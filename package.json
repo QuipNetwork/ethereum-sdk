@@ -1,0 +1,12 @@
+{
+  "name": "hardhat-project",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.19"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.7.1",
+    "@quip.network/hashsigs": "^0.0.1",
+    "@quip.network/hashsigs-solidity": "^0.1.0"
+  }
+}
