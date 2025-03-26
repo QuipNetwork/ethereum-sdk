@@ -8,60 +8,159 @@ import hre from "hardhat";
 import { WOTSPlus } from "@quip.network/hashsigs";
 import { keccak_256 } from '@noble/hashes/sha3';
 
-describe("Lock", function () {
+describe("QuipFactory", function () {
   // We define a fixture to reuse the same setup in every test.
   // We use loadFixture to run this setup once, snapshot that state,
   // and reset Hardhat Network to that snapshot in every test.
-  async function deployOneYearLockFixture() {
-    const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-    const ONE_GWEI = 1_000_000_000;
-
-    const lockedAmount = ONE_GWEI;
-    const unlockTime = (await time.latest()) + ONE_YEAR_IN_SECS;
+  async function deployQuipFactory() {
+    //const ONE_GWEI = 1_000_000_000;
 
     // Deploy the WOTSPlus library first - using the full package path
     const WOTSPlusLib = await hre.ethers.getContractFactory("@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus");
     const wotsPlus = await WOTSPlusLib.deploy();
     await wotsPlus.waitForDeployment();
 
-    // Link the library when deploying Lock - using the full package path
-    const Lock = await hre.ethers.getContractFactory("Lock", {
+    // Link the library when deploying QuipFactory - using the full package path
+    const QuipFactory = await hre.ethers.getContractFactory("QuipFactory", {
       libraries: {
         "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus": await wotsPlus.getAddress()
       }
     });
     
-    const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
-    await lock.waitForDeployment();
+    const quipFactory = await QuipFactory.deploy(await wotsPlus.getAddress());  // Pass WOTSPlus address
+    const deployReceipt = await quipFactory.waitForDeployment();
+    // Get deployment transaction
+    const deployTx = deployReceipt.deploymentTransaction();
+    const receipt = await deployTx!.wait();
+    const deployGasFee = receipt!.gasUsed * receipt!.gasPrice;
+    console.log(`\nDeploy gas used: ${receipt!.gasUsed} units`);
+    console.log(`Deploy gas price: ${receipt!.gasPrice} wei`);
+    console.log(`Deploy total gas fee: ${hre.ethers.formatEther(deployGasFee)} ETH`);
+
 
     const [owner, otherAccount] = await hre.ethers.getSigners();
 
-    return { lock, unlockTime, lockedAmount, owner, otherAccount };
+    return { quipFactory, wotsPlus, owner, otherAccount };
+  }
+
+  async function computeQuipWalletAddress(vaultId: Uint8Array, quipFactoryAddress: string, 
+    ownerAddress: string, pqAddress: [Uint8Array, Uint8Array]) {
+    const quipFactory = await hre.ethers.getContractAt("QuipFactory", quipFactoryAddress);
+    const wotsPlusAddress = await quipFactory.wotsLibrary();
+    
+    const quipWalletCode = (await hre.ethers.getContractFactory("QuipWallet", {
+        libraries: {
+            "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus": wotsPlusAddress
+        }
+    })).bytecode;
+    
+    const creationCode = hre.ethers.solidityPacked(
+      ["bytes", "bytes"],
+      [
+        quipWalletCode,
+        hre.ethers.AbiCoder.defaultAbiCoder().encode(
+          ["address", "address", "bytes32", "bytes32"], 
+          [
+            quipFactoryAddress,
+            ownerAddress, 
+            hre.ethers.hexlify(pqAddress[0]),
+            hre.ethers.hexlify(pqAddress[1])
+          ]
+        ),
+      ]
+  );
+    console.log(`QuipWallet code: ${creationCode}`);
+
+    const hash = hre.ethers.keccak256(
+        hre.ethers.solidityPacked(
+            ["bytes1", "address", "bytes32", "bytes"],
+            [
+                "0xff",
+                quipFactoryAddress,
+                vaultId,
+                hre.ethers.keccak256(creationCode),
+            ]
+        )
+    );
+    return hre.ethers.getAddress(`0x${hash.slice(-40)}`);
   }
 
   describe("Deployment", function () {
-    it("Should set the right unlockTime", async function () {
-      const { lock, unlockTime } = await loadFixture(deployOneYearLockFixture);
+    it("Should set and transfer the right owner", async function () {
+      const { quipFactory, owner, otherAccount } = await loadFixture(deployQuipFactory);
 
-      expect(await lock.unlockTime()).to.equal(unlockTime);
+      expect(await quipFactory.owner()).to.equal(owner.address);
+
+      const transferTx = await quipFactory.transferOwnership(otherAccount.address);
+      await transferTx.wait();
+
+      expect(await quipFactory.owner()).to.equal(otherAccount.address);
     });
 
-    it("Should set the right owner", async function () {
-      const { lock, owner } = await loadFixture(deployOneYearLockFixture);
+    it("Should fail to transferOwner if not the right owner", async function () {
+      const { quipFactory, owner, otherAccount } = await loadFixture(deployQuipFactory);
 
-      expect(await lock.owner()).to.equal(owner.address);
+      expect(await quipFactory.owner()).to.equal(owner.address);
+
+      const otherQuipFactory = quipFactory.connect(otherAccount);
+
+      await expect(
+        otherQuipFactory.transferOwnership(otherAccount.address)
+      ).to.be.revertedWith("You aren't the admin");
+
+      expect(await otherQuipFactory.owner()).to.equal(owner.address);
     });
 
-    it("Should receive and store the funds to lock", async function () {
-      const { lock, lockedAmount } = await loadFixture(
-        deployOneYearLockFixture
-      );
+    it("Should deploy a new quip wallet from non-owner", async function () {
+      const { quipFactory, wotsPlus, otherAccount } = await loadFixture(deployQuipFactory);
 
-      expect(await hre.ethers.provider.getBalance(lock.target)).to.equal(
-        lockedAmount
-      );
+      const vaultId = keccak_256("Vault ID 1");
+      let wots: WOTSPlus = new WOTSPlus(keccak_256);
+      let secret = keccak_256("Hello World!");
+      const keypair = wots.generateKeyPair(secret);
+      const quipAddress = {
+        publicSeed: keypair.publicKey.slice(0, 32),
+        publicKeyHash: keypair.publicKey.slice(32, 64),
+      }
+
+      const computedAddress = await computeQuipWalletAddress(vaultId, 
+        await quipFactory.getAddress(), otherAccount.address, 
+        [quipAddress.publicSeed, quipAddress.publicKeyHash]);
+      const otherQuipFactory = quipFactory.connect(otherAccount);
+      const createTx = await otherQuipFactory.depositToWinternitz(vaultId, otherAccount.address, quipAddress);
+      const createReceipt = await createTx.wait();
+      expect(createReceipt).to.not.be.null;
+
+      // Get the return value directly
+      const returnData = createReceipt!.logs[0].data;
+      const quipWalletAddress = hre.ethers.getAddress(`0x${returnData.slice(-40)}`);
+      expect(quipWalletAddress).to.not.equal(0);
+      expect(quipWalletAddress).to.equal(computedAddress);
+
+      //console.log(`Quip wallet deployed to ${quipWalletAddress}`);
+
+      // Assert event creation.
+      await expect(createTx)
+        .to.emit(quipFactory, "QuipCreated")
+        .withArgs(
+          0, // amount
+          anyValue, // when
+          vaultId,
+          otherAccount.address, // creator
+          [quipAddress.publicSeed, quipAddress.publicKeyHash], // pqPubkey
+          quipWalletAddress // quip address
+        );
+      
+      // Check contract state
+      const quip = await quipFactory.quips(otherAccount.address, vaultId);
+      expect(quip).to.equal(quipWalletAddress);
+
+      // Now get contract instance.
+      const quipWallet = await hre.ethers.getContractAt("QuipWallet", quipWalletAddress);
+      expect(quipWalletAddress).to.equal(quipWallet.target);
+
+
     });
-
   });
 
   describe("Withdrawals", function () {

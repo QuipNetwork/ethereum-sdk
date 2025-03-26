@@ -3,9 +3,12 @@ pragma solidity ^0.8.28;
 
 import "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
 import "./QuipWallet.sol";
+import "hardhat/console.sol";  // Add this import
+
 
 contract QuipFactory {
     address payable public admin;
+    address public immutable wotsLibrary;
 
     // eth address -> "salt" vaultId -> QuipWallet address
     mapping(address => mapping(bytes32 => address)) public quips;
@@ -23,8 +26,9 @@ contract QuipFactory {
     );
 
 
-    constructor() payable {
+    constructor(address _wotsLibrary) payable {
         admin = payable(msg.sender);
+        wotsLibrary = _wotsLibrary;
     }
 
     /* NOTE: you can pregenerate the address as follows:
@@ -48,6 +52,8 @@ contract QuipFactory {
             // Encode params for the constructor
             abi.encode(address(this), to, pqTo)
         );
+
+        console.logBytes(quipWalletCode);
 
         // TODO: Collect a fee here? 
 
@@ -73,14 +79,25 @@ contract QuipFactory {
         return contractAddr;
     }
 
-    function wallets(address owner) public view returns (address[] memory) {
-        bytes32[] storage vaultIds = ownerVaultIds[owner];
+    function transferOwnership(address newOwner) public {
+        require(msg.sender == admin, "You aren't the admin");
+        admin = payable(newOwner);
+    }
+
+
+    function wallets(address walletOwner) public view returns (address[] memory) {
+        bytes32[] storage vaultIds = ownerVaultIds[walletOwner];
         address[] memory result = new address[](vaultIds.length);
         
         for (uint i = 0; i < vaultIds.length; i++) {
-            result[i] = quips[owner][vaultIds[i]];
+            result[i] = quips[walletOwner][vaultIds[i]];
         }
         
         return result;
     }
+
+    function owner() public view returns (address) {
+        return admin;
+    }
+
 }
