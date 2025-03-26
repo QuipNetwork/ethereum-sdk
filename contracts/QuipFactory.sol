@@ -3,8 +3,6 @@ pragma solidity ^0.8.28;
 
 import "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
 import "./QuipWallet.sol";
-import "hardhat/console.sol";  // Add this import
-
 
 contract QuipFactory {
     address payable public admin;
@@ -52,8 +50,6 @@ contract QuipFactory {
             // Encode params for the constructor
             abi.encode(address(this), to, pqTo)
         );
-
-        console.logBytes(quipWalletCode);
 
         // TODO: Collect a fee here? 
 

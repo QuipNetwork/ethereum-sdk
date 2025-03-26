@@ -68,8 +68,8 @@ describe("QuipFactory", function () {
           ]
         ),
       ]
-  );
-    console.log(`QuipWallet code: ${creationCode}`);
+    );
+    //console.log(`QuipWallet code: ${creationCode}`);
 
     const hash = hre.ethers.keccak256(
         hre.ethers.solidityPacked(
@@ -129,6 +129,11 @@ describe("QuipFactory", function () {
       const otherQuipFactory = quipFactory.connect(otherAccount);
       const createTx = await otherQuipFactory.depositToWinternitz(vaultId, otherAccount.address, quipAddress);
       const createReceipt = await createTx.wait();
+      const createGasFee = createReceipt!.gasUsed * createReceipt!.gasPrice;
+      console.log(`\depositToWinternitz gas used: ${createReceipt!.gasUsed} units`);
+      console.log(`depositToWinternitz gas price: ${createReceipt!.gasPrice} wei`);
+      console.log(`depositToWinternitz total gas fee: ${hre.ethers.formatEther(createGasFee)} ETH`);
+      
       expect(createReceipt).to.not.be.null;
 
       // Get the return value directly
@@ -136,8 +141,6 @@ describe("QuipFactory", function () {
       const quipWalletAddress = hre.ethers.getAddress(`0x${returnData.slice(-40)}`);
       expect(quipWalletAddress).to.not.equal(0);
       expect(quipWalletAddress).to.equal(computedAddress);
-
-      //console.log(`Quip wallet deployed to ${quipWalletAddress}`);
 
       // Assert event creation.
       await expect(createTx)
@@ -158,8 +161,69 @@ describe("QuipFactory", function () {
       // Now get contract instance.
       const quipWallet = await hre.ethers.getContractAt("QuipWallet", quipWalletAddress);
       expect(quipWalletAddress).to.equal(quipWallet.target);
+    });
 
+    it("Should deploy a new quip wallet with initial balance", async function () {
+      const { quipFactory, wotsPlus, otherAccount } = await loadFixture(deployQuipFactory);
 
+      const vaultId = keccak_256("Vault ID 1");
+      let wots: WOTSPlus = new WOTSPlus(keccak_256);
+      let secret = keccak_256("Hello World!");
+      const keypair = wots.generateKeyPair(secret);
+      const quipAddress = {
+        publicSeed: keypair.publicKey.slice(0, 32),
+        publicKeyHash: keypair.publicKey.slice(32, 64),
+      }
+
+      const initialDeposit = hre.ethers.parseEther("1.0");
+      const computedAddress = await computeQuipWalletAddress(vaultId, 
+        await quipFactory.getAddress(), otherAccount.address, 
+        [quipAddress.publicSeed, quipAddress.publicKeyHash]);
+      
+      const otherQuipFactory = quipFactory.connect(otherAccount);
+      const createTx = await otherQuipFactory.depositToWinternitz(
+        vaultId, 
+        otherAccount.address, 
+        quipAddress,
+        { value: initialDeposit }
+      );
+      const createReceipt = await createTx.wait();
+      const createGasFee = createReceipt!.gasUsed * createReceipt!.gasPrice;
+      console.log(`\depositToWinternitz with deposit gas used: ${createReceipt!.gasUsed} units`);
+      console.log(`depositToWinternitz with deposit gas price: ${createReceipt!.gasPrice} wei`);
+      console.log(`depositToWinternitz with deposit total gas fee: ${hre.ethers.formatEther(createGasFee)} ETH`);
+      
+      expect(createReceipt).to.not.be.null;
+
+      const quipWalletAddress = hre.ethers.getAddress(`0x${createReceipt!.logs[0].data.slice(-40)}`);
+      expect(quipWalletAddress).to.equal(computedAddress);
+
+      // Verify the balance was transferred
+      expect(await hre.ethers.provider.getBalance(quipWalletAddress)).to.equal(initialDeposit);
+
+      // Assert event creation with the deposit amount
+      await expect(createTx)
+        .to.emit(quipFactory, "QuipCreated")
+        .withArgs(
+          initialDeposit, // amount
+          anyValue, // when
+          vaultId,
+          otherAccount.address, // creator
+          [quipAddress.publicSeed, quipAddress.publicKeyHash], // pqPubkey
+          quipWalletAddress // quip address
+        );
+      
+      // Check contract state
+      const quip = await quipFactory.quips(otherAccount.address, vaultId);
+      expect(quip).to.equal(quipWalletAddress);
+
+      // Now get contract instance and verify its state
+      const quipWallet = await hre.ethers.getContractAt("QuipWallet", quipWalletAddress);
+      expect(await quipWallet.owner()).to.equal(otherAccount.address);
+      expect(await quipWallet.pqOwner()).to.deep.equal([
+        hre.ethers.hexlify(quipAddress.publicSeed),
+        hre.ethers.hexlify(quipAddress.publicKeyHash)
+      ]);
     });
   });
 
