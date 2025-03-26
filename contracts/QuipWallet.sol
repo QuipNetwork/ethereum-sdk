@@ -4,12 +4,17 @@ pragma solidity ^0.8.28;
 import "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
 
 // Uncomment this line to use console.log
-// import "hardhat/console.sol";
 
 contract QuipWallet {
     address public quipFactory;
     address payable public owner;
     WOTSPlus.WinternitzAddress public pqOwner;
+
+    // Add this to receive ETH
+    receive() external payable {}
+    
+    // And/or this
+    fallback() external payable {}
 
     event pqTransfer(
         uint256 amount,
@@ -30,14 +35,18 @@ contract QuipWallet {
         address payable to,
         uint256 value) public {
 
+        WOTSPlus.WinternitzAddress memory curPqOwner = pqOwner;
+
         require(msg.sender == owner, "You aren't the owner");
         require(address(this).balance >= value, "Insufficient balance");
-        
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: keccak256(abi.encodePacked(
+
+        bytes memory msgData = abi.encodePacked(
                 pqOwner.publicSeed, pqOwner.publicKeyHash,
                 nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
-                to, value))
+                to, value);
+   
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: keccak256(msgData)
         });
 
         require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
@@ -45,7 +54,7 @@ contract QuipWallet {
 
         to.transfer(value);
 
-        emit pqTransfer(value, block.timestamp, pqOwner, nextPqOwner, to);
+        emit pqTransfer(value, block.timestamp, curPqOwner, nextPqOwner, to);
     }
 
     function executeWithWinternitz(WOTSPlus.WinternitzAddress calldata nextPqOwner,
