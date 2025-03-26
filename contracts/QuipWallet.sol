@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.28;
+
+import "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+
+// Uncomment this line to use console.log
+// import "hardhat/console.sol";
+
+contract QuipWallet {
+    address public quipFactory;
+    address payable public owner;
+    WOTSPlus.WinternitzAddress public pqOwner;
+
+    event pqTransfer(
+        uint256 amount,
+        uint256 when,
+        WOTSPlus.WinternitzAddress pqFrom,
+        WOTSPlus.WinternitzAddress pqNext,
+        address to
+    );
+
+    constructor(address creator, address payable newOwner, WOTSPlus.WinternitzAddress memory newPqOwner) payable {
+        quipFactory = creator;
+        owner = payable(newOwner);
+        pqOwner = newPqOwner;
+    }
+
+    function transferWithWinternitz(WOTSPlus.WinternitzAddress calldata nextPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig,
+        address payable to,
+        uint256 value) public {
+
+        require(msg.sender == owner, "You aren't the owner");
+        require(address(this).balance >= value, "Insufficient balance");
+        
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: keccak256(abi.encodePacked(
+                pqOwner.publicSeed, pqOwner.publicKeyHash,
+                nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
+                to, value))
+        });
+
+        require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
+        pqOwner = nextPqOwner;
+
+        to.transfer(value);
+
+        emit pqTransfer(value, block.timestamp, pqOwner, nextPqOwner, to);
+    }
+
+    function executeWithWinternitz(WOTSPlus.WinternitzAddress calldata nextPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig,
+        address payable target,
+        bytes calldata opdata) payable public returns (bool, bytes memory) {
+
+        require(msg.sender == owner, "You aren't the owner");
+
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: keccak256(abi.encodePacked(
+                pqOwner.publicSeed, pqOwner.publicKeyHash,
+                target, opdata))
+        });
+
+        require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
+        pqOwner = nextPqOwner;
+
+        return target.call{value: msg.value}(opdata);
+    }
+}
