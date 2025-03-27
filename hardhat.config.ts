@@ -1,8 +1,106 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "dotenv/config";
+import { Alchemy, Network } from 'alchemy-sdk';
+import { task } from "hardhat/config";
+
+task("account", "returns nonce and balance for specified address on multiple networks")
+  .addParam("address")
+  .setAction(async (args) => {
+    const networks = [
+      { name: "Ethereum Sepolia:", url: API_URL_SEPOLIA, network: Network.ETH_SEPOLIA },
+      { name: "Base Sepolia:", url: API_URL_BASE_SEPOLIA, network: Network.BASE_SEPOLIA },
+      { name: "Optimism Sepolia:", url: API_URL_OP_SEPOLIA, network: Network.OPT_SEPOLIA },
+      { name: "Ethereum Mainnet:", url: API_URL_MAINNET, network: Network.ETH_MAINNET },
+      { name: "Base Mainnet:", url: API_URL_BASE, network: Network.BASE_MAINNET },
+      { name: "Optimism Mainnet:", url: API_URL_OPTIMISM, network: Network.OPT_MAINNET }
+    ];
+
+    const resultArr = [["  |NETWORK|   |NONCE|   |BALANCE|  "]];
+
+    for (const network of networks) {
+      const settings = {
+        apiKey: ALCHEMY_API_KEY,
+        network: network.network
+      };
+
+      const alchemy = new Alchemy(settings);
+
+      try {
+        const nonce = await alchemy.core.getTransactionCount(args.address);
+        const balance = await alchemy.core.getBalance(args.address);
+        const balanceInEth = parseFloat(balance.toString()) / 1e18;
+        
+        resultArr.push([
+          network.name,
+          nonce.toString(),
+          balanceInEth.toFixed(2) + " ETH"
+        ]);
+      } catch (error) {
+        resultArr.push([
+          network.name,
+          "Error",
+          "Error"
+        ]);
+      }
+    }
+    
+    console.log(resultArr);
+  });
+
+const {
+  API_URL_SEPOLIA,
+  API_URL_BASE_SEPOLIA,
+  API_URL_OP_SEPOLIA,
+  API_URL_MAINNET,
+  API_URL_BASE,
+  API_URL_OPTIMISM,
+  ALCHEMY_API_KEY,
+  DEPLOYER_PRIVATE_KEY,
+  PRIVATE_KEY,
+} = process.env;
+
 
 const config: HardhatUserConfig = {
   solidity: "0.8.28",
+  networks: {
+    hardhat: {
+      accounts: [
+        {
+          privateKey: `0x${PRIVATE_KEY}`,
+          balance: "10000000000000000000" // 10 ETH in wei
+        },
+        {
+          privateKey: `0x${DEPLOYER_PRIVATE_KEY || "1234567890123456789012345678901234567890123456789012345678901234"}`,
+          balance: "10000000000000000000" // 10 ETH in wei
+        }
+      ]
+    },
+    sepolia: {
+      url: API_URL_SEPOLIA,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    sepolia_optimism: {
+      url: API_URL_OP_SEPOLIA,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    sepolia_base: {
+      url: API_URL_BASE_SEPOLIA,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    mainnet: {
+      url: API_URL_MAINNET,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    base: {
+      url: API_URL_BASE,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    optimism: {
+      url: API_URL_OPTIMISM,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+  },
 };
 
 export default config;
