@@ -102,7 +102,7 @@ describe("QuipFactory", function () {
 
       expect(await quipFactory.owner()).to.equal(owner.address);
 
-      const otherQuipFactory = quipFactory.connect(otherAccount);
+      const otherQuipFactory = quipFactory.connect(otherAccount) as typeof quipFactory;
 
       await expect(
         otherQuipFactory.transferOwnership(otherAccount.address)
@@ -126,7 +126,7 @@ describe("QuipFactory", function () {
       const computedAddress = await computeQuipWalletAddress(vaultId, 
         await quipFactory.getAddress(), otherAccount.address, 
         [quipAddress.publicSeed, quipAddress.publicKeyHash]);
-      const otherQuipFactory = quipFactory.connect(otherAccount);
+      const otherQuipFactory = quipFactory.connect(otherAccount) as typeof quipFactory;
       const createTx = await otherQuipFactory.depositToWinternitz(vaultId, otherAccount.address, quipAddress);
       const createReceipt = await createTx.wait();
       const createGasFee = createReceipt!.gasUsed * createReceipt!.gasPrice;
@@ -180,7 +180,7 @@ describe("QuipFactory", function () {
         await quipFactory.getAddress(), otherAccount.address, 
         [quipAddress.publicSeed, quipAddress.publicKeyHash]);
       
-      const otherQuipFactory = quipFactory.connect(otherAccount);
+      const otherQuipFactory = quipFactory.connect(otherAccount) as typeof quipFactory;
       const createTx = await otherQuipFactory.depositToWinternitz(
         vaultId, 
         otherAccount.address, 

@@ -249,7 +249,8 @@ describe("QuipWallet", function () {
       };
 
       // Execute withdrawal
-      const withdrawalTx = await otherQuipWallet.connect(otherAccount).transferWithWinternitz(
+      const otherQuipWalletConnected = otherQuipWallet.connect(otherAccount) as typeof otherQuipWallet;
+      const withdrawalTx = await otherQuipWalletConnected.transferWithWinternitz(
         otherNextQuipAddress,
         withdrawalSignature,
         otherAccount.address,
@@ -263,7 +264,7 @@ describe("QuipWallet", function () {
       // Verify final balances
       expect(await hre.ethers.provider.getBalance(otherQuipWallet.target)).to.equal(0);
       expect(await hre.ethers.provider.getBalance(otherAccount.address)).to.equal(
-        initialBalance + transferAmount - withdrawalGasCost
+        initialBalance + transferAmount - BigInt(withdrawalGasCost)
       );
     });
   });

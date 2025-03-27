@@ -6,6 +6,20 @@
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
-  }
+    "resolveJsonModule": true,
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*"]
+    }
+  },
+  "include": [
+    "src/**/*",
+    "typechain-types/**/*"
+  ],
+  "exclude": ["node_modules", "dist", "test"]
 }

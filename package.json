@@ -1,5 +1,29 @@
 {
-  "name": "hardhat-project",
+  "name": "@quip.network/sdk",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "typechain-types",
+    "artifacts/contracts/**/*.json",
+    "!artifacts/contracts/**/*.dbg.json"
+  ],
+  "scripts": {
+    "build": "hardhat compile && tsc",
+    "prepare": "npm run build",
+    "typechain": "hardhat typechain"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./addresses": {
+      "types": "./dist/addresses.d.ts",
+      "default": "./dist/addresses.js"
+    }
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "hardhat": "^2.22.19"
