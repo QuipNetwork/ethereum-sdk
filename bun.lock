@@ -4,15 +4,15 @@
     "": {
       "name": "hardhat-project",
       "dependencies": {
-        "@noble/hashes": "latest",
-        "@quip.network/hashsigs": "latest",
-        "@quip.network/hashsigs-solidity": "latest",
-        "alchemy-sdk": "latest",
-        "dotenv": "latest",
+        "@noble/hashes": "^1.7.1",
+        "@quip.network/hashsigs": "^0.0.1",
+        "@quip.network/hashsigs-solidity": "^0.1.0",
+        "alchemy-sdk": "^3.5.6",
+        "dotenv": "^16.4.7",
       },
       "devDependencies": {
-        "@nomicfoundation/hardhat-toolbox": "latest",
-        "hardhat": "latest",
+        "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+        "hardhat": "^2.22.19",
       },
     },
   },

@@ -15,11 +15,16 @@
     "baseUrl": ".",
     "paths": {
       "*": ["node_modules/*"]
-    }
+    },
+    "types": ["node", "hardhat"]
   },
   "include": [
     "src/**/*",
-    "typechain-types/**/*"
+    "typechain-types/**/*",
+    "scripts/**/*",
+    "test/**/*",
+    "scripts/**/*",
+    "hardhat.config.ts"
   ],
-  "exclude": ["node_modules", "dist", "test"]
+  "exclude": ["node_modules", "dist"]
 }
