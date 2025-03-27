@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // addNetwork.ts is called exactly once per network. 
 // It deploys the Deployer contract and checks it against the .env
-// file DEPLOY_ADDRESS.
+// file DEPLOYER_ADDRESS.
 //
 // To use, you must set DEPLOYER_PRIVATE_KEY and DEPLOYER_PUBLIC_KEY
-// in .env.
+// in .env. These must be the keys and address provided by Rick for
+// everything to work (Colton also has a copy).
 // 
 // If you are not Rick, you probably should not be running this script.
 // Call Rick. Get permission. Don't be an idiot.
@@ -116,9 +117,13 @@ async function main() {
     }
 }
 
-main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-        console.error(error);
-        process.exit(1);
-    });
+if (require.main === module) {
+    main()
+        .then(() => process.exit(0))
+        .catch((error) => {
+            console.error(error);
+            process.exit(1);
+        });
+}
+
+export { main as addNetwork };

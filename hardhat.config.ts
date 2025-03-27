@@ -72,9 +72,9 @@ const config: HardhatUserConfig = {
         },
         {
           privateKey: `0x${DEPLOYER_PRIVATE_KEY || "1234567890123456789012345678901234567890123456789012345678901234"}`,
-          balance: "10000000000000000000" // 10 ETH in wei
+          balance: "10000000000000000000", // 10 ETH in wei
         }
-      ]
+      ],
     },
     sepolia: {
       url: API_URL_SEPOLIA,

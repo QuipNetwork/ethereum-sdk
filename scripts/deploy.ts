@@ -1,5 +1,6 @@
 import hre from "hardhat";
 import "dotenv/config";
+import { addNetwork } from "./addNetwork";
 
 const SALT = "QUIP";
 
@@ -26,10 +27,19 @@ async function isContractDeployed(address: string): Promise<boolean> {
 }
 
 async function loadDeployer(deployerAddress: string) {
+    const network = await hre.ethers.provider.getNetwork();
+    const isHardhat = network.name === 'hardhat';
+
     // First verify the deployer exists
     const isDeployed = await isContractDeployed(deployerAddress);
+    
     if (!isDeployed) {
-        throw new Error(`Deployer contract not found at ${deployerAddress} on current network`);
+        if (!isHardhat) {
+            throw new Error(`Deployer contract not found at ${deployerAddress} on current network`);
+        }
+        
+        // On hardhat network, run addNetwork to deploy the Deployer contract
+        await addNetwork();
     }
 
     // Get the contract instance
@@ -75,7 +85,13 @@ async function main() {
     }
 
     // Get the bytecode for QuipFactory
-    const QuipFactory = await hre.ethers.getContractFactory("QuipFactory");
+    const QuipFactory = await hre.ethers.getContractFactory("QuipFactory",
+        {
+            libraries: {
+              "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus": wotsAddress
+            }
+        }
+    );
     const factoryBytecode = QuipFactory.bytecode;
     
     // Encode QuipFactory constructor parameters with WOTSPlus address
