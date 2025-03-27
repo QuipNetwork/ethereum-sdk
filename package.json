@@ -1,6 +1,6 @@
 {
-  "name": "@quip.network/evm-sdk",
-  "version": "0.1.0",
+  "name": "@quip.network/ethereum-sdk",
+  "version": "0.0.1",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
