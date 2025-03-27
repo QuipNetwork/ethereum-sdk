@@ -19,7 +19,7 @@ import hre from "hardhat";
 import "dotenv/config";
 
 async function checkWalletNonce(address: string) {
-    const nonce = await hre.provider.getTransactionCount(address);
+    const nonce = await hre.ethers.provider.getTransactionCount(address);
     const balance = await hre.ethers.provider.getBalance(address);
     const balanceInEth = parseFloat(balance.toString()) / 1e18;
     const network = await hre.ethers.provider.getNetwork();

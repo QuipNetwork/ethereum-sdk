@@ -1,5 +1,5 @@
 {
-  "name": "@quip.network/sdk",
+  "name": "@quip.network/evm-sdk",
   "version": "0.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
