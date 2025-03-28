@@ -14,9 +14,9 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "*": ["node_modules/*"]
+      "*": ["node_modules/*", "typechain-types/*"]
     },
-    "types": ["node", "hardhat"]
+    "types": ["node", "hardhat", "mocha", "chai"]
   },
   "include": [
     "src/**/*",
