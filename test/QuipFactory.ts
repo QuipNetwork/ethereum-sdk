@@ -117,7 +117,8 @@ describe("QuipFactory", function () {
       const vaultId = keccak_256("Vault ID 1");
       let wots: WOTSPlus = new WOTSPlus(keccak_256);
       let secret = keccak_256("Hello World!");
-      const keypair = wots.generateKeyPair(secret);
+      const publicSeed = hre.ethers.randomBytes(32);
+      const keypair = wots.generateKeyPair(secret, publicSeed);
       const quipAddress = {
         publicSeed: keypair.publicKey.slice(0, 32),
         publicKeyHash: keypair.publicKey.slice(32, 64),
@@ -169,7 +170,8 @@ describe("QuipFactory", function () {
       const vaultId = keccak_256("Vault ID 1");
       let wots: WOTSPlus = new WOTSPlus(keccak_256);
       let secret = keccak_256("Hello World!");
-      const keypair = wots.generateKeyPair(secret);
+      const publicSeed = hre.ethers.randomBytes(32);
+      const keypair = wots.generateKeyPair(secret, publicSeed);
       const quipAddress = {
         publicSeed: keypair.publicKey.slice(0, 32),
         publicKeyHash: keypair.publicKey.slice(32, 64),

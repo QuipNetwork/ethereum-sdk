@@ -2,6 +2,7 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { keccak_256 } from '@noble/hashes/sha3';
 import { WOTSPlus } from "@quip.network/hashsigs";
+import { randomBytes } from '@noble/ciphers/webcrypto';
 import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import hre from "hardhat";
 
@@ -37,7 +38,8 @@ describe("QuipWallet", function () {
     initialDeposit: bigint = BigInt(0)
   ) {
     let wots: WOTSPlus = new WOTSPlus(keccak_256);
-    const keypair = wots.generateKeyPair(keccak_256(secret));
+    let publicSeed = randomBytes(32);
+    const keypair = wots.generateKeyPair(keccak_256(secret), publicSeed);
     const quipAddress = {
       publicSeed: keypair.publicKey.slice(0, 32),
       publicKeyHash: keypair.publicKey.slice(32, 64),
@@ -74,7 +76,8 @@ describe("QuipWallet", function () {
 
       // Create new keypair for next owner
       let wots: WOTSPlus = new WOTSPlus(keccak_256);
-      const nextKeypair = wots.generateKeyPair(keccak_256("Next Owner"));
+      const publicSeed = randomBytes(32);
+      const nextKeypair = wots.generateKeyPair(keccak_256("Next Owner"), publicSeed);
       const nextQuipAddress = {
         publicSeed: nextKeypair.publicKey.slice(0, 32),
         publicKeyHash: nextKeypair.publicKey.slice(32, 64),
@@ -104,7 +107,10 @@ describe("QuipWallet", function () {
       };
       
       const signature = {
-        elements: wots.sign(keypair.privateKey, message.messageHash)
+        elements: wots.sign(
+          keypair.privateKey,
+          keypair.publicKey.slice(0, 32),
+          message.messageHash)
       };
 
       // Execute transfer
@@ -166,7 +172,8 @@ describe("QuipWallet", function () {
       
       // Create new keypair for owner's next state
       let wots: WOTSPlus = new WOTSPlus(keccak_256);
-      const ownerNextKeypair = wots.generateKeyPair(keccak_256("Owner Next State"));
+      const publicSeed = randomBytes(32);
+      const ownerNextKeypair = wots.generateKeyPair(keccak_256("Owner Next State"), publicSeed);
       const ownerNextQuipAddress = {
         publicSeed: ownerNextKeypair.publicKey.slice(0, 32),
         publicKeyHash: ownerNextKeypair.publicKey.slice(32, 64),
@@ -198,7 +205,10 @@ describe("QuipWallet", function () {
       };
       
       const transferSignature = {
-        elements: wots.sign(ownerKeypair.privateKey, transferMessage.messageHash)
+        elements: wots.sign(
+          ownerKeypair.privateKey, 
+          ownerKeypair.publicKey.slice(0, 32),
+          transferMessage.messageHash)
       };
 
       // Execute transfer from owner's wallet to other's wallet
@@ -216,7 +226,9 @@ describe("QuipWallet", function () {
       );
 
       // Now otherAccount withdraws from their wallet to their personal address
-      const otherNextKeypair = wots.generateKeyPair(keccak_256("Other Next State"));
+      const publicSeed2 = randomBytes(32);
+      const otherNextKeypair = wots.generateKeyPair(keccak_256("Other Next State"),
+        publicSeed2);
       const otherNextQuipAddress = {
         publicSeed: otherNextKeypair.publicKey.slice(0, 32),
         publicKeyHash: otherNextKeypair.publicKey.slice(32, 64),
@@ -245,7 +257,10 @@ describe("QuipWallet", function () {
       };
       
       const withdrawalSignature = {
-        elements: wots.sign(otherKeypair.privateKey, withdrawalMessage.messageHash)
+        elements: wots.sign(
+          otherKeypair.privateKey, 
+          otherKeypair.publicKey.slice(0, 32),
+          withdrawalMessage.messageHash)
       };
 
       // Execute withdrawal
