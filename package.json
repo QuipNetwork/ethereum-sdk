@@ -1,25 +1,32 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "typings": "dist/index.d.ts",
   "files": [
-    "dist",
-    "typechain-types",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "typechain-types/**/*.d.ts",
+    "typechain-types/**/*.js",
     "artifacts/contracts/**/*.json",
     "!artifacts/contracts/**/*.dbg.json"
   ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./addresses": {
       "types": "./dist/addresses.d.ts",
+      "require": "./dist/addresses.js",
       "default": "./dist/addresses.js"
     },
     "./typechain-types": {
       "types": "./typechain-types/index.d.ts",
+      "require": "./typechain-types/index.js",
       "default": "./typechain-types/index.js"
     }
   },

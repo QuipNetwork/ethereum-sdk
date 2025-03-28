@@ -19,6 +19,7 @@
     "types": ["node", "hardhat", "mocha", "chai"]
   },
   "include": [
+    "index.ts",
     "src/**/*",
     "typechain-types/**/*",
     "scripts/**/*",
