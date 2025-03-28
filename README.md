@@ -2,6 +2,8 @@
 
 This project contains the smart contracts and TypeScript SDK for interacting with the Quip Network EVM Smart Contracts.
 
+NOTICE: This project is currently in active development and is not yet ready for production use.
+
 ## Prerequisites
 
 - Node.js
