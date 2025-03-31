@@ -54,6 +54,10 @@ export class QuipSigner {
   public recoverKeyPair(vaultId: Uint8Array, publicSeed: Uint8Array): WinternitzKeyPair {
     const privateSeed = Uint8Array.from([...this.quantumSecret, ...vaultId]);
     const keypair = this.wots.generateKeyPair(privateSeed, publicSeed);
+    const returnedSeed = keypair.publicKey.slice(0, 32);
+    if (!Buffer.from(publicSeed).equals(Buffer.from(returnedSeed))) {
+      throw new Error('Invalid public seed returned');
+    }
     return {
       privateKey: keypair.privateKey,
       publicKey: {
@@ -203,7 +207,8 @@ export class QuipClient {
     const client = new QuipWalletClient(quipSigner, vaultId, walletContract);
     // Check if we have the right signer
     const curPqOwner = await client.getPqOwner();
-    const curSeed = Buffer.from(curPqOwner.publicSeed);
+    console.log("curPublicSeed: ", curPqOwner.publicSeed);
+    const curSeed = Buffer.from(curPqOwner.publicSeed, 'hex');
     const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
     if (!Buffer.from(keypair.publicKey.publicKeyHash).equals(Buffer.from(curPqOwner.publicKeyHash))) {
       throw new Error('Invalid signer for this wallet');
@@ -211,23 +216,29 @@ export class QuipClient {
     return client
   }
 
-  async getVaults(maxSize: number = 1024): Promise<Map<string, string>> {
+  async getVaults(): Promise<Map<string, string>> {
     await this.initializationPromise;
     if (!this.signer) {
       throw new Error('No signer available. Connect a wallet first.');
     }
 
     const signerAddress = await this.signer.getAddress();
-    const vaultIds = await this.factory!.vaultIds(signerAddress, maxSize);
-    
-    // Create a map of vaultId -> wallet address
     const vaultMap = new Map<string, string>();
-    for (const vaultId of vaultIds) {
-      const walletAddress = await this.factory!.quips(signerAddress, vaultId);
-      if (walletAddress !== ethers.ZeroAddress) {
+    
+    // Start from index 0 and keep trying until we hit an error
+    let index = 0;
+    while (true) {
+      try {
+        const vaultId = await this.factory!.vaultIds(signerAddress, index);
+        const walletAddress = await this.factory!.quips(signerAddress, vaultId);
+        if (walletAddress === ethers.ZeroAddress) {
+          throw new Error(`Invalid contract state for vault ID ${vaultId}`);
+        }
         vaultMap.set(ethers.hexlify(vaultId), walletAddress);
-      } else {
-        throw(new Error(`Invalide contract state for vault ID ${vaultId}`));
+        index++;
+      } catch (error) {
+        // We've reached the end of the array
+        break;
       }
     }
     
