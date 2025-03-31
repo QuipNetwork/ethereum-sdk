@@ -2,6 +2,7 @@
   "name": "@quip.network/ethereum-sdk",
   "version": "0.0.11",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "typings": "dist/index.d.ts",
   "files": [
@@ -16,6 +17,7 @@
   ],
   "exports": {
     ".": {
+      "import": "./dist/index.js",
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
       "default": "./dist/index.js"

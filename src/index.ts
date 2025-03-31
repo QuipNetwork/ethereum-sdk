@@ -207,10 +207,10 @@ export class QuipClient {
     const client = new QuipWalletClient(quipSigner, vaultId, walletContract);
     // Check if we have the right signer
     const curPqOwner = await client.getPqOwner();
-    console.log("curPublicSeed: ", curPqOwner.publicSeed);
     const curSeed = Buffer.from(curPqOwner.publicSeed.replace('0x', ''), 'hex');
+    const curPubKeyHash = Buffer.from(curPqOwner.publicKeyHash.replace('0x', ''), 'hex');
     const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
-    if (!Buffer.from(keypair.publicKey.publicKeyHash).equals(Buffer.from(curPqOwner.publicKeyHash))) {
+    if (!Buffer.from(keypair.publicKey.publicKeyHash).equals(Buffer.from(curPubKeyHash))) {
       throw new Error('Invalid signer for this wallet');
     }
     return client
