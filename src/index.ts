@@ -70,23 +70,24 @@ export class QuipSigner {
 }
 
 export class QuipWalletClient {
-  private signer: ethers.Signer;
   private wallet: QuipWallet;
   private quipSigner: QuipSigner;
   private vaultId: Uint8Array;
 
-  constructor(signer: ethers.Signer, quipSigner: QuipSigner, vaultId: Uint8Array, wallet: QuipWallet) {
-    this.signer = signer;
+  constructor(quipSigner: QuipSigner, vaultId: Uint8Array, wallet: QuipWallet) {
     this.wallet = wallet;
     this.vaultId = vaultId;
     this.quipSigner = quipSigner;
+  }
+
+  async getPqOwner() {
+    return await this.wallet.pqOwner();
   }
 
   async transferWithWinternitz(to: ethers.AddressLike, value: bigint) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
-    const pqKeyPair = this.quipSigner.recoverKeyPair(this.vaultId, publicSeed);
 
     // TODO: Make a function that does this?
     const packedMessageData = ethers.solidityPacked(
@@ -116,7 +117,6 @@ export class QuipWalletClient {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
-    const pqKeyPair = this.quipSigner.recoverKeyPair(this.vaultId, publicSeed);
 
     // Create and sign execute message
     const packedMessageData = ethers.solidityPacked(
@@ -147,12 +147,10 @@ export class QuipClient {
   private signer?: ethers.Signer;
   private factory?: QuipFactory;
   private initializationPromise: Promise<void>;
-  private quipSigner: QuipSigner;
 
-  constructor(signer: ethers.Eip1193Provider, quantumSigner: QuipSigner) {
+  constructor(signer: ethers.Eip1193Provider) {
     this.provider = new ethers.BrowserProvider(signer);
     this.initializationPromise = this.initialize();
-    this.quipSigner = quantumSigner;
   }
 
   private async initialize() {
@@ -170,27 +168,44 @@ export class QuipClient {
     this.factory = QuipFactory__factory.connect(QUIP_FACTORY_ADDRESS, this.signer!);
   }
 
-  async createWallet(vaultId: Uint8Array): Promise<QuipWalletClient> {
+  async createWallet(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
     await this.initializationPromise;
-
+    
+    // Bind vaultId to signer
     const userWalletAddress = await this.signer!.getAddress();
+    
+    // Check if wallet already exists
+    const existingWalletAddress = await this.factory!.quips(userWalletAddress, vaultId);
+    if (existingWalletAddress !== ethers.ZeroAddress) {
+      throw new Error(`Wallet already exists for vault ID ${vaultId}`);
+    }
 
-    const pqKeyPair = this.quipSigner.generateKeyPair(vaultId);
-    const tx = await this.factory!.depositToWinternitz(vaultId,
+    const pqKeyPair = quipSigner.generateKeyPair(vaultId);
+    const tx = await this.factory!.depositToWinternitz(
+      vaultId,
       userWalletAddress,
-      pqKeyPair.publicKey);
+      pqKeyPair.publicKey
+    );
     const receipt = await tx.wait();
     const event = receipt!.logs[0];  // QuipCreated is the first and only event
     const newWalletAddress = ethers.getAddress(`0x${event.data.slice(-40)}`);
     const newWalletContract = await QuipWallet__factory.connect(newWalletAddress, this.signer!)
-    return new QuipWalletClient(this.signer!, this.quipSigner, vaultId, newWalletContract);
+    return new QuipWalletClient(quipSigner, vaultId, newWalletContract);
   }
 
-  async getWallet(vaultId: Uint8Array): Promise<QuipWalletClient> {
+  async getWallet(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
     await this.initializationPromise;
     const walletAddress = await this.factory!.quips(await this.signer!.getAddress(), vaultId);
     const walletContract = await QuipWallet__factory.connect(walletAddress, this.signer!);
-    return new QuipWalletClient(this.signer!, this.quipSigner, vaultId, walletContract);
+    const client = new QuipWalletClient(quipSigner, vaultId, walletContract);
+    // Check if we have the right signer
+    const curPqOwner = await client.getPqOwner();
+    const curSeed = Buffer.from(curPqOwner.publicSeed);
+    const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
+    if (!Buffer.from(keypair.publicKey.publicKeyHash).equals(Buffer.from(curPqOwner.publicKeyHash))) {
+      throw new Error('Invalid signer for this wallet');
+    }
+    return client
   }
 
   async getWalletAddresses(): Promise<string[]> {
