@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "typings": "dist/index.d.ts",
@@ -8,6 +8,7 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
+    "dist/**/*.json",
     "typechain-types/**/*.d.ts",
     "typechain-types/**/*.js",
     "artifacts/contracts/**/*.json",
