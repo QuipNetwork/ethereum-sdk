@@ -56,7 +56,7 @@ export class QuipSigner {
     const keypair = this.wots.generateKeyPair(privateSeed, publicSeed);
     const returnedSeed = keypair.publicKey.slice(0, 32);
     if (!Buffer.from(publicSeed).equals(Buffer.from(returnedSeed))) {
-      throw new Error('Invalid public seed returned');
+      throw new Error('Invalid public seed returned: ' + returnedSeed);
     }
     return {
       privateKey: keypair.privateKey,
@@ -208,7 +208,7 @@ export class QuipClient {
     // Check if we have the right signer
     const curPqOwner = await client.getPqOwner();
     console.log("curPublicSeed: ", curPqOwner.publicSeed);
-    const curSeed = Buffer.from(curPqOwner.publicSeed, 'hex');
+    const curSeed = Buffer.from(curPqOwner.publicSeed.replace('0x', ''), 'hex');
     const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
     if (!Buffer.from(keypair.publicKey.publicKeyHash).equals(Buffer.from(curPqOwner.publicKeyHash))) {
       throw new Error('Invalid signer for this wallet');
