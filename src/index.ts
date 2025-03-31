@@ -167,7 +167,7 @@ export class QuipClient {
   }
 
   private async setQuipFactory() {
-    this.factory = QuipFactory__factory.connect(QUIP_FACTORY_ADDRESS, this.provider);
+    this.factory = QuipFactory__factory.connect(QUIP_FACTORY_ADDRESS, this.signer!);
   }
 
   async createWallet(vaultId: Uint8Array): Promise<QuipWalletClient> {
