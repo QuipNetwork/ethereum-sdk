@@ -88,6 +88,10 @@ export class QuipWalletClient {
     return await this.wallet.pqOwner();
   }
 
+  async getAddress() {
+    return this.wallet.getAddress();
+  }
+
   async transferWithWinternitz(to: ethers.AddressLike, value: bigint) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
