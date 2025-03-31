@@ -12,7 +12,7 @@ contract QuipFactory {
     mapping(address => mapping(bytes32 => address)) public quips;
     
     // Track vaultIds for each owner
-    mapping(address => bytes32[]) private ownerVaultIds;
+    mapping(address => bytes32[]) public vaultIds;
 
     event QuipCreated(
         uint256 amount,
@@ -68,7 +68,7 @@ contract QuipFactory {
 
         assert(contractAddr != address(0));
         quips[to][vaultId] = contractAddr;
-        ownerVaultIds[to].push(vaultId); 
+        vaultIds[to].push(vaultId); 
         
         emit QuipCreated(msg.value, block.timestamp, vaultId, to, pqTo, contractAddr);
 
@@ -78,18 +78,6 @@ contract QuipFactory {
     function transferOwnership(address newOwner) public {
         require(msg.sender == admin, "You aren't the admin");
         admin = payable(newOwner);
-    }
-
-
-    function wallets(address walletOwner) public view returns (address[] memory) {
-        bytes32[] storage vaultIds = ownerVaultIds[walletOwner];
-        address[] memory result = new address[](vaultIds.length);
-        
-        for (uint i = 0; i < vaultIds.length; i++) {
-            result[i] = quips[walletOwner][vaultIds[i]];
-        }
-        
-        return result;
     }
 
     function owner() public view returns (address) {

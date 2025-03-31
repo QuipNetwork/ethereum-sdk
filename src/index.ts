@@ -193,7 +193,7 @@ export class QuipClient {
     return new QuipWalletClient(quipSigner, vaultId, newWalletContract);
   }
 
-  async getWallet(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
+  async getVault(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
     await this.initializationPromise;
     const walletAddress = await this.factory!.quips(await this.signer!.getAddress(), vaultId);
     if (walletAddress === ethers.ZeroAddress) {
@@ -211,14 +211,27 @@ export class QuipClient {
     return client
   }
 
-  async getWalletAddresses(): Promise<string[]> {
+  async getVaults(maxSize: number = 1024): Promise<Map<string, string>> {
     await this.initializationPromise;
     if (!this.signer) {
       throw new Error('No signer available. Connect a wallet first.');
     }
 
     const signerAddress = await this.signer.getAddress();
-    return await this.factory!.wallets(signerAddress);
+    const vaultIds = await this.factory!.vaultIds(signerAddress, maxSize);
+    
+    // Create a map of vaultId -> wallet address
+    const vaultMap = new Map<string, string>();
+    for (const vaultId of vaultIds) {
+      const walletAddress = await this.factory!.quips(signerAddress, vaultId);
+      if (walletAddress !== ethers.ZeroAddress) {
+        vaultMap.set(ethers.hexlify(vaultId), walletAddress);
+      } else {
+        throw(new Error(`Invalide contract state for vault ID ${vaultId}`));
+      }
+    }
+    
+    return vaultMap;
   }
 }
 
