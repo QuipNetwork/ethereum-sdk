@@ -196,6 +196,9 @@ export class QuipClient {
   async getWallet(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
     await this.initializationPromise;
     const walletAddress = await this.factory!.quips(await this.signer!.getAddress(), vaultId);
+    if (walletAddress === ethers.ZeroAddress) {
+      throw new Error(`No wallet found for vault ID ${vaultId}`);
+    }
     const walletContract = await QuipWallet__factory.connect(walletAddress, this.signer!);
     const client = new QuipWalletClient(quipSigner, vaultId, walletContract);
     // Check if we have the right signer
