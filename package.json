@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "typings": "dist/index.d.ts",
@@ -33,12 +33,14 @@
   "scripts": {
     "clean": "rimraf dist typechain-types artifacts cache",
     "prebuild": "npm run clean",
-    "build": "hardhat compile && tsc",
+    "copy-assets": "copyfiles -u 1 \"src/**/*.json\" dist",
+    "build": "hardhat compile && tsc && npm run copy-assets",
     "prepare": "npm run build",
     "typechain": "hardhat typechain"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "copyfiles": "^2.4.1",
     "hardhat": "^2.22.19",
     "rimraf": "^5.0.5"
   },
