@@ -33,6 +33,22 @@ contract QuipWallet {
         pqOwner = newPqOwner;
     }
 
+    function changePqOwner(WOTSPlus.WinternitzAddress calldata newPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig) public {
+        require(msg.sender == owner, "You aren't the owner");
+
+        bytes memory msgData = abi.encodePacked(
+                pqOwner.publicSeed, pqOwner.publicKeyHash,
+                newPqOwner.publicSeed, newPqOwner.publicKeyHash);
+
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: keccak256(msgData)
+        });
+
+        require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
+        pqOwner = newPqOwner;
+    }
+
     function transferWithWinternitz(WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable to,
