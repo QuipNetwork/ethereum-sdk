@@ -24,7 +24,6 @@
     "typechain-types/**/*",
     "scripts/**/*",
     "test/**/*",
-    "scripts/**/*",
     "hardhat.config.ts"
   ],
   "exclude": ["node_modules", "dist"]
