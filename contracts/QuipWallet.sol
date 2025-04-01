@@ -10,10 +10,8 @@ contract QuipWallet {
     address payable public owner;
     WOTSPlus.WinternitzAddress public pqOwner;
 
-    // Add this to receive ETH
     receive() external payable {}
     
-    // And/or this
     fallback() external payable {}
 
     event pqTransfer(
@@ -24,9 +22,14 @@ contract QuipWallet {
         address to
     );
 
-    constructor(address creator, address payable newOwner, WOTSPlus.WinternitzAddress memory newPqOwner) payable {
+    constructor(address creator, address payable newOwner) payable {
         quipFactory = creator;
         owner = payable(newOwner);
+    }
+
+    function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) public {
+        require(msg.sender == owner || msg.sender == quipFactory, "You aren't the owner or creator");
+        require(pqOwner.publicSeed == bytes32(0) && pqOwner.publicKeyHash == bytes32(0), "Already initialized");
         pqOwner = newPqOwner;
     }
 

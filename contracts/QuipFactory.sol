@@ -7,6 +7,7 @@ import "./QuipWallet.sol";
 contract QuipFactory {
     address payable public admin;
     address public immutable wotsLibrary;
+    uint256 public fee = 0;
 
     // eth address -> "salt" vaultId -> QuipWallet address
     mapping(address => mapping(bytes32 => address)) public quips;
@@ -48,17 +49,17 @@ contract QuipFactory {
         bytes memory quipWalletCode = abi.encodePacked(
             type(QuipWallet).creationCode,
             // Encode params for the constructor
-            abi.encode(address(this), to, pqTo)
+            abi.encode(address(this), to)
         );
 
-        // TODO: Collect a fee here? 
+        uint256 contractValue = msg.value - fee;
 
         assembly {
             // code starts after the first 32 bytes...
             // https://ethereum-blockchain-developer.com/110-upgrade-smart-contracts/12-metamorphosis-create2/
             let code := add(0x20, quipWalletCode)
             let codeSize := mload(quipWalletCode)
-            contractAddr := create2(callvalue(), code, codeSize, vaultId)
+            contractAddr := create2(0, code, codeSize, vaultId)
 
             // revert on failure
             if iszero(extcodesize(contractAddr)) {
@@ -67,6 +68,8 @@ contract QuipFactory {
         }
 
         assert(contractAddr != address(0));
+        QuipWallet(payable(contractAddr)).initialize(pqTo);
+        payable(contractAddr).transfer(contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId); 
         
@@ -78,6 +81,17 @@ contract QuipFactory {
     function transferOwnership(address newOwner) public {
         require(msg.sender == admin, "You aren't the admin");
         admin = payable(newOwner);
+    }
+
+    function setFee(uint256 newFee) public {
+        require(msg.sender == admin, "You aren't the admin");
+        fee = newFee;
+    }
+
+    function withdraw(uint256 amount) public {
+        require(msg.sender == admin, "You aren't the admin");
+        require(address(this).balance >= amount, "Insufficient balance");
+        admin.transfer(amount);
     }
 
     function owner() public view returns (address) {

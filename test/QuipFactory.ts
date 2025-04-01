@@ -44,7 +44,7 @@ describe("QuipFactory", function () {
   }
 
   async function computeQuipWalletAddress(vaultId: Uint8Array, quipFactoryAddress: string, 
-    ownerAddress: string, pqAddress: [Uint8Array, Uint8Array]) {
+    ownerAddress: string) {
     const quipFactory = await hre.ethers.getContractAt("QuipFactory", quipFactoryAddress);
     const wotsPlusAddress = await quipFactory.wotsLibrary();
     
@@ -59,12 +59,10 @@ describe("QuipFactory", function () {
       [
         quipWalletCode,
         hre.ethers.AbiCoder.defaultAbiCoder().encode(
-          ["address", "address", "bytes32", "bytes32"], 
+          ["address", "address"], 
           [
             quipFactoryAddress,
-            ownerAddress, 
-            hre.ethers.hexlify(pqAddress[0]),
-            hre.ethers.hexlify(pqAddress[1])
+            ownerAddress
           ]
         ),
       ]
@@ -125,8 +123,7 @@ describe("QuipFactory", function () {
       }
 
       const computedAddress = await computeQuipWalletAddress(vaultId, 
-        await quipFactory.getAddress(), otherAccount.address, 
-        [quipAddress.publicSeed, quipAddress.publicKeyHash]);
+        await quipFactory.getAddress(), otherAccount.address);
       const otherQuipFactory = quipFactory.connect(otherAccount) as typeof quipFactory;
       const createTx = await otherQuipFactory.depositToWinternitz(vaultId, otherAccount.address, quipAddress);
       const createReceipt = await createTx.wait();
@@ -179,8 +176,7 @@ describe("QuipFactory", function () {
 
       const initialDeposit = hre.ethers.parseEther("1.0");
       const computedAddress = await computeQuipWalletAddress(vaultId, 
-        await quipFactory.getAddress(), otherAccount.address, 
-        [quipAddress.publicSeed, quipAddress.publicKeyHash]);
+        await quipFactory.getAddress(), otherAccount.address);
       
       const otherQuipFactory = quipFactory.connect(otherAccount) as typeof quipFactory;
       const createTx = await otherQuipFactory.depositToWinternitz(
