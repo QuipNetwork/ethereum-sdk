@@ -48,6 +48,7 @@
     "rimraf": "^5.0.5"
   },
   "dependencies": {
+    "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@quip.network/hashsigs": "^0.1.0",
     "@quip.network/hashsigs-solidity": "^0.1.0",
