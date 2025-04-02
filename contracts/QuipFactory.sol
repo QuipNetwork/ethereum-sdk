@@ -25,8 +25,8 @@ contract QuipFactory {
     );
 
 
-    constructor(address _wotsLibrary) payable {
-        admin = payable(msg.sender);
+    constructor(address payable initialOwner, address _wotsLibrary) payable {
+        admin = initialOwner;
         wotsLibrary = _wotsLibrary;
     }
 

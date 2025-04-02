@@ -98,9 +98,13 @@ async function main() {
         }
     );
     const factoryBytecode = QuipFactory.bytecode;
-    
+
+    const [signer] = await hre.ethers.getSigners();
+    const initialOwner = await signer.getAddress();
+    console.log(`Deploying with signer: ${initialOwner}`);
+    console.log(`Deploying with WOTSPlus at: ${wotsAddress}`);
     // Encode QuipFactory constructor parameters with WOTSPlus address
-    const encodedParams = QuipFactory.interface.encodeDeploy([wotsAddress]);
+    const encodedParams = QuipFactory.interface.encodeDeploy([initialOwner, wotsAddress]);
     const factoryBytecodeWithParams = factoryBytecode + encodedParams.slice(2); // remove 0x prefix
 
     // Precompute QuipFactory address

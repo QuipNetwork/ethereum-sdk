@@ -19,8 +19,12 @@ describe("QuipWallet", function () {
         "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus": await wotsPlus.getAddress()
       }
     });
-    
-    const quipFactory = await QuipFactory.deploy(await wotsPlus.getAddress());
+    const [signer] = await hre.ethers.getSigners();
+    const initialOwner = signer.getAddress();
+    console.log(`Deploying with signer: ${initialOwner}`);
+    const wotsPlusAddress = await wotsPlus.getAddress();
+    console.log(`WOTSPlus deployed to: ${wotsPlusAddress}`);
+    const quipFactory = await QuipFactory.deploy(initialOwner, wotsPlusAddress);      
     const deployReceipt = await quipFactory.waitForDeployment();
     // Get deployment transaction
     const deployTx = deployReceipt.deploymentTransaction();
