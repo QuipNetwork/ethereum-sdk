@@ -58,6 +58,7 @@ const {
   ALCHEMY_API_KEY,
   DEPLOYER_PRIVATE_KEY,
   PRIVATE_KEY,
+  BASE_SEPOLIA_API_KEY,
 } = process.env;
 
 
@@ -100,6 +101,11 @@ const config: HardhatUserConfig = {
       url: API_URL_OPTIMISM,
       accounts: [`0x${PRIVATE_KEY}`],
     },
+  },
+  etherscan: {
+    apiKey: {
+      "baseSepolia": `${BASE_SEPOLIA_API_KEY}`
+    }
   },
 };
 
