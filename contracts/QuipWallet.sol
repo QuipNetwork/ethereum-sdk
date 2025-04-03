@@ -57,7 +57,9 @@ contract QuipWallet {
 
         WOTSPlus.WinternitzAddress memory curPqOwner = pqOwner;
 
-        require(msg.value >= getTransferFee(), "Insufficient fee");
+        uint256 fee = getTransferFee();
+
+        require(msg.value >= fee, "Insufficient fee");
         require(msg.sender == owner, "You aren't the owner");
         require(address(this).balance >= value, "Insufficient balance");
 
@@ -74,7 +76,7 @@ contract QuipWallet {
         pqOwner = nextPqOwner;
 
         to.transfer(value);
-        quipFactory.transfer(msg.value);
+        quipFactory.transfer(fee);
 
         emit pqTransfer(value, block.timestamp, curPqOwner, nextPqOwner, to);
     }
@@ -84,21 +86,27 @@ contract QuipWallet {
         address payable target,
         bytes calldata opdata) payable public returns (bool, bytes memory) {
 
+        uint256 fee = getExecuteFee();
+        require(msg.value >= fee, "Insufficient fee");
 
-        require(msg.value >= getExecuteFee(), "Insufficient fee");
+        uint256 forwardValue = msg.value - fee;
+
         require(msg.sender == owner, "You aren't the owner");
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: keccak256(abi.encodePacked(
                 pqOwner.publicSeed, pqOwner.publicKeyHash,
+                nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
                 target, opdata))
         });
 
         require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
         pqOwner = nextPqOwner;
-        quipFactory.transfer(msg.value);
+        quipFactory.transfer(fee);
 
-        return target.call{value: msg.value}(opdata);
+        (bool success, bytes memory returnData) = target.call{value: forwardValue}(opdata);
+        require(success, string(returnData));
+        return (success, returnData);
     }
 
     function getTransferFee() public view returns (uint256) {
