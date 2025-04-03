@@ -20,3 +20,4 @@ ignition/
 
 *.tmp.json
 dist/
+.DS_Store
