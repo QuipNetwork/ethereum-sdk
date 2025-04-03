@@ -2,11 +2,12 @@
 pragma solidity ^0.8.28;
 
 import "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+import "./QuipFactory.sol";
 
 // Uncomment this line to use console.log
 
 contract QuipWallet {
-    address public quipFactory;
+    address payable public quipFactory;
     address payable public owner;
     WOTSPlus.WinternitzAddress public pqOwner;
 
@@ -22,7 +23,7 @@ contract QuipWallet {
         address to
     );
 
-    constructor(address creator, address payable newOwner) payable {
+    constructor(address payable creator, address payable newOwner) payable {
         quipFactory = creator;
         owner = payable(newOwner);
     }
@@ -52,10 +53,11 @@ contract QuipWallet {
     function transferWithWinternitz(WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable to,
-        uint256 value) public {
+        uint256 value) public payable {
 
         WOTSPlus.WinternitzAddress memory curPqOwner = pqOwner;
 
+        require(msg.value >= getTransferFee(), "Insufficient fee");
         require(msg.sender == owner, "You aren't the owner");
         require(address(this).balance >= value, "Insufficient balance");
 
@@ -72,6 +74,7 @@ contract QuipWallet {
         pqOwner = nextPqOwner;
 
         to.transfer(value);
+        quipFactory.transfer(msg.value);
 
         emit pqTransfer(value, block.timestamp, curPqOwner, nextPqOwner, to);
     }
@@ -81,6 +84,8 @@ contract QuipWallet {
         address payable target,
         bytes calldata opdata) payable public returns (bool, bytes memory) {
 
+
+        require(msg.value >= getExecuteFee(), "Insufficient fee");
         require(msg.sender == owner, "You aren't the owner");
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
@@ -91,7 +96,16 @@ contract QuipWallet {
 
         require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
         pqOwner = nextPqOwner;
+        quipFactory.transfer(msg.value);
 
         return target.call{value: msg.value}(opdata);
+    }
+
+    function getTransferFee() public view returns (uint256) {
+        return QuipFactory(quipFactory).transferFee();
+    }
+
+    function getExecuteFee() public view returns (uint256) {
+        return QuipFactory(quipFactory).executeFee();
     }
 }

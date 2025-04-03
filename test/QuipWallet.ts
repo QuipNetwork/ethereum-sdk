@@ -286,5 +286,113 @@ describe("QuipWallet", function () {
         initialBalance + transferAmount - BigInt(withdrawalGasCost)
       );
     });
+
+    it("Should properly handle transfer fees with Winternitz", async function () {
+      // Deploy factory and wallet
+      const { quipFactory, owner, otherAccount } = await loadFixture(deployQuipFactory);
+      
+      // Set transfer fee
+      const transferFee = hre.ethers.parseEther("0.005"); // 0.005 ETH
+      await quipFactory.setTransferFee(transferFee);
+      
+      // Deploy wallet with initial balance
+      const initialDeposit = hre.ethers.parseEther("1.0");
+      const { quipWallet, keypair } = await deployQuipWallet(
+        quipFactory,
+        owner,
+        "Fee Test Secret",
+        "Fee Test Vault",
+        initialDeposit
+      );
+
+      // Create new keypair for next owner
+      let wots: WOTSPlus = new WOTSPlus(keccak_256);
+      const publicSeed = randomBytes(32);
+      const nextKeypair = wots.generateKeyPair(keccak_256("Next Owner"), publicSeed);
+      const nextQuipAddress = {
+        publicSeed: nextKeypair.publicKey.slice(0, 32),
+        publicKeyHash: nextKeypair.publicKey.slice(32, 64),
+      }
+
+      const transferAmount = hre.ethers.parseEther("0.5");
+      const currentQuipAddress = {
+        publicSeed: keypair.publicKey.slice(0, 32),
+        publicKeyHash: keypair.publicKey.slice(32, 64),
+      }
+
+      // Get initial balances
+      const factoryInitialBalance = await hre.ethers.provider.getBalance(await quipFactory.getAddress());
+      const recipientInitialBalance = await hre.ethers.provider.getBalance(otherAccount.address);
+
+      // Create and sign transfer message
+      const packedMessageData = hre.ethers.solidityPacked(
+        ["bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
+        [
+          currentQuipAddress.publicSeed,
+          currentQuipAddress.publicKeyHash,
+          nextQuipAddress.publicSeed,
+          nextQuipAddress.publicKeyHash,
+          otherAccount.address,
+          transferAmount
+        ]
+      );
+
+      const message = {
+        messageHash: keccak_256(hre.ethers.getBytes(packedMessageData))
+      };
+      
+      const signature = {
+        elements: wots.sign(
+          keypair.privateKey,
+          keypair.publicKey.slice(0, 32),
+          message.messageHash)
+      };
+
+      // Execute transfer with fee
+      const transferTx = await quipWallet.transferWithWinternitz(
+        nextQuipAddress,
+        signature,
+        otherAccount.address,
+        transferAmount,
+        { value: transferFee }
+      );
+      await transferTx.wait();
+
+      // Verify balances after transfer
+      expect(await hre.ethers.provider.getBalance(quipWallet.target))
+        .to.equal(initialDeposit - transferAmount);
+      expect(await hre.ethers.provider.getBalance(otherAccount.address))
+        .to.equal(recipientInitialBalance + transferAmount);
+      expect(await hre.ethers.provider.getBalance(await quipFactory.getAddress()))
+        .to.equal(factoryInitialBalance + transferFee);
+
+      // Try transfer without fee
+      await expect(quipWallet.transferWithWinternitz(
+        nextQuipAddress,
+        signature,
+        otherAccount.address,
+        transferAmount
+      )).to.be.revertedWith("Insufficient fee");
+
+      // Try transfer with insufficient fee
+      await expect(quipWallet.transferWithWinternitz(
+        nextQuipAddress,
+        signature,
+        otherAccount.address,
+        transferAmount,
+        { value: transferFee - BigInt(1) }
+      )).to.be.revertedWith("Insufficient fee");
+
+      // Verify admin can withdraw accumulated fees
+      const adminInitialBalance = await hre.ethers.provider.getBalance(owner.address);
+      const withdrawTx = await quipFactory.withdraw(transferFee);
+      const withdrawReceipt = await withdrawTx.wait();
+      const withdrawGasCost = withdrawReceipt!.gasUsed * withdrawReceipt!.gasPrice;
+
+      expect(await hre.ethers.provider.getBalance(await quipFactory.getAddress()))
+        .to.equal(factoryInitialBalance);
+      expect(await hre.ethers.provider.getBalance(owner.address))
+        .to.equal(adminInitialBalance + transferFee - withdrawGasCost);
+    });
   });
 });

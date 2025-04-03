@@ -92,10 +92,19 @@ export class QuipWalletClient {
     return this.wallet.getAddress();
   }
 
+  async getTransferFee(): Promise<bigint> {
+    return await this.wallet.getTransferFee();
+  }
+
+  async getExecuteFee(): Promise<bigint> {
+    return await this.wallet.getExecuteFee();
+  }
+
   async transferWithWinternitz(to: ethers.AddressLike, value: bigint) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
+    const transferFee = await this.getTransferFee();
 
     // TODO: Make a function that does this?
     const packedMessageData = ethers.solidityPacked(
@@ -117,7 +126,13 @@ export class QuipWalletClient {
     const pqSig = {
       elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
     }
-    const tx = await this.wallet.transferWithWinternitz(nextPqOwner.publicKey, pqSig, to, value);
+    const tx = await this.wallet.transferWithWinternitz(
+      nextPqOwner.publicKey, 
+      pqSig, 
+      to, 
+      value,
+      { value: transferFee }
+    );
     return await tx.wait();
   }
 
@@ -125,8 +140,8 @@ export class QuipWalletClient {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
+    const executeFee = await this.getExecuteFee();
 
-    // Create and sign execute message
     const packedMessageData = ethers.solidityPacked(
       ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
       [
@@ -145,7 +160,13 @@ export class QuipWalletClient {
     const pqSig = {
       elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
     }
-    const tx = await this.wallet.executeWithWinternitz(nextPqOwner.publicKey, pqSig, target, opdata);
+    const tx = await this.wallet.executeWithWinternitz(
+      nextPqOwner.publicKey, 
+      pqSig, 
+      target, 
+      opdata,
+      { value: executeFee }
+    );
     return await tx.wait();
   }
 }
@@ -176,11 +197,17 @@ export class QuipClient {
     this.factory = QuipFactory__factory.connect(QUIP_FACTORY_ADDRESS, this.signer!);
   }
 
+  async getCreationFee(): Promise<bigint> {
+    await this.initializationPromise;
+    return await this.factory!.creationFee();
+  }
+
   async createWallet(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
     await this.initializationPromise;
     
     // Bind vaultId to signer
     const userWalletAddress = await this.signer!.getAddress();
+    const creationFee = await this.getCreationFee();
     
     // Check if wallet already exists
     const existingWalletAddress = await this.factory!.quips(userWalletAddress, vaultId);
@@ -192,7 +219,8 @@ export class QuipClient {
     const tx = await this.factory!.depositToWinternitz(
       vaultId,
       userWalletAddress,
-      pqKeyPair.publicKey
+      pqKeyPair.publicKey,
+      { value: creationFee }
     );
     const receipt = await tx.wait();
     const event = receipt!.logs[0];  // QuipCreated is the first and only event
