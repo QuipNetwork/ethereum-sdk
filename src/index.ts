@@ -5,6 +5,7 @@ import { QUIP_FACTORY_ADDRESS, WOTS_PLUS_ADDRESS } from './addresses';
 import { WOTSPlus } from '@quip.network/hashsigs';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { randomBytes } from '@noble/ciphers/webcrypto';
+import { DEFAULT_GAS_LIMIT } from './constants';
 
 
 export * from '../typechain-types';
@@ -136,7 +137,13 @@ export class QuipWalletClient {
     return await tx.wait();
   }
 
-  async executeWithWinternitz(target: ethers.AddressLike, opdata: Uint8Array) {
+  async executeWithWinternitz(
+    target: ethers.AddressLike, 
+    opdata: Uint8Array,
+    options: {
+      gasLimit?: bigint
+    } = {}
+  ) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
@@ -160,12 +167,19 @@ export class QuipWalletClient {
     const pqSig = {
       elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
     }
+
+    // Add PQ signature gas cost (850,000) to the default gas limit
+    const defaultGasLimit = BigInt(DEFAULT_GAS_LIMIT);
+    
     const tx = await this.wallet.executeWithWinternitz(
       nextPqOwner.publicKey, 
       pqSig, 
       target, 
       opdata,
-      { value: executeFee }
+      { 
+        value: executeFee,
+        gasLimit: options.gasLimit || defaultGasLimit
+      }
     );
     return await tx.wait();
   }
