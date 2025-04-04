@@ -59,6 +59,11 @@ const {
   DEPLOYER_PRIVATE_KEY,
   PRIVATE_KEY,
   BASE_SEPOLIA_API_KEY,
+  BASE_API_KEY,
+  ETHERSCAN_API_KEY,
+  ETHERSCAN_SEPOLIA_API_KEY,
+  OP_ETHERSCAN_API_KEY,
+  OP_ETHERSCAN_SEPOLIA_API_KEY
 } = process.env;
 
 
@@ -104,7 +109,12 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
-      "baseSepolia": `${BASE_SEPOLIA_API_KEY}`
+      "baseSepolia": `${BASE_SEPOLIA_API_KEY}`,
+      "base": `${BASE_API_KEY}`,
+      "optimisticEthereum": `${OP_ETHERSCAN_API_KEY}`,
+      "optimismSepolia": `${OP_ETHERSCAN_SEPOLIA_API_KEY}`,
+      "sepolia": `${ETHERSCAN_SEPOLIA_API_KEY}`,
+      "mainnet": `${ETHERSCAN_API_KEY}`,
     }
   },
 };
