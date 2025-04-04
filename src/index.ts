@@ -157,23 +157,53 @@ export class QuipWalletClient {
         target,
         opdata
       ]
-    )
+    );
 
     const message = {
       messageHash: keccak_256(ethers.getBytes(packedMessageData))
     };
     const pqSig = {
       elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
+    };
+
+    let gasLimit: bigint;
+    try {
+      // Try to estimate gas
+      const estimatedGas = await this.wallet.executeWithWinternitz.estimateGas(
+        nextPqOwner.publicKey,
+        pqSig,
+        target,
+        opdata,
+        { value: executeFee }
+      );
+      gasLimit = (estimatedGas * 120n) / 100n; // 20% buffer
+    } catch (error: any) {
+      // Log detailed error information
+      console.error("Gas estimation failed:");
+      console.error("Target:", target);
+      console.error("Operation data length:", opdata.length);
+      console.error("Execute fee:", executeFee.toString());
+      
+      if (error.transaction) {
+        // Log the transaction that would have been sent
+        console.error("Failed transaction:", {
+          to: error.transaction.to,
+          from: error.transaction.from,
+          data: error.transaction.data?.slice(0, 66) + '...' // First 32 bytes + '...'
+        });
+      }
+      
+      // If there's a specific revert reason, it might be in error.reason
+      if (error.reason) {
+        console.error("Revert reason:", error.reason);
+      }
+      
+      // Rethrow with more context
+      throw new Error(`Gas estimation failed: ${error.message || error}`);
     }
 
-    // Use provided gas limit or estimate with 20% buffer
-    const gasLimit = options.gasLimit || (await this.wallet.executeWithWinternitz.estimateGas(
-      nextPqOwner.publicKey,
-      pqSig,
-      target,
-      opdata,
-      { value: executeFee }
-    ) * 120n) / 100n;
+    // Use provided gas limit or the estimated one
+    gasLimit = options.gasLimit || gasLimit;
     
     const tx = await this.wallet.executeWithWinternitz(
       nextPqOwner.publicKey, 
@@ -291,7 +321,7 @@ export class QuipClient {
             quipFactoryAddress,
             signerAddress
           ]
-        ),
+        )
       ]
     );
     const hash = ethers.keccak256(
