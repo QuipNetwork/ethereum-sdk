@@ -1,4 +1,4 @@
-export const DEFAULT_GAS_LIMIT = 500000;
+export const WOTSPLUS_GAS_ESTIMATE = 850_000;
 export const DEFAULT_CONFIRMATIONS = 1;
 
 export const ERRORS = {
