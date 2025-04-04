@@ -56,6 +56,15 @@ npx hardhat run scripts/addNetwork.ts --network sepolia_base
 npx hardhat run scripts/addNetwork.ts --network sepolia_optimism
 ```
 
+After deploying, you can drain remaining funds from the wallet to the one owned by PRIVATE_KEY:
+
+```shell
+npx hardhat run scripts/drainDeployer.ts
+npx hardhat run scripts/drainDeployer.ts --network sepolia
+npx hardhat run scripts/drainDeployer.ts --network sepolia_base
+npx hardhat run scripts/drainDeployer.ts --network sepolia_optimism
+```
+
 ### Deploying Contracts
 ```shell
 npx hardhat run scripts/deploy.ts --network <network_name>
@@ -76,6 +85,16 @@ bun run test
 ### Publishing
 ```shell
 npm publish
+```
+
+## Contract Verification
+
+Deployer:
+
+```
+npx hardhat verify --network mainnet 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
+npx hardhat verify --network optimism 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
+npx hardhat verify --network base 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
 ```
 
 ## Available Networks

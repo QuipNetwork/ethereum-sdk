@@ -54,7 +54,7 @@ async function checkWalletNonce(address: string) {
 // TALK TO RICK. DO NOT MODIFY.
 // IF the Nonce is < EXPECTED_NONCE, we simply deploy
 // the contract multiple times.
-const EXPECTED_NONCE = 1;
+export const EXPECTED_NONCE = 1;
 const MIN_BALANCE = 0.04;
 
 async function main() {
