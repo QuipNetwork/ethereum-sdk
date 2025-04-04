@@ -67,8 +67,10 @@ npx hardhat run scripts/drainDeployer.ts --network sepolia_optimism
 
 ### Deploying Contracts
 ```shell
-npx hardhat run scripts/deploy.ts --network <network_name>
+INITIAL_OWNER=<initial_owner_address> npx hardhat run scripts/deploy.ts --network <network_name>
 ```
+
+Note that the initial owner address will change the deployment address. 
 
 ## SDK Development
 
@@ -96,6 +98,10 @@ npx hardhat verify --network mainnet 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
 npx hardhat verify --network optimism 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
 npx hardhat verify --network base 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
 ```
+
+Assuming the following is in your addresses.json folder: 
+
+
 
 ## Available Networks
 

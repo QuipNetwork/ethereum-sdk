@@ -71,9 +71,16 @@ async function loadDeployer(deployerAddress: string) {
 async function main() {
     const network = await hre.ethers.provider.getNetwork();
     const deployerAddress = process.env.DEPLOYER_ADDRESS!;
-
+    // Get initial owner from environment variable or fall back to signer
+    const initialOwnerArg = process.env.INITIAL_OWNER;
+    
     if (deployerAddress === undefined || deployerAddress.length !== 42) {
         throw new Error("DEPLOYER_ADDRESS not set or wrong length in .env");
+    }
+
+    // Validate initial owner address if provided
+    if (initialOwnerArg && !hre.ethers.isAddress(initialOwnerArg)) {
+        throw new Error("Invalid INITIAL_OWNER address provided");
     }
 
     // Load the deployer contract
@@ -116,8 +123,10 @@ async function main() {
     const factoryBytecode = QuipFactory.bytecode;
 
     const [signer] = await hre.ethers.getSigners();
-    const initialOwner = await signer.getAddress();
-    console.log(`Deploying with signer: ${initialOwner}`);
+    // Use provided initial owner or fall back to signer
+    const initialOwner = initialOwnerArg || await signer.getAddress();
+    console.log(`Deploying with signer: ${await signer.getAddress()}`);
+    console.log(`Setting initial owner to: ${initialOwner}`);
     console.log(`Deploying with WOTSPlus at: ${wotsAddress}`);
     // Encode QuipFactory constructor parameters with WOTSPlus address
     const encodedParams = QuipFactory.interface.encodeDeploy([initialOwner, wotsAddress]);
@@ -176,9 +185,14 @@ async function main() {
     console.log(`QuipFactory: ${factoryAddress}`);
 }
 
-main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-        console.error(error);
-        process.exit(1);
-    });
+// Update the script execution to handle the new parameter
+if (require.main === module) {
+    main()
+        .then(() => process.exit(0))
+        .catch((error) => {
+            console.error(error);
+            process.exit(1);
+        });
+}
+
+export { main as deploy };
