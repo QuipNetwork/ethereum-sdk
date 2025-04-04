@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.0.15",
+  "version": "0.0.18",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",

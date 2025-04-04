@@ -6,7 +6,6 @@ import { WOTSPlus } from '@quip.network/hashsigs';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { randomBytes } from '@noble/ciphers/webcrypto';
 
-
 export * from '../typechain-types';
 export * from './addresses';
 export * from './constants';
@@ -92,10 +91,19 @@ export class QuipWalletClient {
     return this.wallet.getAddress();
   }
 
+  async getTransferFee(): Promise<bigint> {
+    return await this.wallet.getTransferFee();
+  }
+
+  async getExecuteFee(): Promise<bigint> {
+    return await this.wallet.getExecuteFee();
+  }
+
   async transferWithWinternitz(to: ethers.AddressLike, value: bigint) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
+    const transferFee = await this.getTransferFee();
 
     // TODO: Make a function that does this?
     const packedMessageData = ethers.solidityPacked(
@@ -117,16 +125,28 @@ export class QuipWalletClient {
     const pqSig = {
       elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
     }
-    const tx = await this.wallet.transferWithWinternitz(nextPqOwner.publicKey, pqSig, to, value);
+    const tx = await this.wallet.transferWithWinternitz(
+      nextPqOwner.publicKey, 
+      pqSig, 
+      to, 
+      value,
+      { value: transferFee }
+    );
     return await tx.wait();
   }
 
-  async executeWithWinternitz(target: ethers.AddressLike, opdata: Uint8Array) {
+  async executeWithWinternitz(
+    target: ethers.AddressLike, 
+    opdata: Uint8Array,
+    options: {
+      gasLimit?: bigint
+    } = {}
+  ) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
+    const executeFee = await this.getExecuteFee();
 
-    // Create and sign execute message
     const packedMessageData = ethers.solidityPacked(
       ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
       [
@@ -137,15 +157,64 @@ export class QuipWalletClient {
         target,
         opdata
       ]
-    )
+    );
 
     const message = {
       messageHash: keccak_256(ethers.getBytes(packedMessageData))
     };
     const pqSig = {
       elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
+    };
+
+    let gasLimit: bigint;
+    try {
+      // Try to estimate gas
+      const estimatedGas = await this.wallet.executeWithWinternitz.estimateGas(
+        nextPqOwner.publicKey,
+        pqSig,
+        target,
+        opdata,
+        { value: executeFee }
+      );
+      gasLimit = (estimatedGas * 120n) / 100n; // 20% buffer
+    } catch (error: any) {
+      // Log detailed error information
+      console.error("Gas estimation failed:");
+      console.error("Target:", target);
+      console.error("Operation data length:", opdata.length);
+      console.error("Execute fee:", executeFee.toString());
+      
+      if (error.transaction) {
+        // Log the transaction that would have been sent
+        console.error("Failed transaction:", {
+          to: error.transaction.to,
+          from: error.transaction.from,
+          data: error.transaction.data?.slice(0, 66) + '...' // First 32 bytes + '...'
+        });
+      }
+      
+      // If there's a specific revert reason, it might be in error.reason
+      if (error.reason) {
+        console.error("Revert reason:", error.reason);
+      }
+      
+      // Rethrow with more context
+      throw new Error(`Gas estimation failed: ${error.message || error}`);
     }
-    const tx = await this.wallet.executeWithWinternitz(nextPqOwner.publicKey, pqSig, target, opdata);
+
+    // Use provided gas limit or the estimated one
+    gasLimit = options.gasLimit || gasLimit;
+    
+    const tx = await this.wallet.executeWithWinternitz(
+      nextPqOwner.publicKey, 
+      pqSig, 
+      target, 
+      opdata,
+      { 
+        value: executeFee,
+        gasLimit
+      }
+    );
     return await tx.wait();
   }
 }
@@ -176,11 +245,17 @@ export class QuipClient {
     this.factory = QuipFactory__factory.connect(QUIP_FACTORY_ADDRESS, this.signer!);
   }
 
+  async getCreationFee(): Promise<bigint> {
+    await this.initializationPromise;
+    return await this.factory!.creationFee();
+  }
+
   async createWallet(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
     await this.initializationPromise;
     
     // Bind vaultId to signer
     const userWalletAddress = await this.signer!.getAddress();
+    const creationFee = await this.getCreationFee();
     
     // Check if wallet already exists
     const existingWalletAddress = await this.factory!.quips(userWalletAddress, vaultId);
@@ -192,7 +267,8 @@ export class QuipClient {
     const tx = await this.factory!.depositToWinternitz(
       vaultId,
       userWalletAddress,
-      pqKeyPair.publicKey
+      pqKeyPair.publicKey,
+      { value: creationFee }
     );
     const receipt = await tx.wait();
     const event = receipt!.logs[0];  // QuipCreated is the first and only event
@@ -245,7 +321,7 @@ export class QuipClient {
             quipFactoryAddress,
             signerAddress
           ]
-        ),
+        )
       ]
     );
     const hash = ethers.keccak256(

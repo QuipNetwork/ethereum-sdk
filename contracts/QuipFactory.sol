@@ -7,7 +7,11 @@ import "./QuipWallet.sol";
 contract QuipFactory {
     address payable public admin;
     address public immutable wotsLibrary;
-    uint256 public fee = 0;
+
+    // Fees
+    uint256 public creationFee = 0;
+    uint256 public transferFee = 0;
+    uint256 public executeFee = 0;
 
     // eth address -> "salt" vaultId -> QuipWallet address
     mapping(address => mapping(bytes32 => address)) public quips;
@@ -24,6 +28,9 @@ contract QuipFactory {
         address quip
     );
 
+    receive() external payable {}
+    
+    fallback() external payable {}
 
     constructor(address payable initialOwner, address _wotsLibrary) payable {
         admin = initialOwner;
@@ -52,7 +59,7 @@ contract QuipFactory {
             abi.encode(address(this), to)
         );
 
-        uint256 contractValue = msg.value - fee;
+        uint256 contractValue = msg.value - creationFee;
 
         assembly {
             // code starts after the first 32 bytes...
@@ -83,9 +90,19 @@ contract QuipFactory {
         admin = payable(newOwner);
     }
 
-    function setFee(uint256 newFee) public {
+    function setCreationFee(uint256 newFee) public {
         require(msg.sender == admin, "You aren't the admin");
-        fee = newFee;
+        creationFee = newFee;
+    }
+
+    function setTransferFee(uint256 newFee) public {
+        require(msg.sender == admin, "You aren't the admin");
+        transferFee = newFee;
+    }
+
+    function setExecuteFee(uint256 newFee) public {
+        require(msg.sender == admin, "You aren't the admin");
+        executeFee = newFee;
     }
 
     function withdraw(uint256 amount) public {

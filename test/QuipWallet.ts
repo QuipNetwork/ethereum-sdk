@@ -6,6 +6,9 @@ import { randomBytes } from '@noble/ciphers/webcrypto';
 import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import hre from "hardhat";
 
+// Test contract for executeWithWinternitz
+// Removed DUMMY_CONTRACT string constant
+
 describe("QuipWallet", function () {
   async function deployQuipFactory() {
     // Deploy the WOTSPlus library first - using the full package path
@@ -285,6 +288,363 @@ describe("QuipWallet", function () {
       expect(await hre.ethers.provider.getBalance(otherAccount.address)).to.equal(
         initialBalance + transferAmount - BigInt(withdrawalGasCost)
       );
+    });
+
+    it("Should properly handle transfer fees with Winternitz", async function () {
+      // Deploy factory and wallet
+      const { quipFactory, owner, otherAccount } = await loadFixture(deployQuipFactory);
+      
+      // Set transfer fee
+      const transferFee = hre.ethers.parseEther("0.005"); // 0.005 ETH
+      await quipFactory.setTransferFee(transferFee);
+      
+      // Deploy wallet with initial balance
+      const initialDeposit = hre.ethers.parseEther("1.0");
+      const { quipWallet, keypair } = await deployQuipWallet(
+        quipFactory,
+        owner,
+        "Fee Test Secret",
+        "Fee Test Vault",
+        initialDeposit
+      );
+
+      // Create new keypair for next owner
+      let wots: WOTSPlus = new WOTSPlus(keccak_256);
+      const publicSeed = randomBytes(32);
+      const nextKeypair = wots.generateKeyPair(keccak_256("Next Owner"), publicSeed);
+      const nextQuipAddress = {
+        publicSeed: nextKeypair.publicKey.slice(0, 32),
+        publicKeyHash: nextKeypair.publicKey.slice(32, 64),
+      }
+
+      const transferAmount = hre.ethers.parseEther("0.5");
+      const currentQuipAddress = {
+        publicSeed: keypair.publicKey.slice(0, 32),
+        publicKeyHash: keypair.publicKey.slice(32, 64),
+      }
+
+      // Get initial balances
+      const factoryInitialBalance = await hre.ethers.provider.getBalance(await quipFactory.getAddress());
+      const recipientInitialBalance = await hre.ethers.provider.getBalance(otherAccount.address);
+
+      // Create and sign transfer message
+      const packedMessageData = hre.ethers.solidityPacked(
+        ["bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
+        [
+          currentQuipAddress.publicSeed,
+          currentQuipAddress.publicKeyHash,
+          nextQuipAddress.publicSeed,
+          nextQuipAddress.publicKeyHash,
+          otherAccount.address,
+          transferAmount
+        ]
+      );
+
+      const message = {
+        messageHash: keccak_256(hre.ethers.getBytes(packedMessageData))
+      };
+      
+      const signature = {
+        elements: wots.sign(
+          keypair.privateKey,
+          keypair.publicKey.slice(0, 32),
+          message.messageHash)
+      };
+
+      // Execute transfer with fee
+      const transferTx = await quipWallet.transferWithWinternitz(
+        nextQuipAddress,
+        signature,
+        otherAccount.address,
+        transferAmount,
+        { value: transferFee }
+      );
+      await transferTx.wait();
+
+      // Verify balances after transfer
+      expect(await hre.ethers.provider.getBalance(quipWallet.target))
+        .to.equal(initialDeposit - transferAmount);
+      expect(await hre.ethers.provider.getBalance(otherAccount.address))
+        .to.equal(recipientInitialBalance + transferAmount);
+      expect(await hre.ethers.provider.getBalance(await quipFactory.getAddress()))
+        .to.equal(factoryInitialBalance + transferFee);
+
+      // Try transfer without fee
+      await expect(quipWallet.transferWithWinternitz(
+        nextQuipAddress,
+        signature,
+        otherAccount.address,
+        transferAmount
+      )).to.be.revertedWith("Insufficient fee");
+
+      // Try transfer with insufficient fee
+      await expect(quipWallet.transferWithWinternitz(
+        nextQuipAddress,
+        signature,
+        otherAccount.address,
+        transferAmount,
+        { value: transferFee - BigInt(1) }
+      )).to.be.revertedWith("Insufficient fee");
+
+      // Verify admin can withdraw accumulated fees
+      const adminInitialBalance = await hre.ethers.provider.getBalance(owner.address);
+      const withdrawTx = await quipFactory.withdraw(transferFee);
+      const withdrawReceipt = await withdrawTx.wait();
+      const withdrawGasCost = withdrawReceipt!.gasUsed * withdrawReceipt!.gasPrice;
+
+      expect(await hre.ethers.provider.getBalance(await quipFactory.getAddress()))
+        .to.equal(factoryInitialBalance);
+      expect(await hre.ethers.provider.getBalance(owner.address))
+        .to.equal(adminInitialBalance + transferFee - withdrawGasCost);
+    });
+
+    it("Should execute contract calls using Winternitz signature", async function () {
+      // Deploy factory and wallet
+      const { quipFactory, owner, otherAccount } = await loadFixture(deployQuipFactory);
+      const initialDeposit = hre.ethers.parseEther("1.0");
+      const { quipWallet, keypair } = await deployQuipWallet(
+        quipFactory,
+        owner,
+        "Hello World!",
+        "Vault ID 1",
+        initialDeposit
+      );
+
+      // Deploy the dummy contract
+      const DummyContract = await hre.ethers.getContractFactory("DummyContract");
+      const dummyContract = await DummyContract.deploy();
+      await dummyContract.waitForDeployment();
+
+      // Create new keypair for next state
+      let wots: WOTSPlus = new WOTSPlus(keccak_256);
+      const publicSeed = randomBytes(32);
+      const nextKeypair = wots.generateKeyPair(keccak_256("Next State"), publicSeed);
+      const nextQuipAddress = {
+        publicSeed: nextKeypair.publicKey.slice(0, 32),
+        publicKeyHash: nextKeypair.publicKey.slice(32, 64),
+      }
+
+      const currentQuipAddress = {
+        publicSeed: keypair.publicKey.slice(0, 32),
+        publicKeyHash: keypair.publicKey.slice(32, 64),
+      }
+
+      // Set execute fee
+      const executeFee = hre.ethers.parseEther("0.001");
+      await quipFactory.setExecuteFee(executeFee);
+
+      // Prepare the call data for setValue(42)
+      const value = 42;
+      const requiredEth = hre.ethers.parseEther("0.01"); // Required by dummy contract
+      const callData = dummyContract.interface.encodeFunctionData("setValue", [value]);
+
+      // Create and sign execution message
+      const packedMessageData = hre.ethers.solidityPacked(
+        ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
+        [
+          currentQuipAddress.publicSeed,
+          currentQuipAddress.publicKeyHash,
+          nextQuipAddress.publicSeed,
+          nextQuipAddress.publicKeyHash,
+          await dummyContract.getAddress(),
+          callData
+        ]
+      );
+
+      const message = {
+        messageHash: keccak_256(hre.ethers.getBytes(packedMessageData))
+      };
+      
+      const signature = {
+        elements: wots.sign(
+          keypair.privateKey,
+          keypair.publicKey.slice(0, 32),
+          message.messageHash)
+      };
+
+      // Execute the call
+      const executeTx = await quipWallet.executeWithWinternitz(
+        nextQuipAddress,
+        signature,
+        await dummyContract.getAddress(),
+        callData,
+        { value: executeFee + requiredEth }
+      );
+      await executeTx.wait();
+
+      // Verify the call was successful
+      expect(await (dummyContract as any).value()).to.equal(value);
+
+      // Now test a failing call
+      const failingCallData = dummyContract.interface.encodeFunctionData("failingFunction");
+      
+      // Create and sign failing execution message
+      const failingMessageData = hre.ethers.solidityPacked(
+        ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
+        [
+          nextQuipAddress.publicSeed,
+          nextQuipAddress.publicKeyHash,
+          nextQuipAddress.publicSeed, // reuse same key for simplicity
+          nextQuipAddress.publicKeyHash,
+          await dummyContract.getAddress(),
+          failingCallData
+        ]
+      );
+
+      const failingMessage = {
+        messageHash: keccak_256(hre.ethers.getBytes(failingMessageData))
+      };
+      
+      const failingSignature = {
+        elements: wots.sign(
+          nextKeypair.privateKey,
+          nextKeypair.publicKey.slice(0, 32),
+          failingMessage.messageHash)
+      };
+
+      // Execute the failing call and expect it to revert
+      let failed = false;
+      try {
+        await quipWallet.executeWithWinternitz(
+          nextQuipAddress,
+          failingSignature,
+          await dummyContract.getAddress(),
+          failingCallData,
+          { value: executeFee }
+        );
+      } catch (error) {
+        failed = true;
+      }
+      expect(failed).to.be.true;
+
+      // Test the no-fee function
+      const noFeeValue = 84;
+      const noFeeCallData = dummyContract.interface.encodeFunctionData("setValueNoFee", [noFeeValue]);
+
+      // Create and sign no-fee execution message
+      const noFeeMessageData = hre.ethers.solidityPacked(
+        ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
+        [
+          nextQuipAddress.publicSeed,
+          nextQuipAddress.publicKeyHash,
+          nextQuipAddress.publicSeed, // reuse same key for simplicity
+          nextQuipAddress.publicKeyHash,
+          await dummyContract.getAddress(),
+          noFeeCallData
+        ]
+      );
+
+      const noFeeMessage = {
+        messageHash: keccak_256(hre.ethers.getBytes(noFeeMessageData))
+      };
+      
+      const noFeeSignature = {
+        elements: wots.sign(
+          nextKeypair.privateKey,
+          nextKeypair.publicKey.slice(0, 32),
+          noFeeMessage.messageHash)
+      };
+
+      // Execute the no-fee call
+      const noFeeTx = await quipWallet.executeWithWinternitz(
+        nextQuipAddress,
+        noFeeSignature,
+        await dummyContract.getAddress(),
+        noFeeCallData,
+        { value: executeFee } // Only need to pay the execute fee, no additional ETH required
+      );
+      await noFeeTx.wait();
+
+      // Verify the no-fee call was successful
+      expect(await dummyContract.value()).to.equal(noFeeValue);
+    });
+
+    it("Should execute contract calls without additional fees using Winternitz signature", async function () {
+      // Deploy factory and wallet
+      const { quipFactory, owner } = await loadFixture(deployQuipFactory);
+      const initialDeposit = hre.ethers.parseEther("1.0");
+      const { quipWallet, keypair } = await deployQuipWallet(
+        quipFactory,
+        owner,
+        "No Fee Test",
+        "Vault ID NoFee",
+        initialDeposit
+      );
+
+      // Deploy the dummy contract
+      const DummyContract = await hre.ethers.getContractFactory("DummyContract");
+      const dummyContract = await DummyContract.deploy();
+      await dummyContract.waitForDeployment();
+
+      // Create new keypair for next state
+      let wots: WOTSPlus = new WOTSPlus(keccak_256);
+      const publicSeed = randomBytes(32);
+      const nextKeypair = wots.generateKeyPair(keccak_256("No Fee Next State"), publicSeed);
+      const nextQuipAddress = {
+        publicSeed: nextKeypair.publicKey.slice(0, 32),
+        publicKeyHash: nextKeypair.publicKey.slice(32, 64),
+      }
+
+      const currentQuipAddress = {
+        publicSeed: keypair.publicKey.slice(0, 32),
+        publicKeyHash: keypair.publicKey.slice(32, 64),
+      }
+
+      // Set execute fee
+      const executeFee = hre.ethers.parseEther("0.001");
+      await quipFactory.setExecuteFee(executeFee);
+
+      // Prepare the call data for setValueNoFee(84)
+      const noFeeValue = 84;
+      const noFeeCallData = dummyContract.interface.encodeFunctionData("setValueNoFee", [noFeeValue]);
+
+      // Create and sign execution message
+      const packedMessageData = hre.ethers.solidityPacked(
+        ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
+        [
+          currentQuipAddress.publicSeed,
+          currentQuipAddress.publicKeyHash,
+          nextQuipAddress.publicSeed,
+          nextQuipAddress.publicKeyHash,
+          await dummyContract.getAddress(),
+          noFeeCallData
+        ]
+      );
+
+      const message = {
+        messageHash: keccak_256(hre.ethers.getBytes(packedMessageData))
+      };
+      
+      const signature = {
+        elements: wots.sign(
+          keypair.privateKey,
+          keypair.publicKey.slice(0, 32),
+          message.messageHash)
+      };
+
+      // Execute the no-fee call
+      const noFeeTx = await quipWallet.executeWithWinternitz(
+        nextQuipAddress,
+        signature,
+        await dummyContract.getAddress(),
+        noFeeCallData,
+        { value: executeFee } // Only need to pay the execute fee, no additional ETH required
+      );
+      await noFeeTx.wait();
+
+      // Verify the no-fee call was successful
+      expect(await dummyContract.value()).to.equal(noFeeValue);
+
+      // Try without execute fee - should fail
+      await expect(
+        quipWallet.executeWithWinternitz(
+          nextQuipAddress,
+          signature,
+          await dummyContract.getAddress(),
+          noFeeCallData,
+          { value: 0 }
+        )
+      ).to.be.revertedWith("Insufficient fee");
     });
   });
 });

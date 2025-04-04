@@ -31,7 +31,7 @@ describe("QuipFactory", function () {
     console.log(`Deploying with signer: ${initialOwner}`);
     const wotsPlusAddress = await wotsPlus.getAddress();
     console.log(`WOTSPlus deployed to: ${wotsPlusAddress}`);
-    const quipFactory = await QuipFactory.deploy(initialOwner, wotsPlusAddress);  // Pass WOTSPlus address
+    const quipFactory = await QuipFactory.deploy(initialOwner, wotsPlusAddress);  
     const deployReceipt = await quipFactory.waitForDeployment();
     // Get deployment transaction
     const deployTx = deployReceipt.deploymentTransaction();
@@ -226,6 +226,79 @@ describe("QuipFactory", function () {
         hre.ethers.hexlify(quipAddress.publicSeed),
         hre.ethers.hexlify(quipAddress.publicKeyHash)
       ]);
+    });
+
+    it("Should properly handle fees and withdrawals", async function () {
+      const { quipFactory, owner, otherAccount } = await loadFixture(deployQuipFactory);
+      
+      // Set fees
+      const creationFee = hre.ethers.parseEther("0.01");  // 0.01 ETH
+      const transferFee = hre.ethers.parseEther("0.005"); // 0.005 ETH
+      const executeFee = hre.ethers.parseEther("0.002"); // 0.002 ETH
+      
+      await quipFactory.setCreationFee(creationFee);
+      await quipFactory.setTransferFee(transferFee);
+      await quipFactory.setExecuteFee(executeFee);
+      
+      // Verify fees were set
+      expect(await quipFactory.creationFee()).to.equal(creationFee);
+      expect(await quipFactory.transferFee()).to.equal(transferFee);
+      expect(await quipFactory.executeFee()).to.equal(executeFee);
+
+      // Create a new wallet with initial deposit, including creation fee
+      const initialDeposit = hre.ethers.parseEther("1.0");
+      const totalDeposit = initialDeposit + creationFee;
+      
+      const vaultId = keccak_256("Fee Test Vault");
+      let wots: WOTSPlus = new WOTSPlus(keccak_256);
+      let secret = keccak_256("Fee Test Secret");
+      const publicSeed = hre.ethers.randomBytes(32);
+      const keypair = wots.generateKeyPair(secret, publicSeed);
+      const quipAddress = {
+        publicSeed: keypair.publicKey.slice(0, 32),
+        publicKeyHash: keypair.publicKey.slice(32, 64),
+      }
+
+      // Get factory's initial balance
+      const factoryInitialBalance = await hre.ethers.provider.getBalance(await quipFactory.getAddress());
+
+      // Create wallet with fee
+      const createTx = await quipFactory.depositToWinternitz(
+        vaultId,
+        owner.address,
+        quipAddress,
+        { value: totalDeposit }
+      );
+      await createTx.wait();
+
+      // Verify factory received the creation fee
+      expect(await hre.ethers.provider.getBalance(await quipFactory.getAddress()))
+        .to.equal(factoryInitialBalance + creationFee);
+
+      // Withdraw fees as admin
+      const adminInitialBalance = await hre.ethers.provider.getBalance(owner.address);
+      const withdrawTx = await quipFactory.withdraw(creationFee);
+      const withdrawReceipt = await withdrawTx.wait();
+      const withdrawGasCost = withdrawReceipt!.gasUsed * withdrawReceipt!.gasPrice;
+
+      // Verify withdrawal
+      expect(await hre.ethers.provider.getBalance(await quipFactory.getAddress()))
+        .to.equal(factoryInitialBalance);
+      expect(await hre.ethers.provider.getBalance(owner.address))
+        .to.equal(adminInitialBalance + creationFee - withdrawGasCost);
+
+      // Verify non-admin cannot withdraw
+      const otherFactoryInstance = quipFactory.connect(otherAccount);
+      await expect(otherFactoryInstance.withdraw(creationFee))
+        .to.be.revertedWith("You aren't the admin");
+
+      // Verify non-admin cannot set fees
+      await expect(otherFactoryInstance.setCreationFee(0))
+        .to.be.revertedWith("You aren't the admin");
+      await expect(otherFactoryInstance.setTransferFee(0))
+        .to.be.revertedWith("You aren't the admin");
+      await expect(otherFactoryInstance.setExecuteFee(0))
+        .to.be.revertedWith("You aren't the admin");
     });
   });
 });
