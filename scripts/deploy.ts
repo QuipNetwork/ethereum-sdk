@@ -71,6 +71,17 @@ async function loadDeployer(deployerAddress: string) {
 async function main() {
     const network = await hre.ethers.provider.getNetwork();
     const deployerAddress = process.env.DEPLOYER_ADDRESS!;
+    
+    // For Mantle, use specific deployment options with lower gas limits
+    const deployOptions = network.name === 'mantle' ? {
+        gasLimit: 8000000000n, // Try a lower value than the max
+        gasPrice: await hre.ethers.provider.getFeeData().then(fd => fd.gasPrice)
+    } : {};
+
+    if (network.name === 'mantle') {
+        console.log("Configuring for Mantle network with gasLimit:", deployOptions.gasLimit);
+    }
+
     // Get initial owner from environment variable or fall back to signer
     const initialOwnerArg = process.env.INITIAL_OWNER;
     
@@ -99,8 +110,12 @@ async function main() {
         console.log(`WOTSPlus already deployed at: ${wotsExpectedAddress}`);
         wotsAddress = wotsExpectedAddress;
     } else {
-        console.log("Deploying WOTSPlus...");
-        const wotsTx = await deployer.deploy(wotsBytecode, hre.ethers.id(SALT));
+        console.log("Deploying WOTSPlus...");                    
+        const wotsTx = await deployer.deploy(
+            wotsBytecode, 
+            hre.ethers.id(SALT),
+            deployOptions
+        );
         const wotsReceipt = await wotsTx.wait();
         const wotsDeployEvent = wotsReceipt?.logs.find(
             log => log.topics[0] === deployer.interface.getEvent('Deploy')?.topicHash
@@ -142,7 +157,11 @@ async function main() {
         factoryAddress = factoryExpectedAddress;
     } else {
         console.log("Deploying QuipFactory...");
-        const factoryTx = await deployer.deploy(factoryBytecodeWithParams, hre.ethers.id(SALT));
+        const factoryTx = await deployer.deploy(
+            factoryBytecodeWithParams, 
+            hre.ethers.id(SALT),
+            deployOptions
+        );
         const factoryReceipt = await factoryTx.wait();
         const factoryDeployEvent = factoryReceipt?.logs.find(
             log => log.topics[0] === deployer.interface.getEvent('Deploy')?.topicHash

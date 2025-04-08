@@ -133,6 +133,12 @@ const config: HardhatUserConfig = {
     mantle: {
       url: API_URL_MANTLE,
       accounts: [`0x${PRIVATE_KEY}`],
+      blockGasLimit: 500000000,
+      gas: 500000000,
+      gasPrice: "auto",
+      timeout: 120000,
+      initialBaseFeePerGas: 0,
+      hardfork: "london"
     },
     celo: {
       url: API_URL_CELO,
@@ -156,8 +162,26 @@ const config: HardhatUserConfig = {
       "polygon": `${ETHERSCAN_API_KEY_POLYGON}`,
       "mantle": `${ETHERSCAN_API_KEY_MANTLE}`,
       "celo": `${ETHERSCAN_API_KEY_CELO}`,
-      "arbitrum": `${ETHERSCAN_API_KEY_ARBITRUM}`
-    }
+      "arbitrumOne": `${ETHERSCAN_API_KEY_ARBITRUM}`
+    },
+    customChains: [
+      {
+        network: "mantle",
+        chainId: 5000,
+        urls: {
+          apiURL: "https://explorer.mantle.xyz/api",
+          browserURL: "https://explorer.mantle.xyz"
+        }
+      },
+      {
+        network: "celo",
+        chainId: 42220,
+        urls: {
+          apiURL: "https://api.celoscan.io/api",
+          browserURL: "https://celoscan.io/"
+        }
+      }
+    ]    
   },
 };
 
