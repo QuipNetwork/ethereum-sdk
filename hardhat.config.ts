@@ -133,12 +133,6 @@ const config: HardhatUserConfig = {
     mantle: {
       url: API_URL_MANTLE,
       accounts: [`0x${PRIVATE_KEY}`],
-      blockGasLimit: 500000000,
-      gas: 500000000,
-      gasPrice: "auto",
-      timeout: 120000,
-      initialBaseFeePerGas: 0,
-      hardfork: "london"
     },
     celo: {
       url: API_URL_CELO,
