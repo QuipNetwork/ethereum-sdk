@@ -55,6 +55,12 @@ const {
   API_URL_MAINNET,
   API_URL_BASE,
   API_URL_OPTIMISM,
+  API_URL_BSC,
+  API_URL_AVAX,
+  API_URL_POLYGON,
+  API_URL_MANTLE,
+  API_URL_CELO,
+  API_URL_ARBITRUM,
   ALCHEMY_API_KEY,
   DEPLOYER_PRIVATE_KEY,
   PRIVATE_KEY,
@@ -63,7 +69,13 @@ const {
   ETHERSCAN_API_KEY,
   ETHERSCAN_SEPOLIA_API_KEY,
   OP_ETHERSCAN_API_KEY,
-  OP_ETHERSCAN_SEPOLIA_API_KEY
+  OP_ETHERSCAN_SEPOLIA_API_KEY,
+  ETHERSCAN_API_KEY_AVAX,
+  ETHERSCAN_API_KEY_BSC,
+  ETHERSCAN_API_KEY_POLYGON,
+  ETHERSCAN_API_KEY_MANTLE,
+  ETHERSCAN_API_KEY_CELO,
+  ETHERSCAN_API_KEY_ARBITRUM
 } = process.env;
 
 
@@ -106,6 +118,30 @@ const config: HardhatUserConfig = {
       url: API_URL_OPTIMISM,
       accounts: [`0x${PRIVATE_KEY}`],
     },
+    bsc: {
+      url: API_URL_BSC,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    avalanche: {
+      url: API_URL_AVAX,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    polygon: {
+      url: API_URL_POLYGON,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    mantle: {
+      url: API_URL_MANTLE,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    celo: {
+      url: API_URL_CELO,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
+    arbitrum: {
+      url: API_URL_ARBITRUM,
+      accounts: [`0x${PRIVATE_KEY}`],
+    }
   },
   etherscan: {
     apiKey: {
@@ -115,6 +151,12 @@ const config: HardhatUserConfig = {
       "optimismSepolia": `${OP_ETHERSCAN_SEPOLIA_API_KEY}`,
       "sepolia": `${ETHERSCAN_SEPOLIA_API_KEY}`,
       "mainnet": `${ETHERSCAN_API_KEY}`,
+      "bsc": `${ETHERSCAN_API_KEY_BSC}`,
+      "avalanche": `${ETHERSCAN_API_KEY_AVAX}`,
+      "polygon": `${ETHERSCAN_API_KEY_POLYGON}`,
+      "mantle": `${ETHERSCAN_API_KEY_MANTLE}`,
+      "celo": `${ETHERSCAN_API_KEY_CELO}`,
+      "arbitrum": `${ETHERSCAN_API_KEY_ARBITRUM}`
     }
   },
 };

@@ -73,6 +73,10 @@ async function main() {
     if (!gasPrice.gasPrice) throw new Error("Failed to get gas price");
     
     const gasLimit = 21000n; // Standard ETH transfer
+    // NOTE: use below for arbitrum
+    //const gasLimit = 30000n;
+    // NOTE: use below for mantle
+    //const gasLimit = 200000000n;
     const gasCost = (gasPrice.gasPrice * gasLimit * 120n) / 100n; // Add 10% buffer
     
     // Calculate amount to send (total balance minus gas cost)
