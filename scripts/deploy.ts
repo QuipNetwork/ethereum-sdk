@@ -175,6 +175,7 @@ async function main() {
 
     // After successful deployment, save addresses to tmp file
     const addresses = {
+        Deployer: deployerAddress,
         WOTSPlus: wotsAddress,
         QuipFactory: factoryAddress
     };
