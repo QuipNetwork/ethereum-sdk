@@ -22,6 +22,14 @@ import { WOTSPlus } from '@quip.network/hashsigs';
 import { keccak_256 } from '@noble/hashes/sha3';
 import { randomBytes } from '@noble/ciphers/webcrypto';
 
+// Add explicit exports for contract interfaces and events
+// For whatever reason, typechain-types/index.ts does not do these
+// exports for us.
+export * from '../typechain-types/contracts/Deployer';
+export {QuipFactory, QuipCreatedEvent} from '../typechain-types/contracts/QuipFactory';
+export {QuipWallet, pqTransferEvent} from '../typechain-types/contracts/QuipWallet';
+
+// The existing exports
 export * from '../typechain-types';
 export * from './addresses';
 export * from './constants';
