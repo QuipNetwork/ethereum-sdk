@@ -123,7 +123,8 @@ export class QuipWalletClient {
     return await this.wallet.getExecuteFee();
   }
 
-  async transferWithWinternitz(to: ethers.AddressLike, value: bigint) {
+  async transferWithWinternitz(to: ethers.AddressLike, value: bigint,
+     options: {gasLimit?: bigint} = {}) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
@@ -149,12 +150,24 @@ export class QuipWalletClient {
     const pqSig = {
       elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
     }
+
+    let gasLimit: bigint;
+    if (options.gasLimit) {
+      gasLimit = options.gasLimit;
+    }
+
+    // Use provided gas limit or the estimated one (or none if estimation failed)
+    const txopts = {
+      value: transferFee,
+      ...(gasLimit! && { gasLimit })
+    }
+
     const tx = await this.wallet.transferWithWinternitz(
       nextPqOwner.publicKey, 
       pqSig, 
       to, 
       value,
-      { value: transferFee }
+      txopts
     );
     return await tx.wait();
   }
@@ -225,6 +238,10 @@ export class QuipWalletClient {
       // Print error with more context, but we don't throw here because
       // some wallets like Safe can't estimate gas properly.
       console.error(`Gas estimation failed: ${error.message || error}`);
+    }
+
+    if (options.gasLimit) {
+      gasLimit = options.gasLimit;
     }
 
     // Use provided gas limit or the estimated one (or none if estimation failed)
