@@ -222,22 +222,23 @@ export class QuipWalletClient {
         console.error("Revert reason:", error.reason);
       }
       
-      // Rethrow with more context
-      throw new Error(`Gas estimation failed: ${error.message || error}`);
+      // Print error with more context, but we don't throw here because
+      // some wallets like Safe can't estimate gas properly.
+      console.error(`Gas estimation failed: ${error.message || error}`);
     }
 
-    // Use provided gas limit or the estimated one
-    gasLimit = options.gasLimit || gasLimit;
+    // Use provided gas limit or the estimated one (or none if estimation failed)
+    const txopts = {
+      value: executeFee,
+      ...(gasLimit! && { gasLimit })
+    }
     
     const tx = await this.wallet.executeWithWinternitz(
       nextPqOwner.publicKey, 
       pqSig, 
       target, 
       opdata,
-      { 
-        value: executeFee,
-        gasLimit
-      }
+      txopts
     );
     return await tx.wait();
   }
