@@ -61,6 +61,7 @@ const {
   API_URL_MANTLE,
   API_URL_CELO,
   API_URL_ARBITRUM,
+  API_URL_DEGEN,
   ALCHEMY_API_KEY,
   DEPLOYER_PRIVATE_KEY,
   PRIVATE_KEY,
@@ -141,6 +142,10 @@ const config: HardhatUserConfig = {
     arbitrum: {
       url: API_URL_ARBITRUM,
       accounts: [`0x${PRIVATE_KEY}`],
+    },
+    degen: {
+      url: API_URL_DEGEN,
+      accounts: [`0x${PRIVATE_KEY}`],
     }
   },
   etherscan: {
@@ -156,7 +161,8 @@ const config: HardhatUserConfig = {
       "polygon": `${ETHERSCAN_API_KEY_POLYGON}`,
       "mantle": `${ETHERSCAN_API_KEY_MANTLE}`,
       "celo": `${ETHERSCAN_API_KEY_CELO}`,
-      "arbitrumOne": `${ETHERSCAN_API_KEY_ARBITRUM}`
+      "arbitrumOne": `${ETHERSCAN_API_KEY_ARBITRUM}`,
+      "degen": "none"
     },
     customChains: [
       {
@@ -173,6 +179,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: "https://api.celoscan.io/api",
           browserURL: "https://celoscan.io/"
+        }
+      },
+      {
+        network: "degen",
+        chainId: 666666666,
+        urls: {
+          apiURL: "https://explorer.degen.tips/api",
+          browserURL: "https://explorer.degen.tips/",
         }
       }
     ]    
