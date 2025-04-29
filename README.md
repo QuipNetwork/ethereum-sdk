@@ -105,6 +105,7 @@ Deployer:
 npx hardhat verify --network mainnet 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
 npx hardhat verify --network optimism 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
 npx hardhat verify --network base 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
+npx hardhat verify --network degen 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
 ...
 ```
 
@@ -112,6 +113,7 @@ WOTSPlus:
 
 ```
 npx hardhat verify --network mainnet 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
+npx hardhat verify --network degen 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
 ...
 ```
 
@@ -119,6 +121,7 @@ QuipFactory:
 
 ```
 npx hardhat verify --network base 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99 "0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9" "0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991"
+npx hardhat verify --network degen 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99 "0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9" "0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991"
 ...
 ```
 
