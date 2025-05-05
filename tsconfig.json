@@ -16,7 +16,7 @@
     "paths": {
       "*": ["node_modules/*", "typechain-types/*"]
     },
-    "types": ["node", "hardhat", "mocha", "chai"]
+    "types": ["node", "hardhat", "mocha", "chai", "jest"]
   },
   "include": [
     "index.ts",
