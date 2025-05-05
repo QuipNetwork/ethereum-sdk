@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { ethers } from 'ethers';
 import { QuipWallet__factory, QuipFactory__factory, QuipFactory, QuipWallet } from '../typechain-types';
-import { QUIP_FACTORY_ADDRESS, WOTS_PLUS_ADDRESS } from './addresses';
+import { computeVaultAddress, QUIP_FACTORY_ADDRESS, WOTS_PLUS_ADDRESS } from './addresses';
 
 import { WOTSPlus } from '@quip.network/hashsigs';
 import { keccak_256 } from '@noble/hashes/sha3';
@@ -343,41 +343,9 @@ export class QuipClient {
 
     const quipFactoryAddress = await this.factory!.getAddress();
     const signerAddress = await this.signer!.getAddress();
-    
-    // Get WOTSPlus library address from the factory
     const wotsLibraryAddress = await this.factory!.wotsLibrary();
-    
-    // Get bytecode with linked library
-    const quipWalletCode = QuipWallet__factory.bytecode.replace(
-      /__\$[a-fA-F0-9]{34}\$__/g, // Pattern for unlinked library placeholder
-      wotsLibraryAddress.slice(2) // Remove '0x' prefix
-    );
-    
-    const creationCode = ethers.solidityPacked(
-      ["bytes", "bytes"],
-      [
-        quipWalletCode,
-        ethers.AbiCoder.defaultAbiCoder().encode(
-          ["address", "address"], 
-          [
-            quipFactoryAddress,
-            signerAddress
-          ]
-        )
-      ]
-    );
-    const hash = ethers.keccak256(
-      ethers.solidityPacked(
-          ["bytes1", "address", "bytes32", "bytes"],
-          [
-              "0xff",
-              quipFactoryAddress,
-              vaultId,
-              ethers.keccak256(creationCode),
-          ]
-      )
-    );
-    return ethers.getAddress(`0x${hash.slice(-40)}`);
+
+    return computeVaultAddress(signerAddress, vaultId, wotsLibraryAddress, quipFactoryAddress);
   }
 
   async getVaults(): Promise<Map<string, string>> {
@@ -409,5 +377,3 @@ export class QuipClient {
     return vaultMap;
   }
 }
-
-
