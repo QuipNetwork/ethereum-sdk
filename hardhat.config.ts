@@ -1,19 +1,46 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "dotenv/config";
-import { Alchemy, Network } from 'alchemy-sdk';
+import { Alchemy, Network } from "alchemy-sdk";
 import { task } from "hardhat/config";
 
-task("account", "returns nonce and balance for specified address on multiple networks")
+task(
+  "account",
+  "returns nonce and balance for specified address on multiple networks"
+)
   .addParam("address")
   .setAction(async (args) => {
     const networks = [
-      { name: "Ethereum Sepolia:", url: API_URL_SEPOLIA, network: Network.ETH_SEPOLIA },
-      { name: "Base Sepolia:", url: API_URL_BASE_SEPOLIA, network: Network.BASE_SEPOLIA },
-      { name: "Optimism Sepolia:", url: API_URL_OP_SEPOLIA, network: Network.OPT_SEPOLIA },
-      { name: "Ethereum Mainnet:", url: API_URL_MAINNET, network: Network.ETH_MAINNET },
-      { name: "Base Mainnet:", url: API_URL_BASE, network: Network.BASE_MAINNET },
-      { name: "Optimism Mainnet:", url: API_URL_OPTIMISM, network: Network.OPT_MAINNET }
+      {
+        name: "Ethereum Sepolia:",
+        url: API_URL_SEPOLIA,
+        network: Network.ETH_SEPOLIA,
+      },
+      {
+        name: "Base Sepolia:",
+        url: API_URL_BASE_SEPOLIA,
+        network: Network.BASE_SEPOLIA,
+      },
+      {
+        name: "Optimism Sepolia:",
+        url: API_URL_OP_SEPOLIA,
+        network: Network.OPT_SEPOLIA,
+      },
+      {
+        name: "Ethereum Mainnet:",
+        url: API_URL_MAINNET,
+        network: Network.ETH_MAINNET,
+      },
+      {
+        name: "Base Mainnet:",
+        url: API_URL_BASE,
+        network: Network.BASE_MAINNET,
+      },
+      {
+        name: "Optimism Mainnet:",
+        url: API_URL_OPTIMISM,
+        network: Network.OPT_MAINNET,
+      },
     ];
 
     const resultArr = [["  |NETWORK|   |NONCE|   |BALANCE|  "]];
@@ -21,7 +48,7 @@ task("account", "returns nonce and balance for specified address on multiple net
     for (const network of networks) {
       const settings = {
         apiKey: ALCHEMY_API_KEY,
-        network: network.network
+        network: network.network,
       };
 
       const alchemy = new Alchemy(settings);
@@ -30,21 +57,17 @@ task("account", "returns nonce and balance for specified address on multiple net
         const nonce = await alchemy.core.getTransactionCount(args.address);
         const balance = await alchemy.core.getBalance(args.address);
         const balanceInEth = parseFloat(balance.toString()) / 1e18;
-        
+
         resultArr.push([
           network.name,
           nonce.toString(),
-          balanceInEth.toFixed(2) + " ETH"
+          balanceInEth.toFixed(2) + " ETH",
         ]);
       } catch (error) {
-        resultArr.push([
-          network.name,
-          "Error",
-          "Error"
-        ]);
+        resultArr.push([network.name, "Error", "Error"]);
       }
     }
-    
+
     console.log(resultArr);
   });
 
@@ -76,9 +99,8 @@ const {
   ETHERSCAN_API_KEY_POLYGON,
   ETHERSCAN_API_KEY_MANTLE,
   ETHERSCAN_API_KEY_CELO,
-  ETHERSCAN_API_KEY_ARBITRUM
+  ETHERSCAN_API_KEY_ARBITRUM,
 } = process.env;
-
 
 const config: HardhatUserConfig = {
   solidity: "0.8.28",
@@ -87,12 +109,15 @@ const config: HardhatUserConfig = {
       accounts: [
         {
           privateKey: `0x${PRIVATE_KEY}`,
-          balance: "10000000000000000000" // 10 ETH in wei
+          balance: "10000000000000000000", // 10 ETH in wei
         },
         {
-          privateKey: `0x${DEPLOYER_PRIVATE_KEY || "1234567890123456789012345678901234567890123456789012345678901234"}`,
+          privateKey: `0x${
+            DEPLOYER_PRIVATE_KEY ||
+            "1234567890123456789012345678901234567890123456789012345678901234"
+          }`,
           balance: "10000000000000000000", // 10 ETH in wei
-        }
+        },
       ],
     },
     sepolia: {
@@ -146,23 +171,23 @@ const config: HardhatUserConfig = {
     degen: {
       url: API_URL_DEGEN,
       accounts: [`0x${PRIVATE_KEY}`],
-    }
+    },
   },
   etherscan: {
     apiKey: {
-      "baseSepolia": `${BASE_SEPOLIA_API_KEY}`,
-      "base": `${BASE_API_KEY}`,
-      "optimisticEthereum": `${OP_ETHERSCAN_API_KEY}`,
-      "optimismSepolia": `${OP_ETHERSCAN_SEPOLIA_API_KEY}`,
-      "sepolia": `${ETHERSCAN_SEPOLIA_API_KEY}`,
-      "mainnet": `${ETHERSCAN_API_KEY}`,
-      "bsc": `${ETHERSCAN_API_KEY_BSC}`,
-      "avalanche": `${ETHERSCAN_API_KEY_AVAX}`,
-      "polygon": `${ETHERSCAN_API_KEY_POLYGON}`,
-      "mantle": `${ETHERSCAN_API_KEY_MANTLE}`,
-      "celo": `${ETHERSCAN_API_KEY_CELO}`,
-      "arbitrumOne": `${ETHERSCAN_API_KEY_ARBITRUM}`,
-      "degen": "none"
+      baseSepolia: `${BASE_SEPOLIA_API_KEY}`,
+      base: `${BASE_API_KEY}`,
+      optimisticEthereum: `${OP_ETHERSCAN_API_KEY}`,
+      optimismSepolia: `${OP_ETHERSCAN_SEPOLIA_API_KEY}`,
+      sepolia: `${ETHERSCAN_SEPOLIA_API_KEY}`,
+      mainnet: `${ETHERSCAN_API_KEY}`,
+      bsc: `${ETHERSCAN_API_KEY_BSC}`,
+      avalanche: `${ETHERSCAN_API_KEY_AVAX}`,
+      polygon: `${ETHERSCAN_API_KEY_POLYGON}`,
+      mantle: `${ETHERSCAN_API_KEY_MANTLE}`,
+      celo: `${ETHERSCAN_API_KEY_CELO}`,
+      arbitrumOne: `${ETHERSCAN_API_KEY_ARBITRUM}`,
+      degen: "none",
     },
     customChains: [
       {
@@ -170,16 +195,16 @@ const config: HardhatUserConfig = {
         chainId: 5000,
         urls: {
           apiURL: "https://explorer.mantle.xyz/api",
-          browserURL: "https://explorer.mantle.xyz"
-        }
+          browserURL: "https://explorer.mantle.xyz",
+        },
       },
       {
         network: "celo",
         chainId: 42220,
         urls: {
           apiURL: "https://api.celoscan.io/api",
-          browserURL: "https://celoscan.io/"
-        }
+          browserURL: "https://celoscan.io/",
+        },
       },
       {
         network: "degen",
@@ -187,9 +212,9 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: "https://explorer.degen.tips/api",
           browserURL: "https://explorer.degen.tips/",
-        }
-      }
-    ]    
+        },
+      },
+    ],
   },
 };
 

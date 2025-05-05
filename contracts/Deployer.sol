@@ -21,7 +21,10 @@ pragma solidity ^0.8.28;
 contract Deployer {
     event Deploy(address addr);
 
-    function deploy(bytes memory bytecode, uint256 salt) public returns (address) {
+    function deploy(
+        bytes memory bytecode,
+        uint256 salt
+    ) public returns (address) {
         address contractAddr;
         assembly {
             // code starts after the first 32 bytes...
@@ -34,7 +37,7 @@ contract Deployer {
             if iszero(extcodesize(contractAddr)) {
                 revert(0, 0)
             }
-        }      
+        }
         emit Deploy(contractAddr);
         return contractAddr;
     }

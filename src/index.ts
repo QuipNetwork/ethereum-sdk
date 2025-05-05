@@ -14,36 +14,52 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { ethers } from 'ethers';
-import { QuipWallet__factory, QuipFactory__factory, QuipFactory, QuipWallet } from '../typechain-types';
-import { computeVaultAddress, QUIP_FACTORY_ADDRESS, WOTS_PLUS_ADDRESS } from './addresses';
+import { ethers } from "ethers";
+import {
+  QuipWallet__factory,
+  QuipFactory__factory,
+  QuipFactory,
+  QuipWallet,
+} from "../typechain-types";
+import {
+  computeVaultAddress,
+  QUIP_FACTORY_ADDRESS,
+  WOTS_PLUS_ADDRESS,
+} from "./addresses";
 
-import { WOTSPlus } from '@quip.network/hashsigs';
-import { keccak_256 } from '@noble/hashes/sha3';
-import { randomBytes } from '@noble/ciphers/webcrypto';
+import { WOTSPlus } from "@quip.network/hashsigs";
+import { keccak_256 } from "@noble/hashes/sha3";
+import { randomBytes } from "@noble/ciphers/webcrypto";
 
 // Add explicit exports for contract interfaces and events
 // For whatever reason, typechain-types/index.ts does not do these
 // exports for us.
-export * from '../typechain-types/contracts/Deployer';
-export {QuipFactory, QuipCreatedEvent} from '../typechain-types/contracts/QuipFactory';
-export {QuipWallet, pqTransferEvent} from '../typechain-types/contracts/QuipWallet';
+export * from "../typechain-types/contracts/Deployer";
+export {
+  QuipFactory,
+  QuipCreatedEvent,
+} from "../typechain-types/contracts/QuipFactory";
+export {
+  QuipWallet,
+  pqTransferEvent,
+} from "../typechain-types/contracts/QuipWallet";
 
 // The existing exports
-export * from '../typechain-types';
-export * from './addresses';
-export * from './constants';
+export * from "../typechain-types";
+export * from "./addresses";
+export * from "./constants";
 
 export const SUPPORTED_NETWORKS = {
-  SEPOLIA: 'sepolia',
-  SEPOLIA_OPTIMISM: 'sepolia_optimism',
-  SEPOLIA_BASE: 'sepolia_base',
-  MAINNET: 'mainnet',
-  BASE: 'base',
-  OPTIMISM: 'optimism'
+  SEPOLIA: "sepolia",
+  SEPOLIA_OPTIMISM: "sepolia_optimism",
+  SEPOLIA_BASE: "sepolia_base",
+  MAINNET: "mainnet",
+  BASE: "base",
+  OPTIMISM: "optimism",
 } as const;
 
-export type NetworkType = typeof SUPPORTED_NETWORKS[keyof typeof SUPPORTED_NETWORKS];
+export type NetworkType =
+  (typeof SUPPORTED_NETWORKS)[keyof typeof SUPPORTED_NETWORKS];
 
 export interface WinternitzKeyPair {
   privateKey: Uint8Array;
@@ -58,7 +74,7 @@ export interface WinternitzPublicKey {
 export class QuipSigner {
   // FIXME: in an ideal world these are kept in a secure wallet somewhere and this is
   // merely an interface. For now we are keeping them in memory.
-  private quantumSecret: Uint8Array; 
+  private quantumSecret: Uint8Array;
   private wots: WOTSPlus;
 
   constructor(quantumSecret: Uint8Array) {
@@ -74,23 +90,30 @@ export class QuipSigner {
   }
 
   // recoverKeyPair given a pre-existing public seed, and vault id
-  public recoverKeyPair(vaultId: Uint8Array, publicSeed: Uint8Array): WinternitzKeyPair {
+  public recoverKeyPair(
+    vaultId: Uint8Array,
+    publicSeed: Uint8Array
+  ): WinternitzKeyPair {
     const privateSeed = Uint8Array.from([...this.quantumSecret, ...vaultId]);
     const keypair = this.wots.generateKeyPair(privateSeed, publicSeed);
     const returnedSeed = keypair.publicKey.slice(0, 32);
     if (!Buffer.from(publicSeed).equals(Buffer.from(returnedSeed))) {
-      throw new Error('Invalid public seed returned: ' + returnedSeed);
+      throw new Error("Invalid public seed returned: " + returnedSeed);
     }
     return {
       privateKey: keypair.privateKey,
       publicKey: {
         publicSeed: keypair.publicKey.slice(0, 32),
         publicKeyHash: keypair.publicKey.slice(32, 64),
-      } 
-    }
+      },
+    };
   }
 
-  public sign(message: Uint8Array, vaultId: Uint8Array, publicSeed: Uint8Array): Uint8Array[] {
+  public sign(
+    message: Uint8Array,
+    vaultId: Uint8Array,
+    publicSeed: Uint8Array
+  ): Uint8Array[] {
     const key = this.recoverKeyPair(vaultId, publicSeed);
     return this.wots.sign(key.privateKey, key.publicKey.publicSeed, message);
   }
@@ -123,8 +146,11 @@ export class QuipWalletClient {
     return await this.wallet.getExecuteFee();
   }
 
-  async transferWithWinternitz(to: ethers.AddressLike, value: bigint,
-     options: {gasLimit?: bigint} = {}) {
+  async transferWithWinternitz(
+    to: ethers.AddressLike,
+    value: bigint,
+    options: { gasLimit?: bigint } = {}
+  ) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
@@ -139,17 +165,21 @@ export class QuipWalletClient {
         nextPqOwner.publicKey.publicSeed,
         nextPqOwner.publicKey.publicKeyHash,
         to,
-        value
+        value,
       ]
-    )
+    );
 
     // FIXME: these are stupid in hindsight.
     const message = {
-      messageHash: keccak_256(ethers.getBytes(packedMessageData))
+      messageHash: keccak_256(ethers.getBytes(packedMessageData)),
     };
     const pqSig = {
-      elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
-    }
+      elements: this.quipSigner.sign(
+        message.messageHash,
+        this.vaultId,
+        publicSeed
+      ),
+    };
 
     let gasLimit: bigint;
     if (options.gasLimit) {
@@ -159,13 +189,13 @@ export class QuipWalletClient {
     // Use provided gas limit or the estimated one (or none if estimation failed)
     const txopts = {
       value: transferFee,
-      ...(gasLimit! && { gasLimit })
-    }
+      ...(gasLimit! && { gasLimit }),
+    };
 
     const tx = await this.wallet.transferWithWinternitz(
-      nextPqOwner.publicKey, 
-      pqSig, 
-      to, 
+      nextPqOwner.publicKey,
+      pqSig,
+      to,
       value,
       txopts
     );
@@ -173,10 +203,10 @@ export class QuipWalletClient {
   }
 
   async executeWithWinternitz(
-    target: ethers.AddressLike, 
+    target: ethers.AddressLike,
     opdata: Uint8Array,
     options: {
-      gasLimit?: bigint
+      gasLimit?: bigint;
     } = {}
   ) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
@@ -192,15 +222,19 @@ export class QuipWalletClient {
         nextPqOwner.publicKey.publicSeed,
         nextPqOwner.publicKey.publicKeyHash,
         target,
-        opdata
+        opdata,
       ]
     );
 
     const message = {
-      messageHash: keccak_256(ethers.getBytes(packedMessageData))
+      messageHash: keccak_256(ethers.getBytes(packedMessageData)),
     };
     const pqSig = {
-      elements: this.quipSigner.sign(message.messageHash, this.vaultId, publicSeed)
+      elements: this.quipSigner.sign(
+        message.messageHash,
+        this.vaultId,
+        publicSeed
+      ),
     };
 
     let gasLimit: bigint;
@@ -220,21 +254,21 @@ export class QuipWalletClient {
       console.error("Target:", target);
       console.error("Operation data length:", opdata.length);
       console.error("Execute fee:", executeFee.toString());
-      
+
       if (error.transaction) {
         // Log the transaction that would have been sent
         console.error("Failed transaction:", {
           to: error.transaction.to,
           from: error.transaction.from,
-          data: error.transaction.data?.slice(0, 66) + '...' // First 32 bytes + '...'
+          data: error.transaction.data?.slice(0, 66) + "...", // First 32 bytes + '...'
         });
       }
-      
+
       // If there's a specific revert reason, it might be in error.reason
       if (error.reason) {
         console.error("Revert reason:", error.reason);
       }
-      
+
       // Print error with more context, but we don't throw here because
       // some wallets like Safe can't estimate gas properly.
       console.error(`Gas estimation failed: ${error.message || error}`);
@@ -247,13 +281,13 @@ export class QuipWalletClient {
     // Use provided gas limit or the estimated one (or none if estimation failed)
     const txopts = {
       value: executeFee,
-      ...(gasLimit! && { gasLimit })
-    }
-    
+      ...(gasLimit! && { gasLimit }),
+    };
+
     const tx = await this.wallet.executeWithWinternitz(
-      nextPqOwner.publicKey, 
-      pqSig, 
-      target, 
+      nextPqOwner.publicKey,
+      pqSig,
+      target,
       opdata,
       txopts
     );
@@ -284,7 +318,10 @@ export class QuipClient {
   }
 
   private async setQuipFactory() {
-    this.factory = QuipFactory__factory.connect(QUIP_FACTORY_ADDRESS, this.signer!);
+    this.factory = QuipFactory__factory.connect(
+      QUIP_FACTORY_ADDRESS,
+      this.signer!
+    );
   }
 
   async getCreationFee(): Promise<bigint> {
@@ -292,15 +329,21 @@ export class QuipClient {
     return await this.factory!.creationFee();
   }
 
-  async createWallet(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
+  async createWallet(
+    vaultId: Uint8Array,
+    quipSigner: QuipSigner
+  ): Promise<QuipWalletClient> {
     await this.initializationPromise;
-    
+
     // Bind vaultId to signer
     const userWalletAddress = await this.signer!.getAddress();
     const creationFee = await this.getCreationFee();
-    
+
     // Check if wallet already exists
-    const existingWalletAddress = await this.factory!.quips(userWalletAddress, vaultId);
+    const existingWalletAddress = await this.factory!.quips(
+      userWalletAddress,
+      vaultId
+    );
     if (existingWalletAddress !== ethers.ZeroAddress) {
       throw new Error(`Wallet already exists for vault ID ${vaultId}`);
     }
@@ -313,29 +356,48 @@ export class QuipClient {
       { value: creationFee }
     );
     const receipt = await tx.wait();
-    const event = receipt!.logs[0];  // QuipCreated is the first and only event
+    const event = receipt!.logs[0]; // QuipCreated is the first and only event
     const newWalletAddress = ethers.getAddress(`0x${event.data.slice(-40)}`);
-    const newWalletContract = await QuipWallet__factory.connect(newWalletAddress, this.signer!)
+    const newWalletContract = await QuipWallet__factory.connect(
+      newWalletAddress,
+      this.signer!
+    );
     return new QuipWalletClient(quipSigner, vaultId, newWalletContract);
   }
 
-  async getVault(vaultId: Uint8Array, quipSigner: QuipSigner): Promise<QuipWalletClient> {
+  async getVault(
+    vaultId: Uint8Array,
+    quipSigner: QuipSigner
+  ): Promise<QuipWalletClient> {
     await this.initializationPromise;
-    const walletAddress = await this.factory!.quips(await this.signer!.getAddress(), vaultId);
+    const walletAddress = await this.factory!.quips(
+      await this.signer!.getAddress(),
+      vaultId
+    );
     if (walletAddress === ethers.ZeroAddress) {
       throw new Error(`No wallet found for vault ID ${vaultId}`);
     }
-    const walletContract = await QuipWallet__factory.connect(walletAddress, this.signer!);
+    const walletContract = await QuipWallet__factory.connect(
+      walletAddress,
+      this.signer!
+    );
     const client = new QuipWalletClient(quipSigner, vaultId, walletContract);
     // Check if we have the right signer
     const curPqOwner = await client.getPqOwner();
-    const curSeed = Buffer.from(curPqOwner.publicSeed.replace('0x', ''), 'hex');
-    const curPubKeyHash = Buffer.from(curPqOwner.publicKeyHash.replace('0x', ''), 'hex');
+    const curSeed = Buffer.from(curPqOwner.publicSeed.replace("0x", ""), "hex");
+    const curPubKeyHash = Buffer.from(
+      curPqOwner.publicKeyHash.replace("0x", ""),
+      "hex"
+    );
     const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
-    if (!Buffer.from(keypair.publicKey.publicKeyHash).equals(Buffer.from(curPubKeyHash))) {
-      throw new Error('Invalid signer for this wallet');
+    if (
+      !Buffer.from(keypair.publicKey.publicKeyHash).equals(
+        Buffer.from(curPubKeyHash)
+      )
+    ) {
+      throw new Error("Invalid signer for this wallet");
     }
-    return client
+    return client;
   }
 
   async getVaultAddress(vaultId: Uint8Array): Promise<string> {
@@ -345,18 +407,23 @@ export class QuipClient {
     const signerAddress = await this.signer!.getAddress();
     const wotsLibraryAddress = await this.factory!.wotsLibrary();
 
-    return computeVaultAddress(signerAddress, vaultId, wotsLibraryAddress, quipFactoryAddress);
+    return computeVaultAddress(
+      signerAddress,
+      vaultId,
+      wotsLibraryAddress,
+      quipFactoryAddress
+    );
   }
 
   async getVaults(): Promise<Map<string, string>> {
     await this.initializationPromise;
     if (!this.signer) {
-      throw new Error('No signer available. Connect a wallet first.');
+      throw new Error("No signer available. Connect a wallet first.");
     }
 
     const signerAddress = await this.signer.getAddress();
     const vaultMap = new Map<string, string>();
-    
+
     // Start from index 0 and keep trying until we hit an error
     let index = 0;
     while (true) {
@@ -373,7 +440,7 @@ export class QuipClient {
         break;
       }
     }
-    
+
     return vaultMap;
   }
 }

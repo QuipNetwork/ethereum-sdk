@@ -27,7 +27,7 @@ contract QuipWallet {
     WOTSPlus.WinternitzAddress public pqOwner;
 
     receive() external payable {}
-    
+
     fallback() external payable {}
 
     event pqTransfer(
@@ -44,18 +44,30 @@ contract QuipWallet {
     }
 
     function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) public {
-        require(msg.sender == owner || msg.sender == quipFactory, "You aren't the owner or creator");
-        require(pqOwner.publicSeed == bytes32(0) && pqOwner.publicKeyHash == bytes32(0), "Already initialized");
+        require(
+            msg.sender == owner || msg.sender == quipFactory,
+            "You aren't the owner or creator"
+        );
+        require(
+            pqOwner.publicSeed == bytes32(0) &&
+                pqOwner.publicKeyHash == bytes32(0),
+            "Already initialized"
+        );
         pqOwner = newPqOwner;
     }
 
-    function changePqOwner(WOTSPlus.WinternitzAddress calldata newPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig) public {
+    function changePqOwner(
+        WOTSPlus.WinternitzAddress calldata newPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig
+    ) public {
         require(msg.sender == owner, "You aren't the owner");
 
         bytes memory msgData = abi.encodePacked(
-                pqOwner.publicSeed, pqOwner.publicKeyHash,
-                newPqOwner.publicSeed, newPqOwner.publicKeyHash);
+            pqOwner.publicSeed,
+            pqOwner.publicKeyHash,
+            newPqOwner.publicSeed,
+            newPqOwner.publicKeyHash
+        );
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: keccak256(msgData)
@@ -65,11 +77,12 @@ contract QuipWallet {
         pqOwner = newPqOwner;
     }
 
-    function transferWithWinternitz(WOTSPlus.WinternitzAddress calldata nextPqOwner,
+    function transferWithWinternitz(
+        WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable to,
-        uint256 value) public payable {
-
+        uint256 value
+    ) public payable {
         WOTSPlus.WinternitzAddress memory curPqOwner = pqOwner;
 
         uint256 fee = getTransferFee();
@@ -79,10 +92,14 @@ contract QuipWallet {
         require(address(this).balance >= value, "Insufficient balance");
 
         bytes memory msgData = abi.encodePacked(
-                pqOwner.publicSeed, pqOwner.publicKeyHash,
-                nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
-                to, value);
-   
+            pqOwner.publicSeed,
+            pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            to,
+            value
+        );
+
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: keccak256(msgData)
         });
@@ -96,11 +113,12 @@ contract QuipWallet {
         emit pqTransfer(value, block.timestamp, curPqOwner, nextPqOwner, to);
     }
 
-    function executeWithWinternitz(WOTSPlus.WinternitzAddress calldata nextPqOwner,
+    function executeWithWinternitz(
+        WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable target,
-        bytes calldata opdata) payable public returns (bool, bytes memory) {
-
+        bytes calldata opdata
+    ) public payable returns (bool, bytes memory) {
         uint256 fee = getExecuteFee();
         require(msg.value >= fee, "Insufficient fee");
 
@@ -109,17 +127,25 @@ contract QuipWallet {
         require(msg.sender == owner, "You aren't the owner");
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: keccak256(abi.encodePacked(
-                pqOwner.publicSeed, pqOwner.publicKeyHash,
-                nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
-                target, opdata))
+            messageHash: keccak256(
+                abi.encodePacked(
+                    pqOwner.publicSeed,
+                    pqOwner.publicKeyHash,
+                    nextPqOwner.publicSeed,
+                    nextPqOwner.publicKeyHash,
+                    target,
+                    opdata
+                )
+            )
         });
 
         require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
         pqOwner = nextPqOwner;
         quipFactory.transfer(fee);
 
-        (bool success, bytes memory returnData) = target.call{value: forwardValue}(opdata);
+        (bool success, bytes memory returnData) = target.call{
+            value: forwardValue
+        }(opdata);
         require(success, string(returnData));
         return (success, returnData);
     }

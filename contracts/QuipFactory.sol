@@ -30,7 +30,7 @@ contract QuipFactory {
 
     // eth address -> "salt" vaultId -> QuipWallet address
     mapping(address => mapping(bytes32 => address)) public quips;
-    
+
     // Track vaultIds for each owner
     mapping(address => bytes32[]) public vaultIds;
 
@@ -44,7 +44,7 @@ contract QuipFactory {
     );
 
     receive() external payable {}
-    
+
     fallback() external payable {}
 
     constructor(address payable initialOwner, address _wotsLibrary) payable {
@@ -63,9 +63,11 @@ contract QuipFactory {
     );
     address preAddr = address(uint160(uint(hash)));
     */
-    function depositToWinternitz(bytes32 vaultId, address payable to,
-        WOTSPlus.WinternitzAddress calldata pqTo) public payable returns (address) {
-
+    function depositToWinternitz(
+        bytes32 vaultId,
+        address payable to,
+        WOTSPlus.WinternitzAddress calldata pqTo
+    ) public payable returns (address) {
         address contractAddr;
 
         bytes memory quipWalletCode = abi.encodePacked(
@@ -93,9 +95,16 @@ contract QuipFactory {
         QuipWallet(payable(contractAddr)).initialize(pqTo);
         payable(contractAddr).transfer(contractValue);
         quips[to][vaultId] = contractAddr;
-        vaultIds[to].push(vaultId); 
-        
-        emit QuipCreated(msg.value, block.timestamp, vaultId, to, pqTo, contractAddr);
+        vaultIds[to].push(vaultId);
+
+        emit QuipCreated(
+            msg.value,
+            block.timestamp,
+            vaultId,
+            to,
+            pqTo,
+            contractAddr
+        );
 
         return contractAddr;
     }
@@ -129,5 +138,4 @@ contract QuipFactory {
     function owner() public view returns (address) {
         return admin;
     }
-
 }
