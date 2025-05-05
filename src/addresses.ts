@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { NetworkType, QuipWallet__factory, SUPPORTED_NETWORKS } from "./index";
 import addresses from "./addresses.json";
-import { ethers } from "hardhat/internal/lib/hardhat-lib";
+import { ethers } from "ethers";
 
 export const DEPLOYER_ADDRESS = addresses.Deployer;
 export const WOTS_PLUS_ADDRESS = addresses.WOTSPlus;
