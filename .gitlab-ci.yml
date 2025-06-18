@@ -31,5 +31,5 @@ github-push:
     - git remote add github_origin https://cadillion:$GITHUB_PAT@github.com/QuipNetwork/ethereum-sdk.git
     - git add .
     - git commit -m "CI push from pipeline"
-rules:
+  rules:
     - $CI_PIPELINE_SOURCE == 'merge_request_event' and $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == 'main'
