@@ -1,4 +1,4 @@
-import { ethers } from 'ethers';
+import { ethers } from "ethers";
 
 interface TransactionData {
   from: string;
@@ -15,41 +15,44 @@ interface TransactionData {
 
 async function sendTransaction(txData: string): Promise<void> {
   try {
-    const provider = new ethers.JsonRpcProvider('http://localhost:8545');
+    const provider = new ethers.JsonRpcProvider("http://localhost:8545");
     const privateKey = process.env.PRIVATE_KEY;
-    
+
     if (!privateKey) {
-      throw new Error('PRIVATE_KEY environment variable not set');
+      throw new Error("PRIVATE_KEY environment variable not set");
     }
-    
+
     const wallet = new ethers.Wallet(privateKey, provider);
-    
+
     // Parse the transaction data
     const txDataParsed: TransactionData = JSON.parse(txData);
-    
+
     // Convert nonce to number for ethers.js
     const tx = {
       ...txDataParsed,
-      nonce: parseInt(txDataParsed.nonce, 16)
+      nonce: parseInt(txDataParsed.nonce, 16),
     };
-    
+
     // Send the transaction
     const txResponse = await wallet.sendTransaction(tx);
     console.log(txResponse.hash);
-    
+
     // Wait for the transaction to be mined
     const receipt = await txResponse.wait();
-    
+
     // Return the wallet address from the QuipCreated event
     if (receipt && receipt.logs && receipt.logs.length > 0) {
       const eventData = receipt.logs[0].data;
-      const walletAddress = '0x' + eventData.slice(-40);
+      const walletAddress = "0x" + eventData.slice(-40);
       console.log(walletAddress);
     } else {
-      throw new Error('No logs found in transaction receipt');
+      throw new Error("No logs found in transaction receipt");
     }
   } catch (error) {
-    console.error('Error:', error instanceof Error ? error.message : String(error));
+    console.error(
+      "Error:",
+      error instanceof Error ? error.message : String(error)
+    );
     process.exit(1);
   }
 }
@@ -57,8 +60,8 @@ async function sendTransaction(txData: string): Promise<void> {
 // Get transaction data from command line argument
 const txData = process.argv[2];
 if (!txData) {
-  console.error('Usage: npx ts-node send_transaction.ts <transaction_json>');
+  console.error("Usage: npx ts-node send_transaction.ts <transaction_json>");
   process.exit(1);
 }
 
-sendTransaction(txData); 
+sendTransaction(txData);

@@ -16,9 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { keccak_256 } from "@noble/hashes/sha3";
 import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
-import {
-  loadFixture
-} from "@nomicfoundation/hardhat-toolbox/network-helpers";
+import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { WOTSPlus } from "@quip.network/hashsigs";
 import { expect } from "chai";
 import hre from "hardhat";
@@ -43,10 +41,15 @@ describe("QuipFactory", function () {
     const wotsPlusBytecode = WOTSPlusLib.bytecode;
 
     // Deploy WOTSPlus through the Deployer contract
-    const wotsPlusSalt = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("WOTSPlus"));
-    const wotsPlusDeployTx = await deployer.deploy(wotsPlusBytecode, wotsPlusSalt);
+    const wotsPlusSalt = hre.ethers.keccak256(
+      hre.ethers.toUtf8Bytes("WOTSPlus")
+    );
+    const wotsPlusDeployTx = await deployer.deploy(
+      wotsPlusBytecode,
+      wotsPlusSalt
+    );
     const wotsPlusDeployReceipt = await wotsPlusDeployTx.wait();
-    
+
     // Get the deployed WOTSPlus address from the Deploy event
     const wotsPlusAddress = wotsPlusDeployReceipt!.logs[0].args[0];
     console.log(`WOTSPlus deployed to: ${wotsPlusAddress}`);
@@ -63,37 +66,54 @@ describe("QuipFactory", function () {
     const [signer] = await hre.ethers.getSigners();
     const initialOwner = await signer.getAddress();
     console.log(`Deploying with owner: ${initialOwner}`);
-    
+
     const constructorArgs = hre.ethers.AbiCoder.defaultAbiCoder().encode(
       ["address", "address"],
       [initialOwner, wotsPlusAddress]
     );
-    
+
     // Combine bytecode with constructor arguments
     const quipFactoryBytecode = QuipFactory.bytecode + constructorArgs.slice(2); // Remove '0x' prefix
 
     // Deploy QuipFactory through the Deployer contract
-    const quipFactorySalt = hre.ethers.keccak256(hre.ethers.toUtf8Bytes("QuipFactory"));
-    const quipFactoryDeployTx = await deployer.deploy(quipFactoryBytecode, quipFactorySalt);
+    const quipFactorySalt = hre.ethers.keccak256(
+      hre.ethers.toUtf8Bytes("QuipFactory")
+    );
+    const quipFactoryDeployTx = await deployer.deploy(
+      quipFactoryBytecode,
+      quipFactorySalt
+    );
     const quipFactoryDeployReceipt = await quipFactoryDeployTx.wait();
-    
+
     // Get the deployed QuipFactory address from the Deploy event
     const quipFactoryAddress = quipFactoryDeployReceipt!.logs[0].args[0];
     console.log(`QuipFactory deployed: ${quipFactoryAddress}`);
 
     // Calculate the gas fee for the deployment
-    const deployGasFee = quipFactoryDeployReceipt!.gasUsed * quipFactoryDeployReceipt!.gasPrice;
-    console.log(`QuipFactory deploy gas used: ${quipFactoryDeployReceipt!.gasUsed} units`);
-    console.log(`QuipFactory deploy gas price: ${quipFactoryDeployReceipt!.gasPrice} wei`);
-    console.log(`QuipFactory deploy total gas fee: ${hre.ethers.formatEther(deployGasFee)} ETH`);
+    const deployGasFee =
+      quipFactoryDeployReceipt!.gasUsed * quipFactoryDeployReceipt!.gasPrice;
+    console.log(
+      `QuipFactory deploy gas used: ${quipFactoryDeployReceipt!.gasUsed} units`
+    );
+    console.log(
+      `QuipFactory deploy gas price: ${quipFactoryDeployReceipt!.gasPrice} wei`
+    );
+    console.log(
+      `QuipFactory deploy total gas fee: ${hre.ethers.formatEther(
+        deployGasFee
+      )} ETH`
+    );
 
     // Get contract instances
     const wotsPlus = await hre.ethers.getContractAt(
       "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus",
       wotsPlusAddress
     );
-    
-    const quipFactory = await hre.ethers.getContractAt("QuipFactory", quipFactoryAddress);
+
+    const quipFactory = await hre.ethers.getContractAt(
+      "QuipFactory",
+      quipFactoryAddress
+    );
 
     // Note: QuipFactory is already initialized via constructor when deployed through Deployer
     // The constructor parameters (initialOwner, wotsLibrary) are encoded in the bytecode
