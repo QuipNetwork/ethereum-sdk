@@ -16,10 +16,10 @@
 # This specific template is located at:
 # https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
 
-stages:          # List of stages for jobs, and their order of execution
+stages: # List of stages for jobs, and their order of execution
   - reflect
 
-variables:      # Variables that can be referenced
+variables: # Variables that can be referenced
   COMMIT_USER_EMAIL: "colton@postquant.xyz"
   GITHUB_TOKEN: $GITHUB_PAT
 
@@ -32,4 +32,6 @@ github-push:
     - git add .
     - git commit -m "CI push from pipeline"
   rules:
-    - $CI_PIPELINE_SOURCE == 'merge_request_event' and $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == 'main'
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+      when: always
+    - when: never
