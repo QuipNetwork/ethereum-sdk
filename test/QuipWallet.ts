@@ -20,6 +20,7 @@ import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { WOTSPlus } from "@quip.network/hashsigs";
 import { expect } from "chai";
+import { EventLog } from "ethers";
 import hre from "hardhat";
 
 // Test contract for executeWithWinternitz
@@ -52,7 +53,7 @@ describe("QuipWallet", function () {
     const wotsPlusDeployReceipt = await wotsPlusDeployTx.wait();
 
     // Get the deployed WOTSPlus address from the Deploy event
-    const wotsPlusAddress = wotsPlusDeployReceipt!.logs[0].args[0];
+    const wotsPlusAddress = (wotsPlusDeployReceipt!.logs[0] as EventLog).args[0];
     console.log(`WOTSPlus deployed to: ${wotsPlusAddress}`);
 
     // Get the bytecode for QuipFactory (with linked WOTSPlus library)
@@ -87,7 +88,7 @@ describe("QuipWallet", function () {
     const quipFactoryDeployReceipt = await quipFactoryDeployTx.wait();
 
     // Get the deployed QuipFactory address from the Deploy event
-    const quipFactoryAddress = quipFactoryDeployReceipt!.logs[0].args[0];
+    const quipFactoryAddress = (quipFactoryDeployReceipt!.logs[0] as EventLog).args[0];
     console.log(`QuipFactory deployed: ${quipFactoryAddress}`);
 
     // Get contract instances
