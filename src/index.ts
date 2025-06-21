@@ -207,12 +207,13 @@ export class QuipWalletClient {
     opdata: Uint8Array,
     options: {
       gasLimit?: bigint;
+      value?: bigint;
     } = {}
   ) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
     const currentPqOwner = await this.wallet.pqOwner();
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
-    const executeFee = await this.getExecuteFee();
+    const executeFee = await this.getExecuteFee() + (options.value ?? 0n);
 
     const packedMessageData = ethers.solidityPacked(
       ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
