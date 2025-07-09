@@ -48,7 +48,8 @@ async function sendTransaction(txData: string): Promise<void> {
         const walletAddress = '0x' + eventData.slice(-40);
         console.log(walletAddress);
       } else {
-        throw new Error('No logs found in transaction receipt');
+        console.warn('Warning: No transaction logs were found which may indicate a success or a failure depending on the transaction type. Please look for additional logs.');
+        console.log('Transaction mined with status:', receipt?.status);
       }
     } catch (error: any) {
       // Print detailed error information for debugging
