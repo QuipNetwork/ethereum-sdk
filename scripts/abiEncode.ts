@@ -6,8 +6,12 @@
 import { ethers } from "ethers";
 
 if (process.argv.length < 5) {
-  console.error("Usage: ts-node abi_encode.ts <abi_json> <function_name> <params_json>");
-  console.error("Example: ts-node abi_encode.ts '[{\"inputs\":[...]}]' 'depositToWinternitz' '[{\"vaultId\":\"0x...\",\"to\":\"0x...\",\"pqTo\":{\"publicSeed\":\"0x...\",\"publicKeyHash\":\"0x...\"}}]'");
+  console.error(
+    "Usage: ts-node abi_encode.ts <abi_json> <function_name> <params_json>"
+  );
+  console.error(
+    'Example: ts-node abi_encode.ts \'[{"inputs":[...]}]\' \'depositToWinternitz\' \'[{"vaultId":"0x...","to":"0x...","pqTo":{"publicSeed":"0x...","publicKeyHash":"0x..."}}]\''
+  );
   process.exit(1);
 }
 
@@ -22,4 +26,4 @@ try {
 } catch (error: any) {
   console.error("Error encoding ABI:", error.message);
   process.exit(1);
-} 
+}
