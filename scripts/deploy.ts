@@ -16,9 +16,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import hre from "hardhat";
 import "dotenv/config";
-import { addNetwork } from "./addNetwork";
+import { addNetwork } from "./addNetwork.js";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const SALT = "QUIP";
 const ADDRESSES_FILE = path.join(__dirname, "../src/addresses.json");
@@ -238,14 +242,11 @@ async function main() {
   console.log(`QuipFactory: ${factoryAddress}`);
 }
 
-// Update the script execution to handle the new parameter
-if (require.main === module) {
-  main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });
-}
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 
 export { main as deploy };

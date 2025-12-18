@@ -17,7 +17,7 @@
 
 import hre from "hardhat";
 import "dotenv/config";
-import { EXPECTED_NONCE } from "./addNetwork";
+import { EXPECTED_NONCE } from "./addNetwork.js";
 
 async function main() {
   if (!process.env.DEPLOYER_PRIVATE_KEY) {
@@ -122,13 +122,11 @@ async function main() {
   );
 }
 
-if (require.main === module) {
-  main()
-    .then(() => process.exit(0))
-    .catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });
-}
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 
 export { main as drainDeployer };
