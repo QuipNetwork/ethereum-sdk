@@ -1,6 +1,7 @@
 {
   "name": "@quip.network/ethereum-sdk",
   "version": "0.1.7",
+  "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,29 +19,27 @@
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "default": "./dist/index.js"
+      "types": "./dist/index.d.ts"
     },
     "./addresses": {
-      "types": "./dist/addresses.d.ts",
-      "require": "./dist/addresses.js",
-      "default": "./dist/addresses.js"
+      "import": "./dist/addresses.js",
+      "types": "./dist/addresses.d.ts"
     },
     "./typechain-types": {
-      "types": "./typechain-types/index.d.ts",
-      "require": "./typechain-types/index.js",
-      "default": "./typechain-types/index.js"
+      "import": "./typechain-types/index.js",
+      "types": "./typechain-types/index.d.ts"
     }
   },
   "scripts": {
     "clean": "rimraf dist typechain-types artifacts cache",
     "prebuild": "npm run clean",
     "copy-assets": "copyfiles -u 1 \"src/**/*.json\" dist",
-    "build": "hardhat compile && tsc && npm run copy-assets",
+    "build": "TS_NODE_PROJECT=tsconfig.hardhat.json hardhat compile && tsc && npm run copy-assets",
     "prepare": "npm run build",
     "typechain": "hardhat typechain",
-    "format": "prettier --write \"**/*.{ts,js,json,sol}\""
+    "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
+    "test": "TS_NODE_PROJECT=tsconfig.hardhat.json hardhat test",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
@@ -49,7 +48,8 @@
     "prettier": "^2.8.8",
     "prettier-plugin-solidity": "^1.1.3",
     "rimraf": "^5.0.5",
-    "ts-jest": "^29.3.2"
+    "ts-jest": "^29.3.2",
+    "tsup": "^8.5.1"
   },
   "dependencies": {
     "@noble/ciphers": "^1.2.1",

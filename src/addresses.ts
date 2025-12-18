@@ -14,8 +14,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { NetworkType, QuipWallet__factory, SUPPORTED_NETWORKS } from "./index";
-import addresses from "./addresses.json";
+import { NetworkType, QuipWallet__factory, SUPPORTED_NETWORKS } from "./index.js";
+import addresses from "./addresses.json" with { type: "json" };
 import { ethers } from "ethers";
 
 export const DEPLOYER_ADDRESS = addresses.Deployer;

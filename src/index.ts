@@ -15,17 +15,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { ethers } from "ethers";
-import {
-  QuipWallet__factory,
-  QuipFactory__factory,
-  QuipFactory,
-  QuipWallet,
-} from "../typechain-types";
+import { QuipWallet__factory } from "../typechain-types/factories/contracts/QuipWallet__factory.js";
+import { QuipFactory__factory } from "../typechain-types/factories/contracts/QuipFactory__factory.js";
+import type { QuipFactory } from "../typechain-types/contracts/QuipFactory.js";
+import type { QuipWallet } from "../typechain-types/contracts/QuipWallet.js";
 import {
   computeVaultAddress,
   QUIP_FACTORY_ADDRESS,
   WOTS_PLUS_ADDRESS,
-} from "./addresses";
+} from "./addresses.js";
 
 import { WOTSPlus } from "@quip.network/hashsigs";
 import { keccak_256 } from "@noble/hashes/sha3";
@@ -34,20 +32,22 @@ import { randomBytes } from "@noble/ciphers/webcrypto";
 // Add explicit exports for contract interfaces and events
 // For whatever reason, typechain-types/index.ts does not do these
 // exports for us.
-export * from "../typechain-types/contracts/Deployer";
+export * from "../typechain-types/contracts/Deployer.js";
 export {
   QuipFactory,
   QuipCreatedEvent,
-} from "../typechain-types/contracts/QuipFactory";
+} from "../typechain-types/contracts/QuipFactory.js";
 export {
   QuipWallet,
   pqTransferEvent,
-} from "../typechain-types/contracts/QuipWallet";
+} from "../typechain-types/contracts/QuipWallet.js";
 
-// The existing exports
-export * from "../typechain-types";
-export * from "./addresses";
-export * from "./constants";
+// Export factories
+export { QuipWallet__factory } from "../typechain-types/factories/contracts/QuipWallet__factory.js";
+export { QuipFactory__factory } from "../typechain-types/factories/contracts/QuipFactory__factory.js";
+
+export * from "./addresses.js";
+export * from "./constants.js";
 
 export const SUPPORTED_NETWORKS = {
   SEPOLIA: "sepolia",

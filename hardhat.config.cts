@@ -213,7 +213,7 @@ const config: HardhatUserConfig = {
           apiURL: "https://explorer.degen.tips/api",
           browserURL: "https://explorer.degen.tips/",
         },
-      },
+      }
     ],
   },
 };
