@@ -34,11 +34,11 @@
     "clean": "rimraf dist typechain-types artifacts cache",
     "prebuild": "npm run clean",
     "copy-assets": "copyfiles -u 1 \"src/**/*.json\" dist",
-    "build": "TS_NODE_PROJECT=tsconfig.hardhat.json hardhat compile && tsc && npm run copy-assets",
+    "build": "hardhat compile && tsc -p tsconfig.build.json && npm run copy-assets",
     "prepare": "npm run build",
     "typechain": "hardhat typechain",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
-    "test": "TS_NODE_PROJECT=tsconfig.hardhat.json hardhat test",
+    "test": "hardhat test",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs"
   },
   "devDependencies": {

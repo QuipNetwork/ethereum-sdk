@@ -16,8 +16,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { keccak_256 } from "@noble/hashes/sha3";
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs.js";
+import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers.js";
 import { WOTSPlus } from "@quip.network/hashsigs";
 import { expect } from "chai";
 import { EventLog } from "ethers";

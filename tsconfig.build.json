@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*", "typechain-types/*"]
+    },
+    "types": ["node", "hardhat", "mocha", "chai", "jest"]
+  },
+  "include": [
+    "index.ts",
+    "src/**/*",
+    "typechain-types/**/*"
+  ],
+  "exclude": ["node_modules", "dist", "hardhat.config.cts", "scripts/**/*", "test/**/*"]
+}
