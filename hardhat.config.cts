@@ -85,6 +85,7 @@ const {
   API_URL_CELO,
   API_URL_ARBITRUM,
   API_URL_DEGEN,
+  API_URL_JAMTON,
   ALCHEMY_API_KEY,
   DEPLOYER_PRIVATE_KEY,
   PRIVATE_KEY,
@@ -172,6 +173,10 @@ const config: HardhatUserConfig = {
       url: API_URL_DEGEN,
       accounts: [`0x${PRIVATE_KEY}`],
     },
+    jamton: {
+      url: API_URL_JAMTON,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
   },
   etherscan: {
     apiKey: {
@@ -188,6 +193,7 @@ const config: HardhatUserConfig = {
       celo: `${ETHERSCAN_API_KEY_CELO}`,
       arbitrumOne: `${ETHERSCAN_API_KEY_ARBITRUM}`,
       degen: "none",
+      jamton: "none",
     },
     customChains: [
       {
@@ -213,7 +219,16 @@ const config: HardhatUserConfig = {
           apiURL: "https://explorer.degen.tips/api",
           browserURL: "https://explorer.degen.tips/",
         },
-      }
+      },
+      {
+        network: "jamton",
+        chainId: 5589,
+        urls: {
+          apiURL: "https://rpc.jamton.network/",
+          browserURL:
+            "https://polkadot.js.org/apps/?rpc=wss%3A%2F%2Frpc.jamton.network#/explorer",
+        },
+      },
     ],
   },
 };
