@@ -1,4 +1,9 @@
-import { getVaultAddress, computeVaultAddress } from "./addresses";
+import {
+  getVaultAddress,
+  computeVaultAddress,
+  WOTS_PLUS_ADDRESS,
+  QUIP_FACTORY_ADDRESS,
+} from "./addresses.js";
 
 describe("Vault Address Functions", () => {
   const testVaultId =
@@ -20,9 +25,6 @@ describe("Vault Address Functions", () => {
   });
 
   it("should compute the same address with computeVaultAddress", () => {
-    // Get addresses from the module
-    const { WOTS_PLUS_ADDRESS, QUIP_FACTORY_ADDRESS } = require("./addresses");
-
     const address1 = getVaultAddress(testOwner, testVaultId);
     const address2 = computeVaultAddress(
       testOwner,
