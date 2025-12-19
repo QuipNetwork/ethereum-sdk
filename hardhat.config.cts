@@ -1,8 +1,11 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "@midl/hardhat-deploy";
+import "hardhat-deploy";
 import "dotenv/config";
 import { Alchemy, Network } from "alchemy-sdk";
 import { task } from "hardhat/config";
+import { midlRegtest } from "@midl/executor";
 
 task(
   "account",
@@ -100,10 +103,46 @@ const {
   ETHERSCAN_API_KEY_MANTLE,
   ETHERSCAN_API_KEY_CELO,
   ETHERSCAN_API_KEY_ARBITRUM,
+  DEPLOYER_BTC_MNEMONIC,
+  BTC_MNEMONIC,
 } = process.env;
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.28",
+  solidity: {
+    version: "0.8.28",
+    settings: {
+      evmVersion: "paris",
+      optimizer: {
+        enabled: false,
+        runs: 200,
+      },
+      metadata: {
+        // Exclude metadata hash for deterministic bytecode across environments
+        // This ensures CREATE2 addresses are consistent regardless of source paths
+        bytecodeHash: "none",
+      },
+    },
+  },
+  midl: {
+    networks: {
+      // For deploying Deployer contract (one-time, nonce-critical)
+      midl_regtest_deployer: {
+        mnemonic: DEPLOYER_BTC_MNEMONIC!,
+        network: "regtest",
+        hardhatNetwork: "midl_regtest",
+        confirmationsRequired: 1,
+        btcConfirmationsRequired: 1,
+      },
+      // For all other deployments via Deployer contract
+      midl_regtest: {
+        mnemonic: BTC_MNEMONIC!,
+        network: "regtest",
+        hardhatNetwork: "midl_regtest",
+        confirmationsRequired: 1,
+        btcConfirmationsRequired: 1,
+      },
+    },
+  },
   networks: {
     hardhat: {
       accounts: [
@@ -172,6 +211,10 @@ const config: HardhatUserConfig = {
       url: API_URL_DEGEN,
       accounts: [`0x${PRIVATE_KEY}`],
     },
+    midl_regtest: {
+      url: midlRegtest.rpcUrls.default.http[0],
+      chainId: midlRegtest.id,
+    },
   },
   etherscan: {
     apiKey: {
@@ -188,6 +231,7 @@ const config: HardhatUserConfig = {
       celo: `${ETHERSCAN_API_KEY_CELO}`,
       arbitrumOne: `${ETHERSCAN_API_KEY_ARBITRUM}`,
       degen: "none",
+      midl_regtest: "not-required",
     },
     customChains: [
       {
@@ -213,7 +257,15 @@ const config: HardhatUserConfig = {
           apiURL: "https://explorer.degen.tips/api",
           browserURL: "https://explorer.degen.tips/",
         },
-      }
+      },
+      {
+        network: "midl_regtest",
+        chainId: 777,
+        urls: {
+          apiURL: "https://blockscout.regtest.midl.xyz/api",
+          browserURL: "https://blockscout.regtest.midl.xyz",
+        },
+      },
     ],
   },
 };

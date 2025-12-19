@@ -39,9 +39,13 @@
     "typechain": "hardhat typechain",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
     "test": "hardhat test",
-    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs"
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
+    "release": "hardhat compile && hardhat run scripts/release.cts --network hardhat"
   },
   "devDependencies": {
+    "@midl/executor": "^3.0.0-next.12",
+    "@midl/hardhat-deploy": "^3.0.0-next.12",
+    "hardhat-deploy": "^0.14.0",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "copyfiles": "^2.4.1",
     "hardhat": "^2.22.19",
@@ -52,6 +56,9 @@
     "tsup": "^8.5.1"
   },
   "dependencies": {
+    "@midl/connectors": "^3.0.0-next.12",
+    "@midl/core": "^3.0.0-next.12",
+    "@midl/react": "^3.0.0-next.12",
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@quip.network/hashsigs": "^0.1.0",

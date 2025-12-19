@@ -18,9 +18,73 @@ import { NetworkType, QuipWallet__factory, SUPPORTED_NETWORKS } from "./index.js
 import addresses from "./addresses.json" with { type: "json" };
 import { ethers } from "ethers";
 
-export const DEPLOYER_ADDRESS = addresses.Deployer;
-export const WOTS_PLUS_ADDRESS = addresses.WOTSPlus;
-export const QUIP_FACTORY_ADDRESS = addresses.QuipFactory;
+/**
+ * Network-specific contract address configuration
+ */
+export interface NetworkAddresses {
+  Deployer: string;
+  WOTSPlus: string;
+  QuipFactory: string;
+}
+
+/**
+ * Chain IDs for supported networks
+ */
+export const CHAIN_IDS = {
+  MIDL_TESTNET: 777,
+  ETHEREUM_MAINNET: 1,
+  SEPOLIA: 11155111,
+  BASE: 8453,
+  BASE_SEPOLIA: 84532,
+  OPTIMISM: 10,
+  OPTIMISM_SEPOLIA: 11155420,
+} as const;
+
+/**
+ * Network-specific address registry
+ * Maps chain IDs to their deployed contract addresses
+ */
+export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
+  // Default: Existing EVM chains (shared deterministic addresses via CREATE2)
+  default: {
+    Deployer: addresses.Deployer,
+    WOTSPlus: addresses.WOTSPlus,
+    QuipFactory: addresses.QuipFactory,
+  },
+  // MIDL Testnet (Chain ID 777) - different deployment mechanism
+  // These addresses will be populated after MIDL deployment
+  [CHAIN_IDS.MIDL_TESTNET]: {
+    Deployer: "0x0000000000000000000000000000000000000000", // TBD after MIDL deployment
+    WOTSPlus: "0x0000000000000000000000000000000000000000",
+    QuipFactory: "0x0000000000000000000000000000000000000000",
+  },
+};
+
+/**
+ * Get contract addresses for a specific network by chain ID
+ * Falls back to default addresses for standard EVM chains
+ *
+ * @param chainId - The chain ID of the network (e.g., 777 for MIDL testnet)
+ * @returns NetworkAddresses for the specified chain
+ */
+export function getNetworkAddresses(chainId?: number): NetworkAddresses {
+  if (chainId && chainId in NETWORK_ADDRESSES) {
+    return NETWORK_ADDRESSES[chainId];
+  }
+  return NETWORK_ADDRESSES.default;
+}
+
+/**
+ * Check if a chain ID represents the MIDL network
+ */
+export function isMidlNetwork(chainId: number): boolean {
+  return chainId === CHAIN_IDS.MIDL_TESTNET;
+}
+
+// Backwards-compatible exports (use default addresses for existing integrations)
+export const DEPLOYER_ADDRESS = NETWORK_ADDRESSES.default.Deployer;
+export const WOTS_PLUS_ADDRESS = NETWORK_ADDRESSES.default.WOTSPlus;
+export const QUIP_FACTORY_ADDRESS = NETWORK_ADDRESSES.default.QuipFactory;
 
 /**
  * getVaultAddress computes the deterministic address of a Quip Vault
@@ -31,19 +95,20 @@ export const QUIP_FACTORY_ADDRESS = addresses.QuipFactory;
  *
  * @param initialOwnerAddress - The Ethereum address of the initial vault owner
  * @param vaultId - The unique identifier for this vault as a Uint8Array
+ * @param chainId - Optional chain ID for network-specific address resolution
  * @returns The Ethereum address where the vault contract would be deployed
  */
 export function getVaultAddress(
   initialOwnerAddress: string,
-  vaultId: string
+  vaultId: string,
+  chainId?: number
 ): string {
-  const quipFactoryAddress = QUIP_FACTORY_ADDRESS;
-  const wotsLibraryAddress = WOTS_PLUS_ADDRESS;
+  const addresses = getNetworkAddresses(chainId);
   return computeVaultAddress(
     initialOwnerAddress,
     vaultId,
-    wotsLibraryAddress,
-    quipFactoryAddress
+    addresses.WOTSPlus,
+    addresses.QuipFactory
   );
 }
 
