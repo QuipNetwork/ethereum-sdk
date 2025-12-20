@@ -60,6 +60,21 @@ export async function getNetworkInfo(hre: HardhatRuntimeEnvironment): Promise<{
 // =============================================================================
 
 /**
+ * Compute the expected Deployer contract address from wallet address + nonce
+ * Uses the standard CREATE address formula: keccak256(RLP([sender, nonce]))[12:]
+ */
+export function computeDeployerAddress(
+  hre: HardhatRuntimeEnvironment,
+  walletAddress: string,
+  nonce: number = EXPECTED_DEPLOYER_NONCE
+): string {
+  return hre.ethers.getCreateAddress({
+    from: walletAddress,
+    nonce: nonce,
+  });
+}
+
+/**
  * Compute CREATE2 address for a contract deployed via Deployer
  */
 export async function computeCreate2Address(

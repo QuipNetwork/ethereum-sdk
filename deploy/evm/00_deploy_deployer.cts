@@ -6,7 +6,8 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { EXPECTED_DEPLOYER_NONCE, MIDL_CHAIN_ID } = require("../../lib/deploy.cts");
+const { EXPECTED_DEPLOYER_NONCE, MIDL_CHAIN_ID, computeDeployerAddress } = require("../../lib/deploy.cts");
+
 
 /**
  * EVM Deployer Contract Deployment
@@ -23,19 +24,12 @@ const { EXPECTED_DEPLOYER_NONCE, MIDL_CHAIN_ID } = require("../../lib/deploy.cts
  * Environment:
  * - DEPLOYER_PRIVATE_KEY: One-time deployer wallet private key
  * - DEPLOYER_PUBLIC_KEY: Expected public key (for validation)
- * - DEPLOYER_ADDRESS: Expected Deployer contract address
  * - PRIVATE_KEY: Operations wallet private key (drain destination)
  */
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const network = await hre.ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-
-  // Skip for MIDL network (uses separate deploy scripts)
-  if (chainId === MIDL_CHAIN_ID) {
-    console.log("Skipping EVM deploy for MIDL network. Use deploy/midl_regtest/ instead.");
-    return;
-  }
 
   console.log("EVM Deployer Contract Deployment");
   console.log("=================================");
@@ -47,9 +41,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
   if (!process.env.DEPLOYER_PUBLIC_KEY) {
     throw new Error("DEPLOYER_PUBLIC_KEY must be set in .env file");
-  }
-  if (!process.env.DEPLOYER_ADDRESS) {
-    throw new Error("DEPLOYER_ADDRESS must be set in .env file");
   }
 
   // Create deployer wallet
@@ -66,10 +57,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     );
   }
 
+  // Compute expected Deployer address from wallet + nonce
+  const expectedDeployerAddress = computeDeployerAddress(hre, deployerAddress);
+
   console.log(`\nDeployer Wallet: ${deployerAddress}`);
+  console.log(`Expected Deployer: ${expectedDeployerAddress}`);
 
   // Check if Deployer contract already exists
-  const expectedDeployerAddress = process.env.DEPLOYER_ADDRESS;
   const existingCode = await hre.ethers.provider.getCode(expectedDeployerAddress);
   if (existingCode !== "0x") {
     console.log(`\nDeployer already deployed at: ${expectedDeployerAddress}`);
@@ -217,3 +211,8 @@ async function attemptDrain(
 
 export default func;
 func.tags = ["Deployer"];
+// Skip for MIDL networks (uses separate deploy scripts in deploy/midl_regtest/)
+func.skip = async (hre) => {
+  const network = await hre.ethers.provider.getNetwork();
+  return Number(network.chainId) === MIDL_CHAIN_ID;
+};

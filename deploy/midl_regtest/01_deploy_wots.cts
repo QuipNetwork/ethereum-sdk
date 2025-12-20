@@ -4,12 +4,15 @@
 
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
+import { getBalance } from "@midl/core";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { loadReleaseBytecode } = require("../../lib/deploy.cts");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { getMidlEnvironment } = require("../../lib/midl.cts");
 
-// Type import for MidlHRE
-import type { MidlHRE } from "../../lib/midl.cts";
+// Type import for MidlEnvironment
+import type { MidlEnvironment } from "../../lib/midl.cts";
 
 /**
  * MIDL WOTSPlus Library Deployment
@@ -18,33 +21,38 @@ import type { MidlHRE } from "../../lib/midl.cts";
  * Uses the stored release bytecode from deployments/bytecode/ to ensure
  * deterministic addresses matching the mainnet deployment.
  *
+ * Supports both PRIVATE_KEY (same address as Ethereum) and BTC_MNEMONIC.
+ *
  * Prerequisites:
  * - Deployer contract must be deployed (run with --tags Deployer first)
- * - BTC_MNEMONIC wallet must have funds
+ * - Operations wallet must have funds
  *
  * Usage:
  * npx hardhat deploy --network midl_regtest --tags WOTSPlus
  */
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
-  const midlHre = hre as MidlHRE;
-
   console.log("MIDL WOTSPlus Library Deployment");
   console.log("=================================");
 
-  // Initialize the MIDL SDK
+  // Get MIDL environment (uses private key if available, falls back to mnemonic)
+  const midl: MidlEnvironment = getMidlEnvironment(hre, "midl_regtest");
+
+  // Initialize the MIDL SDK with operations wallet (index 0)
   console.log("Initializing MIDL connection...");
-  await midlHre.midl.initialize();
+  await midl.initialize(0);
 
   // Get addresses
-  const { address: btcAddress, addressType } = midlHre.midl.getAccount();
-  const evmAddress = midlHre.midl.getEVMAddress();
+  const account = midl.getAccount();
+  const btcAddress = account.address;
+  const addressType = account.addressType || "unknown";
+  const evmAddress = midl.getEVMAddress();
   console.log(`\nOperations Wallet:`);
   console.log(`  Bitcoin: ${btcAddress} (${addressType})`);
   console.log(`  EVM:     ${evmAddress}`);
 
   // Check for Deployer contract
-  const deployerDeployment = await midlHre.midl.getDeployment("Deployer");
+  const deployerDeployment = await midl.getDeployment("Deployer");
   if (!deployerDeployment) {
     throw new Error(
       "Deployer contract not found.\n" +
@@ -69,15 +77,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     return;
   }
 
-  // Check balance
-  const balance = await hre.ethers.provider.getBalance(evmAddress);
-  console.log(`\nWallet balance: ${hre.ethers.formatEther(balance)} ETH`);
+  // Query BTC balance from MIDL
+  const config = midl.getConfig();
+  if (!config) throw new Error("MIDL config not initialized");
+  const btcBalanceSats = await getBalance(config, btcAddress);
+  const btcBalance = btcBalanceSats / 100_000_000;
+  console.log(`\nBTC Balance: ${btcBalance} BTC (${btcBalanceSats} sats)`);
 
-  if (balance === 0n) {
+  if (btcBalanceSats === 0) {
     throw new Error(
-      "Operations wallet has no balance.\n" +
-        "Fund it with testnet BTC from: https://faucet.regtest.midl.xyz\n" +
-        "Or run: npx hardhat run scripts/drainDeployer.ts --network midl_regtest"
+      `Operations wallet has no BTC balance.\n` +
+        `Fund ${btcAddress} with testnet BTC from: https://faucet.regtest.midl.xyz`
     );
   }
 

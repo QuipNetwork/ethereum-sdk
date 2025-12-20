@@ -26,8 +26,8 @@
  *   - Uses PRIVATE_KEY for destination wallet
  *
  * MIDL Network:
- *   - Uses DEPLOYER_BTC_MNEMONIC for source wallet (derived EVM address)
- *   - Uses BTC_MNEMONIC for destination wallet (derived EVM address)
+ *   - Uses DEPLOYER_PRIVATE_KEY for source wallet (same as EVM)
+ *   - Uses PRIVATE_KEY for destination wallet (same as EVM)
  *
  * Usage:
  *   npx hardhat run scripts/drainDeployer.cts --network <network>
@@ -35,11 +35,15 @@
 
 import hre from "hardhat";
 import "dotenv/config";
+import { getBalance } from "@midl/core";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { EXPECTED_DEPLOYER_NONCE, getNetworkInfo, drainWallet, printDrainSummary } = require("../lib/deploy.cts");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { midlGetOperationsAddress, midlInitialize, midlPrintAddresses, hasMidlPlugin } = require("../lib/midl.cts");
+const { getMidlEnvironment, midlGetOperationsAddress, hasMidlPlugin } = require("../lib/midl.cts");
+
+// Type import for MidlEnvironment
+import type { MidlEnvironment } from "../lib/midl.cts";
 
 async function main() {
   const networkInfo = await getNetworkInfo(hre);
@@ -155,11 +159,11 @@ async function drainEvm() {
  */
 async function drainMidl() {
   // Validate environment
-  if (!process.env.DEPLOYER_BTC_MNEMONIC) {
-    throw new Error("DEPLOYER_BTC_MNEMONIC must be set in .env file");
+  if (!process.env.DEPLOYER_PRIVATE_KEY) {
+    throw new Error("DEPLOYER_PRIVATE_KEY must be set in .env file");
   }
-  if (!process.env.BTC_MNEMONIC) {
-    throw new Error("BTC_MNEMONIC must be set in .env file");
+  if (!process.env.PRIVATE_KEY) {
+    throw new Error("PRIVATE_KEY must be set in .env file");
   }
 
   // Check for MIDL plugin
@@ -169,29 +173,41 @@ async function drainMidl() {
     );
   }
 
-  // Initialize MIDL and get deployer addresses
-  console.log("\nInitializing MIDL connection...");
-  const { btcAddress, btcAddressType, evmAddress: deployerEvmAddress } = await midlInitialize(hre);
-  midlPrintAddresses("Deployer Wallet", btcAddress, btcAddressType, deployerEvmAddress);
+  // Get MIDL environment and initialize with deployer wallet (index 1)
+  const midl: MidlEnvironment = getMidlEnvironment(hre);
+  console.log("\nInitializing MIDL connection with deployer wallet...");
+  await midl.initialize(1);
 
-  // Get operations address from BTC_MNEMONIC
+  // Get deployer addresses
+  const account = midl.getAccount();
+  const btcAddress = account.address;
+  const btcAddressType = account.addressType || "p2wpkh";
+  const deployerEvmAddress = midl.getEVMAddress();
+
+  console.log("\nDeployer Wallet:");
+  console.log(`  Bitcoin: ${btcAddress} (${btcAddressType})`);
+  console.log(`  EVM:     ${deployerEvmAddress}`);
+
+  // Get operations address from PRIVATE_KEY
   const targetAddress = midlGetOperationsAddress();
   if (!targetAddress) {
-    throw new Error("Failed to derive operations address from BTC_MNEMONIC");
+    throw new Error("Failed to derive operations address from PRIVATE_KEY");
   }
 
   console.log("\nOperations Wallet:");
   console.log(`  EVM: ${targetAddress}`);
 
   // Get current state
-  const [nonce, balance] = await Promise.all([
-    hre.ethers.provider.getTransactionCount(deployerEvmAddress),
-    hre.ethers.provider.getBalance(deployerEvmAddress),
-  ]);
+  const config = midl.getConfig();
+  if (!config) throw new Error("MIDL config not initialized");
+
+  const nonce = await hre.ethers.provider.getTransactionCount(deployerEvmAddress);
+  const btcBalanceSats = await getBalance(config, btcAddress);
+  const btcBalance = btcBalanceSats / 100_000_000;
 
   console.log("\nDeployer Status:");
   console.log(`  Nonce:   ${nonce}`);
-  console.log(`  Balance: ${hre.ethers.formatEther(balance)} ETH`);
+  console.log(`  Balance: ${btcBalance} BTC (${btcBalanceSats} sats)`);
 
   // Perform the drain
   const result = await drainWallet(hre, deployerEvmAddress, targetAddress, {
@@ -206,8 +222,9 @@ async function drainMidl() {
   }
 
   // Verify final balance
-  const finalBalance = await hre.ethers.provider.getBalance(deployerEvmAddress);
-  console.log(`\nDeployer remaining balance: ${hre.ethers.formatEther(finalBalance)} ETH`);
+  const finalBalanceSats = await getBalance(config, btcAddress);
+  const finalBalance = finalBalanceSats / 100_000_000;
+  console.log(`\nDeployer remaining balance: ${finalBalance} BTC (${finalBalanceSats} sats)`);
 }
 
 main()

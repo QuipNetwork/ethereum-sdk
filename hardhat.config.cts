@@ -6,6 +6,7 @@ import "dotenv/config";
 import { Alchemy, Network } from "alchemy-sdk";
 import { task } from "hardhat/config";
 import { midlRegtest } from "@midl/executor";
+import { fixedSecretKeyPairConnector } from "@midl/node";
 
 task(
   "account",
@@ -103,8 +104,6 @@ const {
   ETHERSCAN_API_KEY_MANTLE,
   ETHERSCAN_API_KEY_CELO,
   ETHERSCAN_API_KEY_ARBITRUM,
-  DEPLOYER_BTC_MNEMONIC,
-  BTC_MNEMONIC,
 } = process.env;
 
 const config: HardhatUserConfig = {
@@ -124,18 +123,20 @@ const config: HardhatUserConfig = {
     },
   },
   midl: {
+    path: "deployments/midl",
     networks: {
-      // For deploying Deployer contract (one-time, nonce-critical)
-      midl_regtest_deployer: {
-        mnemonic: DEPLOYER_BTC_MNEMONIC!,
-        network: "regtest",
-        hardhatNetwork: "midl_regtest",
-        confirmationsRequired: 1,
-        btcConfirmationsRequired: 1,
-      },
-      // For all other deployments via Deployer contract
+      // Multi-key connector for MIDL deployments
+      // Index 0: Operations wallet (PRIVATE_KEY)
+      // Index 1: Deployer wallet (DEPLOYER_PRIVATE_KEY)
       midl_regtest: {
-        mnemonic: BTC_MNEMONIC!,
+        customConnector: (accountIndex: number) =>
+          fixedSecretKeyPairConnector({
+            privateKeys: [
+              PRIVATE_KEY || "", // Index 0: Operations wallet
+              DEPLOYER_PRIVATE_KEY || "", // Index 1: Deployer wallet
+            ],
+            accountIndex,
+          }),
         network: "regtest",
         hardhatNetwork: "midl_regtest",
         confirmationsRequired: 1,
@@ -147,13 +148,18 @@ const config: HardhatUserConfig = {
     hardhat: {
       accounts: [
         {
-          privateKey: `0x${PRIVATE_KEY}`,
+          // Test account 1 - uses PRIVATE_KEY or fallback for testing
+          privateKey: `0x${
+            PRIVATE_KEY ||
+            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+          }`,
           balance: "10000000000000000000", // 10 ETH in wei
         },
         {
+          // Test account 2 - uses DEPLOYER_PRIVATE_KEY or fallback for testing
           privateKey: `0x${
             DEPLOYER_PRIVATE_KEY ||
-            "1234567890123456789012345678901234567890123456789012345678901234"
+            "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
           }`,
           balance: "10000000000000000000", // 10 ETH in wei
         },
@@ -214,7 +220,11 @@ const config: HardhatUserConfig = {
     midl_regtest: {
       url: midlRegtest.rpcUrls.default.http[0],
       chainId: midlRegtest.id,
+      deploy: ["deploy/midl_regtest/"],
     },
+  },
+  paths: {
+    deploy: ["deploy/evm/"],
   },
   etherscan: {
     apiKey: {

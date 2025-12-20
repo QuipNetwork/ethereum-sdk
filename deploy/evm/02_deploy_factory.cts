@@ -37,12 +37,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const network = await hre.ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
 
-  // Skip for MIDL network (uses separate deploy scripts)
-  if (chainId === MIDL_CHAIN_ID) {
-    console.log("Skipping EVM deploy for MIDL network. Use deploy/midl_regtest/ instead.");
-    return;
-  }
-
   console.log("EVM QuipFactory Deployment");
   console.log("==========================");
   console.log(`Network: ${network.name} (chainId: ${chainId})`);
@@ -188,3 +182,8 @@ async function saveAddresses(
 export default func;
 func.tags = ["QuipFactory"];
 func.dependencies = ["WOTSPlus"];
+// Skip for MIDL networks (uses separate deploy scripts in deploy/midl_regtest/)
+func.skip = async (hre) => {
+  const network = await hre.ethers.provider.getNetwork();
+  return Number(network.chainId) === MIDL_CHAIN_ID;
+};
