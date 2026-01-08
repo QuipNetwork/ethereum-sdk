@@ -232,6 +232,7 @@ const config: HardhatUserConfig = {
       celo: `${ETHERSCAN_API_KEY}`,
       // blockscout explorer does not need an API key
       degen: `none`,
+      midl_regtest: "not-required",
     },
     customChains: [
       // ===== Etherscan V2 Supported Chains =====
