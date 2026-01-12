@@ -91,19 +91,8 @@ const {
   API_URL_DEGEN,
   ALCHEMY_API_KEY,
   DEPLOYER_PRIVATE_KEY,
-  PRIVATE_KEY,
-  BASE_SEPOLIA_API_KEY,
-  BASE_API_KEY,
+  PRIVATE_KEY,  
   ETHERSCAN_API_KEY,
-  ETHERSCAN_SEPOLIA_API_KEY,
-  OP_ETHERSCAN_API_KEY,
-  OP_ETHERSCAN_SEPOLIA_API_KEY,
-  ETHERSCAN_API_KEY_AVAX,
-  ETHERSCAN_API_KEY_BSC,
-  ETHERSCAN_API_KEY_POLYGON,
-  ETHERSCAN_API_KEY_MANTLE,
-  ETHERSCAN_API_KEY_CELO,
-  ETHERSCAN_API_KEY_ARBITRUM,
 } = process.env;
 
 const config: HardhatUserConfig = {
@@ -228,44 +217,128 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
-      baseSepolia: `${BASE_SEPOLIA_API_KEY}`,
-      base: `${BASE_API_KEY}`,
-      optimisticEthereum: `${OP_ETHERSCAN_API_KEY}`,
-      optimismSepolia: `${OP_ETHERSCAN_SEPOLIA_API_KEY}`,
-      sepolia: `${ETHERSCAN_SEPOLIA_API_KEY}`,
+      // V2 API uses the same Etherscan API key for all supported chains
       mainnet: `${ETHERSCAN_API_KEY}`,
-      bsc: `${ETHERSCAN_API_KEY_BSC}`,
-      avalanche: `${ETHERSCAN_API_KEY_AVAX}`,
-      polygon: `${ETHERSCAN_API_KEY_POLYGON}`,
-      mantle: `${ETHERSCAN_API_KEY_MANTLE}`,
-      celo: `${ETHERSCAN_API_KEY_CELO}`,
-      arbitrumOne: `${ETHERSCAN_API_KEY_ARBITRUM}`,
-      degen: "none",
+      sepolia: `${ETHERSCAN_API_KEY}`,
+      base: `${ETHERSCAN_API_KEY}`,
+      baseSepolia: `${ETHERSCAN_API_KEY}`,
+      optimisticEthereum: `${ETHERSCAN_API_KEY}`,
+      optimismSepolia: `${ETHERSCAN_API_KEY}`,
+      bsc: `${ETHERSCAN_API_KEY}`,
+      avalanche: `${ETHERSCAN_API_KEY}`,
+      polygon: `${ETHERSCAN_API_KEY}`,
+      arbitrumOne: `${ETHERSCAN_API_KEY}`,
+      mantle: `${ETHERSCAN_API_KEY}`,
+      celo: `${ETHERSCAN_API_KEY}`,
+      // blockscout explorer does not need an API key
+      degen: `none`,
       midl_regtest: "not-required",
     },
     customChains: [
+      // ===== Etherscan V2 Supported Chains =====
+      {
+        network: "mainnet",
+        chainId: 1,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=1",
+          browserURL: "https://etherscan.io",
+        },
+      },
+      {
+        network: "sepolia",
+        chainId: 11155111,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=11155111",
+          browserURL: "https://sepolia.etherscan.io",
+        },
+      },
+      {
+        network: "base",
+        chainId: 8453,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=8453",
+          browserURL: "https://basescan.org",
+        },
+      },
+      {
+        network: "baseSepolia",
+        chainId: 84532,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=84532",
+          browserURL: "https://sepolia.basescan.org",
+        },
+      },
+      {
+        network: "optimisticEthereum",
+        chainId: 10,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=10",
+          browserURL: "https://optimistic.etherscan.io",
+        },
+      },
+      {
+        network: "optimismSepolia",
+        chainId: 11155420,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=11155420",
+          browserURL: "https://sepolia-optimism.etherscan.io",
+        },
+      },
+      {
+        network: "bsc",
+        chainId: 56,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=56",
+          browserURL: "https://bscscan.com",
+        },
+      },
+      {
+        network: "avalanche",
+        chainId: 43114,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=43114",
+          browserURL: "https://snowtrace.io",
+        },
+      },
+      {
+        network: "polygon",
+        chainId: 137,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=137",
+          browserURL: "https://polygonscan.com",
+        },
+      },
+      {
+        network: "arbitrumOne",
+        chainId: 42161,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=42161",
+          browserURL: "https://arbiscan.io",
+        },
+      },
       {
         network: "mantle",
         chainId: 5000,
         urls: {
-          apiURL: "https://explorer.mantle.xyz/api",
-          browserURL: "https://explorer.mantle.xyz",
+          apiURL: "https://api.etherscan.io/v2/api?chainid=5000",
+          browserURL: "https://mantlescan.xyz",
         },
       },
       {
         network: "celo",
         chainId: 42220,
         urls: {
-          apiURL: "https://api.celoscan.io/api",
-          browserURL: "https://celoscan.io/",
+          apiURL: "https://api.etherscan.io/v2/api?chainid=42220",
+          browserURL: "https://celoscan.io",
         },
       },
+      // ===== Non-Etherscan Chains (use their own explorers) =====
       {
         network: "degen",
         chainId: 666666666,
         urls: {
           apiURL: "https://explorer.degen.tips/api",
-          browserURL: "https://explorer.degen.tips/",
+          browserURL: "https://explorer.degen.tips",
         },
       },
       {
