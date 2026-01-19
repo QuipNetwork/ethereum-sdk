@@ -39,12 +39,22 @@
     "typechain": "hardhat typechain",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
     "test": "hardhat test",
-    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs"
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
+    "release": "hardhat compile && hardhat run scripts/release.cts --network hardhat"
   },
   "devDependencies": {
+    "@bitcoinerlab/secp256k1": "^1.2.0",
+    "@midl/executor": "file:../midl-js/packages/executor",
+    "@midl/hardhat-deploy": "file:../midl-js/packages/hardhat-deploy",
+    "@midl/logger": "file:../midl-js/packages/logger",
+    "@midl/midl-js-config": "file:../midl-js/packages/config",
+    "@midl/node": "file:../midl-js/packages/node",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "bitcoinjs-lib": "^7.0.0",
     "copyfiles": "^2.4.1",
+    "ecpair": "^3.0.0",
     "hardhat": "^2.22.19",
+    "hardhat-deploy": "^0.14.0",
     "prettier": "^2.8.8",
     "prettier-plugin-solidity": "^1.1.3",
     "rimraf": "^5.0.5",
@@ -52,6 +62,10 @@
     "tsup": "^8.5.1"
   },
   "dependencies": {
+    "@midl/connectors": "file:../midl-js/packages/connectors",
+    "@midl/core": "file:../midl-js/packages/core",
+    "@midl/react": "file:../midl-js/packages/react",
+    "@midl/viem": "^2.21.38",
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@quip.network/hashsigs": "^0.1.0",
