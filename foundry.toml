@@ -26,13 +26,6 @@ op_sepolia = "${API_URL_OP_SEPOLIA}"
 mainnet = "${API_URL_MAINNET}"
 base = "${API_URL_BASE}"
 optimism = "${API_URL_OPTIMISM}"
-bsc = "${API_URL_BSC}"
-avax = "${API_URL_AVAX}"
-polygon = "${API_URL_POLYGON}"
-mantle = "${API_URL_MANTLE}"
-celo = "${API_URL_CELO}"
-arbitrum = "${API_URL_ARBITRUM}"
-degen = "${API_URL_DEGEN}"
 
 [etherscan]
 mainnet = { key = "${ETHERSCAN_API_KEY}", chain = 1 }

@@ -20,5 +20,5 @@ module.exports = {
       },
     ],
   },
-  transformIgnorePatterns: ["node_modules/(?!(ethers|@ethersproject)/)"],
+  transformIgnorePatterns: ["node_modules/(?!viem/)"],
 };

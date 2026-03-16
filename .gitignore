@@ -11,18 +11,6 @@ bun.lock
 /cache_forge
 /dependencies
 
-# TypeChain files
-/typechain
-/typechain-types
-
-# solidity-coverage files
-/coverage
-/coverage.json
-
-# Hardhat Ignition default
-ignition/
-
-
 *.tmp.json
 dist/
 .DS_Store

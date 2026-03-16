@@ -14,11 +14,11 @@
     "sourceMap": true,
     "rootDir": ".",
     "baseUrl": ".",
-    "types": ["node", "jest"]
+    "types": ["node"]
   },
   "include": [
     "index.ts",
     "src/**/*"
   ],
-  "exclude": ["node_modules", "dist", "hardhat.config.cts", "scripts/**/*", "test/**/*"]
+  "exclude": ["node_modules", "dist", "hardhat.config.cts", "scripts/**/*", "test/**/*", "src/**/*.test.ts"]
 }
