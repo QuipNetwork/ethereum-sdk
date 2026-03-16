@@ -89,6 +89,7 @@ const {
   API_URL_CELO,
   API_URL_ARBITRUM,
   API_URL_DEGEN,
+  API_URL_JAMTON,
   ALCHEMY_API_KEY,
   DEPLOYER_PRIVATE_KEY,
   PRIVATE_KEY,  
@@ -206,6 +207,10 @@ const config: HardhatUserConfig = {
       url: API_URL_DEGEN,
       accounts: [`0x${PRIVATE_KEY}`],
     },
+    jamton: {
+      url: API_URL_JAMTON,
+      accounts: [`0x${PRIVATE_KEY}`],
+    },
     midl_regtest: {
       url: midlRegtest.rpcUrls.default.http[0],
       chainId: midlRegtest.id,
@@ -233,6 +238,7 @@ const config: HardhatUserConfig = {
       // blockscout explorer does not need an API key
       degen: `none`,
       midl_regtest: "not-required",
+      jamton: "none",
     },
     customChains: [
       // ===== Etherscan V2 Supported Chains =====
@@ -339,6 +345,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: "https://explorer.degen.tips/api",
           browserURL: "https://explorer.degen.tips",
+        },
+      },
+      {
+        network: "jamton",
+        chainId: 5589,
+        urls: {
+          apiURL: "https://rpc.jamton.network/",
+          browserURL: "https://polkadot.js.org/apps/?rpc=wss%3A%2F%2Frpc.jamton.network#/explorer",
         },
       },
       {
