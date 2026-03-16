@@ -1,8 +1,12 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "@midl/hardhat-deploy";
+import "hardhat-deploy";
 import "dotenv/config";
 import { Alchemy, Network } from "alchemy-sdk";
 import { task } from "hardhat/config";
+import { midlRegtest } from "@midl/executor";
+import { fixedSecretKeyPairConnector } from "@midl/node";
 
 task(
   "account",
@@ -88,34 +92,64 @@ const {
   API_URL_JAMTON,
   ALCHEMY_API_KEY,
   DEPLOYER_PRIVATE_KEY,
-  PRIVATE_KEY,
-  BASE_SEPOLIA_API_KEY,
-  BASE_API_KEY,
+  PRIVATE_KEY,  
   ETHERSCAN_API_KEY,
-  ETHERSCAN_SEPOLIA_API_KEY,
-  OP_ETHERSCAN_API_KEY,
-  OP_ETHERSCAN_SEPOLIA_API_KEY,
-  ETHERSCAN_API_KEY_AVAX,
-  ETHERSCAN_API_KEY_BSC,
-  ETHERSCAN_API_KEY_POLYGON,
-  ETHERSCAN_API_KEY_MANTLE,
-  ETHERSCAN_API_KEY_CELO,
-  ETHERSCAN_API_KEY_ARBITRUM,
 } = process.env;
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.28",
+  solidity: {
+    version: "0.8.28",
+    settings: {
+      evmVersion: "paris",
+      optimizer: {
+        enabled: false,
+        runs: 200,
+      },
+      metadata: {
+        // Exclude metadata hash for deterministic bytecode across environments
+        // This ensures CREATE2 addresses are consistent regardless of source paths
+        bytecodeHash: "none",
+      },
+    },
+  },
+  midl: {
+    path: "deployments/midl",
+    networks: {
+      // Multi-key connector for MIDL deployments
+      // Index 0: Operations wallet (PRIVATE_KEY)
+      // Index 1: Deployer wallet (DEPLOYER_PRIVATE_KEY)
+      midl_regtest: {
+        customConnector: (accountIndex: number) =>
+          fixedSecretKeyPairConnector({
+            privateKeys: [
+              PRIVATE_KEY || "", // Index 0: Operations wallet
+              DEPLOYER_PRIVATE_KEY || "", // Index 1: Deployer wallet
+            ],
+            accountIndex,
+          }),
+        network: "regtest",
+        hardhatNetwork: "midl_regtest",
+        confirmationsRequired: 1,
+        btcConfirmationsRequired: 1,
+      },
+    },
+  },
   networks: {
     hardhat: {
       accounts: [
         {
-          privateKey: `0x${PRIVATE_KEY}`,
+          // Test account 1 - uses PRIVATE_KEY or fallback for testing
+          privateKey: `0x${
+            PRIVATE_KEY ||
+            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+          }`,
           balance: "10000000000000000000", // 10 ETH in wei
         },
         {
+          // Test account 2 - uses DEPLOYER_PRIVATE_KEY or fallback for testing
           privateKey: `0x${
             DEPLOYER_PRIVATE_KEY ||
-            "1234567890123456789012345678901234567890123456789012345678901234"
+            "59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
           }`,
           balance: "10000000000000000000", // 10 ETH in wei
         },
@@ -177,47 +211,140 @@ const config: HardhatUserConfig = {
       url: API_URL_JAMTON,
       accounts: [`0x${PRIVATE_KEY}`],
     },
+    midl_regtest: {
+      url: midlRegtest.rpcUrls.default.http[0],
+      chainId: midlRegtest.id,
+      deploy: ["deploy/midl_regtest/"],
+    },
+  },
+  paths: {
+    deploy: ["deploy/evm/"],
   },
   etherscan: {
     apiKey: {
-      baseSepolia: `${BASE_SEPOLIA_API_KEY}`,
-      base: `${BASE_API_KEY}`,
-      optimisticEthereum: `${OP_ETHERSCAN_API_KEY}`,
-      optimismSepolia: `${OP_ETHERSCAN_SEPOLIA_API_KEY}`,
-      sepolia: `${ETHERSCAN_SEPOLIA_API_KEY}`,
+      // V2 API uses the same Etherscan API key for all supported chains
       mainnet: `${ETHERSCAN_API_KEY}`,
-      bsc: `${ETHERSCAN_API_KEY_BSC}`,
-      avalanche: `${ETHERSCAN_API_KEY_AVAX}`,
-      polygon: `${ETHERSCAN_API_KEY_POLYGON}`,
-      mantle: `${ETHERSCAN_API_KEY_MANTLE}`,
-      celo: `${ETHERSCAN_API_KEY_CELO}`,
-      arbitrumOne: `${ETHERSCAN_API_KEY_ARBITRUM}`,
-      degen: "none",
+      sepolia: `${ETHERSCAN_API_KEY}`,
+      base: `${ETHERSCAN_API_KEY}`,
+      baseSepolia: `${ETHERSCAN_API_KEY}`,
+      optimisticEthereum: `${ETHERSCAN_API_KEY}`,
+      optimismSepolia: `${ETHERSCAN_API_KEY}`,
+      bsc: `${ETHERSCAN_API_KEY}`,
+      avalanche: `${ETHERSCAN_API_KEY}`,
+      polygon: `${ETHERSCAN_API_KEY}`,
+      arbitrumOne: `${ETHERSCAN_API_KEY}`,
+      mantle: `${ETHERSCAN_API_KEY}`,
+      celo: `${ETHERSCAN_API_KEY}`,
+      // blockscout explorer does not need an API key
+      degen: `none`,
+      midl_regtest: "not-required",
       jamton: "none",
     },
     customChains: [
+      // ===== Etherscan V2 Supported Chains =====
+      {
+        network: "mainnet",
+        chainId: 1,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=1",
+          browserURL: "https://etherscan.io",
+        },
+      },
+      {
+        network: "sepolia",
+        chainId: 11155111,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=11155111",
+          browserURL: "https://sepolia.etherscan.io",
+        },
+      },
+      {
+        network: "base",
+        chainId: 8453,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=8453",
+          browserURL: "https://basescan.org",
+        },
+      },
+      {
+        network: "baseSepolia",
+        chainId: 84532,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=84532",
+          browserURL: "https://sepolia.basescan.org",
+        },
+      },
+      {
+        network: "optimisticEthereum",
+        chainId: 10,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=10",
+          browserURL: "https://optimistic.etherscan.io",
+        },
+      },
+      {
+        network: "optimismSepolia",
+        chainId: 11155420,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=11155420",
+          browserURL: "https://sepolia-optimism.etherscan.io",
+        },
+      },
+      {
+        network: "bsc",
+        chainId: 56,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=56",
+          browserURL: "https://bscscan.com",
+        },
+      },
+      {
+        network: "avalanche",
+        chainId: 43114,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=43114",
+          browserURL: "https://snowtrace.io",
+        },
+      },
+      {
+        network: "polygon",
+        chainId: 137,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=137",
+          browserURL: "https://polygonscan.com",
+        },
+      },
+      {
+        network: "arbitrumOne",
+        chainId: 42161,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=42161",
+          browserURL: "https://arbiscan.io",
+        },
+      },
       {
         network: "mantle",
         chainId: 5000,
         urls: {
-          apiURL: "https://explorer.mantle.xyz/api",
-          browserURL: "https://explorer.mantle.xyz",
+          apiURL: "https://api.etherscan.io/v2/api?chainid=5000",
+          browserURL: "https://mantlescan.xyz",
         },
       },
       {
         network: "celo",
         chainId: 42220,
         urls: {
-          apiURL: "https://api.celoscan.io/api",
-          browserURL: "https://celoscan.io/",
+          apiURL: "https://api.etherscan.io/v2/api?chainid=42220",
+          browserURL: "https://celoscan.io",
         },
       },
+      // ===== Non-Etherscan Chains (use their own explorers) =====
       {
         network: "degen",
         chainId: 666666666,
         urls: {
           apiURL: "https://explorer.degen.tips/api",
-          browserURL: "https://explorer.degen.tips/",
+          browserURL: "https://explorer.degen.tips",
         },
       },
       {
@@ -225,8 +352,15 @@ const config: HardhatUserConfig = {
         chainId: 5589,
         urls: {
           apiURL: "https://rpc.jamton.network/",
-          browserURL:
-            "https://polkadot.js.org/apps/?rpc=wss%3A%2F%2Frpc.jamton.network#/explorer",
+          browserURL: "https://polkadot.js.org/apps/?rpc=wss%3A%2F%2Frpc.jamton.network#/explorer",
+        },
+      },
+      {
+        network: "midl_regtest",
+        chainId: 777,
+        urls: {
+          apiURL: "https://blockscout.regtest.midl.xyz/api",
+          browserURL: "https://blockscout.regtest.midl.xyz",
         },
       },
     ],

@@ -21,8 +21,10 @@ import type { QuipFactory } from "../typechain-types/contracts/QuipFactory.js";
 import type { QuipWallet } from "../typechain-types/contracts/QuipWallet.js";
 import {
   computeVaultAddress,
+  getNetworkAddresses,
   QUIP_FACTORY_ADDRESS,
   WOTS_PLUS_ADDRESS,
+  CHAIN_IDS,
 } from "./addresses.js";
 
 import { WOTSPlus } from "@quip.network/hashsigs";
@@ -56,6 +58,7 @@ export const SUPPORTED_NETWORKS = {
   MAINNET: "mainnet",
   BASE: "base",
   OPTIMISM: "optimism",
+  MIDL_TESTNET: "midl",
 } as const;
 
 export type NetworkType =
@@ -296,19 +299,45 @@ export class QuipWalletClient {
   }
 }
 
+/**
+ * EIP-1193 compatible wallet provider interface
+ * Both ethers.js and MIDL.js providers implement this interface
+ */
+export interface WalletProvider {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}
+
 export class QuipClient {
   private provider: ethers.Provider;
   private signer?: ethers.Signer;
   private factory?: QuipFactory;
   private initializationPromise: Promise<void>;
+  private chainId?: number;
 
-  constructor(signer: ethers.Eip1193Provider) {
-    this.provider = new ethers.BrowserProvider(signer);
+  /**
+   * Create a QuipClient instance
+   * Works with any EIP-1193 compatible provider (ethers.js, MIDL.js, etc.)
+   *
+   * @param provider - An EIP-1193 compatible wallet provider
+   */
+  constructor(provider: ethers.Eip1193Provider | WalletProvider) {
+    this.provider = new ethers.BrowserProvider(provider as ethers.Eip1193Provider);
     this.initializationPromise = this.initialize();
+  }
+
+  /**
+   * Factory method for creating QuipClient instances
+   * Provides a cleaner async initialization pattern
+   */
+  static async create(provider: ethers.Eip1193Provider | WalletProvider): Promise<QuipClient> {
+    const client = new QuipClient(provider);
+    await client.initializationPromise;
+    return client;
   }
 
   private async initialize() {
     await this.setSigner();
+    await this.detectNetwork();
     await this.setQuipFactory();
   }
 
@@ -318,11 +347,50 @@ export class QuipClient {
     }
   }
 
+  private async detectNetwork() {
+    const network = await this.provider.getNetwork();
+    this.chainId = Number(network.chainId);
+  }
+
   private async setQuipFactory() {
+    // Get network-appropriate factory address
+    const addresses = getNetworkAddresses(this.chainId);
     this.factory = QuipFactory__factory.connect(
-      QUIP_FACTORY_ADDRESS,
+      addresses.QuipFactory,
       this.signer!
     );
+  }
+
+  /**
+   * Get the current chain ID
+   * @returns The chain ID of the connected network
+   */
+  getChainId(): number {
+    if (!this.chainId) {
+      throw new Error("Client not initialized. Call await client.initializationPromise first.");
+    }
+    return this.chainId;
+  }
+
+  /**
+   * Check if connected to MIDL network
+   * @returns true if connected to MIDL testnet (chain ID 777)
+   */
+  isMidlNetwork(): boolean {
+    return this.chainId === CHAIN_IDS.MIDL_TESTNET;
+  }
+
+  /**
+   * Get the connected wallet's owner address
+   * Returns EVM-format address regardless of underlying wallet type
+   * (MIDL.js derives EVM address from Bitcoin keys)
+   */
+  async getOwnerAddress(): Promise<string> {
+    await this.initializationPromise;
+    if (!this.signer) {
+      throw new Error("No signer available. Connect a wallet first.");
+    }
+    return await this.signer.getAddress();
   }
 
   async getCreationFee(): Promise<bigint> {
