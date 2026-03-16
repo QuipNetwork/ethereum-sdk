@@ -6,6 +6,11 @@ bun.lock
 /cache
 /artifacts
 
+# Foundry files
+/out
+/cache_forge
+/dependencies
+
 # TypeChain files
 /typechain
 /typechain-types

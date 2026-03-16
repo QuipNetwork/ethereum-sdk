@@ -14,15 +14,11 @@
     "sourceMap": true,
     "rootDir": ".",
     "baseUrl": ".",
-    "paths": {
-      "*": ["node_modules/*", "typechain-types/*"]
-    },
-    "types": ["node", "hardhat", "mocha", "chai", "jest"]
+    "types": ["node", "jest"]
   },
   "include": [
     "index.ts",
-    "src/**/*",
-    "typechain-types/**/*"
+    "src/**/*"
   ],
   "exclude": ["node_modules", "dist", "hardhat.config.cts", "scripts/**/*", "test/**/*"]
 }

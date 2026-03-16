@@ -10,11 +10,7 @@
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
-    "dist/**/*.json",
-    "typechain-types/**/*.d.ts",
-    "typechain-types/**/*.js",
-    "artifacts/contracts/**/*.json",
-    "!artifacts/contracts/**/*.dbg.json"
+    "dist/**/*.json"
   ],
   "exports": {
     ".": {
@@ -24,23 +20,18 @@
     "./addresses": {
       "import": "./dist/addresses.js",
       "types": "./dist/addresses.d.ts"
-    },
-    "./typechain-types": {
-      "import": "./typechain-types/index.js",
-      "types": "./typechain-types/index.d.ts"
     }
   },
   "scripts": {
-    "clean": "rimraf dist typechain-types artifacts cache",
-    "prebuild": "npm run clean",
+    "clean": "rimraf dist out cache_forge",
+    "copy-abi": "node scripts/copy-abi.js",
     "copy-assets": "copyfiles -u 1 \"src/**/*.json\" dist",
-    "build": "hardhat compile && tsc -p tsconfig.build.json && npm run copy-assets",
+    "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json && npm run copy-assets",
     "prepare": "npm run build",
-    "typechain": "hardhat typechain",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
-    "test": "hardhat test",
+    "test": "forge test",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
-    "release": "hardhat compile && hardhat run scripts/release.cts --network hardhat"
+    "release": "forge build && npx tsx scripts/release.ts"
   },
   "devDependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
@@ -49,7 +40,6 @@
     "@midl/logger": "file:../midl-js/packages/logger",
     "@midl/midl-js-config": "file:../midl-js/packages/config",
     "@midl/node": "file:../midl-js/packages/node",
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "bitcoinjs-lib": "^7.0.0",
     "copyfiles": "^2.4.1",
     "ecpair": "^3.0.0",
@@ -65,7 +55,7 @@
     "@midl/connectors": "file:../midl-js/packages/connectors",
     "@midl/core": "file:../midl-js/packages/core",
     "@midl/react": "file:../midl-js/packages/react",
-    "@midl/viem": "^2.21.38",
+    "viem": "^2.21.0",
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@quip.network/hashsigs": "^0.1.0",
