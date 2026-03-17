@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.33;
 
 import {DeployerTest} from "../Deployer.t.sol";
 import {Deployer} from "../../../contracts/Deployer.sol";
