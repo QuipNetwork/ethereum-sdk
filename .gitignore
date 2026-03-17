@@ -13,6 +13,10 @@ bun.lock
 
 *.tmp.json
 dist/
+
+# Generated SDK files
+src/abi/
+src/bytecode.json
 .DS_Store
 
 pwCrack.ts

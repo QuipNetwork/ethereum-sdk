@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Copy ABIs from Foundry output to src/abi/
+ * Copy ABIs from Foundry output to src/abi/ and extract bytecode.
  *
- * Reads the full Foundry artifact JSON from out/ and extracts just the ABI array,
- * writing it as a TypeScript file with `as const` for viem type inference.
+ * 1. Reads Foundry artifact JSON from out/ and extracts the ABI array,
+ *    writing it as a TypeScript file with `as const` for viem type inference.
+ * 2. Generates a barrel re-export file at src/abi/index.ts.
+ * 3. Extracts QuipWallet bytecode, links the WOTSPlus library address,
+ *    and writes src/bytecode.json.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
@@ -29,6 +32,8 @@ const CONTRACTS = [
 
 mkdirSync(ABI_DIR, { recursive: true });
 
+const barrelLines = [];
+
 for (const contract of CONTRACTS) {
   const artifactPath = join(OUT_DIR, contract.path);
   const artifact = JSON.parse(readFileSync(artifactPath, "utf-8"));
@@ -40,4 +45,32 @@ for (const contract of CONTRACTS) {
   const outPath = join(ABI_DIR, `${contract.name}.ts`);
   writeFileSync(outPath, tsContent);
   console.log(`Wrote ${outPath} (${abi.length} entries)`);
+
+  barrelLines.push(`export { ${exportName} } from "./${contract.name}.js";`);
 }
+
+// Write barrel re-export
+const barrelPath = join(ABI_DIR, "index.ts");
+writeFileSync(barrelPath, barrelLines.join("\n") + "\n");
+console.log(`Wrote ${barrelPath}`);
+
+// --- Bytecode extraction ---
+const addresses = JSON.parse(
+  readFileSync(join(ROOT, "src", "addresses.json"), "utf-8")
+);
+const wotsAddress = addresses.WOTSPlus.toLowerCase().replace("0x", "");
+
+const walletArtifact = JSON.parse(
+  readFileSync(join(OUT_DIR, "QuipWallet.sol/QuipWallet.json"), "utf-8")
+);
+let bytecode = walletArtifact.bytecode.object;
+
+// Replace library placeholder (__$<hash>$__) with actual WOTSPlus address
+bytecode = bytecode.replace(/__\$[0-9a-fA-F]{34}\$__/g, wotsAddress);
+
+const bytecodeOut = join(ROOT, "src", "bytecode.json");
+writeFileSync(
+  bytecodeOut,
+  JSON.stringify({ quipWalletCreationCode: bytecode }, null, 2) + "\n"
+);
+console.log(`Wrote ${bytecodeOut} (${bytecode.length} hex chars)`);

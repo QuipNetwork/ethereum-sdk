@@ -20,6 +20,10 @@
     "./addresses": {
       "import": "./dist/addresses.js",
       "types": "./dist/addresses.d.ts"
+    },
+    "./abi": {
+      "import": "./dist/src/abi/index.js",
+      "types": "./dist/src/abi/index.d.ts"
     }
   },
   "scripts": {

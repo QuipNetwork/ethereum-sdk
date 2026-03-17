@@ -32,7 +32,8 @@ import {
   parseEventLogs,
 } from "viem";
 
-import { quipFactoryAbi, quipWalletAbi } from "./contracts.js";
+import { quipFactoryAbi } from "./abi/QuipFactory.js";
+import { quipWalletAbi } from "./abi/QuipWallet.js";
 import {
   computeVaultAddress,
   getNetworkAddresses,
@@ -42,13 +43,17 @@ import {
 import { WOTSPlus } from "@quip.network/hashsigs";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { randomBytes } from "@noble/ciphers/webcrypto";
+import { equalBytes } from "@noble/ciphers/utils";
 
 // Re-export ABIs
-export { deployerAbi, quipFactoryAbi, quipWalletAbi } from "./contracts.js";
+export { deployerAbi } from "./abi/Deployer.js";
+export { quipFactoryAbi } from "./abi/QuipFactory.js";
+export { quipWalletAbi } from "./abi/QuipWallet.js";
 
 export * from "./addresses.js";
 export * from "./constants.js";
 
+// TODO: SUPPORTED_NETWORKS and NetworkType may be unused — CHAIN_IDS in addresses.ts is canonical. Verify against frontend before removing.
 export const SUPPORTED_NETWORKS = {
   SEPOLIA: "sepolia",
   SEPOLIA_OPTIMISM: "sepolia_optimism",
@@ -98,7 +103,7 @@ export class QuipSigner {
     const privateSeed = Uint8Array.from([...this.quantumSecret, ...vaultId]);
     const keypair = this.wots.generateKeyPair(privateSeed, publicSeed);
     const returnedSeed = keypair.publicKey.slice(0, 32);
-    if (!Buffer.from(publicSeed).equals(Buffer.from(returnedSeed))) {
+    if (!equalBytes(publicSeed, returnedSeed)) {
       throw new Error("Invalid public seed returned: " + returnedSeed);
     }
     return {
@@ -278,34 +283,29 @@ export class QuipWalletClient {
     const messageHash = keccak_256(hexToBytes(packedMessageData));
     const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
 
-    let gas: bigint | undefined;
-    try {
-      const estimatedGas = await this.publicClient.estimateContractGas({
-        address: this.walletAddress,
-        abi: quipWalletAbi,
-        functionName: "executeWithWinternitz",
-        args: [
-          pubkeyToHex(nextPqOwner.publicKey),
-          { elements: sigToHex(pqSig) },
-          target,
-          opdata,
-        ],
-        value: executeFee,
-        account: this.account,
-      });
-      gas = (estimatedGas * 120n) / 100n; // 20% buffer
-    } catch (error: any) {
-      console.error("Gas estimation failed:");
-      console.error("Target:", target);
-      console.error("Execute fee:", executeFee.toString());
-      if (error.reason) {
-        console.error("Revert reason:", error.reason);
-      }
-      console.error(`Gas estimation failed: ${error.message || error}`);
-    }
-
+    let gas: bigint;
     if (options.gasLimit) {
       gas = options.gasLimit;
+    } else {
+      try {
+        const estimatedGas = await this.publicClient.estimateContractGas({
+          address: this.walletAddress,
+          abi: quipWalletAbi,
+          functionName: "executeWithWinternitz",
+          args: [
+            pubkeyToHex(nextPqOwner.publicKey),
+            { elements: sigToHex(pqSig) },
+            target,
+            opdata,
+          ],
+          value: executeFee,
+          account: this.account,
+        });
+        gas = (estimatedGas * 120n) / 100n; // 20% buffer
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Gas estimation failed for executeWithWinternitz on ${target}: ${message}`);
+      }
     }
 
     const hash = await this.walletClient.writeContract({
@@ -321,7 +321,7 @@ export class QuipWalletClient {
       ],
       value: executeFee,
       account: this.account,
-      ...(gas && { gas }),
+      gas,
     });
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
@@ -506,11 +506,7 @@ export class QuipClient {
     const curSeed = hexToBytes(curPqOwner.publicSeed);
     const curPubKeyHash = hexToBytes(curPqOwner.publicKeyHash);
     const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
-    if (
-      !Buffer.from(keypair.publicKey.publicKeyHash).equals(
-        Buffer.from(curPubKeyHash)
-      )
-    ) {
+    if (!equalBytes(keypair.publicKey.publicKeyHash, curPubKeyHash)) {
       throw new Error("Invalid signer for this wallet");
     }
     return client;
@@ -540,8 +536,72 @@ export class QuipClient {
     }
 
     const vaultMap = new Map<string, Address>();
+    const batchSize = 50;
+    let offset = 0;
 
-    // Start from index 0 and keep trying until we hit an error
+    while (true) {
+      // Batch-read vaultIds
+      const vaultIdCalls = Array.from({ length: batchSize }, (_, i) => ({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "vaultIds" as const,
+        args: [this.account!, BigInt(offset + i)] as const,
+      }));
+
+      let vaultIdResults: { status: "success" | "failure"; result?: Hex }[];
+      try {
+        vaultIdResults = (await this.publicClient.multicall({
+          contracts: vaultIdCalls,
+          allowFailure: true,
+        })) as { status: "success" | "failure"; result?: Hex }[];
+      } catch {
+        // Multicall3 not available — fall back to sequential reads
+        return this.getVaultsSequential();
+      }
+
+      const validVaultIds: Hex[] = [];
+      for (const r of vaultIdResults) {
+        if (r.status === "success" && r.result) {
+          validVaultIds.push(r.result);
+        } else {
+          break; // past end of array
+        }
+      }
+
+      if (validVaultIds.length === 0) break;
+
+      // Batch-read quips addresses for all valid vault IDs
+      const quipsCalls = validVaultIds.map((vaultId) => ({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "quips" as const,
+        args: [this.account!, vaultId] as const,
+      }));
+
+      const quipsResults = (await this.publicClient.multicall({
+        contracts: quipsCalls,
+        allowFailure: true,
+      })) as { status: "success" | "failure"; result?: Address }[];
+
+      for (let i = 0; i < validVaultIds.length; i++) {
+        const r = quipsResults[i];
+        if (r.status === "success" && r.result && r.result !== zeroAddress) {
+          vaultMap.set(validVaultIds[i], r.result);
+        }
+      }
+
+      if (validVaultIds.length < batchSize) break;
+      offset += batchSize;
+    }
+
+    return vaultMap;
+  }
+
+  /**
+   * Sequential fallback for chains without Multicall3 (e.g. MIDL testnet).
+   */
+  private async getVaultsSequential(): Promise<Map<string, Address>> {
+    const vaultMap = new Map<string, Address>();
     let index = 0;
     while (true) {
       try {
@@ -549,25 +609,21 @@ export class QuipClient {
           address: this.factoryAddress!,
           abi: quipFactoryAbi,
           functionName: "vaultIds",
-          args: [this.account, BigInt(index)],
+          args: [this.account!, BigInt(index)],
         });
         const walletAddress = await this.publicClient.readContract({
           address: this.factoryAddress!,
           abi: quipFactoryAbi,
           functionName: "quips",
-          args: [this.account, vaultId],
+          args: [this.account!, vaultId],
         });
-        if (walletAddress === zeroAddress) {
-          throw new Error(`Invalid contract state for vault ID ${vaultId}`);
-        }
+        if (walletAddress === zeroAddress) break;
         vaultMap.set(vaultId, walletAddress);
         index++;
       } catch {
-        // We've reached the end of the array
         break;
       }
     }
-
     return vaultMap;
   }
 }
