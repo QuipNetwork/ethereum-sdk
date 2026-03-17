@@ -1,4 +1,10 @@
 [[dependencies]]
+name = "@quip.network/hashsigs-solidity"
+version = "0.1.0"
+git = "https://gitlab.com/piqued/hashsigs-solidity.git"
+rev = "e54234702253fcafdeff110b78d4b5b6981aad58"
+
+[[dependencies]]
 name = "forge-std"
 version = "1.14.0"
 url = "https://soldeer-revisions.s3.amazonaws.com/forge-std/1_14_0_05-01-2026_15:24:39_forge-std-1.14.zip"

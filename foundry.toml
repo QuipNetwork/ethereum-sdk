@@ -1,7 +1,7 @@
 [profile.default]
 src = "contracts"
 out = "out"
-libs = ["dependencies", "node_modules"]
+libs = ["dependencies"]
 solc_version = "0.8.28"
 evm_version = "paris"
 optimizer = false
@@ -11,13 +11,9 @@ bytecode_hash = "none"
 extra_output = ["abi", "storageLayout"]
 extra_output_files = ["abi"]
 
-remappings = [
-    "forge-std/=dependencies/forge-std-1.14.0/src/",
-    "@quip.network/hashsigs-solidity/=node_modules/@quip.network/hashsigs-solidity/",
-]
-
 [dependencies]
 forge-std = "1.14.0"
+"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", rev = "e54234702253fcafdeff110b78d4b5b6981aad58" }
 
 [rpc_endpoints]
 sepolia = "${API_URL_SEPOLIA}"
