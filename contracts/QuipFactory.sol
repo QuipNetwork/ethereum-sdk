@@ -17,9 +17,10 @@
 pragma solidity ^0.8.28;
 
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import "./interfaces/IQuipFactory.sol";
 import "./QuipWallet.sol";
 
-contract QuipFactory {
+contract QuipFactory is IQuipFactory {
     address payable public admin;
     address public immutable wotsLibrary;
 
@@ -33,15 +34,6 @@ contract QuipFactory {
 
     // Track vaultIds for each owner
     mapping(address => bytes32[]) public vaultIds;
-
-    event QuipCreated(
-        uint256 amount,
-        uint256 when,
-        bytes32 vaultId,
-        address creator,
-        WOTSPlus.WinternitzAddress pqPubkey,
-        address quip
-    );
 
     receive() external payable {}
 

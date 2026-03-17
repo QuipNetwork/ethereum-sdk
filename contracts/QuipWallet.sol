@@ -17,11 +17,12 @@
 pragma solidity ^0.8.28;
 
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import "./interfaces/IQuipWallet.sol";
 import "./QuipFactory.sol";
 
 // Uncomment this line to use console.log
 
-contract QuipWallet {
+contract QuipWallet is IQuipWallet {
     address payable public quipFactory;
     address payable public owner;
     WOTSPlus.WinternitzAddress public pqOwner;
@@ -29,14 +30,6 @@ contract QuipWallet {
     receive() external payable {}
 
     fallback() external payable {}
-
-    event pqTransfer(
-        uint256 amount,
-        uint256 when,
-        WOTSPlus.WinternitzAddress pqFrom,
-        WOTSPlus.WinternitzAddress pqNext,
-        address to
-    );
 
     constructor(address payable creator, address payable newOwner) payable {
         quipFactory = creator;

@@ -16,11 +16,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.28;
 
+import "./interfaces/IDeployer.sol";
+
 // Deployer allows us to deploy contracts with consistent addresses across EVM chains
 // using create2
-contract Deployer {
-    event Deploy(address addr);
-
+contract Deployer is IDeployer {
     function deploy(
         bytes memory bytecode,
         uint256 salt
