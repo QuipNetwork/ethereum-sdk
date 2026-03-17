@@ -73,7 +73,7 @@ async function main() {
   console.log("-".repeat(60));
 
   const WOTSPlus = await hre.ethers.getContractFactory(
-    "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus"
+    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus"
   );
   const wotsBytecode = WOTSPlus.bytecode;
   const wotsAddress = await computeCreate2Address(
@@ -119,7 +119,7 @@ async function main() {
   // QuipFactory needs WOTSPlus library linked
   const QuipFactory = await hre.ethers.getContractFactory("QuipFactory", {
     libraries: {
-      "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus": wotsAddress,
+      "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus": wotsAddress,
     },
   });
 

@@ -35,11 +35,14 @@
   },
   "devDependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
+    "@midl/connectors": "file:../midl-js/packages/connectors",
+    "@midl/core": "file:../midl-js/packages/core",
     "@midl/executor": "file:../midl-js/packages/executor",
     "@midl/hardhat-deploy": "file:../midl-js/packages/hardhat-deploy",
     "@midl/logger": "file:../midl-js/packages/logger",
     "@midl/midl-js-config": "file:../midl-js/packages/config",
     "@midl/node": "file:../midl-js/packages/node",
+    "@midl/react": "file:../midl-js/packages/react",
     "@types/jest": "^29.5.14",
     "bitcoinjs-lib": "^7.0.0",
     "copyfiles": "^2.4.1",
@@ -54,13 +57,9 @@
     "ts-jest": "^29.3.2"
   },
   "dependencies": {
-    "@midl/connectors": "file:../midl-js/packages/connectors",
-    "@midl/core": "file:../midl-js/packages/core",
-    "@midl/react": "file:../midl-js/packages/react",
     "viem": "^2.21.0",
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
-    "@quip.network/hashsigs": "^0.1.0",
-    "@quip.network/hashsigs-solidity": "^0.1.0"
+    "@quip.network/hashsigs": "^0.1.0"
   }
 }

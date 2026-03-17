@@ -1,3 +1,8 @@
+// Hardhat is used exclusively for:
+// - MIDL deploy scripts (deploy/midl_regtest/)
+// - Release script (scripts/release.cts)
+// EVM chains use Foundry for compilation, testing, and deployment.
+
 import { HardhatUserConfig } from "hardhat/config";
 import "@midl/hardhat-deploy";
 import "hardhat-deploy";
