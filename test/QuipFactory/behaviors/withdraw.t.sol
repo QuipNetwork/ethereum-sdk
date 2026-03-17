@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract QuipFactory_withdraw is QuipFactoryTest {
     function setUp() public override {

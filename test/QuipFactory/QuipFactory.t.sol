@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
+import {Test} from "forge-std-1.14.0/Test.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
 import {QuipWallet} from "../../contracts/QuipWallet.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title QuipFactory Base Test
 /// @dev Base contract for testing QuipFactory. Deploys full stack via CREATE2.
@@ -129,7 +129,7 @@ contract QuipFactoryTest is Test {
     ///      Uses vm.getCode to get the artifact bytecode.
     function _getWOTSPlusBytecode() internal returns (bytes memory) {
         return vm.getCode(
-            "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol:WOTSPlus"
+            "WOTSPlus.sol:WOTSPlus"
         );
     }
 }

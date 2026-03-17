@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.28;
 
-import "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import "./QuipFactory.sol";
 
 // Uncomment this line to use console.log

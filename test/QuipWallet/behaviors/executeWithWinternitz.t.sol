@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {DummyContract} from "../../../contracts/test/DummyContract.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract QuipWallet_executeWithWinternitz is QuipWalletTest {
     DummyContract public dummy;

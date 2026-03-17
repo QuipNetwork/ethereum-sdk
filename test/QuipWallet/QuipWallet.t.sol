@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 
 import {QuipFactoryTest} from "../QuipFactory/QuipFactory.t.sol";
 import {QuipWallet} from "../../contracts/QuipWallet.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title QuipWallet Base Test
 /// @dev Base contract for testing QuipWallet. Inherits full stack from QuipFactoryTest

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
+import {Test} from "forge-std-1.14.0/Test.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 
 contract DeployerTest is Test {

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract QuipWallet_initialize is QuipWalletTest {
     function test_initialize_revertsWhen_alreadyInitialized() public {

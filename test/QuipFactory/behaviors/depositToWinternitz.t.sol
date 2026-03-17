@@ -3,8 +3,8 @@ pragma solidity ^0.8.28;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity/contracts/WOTSPlus.sol";
-import {Vm} from "forge-std/Vm.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 contract QuipFactory_depositToWinternitz is QuipFactoryTest {
     function test_depositToWinternitz_deploysWallet() public {
