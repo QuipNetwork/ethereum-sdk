@@ -98,9 +98,12 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         assertEq(dummy.value(), noFeeValue);
     }
 
-    function test_executeWithWinternitz_revertsWhen_insufficientFee() public {
+    function test_executeWithWinternitz_revertsWhen_insufficientBalance() public {
         vm.prank(ADMIN);
         factory.setExecuteFee(EXECUTE_FEE);
+
+        // Drain wallet so balance cannot cover the fee
+        deal(address(wallet), 0);
 
         bytes memory callData = abi.encodeWithSelector(
             DummyContract.setValueNoFee.selector,
@@ -115,8 +118,8 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(IQuipWallet.InsufficientFee.selector, EXECUTE_FEE, 0));
-        wallet.executeWithWinternitz{value: 0}(
+        vm.expectRevert(abi.encodeWithSelector(IQuipWallet.InsufficientBalance.selector, EXECUTE_FEE, 0));
+        wallet.executeWithWinternitz(
             nextPubkey,
             sig,
             payable(address(dummy)),

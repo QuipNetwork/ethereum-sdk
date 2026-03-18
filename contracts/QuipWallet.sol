@@ -114,9 +114,9 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
         bytes calldata opdata
     ) public payable onlyOwner returns (bytes memory) {
         uint256 fee = getExecuteFee();
-        if (msg.value < fee) revert InsufficientFee(fee, msg.value);
+        if (address(this).balance < fee) revert InsufficientBalance(fee, address(this).balance);
 
-        uint256 forwardValue = msg.value - fee;
+        uint256 forwardValue = msg.value > fee ? msg.value - fee : 0;
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: keccak256(

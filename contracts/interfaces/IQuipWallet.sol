@@ -11,7 +11,7 @@ interface IQuipWallet {
     error InvalidPqOwner();
 
     error InvalidSignature();
-    error InsufficientFee(uint256 required, uint256 provided);
+
     error InsufficientBalance(uint256 requested, uint256 available);
     error RenounceDisabled();
 
