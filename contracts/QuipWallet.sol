@@ -17,45 +17,41 @@
 pragma solidity ^0.8.33;
 
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
+import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
+import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
+import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import "./interfaces/IQuipWallet.sol";
-import "./QuipFactory.sol";
+import "./interfaces/IQuipFactory.sol";
 
-// Uncomment this line to use console.log
-
-contract QuipWallet is IQuipWallet {
+contract QuipWallet is IQuipWallet, Ownable2Step {
     address payable public quipFactory;
-    address payable public owner;
     WOTSPlus.WinternitzAddress public pqOwner;
 
     receive() external payable {}
 
     fallback() external payable {}
 
-    constructor(address payable creator, address payable newOwner) payable {
+    constructor(address payable creator, address payable newOwner) payable Ownable(newOwner) {
         quipFactory = creator;
-        owner = payable(newOwner);
+    }
+
+    function renounceOwnership() public view override onlyOwner {
+        revert RenounceDisabled();
     }
 
     function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) public {
-        require(
-            msg.sender == owner || msg.sender == quipFactory,
-            "You aren't the owner or creator"
-        );
-        require(
-            pqOwner.publicSeed == bytes32(0) &&
-                pqOwner.publicKeyHash == bytes32(0),
-            "Already initialized"
-        );
+        if (msg.sender != owner() && msg.sender != quipFactory) revert UnauthorizedInitializer();
+        if (pqOwner.publicSeed != bytes32(0) || pqOwner.publicKeyHash != bytes32(0)) revert AlreadyInitialized();
         pqOwner = newPqOwner;
     }
 
     function changePqOwner(
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig
-    ) public {
-        require(msg.sender == owner, "You aren't the owner");
-
-        bytes memory msgData = abi.encodePacked(
+    ) public onlyOwner {
+        bytes32 msgHash = EfficientHashLib.hash(
             pqOwner.publicSeed,
             pqOwner.publicKeyHash,
             newPqOwner.publicSeed,
@@ -63,10 +59,10 @@ contract QuipWallet is IQuipWallet {
         );
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: keccak256(msgData)
+            messageHash: msgHash
         });
 
-        require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
+        if (!WOTSPlus.verify(pqOwner, message, pqSig)) revert InvalidSignature();
         pqOwner = newPqOwner;
     }
 
@@ -75,14 +71,13 @@ contract QuipWallet is IQuipWallet {
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable to,
         uint256 value
-    ) public payable {
+    ) public payable onlyOwner {
         WOTSPlus.WinternitzAddress memory curPqOwner = pqOwner;
 
         uint256 fee = getTransferFee();
 
-        require(msg.value >= fee, "Insufficient fee");
-        require(msg.sender == owner, "You aren't the owner");
-        require(address(this).balance >= value, "Insufficient balance");
+        if (msg.value < fee) revert InsufficientFee(fee, msg.value);
+        if (address(this).balance < value) revert InsufficientBalance(value, address(this).balance);
 
         bytes memory msgData = abi.encodePacked(
             pqOwner.publicSeed,
@@ -97,11 +92,11 @@ contract QuipWallet is IQuipWallet {
             messageHash: keccak256(msgData)
         });
 
-        require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
+        if (!WOTSPlus.verify(pqOwner, message, pqSig)) revert InvalidSignature();
         pqOwner = nextPqOwner;
 
-        to.transfer(value);
-        quipFactory.transfer(fee);
+        SafeTransferLib.safeTransferETH(to, value);
+        SafeTransferLib.safeTransferETH(quipFactory, fee);
 
         emit pqTransfer(value, block.timestamp, curPqOwner, nextPqOwner, to);
     }
@@ -111,13 +106,11 @@ contract QuipWallet is IQuipWallet {
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable target,
         bytes calldata opdata
-    ) public payable returns (bool, bytes memory) {
+    ) public payable onlyOwner returns (bytes memory) {
         uint256 fee = getExecuteFee();
-        require(msg.value >= fee, "Insufficient fee");
+        if (msg.value < fee) revert InsufficientFee(fee, msg.value);
 
         uint256 forwardValue = msg.value - fee;
-
-        require(msg.sender == owner, "You aren't the owner");
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: keccak256(
@@ -132,22 +125,19 @@ contract QuipWallet is IQuipWallet {
             )
         });
 
-        require(WOTSPlus.verify(pqOwner, message, pqSig), "Invalid signature");
+        if (!WOTSPlus.verify(pqOwner, message, pqSig)) revert InvalidSignature();
         pqOwner = nextPqOwner;
-        quipFactory.transfer(fee);
+        SafeTransferLib.safeTransferETH(quipFactory, fee);
 
-        (bool success, bytes memory returnData) = target.call{
-            value: forwardValue
-        }(opdata);
-        require(success, string(returnData));
-        return (success, returnData);
+        // Reverts from `target` are bubbled up directly.
+        return LibCall.callContract(target, forwardValue, opdata);
     }
 
     function getTransferFee() public view returns (uint256) {
-        return QuipFactory(quipFactory).transferFee();
+        return IQuipFactory(quipFactory).transferFee();
     }
 
     function getExecuteFee() public view returns (uint256) {
-        return QuipFactory(quipFactory).executeFee();
+        return IQuipFactory(quipFactory).executeFee();
     }
 }
