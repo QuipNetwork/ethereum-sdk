@@ -22,10 +22,11 @@ import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2St
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
+import {Initializable} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/utils/Initializable.sol";
 import "./interfaces/IQuipWallet.sol";
 import "./interfaces/IQuipFactory.sol";
 
-contract QuipWallet is IQuipWallet, Ownable2Step {
+contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
     /// @inheritdoc IQuipWallet
     address payable public quipFactory;
     /// @inheritdoc IQuipWallet
@@ -44,9 +45,9 @@ contract QuipWallet is IQuipWallet, Ownable2Step {
     }
 
     /// @inheritdoc IQuipWallet
-    function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) public {
+    function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) public initializer {
         if (msg.sender != owner() && msg.sender != quipFactory) revert UnauthorizedInitializer();
-        if (pqOwner.publicSeed != bytes32(0) || pqOwner.publicKeyHash != bytes32(0)) revert AlreadyInitialized();
+        if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
         pqOwner = newPqOwner;
     }
 

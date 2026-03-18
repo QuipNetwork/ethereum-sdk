@@ -8,7 +8,8 @@ import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 ///         providing post-quantum security for ETH transfers and arbitrary calls.
 interface IQuipWallet {
     error UnauthorizedInitializer();
-    error AlreadyInitialized();
+    error InvalidPqOwner();
+
     error InvalidSignature();
     error InsufficientFee(uint256 required, uint256 provided);
     error InsufficientBalance(uint256 requested, uint256 available);
@@ -29,7 +30,7 @@ interface IQuipWallet {
     );
 
     /// @notice Initializes the wallet with its first Winternitz public key.
-    /// @dev Can only be called once, by the owner or the factory. Reverts if already initialized.
+    /// @dev Can only be called once, by the owner or the factory. Uses OpenZeppelin's `initializer` modifier.
     /// @param newPqOwner The Winternitz public key to set as the initial post-quantum owner.
     function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) external;
 
