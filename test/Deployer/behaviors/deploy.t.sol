@@ -8,7 +8,7 @@ import {Vm} from "forge-std-1.14.0/Vm.sol";
 contract Deployer_deploy is DeployerTest {
     function test_deploy_deploysContract() public {
         bytes memory bytecode = type(Deployer).creationCode;
-        uint256 salt = 1;
+        bytes32 salt = bytes32(uint256(1));
 
         vm.prank(ADMIN);
         address deployed = deployer.deploy(bytecode, salt);
@@ -19,7 +19,7 @@ contract Deployer_deploy is DeployerTest {
 
     function test_deploy_emitsDeployEvent() public {
         bytes memory bytecode = type(Deployer).creationCode;
-        uint256 salt = 2;
+        bytes32 salt = bytes32(uint256(2));
 
         vm.prank(ADMIN);
         vm.recordLogs();
@@ -32,7 +32,7 @@ contract Deployer_deploy is DeployerTest {
 
     function test_deploy_deterministicAddress() public {
         bytes memory bytecode = type(Deployer).creationCode;
-        uint256 salt = 3;
+        bytes32 salt = bytes32(uint256(3));
 
         vm.prank(ADMIN);
         address deployed1 = deployer.deploy(bytecode, salt);
@@ -41,19 +41,19 @@ contract Deployer_deploy is DeployerTest {
         Deployer deployer2 = new Deployer();
         address deployed2 = deployer2.deploy(bytecode, salt);
 
-        // Different deployer addresses should give different CREATE2 addresses
+        // Different deployer addresses should give different CREATE3 addresses
         assertTrue(deployed1 != deployed2);
     }
 
-    function test_deploy_revertsWhen_create2Fails() public {
+    function test_deploy_revertsWhen_deploymentFails() public {
         bytes memory bytecode = type(Deployer).creationCode;
-        uint256 salt = 4;
+        bytes32 salt = bytes32(uint256(4));
 
         // Deploy once
         vm.prank(ADMIN);
         deployer.deploy(bytecode, salt);
 
-        // Try to deploy again with same salt — CREATE2 collision
+        // Try to deploy again with same salt — CREATE3 collision
         vm.prank(ADMIN);
         vm.expectRevert();
         deployer.deploy(bytecode, salt);

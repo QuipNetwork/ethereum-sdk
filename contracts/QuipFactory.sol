@@ -19,6 +19,7 @@ pragma solidity ^0.8.33;
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
+import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import "./interfaces/IQuipFactory.sol";
 import "./QuipWallet.sol";
@@ -51,17 +52,6 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         wotsLibrary = _wotsLibrary;
     }
 
-    /* NOTE: you can pregenerate the address as follows:
-    bytes32 hash = keccak256(
-        abi.encodePacked(
-            bytes1(0xff),
-            address(this),
-            salt,
-            keccak256(type(Lock).creationCode)
-        )
-    );
-    address preAddr = address(uint160(uint(hash)));
-    */
     /// @inheritdoc IQuipFactory
     function depositToWinternitz(
         bytes32 vaultId,
@@ -78,19 +68,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         uint256 contractValue = msg.value - creationFee;
 
-        assembly {
-            // code starts after the first 32 bytes...
-            // https://ethereum-blockchain-developer.com/110-upgrade-smart-contracts/12-metamorphosis-create2/
-            let code := add(0x20, quipWalletCode)
-            let codeSize := mload(quipWalletCode)
-            contractAddr := create2(0, code, codeSize, vaultId)
-
-            // revert on failure
-            if iszero(extcodesize(contractAddr)) {
-                mstore(0x00, 0x30116425) // DeploymentFailed()
-                revert(0x1c, 0x04)
-            }
-        }
+        contractAddr = CREATE3.deployDeterministic(quipWalletCode, vaultId);
 
         QuipWallet(payable(contractAddr)).initialize(pqTo);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);

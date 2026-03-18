@@ -46,7 +46,7 @@ contract DeployWOTSPlus is Script {
         Deployer deployer = Deployer(deployerAddr);
 
         vm.startBroadcast(privateKey);
-        address wotsAddr = deployer.deploy(creationBytecode, uint256(salt));
+        address wotsAddr = deployer.deploy(creationBytecode, salt);
         vm.stopBroadcast();
 
         console.log("WOTSPlus deployed at:", wotsAddr);

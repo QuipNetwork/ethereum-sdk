@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
+import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
 import {QuipWallet} from "../../contracts/QuipWallet.sol";
@@ -33,17 +34,17 @@ contract QuipFactoryTest is Test {
         // Deploy Deployer
         deployer = new Deployer();
 
-        // Deploy WOTSPlus library via CREATE2
+        // Deploy WOTSPlus library via CREATE3
         bytes memory wotsBytecode = _getWOTSPlusBytecode();
-        uint256 wotsSalt = uint256(keccak256("WOTSPlus"));
+        bytes32 wotsSalt = keccak256("WOTSPlus");
         wotsLibrary = deployer.deploy(wotsBytecode, wotsSalt);
 
-        // Deploy QuipFactory via CREATE2
+        // Deploy QuipFactory via CREATE3
         bytes memory factoryBytecode = abi.encodePacked(
             type(QuipFactory).creationCode,
             abi.encode(ADMIN, wotsLibrary)
         );
-        uint256 factorySalt = uint256(keccak256("QuipFactory"));
+        bytes32 factorySalt = keccak256("QuipFactory");
         address factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
         factory = QuipFactory(payable(factoryAddr));
     }
@@ -105,25 +106,13 @@ contract QuipFactoryTest is Test {
         );
     }
 
-    /// @dev Compute the expected CREATE2 address for a QuipWallet
-    function _computeWalletAddress(bytes32 vaultId, address owner)
+    /// @dev Compute the expected CREATE3 address for a QuipWallet
+    function _computeWalletAddress(bytes32 vaultId, address)
         internal
         view
         returns (address)
     {
-        bytes memory creationCode = abi.encodePacked(
-            type(QuipWallet).creationCode,
-            abi.encode(address(factory), owner)
-        );
-        bytes32 hash = keccak256(
-            abi.encodePacked(
-                bytes1(0xff),
-                address(factory),
-                vaultId,
-                keccak256(creationCode)
-            )
-        );
-        return address(uint160(uint256(hash)));
+        return CREATE3.predictDeterministicAddress(vaultId, address(factory));
     }
 
     /// @dev Get WOTSPlus library creation bytecode.

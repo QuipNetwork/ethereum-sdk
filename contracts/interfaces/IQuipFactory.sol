@@ -13,7 +13,7 @@ interface IQuipFactory {
     /// @notice Emitted when a new QuipWallet is created.
     /// @param amount The ETH value sent with the creation transaction.
     /// @param when The block timestamp at which the wallet was created.
-    /// @param vaultId The salt used to derive the wallet's CREATE2 address.
+    /// @param vaultId The salt used to derive the wallet's CREATE3 address.
     /// @param creator The classical address that owns the new wallet.
     /// @param pqPubkey The post-quantum Winternitz public key assigned to the wallet.
     /// @param quip The address of the newly deployed QuipWallet.
@@ -26,9 +26,9 @@ interface IQuipFactory {
         address quip
     );
 
-    /// @notice Deploys a new QuipWallet via CREATE2, initializes it with a Winternitz public key,
+    /// @notice Deploys a new QuipWallet via CREATE3, initializes it with a Winternitz public key,
     ///         and forwards the deposited ETH (minus the creation fee) to the wallet.
-    /// @dev Reverts if the CREATE2 deployment fails or if `msg.value` is less than `creationFee`.
+    /// @dev Reverts if the CREATE3 deployment fails or if `msg.value` is less than `creationFee`.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param to The classical address that will own the new wallet.
     /// @param pqTo The Winternitz public key to initialize the wallet with.

@@ -55,7 +55,7 @@ contract DeployQuipFactory is Script {
         Deployer deployer = Deployer(deployerAddr);
 
         vm.startBroadcast(privateKey);
-        address factoryAddr = deployer.deploy(creationBytecode, uint256(salt));
+        address factoryAddr = deployer.deploy(creationBytecode, salt);
         vm.stopBroadcast();
 
         console.log("QuipFactory deployed at:", factoryAddr);

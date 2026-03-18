@@ -37,7 +37,7 @@ contract DeployAll is Script {
             wotsAddr = wotsExpected;
         } else {
             vm.startBroadcast(privateKey);
-            wotsAddr = deployer.deploy(wotsBytecode, uint256(wotsSalt));
+            wotsAddr = deployer.deploy(wotsBytecode, wotsSalt);
             vm.stopBroadcast();
             console.log("WOTSPlus deployed at:", wotsAddr);
         }
@@ -52,7 +52,7 @@ contract DeployAll is Script {
             factoryAddr = factoryExpected;
         } else {
             vm.startBroadcast(privateKey);
-            factoryAddr = deployer.deploy(factoryBytecode, uint256(factorySalt));
+            factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
             vm.stopBroadcast();
             console.log("QuipFactory deployed at:", factoryAddr);
         }
