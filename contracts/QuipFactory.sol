@@ -24,19 +24,23 @@ import "./interfaces/IQuipFactory.sol";
 import "./QuipWallet.sol";
 
 contract QuipFactory is IQuipFactory, Ownable2Step {
+    /// @inheritdoc IQuipFactory
     address public immutable wotsLibrary;
 
+    /// @inheritdoc IQuipFactory
     uint256 public constant MAX_FEE = 0.1 ether;
 
-    // Fees
+    /// @inheritdoc IQuipFactory
     uint256 public creationFee = 0;
+    /// @inheritdoc IQuipFactory
     uint256 public transferFee = 0;
+    /// @inheritdoc IQuipFactory
     uint256 public executeFee = 0;
 
-    // eth address -> "salt" vaultId -> QuipWallet address
+    /// @inheritdoc IQuipFactory
     mapping(address => mapping(bytes32 => address)) public quips;
 
-    // Track vaultIds for each owner
+    /// @inheritdoc IQuipFactory
     mapping(address => bytes32[]) public vaultIds;
 
     receive() external payable {}
@@ -58,6 +62,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     );
     address preAddr = address(uint160(uint(hash)));
     */
+    /// @inheritdoc IQuipFactory
     function depositToWinternitz(
         bytes32 vaultId,
         address payable to,
@@ -104,21 +109,25 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         return contractAddr;
     }
 
+    /// @inheritdoc IQuipFactory
     function setCreationFee(uint256 newFee) public onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
         creationFee = newFee;
     }
 
+    /// @inheritdoc IQuipFactory
     function setTransferFee(uint256 newFee) public onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
         transferFee = newFee;
     }
 
+    /// @inheritdoc IQuipFactory
     function setExecuteFee(uint256 newFee) public onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
         executeFee = newFee;
     }
 
+    /// @inheritdoc IQuipFactory
     function withdraw(uint256 amount) public onlyOwner {
         if (address(this).balance < amount) revert InsufficientBalance(amount, address(this).balance);
         SafeTransferLib.forceSafeTransferETH(owner(), amount);

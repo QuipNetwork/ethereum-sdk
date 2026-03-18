@@ -26,7 +26,9 @@ import "./interfaces/IQuipWallet.sol";
 import "./interfaces/IQuipFactory.sol";
 
 contract QuipWallet is IQuipWallet, Ownable2Step {
+    /// @inheritdoc IQuipWallet
     address payable public quipFactory;
+    /// @inheritdoc IQuipWallet
     WOTSPlus.WinternitzAddress public pqOwner;
 
     receive() external payable {}
@@ -41,12 +43,14 @@ contract QuipWallet is IQuipWallet, Ownable2Step {
         revert RenounceDisabled();
     }
 
+    /// @inheritdoc IQuipWallet
     function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) public {
         if (msg.sender != owner() && msg.sender != quipFactory) revert UnauthorizedInitializer();
         if (pqOwner.publicSeed != bytes32(0) || pqOwner.publicKeyHash != bytes32(0)) revert AlreadyInitialized();
         pqOwner = newPqOwner;
     }
 
+    /// @inheritdoc IQuipWallet
     function changePqOwner(
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig
@@ -66,6 +70,7 @@ contract QuipWallet is IQuipWallet, Ownable2Step {
         pqOwner = newPqOwner;
     }
 
+    /// @inheritdoc IQuipWallet
     function transferWithWinternitz(
         WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
@@ -101,6 +106,7 @@ contract QuipWallet is IQuipWallet, Ownable2Step {
         emit pqTransfer(value, block.timestamp, curPqOwner, nextPqOwner, to);
     }
 
+    /// @inheritdoc IQuipWallet
     function executeWithWinternitz(
         WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
@@ -133,10 +139,12 @@ contract QuipWallet is IQuipWallet, Ownable2Step {
         return LibCall.callContract(target, forwardValue, opdata);
     }
 
+    /// @inheritdoc IQuipWallet
     function getTransferFee() public view returns (uint256) {
         return IQuipFactory(quipFactory).transferFee();
     }
 
+    /// @inheritdoc IQuipWallet
     function getExecuteFee() public view returns (uint256) {
         return IQuipFactory(quipFactory).executeFee();
     }
