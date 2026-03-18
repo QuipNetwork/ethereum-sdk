@@ -127,11 +127,12 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         assertEq(BOB.balance, bobBalBefore + transferAmount);
     }
 
-    function test_transferWithWinternitz_revertsWhen_insufficientFee() public {
+    function test_transferWithWinternitz_revertsWhen_insufficientBalance() public {
         vm.prank(ADMIN);
         factory.setTransferFee(TRANSFER_FEE);
 
-        uint256 transferAmount = 0.5 ether;
+        // Transfer the full wallet balance — leaves nothing for the fee
+        uint256 transferAmount = INITIAL_DEPOSIT;
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildTransferMessageHash(
@@ -139,17 +140,13 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
-        // No fee
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(IQuipWallet.InsufficientFee.selector, TRANSFER_FEE, 0));
+        vm.expectRevert(abi.encodeWithSelector(
+            IQuipWallet.InsufficientBalance.selector,
+            transferAmount + TRANSFER_FEE,
+            INITIAL_DEPOSIT
+        ));
         wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
-
-        // Insufficient fee
-        vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(IQuipWallet.InsufficientFee.selector, TRANSFER_FEE, TRANSFER_FEE - 1));
-        wallet.transferWithWinternitz{value: TRANSFER_FEE - 1}(
-            nextPubkey, sig, payable(BOB), transferAmount
-        );
     }
 
     function test_transferWithWinternitz_revertsWhen_callerNotOwner() public {

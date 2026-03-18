@@ -82,8 +82,7 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
 
         uint256 fee = getTransferFee();
 
-        if (msg.value < fee) revert InsufficientFee(fee, msg.value);
-        if (address(this).balance < value) revert InsufficientBalance(value, address(this).balance);
+        if (address(this).balance < value + fee) revert InsufficientBalance(value + fee, address(this).balance);
 
         bytes memory msgData = abi.encodePacked(
             pqOwner.publicSeed,
