@@ -3,6 +3,8 @@ pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 contract QuipWallet_changePqOwner is QuipWalletTest {
     function test_changePqOwner_updatesPqOwner() public {
@@ -26,7 +28,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(BOB);
-        vm.expectRevert("You aren't the owner");
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, BOB));
         wallet.changePqOwner(newPubkey, sig);
     }
 
@@ -38,7 +40,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         WOTSPlus.WinternitzElements memory badSig = _sign(alicePrivateKey, wrongMsgHash);
 
         vm.prank(ALICE);
-        vm.expectRevert("Invalid signature");
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
         wallet.changePqOwner(newPubkey, badSig);
     }
 }

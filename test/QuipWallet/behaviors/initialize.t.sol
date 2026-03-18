@@ -3,13 +3,14 @@ pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 contract QuipWallet_initialize is QuipWalletTest {
     function test_initialize_revertsWhen_alreadyInitialized() public {
         (WOTSPlus.WinternitzAddress memory newPubkey,) = _generateKeyPair("new-seed");
 
         vm.prank(ALICE);
-        vm.expectRevert("Already initialized");
+        vm.expectRevert(IQuipWallet.AlreadyInitialized.selector);
         wallet.initialize(newPubkey);
     }
 
@@ -20,7 +21,7 @@ contract QuipWallet_initialize is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory newPubkey,) = _generateKeyPair("new-seed");
 
         vm.prank(BOB);
-        vm.expectRevert("You aren't the owner or creator");
+        vm.expectRevert(IQuipWallet.UnauthorizedInitializer.selector);
         wallet.initialize(newPubkey);
     }
 }

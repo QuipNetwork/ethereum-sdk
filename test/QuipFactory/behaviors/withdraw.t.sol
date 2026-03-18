@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
 
 contract QuipFactory_withdraw is QuipFactoryTest {
     function setUp() public override {
@@ -48,8 +49,9 @@ contract QuipFactory_withdraw is QuipFactoryTest {
     }
 
     function test_withdraw_revertsWhen_insufficientBalance() public {
+        uint256 bal = address(factory).balance;
         vm.prank(ADMIN);
-        vm.expectRevert("Insufficient balance");
+        vm.expectRevert(abi.encodeWithSelector(IQuipFactory.InsufficientBalance.selector, 1000 ether, bal));
         factory.withdraw(1000 ether);
     }
 }

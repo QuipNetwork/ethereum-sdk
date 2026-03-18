@@ -54,6 +54,7 @@ contract QuipFactoryTest is Test {
         assertEq(factory.creationFee(), 0);
         assertEq(factory.transferFee(), 0);
         assertEq(factory.executeFee(), 0);
+        assertEq(factory.MAX_FEE(), 0.1 ether);
     }
 
     // --- Helpers ---

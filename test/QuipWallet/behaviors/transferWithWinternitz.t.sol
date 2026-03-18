@@ -5,6 +5,8 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
+import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 contract QuipWallet_transferWithWinternitz is QuipWalletTest {
     function test_transferWithWinternitz_transfersFunds() public {
@@ -139,12 +141,12 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
 
         // No fee
         vm.prank(ALICE);
-        vm.expectRevert("Insufficient fee");
+        vm.expectRevert(abi.encodeWithSelector(IQuipWallet.InsufficientFee.selector, TRANSFER_FEE, 0));
         wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
 
         // Insufficient fee
         vm.prank(ALICE);
-        vm.expectRevert("Insufficient fee");
+        vm.expectRevert(abi.encodeWithSelector(IQuipWallet.InsufficientFee.selector, TRANSFER_FEE, TRANSFER_FEE - 1));
         wallet.transferWithWinternitz{value: TRANSFER_FEE - 1}(
             nextPubkey, sig, payable(BOB), transferAmount
         );
@@ -160,7 +162,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(BOB);
-        vm.expectRevert("You aren't the owner");
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, BOB));
         wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
     }
 }
