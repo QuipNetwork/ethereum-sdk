@@ -35,11 +35,6 @@ interface IQuipFactory {
         WOTSPlus.WinternitzAddress calldata pqTo
     ) external payable returns (address);
 
-    /// @notice Transfers admin ownership of the factory to a new address.
-    /// @dev Only callable by the current admin.
-    /// @param newOwner The address of the new admin.
-    function transferOwnership(address newOwner) external;
-
     /// @notice Sets the fee charged when creating a new QuipWallet.
     /// @dev Only callable by the current admin.
     /// @param newFee The new creation fee in wei.
@@ -59,14 +54,6 @@ interface IQuipFactory {
     /// @dev Only callable by the current admin. Reverts if the factory balance is insufficient.
     /// @param amount The amount of ETH in wei to withdraw.
     function withdraw(uint256 amount) external;
-
-    /// @notice Returns the current admin address (alias for `admin`).
-    /// @return The admin address.
-    function owner() external view returns (address);
-
-    /// @notice Returns the admin address that controls the factory.
-    /// @return The admin address.
-    function admin() external view returns (address payable);
 
     /// @notice Returns the address of the deployed WOTSPlus library.
     /// @return The WOTSPlus library address.

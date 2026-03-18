@@ -17,11 +17,12 @@
 pragma solidity ^0.8.33;
 
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import "./interfaces/IQuipFactory.sol";
 import "./QuipWallet.sol";
 
-contract QuipFactory is IQuipFactory {
-    address payable public admin;
+contract QuipFactory is IQuipFactory, Ownable2Step {
     address public immutable wotsLibrary;
 
     // Fees
@@ -39,8 +40,7 @@ contract QuipFactory is IQuipFactory {
 
     fallback() external payable {}
 
-    constructor(address payable initialOwner, address _wotsLibrary) payable {
-        admin = initialOwner;
+    constructor(address payable initialOwner, address _wotsLibrary) payable Ownable(initialOwner) {
         wotsLibrary = _wotsLibrary;
     }
 
@@ -101,33 +101,20 @@ contract QuipFactory is IQuipFactory {
         return contractAddr;
     }
 
-    function transferOwnership(address newOwner) public {
-        require(msg.sender == admin, "You aren't the admin");
-        admin = payable(newOwner);
-    }
-
-    function setCreationFee(uint256 newFee) public {
-        require(msg.sender == admin, "You aren't the admin");
+    function setCreationFee(uint256 newFee) public onlyOwner {
         creationFee = newFee;
     }
 
-    function setTransferFee(uint256 newFee) public {
-        require(msg.sender == admin, "You aren't the admin");
+    function setTransferFee(uint256 newFee) public onlyOwner {
         transferFee = newFee;
     }
 
-    function setExecuteFee(uint256 newFee) public {
-        require(msg.sender == admin, "You aren't the admin");
+    function setExecuteFee(uint256 newFee) public onlyOwner {
         executeFee = newFee;
     }
 
-    function withdraw(uint256 amount) public {
-        require(msg.sender == admin, "You aren't the admin");
+    function withdraw(uint256 amount) public onlyOwner {
         require(address(this).balance >= amount, "Insufficient balance");
-        admin.transfer(amount);
-    }
-
-    function owner() public view returns (address) {
-        return admin;
+        payable(owner()).transfer(amount);
     }
 }

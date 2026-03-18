@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
+import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 
 contract QuipFactory_setExecuteFee is QuipFactoryTest {
     function test_setExecuteFee_setsFee() public {
@@ -13,7 +14,7 @@ contract QuipFactory_setExecuteFee is QuipFactoryTest {
 
     function test_setExecuteFee_revertsWhen_callerNotAdmin() public {
         vm.prank(ALICE);
-        vm.expectRevert("You aren't the admin");
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.setExecuteFee(EXECUTE_FEE);
     }
 }

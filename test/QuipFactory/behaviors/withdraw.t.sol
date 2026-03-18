@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 
 contract QuipFactory_withdraw is QuipFactoryTest {
     function setUp() public override {
@@ -24,7 +25,7 @@ contract QuipFactory_withdraw is QuipFactoryTest {
     }
 
     function test_setUp() public view override {
-        assertEq(factory.admin(), ADMIN);
+        assertEq(factory.owner(), ADMIN);
         assertEq(factory.creationFee(), CREATION_FEE);
         assertTrue(address(factory).balance > 0);
     }
@@ -42,7 +43,7 @@ contract QuipFactory_withdraw is QuipFactoryTest {
 
     function test_withdraw_revertsWhen_callerNotAdmin() public {
         vm.prank(ALICE);
-        vm.expectRevert("You aren't the admin");
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.withdraw(CREATION_FEE);
     }
 

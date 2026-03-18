@@ -49,7 +49,7 @@ contract QuipFactoryTest is Test {
     }
 
     function test_setUp() public view virtual {
-        assertEq(factory.admin(), ADMIN);
+        assertEq(factory.owner(), ADMIN);
         assertEq(factory.wotsLibrary(), wotsLibrary);
         assertEq(factory.creationFee(), 0);
         assertEq(factory.transferFee(), 0);

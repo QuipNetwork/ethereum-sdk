@@ -29,7 +29,7 @@ contract QuipWalletTest is QuipFactoryTest {
 
     function test_setUp() public view override {
         // Inherited checks
-        assertEq(factory.admin(), ADMIN);
+        assertEq(factory.owner(), ADMIN);
 
         // Wallet checks
         assertEq(wallet.owner(), ALICE);
