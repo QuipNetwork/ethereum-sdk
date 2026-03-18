@@ -6,6 +6,10 @@ import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 /// @title IQuipFactory
 /// @notice Factory for creating and managing QuipWallet instances secured by Winternitz one-time signatures.
 interface IQuipFactory {
+    error InsufficientBalance(uint256 requested, uint256 available);
+    error DeploymentFailed();
+    error FeeExceedsMax(uint256 fee, uint256 maxFee);
+
     /// @notice Emitted when a new QuipWallet is created.
     /// @param amount The ETH value sent with the creation transaction.
     /// @param when The block timestamp at which the wallet was created.
@@ -70,6 +74,10 @@ interface IQuipFactory {
     /// @notice Returns the current fee charged for Winternitz-authenticated arbitrary calls.
     /// @return The execute fee in wei.
     function executeFee() external view returns (uint256);
+
+    /// @notice Returns the maximum fee that can be set.
+    /// @return The maximum fee in wei.
+    function MAX_FEE() external view returns (uint256);
 
     /// @notice Returns the QuipWallet address for a given owner and vault ID.
     /// @param owner The classical owner address.

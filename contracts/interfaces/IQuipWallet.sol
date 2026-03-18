@@ -7,6 +7,13 @@ import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz one-time signatures,
 ///         providing post-quantum security for ETH transfers and arbitrary calls.
 interface IQuipWallet {
+    error UnauthorizedInitializer();
+    error AlreadyInitialized();
+    error InvalidSignature();
+    error InsufficientFee(uint256 required, uint256 provided);
+    error InsufficientBalance(uint256 requested, uint256 available);
+    error RenounceDisabled();
+
     /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
     /// @param amount The ETH value transferred.
     /// @param when The block timestamp of the transfer.
@@ -60,14 +67,13 @@ interface IQuipWallet {
     /// @param pqSig The Winternitz signature proving authorization from the current post-quantum owner.
     /// @param target The contract address to call.
     /// @param opdata The calldata to pass to the target.
-    /// @return success Whether the call succeeded.
     /// @return returnData The data returned by the call.
     function executeWithWinternitz(
         WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable target,
         bytes calldata opdata
-    ) external payable returns (bool success, bytes memory returnData);
+    ) external payable returns (bytes memory returnData);
 
     /// @notice Returns the current transfer fee as set by the factory.
     /// @return The transfer fee in wei.
@@ -80,10 +86,6 @@ interface IQuipWallet {
     /// @notice Returns the address of the QuipFactory that created this wallet.
     /// @return The factory address.
     function quipFactory() external view returns (address payable);
-
-    /// @notice Returns the classical owner address of this wallet.
-    /// @return The owner address.
-    function owner() external view returns (address payable);
 
     /// @notice Returns the current post-quantum owner's Winternitz public key components.
     /// @return publicSeed The public seed of the Winternitz address.

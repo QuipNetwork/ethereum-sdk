@@ -19,11 +19,14 @@ pragma solidity ^0.8.33;
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
+import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import "./interfaces/IQuipFactory.sol";
 import "./QuipWallet.sol";
 
 contract QuipFactory is IQuipFactory, Ownable2Step {
     address public immutable wotsLibrary;
+
+    uint256 public constant MAX_FEE = 0.1 ether;
 
     // Fees
     uint256 public creationFee = 0;
@@ -79,13 +82,13 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
             // revert on failure
             if iszero(extcodesize(contractAddr)) {
-                revert(0, 0)
+                mstore(0x00, 0x30116425) // DeploymentFailed()
+                revert(0x1c, 0x04)
             }
         }
 
-        assert(contractAddr != address(0));
         QuipWallet(payable(contractAddr)).initialize(pqTo);
-        payable(contractAddr).transfer(contractValue);
+        SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId);
 
@@ -102,19 +105,22 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     }
 
     function setCreationFee(uint256 newFee) public onlyOwner {
+        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
         creationFee = newFee;
     }
 
     function setTransferFee(uint256 newFee) public onlyOwner {
+        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
         transferFee = newFee;
     }
 
     function setExecuteFee(uint256 newFee) public onlyOwner {
+        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
         executeFee = newFee;
     }
 
     function withdraw(uint256 amount) public onlyOwner {
-        require(address(this).balance >= amount, "Insufficient balance");
-        payable(owner()).transfer(amount);
+        if (address(this).balance < amount) revert InsufficientBalance(amount, address(this).balance);
+        SafeTransferLib.forceSafeTransferETH(owner(), amount);
     }
 }
