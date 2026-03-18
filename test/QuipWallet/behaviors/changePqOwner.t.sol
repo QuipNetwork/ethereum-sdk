@@ -10,7 +10,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
     function test_changePqOwner_updatesPqOwner() public {
         (WOTSPlus.WinternitzAddress memory newPubkey,) = _generateKeyPair("new-pq-owner");
 
-        bytes32 msgHash = _buildChangePqOwnerMessageHash(alicePubkey, newPubkey);
+        bytes32 msgHash = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, newPubkey);
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
@@ -24,7 +24,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
     function test_changePqOwner_revertsWhen_callerNotOwner() public {
         (WOTSPlus.WinternitzAddress memory newPubkey,) = _generateKeyPair("new-pq-owner");
 
-        bytes32 msgHash = _buildChangePqOwnerMessageHash(alicePubkey, newPubkey);
+        bytes32 msgHash = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, newPubkey);
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(BOB);

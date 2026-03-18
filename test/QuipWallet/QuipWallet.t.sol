@@ -45,13 +45,16 @@ contract QuipWalletTest is QuipFactoryTest {
 
     /// @dev Build the transfer message hash for signing
     function _buildTransferMessageHash(
+        address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
         address to,
         uint256 value
-    ) internal pure returns (bytes32) {
+    ) internal view returns (bytes32) {
         return keccak256(
             abi.encodePacked(
+                block.chainid,
+                wallet_,
                 currentPq.publicSeed,
                 currentPq.publicKeyHash,
                 nextPq.publicSeed,
@@ -64,13 +67,16 @@ contract QuipWalletTest is QuipFactoryTest {
 
     /// @dev Build the execute message hash for signing
     function _buildExecuteMessageHash(
+        address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
         address target,
         bytes memory opdata
-    ) internal pure returns (bytes32) {
+    ) internal view returns (bytes32) {
         return keccak256(
             abi.encodePacked(
+                block.chainid,
+                wallet_,
                 currentPq.publicSeed,
                 currentPq.publicKeyHash,
                 nextPq.publicSeed,
@@ -83,11 +89,14 @@ contract QuipWalletTest is QuipFactoryTest {
 
     /// @dev Build the changePqOwner message hash for signing
     function _buildChangePqOwnerMessageHash(
+        address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory newPq
-    ) internal pure returns (bytes32) {
+    ) internal view returns (bytes32) {
         return keccak256(
             abi.encodePacked(
+                block.chainid,
+                wallet_,
                 currentPq.publicSeed,
                 currentPq.publicKeyHash,
                 newPq.publicSeed,

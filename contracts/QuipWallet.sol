@@ -20,7 +20,6 @@ import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
-import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {Initializable} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/utils/Initializable.sol";
 import "./interfaces/IQuipWallet.sol";
@@ -56,11 +55,16 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig
     ) public onlyOwner {
-        bytes32 msgHash = EfficientHashLib.hash(
-            pqOwner.publicSeed,
-            pqOwner.publicKeyHash,
-            newPqOwner.publicSeed,
-            newPqOwner.publicKeyHash
+        // Include chain ID and wallet address to prevent cross-chain and cross-wallet replay attacks.
+        bytes32 msgHash = keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                newPqOwner.publicSeed,
+                newPqOwner.publicKeyHash
+            )
         );
 
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
@@ -84,7 +88,10 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
 
         if (address(this).balance < value + fee) revert InsufficientBalance(value + fee, address(this).balance);
 
+        // Include chain ID and wallet address to prevent cross-chain and cross-wallet replay attacks.
         bytes memory msgData = abi.encodePacked(
+            block.chainid,
+            address(this),
             pqOwner.publicSeed,
             pqOwner.publicKeyHash,
             nextPqOwner.publicSeed,
@@ -118,9 +125,12 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
 
         uint256 forwardValue = msg.value > fee ? msg.value - fee : 0;
 
+        // Include chain ID and wallet address to prevent cross-chain and cross-wallet replay attacks.
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: keccak256(
                 abi.encodePacked(
+                    block.chainid,
+                    address(this),
                     pqOwner.publicSeed,
                     pqOwner.publicKeyHash,
                     nextPqOwner.publicSeed,

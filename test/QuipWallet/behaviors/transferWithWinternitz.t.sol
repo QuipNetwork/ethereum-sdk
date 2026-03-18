@@ -17,7 +17,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
 
         // Build and sign message
         bytes32 msgHash = _buildTransferMessageHash(
-            alicePubkey, nextPubkey, BOB, transferAmount
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -42,7 +42,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildTransferMessageHash(
-            alicePubkey, nextPubkey, BOB, transferAmount
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -74,7 +74,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         // Transfer from Alice's wallet to Bob's wallet
         (WOTSPlus.WinternitzAddress memory aliceNextPubkey,) = _generateKeyPair("alice-next-1");
         bytes32 msgHash = _buildTransferMessageHash(
-            alicePubkey, aliceNextPubkey, bobWalletAddr, transferAmount
+            address(wallet), alicePubkey, aliceNextPubkey, bobWalletAddr, transferAmount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -87,7 +87,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         QuipWallet bobWallet = QuipWallet(payable(bobWalletAddr));
         (WOTSPlus.WinternitzAddress memory bobNextPubkey,) = _generateKeyPair("bob-next-1");
         bytes32 withdrawMsgHash = _buildTransferMessageHash(
-            bobPubkey, bobNextPubkey, BOB, transferAmount
+            bobWalletAddr, bobPubkey, bobNextPubkey, BOB, transferAmount
         );
         WOTSPlus.WinternitzElements memory withdrawSig = _sign(bobPrivateKey, withdrawMsgHash);
 
@@ -109,7 +109,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildTransferMessageHash(
-            alicePubkey, nextPubkey, BOB, transferAmount
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -136,7 +136,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildTransferMessageHash(
-            alicePubkey, nextPubkey, BOB, transferAmount
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -154,7 +154,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildTransferMessageHash(
-            alicePubkey, nextPubkey, BOB, transferAmount
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 

@@ -30,7 +30,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            alicePubkey, nextPubkey, address(dummy), callData
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -56,7 +56,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            alicePubkey, nextPubkey, address(dummy), callData
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -83,7 +83,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            alicePubkey, nextPubkey, address(dummy), callData
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -113,7 +113,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            alicePubkey, nextPubkey, address(dummy), callData
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -136,7 +136,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            alicePubkey, nextPubkey, address(dummy), callData
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
