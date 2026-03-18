@@ -13,7 +13,10 @@ extra_output_files = ["abi"]
 
 [dependencies]
 forge-std = "1.14.0"
-"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", rev = "e54234702253fcafdeff110b78d4b5b6981aad58" }
+solady = "0.1.26"
+"@openzeppelin-contracts" = "5.6.0-rc.1"
+"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", branch = "main" }
+pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
 
 [rpc_endpoints]
 sepolia = "${API_URL_SEPOLIA}"
