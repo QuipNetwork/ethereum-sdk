@@ -25,6 +25,7 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  encodeAbiParameters,
   encodePacked,
   hexToBytes,
   toHex,
@@ -35,7 +36,7 @@ import {
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipWalletAbi } from "./abi/QuipWallet.js";
 import {
-  computeVaultAddress,
+  getVaultAddress,
   getNetworkAddresses,
   CHAIN_IDS,
 } from "./addresses.js";
@@ -163,6 +164,7 @@ export class QuipWalletClient {
   private account: Address;
   private quipSigner: QuipSigner;
   private vaultId: Uint8Array;
+  private chainId: number;
 
   constructor(
     quipSigner: QuipSigner,
@@ -170,7 +172,8 @@ export class QuipWalletClient {
     walletAddress: Address,
     publicClient: PublicClient,
     walletClient: WalletClient,
-    account: Address
+    account: Address,
+    chainId: number
   ) {
     this.walletAddress = walletAddress;
     this.vaultId = vaultId;
@@ -178,6 +181,7 @@ export class QuipWalletClient {
     this.publicClient = publicClient;
     this.walletClient = walletClient;
     this.account = account;
+    this.chainId = chainId;
   }
 
   async getPqOwner() {
@@ -221,8 +225,10 @@ export class QuipWalletClient {
     const transferFee = await this.getTransferFee();
 
     const packedMessageData = encodePacked(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
+      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
       [
+        BigInt(this.chainId),
+        this.walletAddress,
         currentPqOwner.publicSeed,
         currentPqOwner.publicKeyHash,
         toHex(nextPqOwner.publicKey.publicSeed),
@@ -269,8 +275,10 @@ export class QuipWalletClient {
       (await this.getExecuteFee()) + (options.value ?? 0n);
 
     const packedMessageData = encodePacked(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
+      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
       [
+        BigInt(this.chainId),
+        this.walletAddress,
         currentPqOwner.publicSeed,
         currentPqOwner.publicKeyHash,
         toHex(nextPqOwner.publicKey.publicSeed),
@@ -325,6 +333,199 @@ export class QuipWalletClient {
     });
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
+  }
+
+  async changePqOwner(
+    options: { gasLimit?: bigint } = {}
+  ): Promise<TransactionReceipt> {
+    const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
+    const currentPqOwner = await this.getPqOwner();
+    const publicSeed = hexToBytes(currentPqOwner.publicSeed);
+
+    const packedMessageData = encodePacked(
+      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32"],
+      [
+        BigInt(this.chainId),
+        this.walletAddress,
+        currentPqOwner.publicSeed,
+        currentPqOwner.publicKeyHash,
+        toHex(nextPqOwner.publicKey.publicSeed),
+        toHex(nextPqOwner.publicKey.publicKeyHash),
+      ]
+    );
+
+    const messageHash = keccak_256(hexToBytes(packedMessageData));
+    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
+
+    const hash = await this.walletClient.writeContract({
+      chain: null,
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "changePqOwner",
+      args: [
+        pubkeyToHex(nextPqOwner.publicKey),
+        { elements: sigToHex(pqSig) },
+      ],
+      account: this.account,
+      ...(options.gasLimit && { gas: options.gasLimit }),
+    });
+
+    return await this.publicClient.waitForTransactionReceipt({ hash });
+  }
+
+  async recoverWallet(
+    recoveryPublicSeed: Uint8Array,
+    options: { gasLimit?: bigint } = {}
+  ): Promise<TransactionReceipt> {
+    const recoveryKeyPair = this.quipSigner.recoverKeyPair(this.vaultId, recoveryPublicSeed);
+    const newPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
+
+    const packedMessageData = encodePacked(
+      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32"],
+      [
+        BigInt(this.chainId),
+        this.walletAddress,
+        toHex(recoveryKeyPair.publicKey.publicSeed),
+        toHex(recoveryKeyPair.publicKey.publicKeyHash),
+        toHex(newPqOwner.publicKey.publicSeed),
+        toHex(newPqOwner.publicKey.publicKeyHash),
+      ]
+    );
+
+    const messageHash = keccak_256(hexToBytes(packedMessageData));
+    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, recoveryPublicSeed);
+
+    const hash = await this.walletClient.writeContract({
+      chain: null,
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "recoverWallet",
+      args: [
+        pubkeyToHex(recoveryKeyPair.publicKey),
+        pubkeyToHex(newPqOwner.publicKey),
+        { elements: sigToHex(pqSig) },
+      ],
+      account: this.account,
+      ...(options.gasLimit && { gas: options.gasLimit }),
+    });
+
+    return await this.publicClient.waitForTransactionReceipt({ hash });
+  }
+
+  private async signRecoveryKeysMessage(
+    newRecoveryKeys: WinternitzPublicKey[]
+  ) {
+    const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
+    const currentPqOwner = await this.getPqOwner();
+    const publicSeed = hexToBytes(currentPqOwner.publicSeed);
+    const recoveryKeysHex = newRecoveryKeys.map((pk) => pubkeyToHex(pk));
+
+    // Replicate Solidity's keccak256(abi.encode(newRecoveryKeys))
+    const keysEncoded = encodeAbiParameters(
+      [
+        {
+          type: "tuple[]",
+          components: [
+            { type: "bytes32", name: "publicSeed" },
+            { type: "bytes32", name: "publicKeyHash" },
+          ],
+        },
+      ],
+      [recoveryKeysHex]
+    );
+    const keysHash = toHex(keccak_256(hexToBytes(keysEncoded)));
+
+    const packedMessageData = encodePacked(
+      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
+      [
+        BigInt(this.chainId),
+        this.walletAddress,
+        currentPqOwner.publicSeed,
+        currentPqOwner.publicKeyHash,
+        toHex(nextPqOwner.publicKey.publicSeed),
+        toHex(nextPqOwner.publicKey.publicKeyHash),
+        keysHash as Hex,
+      ]
+    );
+
+    const messageHash = keccak_256(hexToBytes(packedMessageData));
+    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
+
+    return { nextPqOwner, pqSig, recoveryKeysHex };
+  }
+
+  async addRecoveryKeys(
+    newRecoveryKeys: WinternitzPublicKey[],
+    options: { gasLimit?: bigint } = {}
+  ): Promise<TransactionReceipt> {
+    const { nextPqOwner, pqSig, recoveryKeysHex } =
+      await this.signRecoveryKeysMessage(newRecoveryKeys);
+
+    const hash = await this.walletClient.writeContract({
+      chain: null,
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "addRecoveryKeys",
+      args: [
+        pubkeyToHex(nextPqOwner.publicKey),
+        { elements: sigToHex(pqSig) },
+        recoveryKeysHex,
+      ],
+      account: this.account,
+      ...(options.gasLimit && { gas: options.gasLimit }),
+    });
+
+    return await this.publicClient.waitForTransactionReceipt({ hash });
+  }
+
+  async replenishRecoveryKeys(
+    newRecoveryKeys: WinternitzPublicKey[],
+    options: { gasLimit?: bigint } = {}
+  ): Promise<TransactionReceipt> {
+    const { nextPqOwner, pqSig, recoveryKeysHex } =
+      await this.signRecoveryKeysMessage(newRecoveryKeys);
+
+    const hash = await this.walletClient.writeContract({
+      chain: null,
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "replenishRecoveryKeys",
+      args: [
+        pubkeyToHex(nextPqOwner.publicKey),
+        { elements: sigToHex(pqSig) },
+        recoveryKeysHex,
+      ],
+      account: this.account,
+      ...(options.gasLimit && { gas: options.gasLimit }),
+    });
+
+    return await this.publicClient.waitForTransactionReceipt({ hash });
+  }
+
+  async getRecoveryKeyCount(): Promise<bigint> {
+    return await this.publicClient.readContract({
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "getRecoveryKeyCount",
+    });
+  }
+
+  async getRecoveryKeyHashAt(index: bigint): Promise<Hex> {
+    return await this.publicClient.readContract({
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "getRecoveryKeyHashAt",
+      args: [index],
+    });
+  }
+
+  async isRecoveryKey(keyHash: Hex): Promise<boolean> {
+    return await this.publicClient.readContract({
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "isRecoveryKey",
+      args: [keyHash],
+    });
   }
 }
 
@@ -422,7 +623,8 @@ export class QuipClient {
 
   async createWallet(
     vaultId: Uint8Array,
-    quipSigner: QuipSigner
+    quipSigner: QuipSigner,
+    recoveryKeys: WinternitzPublicKey[] = []
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
 
@@ -442,13 +644,14 @@ export class QuipClient {
     }
 
     const pqKeyPair = quipSigner.generateKeyPair(vaultId);
+    const recoveryKeysHex = recoveryKeys.map((pk) => pubkeyToHex(pk));
 
     const hash = await this.walletClient.writeContract({
       chain: null,
       address: this.factoryAddress!,
       abi: quipFactoryAbi,
       functionName: "depositToWinternitz",
-      args: [vaultIdHex, this.account!, pubkeyToHex(pqKeyPair.publicKey)],
+      args: [vaultIdHex, this.account!, pubkeyToHex(pqKeyPair.publicKey), recoveryKeysHex],
       value: creationFee,
       account: this.account!,
     });
@@ -470,7 +673,8 @@ export class QuipClient {
       newWalletAddress,
       this.publicClient,
       this.walletClient,
-      this.account!
+      this.account!,
+      this.chainId!
     );
   }
 
@@ -498,7 +702,8 @@ export class QuipClient {
       walletAddress,
       this.publicClient,
       this.walletClient,
-      this.account!
+      this.account!,
+      this.chainId!
     );
 
     // Check if we have the right signer
@@ -514,19 +719,7 @@ export class QuipClient {
 
   async getVaultAddress(vaultId: Uint8Array): Promise<Address> {
     await this.initializationPromise;
-
-    const wotsLibraryAddress = await this.publicClient.readContract({
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "wotsLibrary",
-    });
-
-    return computeVaultAddress(
-      this.account!,
-      toHex(vaultId),
-      wotsLibraryAddress,
-      this.factoryAddress!
-    );
+    return getVaultAddress(toHex(vaultId), this.chainId);
   }
 
   async getVaults(): Promise<Map<string, Address>> {

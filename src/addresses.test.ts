@@ -1,52 +1,26 @@
-import {
-  type Address,
-  type Hex,
-  getCreate2Address,
-  keccak256,
-  concat,
-  encodeAbiParameters,
-} from "viem";
+import { type Address, type Hex } from "viem";
 import {
   getVaultAddress,
   computeVaultAddress,
-  WOTS_PLUS_ADDRESS,
   QUIP_FACTORY_ADDRESS,
 } from "./addresses.js";
-import bytecodeData from "./bytecode.json" with { type: "json" };
 
 describe("Vault Address Functions", () => {
   const testVaultId: Hex =
     "0x783e1393edc4a6dac846b6da7723acb50de92b51b66ccdbc69bcadfb3fd9da69";
-  const testOwner: Address = "0x4971905b8741bdbe1ba008f73c28c82de9d95df9";
 
-  it("should match viem getCreate2Address", () => {
-    const initCode = concat([
-      bytecodeData.quipWalletCreationCode as Hex,
-      encodeAbiParameters(
-        [{ type: "address" }, { type: "address" }],
-        [QUIP_FACTORY_ADDRESS, testOwner]
-      ),
-    ]);
+  // Known-good CREATE3 address for (QUIP_FACTORY_ADDRESS, testVaultId),
+  // verified against Solady CREATE3.deployDeterministic.
+  const expectedAddress: Address =
+    "0xB0AA5b33a205C8FE16409743e9b3d4428E1359E4";
 
-    const expected = getCreate2Address({
-      from: QUIP_FACTORY_ADDRESS,
-      salt: testVaultId,
-      bytecodeHash: keccak256(initCode),
-    });
-
-    const address = getVaultAddress(testOwner, testVaultId);
-    expect(address).toEqual(expected);
+  it("should return the expected CREATE3 address", () => {
+    expect(getVaultAddress(testVaultId)).toEqual(expectedAddress);
   });
 
-  it("should compute the same address with computeVaultAddress", () => {
-    const address1 = getVaultAddress(testOwner, testVaultId);
-    const address2 = computeVaultAddress(
-      testOwner,
-      testVaultId,
-      WOTS_PLUS_ADDRESS,
-      QUIP_FACTORY_ADDRESS
-    );
-
-    expect(address1).toEqual(address2);
+  it("should match between getVaultAddress and computeVaultAddress", () => {
+    const fromGet = getVaultAddress(testVaultId);
+    const fromCompute = computeVaultAddress(QUIP_FACTORY_ADDRESS, testVaultId);
+    expect(fromGet).toEqual(fromCompute);
   });
 });
