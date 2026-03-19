@@ -56,7 +56,8 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     function depositToWinternitz(
         bytes32 vaultId,
         address payable to,
-        WOTSPlus.WinternitzAddress calldata pqTo
+        WOTSPlus.WinternitzAddress calldata pqTo,
+        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
     ) public payable returns (address) {
         address contractAddr;
 
@@ -70,7 +71,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         contractAddr = CREATE3.deployDeterministic(quipWalletCode, vaultId);
 
-        QuipWallet(payable(contractAddr)).initialize(pqTo);
+        QuipWallet(payable(contractAddr)).initialize(pqTo, recoveryKeys);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId);
