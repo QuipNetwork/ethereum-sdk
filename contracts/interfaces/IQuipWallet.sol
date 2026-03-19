@@ -16,6 +16,7 @@ interface IQuipWallet {
     error RenounceDisabled();
 
     error RecoveryKeyNotFound();
+    error IncorrectRecoveryKeyAmount();
     error RecoveryKeyLimitExceeded();
 
     /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
@@ -39,7 +40,7 @@ interface IQuipWallet {
     /// @notice Initializes the wallet with its first Winternitz public key and recovery keys.
     /// @dev Can only be called once, by the owner or the factory. Uses OpenZeppelin's `initializer` modifier.
     /// @param newPqOwner The Winternitz public key to set as the initial post-quantum owner.
-    /// @param recoveryKeys The initial set of recovery keys (up to 10).
+    /// @param recoveryKeys The initial set of recovery keys (must be exactly 10).
     function initialize(
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzAddress[] calldata recoveryKeys

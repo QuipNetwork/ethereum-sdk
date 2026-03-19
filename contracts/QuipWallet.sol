@@ -56,8 +56,7 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
     ) public initializer {
         if (msg.sender != owner() && msg.sender != quipFactory) revert UnauthorizedInitializer();
         if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
-        // checked internally, but this is a 'fail-fast' addition to save gas on reversions
-        if (recoveryKeys.length > MAX_RECOVERY_KEYS) revert RecoveryKeyLimitExceeded();
+        if (recoveryKeys.length != MAX_RECOVERY_KEYS) revert IncorrectRecoveryKeyAmount();
         pqOwner = newPqOwner;
         _addRecoveryKeys(recoveryKeys);
     }
