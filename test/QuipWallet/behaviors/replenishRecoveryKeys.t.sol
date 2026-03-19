@@ -12,7 +12,8 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
         // wallet has 10 recovery keys from setUp
         assertEq(wallet.getRecoveryKeyCount(), 10);
 
-        (WOTSPlus.WinternitzAddress[] memory newKeys, bytes32[] memory newPrivKeys) = _generateRecoveryKeys("replenish", 5);
+        bytes32 replenishBase = keccak256(abi.encodePacked(alicePrivateKey, "replenish"));
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(replenishBase, 5);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq-replenish");
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -45,7 +46,8 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
     }
 
     function test_replenishRecoveryKeys_revertsWhen_callerNotOwner() public {
-        (WOTSPlus.WinternitzAddress[] memory newKeys,) = _generateRecoveryKeys("replenish", 3);
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256(abi.encodePacked(alicePrivateKey, "replenish")), 3);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq");
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -59,7 +61,8 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
     }
 
     function test_replenishRecoveryKeys_revertsWhen_invalidSignature() public {
-        (WOTSPlus.WinternitzAddress[] memory newKeys,) = _generateRecoveryKeys("replenish", 3);
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256(abi.encodePacked(alicePrivateKey, "replenish")), 3);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq");
 
         WOTSPlus.WinternitzElements memory badSig = _sign(alicePrivateKey, keccak256("wrong"));
@@ -88,7 +91,8 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
     }
 
     function test_replenishRecoveryKeys_revertsWhen_tooManyNewKeys() public {
-        (WOTSPlus.WinternitzAddress[] memory tooMany,) = _generateRecoveryKeys("overflow", 11);
+        WOTSPlus.WinternitzAddress[] memory tooMany = _generateRecoveryKeys(
+            keccak256(abi.encodePacked(alicePrivateKey, "overflow")), 11);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq");
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -102,7 +106,8 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
     }
 
     function test_replenishRecoveryKeys_newKeysWorkForRecovery() public {
-        (WOTSPlus.WinternitzAddress[] memory newKeys, bytes32[] memory newPrivKeys) = _generateRecoveryKeys("replenish", 5);
+        bytes32 replenishBase = keccak256(abi.encodePacked(alicePrivateKey, "replenish"));
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(replenishBase, 5);
         (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPqPrivKey) = _generateKeyPair("next-pq-replenish");
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -117,7 +122,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory recoveredPq,) = _generateKeyPair("recovered-pq");
 
         bytes32 recoverMsg = _buildRecoverWalletMessageHash(address(wallet), newKeys[0], recoveredPq);
-        WOTSPlus.WinternitzElements memory recoverSig = _sign(newPrivKeys[0], recoverMsg);
+        WOTSPlus.WinternitzElements memory recoverSig = _sign(_recoverySigningKey(replenishBase, 0), recoverMsg);
 
         vm.prank(ALICE);
         wallet.recoverWallet(newKeys[0], recoveredPq, recoverSig);

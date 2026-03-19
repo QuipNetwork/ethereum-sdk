@@ -82,18 +82,28 @@ contract QuipFactoryTest is Test {
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 
-    /// @dev Generate recovery key pairs from a base seed
-    function _generateRecoveryKeys(bytes32 baseSeed, uint256 count)
+    /// @dev Generate recovery key public keys from a private key
+    function _generateRecoveryKeys(bytes32 privateKey, uint256 count)
         internal
         pure
-        returns (WOTSPlus.WinternitzAddress[] memory pubkeys, bytes32[] memory privateKeys)
+        returns (WOTSPlus.WinternitzAddress[] memory pubkeys)
     {
         pubkeys = new WOTSPlus.WinternitzAddress[](count);
-        privateKeys = new bytes32[](count);
         for (uint256 i = 0; i < count; i++) {
-            bytes32 seed = keccak256(abi.encodePacked(baseSeed, "recovery", i));
-            (pubkeys[i], privateKeys[i]) = WOTSPlus.generateKeyPair(seed);
+            bytes32 seed = keccak256(abi.encodePacked(privateKey, "recovery", i));
+            (pubkeys[i],) = WOTSPlus.generateKeyPair(seed);
         }
+    }
+
+    /// @dev Derive the signing key for a recovery key at a given index
+    function _recoverySigningKey(bytes32 privateKey, uint256 index)
+        internal
+        pure
+        returns (bytes32)
+    {
+        bytes32 seed = keccak256(abi.encodePacked(privateKey, "recovery", index));
+        (, bytes32 signingKey) = WOTSPlus.generateKeyPair(seed);
+        return signingKey;
     }
 
     /// @dev Deploy a QuipWallet through the factory and return its address
@@ -107,13 +117,12 @@ contract QuipFactoryTest is Test {
             address walletAddr,
             WOTSPlus.WinternitzAddress memory pubkey,
             bytes32 privateKey,
-            WOTSPlus.WinternitzAddress[] memory recoveryPubkeys,
-            bytes32[] memory recoveryPrivateKeys
+            WOTSPlus.WinternitzAddress[] memory recoveryPubkeys
         )
     {
         bytes32 vaultId = keccak256(abi.encodePacked(vaultSeed));
         (pubkey, privateKey) = _generateKeyPair(vaultSeed);
-        (recoveryPubkeys, recoveryPrivateKeys) = _generateRecoveryKeys(vaultSeed, 10);
+        recoveryPubkeys = _generateRecoveryKeys(privateKey, 10);
 
         vm.prank(owner);
         walletAddr = factory.depositToWinternitz{value: deposit}(

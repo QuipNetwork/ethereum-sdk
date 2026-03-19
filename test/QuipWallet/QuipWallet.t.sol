@@ -13,7 +13,6 @@ contract QuipWalletTest is QuipFactoryTest {
     WOTSPlus.WinternitzAddress public alicePubkey;
     bytes32 public alicePrivateKey;
     WOTSPlus.WinternitzAddress[] public recoveryPubkeys;
-    bytes32[] public recoveryPrivateKeys;
     bytes32 public constant VAULT_SEED = "alice-vault-1";
 
     function setUp() public virtual override {
@@ -22,8 +21,7 @@ contract QuipWalletTest is QuipFactoryTest {
         // Deploy a wallet for ALICE with initial deposit
         address walletAddr;
         WOTSPlus.WinternitzAddress[] memory rPubkeys;
-        bytes32[] memory rPrivateKeys;
-        (walletAddr, alicePubkey, alicePrivateKey, rPubkeys, rPrivateKeys) = _createWallet(
+        (walletAddr, alicePubkey, alicePrivateKey, rPubkeys) = _createWallet(
             ALICE,
             VAULT_SEED,
             INITIAL_DEPOSIT
@@ -32,7 +30,6 @@ contract QuipWalletTest is QuipFactoryTest {
 
         for (uint256 i = 0; i < rPubkeys.length; i++) {
             recoveryPubkeys.push(rPubkeys[i]);
-            recoveryPrivateKeys.push(rPrivateKeys[i]);
         }
     }
 

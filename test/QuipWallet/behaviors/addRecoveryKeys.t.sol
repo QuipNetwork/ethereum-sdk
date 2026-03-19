@@ -15,13 +15,12 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             address walletAddr_,
             WOTSPlus.WinternitzAddress memory pubkey_,
             bytes32 privateKey_,
-            WOTSPlus.WinternitzAddress[] memory rPubkeys_,
-            bytes32[] memory rPrivateKeys_
+            WOTSPlus.WinternitzAddress[] memory rPubkeys_
         )
     {
         bytes32 vaultId = keccak256(abi.encodePacked("add-test-vault"));
         (pubkey_, privateKey_) = _generateKeyPair("add-test-vault");
-        (rPubkeys_, rPrivateKeys_) = _generateRecoveryKeys("add-test-vault", 10);
+        rPubkeys_ = _generateRecoveryKeys(privateKey_, 10);
 
         vm.prank(ALICE);
         walletAddr_ = factory.depositToWinternitz{value: INITIAL_DEPOSIT}(
@@ -32,56 +31,45 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         );
     }
 
-    /// @dev Recover with a key to free one slot, returning the new pqOwner and its private key
-    function _recoverToFreeSlot(
-        QuipWallet w,
-        WOTSPlus.WinternitzAddress memory recoveryKey,
-        bytes32 recoveryPrivKey
-    ) internal returns (WOTSPlus.WinternitzAddress memory newPq, bytes32 newPqPrivKey) {
-        (newPq, newPqPrivKey) = _generateKeyPair("post-recovery-pq");
-
-        bytes32 msgHash = _buildRecoverWalletMessageHash(address(w), recoveryKey, newPq);
-        WOTSPlus.WinternitzElements memory sig = _sign(recoveryPrivKey, msgHash);
-
-        vm.prank(ALICE);
-        w.recoverWallet(recoveryKey, newPq, sig);
-    }
-
     function test_addRecoveryKeys_addsKeysAndRotatesPqOwner() public {
         (
             address walletAddr_,
             ,
-            ,
-            WOTSPlus.WinternitzAddress[] memory rPubkeys_,
-            bytes32[] memory rPrivateKeys_
+            bytes32 privateKey_,
+            WOTSPlus.WinternitzAddress[] memory rPubkeys_
         ) = _deployWallet();
 
         QuipWallet w = QuipWallet(payable(walletAddr_));
         assertEq(w.getRecoveryKeyCount(), 10);
 
         // Recover with first key to free a slot
-        (WOTSPlus.WinternitzAddress memory currentPq, bytes32 currentPqPrivKey) =
-            _recoverToFreeSlot(w, rPubkeys_[0], rPrivateKeys_[0]);
+        (WOTSPlus.WinternitzAddress memory postRecoveryPq, bytes32 postRecoverySigningKey) =
+            _generateKeyPair(privateKey_);
+        bytes32 recoverMsgHash = _buildRecoverWalletMessageHash(walletAddr_, rPubkeys_[0], postRecoveryPq);
+        WOTSPlus.WinternitzElements memory recoverSig =
+            _sign(_recoverySigningKey(privateKey_, 0), recoverMsgHash);
+
+        vm.prank(ALICE);
+        w.recoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig);
         assertEq(w.getRecoveryKeyCount(), 9);
 
         // Add 1 new key
-        (WOTSPlus.WinternitzAddress[] memory newKeys, ) = _generateRecoveryKeys("add-new", 1);
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq-add");
+        bytes32 addBase = keccak256(abi.encodePacked(privateKey_, "add"));
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(addBase, 1);
+        (WOTSPlus.WinternitzAddress memory nextPq,) =
+            _generateKeyPair(keccak256(abi.encodePacked(privateKey_, uint256(1))));
 
-        bytes32 msgHash = _buildAddRecoveryKeysMessageHash(walletAddr_, currentPq, nextPq, newKeys);
-        WOTSPlus.WinternitzElements memory sig = _sign(currentPqPrivKey, msgHash);
+        bytes32 msgHash = _buildAddRecoveryKeysMessageHash(walletAddr_, postRecoveryPq, nextPq, newKeys);
+        WOTSPlus.WinternitzElements memory sig = _sign(postRecoverySigningKey, msgHash);
 
         vm.prank(ALICE);
         w.addRecoveryKeys(nextPq, sig, newKeys);
 
-        // Count restored
         assertEq(w.getRecoveryKeyCount(), 10);
 
-        // New key is in the set
         bytes32 keyHash = keccak256(abi.encode(newKeys[0].publicSeed, newKeys[0].publicKeyHash));
         assertTrue(w.isRecoveryKey(keyHash));
 
-        // pqOwner rotated
         (bytes32 publicSeed, bytes32 publicKeyHash) = w.pqOwner();
         assertEq(publicSeed, nextPq.publicSeed);
         assertEq(publicKeyHash, nextPq.publicKeyHash);
@@ -91,13 +79,14 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         (
             address walletAddr_,
             WOTSPlus.WinternitzAddress memory pubkey_,
-            bytes32 privateKey_,,
+            bytes32 privateKey_,
         ) = _deployWallet();
 
         QuipWallet w = QuipWallet(payable(walletAddr_));
 
-        (WOTSPlus.WinternitzAddress[] memory newKeys, ) = _generateRecoveryKeys("add-new", 1);
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq");
+        bytes32 addBase = keccak256(abi.encodePacked(privateKey_, "add"));
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(addBase, 1);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair(privateKey_);
 
         bytes32 msgHash = _buildAddRecoveryKeysMessageHash(walletAddr_, pubkey_, nextPq, newKeys);
         WOTSPlus.WinternitzElements memory sig = _sign(privateKey_, msgHash);
@@ -110,15 +99,14 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
     function test_addRecoveryKeys_revertsWhen_invalidSignature() public {
         (
             address walletAddr_,,,
-            ,
         ) = _deployWallet();
 
         QuipWallet w = QuipWallet(payable(walletAddr_));
 
-        (WOTSPlus.WinternitzAddress[] memory newKeys, ) = _generateRecoveryKeys("add-new", 1);
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq");
+        bytes32 addBase = keccak256(abi.encodePacked(bytes32("wrong"), "add"));
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(addBase, 1);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("wrong");
 
-        // Sign wrong message
         (, bytes32 wrongKey) = _generateKeyPair("wrong");
         WOTSPlus.WinternitzElements memory badSig = _sign(wrongKey, keccak256("wrong"));
 
@@ -131,26 +119,32 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         (
             address walletAddr_,
             ,
-            ,
-            WOTSPlus.WinternitzAddress[] memory rPubkeys_,
-            bytes32[] memory rPrivateKeys_
+            bytes32 privateKey_,
+            WOTSPlus.WinternitzAddress[] memory rPubkeys_
         ) = _deployWallet();
 
         QuipWallet w = QuipWallet(payable(walletAddr_));
 
         // Recover to free a slot first
-        (WOTSPlus.WinternitzAddress memory currentPq, bytes32 currentPqPrivKey) =
-            _recoverToFreeSlot(w, rPubkeys_[0], rPrivateKeys_[0]);
+        (WOTSPlus.WinternitzAddress memory currentPq, bytes32 currentPqSigningKey) =
+            _generateKeyPair(privateKey_);
+        bytes32 recoverMsgHash = _buildRecoverWalletMessageHash(walletAddr_, rPubkeys_[0], currentPq);
+        WOTSPlus.WinternitzElements memory recoverSig =
+            _sign(_recoverySigningKey(privateKey_, 0), recoverMsgHash);
+
+        vm.prank(ALICE);
+        w.recoverWallet(rPubkeys_[0], currentPq, recoverSig);
 
         WOTSPlus.WinternitzAddress[] memory badKeys = new WOTSPlus.WinternitzAddress[](1);
         badKeys[0] = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(0),
             publicKeyHash: bytes32("non-empty")
         });
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq,) =
+            _generateKeyPair(keccak256(abi.encodePacked(privateKey_, uint256(1))));
 
         bytes32 msgHash = _buildAddRecoveryKeysMessageHash(walletAddr_, currentPq, nextPq, badKeys);
-        WOTSPlus.WinternitzElements memory sig = _sign(currentPqPrivKey, msgHash);
+        WOTSPlus.WinternitzElements memory sig = _sign(currentPqSigningKey, msgHash);
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidPqOwner.selector);
@@ -161,14 +155,15 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         (
             address walletAddr_,
             WOTSPlus.WinternitzAddress memory pubkey_,
-            bytes32 privateKey_,,
+            bytes32 privateKey_,
         ) = _deployWallet();
 
         QuipWallet w = QuipWallet(payable(walletAddr_));
 
         // Already has 10, adding 1 would exceed cap
-        (WOTSPlus.WinternitzAddress[] memory extraKey, ) = _generateRecoveryKeys("overflow", 1);
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq");
+        bytes32 addBase = keccak256(abi.encodePacked(privateKey_, "add"));
+        WOTSPlus.WinternitzAddress[] memory extraKey = _generateRecoveryKeys(addBase, 1);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair(privateKey_);
 
         bytes32 msgHash = _buildAddRecoveryKeysMessageHash(walletAddr_, pubkey_, nextPq, extraKey);
         WOTSPlus.WinternitzElements memory sig = _sign(privateKey_, msgHash);

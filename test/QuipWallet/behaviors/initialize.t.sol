@@ -55,9 +55,9 @@ contract QuipWallet_initialize is QuipWalletTest {
 
     function test_initialize_revertsWhen_recoveryKeyHasZeroSeed() public {
         QuipWallet freshWallet = new QuipWallet(payable(address(factory)), payable(ALICE));
-        (WOTSPlus.WinternitzAddress memory newPubkey,) = _generateKeyPair("new-seed");
+        (WOTSPlus.WinternitzAddress memory newPubkey, bytes32 newPrivKey) = _generateKeyPair("new-seed");
 
-        (WOTSPlus.WinternitzAddress[] memory badRecovery,) = _generateRecoveryKeys("bad-recovery", 10);
+        WOTSPlus.WinternitzAddress[] memory badRecovery = _generateRecoveryKeys(newPrivKey, 10);
         badRecovery[0] = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(0),
             publicKeyHash: bytes32("non-empty")
@@ -80,8 +80,8 @@ contract QuipWallet_initialize is QuipWalletTest {
 
     function test_initialize_revertsWhen_tooManyRecoveryKeys() public {
         QuipWallet freshWallet = new QuipWallet(payable(address(factory)), payable(ALICE));
-        (WOTSPlus.WinternitzAddress memory newPubkey,) = _generateKeyPair("new-seed");
-        (WOTSPlus.WinternitzAddress[] memory tooMany,) = _generateRecoveryKeys("overflow", 11);
+        (WOTSPlus.WinternitzAddress memory newPubkey, bytes32 newPrivKey) = _generateKeyPair("new-seed");
+        WOTSPlus.WinternitzAddress[] memory tooMany = _generateRecoveryKeys(newPrivKey, 11);
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.IncorrectRecoveryKeyAmount.selector);

@@ -11,7 +11,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("new-pq-after-recovery");
 
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = recoveryPrivateKeys[0];
+        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
 
         bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, newPq);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
@@ -36,7 +36,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("new-pq");
 
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = recoveryPrivateKeys[0];
+        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
 
         bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, newPq);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
@@ -65,7 +65,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         });
 
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = recoveryPrivateKeys[0];
+        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
 
         bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, zeroPq);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
@@ -79,7 +79,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("new-pq");
 
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = recoveryPrivateKeys[0];
+        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
 
         // Sign a wrong message
         bytes32 wrongMsgHash = keccak256("wrong message");
@@ -95,7 +95,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory newPq1,) = _generateKeyPair("new-pq-1");
         WOTSPlus.WinternitzAddress memory rKey0 = recoveryPubkeys[0];
         bytes32 msgHash1 = _buildRecoverWalletMessageHash(address(wallet), rKey0, newPq1);
-        WOTSPlus.WinternitzElements memory sig1 = _sign(recoveryPrivateKeys[0], msgHash1);
+        WOTSPlus.WinternitzElements memory sig1 = _sign(_recoverySigningKey(alicePrivateKey, 0), msgHash1);
 
         vm.prank(ALICE);
         wallet.recoverWallet(rKey0, newPq1, sig1);
@@ -106,7 +106,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory newPq2,) = _generateKeyPair("new-pq-2");
         WOTSPlus.WinternitzAddress memory rKey1 = recoveryPubkeys[1];
         bytes32 msgHash2 = _buildRecoverWalletMessageHash(address(wallet), rKey1, newPq2);
-        WOTSPlus.WinternitzElements memory sig2 = _sign(recoveryPrivateKeys[1], msgHash2);
+        WOTSPlus.WinternitzElements memory sig2 = _sign(_recoverySigningKey(alicePrivateKey, 1), msgHash2);
 
         vm.prank(ALICE);
         wallet.recoverWallet(rKey1, newPq2, sig2);
@@ -120,7 +120,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
 
         bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, newPq);
-        WOTSPlus.WinternitzElements memory sig = _sign(recoveryPrivateKeys[0], msgHash);
+        WOTSPlus.WinternitzElements memory sig = _sign(_recoverySigningKey(alicePrivateKey, 0), msgHash);
 
         vm.prank(ALICE);
         wallet.recoverWallet(rKey, newPq, sig);

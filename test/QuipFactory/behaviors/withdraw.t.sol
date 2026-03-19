@@ -15,8 +15,8 @@ contract QuipFactory_withdraw is QuipFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 vaultId = keccak256("Fee Vault");
-        (WOTSPlus.WinternitzAddress memory pubkey,) = _generateKeyPair("seed1");
-        (WOTSPlus.WinternitzAddress[] memory rKeys,) = _generateRecoveryKeys("seed1", 10);
+        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
         vm.prank(ALICE);
         factory.depositToWinternitz{value: INITIAL_DEPOSIT + CREATION_FEE}(
