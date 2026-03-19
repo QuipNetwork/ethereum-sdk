@@ -20,6 +20,7 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
 
         bytes32 vaultId = keccak256("Vault 1");
         (WOTSPlus.WinternitzAddress memory pubkey,) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory noRecovery = new WOTSPlus.WinternitzAddress[](0);
 
         uint256 factoryBalBefore = address(factory).balance;
 
@@ -27,7 +28,8 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
         factory.depositToWinternitz{value: INITIAL_DEPOSIT + CREATION_FEE}(
             vaultId,
             payable(ALICE),
-            pubkey
+            pubkey,
+            noRecovery
         );
 
         assertEq(address(factory).balance, factoryBalBefore + CREATION_FEE);

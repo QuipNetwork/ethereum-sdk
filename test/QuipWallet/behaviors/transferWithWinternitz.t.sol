@@ -66,7 +66,7 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         (
             address bobWalletAddr,
             WOTSPlus.WinternitzAddress memory bobPubkey,
-            bytes32 bobPrivateKey
+            bytes32 bobPrivateKey,,
         ) = _createWallet(BOB, "bob-vault-1", 0);
 
         uint256 transferAmount = 0.5 ether;

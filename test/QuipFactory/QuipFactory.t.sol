@@ -82,6 +82,20 @@ contract QuipFactoryTest is Test {
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 
+    /// @dev Generate recovery key pairs from a base seed
+    function _generateRecoveryKeys(bytes32 baseSeed, uint256 count)
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress[] memory pubkeys, bytes32[] memory privateKeys)
+    {
+        pubkeys = new WOTSPlus.WinternitzAddress[](count);
+        privateKeys = new bytes32[](count);
+        for (uint256 i = 0; i < count; i++) {
+            bytes32 seed = keccak256(abi.encodePacked(baseSeed, "recovery", i));
+            (pubkeys[i], privateKeys[i]) = WOTSPlus.generateKeyPair(seed);
+        }
+    }
+
     /// @dev Deploy a QuipWallet through the factory and return its address
     function _createWallet(
         address owner,
@@ -92,17 +106,21 @@ contract QuipFactoryTest is Test {
         returns (
             address walletAddr,
             WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 privateKey
+            bytes32 privateKey,
+            WOTSPlus.WinternitzAddress[] memory recoveryPubkeys,
+            bytes32[] memory recoveryPrivateKeys
         )
     {
         bytes32 vaultId = keccak256(abi.encodePacked(vaultSeed));
         (pubkey, privateKey) = _generateKeyPair(vaultSeed);
+        (recoveryPubkeys, recoveryPrivateKeys) = _generateRecoveryKeys(vaultSeed, 10);
 
         vm.prank(owner);
         walletAddr = factory.depositToWinternitz{value: deposit}(
             vaultId,
             payable(owner),
-            pubkey
+            pubkey,
+            recoveryPubkeys
         );
     }
 
