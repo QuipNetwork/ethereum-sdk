@@ -29,7 +29,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     address public immutable wotsLibrary;
 
     /// @inheritdoc IQuipFactory
-    uint256 public constant MAX_FEE = 0.1 ether;
+    uint256 public immutable MAX_FEE;
 
     /// @inheritdoc IQuipFactory
     uint256 public creationFee = 0;
@@ -48,8 +48,9 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     fallback() external payable {}
 
-    constructor(address payable initialOwner, address _wotsLibrary) payable Ownable(initialOwner) {
+    constructor(address payable initialOwner, address _wotsLibrary, uint256 _maxFee) payable Ownable(initialOwner) {
         wotsLibrary = _wotsLibrary;
+        MAX_FEE = _maxFee;
     }
 
     /// @inheritdoc IQuipFactory

@@ -42,7 +42,7 @@ contract QuipFactoryTest is Test {
         // Deploy QuipFactory via CREATE3
         bytes memory factoryBytecode = abi.encodePacked(
             type(QuipFactory).creationCode,
-            abi.encode(ADMIN, wotsLibrary)
+            abi.encode(ADMIN, wotsLibrary, 0.1 ether)
         );
         bytes32 factorySalt = keccak256("QuipFactory");
         address factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
