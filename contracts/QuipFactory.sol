@@ -17,7 +17,7 @@
 pragma solidity ^0.8.33;
 
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
@@ -48,7 +48,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     fallback() external payable {}
 
-    constructor(address payable initialOwner, address _wotsLibrary, uint256 _maxFee) payable Ownable(initialOwner) {
+    constructor(address payable initialOwner, address _wotsLibrary, uint256 _maxFee) payable OZOwnable(initialOwner) {
         wotsLibrary = _wotsLibrary;
         MAX_FEE = _maxFee;
     }
@@ -62,17 +62,13 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     ) public payable returns (address) {
         address contractAddr;
 
-        bytes memory quipWalletCode = abi.encodePacked(
-            type(QuipWallet).creationCode,
-            // Encode params for the constructor
-            abi.encode(address(this), to)
-        );
+        bytes memory quipWalletCode = type(QuipWallet).creationCode;
 
         uint256 contractValue = msg.value - creationFee;
 
         contractAddr = CREATE3.deployDeterministic(quipWalletCode, vaultId);
 
-        QuipWallet(payable(contractAddr)).initialize(pqTo, recoveryKeys);
+        QuipWallet(payable(contractAddr)).initialize(payable(address(this)), to, pqTo, recoveryKeys);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId);

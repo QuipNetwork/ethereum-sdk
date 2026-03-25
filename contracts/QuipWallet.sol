@@ -17,16 +17,16 @@
 pragma solidity ^0.8.33;
 
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
-import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
+import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
+import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
+import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
-import {Initializable} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/utils/Initializable.sol";
 import "./interfaces/IQuipWallet.sol";
 import "./interfaces/IQuipFactory.sol";
 
-contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
+contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     /// @inheritdoc IQuipWallet
@@ -41,24 +41,86 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
 
     fallback() external payable {}
 
-    constructor(address payable creator, address payable newOwner) payable Ownable(newOwner) {
-        quipFactory = creator;
+    constructor() {
+        // When the factory switches to proxy deployment, uncomment:
+        // _disableInitializers();
     }
 
-    function renounceOwnership() public view override onlyOwner {
+    function _guardInitializeOwner() internal pure override returns (bool) {
+        return true;
+    }
+
+    function renounceOwnership() public payable override onlyOwner {
         revert RenounceDisabled();
     }
 
     /// @inheritdoc IQuipWallet
     function initialize(
+        address payable factory_,
+        address payable newOwner,
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzAddress[] calldata recoveryKeys
     ) public initializer {
-        if (msg.sender != owner() && msg.sender != quipFactory) revert UnauthorizedInitializer();
         if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
         if (recoveryKeys.length != MAX_RECOVERY_KEYS) revert IncorrectRecoveryKeyAmount();
+        quipFactory = factory_;
+        _initializeOwner(newOwner);
         pqOwner = newPqOwner;
         _addRecoveryKeys(recoveryKeys);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      UUPS UPGRADE                             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    function upgradeToAndCall(address newImplementation, bytes calldata data)
+        public
+        payable
+        override
+    {
+        _verifyUpgradeTx(newImplementation, data);
+        super.upgradeToAndCall(newImplementation, data);
+    }
+
+    function _verifyUpgradeTx(address newImplementation, bytes calldata data) internal view {
+        (
+            WOTSPlus.WinternitzElements memory pqSig,
+            WOTSPlus.WinternitzAddress memory pqSigner,
+        ) = _extractVerifiers(data);
+
+        bytes32 msgHash = keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                newImplementation,
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                pqSigner.publicSeed,
+                pqSigner.publicKeyHash
+            )
+        );
+
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: msgHash
+        });
+
+        if (!WOTSPlus.verify(pqOwner, message, pqSig)) revert InvalidSignature();
+    }
+
+    function _extractVerifiers(bytes calldata data)
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzElements memory pqSig,
+            WOTSPlus.WinternitzAddress memory pqSigner,
+            bool isRequired
+        )
+    {
+        (WOTSPlus.WinternitzAddress memory nextPqOwner, WOTSPlus.WinternitzElements memory sig) =
+            abi.decode(data, (WOTSPlus.WinternitzAddress, WOTSPlus.WinternitzElements));
+        return (sig, nextPqOwner, true);
     }
 
     /// @inheritdoc IQuipWallet
