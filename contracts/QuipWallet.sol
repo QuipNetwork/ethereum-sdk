@@ -85,15 +85,19 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         payable
         override
     {
-        _verifyUpgradeTx(newImplementation, data);
-        super.upgradeToAndCall(newImplementation, data);
+        // data layout: [0:64) pqSigner, [64:2208) pqSig
+        // Delegatecall verifyUpgrade on the new implementation to ensure
+        // it supports the interface (runs new code with proxy storage).
+        bytes memory encoded = abi.encodeCall(this.verifyUpgrade, (newImplementation, data));
+        LibCall.delegateCallContract(newImplementation, encoded);
+        super.upgradeToAndCall(newImplementation, data[0:0]);
     }
 
-    function _verifyUpgradeTx(address newImplementation, bytes calldata data) internal view {
-        (
-            WOTSPlus.WinternitzElements memory pqSig,
-            WOTSPlus.WinternitzAddress memory pqSigner,
-        ) = _extractVerifiers(data);
+    /// @notice Verifies a PQ signature authorizing an upgrade.
+    /// @dev Data layout: [0:64) pqSigner (WinternitzAddress), [64:2208) pqSig (WinternitzElements).
+    function verifyUpgrade(address newImplementation, bytes calldata data) public view {
+        WOTSPlus.WinternitzAddress calldata pqSigner = Codec.extractPqOwner(data);
+        WOTSPlus.WinternitzElements calldata pqSig = Codec.extractPqSig(data);
 
         bytes32 msgHash = keccak256(
             abi.encodePacked(
@@ -112,20 +116,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         });
 
         if (!WOTSPlus.verify(pqOwner, message, pqSig)) revert InvalidSignature();
-    }
-
-    function _extractVerifiers(bytes calldata data)
-        internal
-        pure
-        returns (
-            WOTSPlus.WinternitzElements memory pqSig,
-            WOTSPlus.WinternitzAddress memory pqSigner,
-            bool isRequired
-        )
-    {
-        (WOTSPlus.WinternitzAddress memory nextPqOwner, WOTSPlus.WinternitzElements memory sig) =
-            abi.decode(data, (WOTSPlus.WinternitzAddress, WOTSPlus.WinternitzElements));
-        return (sig, nextPqOwner, true);
     }
 
     /// @inheritdoc IQuipWallet
