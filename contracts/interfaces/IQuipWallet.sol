@@ -7,7 +7,6 @@ import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz one-time signatures,
 ///         providing post-quantum security for ETH transfers and arbitrary calls.
 interface IQuipWallet {
-    error UnauthorizedInitializer();
     error InvalidPqOwner();
 
     error InvalidSignature();
@@ -37,11 +36,15 @@ interface IQuipWallet {
     event RecoveryKeysReplenished(WOTSPlus.WinternitzAddress nextPqOwner);
     event RecoveryKeysAdded(WOTSPlus.WinternitzAddress nextPqOwner, uint256 count);
 
-    /// @notice Initializes the wallet with its first Winternitz public key and recovery keys.
-    /// @dev Can only be called once, by the owner or the factory. Uses OpenZeppelin's `initializer` modifier.
+    /// @notice Initializes the wallet with its factory, classical owner, post-quantum owner, and recovery keys.
+    /// @dev Can only be called once. Uses Solady's `initializer` modifier.
+    /// @param factory_ The QuipFactory address.
+    /// @param newOwner The classical owner address.
     /// @param newPqOwner The Winternitz public key to set as the initial post-quantum owner.
     /// @param recoveryKeys The initial set of recovery keys (must be exactly 10).
     function initialize(
+        address payable factory_,
+        address payable newOwner,
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzAddress[] calldata recoveryKeys
     ) external;
