@@ -25,6 +25,7 @@ import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 import "./interfaces/IQuipWallet.sol";
 import "./interfaces/IQuipFactory.sol";
+import {WOTSPlusCodec as Codec} from "./WOTSPlusCodec.sol";
 
 contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
@@ -58,15 +59,19 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     function initialize(
         address payable factory_,
         address payable newOwner,
-        WOTSPlus.WinternitzAddress calldata newPqOwner,
-        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
+        bytes calldata payload
     ) public initializer {
+        WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(payload);
         if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
-        if (recoveryKeys.length != MAX_RECOVERY_KEYS) revert IncorrectRecoveryKeyAmount();
+
         quipFactory = factory_;
         _initializeOwner(newOwner);
         pqOwner = newPqOwner;
+
+        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec.extractInitRecoveryKeys(payload);
         _addRecoveryKeys(recoveryKeys);
+
+        emit WalletInitialized(factory_, newOwner, newPqOwner, recoveryKeys);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -333,6 +338,17 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     function _addRecoveryKeys(WOTSPlus.WinternitzAddress[] calldata keys) internal {
         uint256 len = keys.length;
         for (uint256 i = 0; i < len; ++i) {
+            if (keys[i].publicSeed == bytes32(0) || keys[i].publicKeyHash == bytes32(0)) {
+                revert InvalidPqOwner();
+            }
+            bytes32 keyHash = keccak256(abi.encode(keys[i].publicSeed, keys[i].publicKeyHash));
+            _recoveryKeyHashes.add(keyHash, MAX_RECOVERY_KEYS);
+        }
+    }
+
+    /// @dev Fixed-size overload used by initialize (codec returns WinternitzAddress[10]).
+    function _addRecoveryKeys(WOTSPlus.WinternitzAddress[10] calldata keys) internal {
+        for (uint256 i = 0; i < MAX_RECOVERY_KEYS; ++i) {
             if (keys[i].publicSeed == bytes32(0) || keys[i].publicKeyHash == bytes32(0)) {
                 revert InvalidPqOwner();
             }

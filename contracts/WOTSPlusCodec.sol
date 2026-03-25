@@ -4,11 +4,15 @@ pragma solidity ^0.8.33;
 import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title WOTSPlusCodec
-/// @dev Payload layout (all offsets in bytes):
+/// @dev Operation payload layout (all offsets in bytes):
 ///      [0:64)      WinternitzAddress     — pqOwner (publicSeed ++ publicKeyHash)
 ///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
 ///      [2208:2848) WinternitzAddress[10] — recoveryKeys (10 x 64)
 ///      [2848:)     bytes                 — verifier data (variable length)
+///
+///      Init payload layout:
+///      [0:64)      WinternitzAddress     — pqOwner
+///      [64:704)    WinternitzAddress[10] — recoveryKeys (10 x 64)
 ///
 ///      Constants:
 ///        RECOVERY_KEY_AMOUNT = 10
@@ -51,6 +55,17 @@ library WOTSPlusCodec {
     {
         assembly {
             keys := add(payload.offset, 2208) // PQ_OWNER_SIZE + PQ_SIG_SIZE
+        }
+    }
+
+    /// @dev Extract recovery keys from init payload (no pqSig, keys follow pqOwner directly).
+    function extractInitRecoveryKeys(bytes calldata payload)
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress[10] calldata keys)
+    {
+        assembly {
+            keys := add(payload.offset, 64) // PQ_OWNER_SIZE
         }
     }
 

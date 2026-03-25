@@ -32,21 +32,27 @@ interface IQuipWallet {
         address to
     );
 
+    event WalletInitialized(
+        address indexed factory,
+        address indexed owner,
+        WOTSPlus.WinternitzAddress pqOwner,
+        WOTSPlus.WinternitzAddress[10] recoveryKeys
+    );
+
     event pqRecovery(WOTSPlus.WinternitzAddress recoveryKey, WOTSPlus.WinternitzAddress newPqOwner);
     event RecoveryKeysReplenished(WOTSPlus.WinternitzAddress nextPqOwner);
     event RecoveryKeysAdded(WOTSPlus.WinternitzAddress nextPqOwner, uint256 count);
 
     /// @notice Initializes the wallet with its factory, classical owner, post-quantum owner, and recovery keys.
     /// @dev Can only be called once. Uses Solady's `initializer` modifier.
+    ///      Payload layout: [0:64) pqOwner, [64:704) recoveryKeys (10 × 64).
     /// @param factory_ The QuipFactory address.
     /// @param newOwner The classical owner address.
-    /// @param newPqOwner The Winternitz public key to set as the initial post-quantum owner.
-    /// @param recoveryKeys The initial set of recovery keys (must be exactly 10).
+    /// @param payload Packed init data: pqOwner ++ recoveryKeys[10].
     function initialize(
         address payable factory_,
         address payable newOwner,
-        WOTSPlus.WinternitzAddress calldata newPqOwner,
-        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
+        bytes calldata payload
     ) external;
 
     /// @notice Rotates the post-quantum owner key to a new Winternitz public key.

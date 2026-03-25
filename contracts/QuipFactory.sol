@@ -68,7 +68,15 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         contractAddr = CREATE3.deployDeterministic(quipWalletCode, vaultId);
 
-        QuipWallet(payable(contractAddr)).initialize(payable(address(this)), to, pqTo, recoveryKeys);
+        bytes memory initPayload = abi.encodePacked(pqTo.publicSeed, pqTo.publicKeyHash);
+        for (uint256 i = 0; i < recoveryKeys.length; i++) {
+            initPayload = abi.encodePacked(
+                initPayload,
+                recoveryKeys[i].publicSeed,
+                recoveryKeys[i].publicKeyHash
+            );
+        }
+        QuipWallet(payable(contractAddr)).initialize(payable(address(this)), to, initPayload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId);
