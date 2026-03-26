@@ -62,7 +62,10 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     ) public payable returns (address) {
         address contractAddr;
 
-        bytes memory quipWalletCode = type(QuipWallet).creationCode;
+        bytes memory quipWalletCode = abi.encodePacked(
+            type(QuipWallet).creationCode,
+            abi.encode(address(this))
+        );
 
         uint256 contractValue = msg.value - creationFee;
 
@@ -76,7 +79,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
                 recoveryKeys[i].publicKeyHash
             );
         }
-        QuipWallet(payable(contractAddr)).initialize(payable(address(this)), to, initPayload);
+        QuipWallet(payable(contractAddr)).initialize(to, initPayload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId);

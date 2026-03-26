@@ -32,12 +32,15 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     uint256 public constant MAX_RECOVERY_KEYS = 10;
+    address payable public immutable FACTORY;
 
     receive() external payable {}
 
     fallback() external payable {}
 
-    constructor() {
+    constructor(address payable factory_) {
+        if (factory_ == address(0)) revert ZeroAddressFactory();
+        FACTORY = factory_;
         // When the factory switches to proxy deployment, uncomment:
         // _disableInitializers();
     }
@@ -63,23 +66,24 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
     /// @inheritdoc IQuipWallet
     function initialize(
-        address payable factory_,
         address payable newOwner,
         bytes calldata payload
     ) public initializer {
+        if (msg.sender != FACTORY) revert InvalidFactory();
+        if (newOwner == address(0)) revert ZeroAddressOwner();
+
         WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(payload);
-        if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
-        if (newOwner == address(0)) revert InvalidOwner();
-        
+        if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert ZeroValuePqOwner();
+
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
-        $.quipFactory = factory_;
+        $.quipFactory = FACTORY;
         $.pqOwner = newPqOwner;
 
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec.extractInitRecoveryKeys(payload);
         _addRecoveryKeys(recoveryKeys);
 
-        emit WalletInitialized(factory_, newOwner, newPqOwner, recoveryKeys);
+        emit WalletInitialized(FACTORY, newOwner, newPqOwner, recoveryKeys);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -236,7 +240,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         bytes32 keyHash = keccak256(abi.encode(recoveryKey.publicSeed, recoveryKey.publicKeyHash));
         if (!$.recoveryKeyHashes.contains(keyHash)) revert RecoveryKeyNotFound();
 
-        if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
+        if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert ZeroValuePqOwner();
 
         bytes32 msgHash = keccak256(
             abi.encodePacked(
@@ -267,7 +271,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig,
         WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
     ) public onlyOwner {
-        if (nextPqOwner.publicSeed == bytes32(0) || nextPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
+        if (nextPqOwner.publicSeed == bytes32(0) || nextPqOwner.publicKeyHash == bytes32(0)) revert ZeroValuePqOwner();
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 keysHash = keccak256(abi.encode(newRecoveryKeys));
@@ -302,7 +306,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig,
         WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
     ) public onlyOwner {
-        if (nextPqOwner.publicSeed == bytes32(0) || nextPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
+        if (nextPqOwner.publicSeed == bytes32(0) || nextPqOwner.publicKeyHash == bytes32(0)) revert ZeroValuePqOwner();
         if (newRecoveryKeys.length > MAX_RECOVERY_KEYS) revert RecoveryKeyLimitExceeded();
 
         Storage.Layout storage $ = Storage.layout();
@@ -344,7 +348,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         uint256 len = keys.length;
         for (uint256 i = 0; i < len; ++i) {
             if (keys[i].publicSeed == bytes32(0) || keys[i].publicKeyHash == bytes32(0)) {
-                revert InvalidPqOwner();
+                revert ZeroValuePqOwner();
             }
             bytes32 keyHash = keccak256(abi.encode(keys[i].publicSeed, keys[i].publicKeyHash));
             hashes.add(keyHash, MAX_RECOVERY_KEYS);
@@ -356,7 +360,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         EnumerableSetLib.Bytes32Set storage hashes = Storage.layout().recoveryKeyHashes;
         for (uint256 i = 0; i < MAX_RECOVERY_KEYS; ++i) {
             if (keys[i].publicSeed == bytes32(0) || keys[i].publicKeyHash == bytes32(0)) {
-                revert InvalidPqOwner();
+                revert ZeroValuePqOwner();
             }
             bytes32 keyHash = keccak256(abi.encode(keys[i].publicSeed, keys[i].publicKeyHash));
             hashes.add(keyHash, MAX_RECOVERY_KEYS);
