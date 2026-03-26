@@ -44,10 +44,6 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     /// @inheritdoc IQuipFactory
     mapping(address => bytes32[]) public vaultIds;
 
-    receive() external payable {}
-
-    fallback() external payable {}
-
     constructor(
         address payable initialOwner,
         address wotsLibrary_,
@@ -56,6 +52,14 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         wotsLibrary = wotsLibrary_;
         MAX_FEE = maxFee_;
     }
+
+    receive() external payable {}
+
+    fallback() external payable {}
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          PUBLIC                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipFactory
     function depositToWinternitz(

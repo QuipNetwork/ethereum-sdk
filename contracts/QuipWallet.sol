@@ -34,10 +34,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     uint256 public constant MAX_RECOVERY_KEYS = 10;
     address payable public immutable FACTORY;
 
-    receive() external payable {}
-
-    fallback() external payable {}
-
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
         FACTORY = factory_;
@@ -45,9 +41,23 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         // _disableInitializers();
     }
 
+    receive() external payable {}
+
+    fallback() external payable {}
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    INTERNAL OVERRIDES                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
     function _guardInitializeOwner() internal pure override returns (bool) {
         return true;
     }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          PUBLIC                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Disabled; always reverts.
     function renounceOwnership() public payable override onlyOwner {
@@ -82,12 +92,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         emit WalletInitialized(FACTORY, newOwner, newPqOwner, recoveryKeys);
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                      UUPS UPGRADE                             */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    function _authorizeUpgrade(address) internal override onlyOwner {}
-
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
@@ -98,38 +102,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         );
         LibCall.delegateCallContract(newImplementation, encoded);
         super.upgradeToAndCall(newImplementation, data[0:0]);
-    }
-
-    /// @notice Verifies a PQ signature authorizing an upgrade.
-    /// @dev Data layout: [0:64) pqSigner (WinternitzAddress), [64:2208) pqSig (WinternitzElements).
-    function verifyUpgrade(
-        address newImplementation,
-        bytes calldata data
-    ) public view {
-        WOTSPlus.WinternitzAddress calldata pqSigner = Codec.extractPqOwner(
-            data
-        );
-        WOTSPlus.WinternitzElements calldata pqSig = Codec.extractPqSig(data);
-
-        Storage.Layout storage $ = Storage.layout();
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                newImplementation,
-                $.pqOwner.publicSeed,
-                $.pqOwner.publicKeyHash,
-                pqSigner.publicSeed,
-                pqSigner.publicKeyHash
-            )
-        );
-
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
-            revert InvalidSignature();
     }
 
     /// @inheritdoc IQuipWallet
@@ -369,6 +341,38 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         VIEWS                                 */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Verifies a PQ signature authorizing an upgrade.
+    /// @dev Data layout: [0:64) pqSigner (WinternitzAddress), [64:2208) pqSig (WinternitzElements).
+    function verifyUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) public view {
+        WOTSPlus.WinternitzAddress calldata pqSigner = Codec.extractPqOwner(
+            data
+        );
+        WOTSPlus.WinternitzElements calldata pqSig = Codec.extractPqSig(data);
+
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 msgHash = keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                newImplementation,
+                $.pqOwner.publicSeed,
+                $.pqOwner.publicKeyHash,
+                pqSigner.publicSeed,
+                pqSigner.publicKeyHash
+            )
+        );
+
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: msgHash
+        });
+
+        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
+            revert InvalidSignature();
+    }
 
     /// @inheritdoc IQuipWallet
     function quipFactory() public view returns (address payable) {
