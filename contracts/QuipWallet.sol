@@ -69,10 +69,11 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     ) public initializer {
         WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(payload);
         if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
-
+        if (newOwner == address(0)) revert InvalidOwner();
+        
+        _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
         $.quipFactory = factory_;
-        _initializeOwner(newOwner);
         $.pqOwner = newPqOwner;
 
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec.extractInitRecoveryKeys(payload);
