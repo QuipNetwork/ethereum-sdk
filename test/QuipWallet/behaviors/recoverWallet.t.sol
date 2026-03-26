@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 contract QuipWallet_recoverWallet is QuipWalletTest {
@@ -42,7 +42,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
         vm.prank(BOB);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, BOB));
+        vm.expectRevert(SoladyOwnable.Unauthorized.selector);
         wallet.recoverWallet(rKey, newPq, sig);
     }
 
@@ -71,7 +71,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidPqOwner.selector);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.recoverWallet(rKey, zeroPq, sig);
     }
 

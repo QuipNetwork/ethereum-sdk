@@ -1,24 +1,36 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipWallet
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz one-time signatures,
 ///         providing post-quantum security for ETH transfers and arbitrary calls.
 interface IQuipWallet {
+    /// @notice Thrown when the factory address is zero.
     error ZeroAddressFactory();
+    /// @notice Thrown when the owner address is zero.
     error ZeroAddressOwner();
+    /// @notice Thrown when the caller is not the immutable factory.
     error InvalidFactory();
+    /// @notice Thrown when a Winternitz public key has zero-value components.
     error ZeroValuePqOwner();
 
+    /// @notice Thrown when a Winternitz signature fails verification.
     error InvalidSignature();
 
+    /// @notice Thrown when the wallet balance is insufficient for the requested operation.
+    /// @param requested The amount required.
+    /// @param available The current balance.
     error InsufficientBalance(uint256 requested, uint256 available);
+    /// @notice Thrown when `renounceOwnership` is called (always reverts).
     error RenounceDisabled();
 
+    /// @notice Thrown when a recovery key is not in the registered set.
     error RecoveryKeyNotFound();
+    /// @notice Thrown when the number of recovery keys provided is incorrect.
     error IncorrectRecoveryKeyAmount();
+    /// @notice Thrown when adding recovery keys would exceed `MAX_RECOVERY_KEYS`.
     error RecoveryKeyLimitExceeded();
 
     /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
@@ -35,6 +47,11 @@ interface IQuipWallet {
         address to
     );
 
+    /// @notice Emitted when a wallet is initialized with its factory, owner, and keys.
+    /// @param factory The QuipFactory that created this wallet.
+    /// @param owner The classical owner address.
+    /// @param pqOwner The initial post-quantum owner key.
+    /// @param recoveryKeys The initial set of 10 recovery keys.
     event WalletInitialized(
         address indexed factory,
         address indexed owner,
@@ -42,9 +59,23 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress[10] recoveryKeys
     );
 
-    event pqRecovery(WOTSPlus.WinternitzAddress recoveryKey, WOTSPlus.WinternitzAddress newPqOwner);
+    /// @notice Emitted when the wallet is recovered using a recovery key.
+    /// @param recoveryKey The recovery key that authorized the recovery.
+    /// @param newPqOwner The new post-quantum owner key set during recovery.
+    event pqRecovery(
+        WOTSPlus.WinternitzAddress recoveryKey,
+        WOTSPlus.WinternitzAddress newPqOwner
+    );
+    /// @notice Emitted when all recovery keys are cleared and replaced.
+    /// @param nextPqOwner The new post-quantum owner key after rotation.
     event RecoveryKeysReplenished(WOTSPlus.WinternitzAddress nextPqOwner);
-    event RecoveryKeysAdded(WOTSPlus.WinternitzAddress nextPqOwner, uint256 count);
+    /// @notice Emitted when new recovery keys are added to the existing set.
+    /// @param nextPqOwner The new post-quantum owner key after rotation.
+    /// @param count The number of recovery keys added.
+    event RecoveryKeysAdded(
+        WOTSPlus.WinternitzAddress nextPqOwner,
+        uint256 count
+    );
 
     /// @notice Initializes the wallet with its classical owner, post-quantum owner, and recovery keys.
     /// @dev Can only be called once by the FACTORY. Uses Solady's `initializer` modifier.
@@ -113,7 +144,10 @@ interface IQuipWallet {
     /// @notice Returns the current post-quantum owner's Winternitz public key components.
     /// @return publicSeed The public seed of the Winternitz address.
     /// @return publicKeyHash The public key hash of the Winternitz address.
-    function pqOwner() external view returns (bytes32 publicSeed, bytes32 publicKeyHash);
+    function pqOwner()
+        external
+        view
+        returns (bytes32 publicSeed, bytes32 publicKeyHash);
 
     /// @notice Recovers the wallet using a pre-registered recovery key.
     /// @param recoveryKey The recovery key to use (must be in the set).
@@ -149,7 +183,9 @@ interface IQuipWallet {
     function getRecoveryKeyCount() external view returns (uint256);
 
     /// @notice Returns the recovery key hash at a given index.
-    function getRecoveryKeyHashAt(uint256 index) external view returns (bytes32);
+    function getRecoveryKeyHashAt(
+        uint256 index
+    ) external view returns (bytes32);
 
     /// @notice Returns whether a key hash is a registered recovery key.
     function isRecoveryKey(bytes32 keyHash) external view returns (bool);

@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 
@@ -92,7 +92,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(privateKey_, msgHash);
 
         vm.prank(BOB);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, BOB));
+        vm.expectRevert(SoladyOwnable.Unauthorized.selector);
         w.addRecoveryKeys(nextPq, sig, newKeys);
     }
 
@@ -147,7 +147,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(currentPqSigningKey, msgHash);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidPqOwner.selector);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         w.addRecoveryKeys(nextPq, sig, badKeys);
     }
 

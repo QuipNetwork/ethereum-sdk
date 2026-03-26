@@ -2,42 +2,37 @@
 pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
-import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 contract QuipWallet_transferOwnership is QuipWalletTest {
-    function test_transferOwnership_setsPendingOwner() public {
+    function test_transferOwnership_transfersImmediately() public {
         vm.prank(ALICE);
         wallet.transferOwnership(BOB);
-
-        assertEq(wallet.pendingOwner(), BOB);
-        assertEq(wallet.owner(), ALICE);
-    }
-
-    function test_transferOwnership_acceptOwnership_completesTransfer() public {
-        vm.prank(ALICE);
-        wallet.transferOwnership(BOB);
-
-        vm.prank(BOB);
-        wallet.acceptOwnership();
 
         assertEq(wallet.owner(), BOB);
-        assertEq(wallet.pendingOwner(), address(0));
+    }
+
+    function test_ownershipHandover_completesTransfer() public {
+        vm.prank(BOB);
+        wallet.requestOwnershipHandover();
+
+        vm.prank(ALICE);
+        wallet.completeOwnershipHandover(BOB);
+
+        assertEq(wallet.owner(), BOB);
     }
 
     function test_transferOwnership_revertsWhen_callerNotOwner() public {
         vm.prank(BOB);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, BOB));
+        vm.expectRevert(SoladyOwnable.Unauthorized.selector);
         wallet.transferOwnership(BOB);
     }
 
-    function test_acceptOwnership_revertsWhen_callerNotPendingOwner() public {
+    function test_completeOwnershipHandover_revertsWhen_noRequest() public {
         vm.prank(ALICE);
-        wallet.transferOwnership(BOB);
-
-        vm.prank(ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ADMIN));
-        wallet.acceptOwnership();
+        vm.expectRevert(SoladyOwnable.NoHandoverRequest.selector);
+        wallet.completeOwnershipHandover(BOB);
     }
 
     function test_renounceOwnership_revertsAlways() public {

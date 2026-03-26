@@ -17,11 +17,11 @@
 pragma solidity ^0.8.33;
 
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
-import "./interfaces/IDeployer.sol";
+import {IDeployer} from "./interfaces/IDeployer.sol";
 
-// Deployer allows us to deploy contracts with consistent addresses across EVM chains
-// using CREATE3
+/// @notice Deploys contracts with consistent addresses across EVM chains using CREATE3.
 contract Deployer is IDeployer {
+    /// @inheritdoc IDeployer
     function deploy(
         bytes memory bytecode,
         bytes32 salt
@@ -31,6 +31,7 @@ contract Deployer is IDeployer {
         return contractAddr;
     }
 
+    /// @inheritdoc IDeployer
     function predictAddress(bytes32 salt) public view returns (address) {
         return CREATE3.predictDeterministicAddress(salt);
     }

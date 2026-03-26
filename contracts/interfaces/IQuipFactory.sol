@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipFactory
 /// @notice Factory for creating and managing QuipWallet instances secured by Winternitz one-time signatures.
 interface IQuipFactory {
+    /// @notice Thrown when the factory balance is insufficient for the requested withdrawal.
+    /// @param requested The amount requested.
+    /// @param available The current balance.
     error InsufficientBalance(uint256 requested, uint256 available);
+    /// @notice Thrown when a CREATE3 deployment produces no code.
     error DeploymentFailed();
+    /// @notice Thrown when a fee exceeds the maximum allowed.
+    /// @param fee The fee that was set.
+    /// @param maxFee The maximum allowed fee.
     error FeeExceedsMax(uint256 fee, uint256 maxFee);
 
     /// @notice Emitted when a new QuipWallet is created.
@@ -84,11 +91,17 @@ interface IQuipFactory {
     /// @param owner The classical owner address.
     /// @param vaultId The vault identifier.
     /// @return The QuipWallet address, or `address(0)` if none exists.
-    function quips(address owner, bytes32 vaultId) external view returns (address);
+    function quips(
+        address owner,
+        bytes32 vaultId
+    ) external view returns (address);
 
     /// @notice Returns the vault ID at a given index for an owner.
     /// @param owner The classical owner address.
     /// @param index The index into the owner's vault ID array.
     /// @return The vault ID at the specified index.
-    function vaultIds(address owner, uint256 index) external view returns (bytes32);
+    function vaultIds(
+        address owner,
+        uint256 index
+    ) external view returns (bytes32);
 }

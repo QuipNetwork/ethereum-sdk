@@ -13,7 +13,10 @@ interface IDeployer {
     /// @param bytecode The creation bytecode of the contract to deploy.
     /// @param salt The salt used to determine the deployed address.
     /// @return The address of the newly deployed contract.
-    function deploy(bytes memory bytecode, bytes32 salt) external returns (address);
+    function deploy(
+        bytes memory bytecode,
+        bytes32 salt
+    ) external returns (address);
 
     /// @notice Predicts the deterministic address for a given salt.
     /// @param salt The salt used to determine the deployed address.

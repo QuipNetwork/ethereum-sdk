@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {DummyContract} from "../../../contracts/test/DummyContract.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 contract QuipWallet_executeWithWinternitz is QuipWalletTest {
@@ -61,7 +61,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        vm.expectRevert("Function always fails");
+        vm.expectRevert(DummyContract.AlwaysFails.selector);
         wallet.executeWithWinternitz{value: EXECUTE_FEE}(
             nextPubkey,
             sig,
@@ -141,7 +141,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(BOB);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, BOB));
+        vm.expectRevert(SoladyOwnable.Unauthorized.selector);
         wallet.executeWithWinternitz(
             nextPubkey,
             sig,

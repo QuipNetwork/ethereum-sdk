@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title WOTSPlusCodec
 /// @dev Operation payload layout (all offsets in bytes):
@@ -23,57 +23,50 @@ import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 ///        REC_KEYS  = RECOVERY_KEY_AMOUNT x 64         = 640    → starts at 64 + 2144 = 2208
 ///        VERIFIERS                                             → starts at 2208 + 640 = 2848
 library WOTSPlusCodec {
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function extractPqOwner(bytes calldata payload)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzAddress calldata owner)
-    {
+    /// @dev Extracts the WinternitzAddress at offset 0.
+    function extractPqOwner(
+        bytes calldata payload
+    ) internal pure returns (WOTSPlus.WinternitzAddress calldata owner) {
         assembly {
             owner := payload.offset // 0
         }
     }
 
-    function extractPqSig(bytes calldata payload)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzElements calldata sig)
-    {
+    /// @dev Extracts the WinternitzElements at offset 64 (after pqOwner).
+    function extractPqSig(
+        bytes calldata payload
+    ) internal pure returns (WOTSPlus.WinternitzElements calldata sig) {
         assembly {
             sig := add(payload.offset, 64) // PQ_OWNER_SIZE
         }
     }
 
-    function extractRecoveryKeys(bytes calldata payload)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzAddress[10] calldata keys)
-    {
+    /// @dev Extracts 10 recovery keys at offset 2208 (after pqOwner + pqSig).
+    function extractRecoveryKeys(
+        bytes calldata payload
+    ) internal pure returns (WOTSPlus.WinternitzAddress[10] calldata keys) {
         assembly {
             keys := add(payload.offset, 2208) // PQ_OWNER_SIZE + PQ_SIG_SIZE
         }
     }
 
     /// @dev Extract recovery keys from init payload (no pqSig, keys follow pqOwner directly).
-    function extractInitRecoveryKeys(bytes calldata payload)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzAddress[10] calldata keys)
-    {
+    function extractInitRecoveryKeys(
+        bytes calldata payload
+    ) internal pure returns (WOTSPlus.WinternitzAddress[10] calldata keys) {
         assembly {
             keys := add(payload.offset, 64) // PQ_OWNER_SIZE
         }
     }
 
-    function extractVerifiers(bytes calldata payload)
-        internal
-        pure
-        returns (bytes calldata)
-    {
+    /// @dev Extracts verifier data starting at offset 2848.
+    function extractVerifiers(
+        bytes calldata payload
+    ) internal pure returns (bytes calldata) {
         return payload[2848:]; // PQ_OWNER_SIZE + PQ_SIG_SIZE + RECOVERY_KEYS_SIZE
     }
 
@@ -81,6 +74,7 @@ library WOTSPlusCodec {
     /*                         ENCODERS                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @dev Encodes pqOwner, pqSig, and recovery keys into a packed payload.
     function encode(
         WOTSPlus.WinternitzAddress memory owner,
         WOTSPlus.WinternitzElements memory sig,
@@ -101,6 +95,7 @@ library WOTSPlusCodec {
         return result;
     }
 
+    /// @dev Encodes pqOwner, pqSig, recovery keys, and verifier data into a packed payload.
     function encode(
         WOTSPlus.WinternitzAddress memory owner,
         WOTSPlus.WinternitzElements memory sig,

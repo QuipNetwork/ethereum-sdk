@@ -16,13 +16,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
-import "./interfaces/IQuipFactory.sol";
-import "./QuipWallet.sol";
+import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
+import {QuipWallet} from "./QuipWallet.sol";
 
 contract QuipFactory is IQuipFactory, Ownable2Step {
     /// @inheritdoc IQuipFactory
@@ -48,9 +48,13 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     fallback() external payable {}
 
-    constructor(address payable initialOwner, address _wotsLibrary, uint256 _maxFee) payable OZOwnable(initialOwner) {
-        wotsLibrary = _wotsLibrary;
-        MAX_FEE = _maxFee;
+    constructor(
+        address payable initialOwner,
+        address wotsLibrary_,
+        uint256 maxFee_
+    ) payable OZOwnable(initialOwner) {
+        wotsLibrary = wotsLibrary_;
+        MAX_FEE = maxFee_;
     }
 
     /// @inheritdoc IQuipFactory
@@ -71,7 +75,10 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         contractAddr = CREATE3.deployDeterministic(quipWalletCode, vaultId);
 
-        bytes memory initPayload = abi.encodePacked(pqTo.publicSeed, pqTo.publicKeyHash);
+        bytes memory initPayload = abi.encodePacked(
+            pqTo.publicSeed,
+            pqTo.publicKeyHash
+        );
         for (uint256 i = 0; i < recoveryKeys.length; i++) {
             initPayload = abi.encodePacked(
                 initPayload,
@@ -116,7 +123,8 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     /// @inheritdoc IQuipFactory
     function withdraw(uint256 amount) public onlyOwner {
-        if (address(this).balance < amount) revert InsufficientBalance(amount, address(this).balance);
+        if (address(this).balance < amount)
+            revert InsufficientBalance(amount, address(this).balance);
         SafeTransferLib.forceSafeTransferETH(owner(), amount);
     }
 }
