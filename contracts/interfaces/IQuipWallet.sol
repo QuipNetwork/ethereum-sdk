@@ -79,6 +79,34 @@ interface IQuipWallet {
         uint256 count
     );
 
+    /// @notice Disabled; always reverts with `RenounceDisabled`.
+    function renounceOwnership() external payable;
+
+    /// @notice Upgrades the wallet to a new implementation, verifying a PQ signature and
+    ///         optionally migrating state.
+    /// @dev Calls `verifyUpgrade` on the new implementation via delegatecall, then optionally
+    ///      calls `migrate` if the payload includes migration data. Finally delegates to the
+    ///      parent `upgradeToAndCall` with empty calldata.
+    /// @param newImplementation The address of the new implementation contract.
+    /// @param data Packed upgrade data: [0:64) pqSigner, [64:2208) pqSig, [2208:...) optional migration payload.
+    function upgradeToAndCall(
+        address newImplementation,
+        bytes calldata data
+    ) external payable;
+
+    /// @notice Verifies a PQ signature authorizing an upgrade to a new implementation.
+    /// @dev MUST be called on every upgrade — `upgradeToAndCall` delegates to this function
+    ///      on the new implementation to ensure the upgrade is authorized by the current
+    ///      post-quantum owner. New implementations that omit this function will cause
+    ///      upgrades to revert.
+    ///      Data layout: [0:64) pqSigner (WinternitzAddress), [64:2208) pqSig (WinternitzElements).
+    /// @param newImplementation The address of the new implementation being upgraded to.
+    /// @param data Packed verification data containing the PQ signer and signature.
+    function verifyUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) external view;
+
     /// @notice Initializes the wallet with its classical owner, post-quantum owner, and recovery keys.
     /// @dev Can only be called once by the FACTORY. Uses Solady's `initializer` modifier.
     ///      Payload layout: [0:64) pqOwner, [64:704) recoveryKeys (10 × 64).

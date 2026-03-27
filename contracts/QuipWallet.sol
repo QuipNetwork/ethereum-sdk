@@ -65,8 +65,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     /*                          PUBLIC                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Disabled; always reverts.
-    function renounceOwnership() public payable override onlyOwner {
+    /// @inheritdoc IQuipWallet
+    function renounceOwnership() public payable override(IQuipWallet, Ownable) onlyOwner {
         revert RenounceDisabled();
     }
 
@@ -98,10 +98,11 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         emit WalletInitialized(FACTORY, newOwner, newPqOwner, recoveryKeys);
     }
 
+    /// @inheritdoc IQuipWallet
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
-    ) public payable override {
+    ) public payable override(IQuipWallet, UUPSUpgradeable) {
         LibCall.delegateCallContract(
             newImplementation,
             abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
@@ -321,8 +322,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     /*                         VIEWS                                 */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Verifies a PQ signature authorizing an upgrade.
-    /// @dev Data layout: [0:64) pqSigner (WinternitzAddress), [64:2208) pqSig (WinternitzElements).
+    /// @inheritdoc IQuipWallet
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data
