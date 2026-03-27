@@ -93,6 +93,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec
             .extractInitRecoveryKeys(payload);
         _addRecoveryKeys(recoveryKeys);
+        _verifyInitialState();
 
         emit WalletInitialized(FACTORY, newOwner, newPqOwner, recoveryKeys);
     }
@@ -448,6 +449,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec.extractInitRecoveryKeys(payload);
         _addRecoveryKeys(recoveryKeys);
+        _verifyInitialState();
     }
 
     /// @dev Fixed-size overload used by initialize (codec returns WinternitzAddress[10]).
@@ -467,6 +469,16 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             bytes32 keyHash = EfficientHashLib.hash(keys[i].publicSeed, keys[i].publicKeyHash);
             hashes.add(keyHash, MAX_RECOVERY_KEYS);
         }
+    }
+
+    function _verifyInitialState() internal view {
+        Storage.Layout storage $ = Storage.layout();
+        if ($.quipFactory == address(0)) revert ZeroAddressFactory();
+        if (
+            $.pqOwner.publicSeed == bytes32(0) ||
+            $.pqOwner.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqOwner();
+        if ($.recoveryKeyHashes.length() != MAX_RECOVERY_KEYS) revert IncorrectRecoveryKeyAmount();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
