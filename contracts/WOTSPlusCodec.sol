@@ -33,6 +33,16 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///        MIGRATORS = 11 x 64                          = 704    → starts at 5056 + 1 = 5057
 library WOTSPlusCodec {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      DOMAIN TAGS                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    bytes32 internal constant KEY_ROTATION_TAG = keccak256("quip.digest.keyRotation");
+    bytes32 internal constant TRANSFER_TAG     = keccak256("quip.digest.transfer");
+    bytes32 internal constant EXECUTE_TAG      = keccak256("quip.digest.execute");
+    bytes32 internal constant KEY_MGMT_TAG     = keccak256("quip.digest.keyManagement");
+    bytes32 internal constant UPGRADE_TAG      = keccak256("quip.digest.upgrade");
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
@@ -103,9 +113,11 @@ library WOTSPlusCodec {
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          HASHERS                              */
+    /*  NOTE: WOTS+ signatures are incompatible with EIP-712. These  */
+    /*  digests use domain tags instead of EIP-712 structured data.  */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2))
+    /// @dev keccak256(abi.encode(KEY_ROTATION_TAG, chainId, wallet, s1, h1, s2, h2))
     ///      Used by changePqOwner, recoverWallet.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
@@ -123,13 +135,14 @@ library WOTSPlusCodec {
         bytes32 h2
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
+            KEY_ROTATION_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2
         );
     }
 
-    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2, to, value))
+    /// @dev keccak256(abi.encode(TRANSFER_TAG, chainId, wallet, s1, h1, s2, h2, to, value))
     ///      Used by transferWithWinternitz.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
@@ -151,6 +164,7 @@ library WOTSPlusCodec {
         uint256 value
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
+            TRANSFER_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
@@ -159,7 +173,7 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2, target, opdataHash))
+    /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, target, opdataHash))
     ///      Caller must pre-hash opdata: keccak256(opdata).
     ///      Used by executeWithWinternitz.
     /// @param wallet The wallet address to bind the digest to.
@@ -182,6 +196,7 @@ library WOTSPlusCodec {
         bytes32 opdataHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
+            EXECUTE_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
@@ -190,7 +205,7 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2, keysHash))
+    /// @dev keccak256(abi.encode(KEY_MGMT_TAG, chainId, wallet, s1, h1, s2, h2, keysHash))
     ///      Used by addRecoveryKeys, replenishRecoveryKeys.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
@@ -210,6 +225,7 @@ library WOTSPlusCodec {
         bytes32 keysHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
+            KEY_MGMT_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
@@ -217,7 +233,7 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(chainId, wallet, newImpl, s1, h1, s2, h2))
+    /// @dev keccak256(abi.encode(UPGRADE_TAG, chainId, wallet, newImpl, s1, h1, s2, h2))
     ///      Used by verifyUpgrade.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
@@ -237,6 +253,7 @@ library WOTSPlusCodec {
         bytes32 h2
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
+            UPGRADE_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             bytes32(uint256(uint160(newImplementation))),

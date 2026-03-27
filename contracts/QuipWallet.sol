@@ -37,6 +37,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
     /// @dev uint256(keccak256("quip.wallet.upgrade.guard")) - 1
     /// Transient storage slot used to gate `migrate` to the `upgradeToAndCall` context.
+    /// @notice REQUIRES EIP-1153 (transient storage opcodes TSTORE/TLOAD).
     uint256 private constant _UPGRADE_GUARD_SLOT =
         0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
 
@@ -47,8 +48,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     receive() external payable {}
-
-    fallback() external payable {}
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    INTERNAL OVERRIDES                          */
@@ -102,11 +101,26 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
-    ) public payable override(IQuipWallet, UUPSUpgradeable) {
+    ) public payable override(IQuipWallet, UUPSUpgradeable) onlyOwner {
+        Storage.Layout storage $ = Storage.layout();
+        WOTSPlus.WinternitzAddress calldata nextPqOwner = Codec.extractPqOwner(data);
+
+        if (
+            nextPqOwner.publicSeed == $.pqOwner.publicSeed &&
+            nextPqOwner.publicKeyHash == $.pqOwner.publicKeyHash
+        ) revert PqOwnerReuse();
+
+        if (
+            nextPqOwner.publicSeed == bytes32(0) ||
+            nextPqOwner.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqOwner();
+
         LibCall.delegateCallContract(
             newImplementation,
             abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
         );
+        
+        $.pqOwner = nextPqOwner;
 
         (bool shouldMigrate, bytes calldata migratorPayload) = Codec.extractMigrators(data);
         if (shouldMigrate) {
@@ -409,11 +423,12 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     /*                        INTERNALS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Validates and adds recovery keys to the set. Reverts if any key has zero fields
-    ///      or if the set would exceed `MAX_RECOVERY_KEYS`.
+    /// @dev Validates and adds recovery keys to the set. Reverts if any key has zero fields,
+    ///      is a duplicate, or if the set would exceed `MAX_RECOVERY_KEYS`.
     function _addRecoveryKeys(
         WOTSPlus.WinternitzAddress[] calldata keys
     ) internal {
+        if (keys.length == 0) revert EmptyRecoveryKeys();
         EnumerableSetLib.Bytes32Set storage hashes = Storage
             .layout()
             .recoveryKeyHashes;
@@ -426,7 +441,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
                 revert ZeroValuePqOwner();
             }
             bytes32 keyHash = EfficientHashLib.hash(keys[i].publicSeed, keys[i].publicKeyHash);
-            hashes.add(keyHash, MAX_RECOVERY_KEYS);
+            if (!hashes.add(keyHash, MAX_RECOVERY_KEYS)) revert DuplicateRecoveryKey();
         }
     }
 
@@ -467,7 +482,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
                 revert ZeroValuePqOwner();
             }
             bytes32 keyHash = EfficientHashLib.hash(keys[i].publicSeed, keys[i].publicKeyHash);
-            hashes.add(keyHash, MAX_RECOVERY_KEYS);
+            if (!hashes.add(keyHash, MAX_RECOVERY_KEYS)) revert DuplicateRecoveryKey();
         }
     }
 
