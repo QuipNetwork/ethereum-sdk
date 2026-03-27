@@ -34,6 +34,11 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     uint256 public constant MAX_RECOVERY_KEYS = 10;
     address payable public immutable FACTORY;
 
+    /// @dev uint256(keccak256("quip.wallet.upgrade.guard")) - 1
+    /// Transient storage slot used to gate `migrate` to the `upgradeToAndCall` context.
+    uint256 private constant _UPGRADE_GUARD_SLOT =
+        0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
+
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
         FACTORY = factory_;
@@ -96,11 +101,22 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         address newImplementation,
         bytes calldata data
     ) public payable override {
-        bytes memory encoded = abi.encodeCall(
-            this.verifyUpgrade,
-            (newImplementation, data)
+        LibCall.delegateCallContract(
+            newImplementation,
+            abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
         );
-        LibCall.delegateCallContract(newImplementation, encoded);
+
+        (bool shouldMigrate, bytes calldata migratorPayload) = Codec.extractMigrators(data);
+        if (shouldMigrate) {
+            uint256 slot = _UPGRADE_GUARD_SLOT;
+            assembly { tstore(slot, 1) }
+            LibCall.delegateCallContract(
+                newImplementation,
+                abi.encodeCall(this.migrate, (migratorPayload))
+            );
+            assembly { tstore(slot, 0) }
+        }
+
         super.upgradeToAndCall(newImplementation, data[0:0]);
     }
 
@@ -441,6 +457,27 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         }
     }
 
+    /// @inheritdoc IQuipWallet
+    function migrate(bytes calldata payload) external {
+        if (_upgradeGuard() == 0) revert NotUpgrading();
+        WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(payload);
+        if (
+            newPqOwner.publicSeed == bytes32(0) ||
+            newPqOwner.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqOwner();
+
+        Storage.Layout storage $ = Storage.layout();
+        $.pqOwner = newPqOwner;
+
+        uint256 clearLen = $.recoveryKeyHashes.length();
+        for (uint256 i = 0; i < clearLen; ++i) {
+            $.recoveryKeyHashes.remove($.recoveryKeyHashes.at(0));
+        }
+
+        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec.extractInitRecoveryKeys(payload);
+        _addRecoveryKeys(recoveryKeys);
+    }
+
     /// @dev Fixed-size overload used by initialize (codec returns WinternitzAddress[10]).
     function _addRecoveryKeys(
         WOTSPlus.WinternitzAddress[10] calldata keys
@@ -460,5 +497,14 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             );
             hashes.add(keyHash, MAX_RECOVERY_KEYS);
         }
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        PRIVATES                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function _upgradeGuard() private view returns (uint256 v) {
+        uint256 slot = _UPGRADE_GUARD_SLOT;
+        assembly { v := tload(slot) }
     }
 }

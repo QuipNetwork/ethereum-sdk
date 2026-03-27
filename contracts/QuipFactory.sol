@@ -26,7 +26,7 @@ import {QuipWallet} from "./QuipWallet.sol";
 
 contract QuipFactory is IQuipFactory, Ownable2Step {
     /// @inheritdoc IQuipFactory
-    address public immutable wotsLibrary;
+    address public immutable WOTS_LIBRARY;
 
     /// @inheritdoc IQuipFactory
     uint256 public immutable MAX_FEE;
@@ -49,7 +49,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         address wotsLibrary_,
         uint256 maxFee_
     ) payable OZOwnable(initialOwner) {
-        wotsLibrary = wotsLibrary_;
+        WOTS_LIBRARY = wotsLibrary_;
         MAX_FEE = maxFee_;
     }
 

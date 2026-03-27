@@ -32,6 +32,8 @@ interface IQuipWallet {
     error IncorrectRecoveryKeyAmount();
     /// @notice Thrown when adding recovery keys would exceed `MAX_RECOVERY_KEYS`.
     error RecoveryKeyLimitExceeded();
+    /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
+    error NotUpgrading();
 
     /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
     /// @param amount The ETH value transferred.
@@ -86,6 +88,13 @@ interface IQuipWallet {
         address payable newOwner,
         bytes calldata payload
     ) external;
+
+    /// @notice Re-initializes the PQ state (pqOwner + recovery keys) during an upgrade.
+    /// @dev Only callable by the classical owner. Called via delegatecall from upgradeToAndCall
+    ///      so that it executes against proxy storage.
+    ///      Payload layout: [0:64) new pqOwner, [64:704) new recoveryKeys[10].
+    /// @param payload Packed migration data matching the init layout.
+    function migrate(bytes calldata payload) external;
 
     /// @notice Rotates the post-quantum owner key to a new Winternitz public key.
     /// @dev Only callable by the classical owner. The signature must be valid over the

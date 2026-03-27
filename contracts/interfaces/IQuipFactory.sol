@@ -69,7 +69,7 @@ interface IQuipFactory {
 
     /// @notice Returns the address of the deployed WOTSPlus library.
     /// @return The WOTSPlus library address.
-    function wotsLibrary() external view returns (address);
+    function WOTS_LIBRARY() external view returns (address);
 
     /// @notice Returns the current fee charged for wallet creation.
     /// @return The creation fee in wei.
