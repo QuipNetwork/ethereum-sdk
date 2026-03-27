@@ -21,10 +21,13 @@ import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ow
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
+import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
-import {QuipWallet} from "./QuipWallet.sol";
+import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 
 contract QuipFactory is IQuipFactory, Ownable2Step {
+    using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
+
     /// @inheritdoc IQuipFactory
     address public immutable WOTS_LIBRARY;
 
@@ -44,6 +47,19 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     /// @inheritdoc IQuipFactory
     mapping(address => bytes32[]) public vaultIds;
 
+    /// @dev Insertion-ordered set of vetted implementation codehashes.
+    ///      Deprecated entries remain in the set to preserve index stability.
+    EnumerableSetLib.Bytes32Set private _vettedCode;
+
+    /// @inheritdoc IQuipFactory
+    mapping(bytes32 codehash => address walletImplementation) public vettedWalletImpls;
+
+    /// @inheritdoc IQuipFactory
+    mapping(bytes32 codehash => bool isDeprecated) public deprecatedImpls;
+
+    /// @inheritdoc IQuipFactory
+    address public latestWalletImpl;
+
     constructor(
         address payable initialOwner,
         address wotsLibrary_,
@@ -58,39 +74,135 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     fallback() external payable {}
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          PUBLIC                               */
+    /*                   EXTERNAL STATE-CHANGING                      */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipFactory
-    function depositToWinternitz(
+    function vetImplementation(address impl) external onlyOwner {
+        bytes32 codehash = impl.codehash;
+        if (codehash == 0) revert EmptyCode();
+        _vettedCode.add(codehash);
+        vettedWalletImpls[codehash] = impl;
+        deprecatedImpls[codehash] = false;
+        latestWalletImpl = impl;
+        emit ImplementationVetted(impl, codehash);
+    }
+
+    /// @inheritdoc IQuipFactory
+    function deprecateImplementation(address impl) external onlyOwner {
+        bytes32 codehash = impl.codehash;
+        if (!_vettedCode.contains(codehash)) revert ImplementationNotVetted();
+        deprecatedImpls[codehash] = true;
+        emit ImplementationSunset(impl, codehash);
+        if (latestWalletImpl == impl) {
+            latestWalletImpl = _findLatestActive();
+        }
+    }
+
+    /// @inheritdoc IQuipFactory
+    function deployLatestWalletProxy(
         bytes32 vaultId,
         address payable to,
-        WOTSPlus.WinternitzAddress calldata pqTo,
-        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
-    ) public payable returns (address) {
-        address contractAddr;
+        bytes calldata payload
+    ) external payable returns (address) {
+        if (latestWalletImpl == address(0)) revert NoActiveImplementation();
+        return _deployProxy(latestWalletImpl, vaultId, to, payload);
+    }
 
-        bytes memory quipWalletCode = abi.encodePacked(
-            type(QuipWallet).creationCode,
-            abi.encode(address(this))
+    /// @inheritdoc IQuipFactory
+    function deploySpecificWalletProxy(
+        bytes32 vaultId,
+        uint256 index,
+        address payable to,
+        bytes calldata payload
+    ) external payable returns (address) {
+        bytes32 codehash = _vettedCode.at(index);
+        if (deprecatedImpls[codehash]) revert ImplementationDeprecated();
+        return _deployProxy(vettedWalletImpls[codehash], vaultId, to, payload);
+    }
+
+    /// @inheritdoc IQuipFactory
+    function setCreationFee(uint256 newFee) external onlyOwner {
+        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
+        creationFee = newFee;
+    }
+
+    /// @inheritdoc IQuipFactory
+    function setTransferFee(uint256 newFee) external onlyOwner {
+        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
+        transferFee = newFee;
+    }
+
+    /// @inheritdoc IQuipFactory
+    function setExecuteFee(uint256 newFee) external onlyOwner {
+        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
+        executeFee = newFee;
+    }
+
+    /// @inheritdoc IQuipFactory
+    function withdraw(uint256 amount) external onlyOwner {
+        if (address(this).balance < amount)
+            revert InsufficientBalance(amount, address(this).balance);
+        SafeTransferLib.forceSafeTransferETH(owner(), amount);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      EXTERNAL VIEWS                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @inheritdoc IQuipFactory
+    function getVettedCodeCount() external view returns (uint256) {
+        return _vettedCode.length();
+    }
+
+    /// @inheritdoc IQuipFactory
+    function getVettedCodeAt(uint256 index) external view returns (bytes32) {
+        return _vettedCode.at(index);
+    }
+
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         PRIVATE                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Iterates backwards through the vetted set to find the latest
+    ///      non-deprecated implementation. Returns `address(0)` if none found.
+    ///      Solady's EnumerableSetLib stores entries in contiguous slots in
+    ///      insertion order, so `at(length() - 1)` is the most recently added.
+    function _findLatestActive() private view returns (address) {
+        uint256 len = _vettedCode.length();
+        for (uint256 i = len; i > 0;) {
+            unchecked { --i; }
+            bytes32 codehash = _vettedCode.at(i);
+            if (!deprecatedImpls[codehash]) {
+                return vettedWalletImpls[codehash];
+            }
+        }
+        return address(0);
+    }
+
+    /// @dev Deploys a Solady minimal ERC-1967 proxy via CREATE3, initializes it,
+    ///      and forwards deposited ETH (minus creation fee) to the wallet.
+    function _deployProxy(
+        address impl,
+        bytes32 vaultId,
+        address payable to,
+        bytes calldata payload
+    ) private returns (address) {
+        // Solady minimal ERC-1967 proxy initcode (95 bytes).
+        // See: LibClone.deployDeterministicERC1967
+        bytes memory proxyInitcode = abi.encodePacked(
+            hex"603d3d8160223d3973",
+            impl,
+            hex"6009",
+            hex"5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076",
+            hex"cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3"
         );
 
         uint256 contractValue = msg.value - creationFee;
+        address contractAddr = CREATE3.deployDeterministic(proxyInitcode, vaultId);
 
-        contractAddr = CREATE3.deployDeterministic(quipWalletCode, vaultId);
-
-        bytes memory initPayload = abi.encodePacked(
-            pqTo.publicSeed,
-            pqTo.publicKeyHash
-        );
-        for (uint256 i = 0; i < recoveryKeys.length; i++) {
-            initPayload = abi.encodePacked(
-                initPayload,
-                recoveryKeys[i].publicSeed,
-                recoveryKeys[i].publicKeyHash
-            );
-        }
-        QuipWallet(payable(contractAddr)).initialize(to, initPayload);
+        IQuipWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId);
@@ -100,35 +212,13 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
             block.timestamp,
             vaultId,
             to,
-            pqTo,
+            WOTSPlus.WinternitzAddress({
+                publicSeed: bytes32(payload[0:32]),
+                publicKeyHash: bytes32(payload[32:64])
+            }),
             contractAddr
         );
 
         return contractAddr;
-    }
-
-    /// @inheritdoc IQuipFactory
-    function setCreationFee(uint256 newFee) public onlyOwner {
-        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
-        creationFee = newFee;
-    }
-
-    /// @inheritdoc IQuipFactory
-    function setTransferFee(uint256 newFee) public onlyOwner {
-        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
-        transferFee = newFee;
-    }
-
-    /// @inheritdoc IQuipFactory
-    function setExecuteFee(uint256 newFee) public onlyOwner {
-        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
-        executeFee = newFee;
-    }
-
-    /// @inheritdoc IQuipFactory
-    function withdraw(uint256 amount) public onlyOwner {
-        if (address(this).balance < amount)
-            revert InsufficientBalance(amount, address(this).balance);
-        SafeTransferLib.forceSafeTransferETH(owner(), amount);
     }
 }

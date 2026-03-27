@@ -4,26 +4,52 @@ pragma solidity ^0.8.33;
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipFactory
-/// @notice Factory for creating and managing QuipWallet instances secured by Winternitz one-time signatures.
+/// @notice Factory for creating and managing QuipWallet proxies secured by Winternitz one-time signatures.
+///         Supports multiple vetted implementation versions with index-based selection.
 interface IQuipFactory {
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          ERRORS                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
     /// @notice Thrown when the factory balance is insufficient for the requested withdrawal.
     /// @param requested The amount requested.
     /// @param available The current balance.
     error InsufficientBalance(uint256 requested, uint256 available);
-    /// @notice Thrown when a CREATE3 deployment produces no code.
-    error DeploymentFailed();
     /// @notice Thrown when a fee exceeds the maximum allowed.
     /// @param fee The fee that was set.
     /// @param maxFee The maximum allowed fee.
     error FeeExceedsMax(uint256 fee, uint256 maxFee);
 
-    /// @notice Emitted when a new QuipWallet is created.
+    /// @notice Thrown when the implementation address has no deployed code.
+    error EmptyCode();
+    /// @notice Thrown when the implementation's codehash is not in the vetted set.
+    error ImplementationNotVetted();
+    /// @notice Thrown when attempting to deploy with a deprecated implementation.
+    error ImplementationDeprecated();
+    /// @notice Thrown when no active (non-deprecated) implementation exists.
+    error NoActiveImplementation();
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          EVENTS                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Emitted when an implementation is vetted or re-activated.
+    /// @param impl The implementation contract address.
+    /// @param codehash The codehash of the implementation.
+    event ImplementationVetted(address indexed impl, bytes32 codehash);
+
+    /// @notice Emitted when an implementation is deprecated.
+    /// @param impl The implementation contract address.
+    /// @param codehash The codehash of the implementation.
+    event ImplementationSunset(address indexed impl, bytes32 codehash);
+
+    /// @notice Emitted when a new QuipWallet proxy is created.
     /// @param amount The ETH value sent with the creation transaction.
     /// @param when The block timestamp at which the wallet was created.
-    /// @param vaultId The salt used to derive the wallet's CREATE3 address.
+    /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param creator The classical address that owns the new wallet.
     /// @param pqPubkey The post-quantum Winternitz public key assigned to the wallet.
-    /// @param quip The address of the newly deployed QuipWallet.
+    /// @param quip The address of the newly deployed QuipWallet proxy.
     event QuipCreated(
         uint256 amount,
         uint256 when,
@@ -33,18 +59,50 @@ interface IQuipFactory {
         address quip
     );
 
-    /// @notice Deploys a new QuipWallet via CREATE3, initializes it with a Winternitz public key,
-    ///         and forwards the deposited ETH (minus the creation fee) to the wallet.
-    /// @dev Reverts if the CREATE3 deployment fails or if `msg.value` is less than `creationFee`.
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       FUNCTIONS                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Approves an implementation's codehash for proxy deployment.
+    /// @dev Only callable by the admin. Computes `extcodehash` of `impl` and adds it
+    ///      to the vetted set. If the codehash was previously deprecated, re-activates it.
+    /// @param impl The deployed implementation contract address.
+    function vetImplementation(address impl) external;
+
+    /// @notice Marks an implementation's codehash as deprecated.
+    /// @dev Only callable by the admin. The codehash remains in the set (preserving indices)
+    ///      but cannot be used for new proxy deployments until re-vetted.
+    /// @param impl The deployed implementation contract address.
+    function deprecateImplementation(address impl) external;
+
+    /// @notice Deploys a new QuipWallet proxy using the latest active implementation,
+    ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
+    /// @dev Iterates backwards through the vetted set to find the most recently added
+    ///      non-deprecated implementation. Uses CREATE3 for deterministic addressing.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param to The classical address that will own the new wallet.
-    /// @param pqTo The Winternitz public key to initialize the wallet with.
-    /// @return The address of the newly deployed QuipWallet.
-    function depositToWinternitz(
+    /// @param payload Packed init data: [0:64) pqOwner, [64:704) recoveryKeys[10].
+    /// @return The address of the newly deployed QuipWallet proxy.
+    function deployLatestWalletProxy(
         bytes32 vaultId,
         address payable to,
-        WOTSPlus.WinternitzAddress calldata pqTo,
-        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
+        bytes calldata payload
+    ) external payable returns (address);
+
+    /// @notice Deploys a new QuipWallet proxy using the implementation at a specific index,
+    ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
+    /// @dev The index corresponds to insertion order in the vetted set. Reverts if the
+    ///      implementation at the given index is deprecated.
+    /// @param vaultId The salt used to derive the wallet's deterministic address.
+    /// @param index The index into the vetted implementation set.
+    /// @param to The classical address that will own the new wallet.
+    /// @param payload Packed init data: [0:64) pqOwner, [64:704) recoveryKeys[10].
+    /// @return The address of the newly deployed QuipWallet proxy.
+    function deploySpecificWalletProxy(
+        bytes32 vaultId,
+        uint256 index,
+        address payable to,
+        bytes calldata payload
     ) external payable returns (address);
 
     /// @notice Sets the fee charged when creating a new QuipWallet.
@@ -104,4 +162,27 @@ interface IQuipFactory {
         address owner,
         uint256 index
     ) external view returns (bytes32);
+
+    /// @notice Returns the number of vetted implementation codehashes.
+    /// @return The count of entries in the vetted set.
+    function getVettedCodeCount() external view returns (uint256);
+
+    /// @notice Returns the codehash at a given index in the vetted set.
+    /// @param index The index into the vetted set (insertion order).
+    /// @return The codehash at the specified index.
+    function getVettedCodeAt(uint256 index) external view returns (bytes32);
+
+    /// @notice Returns the implementation address associated with a vetted codehash.
+    /// @param codehash The codehash to look up.
+    /// @return walletImplementation The implementation contract address.
+    function vettedWalletImpls(bytes32 codehash) external view returns (address walletImplementation);
+
+    /// @notice Returns whether a codehash has been deprecated.
+    /// @param codehash The codehash to check.
+    /// @return isDeprecated True if the codehash is deprecated.
+    function deprecatedImpls(bytes32 codehash) external view returns (bool isDeprecated);
+
+    /// @notice Returns the most recently vetted active implementation address.
+    /// @return The latest active wallet implementation address, or `address(0)` if none.
+    function latestWalletImpl() external view returns (address);
 }

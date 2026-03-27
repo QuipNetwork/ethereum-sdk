@@ -43,8 +43,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
         FACTORY = factory_;
-        // When the factory switches to proxy deployment, uncomment:
-        // _disableInitializers();
+        _disableInitializers();
     }
 
     receive() external payable {}
