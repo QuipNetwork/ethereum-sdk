@@ -23,6 +23,7 @@ import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
+import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
 import {WOTSPlusCodec as Codec} from "./WOTSPlusCodec.sol";
@@ -234,9 +235,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig
     ) public onlyOwner {
         Storage.Layout storage $ = Storage.layout();
-        bytes32 keyHash = keccak256(
-            abi.encode(recoveryKey.publicSeed, recoveryKey.publicKeyHash)
-        );
+        bytes32 keyHash = EfficientHashLib.hash(recoveryKey.publicSeed, recoveryKey.publicKeyHash);
         if (!$.recoveryKeyHashes.contains(keyHash))
             revert RecoveryKeyNotFound();
 
@@ -450,9 +449,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             ) {
                 revert ZeroValuePqOwner();
             }
-            bytes32 keyHash = keccak256(
-                abi.encode(keys[i].publicSeed, keys[i].publicKeyHash)
-            );
+            bytes32 keyHash = EfficientHashLib.hash(keys[i].publicSeed, keys[i].publicKeyHash);
             hashes.add(keyHash, MAX_RECOVERY_KEYS);
         }
     }
@@ -492,9 +489,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             ) {
                 revert ZeroValuePqOwner();
             }
-            bytes32 keyHash = keccak256(
-                abi.encode(keys[i].publicSeed, keys[i].publicKeyHash)
-            );
+            bytes32 keyHash = EfficientHashLib.hash(keys[i].publicSeed, keys[i].publicKeyHash);
             hashes.add(keyHash, MAX_RECOVERY_KEYS);
         }
     }
