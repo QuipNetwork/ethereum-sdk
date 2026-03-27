@@ -22,6 +22,7 @@ import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 library WOTSPlusStorage {
     /// @custom:storage-location erc7201:quip.storage.wallet.wotsplus
     struct Layout {
+        /// @dev Set once during `initialize`; effectively immutable after deployment.
         address payable quipFactory;
         WOTSPlus.WinternitzAddress pqOwner;
         EnumerableSetLib.Bytes32Set recoveryKeyHashes;

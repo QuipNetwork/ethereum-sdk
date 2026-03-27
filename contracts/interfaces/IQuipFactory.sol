@@ -28,6 +28,10 @@ interface IQuipFactory {
     error ImplementationDeprecated();
     /// @notice Thrown when no active (non-deprecated) implementation exists.
     error NoActiveImplementation();
+    /// @notice Thrown when msg.value is less than the creation fee.
+    /// @param sent The ETH value sent.
+    /// @param required The required creation fee.
+    error InsufficientCreationFee(uint256 sent, uint256 required);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          EVENTS                               */
@@ -42,6 +46,21 @@ interface IQuipFactory {
     /// @param impl The implementation contract address.
     /// @param codehash The codehash of the implementation.
     event ImplementationSunset(address indexed impl, bytes32 codehash);
+
+    /// @notice Emitted when the creation fee is updated.
+    /// @param oldFee The previous creation fee.
+    /// @param newFee The new creation fee.
+    event CreationFeeUpdated(uint256 oldFee, uint256 newFee);
+
+    /// @notice Emitted when the transfer fee is updated.
+    /// @param oldFee The previous transfer fee.
+    /// @param newFee The new transfer fee.
+    event TransferFeeUpdated(uint256 oldFee, uint256 newFee);
+
+    /// @notice Emitted when the execute fee is updated.
+    /// @param oldFee The previous execute fee.
+    /// @param newFee The new execute fee.
+    event ExecuteFeeUpdated(uint256 oldFee, uint256 newFee);
 
     /// @notice Emitted when a new QuipWallet proxy is created.
     /// @param amount The ETH value sent with the creation transaction.

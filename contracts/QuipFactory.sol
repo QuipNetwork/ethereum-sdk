@@ -17,6 +17,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+// NOTE: OpenZeppelin 5.6.0-rc.1 is a pre-release version. Pin to a stable release before mainnet.
 import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
@@ -71,8 +72,6 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     receive() external payable {}
 
-    fallback() external payable {}
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                   EXTERNAL STATE-CHANGING                      */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -81,10 +80,10 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     function vetImplementation(address impl) external onlyOwner {
         bytes32 codehash = impl.codehash;
         if (codehash == 0) revert EmptyCode();
-        _vettedCode.add(codehash);
+        bool added = _vettedCode.add(codehash);
         vettedWalletImpls[codehash] = impl;
         deprecatedImpls[codehash] = false;
-        latestWalletImpl = impl;
+        if (added) latestWalletImpl = impl;
         emit ImplementationVetted(impl, codehash);
     }
 
@@ -124,19 +123,25 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     /// @inheritdoc IQuipFactory
     function setCreationFee(uint256 newFee) external onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
+        uint256 oldFee = creationFee;
         creationFee = newFee;
+        emit CreationFeeUpdated(oldFee, newFee);
     }
 
     /// @inheritdoc IQuipFactory
     function setTransferFee(uint256 newFee) external onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
+        uint256 oldFee = transferFee;
         transferFee = newFee;
+        emit TransferFeeUpdated(oldFee, newFee);
     }
 
     /// @inheritdoc IQuipFactory
     function setExecuteFee(uint256 newFee) external onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
+        uint256 oldFee = executeFee;
         executeFee = newFee;
+        emit ExecuteFeeUpdated(oldFee, newFee);
     }
 
     /// @inheritdoc IQuipFactory
@@ -199,6 +204,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
             hex"cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3"
         );
 
+        if (msg.value < creationFee) revert InsufficientCreationFee(msg.value, creationFee);
         uint256 contractValue = msg.value - creationFee;
         address contractAddr = CREATE3.deployDeterministic(proxyInitcode, vaultId);
 

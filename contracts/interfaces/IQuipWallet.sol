@@ -34,6 +34,12 @@ interface IQuipWallet {
     error RecoveryKeyLimitExceeded();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
+    /// @notice Thrown when upgradeToAndCall would reuse the current pqOwner key.
+    error PqOwnerReuse();
+    /// @notice Thrown when a duplicate recovery key is provided.
+    error DuplicateRecoveryKey();
+    /// @notice Thrown when an empty recovery key array is provided.
+    error EmptyRecoveryKeys();
 
     /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
     /// @param amount The ETH value transferred.
