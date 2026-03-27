@@ -126,6 +126,11 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig
     ) public onlyOwner {
+        if (
+            newPqOwner.publicSeed == bytes32(0) ||
+            newPqOwner.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqOwner();
+
         Storage.Layout storage $ = Storage.layout();
         bytes32 digest = Codec.keyRotationDigest(
             address(this),
@@ -138,6 +143,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
+
         $.pqOwner = newPqOwner;
     }
 
@@ -148,6 +154,11 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         address payable to,
         uint256 value
     ) public payable onlyOwner {
+        if (
+            nextPqOwner.publicSeed == bytes32(0) ||
+            nextPqOwner.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqOwner();
+
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
 
@@ -169,6 +180,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
+
         $.pqOwner = nextPqOwner;
 
         SafeTransferLib.safeTransferETH(to, value);
@@ -184,6 +196,11 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         address payable target,
         bytes calldata opdata
     ) public payable onlyOwner returns (bytes memory) {
+        if (
+            nextPqOwner.publicSeed == bytes32(0) ||
+            nextPqOwner.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqOwner();
+
         uint256 fee = getExecuteFee();
         if (address(this).balance < fee)
             revert InsufficientBalance(fee, address(this).balance);
@@ -204,6 +221,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
+
         $.pqOwner = nextPqOwner;
         SafeTransferLib.safeTransferETH($.quipFactory, fee);
 
