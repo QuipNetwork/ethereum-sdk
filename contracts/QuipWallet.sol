@@ -127,22 +127,14 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig
     ) public onlyOwner {
         Storage.Layout storage $ = Storage.layout();
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                $.pqOwner.publicSeed,
-                $.pqOwner.publicKeyHash,
-                newPqOwner.publicSeed,
-                newPqOwner.publicKeyHash
-            )
+        bytes32 digest = Codec.keyRotationDigest(
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            newPqOwner.publicSeed,
+            newPqOwner.publicKeyHash
         );
 
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
         $.pqOwner = newPqOwner;
     }
@@ -162,24 +154,16 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         if (address(this).balance < value + fee)
             revert InsufficientBalance(value + fee, address(this).balance);
 
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                curPqOwner.publicSeed,
-                curPqOwner.publicKeyHash,
-                nextPqOwner.publicSeed,
-                nextPqOwner.publicKeyHash,
-                to,
-                value
-            )
+        bytes32 digest = Codec.transferDigest(
+            curPqOwner.publicSeed,
+            curPqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            to,
+            value
         );
 
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
         $.pqOwner = nextPqOwner;
 
@@ -203,24 +187,16 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         uint256 forwardValue = msg.value > fee ? msg.value - fee : 0;
 
         Storage.Layout storage $ = Storage.layout();
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                $.pqOwner.publicSeed,
-                $.pqOwner.publicKeyHash,
-                nextPqOwner.publicSeed,
-                nextPqOwner.publicKeyHash,
-                target,
-                opdata
-            )
+        bytes32 digest = Codec.executeDigest(
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            target,
+            keccak256(opdata)
         );
 
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
         $.pqOwner = nextPqOwner;
         SafeTransferLib.safeTransferETH($.quipFactory, fee);
@@ -244,22 +220,14 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             newPqOwner.publicKeyHash == bytes32(0)
         ) revert ZeroValuePqOwner();
 
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                recoveryKey.publicSeed,
-                recoveryKey.publicKeyHash,
-                newPqOwner.publicSeed,
-                newPqOwner.publicKeyHash
-            )
+        bytes32 digest = Codec.keyRotationDigest(
+            recoveryKey.publicSeed,
+            recoveryKey.publicKeyHash,
+            newPqOwner.publicSeed,
+            newPqOwner.publicKeyHash
         );
 
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify(recoveryKey, message, pqSig))
+        if (!WOTSPlus.verify(recoveryKey, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
 
         $.recoveryKeyHashes.remove(keyHash);
@@ -281,23 +249,15 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 keysHash = keccak256(abi.encode(newRecoveryKeys));
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                $.pqOwner.publicSeed,
-                $.pqOwner.publicKeyHash,
-                nextPqOwner.publicSeed,
-                nextPqOwner.publicKeyHash,
-                keysHash
-            )
+        bytes32 digest = Codec.keyManagementDigest(
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            keysHash
         );
 
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
 
         _addRecoveryKeys(newRecoveryKeys);
@@ -322,23 +282,15 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 keysHash = keccak256(abi.encode(newRecoveryKeys));
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                $.pqOwner.publicSeed,
-                $.pqOwner.publicKeyHash,
-                nextPqOwner.publicSeed,
-                nextPqOwner.publicKeyHash,
-                keysHash
-            )
+        bytes32 digest = Codec.keyManagementDigest(
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            keysHash
         );
 
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
 
         uint256 clearLen = $.recoveryKeyHashes.length();
@@ -369,23 +321,15 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig = Codec.extractPqSig(data);
 
         Storage.Layout storage $ = Storage.layout();
-        bytes32 msgHash = keccak256(
-            abi.encodePacked(
-                block.chainid,
-                address(this),
-                newImplementation,
-                $.pqOwner.publicSeed,
-                $.pqOwner.publicKeyHash,
-                pqSigner.publicSeed,
-                pqSigner.publicKeyHash
-            )
+        bytes32 digest = Codec.upgradeDigest(
+            newImplementation,
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            pqSigner.publicSeed,
+            pqSigner.publicKeyHash
         );
 
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: msgHash
-        });
-
-        if (!WOTSPlus.verify($.pqOwner, message, pqSig))
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
     }
 
