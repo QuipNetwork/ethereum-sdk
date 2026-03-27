@@ -105,28 +105,34 @@ library WOTSPlusCodec {
     /*                          HASHERS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev keccak256(abi.encode(chainid, wallet, s1, h1, s2, h2))
+    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2))
     ///      Used by changePqOwner, recoverWallet.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
     /// @param s1 The public seed of the current signer.
     /// @param h1 The public key hash of the current signer.
     /// @param s2 The public seed of the new PQ owner.
     /// @param h2 The public key hash of the new PQ owner.
     /// @return The signing digest.
     function keyRotationDigest(
+        address wallet,
+        uint256 chainId,
         bytes32 s1,
         bytes32 h1,
         bytes32 s2,
         bytes32 h2
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            bytes32(block.chainid),
-            bytes32(uint256(uint160(address(this)))),
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2
         );
     }
 
-    /// @dev keccak256(abi.encode(chainid, wallet, s1, h1, s2, h2, to, value))
+    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2, to, value))
     ///      Used by transferWithWinternitz.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
     /// @param s1 The public seed of the current PQ owner.
     /// @param h1 The public key hash of the current PQ owner.
     /// @param s2 The public seed of the next PQ owner.
@@ -135,25 +141,29 @@ library WOTSPlusCodec {
     /// @param value The ETH amount to transfer.
     /// @return The signing digest.
     function transferDigest(
+        address wallet,
+        uint256 chainId,
         bytes32 s1,
         bytes32 h1,
         bytes32 s2,
         bytes32 h2,
         address to,
         uint256 value
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            bytes32(block.chainid),
-            bytes32(uint256(uint160(address(this)))),
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
             bytes32(uint256(uint160(to))),
             bytes32(value)
         );
     }
 
-    /// @dev keccak256(abi.encode(chainid, wallet, s1, h1, s2, h2, target, opdataHash))
+    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2, target, opdataHash))
     ///      Caller must pre-hash opdata: keccak256(opdata).
     ///      Used by executeWithWinternitz.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
     /// @param s1 The public seed of the current PQ owner.
     /// @param h1 The public key hash of the current PQ owner.
     /// @param s2 The public seed of the next PQ owner.
@@ -162,24 +172,28 @@ library WOTSPlusCodec {
     /// @param opdataHash The keccak256 hash of the calldata to execute.
     /// @return The signing digest.
     function executeDigest(
+        address wallet,
+        uint256 chainId,
         bytes32 s1,
         bytes32 h1,
         bytes32 s2,
         bytes32 h2,
         address target,
         bytes32 opdataHash
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            bytes32(block.chainid),
-            bytes32(uint256(uint160(address(this)))),
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
             bytes32(uint256(uint160(target))),
             opdataHash
         );
     }
 
-    /// @dev keccak256(abi.encode(chainid, wallet, s1, h1, s2, h2, keysHash))
+    /// @dev keccak256(abi.encode(chainId, wallet, s1, h1, s2, h2, keysHash))
     ///      Used by addRecoveryKeys, replenishRecoveryKeys.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
     /// @param s1 The public seed of the current PQ owner.
     /// @param h1 The public key hash of the current PQ owner.
     /// @param s2 The public seed of the next PQ owner.
@@ -187,22 +201,26 @@ library WOTSPlusCodec {
     /// @param keysHash The keccak256 hash of the abi-encoded recovery keys array.
     /// @return The signing digest.
     function keyManagementDigest(
+        address wallet,
+        uint256 chainId,
         bytes32 s1,
         bytes32 h1,
         bytes32 s2,
         bytes32 h2,
         bytes32 keysHash
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            bytes32(block.chainid),
-            bytes32(uint256(uint160(address(this)))),
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
             keysHash
         );
     }
 
-    /// @dev keccak256(abi.encode(chainid, wallet, newImpl, s1, h1, s2, h2))
+    /// @dev keccak256(abi.encode(chainId, wallet, newImpl, s1, h1, s2, h2))
     ///      Used by verifyUpgrade.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
     /// @param newImplementation The address of the new UUPS implementation.
     /// @param s1 The public seed of the current PQ owner.
     /// @param h1 The public key hash of the current PQ owner.
@@ -210,15 +228,17 @@ library WOTSPlusCodec {
     /// @param h2 The public key hash of the upgrade signer.
     /// @return The signing digest.
     function upgradeDigest(
+        address wallet,
+        uint256 chainId,
         address newImplementation,
         bytes32 s1,
         bytes32 h1,
         bytes32 s2,
         bytes32 h2
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            bytes32(block.chainid),
-            bytes32(uint256(uint160(address(this)))),
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
             bytes32(uint256(uint160(newImplementation))),
             s1, h1, s2, h2
         );

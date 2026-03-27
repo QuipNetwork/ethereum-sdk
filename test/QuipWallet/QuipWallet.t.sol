@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipFactoryTest} from "../QuipFactory/QuipFactory.t.sol";
 import {QuipWallet} from "../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
 
 /// @title QuipWallet Base Test
 /// @dev Base contract for testing QuipWallet. Inherits full stack from QuipFactoryTest
@@ -52,7 +53,6 @@ contract QuipWalletTest is QuipFactoryTest {
 
     // --- Wallet-specific helpers ---
 
-    /// @dev Build the transfer message hash for signing
     function _buildTransferMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
@@ -60,21 +60,14 @@ contract QuipWalletTest is QuipFactoryTest {
         address to,
         uint256 value
     ) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                block.chainid,
-                wallet_,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                to,
-                value
-            )
+        return Codec.transferDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            to, value
         );
     }
 
-    /// @dev Build the execute message hash for signing
     function _buildExecuteMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
@@ -82,93 +75,63 @@ contract QuipWalletTest is QuipFactoryTest {
         address target,
         bytes memory opdata
     ) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                block.chainid,
-                wallet_,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                target,
-                opdata
-            )
+        return Codec.executeDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            target, keccak256(opdata)
         );
     }
 
-    /// @dev Build the changePqOwner message hash for signing
     function _buildChangePqOwnerMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory newPq
     ) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                block.chainid,
-                wallet_,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                newPq.publicSeed,
-                newPq.publicKeyHash
-            )
+        return Codec.keyRotationDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            newPq.publicSeed, newPq.publicKeyHash
         );
     }
 
-    /// @dev Build the recoverWallet message hash for signing
     function _buildRecoverWalletMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory recoveryKey,
         WOTSPlus.WinternitzAddress memory newPq
     ) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                block.chainid,
-                wallet_,
-                recoveryKey.publicSeed,
-                recoveryKey.publicKeyHash,
-                newPq.publicSeed,
-                newPq.publicKeyHash
-            )
+        return Codec.keyRotationDigest(
+            wallet_, block.chainid,
+            recoveryKey.publicSeed, recoveryKey.publicKeyHash,
+            newPq.publicSeed, newPq.publicKeyHash
         );
     }
 
-    /// @dev Build the addRecoveryKeys message hash for signing
     function _buildAddRecoveryKeysMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
         WOTSPlus.WinternitzAddress[] memory newKeys
     ) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                block.chainid,
-                wallet_,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(newKeys))
-            )
+        return Codec.keyManagementDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            keccak256(abi.encode(newKeys))
         );
     }
 
-    /// @dev Build the replenishRecoveryKeys message hash for signing
     function _buildReplenishRecoveryKeysMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
         WOTSPlus.WinternitzAddress[] memory newKeys
     ) internal view returns (bytes32) {
-        return keccak256(
-            abi.encodePacked(
-                block.chainid,
-                wallet_,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(newKeys))
-            )
+        return Codec.keyManagementDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            keccak256(abi.encode(newKeys))
         );
     }
 }

@@ -128,6 +128,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     ) public onlyOwner {
         Storage.Layout storage $ = Storage.layout();
         bytes32 digest = Codec.keyRotationDigest(
+            address(this),
+            block.chainid,
             $.pqOwner.publicSeed,
             $.pqOwner.publicKeyHash,
             newPqOwner.publicSeed,
@@ -155,6 +157,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             revert InsufficientBalance(value + fee, address(this).balance);
 
         bytes32 digest = Codec.transferDigest(
+            address(this),
+            block.chainid,
             curPqOwner.publicSeed,
             curPqOwner.publicKeyHash,
             nextPqOwner.publicSeed,
@@ -188,6 +192,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 digest = Codec.executeDigest(
+            address(this),
+            block.chainid,
             $.pqOwner.publicSeed,
             $.pqOwner.publicKeyHash,
             nextPqOwner.publicSeed,
@@ -221,6 +227,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         ) revert ZeroValuePqOwner();
 
         bytes32 digest = Codec.keyRotationDigest(
+            address(this),
+            block.chainid,
             recoveryKey.publicSeed,
             recoveryKey.publicKeyHash,
             newPqOwner.publicSeed,
@@ -250,6 +258,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         Storage.Layout storage $ = Storage.layout();
         bytes32 keysHash = keccak256(abi.encode(newRecoveryKeys));
         bytes32 digest = Codec.keyManagementDigest(
+            address(this),
+            block.chainid,
             $.pqOwner.publicSeed,
             $.pqOwner.publicKeyHash,
             nextPqOwner.publicSeed,
@@ -283,6 +293,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         Storage.Layout storage $ = Storage.layout();
         bytes32 keysHash = keccak256(abi.encode(newRecoveryKeys));
         bytes32 digest = Codec.keyManagementDigest(
+            address(this),
+            block.chainid,
             $.pqOwner.publicSeed,
             $.pqOwner.publicKeyHash,
             nextPqOwner.publicSeed,
@@ -322,6 +334,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 digest = Codec.upgradeDigest(
+            address(this),
+            block.chainid,
             newImplementation,
             $.pqOwner.publicSeed,
             $.pqOwner.publicKeyHash,
