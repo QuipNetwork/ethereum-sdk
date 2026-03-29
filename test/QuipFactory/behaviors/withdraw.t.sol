@@ -18,12 +18,13 @@ contract QuipFactory_withdraw is QuipFactoryTest {
         (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
         WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
+        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+
         vm.prank(ALICE);
-        factory.depositToWinternitz{value: INITIAL_DEPOSIT + CREATION_FEE}(
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(
             vaultId,
             payable(ALICE),
-            pubkey,
-            rKeys
+            payload
         );
     }
 
@@ -42,6 +43,31 @@ contract QuipFactory_withdraw is QuipFactoryTest {
 
         assertEq(address(factory).balance, 0);
         assertEq(ADMIN.balance, adminBalBefore + factoryBal);
+    }
+
+    // ── Additional coverage ─────────────────────────────────────────
+
+    function test_withdraw_partialAmount() public {
+        uint256 factoryBal = address(factory).balance;
+        uint256 half = factoryBal / 2;
+        uint256 adminBalBefore = ADMIN.balance;
+
+        vm.prank(ADMIN);
+        factory.withdraw(half);
+
+        assertEq(address(factory).balance, factoryBal - half);
+        assertEq(ADMIN.balance, adminBalBefore + half);
+    }
+
+    function test_withdraw_zeroAmount() public {
+        uint256 factoryBal = address(factory).balance;
+        uint256 adminBalBefore = ADMIN.balance;
+
+        vm.prank(ADMIN);
+        factory.withdraw(0);
+
+        assertEq(address(factory).balance, factoryBal);
+        assertEq(ADMIN.balance, adminBalBefore);
     }
 
     function test_withdraw_revertsWhen_callerNotAdmin() public {

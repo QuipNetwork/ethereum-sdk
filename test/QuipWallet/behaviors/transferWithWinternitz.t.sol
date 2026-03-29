@@ -127,6 +127,93 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         assertEq(BOB.balance, bobBalBefore + transferAmount);
     }
 
+    function test_transferWithWinternitz_rotatesPqOwner() public {
+        uint256 transferAmount = 0.5 ether;
+
+        // First transfer succeeds
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
+
+        // Second attempt with old key should revert
+        (WOTSPlus.WinternitzAddress memory nextPubkey2,) = _generateKeyPair("next-key-2");
+        bytes32 msgHash2 = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey2, BOB, 0.1 ether
+        );
+        WOTSPlus.WinternitzElements memory sig2 = _sign(alicePrivateKey, msgHash2);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.transferWithWinternitz(nextPubkey2, sig2, payable(BOB), 0.1 ether);
+    }
+
+    function test_transferWithWinternitz_zeroValueTransfer() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, 0
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        uint256 walletBalBefore = address(wallet).balance;
+
+        vm.prank(ALICE);
+        wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), 0);
+
+        // Balance unchanged
+        assertEq(address(wallet).balance, walletBalBefore);
+
+        // pqOwner rotated
+        (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
+        assertEq(publicSeed, nextPubkey.publicSeed);
+        assertEq(publicKeyHash, nextPubkey.publicKeyHash);
+    }
+
+    function test_transferWithWinternitz_transferToSelf() public {
+        vm.prank(ADMIN);
+        factory.setTransferFee(TRANSFER_FEE);
+
+        uint256 transferAmount = 0.5 ether;
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(wallet), transferAmount
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        uint256 walletBalBefore = address(wallet).balance;
+        uint256 factoryBalBefore = address(factory).balance;
+
+        vm.prank(ALICE);
+        wallet.transferWithWinternitz(nextPubkey, sig, payable(address(wallet)), transferAmount);
+
+        assertEq(address(wallet).balance, walletBalBefore - TRANSFER_FEE);
+        assertEq(address(factory).balance, factoryBalBefore + TRANSFER_FEE);
+    }
+
+    function test_transferWithWinternitz_transferEntireBalance() public {
+        vm.prank(ADMIN);
+        factory.setTransferFee(TRANSFER_FEE);
+
+        uint256 transferAmount = address(wallet).balance - TRANSFER_FEE;
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
+
+        assertEq(address(wallet).balance, 0);
+    }
+
     function test_transferWithWinternitz_revertsWhen_insufficientBalance() public {
         vm.prank(ADMIN);
         factory.setTransferFee(TRANSFER_FEE);
@@ -160,6 +247,58 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
+        wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
+    }
+
+    function test_transferWithWinternitz_revertsWhen_invalidSignature() public {
+        uint256 transferAmount = 0.5 ether;
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
+        );
+
+        (, bytes32 wrongKey) = _generateKeyPair("wrong-key");
+        WOTSPlus.WinternitzElements memory badSig = _sign(wrongKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.transferWithWinternitz(nextPubkey, badSig, payable(BOB), transferAmount);
+    }
+
+    function test_transferWithWinternitz_revertsWhen_nextPqOwnerSeedIsZero() public {
+        uint256 transferAmount = 0.5 ether;
+
+        WOTSPlus.WinternitzAddress memory nextPubkey = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(0),
+            publicKeyHash: bytes32("non-empty")
+        });
+
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
+    }
+
+    function test_transferWithWinternitz_revertsWhen_nextPqOwnerHashIsZero() public {
+        uint256 transferAmount = 0.5 ether;
+
+        WOTSPlus.WinternitzAddress memory nextPubkey = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32("non-empty"),
+            publicKeyHash: bytes32(0)
+        });
+
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
     }
 }

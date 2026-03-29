@@ -5,6 +5,7 @@ import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
+import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 contract QuipFactory_setCreationFee is QuipFactoryTest {
     function test_setCreationFee_setsFee() public {
@@ -24,15 +25,32 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
 
         uint256 factoryBalBefore = address(factory).balance;
 
+        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+
         vm.prank(ALICE);
-        factory.depositToWinternitz{value: INITIAL_DEPOSIT + CREATION_FEE}(
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(
             vaultId,
             payable(ALICE),
-            pubkey,
-            rKeys
+            payload
         );
 
         assertEq(address(factory).balance, factoryBalBefore + CREATION_FEE);
+    }
+
+    function test_setCreationFee_emitsCreationFeeUpdated() public {
+        vm.prank(ADMIN);
+        vm.recordLogs();
+        factory.setCreationFee(CREATION_FEE);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found = false;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == IQuipFactory.CreationFeeUpdated.selector) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "CreationFeeUpdated event not emitted");
     }
 
     function test_setCreationFee_revertsWhen_callerNotAdmin() public {

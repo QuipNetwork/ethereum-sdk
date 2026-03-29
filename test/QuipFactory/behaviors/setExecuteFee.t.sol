@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
+import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 contract QuipFactory_setExecuteFee is QuipFactoryTest {
     function test_setExecuteFee_setsFee() public {
@@ -11,6 +12,22 @@ contract QuipFactory_setExecuteFee is QuipFactoryTest {
         factory.setExecuteFee(EXECUTE_FEE);
 
         assertEq(factory.executeFee(), EXECUTE_FEE);
+    }
+
+    function test_setExecuteFee_emitsExecuteFeeUpdated() public {
+        vm.prank(ADMIN);
+        vm.recordLogs();
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found = false;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == IQuipFactory.ExecuteFeeUpdated.selector) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "ExecuteFeeUpdated event not emitted");
     }
 
     function test_setExecuteFee_revertsWhen_callerNotAdmin() public {

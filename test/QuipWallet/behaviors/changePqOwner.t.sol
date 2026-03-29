@@ -21,6 +21,23 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         assertEq(publicKeyHash, newPubkey.publicKeyHash);
     }
 
+    function test_changePqOwner_oldKeyCannotSignAfterRotation() public {
+        // First rotation succeeds
+        (WOTSPlus.WinternitzAddress memory newPubkey, bytes32 newPrivKey) = _generateKeyPair("new-pq-owner");
+        bytes32 msgHash = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, newPubkey);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+        vm.prank(ALICE);
+        wallet.changePqOwner(newPubkey, sig);
+
+        // Try using old key — must fail
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-pq-owner");
+        bytes32 msgHash2 = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, nextPubkey);
+        WOTSPlus.WinternitzElements memory sig2 = _sign(alicePrivateKey, msgHash2);
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.changePqOwner(nextPubkey, sig2);
+    }
+
     function test_changePqOwner_revertsWhen_callerNotOwner() public {
         (WOTSPlus.WinternitzAddress memory newPubkey,) = _generateKeyPair("new-pq-owner");
 
@@ -42,5 +59,33 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
         wallet.changePqOwner(newPubkey, badSig);
+    }
+
+    function test_changePqOwner_revertsWhen_newPqOwnerSeedIsZero() public {
+        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(0),
+            publicKeyHash: bytes32("non-empty")
+        });
+
+        bytes32 msgHash = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, zeroPq);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        wallet.changePqOwner(zeroPq, sig);
+    }
+
+    function test_changePqOwner_revertsWhen_newPqOwnerHashIsZero() public {
+        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32("non-empty"),
+            publicKeyHash: bytes32(0)
+        });
+
+        bytes32 msgHash = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, zeroPq);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        wallet.changePqOwner(zeroPq, sig);
     }
 }

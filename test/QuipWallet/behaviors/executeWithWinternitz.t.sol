@@ -45,32 +45,7 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         assertEq(dummy.value(), value);
     }
 
-    function test_executeWithWinternitz_revertsWhen_targetReverts() public {
-        vm.prank(ADMIN);
-        factory.setExecuteFee(EXECUTE_FEE);
-
-        bytes memory callData = abi.encodeWithSelector(
-            DummyContract.failingFunction.selector
-        );
-
-        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
-
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
-
-        vm.prank(ALICE);
-        vm.expectRevert(DummyContract.AlwaysFails.selector);
-        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
-            nextPubkey,
-            sig,
-            payable(address(dummy)),
-            callData
-        );
-    }
-
-    function test_executeWithWinternitz_noFeeCall() public {
+    function test_executeWithWinternitz_zeroValueForwardedToTarget() public {
         vm.prank(ADMIN);
         factory.setExecuteFee(EXECUTE_FEE);
 
@@ -96,6 +71,213 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         );
 
         assertEq(dummy.value(), noFeeValue);
+    }
+
+    function test_executeWithWinternitz_rotatesPqOwner() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            42
+        );
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey, bytes32 nextPrivateKey) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        // First call succeeds and rotates the pq owner
+        vm.prank(ALICE);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+
+        // Attempting to use the old alicePrivateKey should now fail
+        (WOTSPlus.WinternitzAddress memory nextPubkey2,) = _generateKeyPair("next-key-2");
+        bytes memory callData2 = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            99
+        );
+
+        // Sign with old alicePrivateKey against the NEW current pq owner (nextPubkey)
+        bytes32 msgHash2 = _buildExecuteMessageHash(
+            address(wallet), nextPubkey, nextPubkey2, address(dummy), callData2
+        );
+        WOTSPlus.WinternitzElements memory sig2 = _sign(alicePrivateKey, msgHash2);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey2,
+            sig2,
+            payable(address(dummy)),
+            callData2
+        );
+
+        // But signing with the new key should work
+        WOTSPlus.WinternitzElements memory sig3 = _sign(nextPrivateKey, msgHash2);
+
+        vm.prank(ALICE);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey2,
+            sig3,
+            payable(address(dummy)),
+            callData2
+        );
+
+        assertEq(dummy.value(), 99);
+    }
+
+    function test_executeWithWinternitz_forwardsValueMinusFee() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        uint256 extraValue = 0.05 ether;
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValue.selector,
+            99
+        );
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        uint256 dummyBalBefore = address(dummy).balance;
+
+        vm.prank(ALICE);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE + extraValue}(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+
+        assertEq(address(dummy).balance, dummyBalBefore + extraValue);
+        assertEq(dummy.value(), 99);
+    }
+
+    function test_executeWithWinternitz_forwardsZeroWhenMsgValueEqualsFee() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            55
+        );
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        uint256 dummyBalBefore = address(dummy).balance;
+
+        vm.prank(ALICE);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+
+        assertEq(address(dummy).balance, dummyBalBefore);
+        assertEq(dummy.value(), 55);
+    }
+
+    function test_executeWithWinternitz_forwardsZeroWhenNoMsgValue() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            77
+        );
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        uint256 walletBalBefore = address(wallet).balance;
+        uint256 factoryBalBefore = address(factory).balance;
+
+        vm.prank(ALICE);
+        wallet.executeWithWinternitz(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+
+        assertEq(address(wallet).balance, walletBalBefore - EXECUTE_FEE);
+        assertEq(address(factory).balance, factoryBalBefore + EXECUTE_FEE);
+        assertEq(dummy.value(), 77);
+    }
+
+    function test_executeWithWinternitz_returnsCallData() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            123
+        );
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        bytes memory returnData = wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+
+        assertEq(returnData.length, 0);
+        assertEq(dummy.value(), 123);
+    }
+
+    function test_executeWithWinternitz_revertsWhen_targetReverts() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.failingFunction.selector
+        );
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(DummyContract.AlwaysFails.selector);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
     }
 
     function test_executeWithWinternitz_revertsWhen_insufficientBalance() public {
@@ -143,6 +325,92 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
         wallet.executeWithWinternitz(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+    }
+
+    function test_executeWithWinternitz_revertsWhen_nextPqOwnerSeedIsZero() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            42
+        );
+
+        WOTSPlus.WinternitzAddress memory nextPubkey = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(0),
+            publicKeyHash: bytes32("non-empty")
+        });
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+    }
+
+    function test_executeWithWinternitz_revertsWhen_nextPqOwnerHashIsZero() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            42
+        );
+
+        WOTSPlus.WinternitzAddress memory nextPubkey = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32("non-empty"),
+            publicKeyHash: bytes32(0)
+        });
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
+            nextPubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+    }
+
+    function test_executeWithWinternitz_revertsWhen_invalidSignature() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            42
+        );
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+
+        // Sign with a wrong key (BOB's key instead of ALICE's)
+        (, bytes32 wrongPrivateKey) = _generateKeyPair("wrong-key");
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(wrongPrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.executeWithWinternitz{value: EXECUTE_FEE}(
             nextPubkey,
             sig,
             payable(address(dummy)),
