@@ -7,13 +7,16 @@ import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
 import {QuipWallet} from "../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
 
 /// @title QuipFactory Base Test
-/// @dev Base contract for testing QuipFactory. Deploys full stack via CREATE2.
+/// @dev Base contract for testing QuipFactory. Deploys full stack via CREATE3
+///      and vets an initial QuipWallet implementation for proxy deployment.
 contract QuipFactoryTest is Test {
     Deployer public deployer;
     QuipFactory public factory;
     address public wotsLibrary;
+    QuipWallet public walletImplementation;
 
     address public ADMIN = makeAddr("admin");
     address public ALICE = makeAddr("alice");
@@ -47,6 +50,11 @@ contract QuipFactoryTest is Test {
         bytes32 factorySalt = keccak256("QuipFactory");
         address factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
         factory = QuipFactory(payable(factoryAddr));
+
+        // Deploy and vet a QuipWallet implementation
+        walletImplementation = new QuipWallet(payable(address(factory)));
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(walletImplementation));
     }
 
     function test_setUp() public view virtual {
@@ -56,6 +64,7 @@ contract QuipFactoryTest is Test {
         assertEq(factory.transferFee(), 0);
         assertEq(factory.executeFee(), 0);
         assertEq(factory.MAX_FEE(), 0.1 ether);
+        assertEq(factory.getVettedCodeCount(), 1);
     }
 
     // --- Helpers ---
@@ -106,7 +115,7 @@ contract QuipFactoryTest is Test {
         return signingKey;
     }
 
-    /// @dev Deploy a QuipWallet through the factory and return its address
+    /// @dev Deploy a QuipWallet proxy through the factory and return its address
     function _createWallet(
         address owner,
         bytes32 vaultSeed,
@@ -124,13 +133,30 @@ contract QuipFactoryTest is Test {
         (pubkey, privateKey) = _generateKeyPair(vaultSeed);
         recoveryPubkeys = _generateRecoveryKeys(privateKey, 10);
 
+        bytes memory payload = _encodeInitPayload(pubkey, recoveryPubkeys);
+
         vm.prank(owner);
-        walletAddr = factory.depositToWinternitz{value: deposit}(
+        walletAddr = factory.deployLatestWalletProxy{value: deposit}(
             vaultId,
             payable(owner),
-            pubkey,
-            recoveryPubkeys
+            payload
         );
+    }
+
+    /// @dev Encode init payload: [0:64) pqOwner + [64:704) recoveryKeys
+    function _encodeInitPayload(
+        WOTSPlus.WinternitzAddress memory pqOwner,
+        WOTSPlus.WinternitzAddress[] memory recoveryKeys
+    ) internal pure returns (bytes memory) {
+        bytes memory payload = abi.encodePacked(pqOwner.publicSeed, pqOwner.publicKeyHash);
+        for (uint256 i = 0; i < recoveryKeys.length; i++) {
+            payload = abi.encodePacked(
+                payload,
+                recoveryKeys[i].publicSeed,
+                recoveryKeys[i].publicKeyHash
+            );
+        }
+        return payload;
     }
 
     /// @dev Compute the expected CREATE3 address for a QuipWallet
@@ -142,9 +168,22 @@ contract QuipFactoryTest is Test {
         return CREATE3.predictDeterministicAddress(vaultId, address(factory));
     }
 
+    /// @dev Deploy a fresh uninitialized QuipWallet proxy via CREATE3.
+    function _deployFreshProxy(bytes32 salt) internal returns (QuipWallet) {
+        bytes memory proxyInitcode = abi.encodePacked(
+            hex"603d3d8160223d3973",
+            address(walletImplementation),
+            hex"6009",
+            hex"5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076",
+            hex"cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3"
+        );
+        address proxyAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
+        return QuipWallet(payable(proxyAddr));
+    }
+
     /// @dev Get WOTSPlus library creation bytecode.
     ///      Uses vm.getCode to get the artifact bytecode.
-    function _getWOTSPlusBytecode() internal returns (bytes memory) {
+    function _getWOTSPlusBytecode() internal view returns (bytes memory) {
         return vm.getCode(
             "WOTSPlus.sol:WOTSPlus"
         );
