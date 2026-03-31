@@ -120,9 +120,9 @@ interface IQuipWallet {
     ///      Optionally calls `migrate` if the payload includes migration data. Finally delegates
     ///      to the parent `upgradeToAndCall` with empty calldata.
     /// @param newImplementation The address of the new implementation contract.
-    /// @param data Packed upgrade data: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2848) recoveryKeys,
-    ///      [2848:5056) verifier data (WinternitzAddress + WinternitzElements),
-    ///      [5056] shouldMigrate, [5057:5761) migrators.
+    /// @param data Packed upgrade data: [0:64) nextPqOwner, [64:2208) pqSig,
+    ///      [2208:2272) verifier, [2272:4416) verifySig,
+    ///      [4416] shouldMigrate, [4417:5121) migratorPayload.
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
@@ -131,10 +131,10 @@ interface IQuipWallet {
     /// @notice Verifies a PQ signature from the new implementation's verifier key.
     /// @dev MUST be called on every upgrade — `upgradeToAndCall` delegates to this function
     ///      on the new implementation. The verifier key and signature are extracted via
-    ///      `extractVerifiers` and verified against a `verificationDigest`. Future
+    ///      `decodeUpgradeVerification` and verified against a `verificationDigest`. Future
     ///      implementations may use a different PQ scheme for this step.
     /// @param newImplementation The address of the new implementation being upgraded to.
-    /// @param data Packed upgrade payload; verifier data at [2848:5056).
+    /// @param data Packed upgrade payload; verifier at [2208:2272), verifySig at [2272:4416).
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data

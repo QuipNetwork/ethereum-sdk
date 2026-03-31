@@ -5,32 +5,28 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 
 /// @title WOTSPlusCodec
-/// @dev Operation payload layout (all offsets in bytes):
+/// @dev Init payload layout (704 bytes, used by initialize & migrate):
 ///      [0:64)      WinternitzAddress     — pqOwner (publicSeed ++ publicKeyHash)
-///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
-///      [2208:2848) WinternitzAddress[10] — recoveryKeys (10 x 64)
-///      [2848:5056) bytes                 — verifier data (1 address + 1 sig = 2208)
-///      [5056]      bool                  — shouldMigrate (0x00 = false, 0x01 = true)
-///      [5057:5761) WinternitzAddress[11] — migrators (pqOwner + 10 recoveryKeys)
-///
-///      Init payload layout:
-///      [0:64)      WinternitzAddress     — pqOwner
 ///      [64:704)    WinternitzAddress[10] — recoveryKeys (10 x 64)
 ///
-///      Migrator payload layout (same as init):
-///      [0:64)      WinternitzAddress     — new pqOwner
-///      [64:704)    WinternitzAddress[10] — new recoveryKeys (10 x 64)
+///      Upgrade payload layout (5121 bytes, used by upgradeToAndCall & verifyUpgrade):
+///      [0:64)      WinternitzAddress     — nextPqOwner (publicSeed ++ publicKeyHash)
+///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
+///      [2208:2272) WinternitzAddress     — verifier (publicSeed ++ publicKeyHash)
+///      [2272:4416) WinternitzElements    — verifySig (67 x 32)
+///      [4416]      uint8                 — shouldMigrate (0x00 = false, 0x01 = true)
+///      [4417:5121) bytes                 — migratorPayload (init layout, 704 bytes)
 ///
 ///      Constants:
 ///        RECOVERY_KEY_AMOUNT = 10
 ///
 ///      Offset derivation:
-///        PQ_OWNER  = 2 x 32                          = 64
-///        PQ_SIG    = 67 x 32                          = 2144   → starts at 64
-///        REC_KEYS  = RECOVERY_KEY_AMOUNT x 64         = 640    → starts at 64 + 2144 = 2208
-///        VERIFIERS = PQ_OWNER + PQ_SIG                = 2208   → starts at 2208 + 640 = 2848
-///        MIGRATE   = 1 (bool)                                  → starts at 2848 + 2208 = 5056
-///        MIGRATORS = 11 x 64                          = 704    → starts at 5056 + 1 = 5057
+///        PQ_OWNER    = 2 x 32                          = 64
+///        PQ_SIG      = 67 x 32                         = 2144   → starts at 64
+///        VERIFIER    = 2 x 32                          = 64     → starts at 64 + 2144 = 2208
+///        VERIFY_SIG  = 67 x 32                         = 2144   → starts at 2208 + 64 = 2272
+///        MIGRATE     = 1 (uint8)                                → starts at 2272 + 2144 = 4416
+///        MIGRATORS   = 704 (init layout)                        → starts at 4416 + 1 = 4417
 library WOTSPlusCodec {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                      DOMAIN TAGS                              */
@@ -47,70 +43,83 @@ library WOTSPlusCodec {
     /*                         DECODERS                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Extracts the WinternitzAddress at offset 0.
-    /// @param payload The packed operation or init payload.
-    /// @return owner The PQ owner extracted from the payload head.
-    function extractPqOwner(
-        bytes calldata payload
-    ) internal pure returns (WOTSPlus.WinternitzAddress calldata owner) {
-        assembly {
-            owner := payload.offset // 0
-        }
-    }
-
-    /// @dev Extracts the WinternitzElements at offset 64 (after pqOwner).
-    /// @param payload The packed operation payload.
-    /// @return sig The PQ signature extracted after the owner.
-    function extractPqSig(
-        bytes calldata payload
-    ) internal pure returns (WOTSPlus.WinternitzElements calldata sig) {
-        assembly {
-            sig := add(payload.offset, 64) // PQ_OWNER_SIZE
-        }
-    }
-
-    /// @dev Extract recovery keys from init payload (no pqSig, keys follow pqOwner directly).
-    /// @param payload The packed init or migrator payload.
-    /// @return keys The 10 recovery keys extracted after the owner.
-    function extractInitRecoveryKeys(
-        bytes calldata payload
-    ) internal pure returns (WOTSPlus.WinternitzAddress[10] calldata keys) {
-        assembly {
-            keys := add(payload.offset, 64) // PQ_OWNER_SIZE
-        }
-    }
-
-    /// @dev Extracts the verifier WinternitzAddress and WinternitzElements from the upgrade payload.
-    ///      Verifier data starts at offset 2848 (after recovery keys).
-    /// @param payload The packed upgrade payload.
-    /// @return verifier The verifier's WinternitzAddress.
-    /// @return sig The verifier's WinternitzElements signature.
-    function extractVerifiers(
+    /// @dev Decodes the init payload into pqOwner and recovery keys.
+    ///      Layout: [0:64) pqOwner, [64:704) recoveryKeys[10].
+    ///      Used by initialize() and migrate().
+    /// @param payload The packed init or migrator payload (704 bytes).
+    /// @return pqOwner The PQ owner at offset 0.
+    /// @return recoveryKeys The 10 recovery keys at offset 64.
+    function decodeInit(
         bytes calldata payload
     )
         internal
         pure
         returns (
-            WOTSPlus.WinternitzAddress calldata verifier,
-            WOTSPlus.WinternitzElements calldata sig
+            WOTSPlus.WinternitzAddress calldata pqOwner,
+            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         )
     {
         assembly {
-            verifier := add(payload.offset, 2848)
-            sig := add(payload.offset, 2912) // 2848 + 64 (PQ_OWNER_SIZE)
+            pqOwner := payload.offset
+            recoveryKeys := add(payload.offset, 64)
         }
     }
 
-    /// @dev Extracts the shouldMigrate flag and migrator payload from the upgrade data.
-    ///      [5056] = 1-byte boolean, [5057:5761) = 704-byte migrator payload (init layout).
-    /// @param payload The packed upgrade payload.
+    /// @dev Decodes the upgrade payload's authentication portion.
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig.
+    ///      Used by upgradeToAndCall().
+    /// @param data The packed upgrade payload (5121 bytes).
+    /// @return nextPqOwner The next PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    function decodeUpgradeAuth(
+        bytes calldata data
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig
+        )
+    {
+        assembly {
+            nextPqOwner := data.offset
+            pqSig := add(data.offset, 64)
+        }
+    }
+
+    /// @dev Decodes the upgrade payload's verification portion.
+    ///      Layout: [2208:2272) verifier, [2272:4416) verifySig.
+    ///      Used by verifyUpgrade().
+    /// @param data The packed upgrade payload (5121 bytes).
+    /// @return verifier The verifier's WinternitzAddress at offset 2208.
+    /// @return verifySig The verifier's WinternitzElements at offset 2272.
+    function decodeUpgradeVerification(
+        bytes calldata data
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            WOTSPlus.WinternitzElements calldata verifySig
+        )
+    {
+        assembly {
+            verifier := add(data.offset, 2208)
+            verifySig := add(data.offset, 2272)
+        }
+    }
+
+    /// @dev Decodes the upgrade payload's migration portion.
+    ///      Layout: [4416] shouldMigrate, [4417:5121) migratorPayload.
+    ///      Used by upgradeToAndCall().
+    /// @param data The packed upgrade payload (5121 bytes).
     /// @return shouldMigrate True if state migration is required.
     /// @return migratorPayload The 704-byte init-layout payload for the new implementation.
-    function extractMigrators(
-        bytes calldata payload
+    function decodeUpgradeMigration(
+        bytes calldata data
     ) internal pure returns (bool shouldMigrate, bytes calldata migratorPayload) {
-        shouldMigrate = uint8(payload[5056]) != 0;
-        migratorPayload = payload[5057:5761];
+        shouldMigrate = uint8(data[4416]) != 0;
+        migratorPayload = data[4417:5121];
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

@@ -46,12 +46,6 @@ contract QuipWallet_version is QuipWalletTest {
             pqSig = abi.encodePacked(pqSig, sig.elements[i]);
         }
 
-        // Pack dummy recoveryKeys[10] (640 bytes)
-        bytes memory recoveryKeys;
-        for (uint256 i = 0; i < 10; i++) {
-            recoveryKeys = abi.encodePacked(recoveryKeys, bytes32(0), bytes32(0));
-        }
-
         // Build verifier data (2208 bytes)
         (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair("version-verifier");
         bytes32 vHash = Codec.verificationDigest(
@@ -76,7 +70,7 @@ contract QuipWallet_version is QuipWalletTest {
         }
 
         return abi.encodePacked(
-            pqSigner, pqSig, recoveryKeys, verifierData, migrateFlag, migratorPayload
+            pqSigner, pqSig, verifierData, migrateFlag, migratorPayload
         );
     }
 }

@@ -19,10 +19,10 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         factory.vetImplementation(address(newImpl));
     }
 
-    /// @dev Builds the full upgrade data payload (5761 bytes).
-    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2848) recoveryKeys[10],
-    ///              [2848:5056) verifier (nextPqOwner + pqSig), [5056] shouldMigrate,
-    ///              [5057:5761) migratorPayload (pqOwner + recoveryKeys[10]).
+    /// @dev Builds the full upgrade data payload (5121 bytes).
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig,
+    ///              [2208:2272) verifier, [2272:4416) verifySig,
+    ///              [4416] shouldMigrate, [4417:5121) migratorPayload.
     function _buildUpgradeData(
         address newImplementation_,
         bytes32 signingKey,
@@ -56,12 +56,6 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             pqSig = abi.encodePacked(pqSig, sig.elements[i]);
         }
 
-        // Pack recoveryKeys[10] (640 bytes) — dummy, not used in upgrade path
-        bytes memory recoveryKeys;
-        for (uint256 i = 0; i < 10; i++) {
-            recoveryKeys = abi.encodePacked(recoveryKeys, bytes32(0), bytes32(0));
-        }
-
         // Verifier data (2208 bytes): verifier address (64) + verifier sig (2144)
         bytes memory verifierData = _buildVerifierData(newImplementation_, verifierSeed);
 
@@ -92,10 +86,9 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         return abi.encodePacked(
             pqSigner,       // [0:64)
             pqSig,          // [64:2208)
-            recoveryKeys,   // [2208:2848)
-            verifierData,   // [2848:5056)
-            migrateFlag,    // [5056]
-            migratorPayload // [5057:5761)
+            verifierData,   // [2208:4416)
+            migrateFlag,    // [4416]
+            migratorPayload // [4417:5121)
         );
     }
 

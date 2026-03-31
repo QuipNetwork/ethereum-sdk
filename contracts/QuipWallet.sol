@@ -76,9 +76,10 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         if (msg.sender != FACTORY) revert InvalidFactory();
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
-        WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(
-            payload
-        );
+        (
+            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+        ) = Codec.decodeInit(payload);
         _enforceNonZeroPqOwner(newPqOwner);
 
         _initializeOwner(newOwner);
@@ -86,8 +87,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         $.quipFactory = FACTORY;
         $.pqOwner = newPqOwner;
 
-        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec
-            .extractInitRecoveryKeys(payload);
         _addRecoveryKeys(recoveryKeys);
         _verifyInitialState();
 
@@ -100,8 +99,10 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         bytes calldata data
     ) public payable override(IQuipWallet, UUPSUpgradeable) onlyOwner {
         Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress calldata nextPqOwner = Codec.extractPqOwner(data);
-        WOTSPlus.WinternitzElements calldata pqSig = Codec.extractPqSig(data);
+        (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig
+        ) = Codec.decodeUpgradeAuth(data);
 
         _enforceNonZeroPqOwner(nextPqOwner);
         _enforceDifferentPqOwner(nextPqOwner);
@@ -126,10 +127,13 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         $.pqOwner = nextPqOwner;
 
-        (bool shouldMigrate, bytes calldata migratorPayload) = Codec.extractMigrators(data);
+        (bool shouldMigrate, bytes calldata migratorPayload) = Codec.decodeUpgradeMigration(data);
         if (shouldMigrate) {
             uint256 slot = _UPGRADE_GUARD_SLOT;
             assembly { tstore(slot, 1) }
+            // abi.encodeCall re-serializes migratorPayload into fresh calldata,
+            // so migrate's decodeInit reads from offset 0 of the init layout
+            // regardless of where the slice sat in the original upgrade payload.
             LibCall.delegateCallContract(
                 newImplementation,
                 abi.encodeCall(this.migrate, (migratorPayload))
@@ -362,7 +366,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         (
             WOTSPlus.WinternitzAddress calldata verifier,
             WOTSPlus.WinternitzElements calldata verifySig
-        ) = Codec.extractVerifiers(data);
+        ) = Codec.decodeUpgradeVerification(data);
 
         bytes32 digest = Codec.verificationDigest(
             address(this),
@@ -473,7 +477,10 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     /// @inheritdoc IQuipWallet
     function migrate(bytes calldata payload) external {
         if (_upgradeGuard() == 0) revert NotUpgrading();
-        WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(payload);
+        (
+            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+        ) = Codec.decodeInit(payload);
         _enforceNonZeroPqOwner(newPqOwner);
 
         Storage.Layout storage $ = Storage.layout();
@@ -483,8 +490,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         for (uint256 i = 0; i < clearLen; ++i) {
             $.recoveryKeyHashes.remove($.recoveryKeyHashes.at(0));
         }
-
-        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec.extractInitRecoveryKeys(payload);
         _addRecoveryKeys(recoveryKeys);
         _verifyInitialState();
 
