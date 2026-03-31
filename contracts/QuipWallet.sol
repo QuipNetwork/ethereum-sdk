@@ -79,10 +79,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(
             payload
         );
-        if (
-            newPqOwner.publicSeed == bytes32(0) ||
-            newPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(newPqOwner);
 
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
@@ -105,15 +102,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress calldata nextPqOwner = Codec.extractPqOwner(data);
 
-        if (
-            nextPqOwner.publicSeed == $.pqOwner.publicSeed &&
-            nextPqOwner.publicKeyHash == $.pqOwner.publicKeyHash
-        ) revert PqOwnerReuse();
-
-        if (
-            nextPqOwner.publicSeed == bytes32(0) ||
-            nextPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
 
         LibCall.delegateCallContract(
             newImplementation,
@@ -141,17 +131,16 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzAddress calldata newPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig
     ) public onlyOwner {
-        if (
-            newPqOwner.publicSeed == bytes32(0) ||
-            newPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(newPqOwner);
+        _enforceDifferentPqOwner(newPqOwner);
 
         Storage.Layout storage $ = Storage.layout();
+        WOTSPlus.WinternitzAddress memory oldPqOwner = $.pqOwner;
         bytes32 digest = Codec.keyRotationDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
+            oldPqOwner.publicSeed,
+            oldPqOwner.publicKeyHash,
             newPqOwner.publicSeed,
             newPqOwner.publicKeyHash
         );
@@ -160,6 +149,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             revert InvalidSignature();
 
         $.pqOwner = newPqOwner;
+
+        emit PqOwnerChanged(oldPqOwner, newPqOwner);
     }
 
     /// @inheritdoc IQuipWallet
@@ -169,10 +160,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         address payable to,
         uint256 value
     ) public payable onlyOwner {
-        if (
-            nextPqOwner.publicSeed == bytes32(0) ||
-            nextPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
 
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
@@ -211,10 +200,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         address payable target,
         bytes calldata opdata
     ) public payable onlyOwner returns (bytes memory) {
-        if (
-            nextPqOwner.publicSeed == bytes32(0) ||
-            nextPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
 
         uint256 fee = getExecuteFee();
         if (address(this).balance < fee)
@@ -237,8 +224,11 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
 
+        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
         $.pqOwner = nextPqOwner;
         SafeTransferLib.safeTransferETH($.quipFactory, fee);
+
+        emit pqExecution(block.timestamp, curPqOwner, nextPqOwner, target);
 
         return LibCall.callContract(target, forwardValue, opdata);
     }
@@ -254,10 +244,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         if (!$.recoveryKeyHashes.contains(keyHash))
             revert RecoveryKeyNotFound();
 
-        if (
-            newPqOwner.publicSeed == bytes32(0) ||
-            newPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(newPqOwner);
+        _enforceDifferentPqOwner(newPqOwner);
 
         bytes32 digest = Codec.keyRotationDigest(
             address(this),
@@ -283,10 +271,10 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig,
         WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
     ) public onlyOwner {
-        if (
-            nextPqOwner.publicSeed == bytes32(0) ||
-            nextPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
+        if (getRecoveryKeyCount() + newRecoveryKeys.length > MAX_RECOVERY_KEYS)
+            revert RecoveryKeyLimitExceeded();
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 keysHash = keccak256(abi.encode(newRecoveryKeys));
@@ -316,10 +304,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig,
         WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
     ) public onlyOwner {
-        if (
-            nextPqOwner.publicSeed == bytes32(0) ||
-            nextPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
         if (newRecoveryKeys.length > MAX_RECOVERY_KEYS)
             revert RecoveryKeyLimitExceeded();
 
@@ -423,6 +409,25 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     /*                        INTERNALS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    function _enforceNonZeroPqOwner(
+        WOTSPlus.WinternitzAddress calldata pqOwner
+    ) internal pure {
+        if (
+            pqOwner.publicSeed == bytes32(0) ||
+            pqOwner.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqOwner();
+    }
+
+    function _enforceDifferentPqOwner(
+        WOTSPlus.WinternitzAddress calldata nextPqOwner
+    ) internal view {
+        Storage.Layout storage $ = Storage.layout();
+        if (
+            nextPqOwner.publicSeed == $.pqOwner.publicSeed &&
+            nextPqOwner.publicKeyHash == $.pqOwner.publicKeyHash
+        ) revert PqOwnerReuse();
+    }
+
     /// @dev Validates and adds recovery keys to the set. Reverts if any key has zero fields,
     ///      is a duplicate, or if the set would exceed `MAX_RECOVERY_KEYS`.
     function _addRecoveryKeys(
@@ -449,10 +454,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     function migrate(bytes calldata payload) external {
         if (_upgradeGuard() == 0) revert NotUpgrading();
         WOTSPlus.WinternitzAddress calldata newPqOwner = Codec.extractPqOwner(payload);
-        if (
-            newPqOwner.publicSeed == bytes32(0) ||
-            newPqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
+        _enforceNonZeroPqOwner(newPqOwner);
 
         Storage.Layout storage $ = Storage.layout();
         $.pqOwner = newPqOwner;
@@ -465,6 +467,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys = Codec.extractInitRecoveryKeys(payload);
         _addRecoveryKeys(recoveryKeys);
         _verifyInitialState();
+
+        emit WalletMigrated(newPqOwner);
     }
 
     /// @dev Fixed-size overload used by initialize (codec returns WinternitzAddress[10]).
