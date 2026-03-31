@@ -85,29 +85,56 @@ interface IQuipWallet {
         uint256 count
     );
 
+    /// @notice Emitted when the post-quantum owner key is rotated via `changePqOwner`.
+    /// @param oldPqOwner The previous Winternitz public key.
+    /// @param newPqOwner The new Winternitz public key.
+    event PqOwnerChanged(
+        WOTSPlus.WinternitzAddress oldPqOwner,
+        WOTSPlus.WinternitzAddress newPqOwner
+    );
+
+    /// @notice Emitted when an arbitrary call is executed via `executeWithWinternitz`.
+    /// @param when The block timestamp of the execution.
+    /// @param pqFrom The Winternitz public key that authorized the operation.
+    /// @param pqNext The new Winternitz public key that replaces `pqFrom`.
+    /// @param target The contract address that was called.
+    event pqExecution(
+        uint256 when,
+        WOTSPlus.WinternitzAddress pqFrom,
+        WOTSPlus.WinternitzAddress pqNext,
+        address target
+    );
+
+    /// @notice Emitted when PQ state is migrated during an upgrade.
+    /// @param newPqOwner The new post-quantum owner key set during migration.
+    event WalletMigrated(WOTSPlus.WinternitzAddress newPqOwner);
+
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;
 
-    /// @notice Upgrades the wallet to a new implementation, verifying a PQ signature and
+    /// @notice Upgrades the wallet to a new implementation, verifying two PQ signatures and
     ///         optionally migrating state.
-    /// @dev Calls `verifyUpgrade` on the new implementation via delegatecall, then optionally
-    ///      calls `migrate` if the payload includes migration data. Finally delegates to the
-    ///      parent `upgradeToAndCall` with empty calldata.
+    /// @dev First verifies the upgrade authorization against the current pqOwner using pqSig.
+    ///      Then delegatecalls `verifyUpgrade` on the new implementation, which independently
+    ///      verifies a second signature from the verifier key embedded in the payload.
+    ///      Optionally calls `migrate` if the payload includes migration data. Finally delegates
+    ///      to the parent `upgradeToAndCall` with empty calldata.
     /// @param newImplementation The address of the new implementation contract.
-    /// @param data Packed upgrade data: [0:64) pqSigner, [64:2208) pqSig, [2208:...) optional migration payload.
+    /// @param data Packed upgrade data: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2848) recoveryKeys,
+    ///      [2848:5056) verifier data (WinternitzAddress + WinternitzElements),
+    ///      [5056] shouldMigrate, [5057:5761) migrators.
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
     ) external payable;
 
-    /// @notice Verifies a PQ signature authorizing an upgrade to a new implementation.
+    /// @notice Verifies a PQ signature from the new implementation's verifier key.
     /// @dev MUST be called on every upgrade — `upgradeToAndCall` delegates to this function
-    ///      on the new implementation to ensure the upgrade is authorized by the current
-    ///      post-quantum owner. New implementations that omit this function will cause
-    ///      upgrades to revert.
-    ///      Data layout: [0:64) pqSigner (WinternitzAddress), [64:2208) pqSig (WinternitzElements).
+    ///      on the new implementation. The verifier key and signature are extracted via
+    ///      `extractVerifiers` and verified against a `verificationDigest`. Future
+    ///      implementations may use a different PQ scheme for this step.
     /// @param newImplementation The address of the new implementation being upgraded to.
-    /// @param data Packed verification data containing the PQ signer and signature.
+    /// @param data Packed upgrade payload; verifier data at [2848:5056).
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data

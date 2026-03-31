@@ -32,6 +32,12 @@ interface IQuipFactory {
     /// @param sent The ETH value sent.
     /// @param required The required creation fee.
     error InsufficientCreationFee(uint256 sent, uint256 required);
+    /// @notice Thrown when `renounceOwnership` is called (always reverts).
+    error RenounceDisabled();
+    /// @notice Thrown when the max fee is zero.
+    error ZeroMaxFee();
+    /// @notice Thrown when the wallet owner address is zero.
+    error ZeroAddressOwner();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          EVENTS                               */
@@ -77,6 +83,11 @@ interface IQuipFactory {
         WOTSPlus.WinternitzAddress pqPubkey,
         address quip
     );
+
+    /// @notice Emitted when ETH is withdrawn from the factory.
+    /// @param to The address that received the withdrawal.
+    /// @param amount The amount of ETH withdrawn.
+    event Withdrawn(address indexed to, uint256 amount);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                               */
@@ -144,9 +155,8 @@ interface IQuipFactory {
     /// @param amount The amount of ETH in wei to withdraw.
     function withdraw(uint256 amount) external;
 
-    /// @notice Returns the address of the deployed WOTSPlus library.
-    /// @return The WOTSPlus library address.
-    function WOTS_LIBRARY() external view returns (address);
+    /// @notice Disabled; always reverts with `RenounceDisabled`.
+    function renounceOwnership() external;
 
     /// @notice Returns the current fee charged for wallet creation.
     /// @return The creation fee in wei.
