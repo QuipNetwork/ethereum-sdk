@@ -24,7 +24,6 @@ contract QuipFactoryTest is Test {
     // Standard test amounts
     uint256 public constant INITIAL_DEPOSIT = 1 ether;
     uint256 public constant CREATION_FEE = 0.01 ether;
-    uint256 public constant TRANSFER_FEE = 0.005 ether;
     uint256 public constant EXECUTE_FEE = 0.002 ether;
 
     function setUp() public virtual {
@@ -54,7 +53,6 @@ contract QuipFactoryTest is Test {
     function test_setUp() public view virtual {
         assertEq(factory.owner(), ADMIN);
         assertEq(factory.creationFee(), 0);
-        assertEq(factory.transferFee(), 0);
         assertEq(factory.executeFee(), 0);
         assertEq(factory.MAX_FEE(), 0.1 ether);
         assertEq(factory.getVettedCodeCount(), 1);

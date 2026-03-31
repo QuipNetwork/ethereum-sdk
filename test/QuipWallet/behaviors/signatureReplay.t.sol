@@ -17,9 +17,9 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         uint256 transferAmount = 0.1 ether;
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
-        // Build a valid transfer signature with alicePrivateKey
-        bytes32 msgHash = _buildTransferMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
+        // Build a valid execute (transfer) signature with alicePrivateKey
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, ""
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -34,10 +34,10 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         vm.prank(ALICE);
         wallet.changePqOwner(rotatedPubkey, rotateSig);
 
-        // Now try to replay the original transfer signature — pqOwner has changed
+        // Now try to replay the original signature — pqOwner has changed
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
+        wallet.execute(nextPubkey, sig, payable(BOB), transferAmount, "");
     }
 
     /// @dev A signature computed for wallet A must not work on wallet B,
@@ -50,10 +50,10 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
             bytes32 bobPrivateKey,
         ) = _createWallet(BOB, "bob-replay-vault", INITIAL_DEPOSIT);
 
-        // Build a valid transfer signature for ALICE's wallet
+        // Build a valid execute signature for ALICE's wallet
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-cross");
-        bytes32 msgHash = _buildTransferMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, ""
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -61,44 +61,42 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         QuipWallet bobWallet = QuipWallet(payable(bobWalletAddr));
         vm.prank(BOB);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        bobWallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), 0.1 ether);
+        bobWallet.execute(nextPubkey, sig, payable(BOB), 0.1 ether, "");
     }
 
-    /// @dev A transfer signature cannot be used for executeWithWinternitz,
-    ///      because each operation type uses a different digest tag.
-    function test_signatureReplay_crossOperationSignatureFails() public {
-        uint256 transferAmount = 0.1 ether;
+    /// @dev A signature for a pure transfer (empty data) cannot be used for a
+    ///      contract call (non-empty data), because the dataHash differs.
+    function test_signatureReplay_dataHashDifferentiatesOperations() public {
+        uint256 value = 0.1 ether;
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-cross-op");
 
-        // Build a transfer signature
-        bytes32 transferMsgHash = _buildTransferMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount
+        // Build a signature for a pure transfer (empty data)
+        bytes32 transferMsgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, nextPubkey, BOB, value, ""
         );
         WOTSPlus.WinternitzElements memory transferSig = _sign(alicePrivateKey, transferMsgHash);
 
-        // Try using it for an execute call — different digest tag
+        // Try using it for a call with non-empty data — different dataHash
         bytes memory callData = abi.encodeWithSignature("nonExistent()");
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.executeWithWinternitz(
-            nextPubkey, transferSig, payable(BOB), callData
-        );
+        wallet.execute(nextPubkey, transferSig, payable(BOB), value, callData);
     }
 
-    /// @dev Transfer digest must include chainId so signatures are invalid on forks.
+    /// @dev Execute digest must include chainId so signatures are invalid on forks.
     function test_signatureReplay_chainIdInDigest() public {
-        bytes32 digest1 = Codec.transferDigest(
+        bytes32 digest1 = Codec.executeDigest(
             address(wallet), block.chainid,
             alicePubkey.publicSeed, alicePubkey.publicKeyHash,
             bytes32(uint256(1)), bytes32(uint256(2)),
-            BOB, 0.1 ether
+            BOB, 0.1 ether, keccak256("")
         );
 
-        bytes32 digest2 = Codec.transferDigest(
+        bytes32 digest2 = Codec.executeDigest(
             address(wallet), block.chainid + 1,
             alicePubkey.publicSeed, alicePubkey.publicKeyHash,
             bytes32(uint256(1)), bytes32(uint256(2)),
-            BOB, 0.1 ether
+            BOB, 0.1 ether, keccak256("")
         );
 
         assertTrue(digest1 != digest2, "Digests must differ across chain IDs");

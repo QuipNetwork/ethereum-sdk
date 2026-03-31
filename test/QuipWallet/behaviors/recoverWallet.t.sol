@@ -99,15 +99,15 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         uint256 transferAmount = 0.1 ether;
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-after-recovery");
 
-        bytes32 transferMsgHash = _buildTransferMessageHash(
-            address(wallet), newPq, nextPq, BOB, transferAmount
+        bytes32 transferMsgHash = _buildExecuteMessageHash(
+            address(wallet), newPq, nextPq, BOB, transferAmount, ""
         );
         WOTSPlus.WinternitzElements memory transferSig = _sign(newPqPrivKey, transferMsgHash);
 
         uint256 bobBalBefore = BOB.balance;
 
         vm.prank(ALICE);
-        wallet.transferWithWinternitz(nextPq, transferSig, payable(BOB), transferAmount);
+        wallet.execute(nextPq, transferSig, payable(BOB), transferAmount, "");
 
         assertEq(BOB.balance, bobBalBefore + transferAmount);
     }

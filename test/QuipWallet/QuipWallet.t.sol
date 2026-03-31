@@ -53,33 +53,19 @@ contract QuipWalletTest is QuipFactoryTest {
 
     // --- Wallet-specific helpers ---
 
-    function _buildTransferMessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory nextPq,
-        address to,
-        uint256 value
-    ) internal view returns (bytes32) {
-        return Codec.transferDigest(
-            wallet_, block.chainid,
-            currentPq.publicSeed, currentPq.publicKeyHash,
-            nextPq.publicSeed, nextPq.publicKeyHash,
-            to, value
-        );
-    }
-
     function _buildExecuteMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
         address target,
-        bytes memory opdata
+        uint256 value,
+        bytes memory data
     ) internal view returns (bytes32) {
         return Codec.executeDigest(
             wallet_, block.chainid,
             currentPq.publicSeed, currentPq.publicKeyHash,
             nextPq.publicSeed, nextPq.publicKeyHash,
-            target, keccak256(opdata)
+            target, value, keccak256(data)
         );
     }
 
