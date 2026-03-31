@@ -363,6 +363,13 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         address newImplementation,
         bytes calldata data
     ) public view {
+        bytes32 implCodehash = newImplementation.codehash;
+        IQuipFactory factory = IQuipFactory(FACTORY);
+        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
+            revert ImplementationNotVetted();
+        if (factory.deprecatedImpls(implCodehash))
+            revert ImplementationDeprecated();
+
         (
             WOTSPlus.WinternitzAddress calldata verifier,
             WOTSPlus.WinternitzElements calldata verifySig

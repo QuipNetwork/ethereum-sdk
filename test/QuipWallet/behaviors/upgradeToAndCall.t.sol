@@ -410,4 +410,58 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
+    function test_upgradeToAndCall_revertsWhen_implementationNotVetted() public {
+        // Deploy but do NOT vet
+        QuipWallet unvetted = new QuipWallet(payable(address(factory)));
+
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("unvetted-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(uint256(1)),
+            publicKeyHash: bytes32(uint256(2))
+        });
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+
+        bytes memory data = _buildUpgradeData(
+            address(unvetted),
+            alicePrivateKey,
+            alicePubkey,
+            nextPq,
+            "verifier",
+            false,
+            dummyPq,
+            emptyKeys
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ImplementationNotVetted.selector);
+        wallet.upgradeToAndCall(address(unvetted), data);
+    }
+
+    function test_upgradeToAndCall_revertsWhen_implementationDeprecated() public {
+        // Deprecate the already-vetted newImpl
+        vm.prank(ADMIN);
+        factory.deprecateImplementation(address(newImpl));
+
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("deprecated-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(uint256(1)),
+            publicKeyHash: bytes32(uint256(2))
+        });
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+
+        bytes memory data = _buildUpgradeData(
+            address(newImpl),
+            alicePrivateKey,
+            alicePubkey,
+            nextPq,
+            "verifier",
+            false,
+            dummyPq,
+            emptyKeys
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ImplementationDeprecated.selector);
+        wallet.upgradeToAndCall(address(newImpl), data);
+    }
 }

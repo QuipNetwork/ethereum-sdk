@@ -40,6 +40,10 @@ interface IQuipWallet {
     error DuplicateRecoveryKey();
     /// @notice Thrown when an empty recovery key array is provided.
     error EmptyRecoveryKeys();
+    /// @notice Thrown when the upgrade target's codehash is not in the factory's vetted set.
+    error ImplementationNotVetted();
+    /// @notice Thrown when the upgrade target's codehash has been deprecated.
+    error ImplementationDeprecated();
 
     /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
     /// @param amount The ETH value transferred.
