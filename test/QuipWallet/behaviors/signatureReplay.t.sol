@@ -32,12 +32,12 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         WOTSPlus.WinternitzElements memory rotateSig = _sign(alicePrivateKey, rotateMsgHash);
 
         vm.prank(ALICE);
-        wallet.changePqOwner(rotatedPubkey, rotateSig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(rotatedPubkey, rotateSig));
 
         // Now try to replay the original signature — pqOwner has changed
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.execute(nextPubkey, sig, payable(BOB), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
     }
 
     /// @dev A signature computed for wallet A must not work on wallet B,
@@ -61,7 +61,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         QuipWallet bobWallet = QuipWallet(payable(bobWalletAddr));
         vm.prank(BOB);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        bobWallet.execute(nextPubkey, sig, payable(BOB), 0.1 ether, "");
+        bobWallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, 0.1 ether, ""));
     }
 
     /// @dev A signature for a pure transfer (empty data) cannot be used for a
@@ -80,7 +80,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         bytes memory callData = abi.encodeWithSignature("nonExistent()");
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.execute(nextPubkey, transferSig, payable(BOB), value, callData);
+        wallet.execute(Codec.encodeExecute(nextPubkey, transferSig, BOB, value, callData));
     }
 
     /// @dev Execute digest must include chainId so signatures are invalid on forks.

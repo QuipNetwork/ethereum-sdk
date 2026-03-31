@@ -17,6 +17,27 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [4416]      uint8                 — shouldMigrate (0x00 = false, 0x01 = true)
 ///      [4417:5121) bytes                 — migratorPayload (init layout, 704 bytes)
 ///
+///      changePqOwner payload layout (2208 bytes):
+///      [0:64)      WinternitzAddress     — newPqOwner
+///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
+///
+///      execute payload layout (2272 + N bytes):
+///      [0:64)      WinternitzAddress     — nextPqOwner
+///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
+///      [2208:2240) bytes32               — target (left-padded address)
+///      [2240:2272) uint256               — value
+///      [2272:...)  bytes                 — data (dynamic tail)
+///
+///      recoverWallet payload layout (2272 bytes):
+///      [0:64)      WinternitzAddress     — recoveryKey
+///      [64:128)    WinternitzAddress     — newPqOwner
+///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
+///
+///      keyManagement payload layout (2208 + N*64 bytes, used by addRecoveryKeys & replenishRecoveryKeys):
+///      [0:64)      WinternitzAddress     — nextPqOwner
+///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
+///      [2208:...)  WinternitzAddress[]   — newRecoveryKeys (N x 64)
+///
 ///      Constants:
 ///        RECOVERY_KEY_AMOUNT = 10
 ///
@@ -119,6 +140,189 @@ library WOTSPlusCodec {
     ) internal pure returns (bool shouldMigrate, bytes calldata migratorPayload) {
         shouldMigrate = uint8(data[4416]) != 0;
         migratorPayload = data[4417:5121];
+    }
+
+    /// @dev Decodes the changePqOwner payload.
+    ///      Layout: [0:64) newPqOwner, [64:2208) pqSig.
+    /// @param payload The packed changePqOwner payload (2208 bytes).
+    /// @return newPqOwner The new PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    function decodeChangePqOwner(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig
+        )
+    {
+        assembly {
+            newPqOwner := payload.offset
+            pqSig := add(payload.offset, 64)
+        }
+    }
+
+    /// @dev Decodes the execute payload.
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) target,
+    ///              [2240:2272) value, [2272:...) data.
+    /// @param payload The packed execute payload (>= 2272 bytes).
+    /// @return nextPqOwner The next PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    /// @return target The recipient or contract address at offset 2208 (left-padded).
+    /// @return value The ETH amount at offset 2240.
+    /// @return data The calldata tail starting at offset 2272 (empty for pure transfers).
+    function decodeExecute(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address target,
+            uint256 value,
+            bytes calldata data
+        )
+    {
+        assembly {
+            nextPqOwner := payload.offset
+            pqSig := add(payload.offset, 64)
+            target := calldataload(add(payload.offset, 2208))
+            value := calldataload(add(payload.offset, 2240))
+        }
+        data = payload[2272:];
+    }
+
+    /// @dev Decodes the recoverWallet payload.
+    ///      Layout: [0:64) recoveryKey, [64:128) newPqOwner, [128:2272) pqSig.
+    /// @param payload The packed recoverWallet payload (2272 bytes).
+    /// @return recoveryKey The recovery key at offset 0.
+    /// @return newPqOwner The new PQ owner at offset 64.
+    /// @return pqSig The PQ signature at offset 128.
+    function decodeRecoverWallet(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata recoveryKey,
+            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig
+        )
+    {
+        assembly {
+            recoveryKey := payload.offset
+            newPqOwner := add(payload.offset, 64)
+            pqSig := add(payload.offset, 128)
+        }
+    }
+
+    /// @dev Decodes the keyManagement payload (used by addRecoveryKeys & replenishRecoveryKeys).
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:...) keys (N x 64).
+    /// @param payload The packed keyManagement payload (>= 2208 bytes).
+    /// @return nextPqOwner The next PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    /// @return newRecoveryKeys The recovery keys starting at offset 2208 (length inferred).
+    function decodeKeyManagement(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
+        )
+    {
+        assembly {
+            nextPqOwner := payload.offset
+            pqSig := add(payload.offset, 64)
+            newRecoveryKeys.offset := add(payload.offset, 2208)
+            newRecoveryKeys.length := div(sub(payload.length, 2208), 64)
+        }
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          ENCODERS                             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Encodes the changePqOwner payload.
+    /// @param newPqOwner The new PQ owner key.
+    /// @param pqSig The PQ signature.
+    /// @return The packed payload (2208 bytes).
+    function encodeChangePqOwner(
+        WOTSPlus.WinternitzAddress memory newPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            newPqOwner.publicSeed, newPqOwner.publicKeyHash,
+            pqSig.elements
+        );
+    }
+
+    /// @dev Encodes the execute payload.
+    /// @param nextPqOwner The next PQ owner key.
+    /// @param pqSig The PQ signature.
+    /// @param target The recipient or contract address.
+    /// @param value The ETH amount to send.
+    /// @param data The calldata for contract calls (empty for pure transfers).
+    /// @return The packed payload (>= 2272 bytes).
+    function encodeExecute(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig,
+        address target,
+        uint256 value,
+        bytes memory data
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
+            pqSig.elements,
+            bytes32(uint256(uint160(target))),
+            value,
+            data
+        );
+    }
+
+    /// @dev Encodes the recoverWallet payload.
+    /// @param recoveryKey The recovery key to use.
+    /// @param newPqOwner The new PQ owner key.
+    /// @param pqSig The PQ signature from the recovery key.
+    /// @return The packed payload (2272 bytes).
+    function encodeRecoverWallet(
+        WOTSPlus.WinternitzAddress memory recoveryKey,
+        WOTSPlus.WinternitzAddress memory newPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            recoveryKey.publicSeed, recoveryKey.publicKeyHash,
+            newPqOwner.publicSeed, newPqOwner.publicKeyHash,
+            pqSig.elements
+        );
+    }
+
+    /// @dev Encodes the keyManagement payload (used by addRecoveryKeys & replenishRecoveryKeys).
+    /// @param nextPqOwner The next PQ owner key.
+    /// @param pqSig The PQ signature.
+    /// @param newRecoveryKeys The recovery keys to add or set.
+    /// @return The packed payload (2208 + N*64 bytes).
+    function encodeKeyManagement(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress[] memory newRecoveryKeys
+    ) internal pure returns (bytes memory) {
+        bytes memory payload = abi.encodePacked(
+            nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
+            pqSig.elements
+        );
+        for (uint256 i = 0; i < newRecoveryKeys.length; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newRecoveryKeys[i].publicSeed,
+                newRecoveryKeys[i].publicKeyHash
+            );
+        }
+        return payload;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

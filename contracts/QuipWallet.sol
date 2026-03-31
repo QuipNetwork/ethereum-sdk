@@ -145,10 +145,12 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function changePqOwner(
-        WOTSPlus.WinternitzAddress calldata newPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig
-    ) public onlyOwner {
+    function changePqOwner(bytes calldata payload) public onlyOwner {
+        (
+            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig
+        ) = Codec.decodeChangePqOwner(payload);
+
         _enforceNonZeroPqOwner(newPqOwner);
         _enforceDifferentPqOwner(newPqOwner);
 
@@ -172,13 +174,15 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function execute(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        address payable target,
-        uint256 value,
-        bytes calldata data
-    ) public payable onlyOwner returns (bytes memory) {
+    function execute(bytes calldata payload) public payable onlyOwner returns (bytes memory) {
+        (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address target,
+            uint256 value,
+            bytes calldata data
+        ) = Codec.decodeExecute(payload);
+
         _enforceNonZeroPqOwner(nextPqOwner);
         _enforceDifferentPqOwner(nextPqOwner);
 
@@ -220,11 +224,13 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function recoverWallet(
-        WOTSPlus.WinternitzAddress calldata recoveryKey,
-        WOTSPlus.WinternitzAddress calldata newPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig
-    ) public onlyOwner {
+    function recoverWallet(bytes calldata payload) public onlyOwner {
+        (
+            WOTSPlus.WinternitzAddress calldata recoveryKey,
+            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig
+        ) = Codec.decodeRecoverWallet(payload);
+
         Storage.Layout storage $ = Storage.layout();
         bytes32 keyHash = EfficientHashLib.hash(recoveryKey.publicSeed, recoveryKey.publicKeyHash);
         if (!$.recoveryKeyHashes.contains(keyHash))
@@ -252,11 +258,13 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function addRecoveryKeys(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
-    ) public onlyOwner {
+    function addRecoveryKeys(bytes calldata payload) public onlyOwner {
+        (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
+        ) = Codec.decodeKeyManagement(payload);
+
         _enforceNonZeroPqOwner(nextPqOwner);
         _enforceDifferentPqOwner(nextPqOwner);
         if (getRecoveryKeyCount() + newRecoveryKeys.length > MAX_RECOVERY_KEYS)
@@ -285,11 +293,13 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function replenishRecoveryKeys(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
-    ) public onlyOwner {
+    function replenishRecoveryKeys(bytes calldata payload) public onlyOwner {
+        (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
+        ) = Codec.decodeKeyManagement(payload);
+
         _enforceNonZeroPqOwner(nextPqOwner);
         _enforceDifferentPqOwner(nextPqOwner);
         if (newRecoveryKeys.length > MAX_RECOVERY_KEYS)

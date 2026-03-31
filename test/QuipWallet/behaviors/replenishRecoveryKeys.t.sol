@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
@@ -25,7 +26,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.replenishRecoveryKeys(nextPq, sig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
 
         // Count is now 5
         assertEq(wallet.getRecoveryKeyCount(), 5);
@@ -60,7 +61,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.recordLogs();
-        wallet.replenishRecoveryKeys(nextPq, sig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -84,7 +85,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.replenishRecoveryKeys(nextPq, sig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
 
         // Now use the first new recovery key
         (WOTSPlus.WinternitzAddress memory recoveredPq,) = _generateKeyPair("recovered-pq");
@@ -93,7 +94,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory recoverSig = _sign(_recoverySigningKey(replenishBase, 0), recoverMsg);
 
         vm.prank(ALICE);
-        wallet.recoverWallet(newKeys[0], recoveredPq, recoverSig);
+        wallet.recoverWallet(Codec.encodeRecoverWallet(newKeys[0], recoveredPq, recoverSig));
 
         (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
         assertEq(publicSeed, recoveredPq.publicSeed);
@@ -112,7 +113,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.replenishRecoveryKeys(nextPq, sig, maxKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, maxKeys));
 
         assertEq(wallet.getRecoveryKeyCount(), 10);
     }
@@ -131,7 +132,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.replenishRecoveryKeys(nextPq, sig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_invalidSignature() public {
@@ -143,7 +144,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.replenishRecoveryKeys(nextPq, badSig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, badSig, newKeys));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_newKeyIsZero() public {
@@ -161,7 +162,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.replenishRecoveryKeys(nextPq, sig, badKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, badKeys));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_tooManyNewKeys() public {
@@ -176,7 +177,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.RecoveryKeyLimitExceeded.selector);
-        wallet.replenishRecoveryKeys(nextPq, sig, tooMany);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, tooMany));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_nextPqOwnerSeedIsZero() public {
@@ -189,7 +190,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.replenishRecoveryKeys(zeroPq, dummySig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(zeroPq, dummySig, newKeys));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_nextPqOwnerHashIsZero() public {
@@ -202,7 +203,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.replenishRecoveryKeys(zeroPq, dummySig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(zeroPq, dummySig, newKeys));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_emptyArray() public {
@@ -216,7 +217,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.EmptyRecoveryKeys.selector);
-        wallet.replenishRecoveryKeys(nextPq, sig, emptyKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, emptyKeys));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_duplicateKeyInBatch() public {
@@ -232,7 +233,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.DuplicateRecoveryKey.selector);
-        wallet.replenishRecoveryKeys(nextPq, sig, dupKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, dupKeys));
     }
 
     function test_replenishRecoveryKeys_oldKeysInvalidAfterReplenish() public {
@@ -246,7 +247,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.replenishRecoveryKeys(nextPq, sig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
 
         // Try recovery with old key[0] — should fail
         WOTSPlus.WinternitzAddress memory oldKey = recoveryPubkeys[0];
@@ -257,7 +258,7 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.RecoveryKeyNotFound.selector);
-        wallet.recoverWallet(oldKey, recoveredPq, recoverSig);
+        wallet.recoverWallet(Codec.encodeRecoverWallet(oldKey, recoveredPq, recoverSig));
     }
 
     function test_replenishRecoveryKeys_revertsWhen_pqOwnerReuse() public {
@@ -271,6 +272,6 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
-        wallet.replenishRecoveryKeys(alicePubkey, sig, newKeys);
+        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(alicePubkey, sig, newKeys));
     }
 }

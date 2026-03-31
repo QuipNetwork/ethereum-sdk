@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
@@ -14,7 +15,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.changePqOwner(newPubkey, sig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(newPubkey, sig));
 
         (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
         assertEq(publicSeed, newPubkey.publicSeed);
@@ -27,7 +28,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         bytes32 msgHash = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, newPubkey);
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
         vm.prank(ALICE);
-        wallet.changePqOwner(newPubkey, sig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(newPubkey, sig));
 
         // Try using old key — must fail
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-pq-owner");
@@ -35,7 +36,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig2 = _sign(alicePrivateKey, msgHash2);
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.changePqOwner(nextPubkey, sig2);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(nextPubkey, sig2));
     }
 
     function test_changePqOwner_revertsWhen_callerNotOwner() public {
@@ -46,7 +47,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.changePqOwner(newPubkey, sig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(newPubkey, sig));
     }
 
     function test_changePqOwner_revertsWhen_invalidSignature() public {
@@ -58,7 +59,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.changePqOwner(newPubkey, badSig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(newPubkey, badSig));
     }
 
     function test_changePqOwner_revertsWhen_newPqOwnerSeedIsZero() public {
@@ -72,7 +73,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.changePqOwner(zeroPq, sig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(zeroPq, sig));
     }
 
     function test_changePqOwner_revertsWhen_newPqOwnerHashIsZero() public {
@@ -86,7 +87,7 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.changePqOwner(zeroPq, sig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(zeroPq, sig));
     }
 
     function test_changePqOwner_revertsWhen_pqOwnerReuse() public {
@@ -95,6 +96,6 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
-        wallet.changePqOwner(alicePubkey, sig);
+        wallet.changePqOwner(Codec.encodeChangePqOwner(alicePubkey, sig));
     }
 }

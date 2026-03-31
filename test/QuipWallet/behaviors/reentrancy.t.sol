@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 /// @dev Malicious contract that attempts reentrancy via receive()
@@ -18,13 +19,8 @@ contract ReentrantReceiver {
     receive() external payable {
         if (!attacked) {
             attacked = true;
-            WOTSPlus.WinternitzAddress memory fakePq = WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(uint256(99)),
-                publicKeyHash: bytes32(uint256(100))
-            });
-            WOTSPlus.WinternitzElements memory fakeSig;
 
-            try target.execute(fakePq, fakeSig, payable(address(this)), 0, "") {
+            try target.execute(bytes("")) {
                 // Should not reach here
             } catch {
                 // Expected: Unauthorized (not owner)
@@ -45,13 +41,8 @@ contract ReentrantTarget {
     fallback() external payable {
         if (!attacked) {
             attacked = true;
-            WOTSPlus.WinternitzAddress memory fakePq = WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(uint256(99)),
-                publicKeyHash: bytes32(uint256(100))
-            });
-            WOTSPlus.WinternitzElements memory fakeSig;
 
-            try wallet.execute(fakePq, fakeSig, payable(address(this)), 0, "") {
+            try wallet.execute(bytes("")) {
                 // Should not reach here
             } catch {
                 // Expected: Unauthorized (not owner)
@@ -78,7 +69,7 @@ contract QuipWallet_reentrancy is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(address(attacker)), 0, callData);
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(attacker), 0, callData));
 
         // The reentrancy was attempted but failed (Unauthorized)
         assertTrue(attacker.attacked(), "Reentrancy callback was triggered");
@@ -103,7 +94,7 @@ contract QuipWallet_reentrancy is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(address(attacker)), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(attacker), transferAmount, ""));
 
         // The reentrancy was attempted but failed
         assertTrue(attacker.attacked(), "Reentrancy callback was triggered");

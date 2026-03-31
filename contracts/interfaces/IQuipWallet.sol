@@ -154,12 +154,9 @@ interface IQuipWallet {
     /// @notice Rotates the post-quantum owner key to a new Winternitz public key.
     /// @dev Only callable by the classical owner. The signature must be valid over the
     ///      concatenation of the current and new public key components.
-    /// @param newPqOwner The new Winternitz public key to replace the current one.
-    /// @param pqSig The Winternitz signature proving authorization from the current post-quantum owner.
-    function changePqOwner(
-        WOTSPlus.WinternitzAddress calldata newPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig
-    ) external;
+    ///      Payload layout: [0:64) newPqOwner, [64:2208) pqSig.
+    /// @param payload Packed changePqOwner data (2208 bytes).
+    function changePqOwner(bytes calldata payload) external;
 
     /// @notice Executes a post-quantum authenticated operation: either a pure ETH transfer
     ///         or an arbitrary contract call.
@@ -167,19 +164,11 @@ interface IQuipWallet {
     ///      and sent to the factory. For pure transfers (data is empty), uses SafeTransferLib.
     ///      For contract calls (data is non-empty), uses LibCall.callContract.
     ///      Rotates the post-quantum owner key to `nextPqOwner` upon success.
-    /// @param nextPqOwner The new Winternitz public key to replace the current one.
-    /// @param pqSig The Winternitz signature proving authorization from the current PQ owner.
-    /// @param target The recipient address (for transfers) or contract address (for calls).
-    /// @param value The amount of ETH in wei to send to the target from the wallet balance.
-    /// @param data The calldata to pass to the target. Empty bytes for pure ETH transfers.
+    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig,
+    ///      [2208:2240) target, [2240:2272) value, [2272:...) data.
+    /// @param payload Packed execute data (>= 2272 bytes).
     /// @return The data returned by the call (empty for pure transfers).
-    function execute(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        address payable target,
-        uint256 value,
-        bytes calldata data
-    ) external payable returns (bytes memory);
+    function execute(bytes calldata payload) external payable returns (bytes memory);
 
     /// @notice Returns the current execute fee as set by the factory.
     /// @return The execute fee in wei.
@@ -198,34 +187,19 @@ interface IQuipWallet {
         returns (bytes32 publicSeed, bytes32 publicKeyHash);
 
     /// @notice Recovers the wallet using a pre-registered recovery key.
-    /// @param recoveryKey The recovery key to use (must be in the set).
-    /// @param newPqOwner The new post-quantum owner key to set.
-    /// @param pqSig The Winternitz signature from the recovery key.
-    function recoverWallet(
-        WOTSPlus.WinternitzAddress calldata recoveryKey,
-        WOTSPlus.WinternitzAddress calldata newPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig
-    ) external;
+    /// @dev Payload layout: [0:64) recoveryKey, [64:128) newPqOwner, [128:2272) pqSig.
+    /// @param payload Packed recoverWallet data (2272 bytes).
+    function recoverWallet(bytes calldata payload) external;
 
     /// @notice Adds new recovery keys to the existing set.
-    /// @param nextPqOwner The new post-quantum owner key after rotation.
-    /// @param pqSig The Winternitz signature from the current pqOwner.
-    /// @param newRecoveryKeys The recovery keys to add.
-    function addRecoveryKeys(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
-    ) external;
+    /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:...) keys (N x 64).
+    /// @param payload Packed keyManagement data (>= 2208 bytes).
+    function addRecoveryKeys(bytes calldata payload) external;
 
     /// @notice Clears existing recovery keys and adds new ones.
-    /// @param nextPqOwner The new post-quantum owner key after rotation.
-    /// @param pqSig The Winternitz signature from the current pqOwner.
-    /// @param newRecoveryKeys The new recovery keys to set.
-    function replenishRecoveryKeys(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
-    ) external;
+    /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:...) keys (N x 64).
+    /// @param payload Packed keyManagement data (>= 2208 bytes).
+    function replenishRecoveryKeys(bytes calldata payload) external;
 
     /// @notice Returns the number of recovery keys in the set.
     function getRecoveryKeyCount() external view returns (uint256);

@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {DummyContract} from "../../../contracts/test/DummyContract.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 /// @title Fee Edge Case Tests
@@ -34,7 +35,7 @@ contract QuipWallet_feeEdgeCases is QuipWalletTest {
         uint256 factoryBalBefore = address(factory).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(BOB), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
 
         // Factory collected the higher fee
         assertEq(address(factory).balance, factoryBalBefore + 0.05 ether);
@@ -57,7 +58,7 @@ contract QuipWallet_feeEdgeCases is QuipWalletTest {
         uint256 walletBalBefore = address(wallet).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(BOB), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
 
         assertEq(address(factory).balance, factoryBalBefore);
         assertEq(address(wallet).balance, walletBalBefore - transferAmount);
@@ -81,7 +82,7 @@ contract QuipWallet_feeEdgeCases is QuipWalletTest {
         uint256 factoryBalBefore = address(factory).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(address(dummy)), 0, callData);
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(dummy), 0, callData));
 
         // No fee collected
         assertEq(address(factory).balance, factoryBalBefore);

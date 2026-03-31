@@ -6,6 +6,7 @@ import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 
@@ -54,7 +55,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             _sign(_recoverySigningKey(privateKey_, 0), recoverMsgHash);
 
         vm.prank(ALICE);
-        w.recoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig);
+        w.recoverWallet(Codec.encodeRecoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig));
         assertEq(w.getRecoveryKeyCount(), 9);
 
         // Add 1 new key
@@ -67,7 +68,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(postRecoverySigningKey, msgHash);
 
         vm.prank(ALICE);
-        w.addRecoveryKeys(nextPq, sig, newKeys);
+        w.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
 
         assertEq(w.getRecoveryKeyCount(), 10);
 
@@ -97,7 +98,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             _sign(_recoverySigningKey(privateKey_, 0), recoverMsgHash);
 
         vm.prank(ALICE);
-        w.recoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig);
+        w.recoverWallet(Codec.encodeRecoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig));
 
         // Add 1 new key
         bytes32 addBase = keccak256(abi.encodePacked(privateKey_, "add-event"));
@@ -110,7 +111,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.recordLogs();
-        w.addRecoveryKeys(nextPq, sig, newKeys);
+        w.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -143,7 +144,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        w.addRecoveryKeys(nextPq, sig, newKeys);
+        w.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_invalidSignature() public {
@@ -162,7 +163,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.RecoveryKeyLimitExceeded.selector);
-        w.addRecoveryKeys(nextPq, badSig, newKeys);
+        w.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, badSig, newKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_newKeyIsZero() public {
@@ -183,7 +184,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             _sign(_recoverySigningKey(privateKey_, 0), recoverMsgHash);
 
         vm.prank(ALICE);
-        w.recoverWallet(rPubkeys_[0], currentPq, recoverSig);
+        w.recoverWallet(Codec.encodeRecoverWallet(rPubkeys_[0], currentPq, recoverSig));
 
         WOTSPlus.WinternitzAddress[] memory badKeys = new WOTSPlus.WinternitzAddress[](1);
         badKeys[0] = WOTSPlus.WinternitzAddress({
@@ -198,7 +199,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        w.addRecoveryKeys(nextPq, sig, badKeys);
+        w.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, badKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_exceedsCap() public {
@@ -220,7 +221,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.RecoveryKeyLimitExceeded.selector);
-        w.addRecoveryKeys(nextPq, sig, extraKey);
+        w.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, extraKey));
     }
 
     function test_addRecoveryKeys_revertsWhen_nextPqOwnerSeedIsZero() public {
@@ -235,7 +236,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.addRecoveryKeys(zeroPq, dummySig, newKeys);
+        wallet.addRecoveryKeys(Codec.encodeKeyManagement(zeroPq, dummySig, newKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_nextPqOwnerHashIsZero() public {
@@ -250,7 +251,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.addRecoveryKeys(zeroPq, dummySig, newKeys);
+        wallet.addRecoveryKeys(Codec.encodeKeyManagement(zeroPq, dummySig, newKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_emptyArray() public {
@@ -264,7 +265,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.EmptyRecoveryKeys.selector);
-        wallet.addRecoveryKeys(nextPq, sig, emptyKeys);
+        wallet.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, emptyKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_duplicateKeyInBatch() public {
@@ -278,7 +279,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             _sign(_recoverySigningKey(alicePrivateKey, 0), recoverMsg1);
 
         vm.prank(ALICE);
-        wallet.recoverWallet(recoveryPubkeys[0], pq1, recoverSig1);
+        wallet.recoverWallet(Codec.encodeRecoverWallet(recoveryPubkeys[0], pq1, recoverSig1));
 
         (WOTSPlus.WinternitzAddress memory pq2, bytes32 pq2Key) =
             _generateKeyPair("dup-batch-pq2");
@@ -289,7 +290,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             _sign(_recoverySigningKey(alicePrivateKey, 1), recoverMsg2);
 
         vm.prank(ALICE);
-        wallet.recoverWallet(recoveryPubkeys[1], pq2, recoverSig2);
+        wallet.recoverWallet(Codec.encodeRecoverWallet(recoveryPubkeys[1], pq2, recoverSig2));
 
         // Add 2 identical keys
         WOTSPlus.WinternitzAddress[] memory dupKeys = new WOTSPlus.WinternitzAddress[](2);
@@ -304,7 +305,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.DuplicateRecoveryKey.selector);
-        wallet.addRecoveryKeys(nextPq, sig, dupKeys);
+        wallet.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, dupKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_duplicateOfExistingKey() public {
@@ -318,7 +319,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             _sign(_recoverySigningKey(alicePrivateKey, 0), recoverMsg);
 
         vm.prank(ALICE);
-        wallet.recoverWallet(recoveryPubkeys[0], postRecoveryPq, recoverSig);
+        wallet.recoverWallet(Codec.encodeRecoverWallet(recoveryPubkeys[0], postRecoveryPq, recoverSig));
 
         // Try to add key[1] which already exists in the set
         WOTSPlus.WinternitzAddress[] memory existingKey = new WOTSPlus.WinternitzAddress[](1);
@@ -332,7 +333,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.DuplicateRecoveryKey.selector);
-        wallet.addRecoveryKeys(nextPq, sig, existingKey);
+        wallet.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, existingKey));
     }
 
     function test_addRecoveryKeys_revertsWhen_pqOwnerReuse() public {
@@ -353,7 +354,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
             _sign(_recoverySigningKey(privateKey_, 0), recoverMsgHash);
 
         vm.prank(ALICE);
-        w.recoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig);
+        w.recoverWallet(Codec.encodeRecoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig));
 
         // Try to add with nextPq == current pqOwner
         bytes32 addBase = keccak256(abi.encodePacked(privateKey_, "add-reuse"));
@@ -364,7 +365,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
-        w.addRecoveryKeys(postRecoveryPq, sig, newKeys);
+        w.addRecoveryKeys(Codec.encodeKeyManagement(postRecoveryPq, sig, newKeys));
     }
 
     function test_addRecoveryKeys_revertsWhen_exceedsMaxRecoveryKeys() public {
@@ -380,6 +381,6 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.RecoveryKeyLimitExceeded.selector);
-        wallet.addRecoveryKeys(nextPq, sig, extraKey);
+        wallet.addRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, extraKey));
     }
 }

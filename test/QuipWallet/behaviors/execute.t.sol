@@ -5,6 +5,7 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {DummyContract} from "../../../contracts/test/DummyContract.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
@@ -32,7 +33,7 @@ contract QuipWallet_execute is QuipWalletTest {
         uint256 walletBalBefore = address(wallet).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(BOB), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
 
         assertEq(BOB.balance, bobBalBefore + transferAmount);
         assertEq(address(wallet).balance, walletBalBefore - transferAmount);
@@ -49,7 +50,7 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.recordLogs();
-        wallet.execute(nextPubkey, sig, payable(BOB), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -77,7 +78,7 @@ contract QuipWallet_execute is QuipWalletTest {
         uint256 factoryBalBefore = address(factory).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(BOB), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
 
         assertEq(address(factory).balance, factoryBalBefore + EXECUTE_FEE);
     }
@@ -91,7 +92,7 @@ contract QuipWallet_execute is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(BOB), 0.1 ether, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, 0.1 ether, ""));
 
         (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
         assertEq(publicSeed, nextPubkey.publicSeed);
@@ -106,7 +107,7 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.execute(anotherPubkey, oldSig, payable(BOB), 0.1 ether, "");
+        wallet.execute(Codec.encodeExecute(anotherPubkey, oldSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_zeroValueTransfer() public {
@@ -120,7 +121,7 @@ contract QuipWallet_execute is QuipWalletTest {
         uint256 walletBalBefore = address(wallet).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(BOB), 0, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, 0, ""));
 
         // Balance unchanged (no fee set)
         assertEq(address(wallet).balance, walletBalBefore);
@@ -145,7 +146,7 @@ contract QuipWallet_execute is QuipWalletTest {
         uint256 walletBalBefore = address(wallet).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(address(wallet)), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(wallet), transferAmount, ""));
 
         // Only the fee should be deducted (transfer to self is a no-op on balance)
         assertEq(address(wallet).balance, walletBalBefore - EXECUTE_FEE);
@@ -164,7 +165,7 @@ contract QuipWallet_execute is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(BOB), walletBal, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, walletBal, ""));
 
         assertEq(address(wallet).balance, 0);
     }
@@ -185,7 +186,7 @@ contract QuipWallet_execute is QuipWalletTest {
         uint256 bobWalletBalBefore = bobWalletAddr.balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(bobWalletAddr), transferAmount, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, bobWalletAddr, transferAmount, ""));
 
         assertEq(bobWalletAddr.balance, bobWalletBalBefore + transferAmount);
     }
@@ -206,7 +207,7 @@ contract QuipWallet_execute is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(address(dummy)), requiredEth, callData);
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(dummy), requiredEth, callData));
 
         assertEq(dummy.value(), 42);
     }
@@ -224,7 +225,7 @@ contract QuipWallet_execute is QuipWalletTest {
         uint256 dummyBalBefore = address(dummy).balance;
 
         vm.prank(ALICE);
-        wallet.execute(nextPubkey, sig, payable(address(dummy)), forwardAmount, callData);
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(dummy), forwardAmount, callData));
 
         assertEq(address(dummy).balance, dummyBalBefore + forwardAmount);
     }
@@ -239,7 +240,7 @@ contract QuipWallet_execute is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        bytes memory result = wallet.execute(nextPubkey, sig, payable(address(dummy)), 0, callData);
+        bytes memory result = wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(dummy), 0, callData));
 
         // setValueNoFee returns nothing, so result should be empty
         assertEq(result.length, 0);
@@ -257,7 +258,7 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(DummyContract.AlwaysFails.selector);
-        wallet.execute(nextPubkey, sig, payable(address(dummy)), 0, callData);
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(dummy), 0, callData));
     }
 
     // ── Shared validation (reverts) ─────────────────────────────────
@@ -282,7 +283,7 @@ contract QuipWallet_execute is QuipWalletTest {
                 address(wallet).balance
             )
         );
-        wallet.execute(nextPubkey, sig, payable(BOB), tooMuch, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, tooMuch, ""));
     }
 
     function test_execute_revertsWhen_callerNotOwner() public {
@@ -295,7 +296,7 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.execute(nextPubkey, sig, payable(BOB), 0.1 ether, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_invalidSignature() public {
@@ -309,7 +310,7 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.execute(nextPubkey, badSig, payable(BOB), 0.1 ether, "");
+        wallet.execute(Codec.encodeExecute(nextPubkey, badSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_nextPqOwnerSeedIsZero() public {
@@ -321,7 +322,7 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.execute(zeroPq, fakeSig, payable(BOB), 0.1 ether, "");
+        wallet.execute(Codec.encodeExecute(zeroPq, fakeSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_nextPqOwnerHashIsZero() public {
@@ -333,7 +334,7 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
-        wallet.execute(zeroPq, fakeSig, payable(BOB), 0.1 ether, "");
+        wallet.execute(Codec.encodeExecute(zeroPq, fakeSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_pqOwnerReuse() public {
@@ -344,6 +345,6 @@ contract QuipWallet_execute is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
-        wallet.execute(alicePubkey, sig, payable(BOB), 0.1 ether, "");
+        wallet.execute(Codec.encodeExecute(alicePubkey, sig, BOB, 0.1 ether, ""));
     }
 }
