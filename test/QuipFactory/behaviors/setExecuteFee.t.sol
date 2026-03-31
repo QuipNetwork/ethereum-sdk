@@ -36,6 +36,23 @@ contract QuipFactory_setExecuteFee is QuipFactoryTest {
         factory.setExecuteFee(EXECUTE_FEE);
     }
 
+    function test_setExecuteFee_setsZeroFee() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+        assertEq(factory.executeFee(), EXECUTE_FEE);
+
+        vm.prank(ADMIN);
+        factory.setExecuteFee(0);
+        assertEq(factory.executeFee(), 0);
+    }
+
+    function test_setExecuteFee_setsMaxFee() public {
+        uint256 maxFee = factory.MAX_FEE();
+        vm.prank(ADMIN);
+        factory.setExecuteFee(maxFee);
+        assertEq(factory.executeFee(), maxFee);
+    }
+
     function test_setExecuteFee_revertsWhen_feeExceedsMax() public {
         uint256 maxFee = factory.MAX_FEE();
         uint256 excessFee = maxFee + 1;

@@ -248,6 +248,17 @@ contract QuipFactory_deployLatestWalletProxy is QuipFactoryTest {
         );
     }
 
+    function test_deployLatestWalletProxy_revertsWhen_toIsZeroAddress() public {
+        bytes32 vaultId = keccak256("Zero Owner");
+        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 pk) = _generateKeyPair("seed-zero");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(pk, 10);
+        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipFactory.ZeroAddressOwner.selector);
+        factory.deployLatestWalletProxy(vaultId, payable(address(0)), payload);
+    }
+
     function test_deployLatestWalletProxy_revertsWhen_sameVaultIdDifferentSenders() public {
         bytes32 vaultId = keccak256("Shared Vault");
         (WOTSPlus.WinternitzAddress memory pubkey1, bytes32 pk1) = _generateKeyPair("seed-alice");

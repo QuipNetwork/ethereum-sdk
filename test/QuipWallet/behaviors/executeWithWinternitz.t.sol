@@ -417,4 +417,25 @@ contract QuipWallet_executeWithWinternitz is QuipWalletTest {
             callData
         );
     }
+
+    function test_executeWithWinternitz_revertsWhen_pqOwnerReuse() public {
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            42
+        );
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet), alicePubkey, alicePubkey, address(dummy), callData
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
+        wallet.executeWithWinternitz(
+            alicePubkey,
+            sig,
+            payable(address(dummy)),
+            callData
+        );
+    }
 }

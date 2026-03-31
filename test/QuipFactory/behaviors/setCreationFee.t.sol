@@ -59,6 +59,23 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
         factory.setCreationFee(CREATION_FEE);
     }
 
+    function test_setCreationFee_setsZeroFee() public {
+        vm.prank(ADMIN);
+        factory.setCreationFee(CREATION_FEE);
+        assertEq(factory.creationFee(), CREATION_FEE);
+
+        vm.prank(ADMIN);
+        factory.setCreationFee(0);
+        assertEq(factory.creationFee(), 0);
+    }
+
+    function test_setCreationFee_setsMaxFee() public {
+        uint256 maxFee = factory.MAX_FEE();
+        vm.prank(ADMIN);
+        factory.setCreationFee(maxFee);
+        assertEq(factory.creationFee(), maxFee);
+    }
+
     function test_setCreationFee_revertsWhen_feeExceedsMax() public {
         uint256 maxFee = factory.MAX_FEE();
         uint256 excessFee = maxFee + 1;

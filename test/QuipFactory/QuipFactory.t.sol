@@ -15,7 +15,6 @@ import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
 contract QuipFactoryTest is Test {
     Deployer public deployer;
     QuipFactory public factory;
-    address public wotsLibrary;
     QuipWallet public walletImplementation;
 
     address public ADMIN = makeAddr("admin");
@@ -37,15 +36,10 @@ contract QuipFactoryTest is Test {
         // Deploy Deployer
         deployer = new Deployer();
 
-        // Deploy WOTSPlus library via CREATE3
-        bytes memory wotsBytecode = _getWOTSPlusBytecode();
-        bytes32 wotsSalt = keccak256("WOTSPlus");
-        wotsLibrary = deployer.deploy(wotsBytecode, wotsSalt);
-
         // Deploy QuipFactory via CREATE3
         bytes memory factoryBytecode = abi.encodePacked(
             type(QuipFactory).creationCode,
-            abi.encode(ADMIN, wotsLibrary, 0.1 ether)
+            abi.encode(ADMIN, 0.1 ether)
         );
         bytes32 factorySalt = keccak256("QuipFactory");
         address factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
@@ -59,7 +53,6 @@ contract QuipFactoryTest is Test {
 
     function test_setUp() public view virtual {
         assertEq(factory.owner(), ADMIN);
-        assertEq(factory.WOTS_LIBRARY(), wotsLibrary);
         assertEq(factory.creationFee(), 0);
         assertEq(factory.transferFee(), 0);
         assertEq(factory.executeFee(), 0);
@@ -181,11 +174,4 @@ contract QuipFactoryTest is Test {
         return QuipWallet(payable(proxyAddr));
     }
 
-    /// @dev Get WOTSPlus library creation bytecode.
-    ///      Uses vm.getCode to get the artifact bytecode.
-    function _getWOTSPlusBytecode() internal view returns (bytes memory) {
-        return vm.getCode(
-            "WOTSPlus.sol:WOTSPlus"
-        );
-    }
 }

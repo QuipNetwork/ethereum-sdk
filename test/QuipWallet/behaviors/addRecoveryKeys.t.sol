@@ -161,7 +161,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory badSig = _sign(wrongKey, keccak256("wrong"));
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        vm.expectRevert(IQuipWallet.RecoveryKeyLimitExceeded.selector);
         w.addRecoveryKeys(nextPq, badSig, newKeys);
     }
 
@@ -219,7 +219,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(privateKey_, msgHash);
 
         vm.prank(ALICE);
-        vm.expectRevert(EnumerableSetLib.ExceedsCapacity.selector);
+        vm.expectRevert(IQuipWallet.RecoveryKeyLimitExceeded.selector);
         w.addRecoveryKeys(nextPq, sig, extraKey);
     }
 
@@ -333,5 +333,53 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.DuplicateRecoveryKey.selector);
         wallet.addRecoveryKeys(nextPq, sig, existingKey);
+    }
+
+    function test_addRecoveryKeys_revertsWhen_pqOwnerReuse() public {
+        (
+            address walletAddr_,
+            ,
+            bytes32 privateKey_,
+            WOTSPlus.WinternitzAddress[] memory rPubkeys_
+        ) = _deployWallet();
+
+        QuipWallet w = QuipWallet(payable(walletAddr_));
+
+        // Recover with first key to free a slot
+        (WOTSPlus.WinternitzAddress memory postRecoveryPq, bytes32 postRecoverySigningKey) =
+            _generateKeyPair(privateKey_);
+        bytes32 recoverMsgHash = _buildRecoverWalletMessageHash(walletAddr_, rPubkeys_[0], postRecoveryPq);
+        WOTSPlus.WinternitzElements memory recoverSig =
+            _sign(_recoverySigningKey(privateKey_, 0), recoverMsgHash);
+
+        vm.prank(ALICE);
+        w.recoverWallet(rPubkeys_[0], postRecoveryPq, recoverSig);
+
+        // Try to add with nextPq == current pqOwner
+        bytes32 addBase = keccak256(abi.encodePacked(privateKey_, "add-reuse"));
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(addBase, 1);
+
+        bytes32 msgHash = _buildAddRecoveryKeysMessageHash(walletAddr_, postRecoveryPq, postRecoveryPq, newKeys);
+        WOTSPlus.WinternitzElements memory sig = _sign(postRecoverySigningKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
+        w.addRecoveryKeys(postRecoveryPq, sig, newKeys);
+    }
+
+    function test_addRecoveryKeys_revertsWhen_exceedsMaxRecoveryKeys() public {
+        // wallet from setUp already has 10 keys — try adding 1 more
+        bytes32 addBase = keccak256(abi.encodePacked(alicePrivateKey, "add-exceed"));
+        WOTSPlus.WinternitzAddress[] memory extraKey = _generateRecoveryKeys(addBase, 1);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-pq-exceed");
+
+        bytes32 msgHash = _buildAddRecoveryKeysMessageHash(
+            address(wallet), alicePubkey, nextPq, extraKey
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.RecoveryKeyLimitExceeded.selector);
+        wallet.addRecoveryKeys(nextPq, sig, extraKey);
     }
 }

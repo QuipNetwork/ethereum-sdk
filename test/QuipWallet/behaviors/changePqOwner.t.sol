@@ -88,4 +88,13 @@ contract QuipWallet_changePqOwner is QuipWalletTest {
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.changePqOwner(zeroPq, sig);
     }
+
+    function test_changePqOwner_revertsWhen_pqOwnerReuse() public {
+        bytes32 msgHash = _buildChangePqOwnerMessageHash(address(wallet), alicePubkey, alicePubkey);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
+        wallet.changePqOwner(alicePubkey, sig);
+    }
 }

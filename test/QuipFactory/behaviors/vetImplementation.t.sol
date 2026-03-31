@@ -77,4 +77,29 @@ contract QuipFactory_vetImplementation is QuipFactoryTest {
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.vetImplementation(address(walletImplementation));
     }
+
+    function test_vetImplementation_reVetUpdatesLatestWhenNoneActive() public {
+        vm.prank(ADMIN);
+        factory.deprecateImplementation(address(walletImplementation));
+        assertEq(factory.latestWalletImpl(), address(0));
+
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(walletImplementation));
+        assertEq(factory.latestWalletImpl(), address(walletImplementation));
+    }
+
+    function test_vetImplementation_reVetDoesNotChangeLatestWhenOneActive() public {
+        QuipWallet impl2 = new QuipWallet(payable(address(factory)));
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(impl2));
+
+        vm.prank(ADMIN);
+        factory.deprecateImplementation(address(walletImplementation));
+
+        assertEq(factory.latestWalletImpl(), address(impl2));
+
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(walletImplementation));
+        assertEq(factory.latestWalletImpl(), address(impl2));
+    }
 }

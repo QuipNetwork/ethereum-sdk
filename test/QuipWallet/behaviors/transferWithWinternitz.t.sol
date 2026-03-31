@@ -301,4 +301,17 @@ contract QuipWallet_transferWithWinternitz is QuipWalletTest {
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.transferWithWinternitz(nextPubkey, sig, payable(BOB), transferAmount);
     }
+
+    function test_transferWithWinternitz_revertsWhen_pqOwnerReuse() public {
+        uint256 transferAmount = 0.5 ether;
+
+        bytes32 msgHash = _buildTransferMessageHash(
+            address(wallet), alicePubkey, alicePubkey, BOB, transferAmount
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
+        wallet.transferWithWinternitz(alicePubkey, sig, payable(BOB), transferAmount);
+    }
 }

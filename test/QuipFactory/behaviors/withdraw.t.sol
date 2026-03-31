@@ -5,6 +5,7 @@ import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
+import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 contract QuipFactory_withdraw is QuipFactoryTest {
     function setUp() public override {
@@ -68,6 +69,24 @@ contract QuipFactory_withdraw is QuipFactoryTest {
 
         assertEq(address(factory).balance, factoryBal);
         assertEq(ADMIN.balance, adminBalBefore);
+    }
+
+    function test_withdraw_emitsWithdrawnEvent() public {
+        uint256 factoryBal = address(factory).balance;
+
+        vm.prank(ADMIN);
+        vm.recordLogs();
+        factory.withdraw(factoryBal);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found = false;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("Withdrawn(address,uint256)")) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "Withdrawn event not emitted");
     }
 
     function test_withdraw_revertsWhen_callerNotAdmin() public {

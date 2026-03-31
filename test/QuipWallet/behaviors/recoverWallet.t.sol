@@ -234,4 +234,16 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         vm.expectRevert(IQuipWallet.RecoveryKeyNotFound.selector);
         wallet.recoverWallet(fakeKey, extraPq, sig);
     }
+
+    function test_recoverWallet_revertsWhen_pqOwnerReuse() public {
+        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
+        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
+
+        bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, alicePubkey);
+        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
+        wallet.recoverWallet(rKey, alicePubkey, sig);
+    }
 }

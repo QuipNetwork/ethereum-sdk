@@ -36,6 +36,23 @@ contract QuipFactory_setTransferFee is QuipFactoryTest {
         factory.setTransferFee(TRANSFER_FEE);
     }
 
+    function test_setTransferFee_setsZeroFee() public {
+        vm.prank(ADMIN);
+        factory.setTransferFee(TRANSFER_FEE);
+        assertEq(factory.transferFee(), TRANSFER_FEE);
+
+        vm.prank(ADMIN);
+        factory.setTransferFee(0);
+        assertEq(factory.transferFee(), 0);
+    }
+
+    function test_setTransferFee_setsMaxFee() public {
+        uint256 maxFee = factory.MAX_FEE();
+        vm.prank(ADMIN);
+        factory.setTransferFee(maxFee);
+        assertEq(factory.transferFee(), maxFee);
+    }
+
     function test_setTransferFee_revertsWhen_feeExceedsMax() public {
         uint256 maxFee = factory.MAX_FEE();
         uint256 excessFee = maxFee + 1;

@@ -28,6 +28,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         bytes32 signingKey,
         WOTSPlus.WinternitzAddress memory currentPqOwner,
         WOTSPlus.WinternitzAddress memory nextPqOwner,
+        bytes32 verifierSeed,
         bool shouldMigrate,
         WOTSPlus.WinternitzAddress memory migratePqOwner,
         WOTSPlus.WinternitzAddress[] memory migrateRecoveryKeys
@@ -61,8 +62,8 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             recoveryKeys = abi.encodePacked(recoveryKeys, bytes32(0), bytes32(0));
         }
 
-        // Verifier data = pqSigner + pqSig (2208 bytes, same signer/sig repeated)
-        bytes memory verifierData = abi.encodePacked(pqSigner, pqSig);
+        // Verifier data (2208 bytes): verifier address (64) + verifier sig (2144)
+        bytes memory verifierData = _buildVerifierData(newImplementation_, verifierSeed);
 
         // shouldMigrate flag (1 byte)
         bytes memory migrateFlag = abi.encodePacked(shouldMigrate ? uint8(1) : uint8(0));
@@ -98,6 +99,24 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         );
     }
 
+    function _buildVerifierData(
+        address newImplementation_,
+        bytes32 verifierSeed
+    ) internal view returns (bytes memory) {
+        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair(verifierSeed);
+        bytes32 vHash = Codec.verificationDigest(
+            address(wallet), block.chainid, newImplementation_,
+            vPub.publicSeed, vPub.publicKeyHash
+        );
+        WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
+
+        bytes memory data = abi.encodePacked(vPub.publicSeed, vPub.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            data = abi.encodePacked(data, vSig.elements[i]);
+        }
+        return data;
+    }
+
     // ── Happy paths ──────────────────────────────────────────────────
 
     function test_upgradeSetUp_vetsSecondImpl() public view {
@@ -117,6 +136,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             nextPq,
+            "verifier",
             false,
             dummyPq,
             emptyKeys
@@ -142,6 +162,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             nextPq,
+            "verifier",
             true,
             newMigratePq,
             migrateKeys
@@ -171,6 +192,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             nextPq,
+            "verifier",
             false,
             dummyPq,
             emptyKeys
@@ -200,7 +222,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
 
         bytes memory data = _buildUpgradeData(
             address(newImpl), alicePrivateKey, alicePubkey, nextPq,
-            false, dummyPq, emptyKeys
+            "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -218,7 +240,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
 
         bytes memory data = _buildUpgradeData(
             address(newImpl), alicePrivateKey, alicePubkey, nextPq,
-            true, newMigratePq, migrateKeys
+            "verifier", true, newMigratePq, migrateKeys
         );
 
         vm.prank(ALICE);
@@ -246,6 +268,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             nextPq_,
+            "verifier",
             false,
             dummyPq,
             emptyKeys
@@ -271,6 +294,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             wrongKey,
             alicePubkey,
             nextPq_,
+            "verifier",
             false,
             dummyPq,
             emptyKeys
@@ -304,6 +328,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             nextPq_,
+            "verifier",
             true,
             zeroPq,
             rKeys
@@ -327,6 +352,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             alicePubkey, // REUSE
+            "verifier",
             false,
             dummyPq,
             emptyKeys
@@ -353,6 +379,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             zeroPq,
+            "verifier",
             false,
             dummyPq,
             emptyKeys
@@ -379,6 +406,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             alicePrivateKey,
             alicePubkey,
             zeroPq,
+            "verifier",
             false,
             dummyPq,
             emptyKeys
