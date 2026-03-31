@@ -259,4 +259,10 @@ interface IQuipWallet {
 
     /// @notice Returns whether a key hash is a registered recovery key.
     function isRecoveryKey(bytes32 keyHash) external view returns (bool);
+
+    /// @notice Returns the implementation version of this wallet.
+    /// @dev Reads the ERC-1967 implementation slot and queries the factory for
+    ///      the index of its codehash in the vetted set.
+    /// @return The index in the factory's vetted set, or `type(uint256).max` if not found.
+    function version() external view returns (uint256);
 }

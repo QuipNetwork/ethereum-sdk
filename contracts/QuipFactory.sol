@@ -167,6 +167,11 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         return _vettedCode.at(index);
     }
 
+    /// @inheritdoc IQuipFactory
+    function getVettedCodeIndex(bytes32 codehash) external view returns (uint256) {
+        return _vettedCode.indexOf(codehash);
+    }
+
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         PRIVATE                               */

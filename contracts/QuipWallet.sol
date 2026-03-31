@@ -407,6 +407,15 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    function version() public view returns (uint256) {
+        address impl;
+        assembly {
+            impl := sload(_ERC1967_IMPLEMENTATION_SLOT)
+        }
+        return IQuipFactory(FACTORY).getVettedCodeIndex(impl.codehash);
+    }
+
+    /// @inheritdoc IQuipWallet
     function getTransferFee() public view returns (uint256) {
         return IQuipFactory(Storage.layout().quipFactory).transferFee();
     }

@@ -201,6 +201,11 @@ interface IQuipFactory {
     /// @return The codehash at the specified index.
     function getVettedCodeAt(uint256 index) external view returns (bytes32);
 
+    /// @notice Returns the index of a codehash in the vetted set.
+    /// @param codehash The codehash to look up.
+    /// @return The index in the vetted set, or `type(uint256).max` if not found.
+    function getVettedCodeIndex(bytes32 codehash) external view returns (uint256);
+
     /// @notice Returns the implementation address associated with a vetted codehash.
     /// @param codehash The codehash to look up.
     /// @return walletImplementation The implementation contract address.
