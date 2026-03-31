@@ -30,9 +30,6 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     /// @inheritdoc IQuipFactory
-    address public immutable WOTS_LIBRARY;
-
-    /// @inheritdoc IQuipFactory
     uint256 public immutable MAX_FEE;
 
     /// @inheritdoc IQuipFactory
@@ -63,10 +60,9 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     constructor(
         address payable initialOwner,
-        address wotsLibrary_,
         uint256 maxFee_
     ) payable OZOwnable(initialOwner) {
-        WOTS_LIBRARY = wotsLibrary_;
+        if (maxFee_ == 0) revert ZeroMaxFee();
         MAX_FEE = maxFee_;
     }
 
@@ -83,7 +79,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         bool added = _vettedCode.add(codehash);
         vettedWalletImpls[codehash] = impl;
         deprecatedImpls[codehash] = false;
-        if (added) latestWalletImpl = impl;
+        if (added || latestWalletImpl == address(0)) latestWalletImpl = impl;
         emit ImplementationVetted(impl, codehash);
     }
 
@@ -149,6 +145,12 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         if (address(this).balance < amount)
             revert InsufficientBalance(amount, address(this).balance);
         SafeTransferLib.forceSafeTransferETH(owner(), amount);
+        emit Withdrawn(owner(), amount);
+    }
+
+    /// @inheritdoc IQuipFactory
+    function renounceOwnership() public override(IQuipFactory, OZOwnable) onlyOwner {
+        revert RenounceDisabled();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -204,6 +206,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
             hex"cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3"
         );
 
+        if (to == address(0)) revert ZeroAddressOwner();
         if (msg.value < creationFee) revert InsufficientCreationFee(msg.value, creationFee);
         uint256 contractValue = msg.value - creationFee;
         address contractAddr = CREATE3.deployDeterministic(proxyInitcode, vaultId);
