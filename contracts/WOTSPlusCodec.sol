@@ -33,7 +33,6 @@ library WOTSPlusCodec {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     bytes32 internal constant KEY_ROTATION_TAG = keccak256("quip.digest.keyRotation");
-    bytes32 internal constant TRANSFER_TAG     = keccak256("quip.digest.transfer");
     bytes32 internal constant EXECUTE_TAG      = keccak256("quip.digest.execute");
     bytes32 internal constant KEY_MGMT_TAG     = keccak256("quip.digest.keyManagement");
     bytes32 internal constant UPGRADE_TAG       = keccak256("quip.digest.upgrade");
@@ -153,47 +152,17 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(TRANSFER_TAG, chainId, wallet, s1, h1, s2, h2, to, value))
-    ///      Used by transferWithWinternitz.
-    /// @param wallet The wallet address to bind the digest to.
-    /// @param chainId The chain ID to bind the digest to.
-    /// @param s1 The public seed of the current PQ owner.
-    /// @param h1 The public key hash of the current PQ owner.
-    /// @param s2 The public seed of the next PQ owner.
-    /// @param h2 The public key hash of the next PQ owner.
-    /// @param to The ETH transfer recipient.
-    /// @param value The ETH amount to transfer.
-    /// @return The signing digest.
-    function transferDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        address to,
-        uint256 value
-    ) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(
-            TRANSFER_TAG,
-            bytes32(chainId),
-            bytes32(uint256(uint160(wallet))),
-            s1, h1, s2, h2,
-            bytes32(uint256(uint160(to))),
-            bytes32(value)
-        );
-    }
-
-    /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, target, opdataHash))
+    /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, target, value, opdataHash))
     ///      Caller must pre-hash opdata: keccak256(opdata).
-    ///      Used by executeWithWinternitz.
+    ///      Used by execute.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
     /// @param s1 The public seed of the current PQ owner.
     /// @param h1 The public key hash of the current PQ owner.
     /// @param s2 The public seed of the next PQ owner.
     /// @param h2 The public key hash of the next PQ owner.
-    /// @param target The address of the contract to call.
+    /// @param target The recipient or contract address.
+    /// @param value The ETH amount to send.
     /// @param opdataHash The keccak256 hash of the calldata to execute.
     /// @return The signing digest.
     function executeDigest(
@@ -204,6 +173,7 @@ library WOTSPlusCodec {
         bytes32 s2,
         bytes32 h2,
         address target,
+        uint256 value,
         bytes32 opdataHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
@@ -212,6 +182,7 @@ library WOTSPlusCodec {
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
             bytes32(uint256(uint160(target))),
+            bytes32(value),
             opdataHash
         );
     }

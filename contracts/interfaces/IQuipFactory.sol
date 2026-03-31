@@ -58,11 +58,6 @@ interface IQuipFactory {
     /// @param newFee The new creation fee.
     event CreationFeeUpdated(uint256 oldFee, uint256 newFee);
 
-    /// @notice Emitted when the transfer fee is updated.
-    /// @param oldFee The previous transfer fee.
-    /// @param newFee The new transfer fee.
-    event TransferFeeUpdated(uint256 oldFee, uint256 newFee);
-
     /// @notice Emitted when the execute fee is updated.
     /// @param oldFee The previous execute fee.
     /// @param newFee The new execute fee.
@@ -140,12 +135,7 @@ interface IQuipFactory {
     /// @param newFee The new creation fee in wei.
     function setCreationFee(uint256 newFee) external;
 
-    /// @notice Sets the fee charged on Winternitz-authenticated transfers.
-    /// @dev Only callable by the current admin.
-    /// @param newFee The new transfer fee in wei.
-    function setTransferFee(uint256 newFee) external;
-
-    /// @notice Sets the fee charged on Winternitz-authenticated arbitrary calls.
+    /// @notice Sets the fee charged on Winternitz-authenticated operations.
     /// @dev Only callable by the current admin.
     /// @param newFee The new execute fee in wei.
     function setExecuteFee(uint256 newFee) external;
@@ -162,11 +152,7 @@ interface IQuipFactory {
     /// @return The creation fee in wei.
     function creationFee() external view returns (uint256);
 
-    /// @notice Returns the current fee charged for Winternitz-authenticated transfers.
-    /// @return The transfer fee in wei.
-    function transferFee() external view returns (uint256);
-
-    /// @notice Returns the current fee charged for Winternitz-authenticated arbitrary calls.
+    /// @notice Returns the current fee charged for Winternitz-authenticated operations.
     /// @return The execute fee in wei.
     function executeFee() external view returns (uint256);
 

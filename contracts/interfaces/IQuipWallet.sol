@@ -45,18 +45,20 @@ interface IQuipWallet {
     /// @notice Thrown when the upgrade target's codehash has been deprecated.
     error ImplementationDeprecated();
 
-    /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
-    /// @param amount The ETH value transferred.
-    /// @param when The block timestamp of the transfer.
+    /// @notice Emitted when a post-quantum authenticated operation is executed.
+    /// @param when The block timestamp of the execution.
     /// @param pqFrom The Winternitz public key that authorized the operation.
     /// @param pqNext The new Winternitz public key that replaces `pqFrom`.
-    /// @param to The recipient address.
-    event pqTransfer(
-        uint256 amount,
+    /// @param target The recipient or contract address.
+    /// @param value The ETH value sent to the target.
+    /// @param dataHash The keccak256 hash of the calldata (keccak256("") for pure transfers).
+    event pqExecution(
         uint256 when,
         WOTSPlus.WinternitzAddress pqFrom,
         WOTSPlus.WinternitzAddress pqNext,
-        address to
+        address target,
+        uint256 value,
+        bytes32 dataHash
     );
 
     /// @notice Emitted when a wallet is initialized with its factory, owner, and keys.
@@ -95,18 +97,6 @@ interface IQuipWallet {
     event PqOwnerChanged(
         WOTSPlus.WinternitzAddress oldPqOwner,
         WOTSPlus.WinternitzAddress newPqOwner
-    );
-
-    /// @notice Emitted when an arbitrary call is executed via `executeWithWinternitz`.
-    /// @param when The block timestamp of the execution.
-    /// @param pqFrom The Winternitz public key that authorized the operation.
-    /// @param pqNext The new Winternitz public key that replaces `pqFrom`.
-    /// @param target The contract address that was called.
-    event pqExecution(
-        uint256 when,
-        WOTSPlus.WinternitzAddress pqFrom,
-        WOTSPlus.WinternitzAddress pqNext,
-        address target
     );
 
     /// @notice Emitted when PQ state is migrated during an upgrade.
@@ -171,41 +161,25 @@ interface IQuipWallet {
         WOTSPlus.WinternitzElements calldata pqSig
     ) external;
 
-    /// @notice Transfers ETH from the wallet to a recipient, authorized by a Winternitz signature.
-    /// @dev Only callable by the classical owner. Requires `msg.value >= transferFee`.
-    ///      The signature must be valid over the concatenation of the current and next public key
-    ///      components, the recipient address, and the transfer value. Rotates the post-quantum
-    ///      owner key to `nextPqOwner` upon success.
-    /// @param nextPqOwner The new Winternitz public key to replace the current one after the transfer.
-    /// @param pqSig The Winternitz signature proving authorization from the current post-quantum owner.
-    /// @param to The recipient address.
-    /// @param value The amount of ETH in wei to transfer from the wallet.
-    function transferWithWinternitz(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        address payable to,
-        uint256 value
-    ) external payable;
-
-    /// @notice Executes an arbitrary call from the wallet, authorized by a Winternitz signature.
-    /// @dev Only callable by the classical owner. Requires `msg.value >= executeFee`.
-    ///      The fee is sent to the factory; the remaining `msg.value` is forwarded to the target.
+    /// @notice Executes a post-quantum authenticated operation: either a pure ETH transfer
+    ///         or an arbitrary contract call.
+    /// @dev Only callable by the classical owner. The fee is deducted from the wallet balance
+    ///      and sent to the factory. For pure transfers (data is empty), uses SafeTransferLib.
+    ///      For contract calls (data is non-empty), uses LibCall.callContract.
     ///      Rotates the post-quantum owner key to `nextPqOwner` upon success.
-    /// @param nextPqOwner The new Winternitz public key to replace the current one after execution.
-    /// @param pqSig The Winternitz signature proving authorization from the current post-quantum owner.
-    /// @param target The contract address to call.
-    /// @param opdata The calldata to pass to the target.
-    /// @return returnData The data returned by the call.
-    function executeWithWinternitz(
+    /// @param nextPqOwner The new Winternitz public key to replace the current one.
+    /// @param pqSig The Winternitz signature proving authorization from the current PQ owner.
+    /// @param target The recipient address (for transfers) or contract address (for calls).
+    /// @param value The amount of ETH in wei to send to the target from the wallet balance.
+    /// @param data The calldata to pass to the target. Empty bytes for pure ETH transfers.
+    /// @return The data returned by the call (empty for pure transfers).
+    function execute(
         WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable target,
-        bytes calldata opdata
-    ) external payable returns (bytes memory returnData);
-
-    /// @notice Returns the current transfer fee as set by the factory.
-    /// @return The transfer fee in wei.
-    function getTransferFee() external view returns (uint256);
+        uint256 value,
+        bytes calldata data
+    ) external payable returns (bytes memory);
 
     /// @notice Returns the current execute fee as set by the factory.
     /// @return The execute fee in wei.

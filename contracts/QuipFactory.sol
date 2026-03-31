@@ -35,8 +35,6 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     /// @inheritdoc IQuipFactory
     uint256 public creationFee = 0;
     /// @inheritdoc IQuipFactory
-    uint256 public transferFee = 0;
-    /// @inheritdoc IQuipFactory
     uint256 public executeFee = 0;
 
     /// @inheritdoc IQuipFactory
@@ -122,14 +120,6 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         uint256 oldFee = creationFee;
         creationFee = newFee;
         emit CreationFeeUpdated(oldFee, newFee);
-    }
-
-    /// @inheritdoc IQuipFactory
-    function setTransferFee(uint256 newFee) external onlyOwner {
-        if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
-        uint256 oldFee = transferFee;
-        transferFee = newFee;
-        emit TransferFeeUpdated(oldFee, newFee);
     }
 
     /// @inheritdoc IQuipFactory

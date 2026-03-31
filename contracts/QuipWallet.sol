@@ -172,60 +172,19 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function transferWithWinternitz(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner,
-        WOTSPlus.WinternitzElements calldata pqSig,
-        address payable to,
-        uint256 value
-    ) public payable onlyOwner {
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-
-        Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
-
-        uint256 fee = getTransferFee();
-
-        if (address(this).balance < value + fee)
-            revert InsufficientBalance(value + fee, address(this).balance);
-
-        bytes32 digest = Codec.transferDigest(
-            address(this),
-            block.chainid,
-            curPqOwner.publicSeed,
-            curPqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
-            to,
-            value
-        );
-
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
-
-        $.pqOwner = nextPqOwner;
-
-        SafeTransferLib.safeTransferETH(to, value);
-        SafeTransferLib.safeTransferETH($.quipFactory, fee);
-
-        emit pqTransfer(value, block.timestamp, curPqOwner, nextPqOwner, to);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function executeWithWinternitz(
+    function execute(
         WOTSPlus.WinternitzAddress calldata nextPqOwner,
         WOTSPlus.WinternitzElements calldata pqSig,
         address payable target,
-        bytes calldata opdata
+        uint256 value,
+        bytes calldata data
     ) public payable onlyOwner returns (bytes memory) {
         _enforceNonZeroPqOwner(nextPqOwner);
         _enforceDifferentPqOwner(nextPqOwner);
 
         uint256 fee = getExecuteFee();
-        if (address(this).balance < fee)
-            revert InsufficientBalance(fee, address(this).balance);
-
-        uint256 forwardValue = msg.value > fee ? msg.value - fee : 0;
+        if (address(this).balance < value + fee)
+            revert InsufficientBalance(value + fee, address(this).balance);
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 digest = Codec.executeDigest(
@@ -236,7 +195,8 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             nextPqOwner.publicSeed,
             nextPqOwner.publicKeyHash,
             target,
-            keccak256(opdata)
+            value,
+            keccak256(data)
         );
 
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
@@ -244,11 +204,19 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
         $.pqOwner = nextPqOwner;
-        SafeTransferLib.safeTransferETH($.quipFactory, fee);
 
-        emit pqExecution(block.timestamp, curPqOwner, nextPqOwner, target);
+        if (fee > 0) SafeTransferLib.safeTransferETH($.quipFactory, fee);
 
-        return LibCall.callContract(target, forwardValue, opdata);
+        bytes memory result;
+        if (data.length == 0) {
+            if (value > 0) SafeTransferLib.safeTransferETH(target, value);
+        } else {
+            result = LibCall.callContract(target, value, data);
+        }
+
+        emit pqExecution(block.timestamp, curPqOwner, nextPqOwner, target, value, keccak256(data));
+
+        return result;
     }
 
     /// @inheritdoc IQuipWallet
@@ -424,11 +392,6 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
             impl := sload(_ERC1967_IMPLEMENTATION_SLOT)
         }
         return IQuipFactory(FACTORY).getVettedCodeIndex(impl.codehash);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function getTransferFee() public view returns (uint256) {
-        return IQuipFactory(Storage.layout().quipFactory).transferFee();
     }
 
     /// @inheritdoc IQuipWallet
