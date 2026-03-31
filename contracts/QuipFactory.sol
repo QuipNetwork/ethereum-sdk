@@ -171,7 +171,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     ///      non-deprecated implementation. Returns `address(0)` if none found.
     ///      Solady's EnumerableSetLib stores entries in contiguous slots in
     ///      insertion order, so `at(length() - 1)` is the most recently added.
-    function _findLatestActive() private view returns (address) {
+    function _findLatestActive() internal view returns (address) {
         uint256 len = _vettedCode.length();
         for (uint256 i = len; i > 0;) {
             unchecked { --i; }
@@ -190,7 +190,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         bytes32 vaultId,
         address payable to,
         bytes calldata payload
-    ) private returns (address) {
+    ) internal returns (address) {
         // Solady minimal ERC-1967 proxy initcode (95 bytes).
         // See: LibClone.deployDeterministicERC1967
         bytes memory proxyInitcode = abi.encodePacked(

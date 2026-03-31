@@ -509,7 +509,7 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     /*                        PRIVATES                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function _upgradeGuard() private view returns (uint256 v) {
+    function _upgradeGuard() internal view returns (uint256 v) {
         uint256 slot = _UPGRADE_GUARD_SLOT;
         assembly { v := tload(slot) }
     }
