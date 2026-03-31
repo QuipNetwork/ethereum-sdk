@@ -101,15 +101,29 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
     ) public payable override(IQuipWallet, UUPSUpgradeable) onlyOwner {
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress calldata nextPqOwner = Codec.extractPqOwner(data);
+        WOTSPlus.WinternitzElements calldata pqSig = Codec.extractPqSig(data);
 
         _enforceNonZeroPqOwner(nextPqOwner);
         _enforceDifferentPqOwner(nextPqOwner);
+
+        bytes32 digest = Codec.upgradeDigest(
+            address(this),
+            block.chainid,
+            newImplementation,
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash
+        );
+
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
+            revert InvalidSignature();
 
         LibCall.delegateCallContract(
             newImplementation,
             abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
         );
-        
+
         $.pqOwner = nextPqOwner;
 
         (bool shouldMigrate, bytes calldata migratorPayload) = Codec.extractMigrators(data);
@@ -345,23 +359,20 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         address newImplementation,
         bytes calldata data
     ) public view {
-        WOTSPlus.WinternitzAddress calldata pqSigner = Codec.extractPqOwner(
-            data
-        );
-        WOTSPlus.WinternitzElements calldata pqSig = Codec.extractPqSig(data);
+        (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            WOTSPlus.WinternitzElements calldata verifySig
+        ) = Codec.extractVerifiers(data);
 
-        Storage.Layout storage $ = Storage.layout();
-        bytes32 digest = Codec.upgradeDigest(
+        bytes32 digest = Codec.verificationDigest(
             address(this),
             block.chainid,
             newImplementation,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            pqSigner.publicSeed,
-            pqSigner.publicKeyHash
+            verifier.publicSeed,
+            verifier.publicKeyHash
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
+        if (!WOTSPlus.verify(verifier, WOTSPlus.WinternitzMessage({ messageHash: digest }), verifySig))
             revert InvalidSignature();
     }
 

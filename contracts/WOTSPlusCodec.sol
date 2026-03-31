@@ -40,7 +40,8 @@ library WOTSPlusCodec {
     bytes32 internal constant TRANSFER_TAG     = keccak256("quip.digest.transfer");
     bytes32 internal constant EXECUTE_TAG      = keccak256("quip.digest.execute");
     bytes32 internal constant KEY_MGMT_TAG     = keccak256("quip.digest.keyManagement");
-    bytes32 internal constant UPGRADE_TAG      = keccak256("quip.digest.upgrade");
+    bytes32 internal constant UPGRADE_TAG       = keccak256("quip.digest.upgrade");
+    bytes32 internal constant VERIFICATION_TAG = keccak256("quip.digest.verification");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
@@ -68,17 +69,6 @@ library WOTSPlusCodec {
         }
     }
 
-    /// @dev Extracts 10 recovery keys at offset 2208 (after pqOwner + pqSig).
-    /// @param payload The packed operation payload.
-    /// @return keys The 10 recovery keys extracted after the owner and signature.
-    function extractRecoveryKeys(
-        bytes calldata payload
-    ) internal pure returns (WOTSPlus.WinternitzAddress[10] calldata keys) {
-        assembly {
-            keys := add(payload.offset, 2208) // PQ_OWNER_SIZE + PQ_SIG_SIZE
-        }
-    }
-
     /// @dev Extract recovery keys from init payload (no pqSig, keys follow pqOwner directly).
     /// @param payload The packed init or migrator payload.
     /// @return keys The 10 recovery keys extracted after the owner.
@@ -90,13 +80,25 @@ library WOTSPlusCodec {
         }
     }
 
-    /// @dev Extracts verifier data starting at offset 2848 (2208 bytes: 1 address + 1 sig).
-    /// @param payload The packed operation payload.
-    /// @return The raw verifier bytes slice.
+    /// @dev Extracts the verifier WinternitzAddress and WinternitzElements from the upgrade payload.
+    ///      Verifier data starts at offset 2848 (after recovery keys).
+    /// @param payload The packed upgrade payload.
+    /// @return verifier The verifier's WinternitzAddress.
+    /// @return sig The verifier's WinternitzElements signature.
     function extractVerifiers(
         bytes calldata payload
-    ) internal pure returns (bytes calldata) {
-        return payload[2848:5056];
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            WOTSPlus.WinternitzElements calldata sig
+        )
+    {
+        assembly {
+            verifier := add(payload.offset, 2848)
+            sig := add(payload.offset, 2912) // 2848 + 64 (PQ_OWNER_SIZE)
+        }
     }
 
     /// @dev Extracts the shouldMigrate flag and migrator payload from the upgrade data.
@@ -258,6 +260,30 @@ library WOTSPlusCodec {
             bytes32(uint256(uint160(wallet))),
             bytes32(uint256(uint160(newImplementation))),
             s1, h1, s2, h2
+        );
+    }
+
+    /// @dev keccak256(abi.encode(VERIFICATION_TAG, chainId, wallet, newImpl, s1, h1))
+    ///      Used by verifyUpgrade (delegatecalled on the new implementation).
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param newImplementation The address of the new UUPS implementation.
+    /// @param s1 The public seed of the verifier.
+    /// @param h1 The public key hash of the verifier.
+    /// @return The verification digest.
+    function verificationDigest(
+        address wallet,
+        uint256 chainId,
+        address newImplementation,
+        bytes32 s1,
+        bytes32 h1
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            VERIFICATION_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            bytes32(uint256(uint160(newImplementation))),
+            s1, h1
         );
     }
 }
