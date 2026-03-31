@@ -46,4 +46,13 @@ contract QuipWalletHarness is QuipWallet {
     function exposed_upgradeGuard() external view returns (uint256) {
         return _upgradeGuard();
     }
+
+    function exposed_upgradeGuardInContext() external returns (uint256) {
+        // _UPGRADE_GUARD_SLOT is private; replicate the constant
+        uint256 slot = 0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
+        assembly { tstore(slot, 1) }
+        uint256 v = _upgradeGuard();
+        assembly { tstore(slot, 0) }
+        return v;
+    }
 }
