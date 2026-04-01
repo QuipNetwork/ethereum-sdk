@@ -48,6 +48,7 @@
     "@midl/node": "file:../midl-js/packages/node",
     "@midl/react": "file:../midl-js/packages/react",
     "@types/jest": "^29.5.14",
+    "@viem/anvil": "^0.0.10",
     "bitcoinjs-lib": "^7.0.0",
     "copyfiles": "^2.4.1",
     "dotenv": "^16.4.7",
@@ -61,9 +62,9 @@
     "ts-jest": "^29.3.2"
   },
   "dependencies": {
-    "viem": "^2.21.0",
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
-    "@quip.network/hashsigs": "^0.1.0"
+    "@quip.network/hashsigs": "^0.1.0",
+    "viem": "^2.21.0"
   }
 }
