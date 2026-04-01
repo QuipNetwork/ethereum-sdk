@@ -52,6 +52,7 @@ export { quipFactoryAbi } from "./abi/QuipFactory.js";
 export { quipWalletAbi } from "./abi/QuipWallet.js";
 
 export * from "./addresses.js";
+export * as WotsCodec from "./wotsCodec.js";
 export * from "./constants.js";
 
 // TODO: SUPPORTED_NETWORKS and NetworkType may be unused — CHAIN_IDS in addresses.ts is canonical. Verify against frontend before removing.
