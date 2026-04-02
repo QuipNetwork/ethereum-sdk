@@ -103,6 +103,14 @@ interface IQuipWallet {
     /// @param newPqOwner The new post-quantum owner key set during migration.
     event WalletMigrated(WOTSPlus.WinternitzAddress newPqOwner);
 
+    /// @notice Emitted when a recovery key authorizes an emergency implementation upgrade.
+    /// @param newImplementation The new implementation address.
+    /// @param recoveryKey The recovery key that authorized the upgrade.
+    event RecoveryUpgrade(
+        address indexed newImplementation,
+        WOTSPlus.WinternitzAddress recoveryKey
+    );
+
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;
 
@@ -130,6 +138,15 @@ interface IQuipWallet {
     /// @param newImplementation The address of the new implementation being upgraded to.
     /// @param data Packed upgrade payload; verifier at [2208:2272), verifySig at [2272:4416).
     function verifyUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) external view;
+
+    /// @notice Verifies an implementation is vetted and not deprecated during a recovery upgrade.
+    /// @dev Called via delegatecall from `recoveryUpgrade` on the new implementation.
+    /// @param newImplementation The address of the new implementation being upgraded to.
+    /// @param data Packed recovery upgrade payload.
+    function verifyRecoveryUpgrade(
         address newImplementation,
         bytes calldata data
     ) external view;
@@ -200,6 +217,18 @@ interface IQuipWallet {
     /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:...) keys (N x 64).
     /// @param payload Packed keyManagement data (>= 2208 bytes).
     function replenishRecoveryKeys(bytes calldata payload) external;
+
+    /// @notice Emergency upgrade authorized by a recovery key, without migration.
+    /// @dev Delegatecalls `verifyRecoveryUpgrade` on the new implementation to vet it,
+    ///      then verifies the recovery key's signature and spends the key.
+    ///      No pqOwner rotation or migration is performed.
+    ///      Payload layout: [0:64) recoveryKey, [64:2208) pqSig.
+    /// @param newImplementation The address of the new implementation contract.
+    /// @param payload Packed recovery upgrade data (2208 bytes).
+    function recoveryUpgrade(
+        address newImplementation,
+        bytes calldata payload
+    ) external;
 
     /// @notice Returns the number of recovery keys in the set.
     function getRecoveryKeyCount() external view returns (uint256);

@@ -38,6 +38,10 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
 ///      [2208:...)  WinternitzAddress[]   — newRecoveryKeys (N x 64)
 ///
+///      recoveryUpgrade payload layout (2208 bytes):
+///      [0:64)      WinternitzAddress     — recoveryKey (publicSeed ++ publicKeyHash)
+///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
+///
 ///      Constants:
 ///        RECOVERY_KEY_AMOUNT = 10
 ///
@@ -58,6 +62,7 @@ library WOTSPlusCodec {
     bytes32 internal constant KEY_MGMT_TAG     = keccak256("quip.digest.keyManagement");
     bytes32 internal constant UPGRADE_TAG       = keccak256("quip.digest.upgrade");
     bytes32 internal constant VERIFICATION_TAG = keccak256("quip.digest.verification");
+    bytes32 internal constant UPGRADE_RECOVERY_TAG = keccak256("quip.digest.upgradeRecovery");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
@@ -163,6 +168,27 @@ library WOTSPlusCodec {
         }
     }
 
+    /// @dev Decodes the recoveryUpgrade payload.
+    ///      Layout: [0:64) recoveryKey, [64:2208) pqSig.
+    /// @param payload The packed recovery upgrade payload (2208 bytes).
+    /// @return recoveryKey The recovery key at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    function decodeRecoveryUpgradeData(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata recoveryKey,
+            WOTSPlus.WinternitzElements calldata pqSig
+        )
+    {
+        assembly {
+            recoveryKey := payload.offset
+            pqSig := add(payload.offset, 64)
+        }
+    }
+
     /// @dev Decodes the execute payload.
     ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) target,
     ///              [2240:2272) value, [2272:...) data.
@@ -257,6 +283,20 @@ library WOTSPlusCodec {
     ) internal pure returns (bytes memory) {
         return abi.encodePacked(
             newPqOwner.publicSeed, newPqOwner.publicKeyHash,
+            pqSig.elements
+        );
+    }
+
+    /// @dev Encodes the recoveryUpgrade payload.
+    /// @param recoveryKey The recovery key to authorize the upgrade.
+    /// @param pqSig The PQ signature from the recovery key.
+    /// @return The packed payload (2208 bytes).
+    function encodeRecoveryUpgradeData(
+        WOTSPlus.WinternitzAddress memory recoveryKey,
+        WOTSPlus.WinternitzElements memory pqSig
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            recoveryKey.publicSeed, recoveryKey.publicKeyHash,
             pqSig.elements
         );
     }
@@ -468,6 +508,34 @@ library WOTSPlusCodec {
             bytes32(uint256(uint160(wallet))),
             bytes32(uint256(uint160(newImplementation))),
             s1, h1
+        );
+    }
+
+    /// @dev keccak256(abi.encode(UPGRADE_RECOVERY_TAG, chainId, wallet, newImpl, s1, h1, s2, h2))
+    ///      Used by recoveryUpgrade.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param newImplementation The address of the new UUPS implementation.
+    /// @param s1 The public seed of the current pqOwner.
+    /// @param h1 The public key hash of the current pqOwner.
+    /// @param s2 The public seed of the recovery key.
+    /// @param h2 The public key hash of the recovery key.
+    /// @return The signing digest for the recovery key.
+    function upgradeRecoveryDigest(
+        address wallet,
+        uint256 chainId,
+        address newImplementation,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            UPGRADE_RECOVERY_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            bytes32(uint256(uint160(newImplementation))),
+            s1, h1, s2, h2
         );
     }
 }

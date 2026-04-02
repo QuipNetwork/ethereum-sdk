@@ -332,6 +332,44 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
         emit RecoveryKeysReplenished(nextPqOwner);
     }
 
+    /// @inheritdoc IQuipWallet
+    function recoveryUpgrade(address newImplementation, bytes calldata payload) public onlyOwner {
+        LibCall.delegateCallContract(
+            newImplementation,
+            abi.encodeCall(this.verifyRecoveryUpgrade, (newImplementation, payload))
+        );
+
+        (
+            WOTSPlus.WinternitzAddress calldata recoveryKey,
+            WOTSPlus.WinternitzElements calldata pqSig
+        ) = Codec.decodeRecoveryUpgradeData(payload);
+
+        Storage.Layout storage $ = Storage.layout();
+
+        bytes32 keyHash = EfficientHashLib.hash(recoveryKey.publicSeed, recoveryKey.publicKeyHash);
+        if (!$.recoveryKeyHashes.contains(keyHash))
+            revert RecoveryKeyNotFound();
+
+        bytes32 digest = Codec.upgradeRecoveryDigest(
+            address(this),
+            block.chainid,
+            newImplementation,
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            recoveryKey.publicSeed,
+            recoveryKey.publicKeyHash
+        );
+
+        if (!WOTSPlus.verify(recoveryKey, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
+            revert InvalidSignature();
+
+        $.recoveryKeyHashes.remove(keyHash);
+
+        super.upgradeToAndCall(newImplementation, payload[0:0]);
+
+        emit RecoveryUpgrade(newImplementation, recoveryKey);
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         VIEWS                                 */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -363,6 +401,19 @@ contract QuipWallet is IQuipWallet, Ownable, UUPSUpgradeable, Initializable {
 
         if (!WOTSPlus.verify(verifier, WOTSPlus.WinternitzMessage({ messageHash: digest }), verifySig))
             revert InvalidSignature();
+    }
+
+    /// @inheritdoc IQuipWallet
+    function verifyRecoveryUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) public view {
+        bytes32 implCodehash = newImplementation.codehash;
+        IQuipFactory factory = IQuipFactory(FACTORY);
+        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
+            revert ImplementationNotVetted();
+        if (factory.deprecatedImpls(implCodehash))
+            revert ImplementationDeprecated();
     }
 
     /// @inheritdoc IQuipWallet
