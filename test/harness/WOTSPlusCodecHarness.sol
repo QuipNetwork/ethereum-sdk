@@ -147,6 +147,22 @@ contract WOTSPlusCodecHarness {
         }
     }
 
+    function exposed_decodeRecoveryUpgradeData(bytes calldata payload)
+        external
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress memory recoveryKey,
+            WOTSPlus.WinternitzElements memory pqSig
+        )
+    {
+        (
+            WOTSPlus.WinternitzAddress calldata _rk,
+            WOTSPlus.WinternitzElements calldata _sig
+        ) = Codec.decodeRecoveryUpgradeData(payload);
+        recoveryKey = _rk;
+        pqSig = _sig;
+    }
+
     // --- Encoders ---
 
     function exposed_encodeChangePqOwner(
@@ -172,6 +188,13 @@ contract WOTSPlusCodecHarness {
         WOTSPlus.WinternitzElements memory pqSig
     ) external pure returns (bytes memory) {
         return Codec.encodeRecoverWallet(recoveryKey, newPqOwner, pqSig);
+    }
+
+    function exposed_encodeRecoveryUpgradeData(
+        WOTSPlus.WinternitzAddress memory recoveryKey,
+        WOTSPlus.WinternitzElements memory pqSig
+    ) external pure returns (bytes memory) {
+        return Codec.encodeRecoveryUpgradeData(recoveryKey, pqSig);
     }
 
     function exposed_encodeKeyManagement(
@@ -219,5 +242,12 @@ contract WOTSPlusCodecHarness {
         bytes32 s1, bytes32 h1
     ) external pure returns (bytes32) {
         return Codec.verificationDigest(wallet, chainId, newImplementation, s1, h1);
+    }
+
+    function exposed_upgradeRecoveryDigest(
+        address wallet, uint256 chainId, address newImplementation,
+        bytes32 s1, bytes32 h1, bytes32 s2, bytes32 h2
+    ) external pure returns (bytes32) {
+        return Codec.upgradeRecoveryDigest(wallet, chainId, newImplementation, s1, h1, s2, h2);
     }
 }

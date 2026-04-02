@@ -120,4 +120,17 @@ contract QuipWalletTest is QuipFactoryTest {
             keccak256(abi.encode(newKeys))
         );
     }
+
+    function _buildRecoveryUpgradeMessageHash(
+        address wallet_,
+        address newImplementation,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory recoveryKey
+    ) internal view returns (bytes32) {
+        return Codec.upgradeRecoveryDigest(
+            wallet_, block.chainid, newImplementation,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            recoveryKey.publicSeed, recoveryKey.publicKeyHash
+        );
+    }
 }
