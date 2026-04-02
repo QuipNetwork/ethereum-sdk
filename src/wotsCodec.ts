@@ -54,6 +54,7 @@ export const EXECUTE_TAG: Hex = keccak256(toHex("quip.digest.execute"));
 export const KEY_MGMT_TAG: Hex = keccak256(toHex("quip.digest.keyManagement"));
 export const UPGRADE_TAG: Hex = keccak256(toHex("quip.digest.upgrade"));
 export const VERIFICATION_TAG: Hex = keccak256(toHex("quip.digest.verification"));
+export const UPGRADE_RECOVERY_TAG: Hex = keccak256(toHex("quip.digest.upgradeRecovery"));
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                          HELPERS                              */
@@ -110,6 +111,16 @@ export function encodeChangePqOwner(
 ): Hex {
   return concat([
     packAddress(newPqOwner),
+    packElements(pqSig),
+  ]);
+}
+
+export function encodeRecoveryUpgradeData(
+  recoveryKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+): Hex {
+  return concat([
+    packAddress(recoveryKey),
     packElements(pqSig),
   ]);
 }
@@ -224,6 +235,16 @@ export function decodeChangePqOwner(payload: Hex): {
 } {
   return {
     newPqOwner: sliceAddress(payload, 0),
+    pqSig: sliceElements(payload, 64),
+  };
+}
+
+export function decodeRecoveryUpgradeData(payload: Hex): {
+  recoveryKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+} {
+  return {
+    recoveryKey: sliceAddress(payload, 0),
     pqSig: sliceElements(payload, 64),
   };
 }
@@ -365,5 +386,23 @@ export function verificationDigest(
     addressToBytes32(wallet),
     addressToBytes32(newImplementation),
     s1, h1,
+  ]));
+}
+
+export function upgradeRecoveryDigest(
+  wallet: Address,
+  chainId: bigint,
+  newImplementation: Address,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+): Hex {
+  return keccak256(concat([
+    UPGRADE_RECOVERY_TAG,
+    bigintToBytes32(chainId),
+    addressToBytes32(wallet),
+    addressToBytes32(newImplementation),
+    s1, h1, s2, h2,
   ]));
 }

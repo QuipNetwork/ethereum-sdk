@@ -23,6 +23,7 @@ import {
   encodeRecoverWallet,
   encodeKeyManagement,
   encodeUpgrade,
+  encodeRecoveryUpgradeData,
   decodeInit,
   decodeUpgradeAuth,
   decodeUpgradeVerification,
@@ -31,11 +32,13 @@ import {
   decodeExecute,
   decodeRecoverWallet,
   decodeKeyManagement,
+  decodeRecoveryUpgradeData,
   keyRotationDigest,
   executeDigest,
   keyManagementDigest,
   upgradeDigest,
   verificationDigest,
+  upgradeRecoveryDigest,
   RECOVERY_KEY_AMOUNT,
 } from "./wotsCodec.js";
 
@@ -163,6 +166,13 @@ describe("encoder parity (live Solidity)", () => {
     const solEncoded = await callHarness("exposed_encodeKeyManagement", [pq, sig, keys]);
     expect(tsEncoded).toBe(solEncoded);
   });
+
+  test("encodeRecoveryUpgradeData matches Solidity", async () => {
+    const recoveryKey = makeKey(1n);
+    const tsEncoded = encodeRecoveryUpgradeData(recoveryKey, sig);
+    const solEncoded = await callHarness("exposed_encodeRecoveryUpgradeData", [recoveryKey, sig]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
 });
 
 // ─── Digest parity tests (live Solidity comparison) ──────────────
@@ -206,6 +216,14 @@ describe("digest parity (live Solidity)", () => {
     const tsDigest = verificationDigest(WALLET, CHAIN_ID, IMPL, S1, H1);
     const solDigest = await callHarness("exposed_verificationDigest", [
       WALLET, CHAIN_ID, IMPL, S1, H1,
+    ]);
+    expect(tsDigest).toBe(solDigest);
+  });
+
+  test("upgradeRecoveryDigest matches Solidity", async () => {
+    const tsDigest = upgradeRecoveryDigest(WALLET, CHAIN_ID, IMPL, S1, H1, S2, H2);
+    const solDigest = await callHarness("exposed_upgradeRecoveryDigest", [
+      WALLET, CHAIN_ID, IMPL, S1, H1, S2, H2,
     ]);
     expect(tsDigest).toBe(solDigest);
   });
@@ -277,6 +295,15 @@ describe("encode/decode roundtrip", () => {
     const decoded = decodeRecoverWallet(encoded);
     expectAddressEq(decoded.recoveryKey, recoveryKey);
     expectAddressEq(decoded.newPqOwner, pq);
+    expectElementsEq(decoded.pqSig, sig);
+  });
+
+  test("recoveryUpgradeData", () => {
+    const recoveryKey = makeKey(3n);
+    const encoded = encodeRecoveryUpgradeData(recoveryKey, sig);
+    expect(size(encoded)).toBe(2208);
+    const decoded = decodeRecoveryUpgradeData(encoded);
+    expectAddressEq(decoded.recoveryKey, recoveryKey);
     expectElementsEq(decoded.pqSig, sig);
   });
 
