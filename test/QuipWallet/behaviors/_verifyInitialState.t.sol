@@ -6,7 +6,7 @@ import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
-contract QuipWallet___verifyInitialState is QuipWalletTest {
+contract QuipWallet__verifyInitialState is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
     /// @dev ERC-7201 base slot for WOTSPlusStorage.Layout

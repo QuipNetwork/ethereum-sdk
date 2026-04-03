@@ -55,12 +55,12 @@ contract QuipWallet_execute is QuipWalletTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IQuipWallet.pqExecution.selector) {
+            if (logs[i].topics[0] == IQuipWallet.PqExecution.selector) {
                 found = true;
                 break;
             }
         }
-        assertTrue(found, "pqExecution event not emitted");
+        assertTrue(found, "PqExecution event not emitted");
     }
 
     function test_execute_collectsFees() public {

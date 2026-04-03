@@ -14,6 +14,10 @@ contract WOTSPlusCodecTest is Test {
         codec = new WOTSPlusCodecHarness();
     }
 
+    function test_setUp() public view {
+        assertTrue(address(codec) != address(0));
+    }
+
     // --- Helpers ---
 
     /// @dev Build a 704-byte init payload with known values.

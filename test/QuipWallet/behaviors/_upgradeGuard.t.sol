@@ -5,7 +5,7 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
-contract QuipWallet___upgradeGuard is QuipWalletTest {
+contract QuipWallet__upgradeGuard is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
     function setUp() public override {

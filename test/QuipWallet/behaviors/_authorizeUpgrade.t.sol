@@ -6,7 +6,7 @@ import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
-contract QuipWallet___authorizeUpgrade is QuipWalletTest {
+contract QuipWallet__authorizeUpgrade is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
     function setUp() public override {

@@ -53,12 +53,12 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IQuipWallet.pqRecovery.selector) {
+            if (logs[i].topics[0] == IQuipWallet.PqRecovery.selector) {
                 found = true;
                 break;
             }
         }
-        assertTrue(found, "pqRecovery event not emitted");
+        assertTrue(found, "PqRecovery event not emitted");
     }
 
     function test_recoverWallet_multipleIndependentRecoveries() public {

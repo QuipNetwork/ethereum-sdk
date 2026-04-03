@@ -8,7 +8,7 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 
 /// @dev Tests for dynamic _addRecoveryKeys(WinternitzAddress[] calldata)
-contract QuipWallet___addRecoveryKeys is QuipWalletTest {
+contract QuipWallet__addRecoveryKeys is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
     QuipWalletHarness public bare;
 
@@ -118,7 +118,7 @@ contract QuipWallet___addRecoveryKeys is QuipWalletTest {
 }
 
 /// @dev Tests for fixed-size _addRecoveryKeys(WinternitzAddress[10] calldata)
-contract QuipWallet___addRecoveryKeysFixed is QuipWalletTest {
+contract QuipWallet__addRecoveryKeysFixed is QuipWalletTest {
     QuipWalletHarness public harness;
 
     function setUp() public override {

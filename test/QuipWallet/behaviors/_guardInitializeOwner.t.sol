@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
 
-contract QuipWallet___guardInitializeOwner is QuipWalletTest {
+contract QuipWallet__guardInitializeOwner is QuipWalletTest {
     QuipWalletHarness public harness;
 
     function setUp() public override {
