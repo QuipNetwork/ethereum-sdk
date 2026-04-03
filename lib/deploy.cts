@@ -20,7 +20,7 @@ import path from "path";
 /** Critical nonce for deterministic Deployer contract address */
 export const EXPECTED_DEPLOYER_NONCE = 1;
 
-/** Standard salt for CREATE2 deployments */
+/** Base salt for CREATE3 deployments. Per-contract salts: keccak256("QUIP:<Name>:V1"). */
 export const DEPLOYMENT_SALT = "QUIP";
 
 /** MIDL network chain ID */
@@ -75,7 +75,8 @@ export function computeDeployerAddress(
 }
 
 /**
- * Compute CREATE2 address for a contract deployed via Deployer
+ * @deprecated Use computeCreate3Address for new deployments.
+ * Compute CREATE2 address for a contract deployed via Deployer (V1 deployments).
  */
 export async function computeCreate2Address(
   hre: HardhatRuntimeEnvironment,
@@ -95,6 +96,48 @@ export async function computeCreate2Address(
     )
   );
   return hre.ethers.getAddress(`0x${hash.slice(-40)}`);
+}
+
+/**
+ * Derive a per-contract salt from the base deployment salt and contract name.
+ * Returns keccak256(abi.encodePacked("QUIP:", contractName, ":V1")).
+ */
+export function contractSalt(
+  hre: HardhatRuntimeEnvironment,
+  contractName: string
+): string {
+  return hre.ethers.solidityPackedKeccak256(
+    ["string", "string", "string", "string", "string"],
+    [DEPLOYMENT_SALT, ":", contractName, ":", "V1"]
+  );
+}
+
+/**
+ * Compute CREATE3 address for a contract deployed via Deployer.
+ *
+ * CREATE3 addresses depend only on the deployer contract and salt, not on bytecode.
+ * Mirrors Solady's CREATE3.predictDeterministicAddress(salt, deployer):
+ *   1. proxy    = CREATE2(deployer, salt, PROXY_INITCODE_HASH)
+ *   2. deployed = CREATE(proxy, nonce=1)
+ *
+ * @param salt - The bytes32 salt (already hashed, e.g. from contractSalt())
+ */
+export function computeCreate3Address(
+  hre: HardhatRuntimeEnvironment,
+  deployerAddress: string,
+  salt: string
+): string {
+  // Solady CREATE3 proxy initcode hash: keccak256(hex"67363d3d37363d34f03d5260086018f3")
+  const PROXY_INITCODE_HASH =
+    "0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f";
+
+  const proxyAddress = hre.ethers.getCreate2Address(
+    deployerAddress,
+    salt,
+    PROXY_INITCODE_HASH
+  );
+
+  return hre.ethers.getCreateAddress({ from: proxyAddress, nonce: 1 });
 }
 
 /**

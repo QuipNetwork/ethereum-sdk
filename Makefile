@@ -1,5 +1,6 @@
 .PHONY: build test clean format snapshot gas install update release \
        deploy-deployer deploy-wotsplus deploy-factory deploy-all \
+       deploy-impl vet-impl predict-addresses \
        fund-deployer drain-deployer balance
 
 # ── Build & Test ──────────────────────────────────────────────────
@@ -62,6 +63,15 @@ deploy-factory:
 
 deploy-all:
 	forge script script/DeployAll.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify
+
+deploy-impl:
+	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+
+vet-impl:
+	forge script script/VetImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+
+predict-addresses:
+	forge script script/PredictAddresses.s.sol
 
 # ── Utility Scripts ───────────────────────────────────────────────
 
