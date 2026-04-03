@@ -19,6 +19,7 @@ pragma solidity ^0.8.33;
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {IDeployer} from "./interfaces/IDeployer.sol";
 
+/// @title Deployer
 /// @notice Deploys contracts with consistent addresses across EVM chains using CREATE3.
 contract Deployer is IDeployer {
     /// @inheritdoc IDeployer

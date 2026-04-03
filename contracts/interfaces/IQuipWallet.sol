@@ -1,3 +1,18 @@
+// Copyright (C) 2025 quip.network
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
@@ -52,7 +67,7 @@ interface IQuipWallet {
     /// @param target The recipient or contract address.
     /// @param value The ETH value sent to the target.
     /// @param dataHash The keccak256 hash of the calldata (keccak256("") for pure transfers).
-    event pqExecution(
+    event PqExecution(
         uint256 when,
         WOTSPlus.WinternitzAddress pqFrom,
         WOTSPlus.WinternitzAddress pqNext,
@@ -76,7 +91,7 @@ interface IQuipWallet {
     /// @notice Emitted when the wallet is recovered using a recovery key.
     /// @param recoveryKey The recovery key that authorized the recovery.
     /// @param newPqOwner The new post-quantum owner key set during recovery.
-    event pqRecovery(
+    event PqRecovery(
         WOTSPlus.WinternitzAddress recoveryKey,
         WOTSPlus.WinternitzAddress newPqOwner
     );
@@ -231,14 +246,17 @@ interface IQuipWallet {
     ) external;
 
     /// @notice Returns the number of recovery keys in the set.
+    /// @return The number of registered recovery key hashes.
     function getRecoveryKeyCount() external view returns (uint256);
 
     /// @notice Returns the recovery key hash at a given index.
+    /// @return The keccak256 hash of the recovery key at the given index.
     function getRecoveryKeyHashAt(
         uint256 index
     ) external view returns (bytes32);
 
     /// @notice Returns whether a key hash is a registered recovery key.
+    /// @return True if the key hash is a registered recovery key.
     function isRecoveryKey(bytes32 keyHash) external view returns (bool);
 
     /// @notice Returns the implementation version of this wallet.
