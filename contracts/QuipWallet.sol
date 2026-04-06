@@ -48,9 +48,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     bytes32 private constant _PQ_FACTORY_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
     bytes32 private constant _PQ_OWNER_SEED_SLOT =
-        bytes32(uint256(_PQ_FACTORY_SLOT) + 1);
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701;
     bytes32 private constant _PQ_OWNER_HASH_SLOT =
-        bytes32(uint256(_PQ_FACTORY_SLOT) + 2);
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf702;
 
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
@@ -201,33 +201,34 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
-    /// Soft guard: blocked writes to protected slots emit `ExecutionReverted` instead
-    /// of reverting (key safety).
     function storageStore(bytes32 storageSlot, bytes32 storageValue)
         public
         payable
         override
         onlyEntryPoint
+        storageStoreGuard(storageSlot)
     {
-        bytes32 dataHash = EfficientHashLib.hash(storageSlot, storageValue);
-
-        // Soft guard: block writes to protected slots without reverting
-        if (
-            storageSlot == _OWNER_SLOT ||
-            storageSlot == _ERC1967_IMPLEMENTATION_SLOT ||
-            storageSlot == _PQ_FACTORY_SLOT ||
-            storageSlot == _PQ_OWNER_SEED_SLOT ||
-            storageSlot == _PQ_OWNER_HASH_SLOT
-        ) {
-            emit ExecutionReverted(address(this), 0, dataHash, "");
-            return;
-        }
-
+        /// @solidity memory-safe-assembly
         assembly {
             sstore(storageSlot, storageValue)
         }
+    }
 
-        emit ExecutionSucceeded(address(this), 0, dataHash);
+    /// @dev Extends Solady's guard with PQ-specific protected slots.
+    modifier storageStoreGuard(bytes32 storageSlot) override {
+        /// @solidity memory-safe-assembly
+        assembly {
+            if or(
+                or(eq(storageSlot, _OWNER_SLOT), eq(storageSlot, _ERC1967_IMPLEMENTATION_SLOT)),
+                or(
+                    eq(storageSlot, _PQ_FACTORY_SLOT),
+                    or(eq(storageSlot, _PQ_OWNER_SEED_SLOT), eq(storageSlot, _PQ_OWNER_HASH_SLOT))
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+        }
+        _;
     }
 
     /// @inheritdoc ERC4337
