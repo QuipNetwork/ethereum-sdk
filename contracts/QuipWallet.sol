@@ -43,16 +43,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     uint256 private constant _UPGRADE_GUARD_SLOT =
         0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
 
-    /// @dev uint256(keccak256("quip.wallet.erc4337.nextPqOwner.seed")) - 1
-    /// Transient storage slot for passing nextPqOwner.publicSeed from validateUserOp to execution.
-    uint256 private constant _NEXT_PQ_SEED_TSLOT =
-        uint256(keccak256("quip.wallet.erc4337.nextPqOwner.seed")) - 1;
-
-    /// @dev uint256(keccak256("quip.wallet.erc4337.nextPqOwner.hash")) - 1
-    /// Transient storage slot for passing nextPqOwner.publicKeyHash from validateUserOp to execution.
-    uint256 private constant _NEXT_PQ_HASH_TSLOT =
-        uint256(keccak256("quip.wallet.erc4337.nextPqOwner.hash")) - 1;
-
     /// @dev PQ storage base slot (ERC-7201 namespace: quip.storage.wallet.wotsplus).
     /// quipFactory at base+0, pqOwner.publicSeed at base+1, pqOwner.publicKeyHash at base+2.
     bytes32 private constant _PQ_FACTORY_SLOT =
@@ -84,8 +74,28 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev WOTS+ signature validation for ERC-4337 UserOps.
-    /// Verifies the PQ signature against the current pqOwner and stores
-    /// nextPqOwner in transient storage for the execution phase.
+    /// Decodes a WOTS+ one-time signature and the caller-supplied nextPqOwner from
+    /// `userOp.signature`, then verifies the signature against the current `pqOwner`.
+    ///
+    /// Validation fails (returns 1) when:
+    ///   - `nextPqOwner` is zero (missing key material).
+    ///   - `nextPqOwner` equals the current `pqOwner` (key reuse / no rotation).
+    ///   - The WOTS+ signature does not verify against the current `pqOwner`.
+    ///
+    /// On success the key rotation is committed immediately via `_rotatePqOwner`.
+    /// The EntryPoint's `handleOps` invokes validation and execution as two separate
+    /// top-level calls on the account within the same transaction. Writing the rotation
+    /// during validation ensures the key is rotated
+    /// regardless of whether the execution phase succeeds or fails.
+    ///
+    /// Security: because WOTS+ is a one-time signature scheme, the signing key is
+    /// effectively compromised once the signature is revealed on-chain in the UserOp.
+    /// It is therefore imperative that key rotation succeeds regardless of whether the
+    /// inner execution call succeeds or fails.
+    ///
+    /// @param userOp  The packed ERC-4337 user operation.
+    /// @param userOpHash  Hash of the user operation produced by the EntryPoint.
+    /// @return validationData  0 if the signature is valid, 1 otherwise.
     function _validateSignature(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
@@ -118,14 +128,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             return 1;
 
-        bytes32 seed = nextPqOwner.publicSeed;
-        bytes32 hash_ = nextPqOwner.publicKeyHash;
-        uint256 seedSlot = _NEXT_PQ_SEED_TSLOT;
-        uint256 hashSlot = _NEXT_PQ_HASH_TSLOT;
-        assembly {
-            tstore(seedSlot, seed)
-            tstore(hashSlot, hash_)
-        }
+        _rotatePqOwner(nextPqOwner);
 
         return 0;
     }
@@ -135,8 +138,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc ERC4337
-    /// @dev Overridden to enforce PQ auth via forced key rotation from transient storage.
-    /// The inner call is isolated so its revert does not undo the rotation.
+    /// @dev Key rotation is committed during `_validateSignature`. The inner call is
+    /// isolated so its revert does not roll back the transaction.
     /// Owner must use `execute(bytes)` which has inline PQ auth.
     function execute(address target, uint256 value, bytes calldata data)
         public
@@ -146,8 +149,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         returns (bytes memory result)
     {
         Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
-        WOTSPlus.WinternitzAddress memory nextPqOwner = _consumePqKeyRotation();
 
         uint256 fee = getExecuteFee();
         if (fee > 0 && address(this).balance >= fee) {
@@ -158,15 +159,15 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         bool success;
         (success, result) = _tryCallContract(target, value, data);
 
-        emit PqExecution(block.timestamp, curPqOwner, nextPqOwner, target, value, dataHash);
-
-        if (!success) {
+        if (success) {
+            emit ExecutionSucceeded(target, value, dataHash);
+        } else {
             emit ExecutionReverted(target, value, dataHash, result);
         }
     }
 
     /// @inheritdoc ERC4337
-    /// @dev Overridden to enforce PQ auth. Single key rotation covers the entire batch.
+    /// @dev Key rotation is committed during `_validateSignature`.
     /// Each call in the batch is isolated individually via `_tryCallContract`.
     function executeBatch(Call[] calldata calls)
         public
@@ -176,8 +177,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         returns (bytes[] memory results)
     {
         Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
-        WOTSPlus.WinternitzAddress memory nextPqOwner = _consumePqKeyRotation();
 
         uint256 fee = getExecuteFee();
         if (fee > 0 && address(this).balance >= fee) {
@@ -188,22 +187,22 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         results = new bytes[](len);
         for (uint256 i; i < len; ++i) {
             bool success;
+            bytes32 callDataHash = EfficientHashLib.hashCalldata(calls[i].data);
             (success, results[i]) = _tryCallContract(calls[i].target, calls[i].value, calls[i].data);
-            if (!success) {
-                bytes32 callDataHash = EfficientHashLib.hashCalldata(calls[i].data);
+            if (success) {
+                emit ExecutionSucceeded(calls[i].target, calls[i].value, callDataHash);
+            } else {
                 emit ExecutionReverted(calls[i].target, calls[i].value, callDataHash, results[i]);
             }
         }
-
-        bytes32 batchHash = EfficientHashLib.hash(abi.encode(calls));
-        emit PqExecution(block.timestamp, curPqOwner, nextPqOwner, address(0), 0, batchHash);
     }
 
     /// @inheritdoc ERC4337
-    /// @dev Overridden to enforce PQ auth + snapshot-and-restore guard for PQ storage.
-    /// Critical slots (owner, implementation, factory, pqOwner) are restored if the
-    /// delegatecall modifies them. Recovery keys are verified but cannot be reliably
-    /// restored if corrupted — the `_FINAL_RECOURSE_KEY` (see TODO.md) is the backstop.
+    /// @dev Key rotation is committed during `_validateSignature`.
+    /// Snapshot-and-restore guard protects PQ storage: critical slots (owner,
+    /// implementation, factory, pqOwner) are restored if the delegatecall modifies them.
+    /// Recovery keys are verified but cannot be reliably restored if corrupted —
+    /// the `_FINAL_RECOURSE_KEY` (see TODO.md) is the backstop.
     function delegateExecute(address delegate, bytes calldata data)
         public
         payable
@@ -211,34 +210,27 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         onlyEntryPoint
         returns (bytes memory result)
     {
-        Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
-        WOTSPlus.WinternitzAddress memory nextPqOwner = _consumePqKeyRotation();
-
         bool success;
         (success, result) = _guardedDelegateCall(delegate, data);
 
         bytes32 dataHash = EfficientHashLib.hashCalldata(data);
-        emit PqExecution(block.timestamp, curPqOwner, nextPqOwner, delegate, 0, dataHash);
-
-        if (!success) {
+        if (success) {
+            emit ExecutionSucceeded(delegate, 0, dataHash);
+        } else {
             emit ExecutionReverted(delegate, 0, dataHash, result);
         }
     }
 
     /// @inheritdoc ERC4337
-    /// @dev Overridden to enforce PQ auth + extended guard that also blocks PQ storage slots.
-    /// Soft guard: blocked writes emit `ExecutionReverted` instead of reverting (key safety).
+    /// @dev Key rotation is committed during `_validateSignature`.
+    /// Soft guard: blocked writes to protected slots emit `ExecutionReverted` instead
+    /// of reverting (key safety).
     function storageStore(bytes32 storageSlot, bytes32 storageValue)
         public
         payable
         override
         onlyEntryPoint
     {
-        Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
-        WOTSPlus.WinternitzAddress memory nextPqOwner = _consumePqKeyRotation();
-
         bytes32 dataHash = EfficientHashLib.hash(storageSlot, storageValue);
 
         // Soft guard: block writes to protected slots without reverting
@@ -249,7 +241,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             storageSlot == _PQ_OWNER_SEED_SLOT ||
             storageSlot == _PQ_OWNER_HASH_SLOT
         ) {
-            emit PqExecution(block.timestamp, curPqOwner, nextPqOwner, address(this), 0, dataHash);
             emit ExecutionReverted(address(this), 0, dataHash, "");
             return;
         }
@@ -258,22 +249,18 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             sstore(storageSlot, storageValue)
         }
 
-        emit PqExecution(block.timestamp, curPqOwner, nextPqOwner, address(this), 0, dataHash);
+        emit ExecutionSucceeded(address(this), 0, dataHash);
     }
 
     /// @inheritdoc ERC4337
-    /// @dev Overridden to enforce PQ auth. The withdrawal is isolated so its revert
-    /// does not undo the key rotation.
+    /// @dev Key rotation is committed during `_validateSignature`. The withdrawal is
+    /// isolated so its revert does not roll back the transaction.
     function withdrawDepositTo(address to, uint256 amount)
         public
         payable
         override
         onlyEntryPoint
     {
-        Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
-        WOTSPlus.WinternitzAddress memory nextPqOwner = _consumePqKeyRotation();
-
         address ep = entryPoint();
         bool success;
         /// @solidity memory-safe-assembly
@@ -286,9 +273,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         }
 
         bytes32 dataHash = EfficientHashLib.hash(bytes32(uint256(uint160(to))), bytes32(amount));
-        emit PqExecution(block.timestamp, curPqOwner, nextPqOwner, ep, amount, dataHash);
-
-        if (!success) {
+        if (success) {
+            emit ExecutionSucceeded(ep, amount, dataHash);
+        } else {
             emit ExecutionReverted(ep, amount, dataHash, "");
         }
     }
@@ -359,7 +346,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
         );
 
-        $.pqOwner = nextPqOwner;
+        _rotatePqOwner(nextPqOwner);
 
         (bool shouldMigrate, bytes calldata migratorPayload) = Codec.decodeUpgradeMigration(data);
         if (shouldMigrate) {
@@ -389,12 +376,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _enforceDifferentPqOwner(newPqOwner);
 
         Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory oldPqOwner = $.pqOwner;
         bytes32 digest = Codec.keyRotationDigest(
             address(this),
             block.chainid,
-            oldPqOwner.publicSeed,
-            oldPqOwner.publicKeyHash,
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
             newPqOwner.publicSeed,
             newPqOwner.publicKeyHash
         );
@@ -402,9 +388,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
 
-        $.pqOwner = newPqOwner;
-
-        emit PqOwnerChanged(oldPqOwner, newPqOwner);
+        _rotatePqOwner(newPqOwner);
     }
 
     /// @inheritdoc IQuipWallet
@@ -441,8 +425,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
 
-        WOTSPlus.WinternitzAddress memory curPqOwner = $.pqOwner;
-        $.pqOwner = nextPqOwner;
+        _rotatePqOwner(nextPqOwner);
 
         if (fee > 0) SafeTransferLib.safeTransferETH($.quipFactory, fee);
 
@@ -453,7 +436,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             result = LibCall.callContract(target, value, data);
         }
 
-        emit PqExecution(block.timestamp, curPqOwner, nextPqOwner, target, value, dataHash);
+        emit ExecutionSucceeded(target, value, dataHash);
 
         return result;
     }
@@ -487,7 +470,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             revert InvalidSignature();
 
         $.recoveryKeyHashes.remove(keyHash);
-        $.pqOwner = newPqOwner;
+        _rotatePqOwner(newPqOwner);
 
         emit PqRecovery(recoveryKey, newPqOwner);
     }
@@ -522,7 +505,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         _addRecoveryKeys(newRecoveryKeys);
 
-        $.pqOwner = nextPqOwner;
+        _rotatePqOwner(nextPqOwner);
 
         emit RecoveryKeysAdded(nextPqOwner, newRecoveryKeys.length);
     }
@@ -562,7 +545,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         _addRecoveryKeys(newRecoveryKeys);
 
-        $.pqOwner = nextPqOwner;
+        _rotatePqOwner(nextPqOwner);
 
         emit RecoveryKeysReplenished(nextPqOwner);
     }
@@ -845,37 +828,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         return EfficientHashLib.hash(abi.encodePacked(len, elements));
     }
 
-    /// @dev Reads nextPqOwner from transient storage (set by _validateSignature),
-    ///      clears transient storage, validates the key, and rotates $.pqOwner.
-    /// @return nextPqOwner The new PQ owner after rotation.
-    function _consumePqKeyRotation()
-        internal
-        returns (WOTSPlus.WinternitzAddress memory nextPqOwner)
-    {
-        uint256 seedSlot = _NEXT_PQ_SEED_TSLOT;
-        uint256 hashSlot = _NEXT_PQ_HASH_TSLOT;
-        bytes32 seed;
-        bytes32 hash_;
-        assembly {
-            seed := tload(seedSlot)
-            hash_ := tload(hashSlot)
-            tstore(seedSlot, 0)
-            tstore(hashSlot, 0)
-        }
-        if (seed == bytes32(0) || hash_ == bytes32(0)) revert TransientStorageEmpty();
-
-        nextPqOwner = WOTSPlus.WinternitzAddress({
-            publicSeed: seed,
-            publicKeyHash: hash_
-        });
-
+    /// @dev Rotates the post-quantum owner key and emits `PqOwnerRotated`.
+    function _rotatePqOwner(WOTSPlus.WinternitzAddress calldata nextPqOwner) internal {
         Storage.Layout storage $ = Storage.layout();
-        if (
-            nextPqOwner.publicSeed == $.pqOwner.publicSeed &&
-            nextPqOwner.publicKeyHash == $.pqOwner.publicKeyHash
-        ) revert PqOwnerReuse();
-
+        WOTSPlus.WinternitzAddress memory oldPqOwner = $.pqOwner;
         $.pqOwner = nextPqOwner;
+        emit PqOwnerRotated(oldPqOwner, nextPqOwner);
     }
 
     /// @dev Non-reverting variant of Solady's callContract pattern.

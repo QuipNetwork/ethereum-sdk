@@ -55,29 +55,25 @@ interface IQuipWallet {
     error DuplicateRecoveryKey();
     /// @notice Thrown when an empty recovery key array is provided.
     error EmptyRecoveryKeys();
-    /// @notice Thrown when ERC-4337 execution is attempted without prior validation (transient storage empty).
-    error TransientStorageEmpty();
 
     /// @notice Thrown when the upgrade target's codehash is not in the factory's vetted set.
     error ImplementationNotVetted();
     /// @notice Thrown when the upgrade target's codehash has been deprecated.
     error ImplementationDeprecated();
 
-    /// @notice Emitted when a post-quantum authenticated operation is executed.
-    /// @param when The block timestamp of the execution.
-    /// @param pqFrom The Winternitz public key that authorized the operation.
-    /// @param pqNext The new Winternitz public key that replaces `pqFrom`.
+    /// @notice Emitted when the post-quantum owner key is rotated.
+    /// @param oldPqOwner The previous Winternitz public key.
+    /// @param newPqOwner The new Winternitz public key.
+    event PqOwnerRotated(
+        WOTSPlus.WinternitzAddress oldPqOwner,
+        WOTSPlus.WinternitzAddress newPqOwner
+    );
+
+    /// @notice Emitted when an execution call succeeds.
     /// @param target The recipient or contract address.
     /// @param value The ETH value sent to the target.
-    /// @param dataHash The keccak256 hash of the calldata (keccak256("") for pure transfers).
-    event PqExecution(
-        uint256 when,
-        WOTSPlus.WinternitzAddress pqFrom,
-        WOTSPlus.WinternitzAddress pqNext,
-        address target,
-        uint256 value,
-        bytes32 dataHash
-    );
+    /// @param dataHash The keccak256 hash of the calldata.
+    event ExecutionSucceeded(address target, uint256 value, bytes32 dataHash);
 
     /// @notice Emitted when a wallet is initialized with its factory, owner, and keys.
     /// @param factory The QuipFactory that created this wallet.
@@ -109,13 +105,6 @@ interface IQuipWallet {
         uint256 count
     );
 
-    /// @notice Emitted when the post-quantum owner key is rotated via `changePqOwner`.
-    /// @param oldPqOwner The previous Winternitz public key.
-    /// @param newPqOwner The new Winternitz public key.
-    event PqOwnerChanged(
-        WOTSPlus.WinternitzAddress oldPqOwner,
-        WOTSPlus.WinternitzAddress newPqOwner
-    );
 
     /// @notice Emitted when PQ state is migrated during an upgrade.
     /// @param newPqOwner The new post-quantum owner key set during migration.

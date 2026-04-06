@@ -39,7 +39,7 @@ contract QuipWallet_execute is QuipWalletTest {
         assertEq(address(wallet).balance, walletBalBefore - transferAmount);
     }
 
-    function test_execute_emitsPqExecution() public {
+    function test_execute_emitsPqOwnerRotatedAndExecutionSucceeded() public {
         uint256 transferAmount = 0.3 ether;
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("event-next");
 
@@ -53,14 +53,18 @@ contract QuipWallet_execute is QuipWalletTest {
         wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        bool found = false;
+        bool foundRotated = false;
+        bool foundSucceeded = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IQuipWallet.PqExecution.selector) {
-                found = true;
-                break;
+            if (logs[i].topics[0] == IQuipWallet.PqOwnerRotated.selector) {
+                foundRotated = true;
+            }
+            if (logs[i].topics[0] == IQuipWallet.ExecutionSucceeded.selector) {
+                foundSucceeded = true;
             }
         }
-        assertTrue(found, "PqExecution event not emitted");
+        assertTrue(foundRotated, "PqOwnerRotated event not emitted");
+        assertTrue(foundSucceeded, "ExecutionSucceeded event not emitted");
     }
 
     function test_execute_collectsFees() public {
