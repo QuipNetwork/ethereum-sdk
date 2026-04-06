@@ -55,6 +55,9 @@ interface IQuipWallet {
     error DuplicateRecoveryKey();
     /// @notice Thrown when an empty recovery key array is provided.
     error EmptyRecoveryKeys();
+    /// @notice Thrown when ERC-4337 execution is attempted without prior validation (transient storage empty).
+    error TransientStorageEmpty();
+
     /// @notice Thrown when the upgrade target's codehash is not in the factory's vetted set.
     error ImplementationNotVetted();
     /// @notice Thrown when the upgrade target's codehash has been deprecated.
@@ -125,6 +128,16 @@ interface IQuipWallet {
         address indexed newImplementation,
         WOTSPlus.WinternitzAddress recoveryKey
     );
+
+    /// @notice Emitted when the inner call of an ERC-4337 execution reverts but key rotation commits.
+    /// @param target The target of the failed call.
+    /// @param value The ETH value attempted.
+    /// @param dataHash The keccak256 hash of the calldata.
+    /// @param result The revert data from the failed call.
+    event ExecutionReverted(address target, uint256 value, bytes32 dataHash, bytes result);
+
+    /// @notice Emitted when a delegatecall via delegateExecute corrupts recovery key storage.
+    event RecoveryKeysCorrupted();
 
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;

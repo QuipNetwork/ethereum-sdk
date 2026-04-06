@@ -53,6 +53,10 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
 ///      [2208:...)  WinternitzAddress[]   — newRecoveryKeys (N x 64)
 ///
+///      ERC-4337 UserOp signature layout (2208 bytes, used by validateUserOp):
+///      [0:64)      WinternitzAddress     — nextPqOwner (publicSeed ++ publicKeyHash)
+///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
+///
 ///      recoveryUpgrade payload layout (2208 bytes):
 ///      [0:64)      WinternitzAddress     — recoveryKey (publicSeed ++ publicKeyHash)
 ///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
@@ -78,6 +82,7 @@ library WOTSPlusCodec {
     bytes32 internal constant UPGRADE_TAG       = keccak256("quip.digest.upgrade");
     bytes32 internal constant VERIFICATION_TAG = keccak256("quip.digest.verification");
     bytes32 internal constant UPGRADE_RECOVERY_TAG = keccak256("quip.digest.upgradeRecovery");
+    bytes32 internal constant ERC4337_EXECUTE_TAG  = keccak256("quip.digest.erc4337Execute");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
@@ -201,6 +206,28 @@ library WOTSPlusCodec {
         assembly {
             recoveryKey := payload.offset
             pqSig := add(payload.offset, 64)
+        }
+    }
+
+    /// @dev Decodes the ERC-4337 UserOp signature payload.
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig.
+    ///      Same layout as changePqOwner.
+    /// @param sig The UserOp signature bytes.
+    /// @return nextPqOwner The next PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    function decodeUserOpSignature(
+        bytes calldata sig
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig
+        )
+    {
+        assembly {
+            nextPqOwner := sig.offset
+            pqSig := add(sig.offset, 64)
         }
     }
 
@@ -380,6 +407,20 @@ library WOTSPlusCodec {
         return payload;
     }
 
+    /// @dev Encodes the ERC-4337 UserOp signature payload.
+    /// @param nextPqOwner The next PQ owner key.
+    /// @param pqSig The PQ signature.
+    /// @return The packed signature (2208 bytes).
+    function encodeUserOpSignature(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
+            pqSig.elements
+        );
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          HASHERS                              */
     /*  NOTE: WOTS+ signatures are incompatible with EIP-712. These  */
@@ -523,6 +564,34 @@ library WOTSPlusCodec {
             bytes32(uint256(uint160(wallet))),
             bytes32(uint256(uint160(newImplementation))),
             s1, h1
+        );
+    }
+
+    /// @dev keccak256(abi.encode(ERC4337_EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, userOpHash))
+    ///      Used by _validateSignature in the ERC-4337 path.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param s1 The public seed of the current PQ owner.
+    /// @param h1 The public key hash of the current PQ owner.
+    /// @param s2 The public seed of the next PQ owner.
+    /// @param h2 The public key hash of the next PQ owner.
+    /// @param userOpHash The EntryPoint-computed UserOp hash.
+    /// @return The signing digest.
+    function erc4337ExecuteDigest(
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        bytes32 userOpHash
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            ERC4337_EXECUTE_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            s1, h1, s2, h2,
+            userOpHash
         );
     }
 
