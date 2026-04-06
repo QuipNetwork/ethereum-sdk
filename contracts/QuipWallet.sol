@@ -138,8 +138,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc ERC4337
-    /// @dev Key rotation is committed during `_validateSignature`. The inner call is
-    /// isolated so its revert does not roll back the transaction.
+    /// @dev Key rotation is committed during `_validateSignature`.
+    /// Fee is only collected on success — if the inner call reverts, the entire
+    /// execution phase rolls back (including the fee transfer). The EntryPoint
+    /// still deducts gas costs from the wallet's prefund deposit.
     /// Owner must use `execute(bytes)` which has inline PQ auth.
     function execute(address target, uint256 value, bytes calldata data)
         public
@@ -148,27 +150,17 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         onlyEntryPoint
         returns (bytes memory result)
     {
-        Storage.Layout storage $ = Storage.layout();
-
         uint256 fee = getExecuteFee();
         if (fee > 0 && address(this).balance >= fee) {
-            SafeTransferLib.safeTransferETH($.quipFactory, fee);
+            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
         }
-
-        bytes32 dataHash = EfficientHashLib.hashCalldata(data);
-        bool success;
-        (success, result) = _tryCallContract(target, value, data);
-
-        if (success) {
-            emit ExecutionSucceeded(target, value, dataHash);
-        } else {
-            emit ExecutionReverted(target, value, dataHash, result);
-        }
+        result = super.execute(target, value, data);
     }
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
-    /// Each call in the batch is isolated individually via `_tryCallContract`.
+    /// Fee is only collected on success — if any call in the batch reverts,
+    /// the entire execution phase rolls back (including the fee transfer).
     function executeBatch(Call[] calldata calls)
         public
         payable
@@ -176,25 +168,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         onlyEntryPoint
         returns (bytes[] memory results)
     {
-        Storage.Layout storage $ = Storage.layout();
-
         uint256 fee = getExecuteFee();
         if (fee > 0 && address(this).balance >= fee) {
-            SafeTransferLib.safeTransferETH($.quipFactory, fee);
+            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
         }
-
-        uint256 len = calls.length;
-        results = new bytes[](len);
-        for (uint256 i; i < len; ++i) {
-            bool success;
-            bytes32 callDataHash = EfficientHashLib.hashCalldata(calls[i].data);
-            (success, results[i]) = _tryCallContract(calls[i].target, calls[i].value, calls[i].data);
-            if (success) {
-                emit ExecutionSucceeded(calls[i].target, calls[i].value, callDataHash);
-            } else {
-                emit ExecutionReverted(calls[i].target, calls[i].value, callDataHash, results[i]);
-            }
-        }
+        results = super.executeBatch(calls);
     }
 
     /// @inheritdoc ERC4337
