@@ -125,9 +125,6 @@ interface IQuipWallet {
     /// @param result The revert data from the failed call.
     event ExecutionReverted(address target, uint256 value, bytes32 dataHash, bytes result);
 
-    /// @notice Emitted when a delegatecall via delegateExecute corrupts recovery key storage.
-    event RecoveryKeysCorrupted();
-
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;
 

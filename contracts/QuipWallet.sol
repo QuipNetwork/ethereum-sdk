@@ -177,26 +177,21 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
-    /// Snapshot-and-restore guard protects PQ storage: critical slots (owner,
-    /// implementation, factory, pqOwner) are restored if the delegatecall modifies them.
-    /// Recovery keys are verified but cannot be reliably restored if corrupted —
-    /// the `_FINAL_RECOURSE_KEY` (see TODO.md) is the backstop.
+    /// Fee is only collected on success — if the delegatecall reverts, the entire
+    /// execution phase rolls back (including the fee transfer).
     function delegateExecute(address delegate, bytes calldata data)
         public
         payable
         override
         onlyEntryPoint
+        delegateExecuteGuard
         returns (bytes memory result)
     {
-        bool success;
-        (success, result) = _guardedDelegateCall(delegate, data);
-
-        bytes32 dataHash = EfficientHashLib.hashCalldata(data);
-        if (success) {
-            emit ExecutionSucceeded(delegate, 0, dataHash);
-        } else {
-            emit ExecutionReverted(delegate, 0, dataHash, result);
+        uint256 fee = getExecuteFee();
+        if (fee > 0 && address(this).balance >= fee) {
+            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
         }
+        result = super.delegateExecute(delegate, data);
     }
 
     /// @inheritdoc ERC4337
@@ -229,6 +224,42 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             }
         }
         _;
+    }
+
+    /// @dev Extends Solady's guard with PQ-specific protected slots.
+    modifier delegateExecuteGuard() override {
+        bytes32 ownerValue;
+        bytes32 implValue;
+        bytes32 factoryValue;
+        bytes32 seedValue;
+        bytes32 hashValue;
+        /// @solidity memory-safe-assembly
+        assembly {
+            ownerValue := sload(_OWNER_SLOT)
+            implValue := sload(_ERC1967_IMPLEMENTATION_SLOT)
+            factoryValue := sload(_PQ_FACTORY_SLOT)
+            seedValue := sload(_PQ_OWNER_SEED_SLOT)
+            hashValue := sload(_PQ_OWNER_HASH_SLOT)
+        }
+        _;
+        /// @solidity memory-safe-assembly
+        assembly {
+            if iszero(
+                and(
+                    and(
+                        eq(ownerValue, sload(_OWNER_SLOT)),
+                        eq(implValue, sload(_ERC1967_IMPLEMENTATION_SLOT))
+                    ),
+                    and(
+                        eq(factoryValue, sload(_PQ_FACTORY_SLOT)),
+                        and(
+                            eq(seedValue, sload(_PQ_OWNER_SEED_SLOT)),
+                            eq(hashValue, sload(_PQ_OWNER_HASH_SLOT))
+                        )
+                    )
+                )
+            ) { revert(codesize(), 0x00) }
+        }
     }
 
     /// @inheritdoc ERC4337
@@ -753,106 +784,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if ($.recoveryKeyHashes.length() != MAX_RECOVERY_KEYS) revert IncorrectRecoveryKeyAmount();
     }
 
-    /// @dev Snapshots critical storage, executes an isolated delegatecall, then restores
-    ///      any slots corrupted by the delegatecall. Recovery keys are verified via
-    ///      digest comparison; corruption emits `RecoveryKeysCorrupted`.
-    function _guardedDelegateCall(address delegate, bytes calldata data)
-        internal
-        returns (bool success, bytes memory result)
-    {
-        Storage.Layout storage $ = Storage.layout();
-
-        // Snapshot critical slots (after rotation — $.pqOwner is already the new key)
-        bytes32 ownerSlotValue;
-        bytes32 implSlotValue;
-        assembly {
-            ownerSlotValue := sload(_OWNER_SLOT)
-            implSlotValue := sload(_ERC1967_IMPLEMENTATION_SLOT)
-        }
-        address payable savedFactory = $.quipFactory;
-        bytes32 savedPqSeed = $.pqOwner.publicSeed;
-        bytes32 savedPqHash = $.pqOwner.publicKeyHash;
-        bytes32 savedRecoveryDigest = _recoveryKeysDigest();
-
-        // Isolated delegatecall
-        (success, result) = _tryDelegateCallContract(delegate, data);
-
-        // Restore critical slots if corrupted
-        assembly {
-            if iszero(eq(sload(_OWNER_SLOT), ownerSlotValue)) {
-                sstore(_OWNER_SLOT, ownerSlotValue)
-            }
-            if iszero(eq(sload(_ERC1967_IMPLEMENTATION_SLOT), implSlotValue)) {
-                sstore(_ERC1967_IMPLEMENTATION_SLOT, implSlotValue)
-            }
-        }
-        if ($.quipFactory != savedFactory) $.quipFactory = savedFactory;
-        if ($.pqOwner.publicSeed != savedPqSeed) $.pqOwner.publicSeed = savedPqSeed;
-        if ($.pqOwner.publicKeyHash != savedPqHash) $.pqOwner.publicKeyHash = savedPqHash;
-
-        // Verify recovery keys (cannot reliably restore EnumerableSetLib internals)
-        if (_recoveryKeysDigest() != savedRecoveryDigest) {
-            emit RecoveryKeysCorrupted();
-        }
-    }
-
-    /// @dev Computes a digest over the recovery key set (length + all element hashes).
-    function _recoveryKeysDigest() internal view returns (bytes32) {
-        EnumerableSetLib.Bytes32Set storage hashes = Storage.layout().recoveryKeyHashes;
-        uint256 len = hashes.length();
-        bytes32[] memory elements = new bytes32[](len);
-        for (uint256 i; i < len; ++i) {
-            elements[i] = hashes.at(i);
-        }
-        return EfficientHashLib.hash(abi.encodePacked(len, elements));
-    }
-
     /// @dev Rotates the post-quantum owner key and emits `PqOwnerRotated`.
     function _rotatePqOwner(WOTSPlus.WinternitzAddress calldata nextPqOwner) internal {
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress memory oldPqOwner = $.pqOwner;
         $.pqOwner = nextPqOwner;
         emit PqOwnerRotated(oldPqOwner, nextPqOwner);
-    }
-
-    /// @dev Non-reverting variant of Solady's callContract pattern.
-    /// Same assembly as ERC4337.execute — calldatacopy + call — but returns
-    /// (bool, bytes) instead of reverting on failure.
-    function _tryCallContract(address target, uint256 value, bytes calldata data)
-        internal
-        returns (bool success, bytes memory result)
-    {
-        /// @solidity memory-safe-assembly
-        assembly {
-            result := mload(0x40)
-            let m := result
-            calldatacopy(m, data.offset, data.length)
-            success := call(gas(), target, value, m, data.length, codesize(), 0x00)
-            mstore(result, returndatasize())
-            let o := add(result, 0x20)
-            returndatacopy(o, 0x00, returndatasize())
-            mstore(0x40, add(o, returndatasize()))
-        }
-    }
-
-    /// @dev Non-reverting variant of Solady's delegateCallContract pattern.
-    /// Same assembly as ERC4337.delegateExecute — calldatacopy + delegatecall — but returns
-    /// (bool, bytes) instead of reverting on failure.
-    function _tryDelegateCallContract(address target, bytes calldata data)
-        internal
-        returns (bool success, bytes memory result)
-    {
-        /// @solidity memory-safe-assembly
-        assembly {
-            result := mload(0x40)
-            let m := result
-            calldatacopy(m, data.offset, data.length)
-            success := delegatecall(gas(), target, m, data.length, codesize(), 0x00)
-            mstore(result, returndatasize())
-            let o := add(result, 0x20)
-            returndatacopy(o, 0x00, returndatasize())
-            mstore(0x40, add(o, returndatasize()))
-        }
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
