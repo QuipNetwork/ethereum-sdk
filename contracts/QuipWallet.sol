@@ -452,6 +452,44 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    function withdrawDepositTo(bytes calldata payload) public payable onlyOwner {
+        (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address to,
+            uint256 amount
+        ) = Codec.decodeWithdrawDeposit(payload);
+
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
+
+        uint256 fee = getExecuteFee();
+        if (address(this).balance < fee)
+            revert InsufficientBalance(fee, address(this).balance);
+
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 digest = Codec.withdrawDepositDigest(
+            address(this),
+            block.chainid,
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            to,
+            amount
+        );
+
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
+            revert InvalidSignature();
+
+        _rotatePqOwner(nextPqOwner);
+
+        if (fee > 0) SafeTransferLib.safeTransferETH($.quipFactory, fee);
+
+        super.withdrawDepositTo(to, amount);
+    }
+
+    /// @inheritdoc IQuipWallet
     function recoverWallet(bytes calldata payload) public onlyOwner {
         (
             WOTSPlus.WinternitzAddress calldata recoveryKey,

@@ -201,6 +201,13 @@ interface IQuipWallet {
     /// @return The data returned by the call (empty for pure transfers).
     function execute(bytes calldata payload) external payable returns (bytes memory);
 
+    /// @notice Withdraws ETH from the wallet's EntryPoint deposit, authorized by a WOTS+ signature.
+    /// @dev Only callable by the classical owner. Charges execute fee, rotates PQ key, then
+    ///      delegates to Solady's withdrawDepositTo which calls withdrawTo on the EntryPoint.
+    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) to, [2240:2272) amount.
+    /// @param payload Packed withdrawDeposit data (2272 bytes).
+    function withdrawDepositTo(bytes calldata payload) external payable;
+
     /// @notice Returns the current execute fee as set by the factory.
     /// @return The execute fee in wei.
     function getExecuteFee() external view returns (uint256);

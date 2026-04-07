@@ -83,6 +83,7 @@ library WOTSPlusCodec {
     bytes32 internal constant VERIFICATION_TAG = keccak256("quip.digest.verification");
     bytes32 internal constant UPGRADE_RECOVERY_TAG = keccak256("quip.digest.upgradeRecovery");
     bytes32 internal constant ERC4337_EXECUTE_TAG  = keccak256("quip.digest.erc4337Execute");
+    bytes32 internal constant WITHDRAW_DEPOSIT_TAG = keccak256("quip.digest.withdrawDeposit");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
@@ -260,6 +261,33 @@ library WOTSPlusCodec {
             value := calldataload(add(payload.offset, 2240))
         }
         data = payload[2272:];
+    }
+
+    /// @dev Decodes the withdrawDeposit payload.
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) to, [2240:2272) amount.
+    /// @param payload The packed withdrawDeposit payload (2272 bytes).
+    /// @return nextPqOwner The next PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    /// @return to The withdrawal recipient at offset 2208 (left-padded).
+    /// @return amount The withdrawal amount at offset 2240.
+    function decodeWithdrawDeposit(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address to,
+            uint256 amount
+        )
+    {
+        assembly {
+            nextPqOwner := payload.offset
+            pqSig := add(payload.offset, 64)
+            to := calldataload(add(payload.offset, 2208))
+            amount := calldataload(add(payload.offset, 2240))
+        }
     }
 
     /// @dev Decodes the recoverWallet payload.
@@ -484,6 +512,37 @@ library WOTSPlusCodec {
             bytes32(uint256(uint160(target))),
             bytes32(value),
             opdataHash
+        );
+    }
+
+    /// @dev keccak256(abi.encode(WITHDRAW_DEPOSIT_TAG, chainId, wallet, s1, h1, s2, h2, to, amount))
+    ///      Used by withdrawDepositTo(bytes).
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param s1 The public seed of the current PQ owner.
+    /// @param h1 The public key hash of the current PQ owner.
+    /// @param s2 The public seed of the next PQ owner.
+    /// @param h2 The public key hash of the next PQ owner.
+    /// @param to The withdrawal recipient.
+    /// @param amount The withdrawal amount.
+    /// @return The signing digest.
+    function withdrawDepositDigest(
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        address to,
+        uint256 amount
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            WITHDRAW_DEPOSIT_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            s1, h1, s2, h2,
+            bytes32(uint256(uint160(to))),
+            bytes32(amount)
         );
     }
 
