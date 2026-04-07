@@ -16,11 +16,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+
 library QuipPaymasterStorage {
     /// @custom:storage-location erc7201:quip.storage.paymaster
     struct Layout {
-        /// @dev Trusted backend ECDSA signer that authorizes gas sponsorship.
-        address verifier;
+        /// @dev Per-wallet WOTS+ verifier keys for gas sponsorship authorization.
+        mapping(address wallet => WOTSPlus.WinternitzAddress verifier) verifiers;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.paymaster")) - 1)) & ~bytes32(uint256(0xff))
