@@ -40,6 +40,9 @@ interface IQuipWallet {
     error InsufficientBalance(uint256 requested, uint256 available);
     /// @notice Thrown when `renounceOwnership` is called (always reverts).
     error RenounceDisabled();
+    /// @notice Thrown when the classical `withdrawDepositTo(address,uint256)` is called directly.
+    /// @dev Only the WOTS+-authenticated `withdrawDepositTo(bytes)` path is permitted.
+    error ClassicalWithdrawDisabled();
 
     /// @notice Thrown when a recovery key is not in the registered set.
     error RecoveryKeyNotFound();
@@ -184,7 +187,9 @@ interface IQuipWallet {
     /// @notice Executes a post-quantum authenticated operation: either a pure ETH transfer
     ///         or an arbitrary contract call.
     /// @dev Only callable by the classical owner. The fee is deducted from the wallet balance
-    ///      and sent to the factory. For pure transfers (data is empty), uses SafeTransferLib.
+    ///      and sent to the factory. The fee is committed in the signed digest so the factory
+    ///      owner cannot front-run the transaction by raising the fee.
+    ///      For pure transfers (data is empty), uses SafeTransferLib.
     ///      For contract calls (data is non-empty), uses LibCall.callContract.
     ///      Rotates the post-quantum owner key to `nextPqOwner` upon success.
     ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig,
@@ -194,8 +199,8 @@ interface IQuipWallet {
     function execute(bytes calldata payload) external payable returns (bytes memory);
 
     /// @notice Withdraws ETH from the wallet's EntryPoint deposit, authorized by a WOTS+ signature.
-    /// @dev Only callable by the classical owner. Charges execute fee, rotates PQ key, then
-    ///      delegates to Solady's withdrawDepositTo which calls withdrawTo on the EntryPoint.
+    /// @dev Only callable by the classical owner. Rotates PQ key, then delegates to Solady's
+    ///      withdrawDepositTo which calls withdrawTo on the EntryPoint. No fee is charged.
     ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) to, [2240:2272) amount.
     /// @param payload Packed withdrawDeposit data (2272 bytes).
     function withdrawDepositTo(bytes calldata payload) external payable;

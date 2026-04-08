@@ -446,9 +446,10 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, target, value, opdataHash))
+    /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, target, value, opdataHash, fee))
     ///      Caller must pre-hash opdata: keccak256(opdata).
-    ///      Used by execute.
+    ///      Used by execute(bytes). The fee is committed at signing time so the
+    ///      factory owner cannot front-run the transaction by raising the fee.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
     /// @param s1 The public seed of the current PQ owner.
@@ -458,6 +459,7 @@ library WOTSPlusCodec {
     /// @param target The recipient or contract address.
     /// @param value The ETH amount to send.
     /// @param opdataHash The keccak256 hash of the calldata to execute.
+    /// @param fee The expected factory execute fee at signing time.
     /// @return The signing digest.
     function executeDigest(
         address wallet,
@@ -468,7 +470,8 @@ library WOTSPlusCodec {
         bytes32 h2,
         address target,
         uint256 value,
-        bytes32 opdataHash
+        bytes32 opdataHash,
+        uint256 fee
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
             EXECUTE_TAG,
@@ -477,7 +480,8 @@ library WOTSPlusCodec {
             s1, h1, s2, h2,
             bytes32(uint256(uint160(target))),
             bytes32(value),
-            opdataHash
+            opdataHash,
+            bytes32(fee)
         );
     }
 
@@ -592,8 +596,9 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(ERC4337_EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, userOpHash))
-    ///      Used by _validateSignature in the ERC-4337 path.
+    /// @dev keccak256(abi.encode(ERC4337_EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, userOpHash, fee))
+    ///      Used by _validateSignature in the ERC-4337 path. The fee is committed
+    ///      at signing time so the factory owner cannot front-run the fee.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
     /// @param s1 The public seed of the current PQ owner.
@@ -601,6 +606,7 @@ library WOTSPlusCodec {
     /// @param s2 The public seed of the next PQ owner.
     /// @param h2 The public key hash of the next PQ owner.
     /// @param userOpHash The EntryPoint-computed UserOp hash.
+    /// @param fee The expected factory execute fee at signing time.
     /// @return The signing digest.
     function erc4337ExecuteDigest(
         address wallet,
@@ -609,14 +615,16 @@ library WOTSPlusCodec {
         bytes32 h1,
         bytes32 s2,
         bytes32 h2,
-        bytes32 userOpHash
+        bytes32 userOpHash,
+        uint256 fee
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
             ERC4337_EXECUTE_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
-            userOpHash
+            userOpHash,
+            bytes32(fee)
         );
     }
 

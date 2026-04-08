@@ -122,7 +122,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             $.pqOwner.publicKeyHash,
             nextPqOwner.publicSeed,
             nextPqOwner.publicKeyHash,
-            userOpHash
+            userOpHash,
+            getExecuteFee()
         );
 
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
@@ -259,34 +260,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     )
                 )
             ) { revert(codesize(), 0x00) }
-        }
-    }
-
-    /// @inheritdoc ERC4337
-    /// @dev Key rotation is committed during `_validateSignature`. The withdrawal is
-    /// isolated so its revert does not roll back the transaction.
-    function withdrawDepositTo(address to, uint256 amount)
-        public
-        payable
-        override
-        onlyEntryPoint
-    {
-        address ep = entryPoint();
-        bool success;
-        /// @solidity memory-safe-assembly
-        assembly {
-            mstore(0x14, to)
-            mstore(0x34, amount)
-            mstore(0x00, 0x205c2878000000000000000000000000) // `withdrawTo(address,uint256)`.
-            success := mul(extcodesize(ep), call(gas(), ep, 0, 0x10, 0x44, codesize(), 0x00))
-            mstore(0x34, 0) // Restore the part of the free memory pointer that was overwritten.
-        }
-
-        bytes32 dataHash = EfficientHashLib.hash(bytes32(uint256(uint160(to))), bytes32(amount));
-        if (success) {
-            emit ExecutionSucceeded(ep, amount, dataHash);
-        } else {
-            emit ExecutionReverted(ep, amount, dataHash, "");
         }
     }
 
@@ -437,7 +410,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             nextPqOwner.publicKeyHash,
             target,
             value,
-            dataHash
+            dataHash,
+            fee
         );
 
         if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
@@ -459,6 +433,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         return result;
     }
 
+    /// @dev Blocks the classical ERC-4337 `withdrawDepositTo(address,uint256)`.
+    ///      All withdrawals MUST go through the WOTS+-authenticated `withdrawDepositTo(bytes)`.
+    function withdrawDepositTo(address, uint256) public payable override {
+        revert ClassicalWithdrawDisabled();
+    }
+
     /// @inheritdoc IQuipWallet
     function withdrawDepositTo(bytes calldata payload) public payable onlyOwner {
         (
@@ -470,10 +450,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         _enforceNonZeroPqOwner(nextPqOwner);
         _enforceDifferentPqOwner(nextPqOwner);
-
-        uint256 fee = getExecuteFee();
-        if (address(this).balance < fee)
-            revert InsufficientBalance(fee, address(this).balance);
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 digest = Codec.withdrawDepositDigest(
@@ -492,9 +468,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         _rotatePqOwner(nextPqOwner);
 
-        if (fee > 0) SafeTransferLib.safeTransferETH($.quipFactory, fee);
-
-        super.withdrawDepositTo(to, amount);
+        ERC4337.withdrawDepositTo(to, amount);
     }
 
     /// @inheritdoc IQuipWallet
