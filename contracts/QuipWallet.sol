@@ -329,6 +329,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         address newImplementation,
         bytes calldata data
     ) public payable override(IQuipWallet, UUPSUpgradeable) onlyOwner {
+        // Vet implementation locally BEFORE any delegatecall.
+        bytes32 implCodehash = newImplementation.codehash;
+        IQuipFactory factory = IQuipFactory(FACTORY);
+        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
+            revert ImplementationNotVetted();
+        if (factory.deprecatedImpls(implCodehash))
+            revert ImplementationDeprecated();
+
         Storage.Layout storage $ = Storage.layout();
         (
             WOTSPlus.WinternitzAddress calldata nextPqOwner,
@@ -600,15 +608,17 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @inheritdoc IQuipWallet
     function recoveryUpgrade(address newImplementation, bytes calldata payload) public onlyOwner {
-        LibCall.delegateCallContract(
-            newImplementation,
-            abi.encodeCall(this.verifyRecoveryUpgrade, (newImplementation, payload))
-        );
-
+        // Vet implementation locally BEFORE any delegatecall.
+        bytes32 implCodehash = newImplementation.codehash;
+        IQuipFactory factory = IQuipFactory(FACTORY);
+        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
+            revert ImplementationNotVetted();
+        if (factory.deprecatedImpls(implCodehash))
+            revert ImplementationDeprecated();
         (
             WOTSPlus.WinternitzAddress calldata recoveryKey,
             WOTSPlus.WinternitzElements calldata pqSig
-        ) = Codec.decodeRecoveryUpgradeData(payload);
+        ) = Codec.decodeUpgradeAuth(payload);
 
         Storage.Layout storage $ = Storage.layout();
 
@@ -628,6 +638,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         if (!WOTSPlus.verify(recoveryKey, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
             revert InvalidSignature();
+
+        // Delegatecall to vetted implementation (defense-in-depth).
+        LibCall.delegateCallContract(
+            newImplementation,
+            abi.encodeCall(this.verifyUpgrade, (newImplementation, payload))
+        );
 
         $.recoveryKeyHashes.remove(keyHash);
 
@@ -667,13 +683,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         address newImplementation,
         bytes calldata data
     ) public view {
-        bytes32 implCodehash = newImplementation.codehash;
-        IQuipFactory factory = IQuipFactory(FACTORY);
-        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
-            revert ImplementationNotVetted();
-        if (factory.deprecatedImpls(implCodehash))
-            revert ImplementationDeprecated();
-
         (
             WOTSPlus.WinternitzAddress calldata verifier,
             WOTSPlus.WinternitzElements calldata verifySig
@@ -689,19 +698,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         if (!WOTSPlus.verify(verifier, WOTSPlus.WinternitzMessage({ messageHash: digest }), verifySig))
             revert InvalidSignature();
-    }
-
-    /// @inheritdoc IQuipWallet
-    function verifyRecoveryUpgrade(
-        address newImplementation,
-        bytes calldata data
-    ) public view {
-        bytes32 implCodehash = newImplementation.codehash;
-        IQuipFactory factory = IQuipFactory(FACTORY);
-        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
-            revert ImplementationNotVetted();
-        if (factory.deprecatedImpls(implCodehash))
-            revert ImplementationDeprecated();
     }
 
     /// @inheritdoc IQuipWallet

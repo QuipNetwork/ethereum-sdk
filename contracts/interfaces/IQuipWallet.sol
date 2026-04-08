@@ -145,22 +145,14 @@ interface IQuipWallet {
     ) external payable;
 
     /// @notice Verifies a PQ signature from the new implementation's verifier key.
-    /// @dev MUST be called on every upgrade — `upgradeToAndCall` delegates to this function
-    ///      on the new implementation. The verifier key and signature are extracted via
-    ///      `decodeUpgradeVerification` and verified against a `verificationDigest`. Future
-    ///      implementations may use a different PQ scheme for this step.
+    /// @dev Called via delegatecall from both `upgradeToAndCall` and `recoveryUpgrade` on the
+    ///      new implementation. Factory vetting is the caller's responsibility; this function
+    ///      performs only scheme-specific verification. The verifier key and signature are
+    ///      extracted via `decodeUpgradeVerification` and verified against a
+    ///      `verificationDigest`. Future implementations may use a different PQ scheme.
     /// @param newImplementation The address of the new implementation being upgraded to.
     /// @param data Packed upgrade payload; verifier at [2208:2272), verifySig at [2272:4416).
     function verifyUpgrade(
-        address newImplementation,
-        bytes calldata data
-    ) external view;
-
-    /// @notice Verifies an implementation is vetted and not deprecated during a recovery upgrade.
-    /// @dev Called via delegatecall from `recoveryUpgrade` on the new implementation.
-    /// @param newImplementation The address of the new implementation being upgraded to.
-    /// @param data Packed recovery upgrade payload.
-    function verifyRecoveryUpgrade(
         address newImplementation,
         bytes calldata data
     ) external view;
@@ -240,12 +232,12 @@ interface IQuipWallet {
     function replenishRecoveryKeys(bytes calldata payload) external;
 
     /// @notice Emergency upgrade authorized by a recovery key, without migration.
-    /// @dev Delegatecalls `verifyRecoveryUpgrade` on the new implementation to vet it,
-    ///      then verifies the recovery key's signature and spends the key.
+    /// @dev Verifies the recovery key signature, then delegatecalls `verifyUpgrade` on the
+    ///      new implementation so it can enforce scheme-specific checks (e.g. WOTS+ verification).
     ///      No pqOwner rotation or migration is performed.
-    ///      Payload layout: [0:64) recoveryKey, [64:2208) pqSig.
+    ///      Payload layout: [0:64) recoveryKey, [64:2208) pqSig, [2208:2272) verifier, [2272:4416) verifySig.
     /// @param newImplementation The address of the new implementation contract.
-    /// @param payload Packed recovery upgrade data (2208 bytes).
+    /// @param payload Packed recovery upgrade data (4416 bytes).
     function recoveryUpgrade(
         address newImplementation,
         bytes calldata payload

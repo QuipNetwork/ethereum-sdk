@@ -112,10 +112,11 @@ library WOTSPlusCodec {
     }
 
     /// @dev Decodes the upgrade payload's authentication portion.
-    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig.
-    ///      Used by upgradeToAndCall().
-    /// @param data The packed upgrade payload (5121 bytes).
-    /// @return nextPqOwner The next PQ owner at offset 0.
+    ///      Layout: [0:64) authKey, [64:2208) pqSig.
+    ///      Used by both `upgradeToAndCall` (authKey = nextPqOwner) and
+    ///      `recoveryUpgrade` (authKey = recoveryKey).
+    /// @param data The packed upgrade payload.
+    /// @return nextPqOwner The auth key at offset 0.
     /// @return pqSig The PQ signature at offset 64.
     function decodeUpgradeAuth(
         bytes calldata data
@@ -185,27 +186,6 @@ library WOTSPlusCodec {
     {
         assembly {
             newPqOwner := payload.offset
-            pqSig := add(payload.offset, 64)
-        }
-    }
-
-    /// @dev Decodes the recoveryUpgrade payload.
-    ///      Layout: [0:64) recoveryKey, [64:2208) pqSig.
-    /// @param payload The packed recovery upgrade payload (2208 bytes).
-    /// @return recoveryKey The recovery key at offset 0.
-    /// @return pqSig The PQ signature at offset 64.
-    function decodeRecoveryUpgradeData(
-        bytes calldata payload
-    )
-        internal
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress calldata recoveryKey,
-            WOTSPlus.WinternitzElements calldata pqSig
-        )
-    {
-        assembly {
-            recoveryKey := payload.offset
             pqSig := add(payload.offset, 64)
         }
     }
@@ -353,20 +333,6 @@ library WOTSPlusCodec {
     ) internal pure returns (bytes memory) {
         return abi.encodePacked(
             newPqOwner.publicSeed, newPqOwner.publicKeyHash,
-            pqSig.elements
-        );
-    }
-
-    /// @dev Encodes the recoveryUpgrade payload.
-    /// @param recoveryKey The recovery key to authorize the upgrade.
-    /// @param pqSig The PQ signature from the recovery key.
-    /// @return The packed payload (2208 bytes).
-    function encodeRecoveryUpgradeData(
-        WOTSPlus.WinternitzAddress memory recoveryKey,
-        WOTSPlus.WinternitzElements memory pqSig
-    ) internal pure returns (bytes memory) {
-        return abi.encodePacked(
-            recoveryKey.publicSeed, recoveryKey.publicKeyHash,
             pqSig.elements
         );
     }
