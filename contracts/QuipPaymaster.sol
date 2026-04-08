@@ -54,8 +54,6 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
         _disableInitializers();
     }
 
-    /// @dev Accept ETH deposits.
-    receive() external payable {}
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                      INTERNAL OVERRIDES                       */
