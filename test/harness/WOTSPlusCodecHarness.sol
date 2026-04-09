@@ -147,22 +147,6 @@ contract WOTSPlusCodecHarness {
         }
     }
 
-    function exposed_decodeRecoveryUpgradeData(bytes calldata payload)
-        external
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress memory recoveryKey,
-            WOTSPlus.WinternitzElements memory pqSig
-        )
-    {
-        (
-            WOTSPlus.WinternitzAddress calldata _rk,
-            WOTSPlus.WinternitzElements calldata _sig
-        ) = Codec.decodeRecoveryUpgradeData(payload);
-        recoveryKey = _rk;
-        pqSig = _sig;
-    }
-
     // --- Encoders ---
 
     function exposed_encodeChangePqOwner(
@@ -190,13 +174,6 @@ contract WOTSPlusCodecHarness {
         return Codec.encodeRecoverWallet(recoveryKey, newPqOwner, pqSig);
     }
 
-    function exposed_encodeRecoveryUpgradeData(
-        WOTSPlus.WinternitzAddress memory recoveryKey,
-        WOTSPlus.WinternitzElements memory pqSig
-    ) external pure returns (bytes memory) {
-        return Codec.encodeRecoveryUpgradeData(recoveryKey, pqSig);
-    }
-
     function exposed_encodeKeyManagement(
         WOTSPlus.WinternitzAddress memory nextPqOwner,
         WOTSPlus.WinternitzElements memory pqSig,
@@ -217,9 +194,9 @@ contract WOTSPlusCodecHarness {
     function exposed_executeDigest(
         address wallet, uint256 chainId,
         bytes32 s1, bytes32 h1, bytes32 s2, bytes32 h2,
-        address target, uint256 value, bytes32 opdataHash
+        address target, uint256 value, bytes32 opdataHash, uint256 fee
     ) external pure returns (bytes32) {
-        return Codec.executeDigest(wallet, chainId, s1, h1, s2, h2, target, value, opdataHash);
+        return Codec.executeDigest(wallet, chainId, s1, h1, s2, h2, target, value, opdataHash, fee);
     }
 
     function exposed_keyManagementDigest(
@@ -249,5 +226,70 @@ contract WOTSPlusCodecHarness {
         bytes32 s1, bytes32 h1, bytes32 s2, bytes32 h2
     ) external pure returns (bytes32) {
         return Codec.upgradeRecoveryDigest(wallet, chainId, newImplementation, s1, h1, s2, h2);
+    }
+
+    function exposed_withdrawDepositDigest(
+        address wallet, uint256 chainId,
+        bytes32 s1, bytes32 h1, bytes32 s2, bytes32 h2,
+        address to, uint256 amount
+    ) external pure returns (bytes32) {
+        return Codec.withdrawDepositDigest(wallet, chainId, s1, h1, s2, h2, to, amount);
+    }
+
+    function exposed_erc4337ExecuteDigest(
+        address wallet, uint256 chainId,
+        bytes32 s1, bytes32 h1, bytes32 s2, bytes32 h2,
+        bytes32 userOpHash, uint256 fee
+    ) external pure returns (bytes32) {
+        return Codec.erc4337ExecuteDigest(wallet, chainId, s1, h1, s2, h2, userOpHash, fee);
+    }
+
+    // --- Decoders (additional) ---
+
+    function exposed_decodeUserOpSignature(bytes calldata sig)
+        external
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress memory nextPqOwner,
+            WOTSPlus.WinternitzElements memory pqSig
+        )
+    {
+        (
+            WOTSPlus.WinternitzAddress calldata _pq,
+            WOTSPlus.WinternitzElements calldata _sig
+        ) = Codec.decodeUserOpSignature(sig);
+        nextPqOwner = _pq;
+        pqSig = _sig;
+    }
+
+    function exposed_decodeWithdrawDeposit(bytes calldata payload)
+        external
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress memory nextPqOwner,
+            WOTSPlus.WinternitzElements memory pqSig,
+            address to,
+            uint256 amount
+        )
+    {
+        (
+            WOTSPlus.WinternitzAddress calldata _pq,
+            WOTSPlus.WinternitzElements calldata _sig,
+            address _to,
+            uint256 _amt
+        ) = Codec.decodeWithdrawDeposit(payload);
+        nextPqOwner = _pq;
+        pqSig = _sig;
+        to = _to;
+        amount = _amt;
+    }
+
+    // --- Encoders (additional) ---
+
+    function exposed_encodeUserOpSignature(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig
+    ) external pure returns (bytes memory) {
+        return Codec.encodeUserOpSignature(nextPqOwner, pqSig);
     }
 }

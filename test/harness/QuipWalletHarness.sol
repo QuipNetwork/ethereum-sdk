@@ -47,6 +47,10 @@ contract QuipWalletHarness is QuipWallet {
         return _upgradeGuard();
     }
 
+    function exposed_rotatePqOwner(WOTSPlus.WinternitzAddress calldata nextPqOwner) external {
+        _rotatePqOwner(nextPqOwner);
+    }
+
     function exposed_upgradeGuardInContext() external returns (uint256) {
         // _UPGRADE_GUARD_SLOT is private; replicate the constant
         uint256 slot = 0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;

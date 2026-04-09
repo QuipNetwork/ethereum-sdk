@@ -59,13 +59,14 @@ contract QuipWalletTest is QuipFactoryTest {
         WOTSPlus.WinternitzAddress memory nextPq,
         address target,
         uint256 value,
-        bytes memory data
+        bytes memory data,
+        uint256 fee
     ) internal view returns (bytes32) {
         return Codec.executeDigest(
             wallet_, block.chainid,
             currentPq.publicSeed, currentPq.publicKeyHash,
             nextPq.publicSeed, nextPq.publicKeyHash,
-            target, value, keccak256(data)
+            target, value, keccak256(data), fee
         );
     }
 
