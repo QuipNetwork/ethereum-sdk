@@ -415,6 +415,52 @@ library WOTSPlusCodec {
         );
     }
 
+    /// @dev Encodes the recoveryUpgrade payload (auth + verification portions).
+    /// @param recoveryKey The recovery key used for auth.
+    /// @param pqSig The PQ signature from the recovery key.
+    /// @param verifier The verifier's key on the new implementation.
+    /// @param verifySig The PQ signature from the verifier.
+    /// @return The packed payload (4416 bytes).
+    function encodeRecoveryUpgrade(
+        WOTSPlus.WinternitzAddress memory recoveryKey,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress memory verifier,
+        WOTSPlus.WinternitzElements memory verifySig
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            recoveryKey.publicSeed, recoveryKey.publicKeyHash,
+            pqSig.elements,
+            verifier.publicSeed, verifier.publicKeyHash,
+            verifySig.elements
+        );
+    }
+
+    /// @dev Encodes the full upgradeToAndCall payload (auth + verification + migration).
+    /// @param nextPqOwner The next PQ owner key (auth key).
+    /// @param pqSig The PQ signature from the current pqOwner.
+    /// @param verifier The verifier's key on the new implementation.
+    /// @param verifySig The PQ signature from the verifier.
+    /// @param shouldMigrate True if state migration is required.
+    /// @param migratorPayload The 704-byte init-layout payload for migration.
+    /// @return The packed payload (5121 bytes).
+    function encodeUpgradeToAndCall(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress memory verifier,
+        WOTSPlus.WinternitzElements memory verifySig,
+        bool shouldMigrate,
+        bytes memory migratorPayload
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
+            pqSig.elements,
+            verifier.publicSeed, verifier.publicKeyHash,
+            verifySig.elements,
+            uint8(shouldMigrate ? 1 : 0),
+            migratorPayload
+        );
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          HASHERS                              */
     /*  NOTE: WOTS+ signatures are incompatible with EIP-712. These  */

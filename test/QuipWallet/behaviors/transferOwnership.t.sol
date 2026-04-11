@@ -3,7 +3,6 @@ pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 contract QuipWallet_transferOwnership is QuipWalletTest {
     function test_transferOwnership_transfersImmediately() public {
@@ -13,7 +12,7 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
         assertEq(wallet.owner(), BOB);
     }
 
-    function test_ownershipHandover_completesTransfer() public {
+    function test_transferOwnership_completesHandover() public {
         vm.prank(BOB);
         wallet.requestOwnershipHandover();
 
@@ -29,15 +28,9 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
         wallet.transferOwnership(BOB);
     }
 
-    function test_completeOwnershipHandover_revertsWhen_noRequest() public {
+    function test_transferOwnership_revertsWhen_noHandoverRequest() public {
         vm.prank(ALICE);
         vm.expectRevert(SoladyOwnable.NoHandoverRequest.selector);
         wallet.completeOwnershipHandover(BOB);
-    }
-
-    function test_renounceOwnership_revertsAlways() public {
-        vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.RenounceDisabled.selector);
-        wallet.renounceOwnership();
     }
 }

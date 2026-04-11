@@ -101,7 +101,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("next-after-recovery");
 
         bytes32 transferMsgHash = _buildExecuteMessageHash(
-            address(wallet), newPq, nextPq, BOB, transferAmount, ""
+            address(wallet), newPq, nextPq, BOB, transferAmount, "", 0
         );
         WOTSPlus.WinternitzElements memory transferSig = _sign(newPqPrivKey, transferMsgHash);
 

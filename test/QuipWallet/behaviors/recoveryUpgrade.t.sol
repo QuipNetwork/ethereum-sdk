@@ -22,6 +22,22 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
 
     // ── Helpers ──────────────────────────────────────────────────────
 
+    function _buildRecoveryUpgradePayload(
+        WOTSPlus.WinternitzAddress memory rKey,
+        WOTSPlus.WinternitzElements memory sig,
+        address impl,
+        bytes32 verifierSeed
+    ) internal view returns (bytes memory) {
+        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair(verifierSeed);
+        bytes32 vHash = Codec.verificationDigest(
+            address(wallet), block.chainid, impl,
+            vPub.publicSeed, vPub.publicKeyHash
+        );
+        WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
+
+        return Codec.encodeRecoveryUpgrade(rKey, sig, vPub, vSig);
+    }
+
     function _doRecoveryUpgrade(
         address impl,
         uint256 keyIndex
@@ -32,8 +48,12 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), impl, alicePubkey, rKey);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            rKey, sig, impl, keccak256(abi.encodePacked("recovery-verifier", keyIndex))
+        );
+
         vm.prank(ALICE);
-        wallet.recoveryUpgrade(impl, Codec.encodeRecoveryUpgradeData(rKey, sig));
+        wallet.recoveryUpgrade(impl, payload);
     }
 
     // ── Happy paths ─────────────────────────────────────────────────
@@ -82,9 +102,13 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), alicePubkey, rKey);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            rKey, sig, address(newImpl), keccak256("emit-verifier")
+        );
+
         vm.prank(ALICE);
         vm.recordLogs();
-        wallet.recoveryUpgrade(address(newImpl), Codec.encodeRecoveryUpgradeData(rKey, sig));
+        wallet.recoveryUpgrade(address(newImpl), payload);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -150,9 +174,13 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), alicePubkey, rKey);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            rKey, sig, address(newImpl), keccak256("notOwner-verifier")
+        );
+
         vm.prank(makeAddr("bob"));
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.recoveryUpgrade(address(newImpl), Codec.encodeRecoveryUpgradeData(rKey, sig));
+        wallet.recoveryUpgrade(address(newImpl), payload);
     }
 
     function test_recoveryUpgrade_revertsWhen_keyNotInSet() public {
@@ -161,9 +189,13 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), alicePubkey, fakeKey);
         WOTSPlus.WinternitzElements memory sig = _sign(fakePriv, msgHash);
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            fakeKey, sig, address(newImpl), keccak256("keyNotInSet-verifier")
+        );
+
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.RecoveryKeyNotFound.selector);
-        wallet.recoveryUpgrade(address(newImpl), Codec.encodeRecoveryUpgradeData(fakeKey, sig));
+        wallet.recoveryUpgrade(address(newImpl), payload);
     }
 
     function test_recoveryUpgrade_revertsWhen_invalidSignature() public {
@@ -173,9 +205,13 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         // Sign a wrong message
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, keccak256("wrong message"));
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            rKey, sig, address(newImpl), keccak256("invalidSig-verifier")
+        );
+
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.recoveryUpgrade(address(newImpl), Codec.encodeRecoveryUpgradeData(rKey, sig));
+        wallet.recoveryUpgrade(address(newImpl), payload);
     }
 
     function test_recoveryUpgrade_revertsWhen_implementationNotVetted() public {
@@ -187,9 +223,13 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(unvetted), alicePubkey, rKey);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            rKey, sig, address(unvetted), keccak256("notVetted-verifier")
+        );
+
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ImplementationNotVetted.selector);
-        wallet.recoveryUpgrade(address(unvetted), Codec.encodeRecoveryUpgradeData(rKey, sig));
+        wallet.recoveryUpgrade(address(unvetted), payload);
     }
 
     function test_recoveryUpgrade_revertsWhen_implementationDeprecated() public {
@@ -202,9 +242,13 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), alicePubkey, rKey);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            rKey, sig, address(newImpl), keccak256("deprecated-verifier")
+        );
+
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ImplementationDeprecated.selector);
-        wallet.recoveryUpgrade(address(newImpl), Codec.encodeRecoveryUpgradeData(rKey, sig));
+        wallet.recoveryUpgrade(address(newImpl), payload);
     }
 
     function test_recoveryUpgrade_revertsWhen_keyAlreadyConsumed() public {
@@ -223,8 +267,12 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(thirdImpl), alicePubkey, rKey);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
+        bytes memory payload = _buildRecoveryUpgradePayload(
+            rKey, sig, address(thirdImpl), keccak256("consumed-verifier")
+        );
+
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.RecoveryKeyNotFound.selector);
-        wallet.recoveryUpgrade(address(thirdImpl), Codec.encodeRecoveryUpgradeData(rKey, sig));
+        wallet.recoveryUpgrade(address(thirdImpl), payload);
     }
 }
