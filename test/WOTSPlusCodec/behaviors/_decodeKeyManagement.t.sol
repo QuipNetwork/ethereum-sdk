@@ -31,4 +31,22 @@ contract WOTSPlusCodec__decodeKeyManagement is WOTSPlusCodecTest {
         (,, WOTSPlus.WinternitzAddress[] memory keys) = codec.exposed_decodeKeyManagement(payload);
         assertEq(keys.length, 10);
     }
+
+    function test_exposed_decodeKeyManagement_revertsWhen_shortPayload() public {
+        bytes memory payload = _filledBytes(100);
+        vm.expectRevert();
+        codec.exposed_decodeKeyManagement(payload);
+    }
+
+    function test_exposed_decodeKeyManagement_exactMinLength_succeeds() public view {
+        bytes memory payload = _filledBytes(2208);
+        (,, WOTSPlus.WinternitzAddress[] memory keys) = codec.exposed_decodeKeyManagement(payload);
+        assertEq(keys.length, 0);
+    }
+
+    function test_exposed_decodeKeyManagement_unalignedLength() public view {
+        bytes memory payload = _filledBytes(2240);
+        (,, WOTSPlus.WinternitzAddress[] memory keys) = codec.exposed_decodeKeyManagement(payload);
+        assertEq(keys.length, 0);
+    }
 }

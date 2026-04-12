@@ -19,4 +19,9 @@ contract WOTSPlusCodec__decodeUpgradeAuth is WOTSPlusCodecTest {
             assertEq(sig.elements[i], bytes32(uint256(7 + 1000 + i)));
         }
     }
+
+    function test_exposed_decodeUpgradeAuth_revertsWhen_emptyPayload() public {
+        vm.expectRevert();
+        codec.exposed_decodeUpgradeAuth("");
+    }
 }

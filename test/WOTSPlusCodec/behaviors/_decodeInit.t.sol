@@ -18,6 +18,13 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         }
     }
 
+    function test_exposed_decodeInit_extraBytes_ignored() public view {
+        bytes memory payload = _buildInitPayload(42);
+        payload = abi.encodePacked(payload, bytes32(uint256(0xFF)), bytes32(uint256(0xFF)), bytes32(uint256(0xFF)));
+        (WOTSPlus.WinternitzAddress memory pq,) = codec.exposed_decodeInit(payload);
+        assertEq(pq.publicSeed, bytes32(uint256(42)));
+    }
+
     function test_exposed_decodeInit_handlesMaxValues() public view {
         bytes memory payload = abi.encodePacked(
             bytes32(type(uint256).max), bytes32(type(uint256).max)
@@ -28,5 +35,16 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         (WOTSPlus.WinternitzAddress memory pq,) = codec.exposed_decodeInit(payload);
         assertEq(pq.publicSeed, bytes32(type(uint256).max));
         assertEq(pq.publicKeyHash, bytes32(type(uint256).max));
+    }
+
+    function test_exposed_decodeInit_revertsWhen_emptyPayload() public {
+        vm.expectRevert();
+        codec.exposed_decodeInit("");
+    }
+
+    function test_exposed_decodeInit_revertsWhen_truncatedPayload() public {
+        bytes memory payload = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)));
+        vm.expectRevert();
+        codec.exposed_decodeInit(payload);
     }
 }

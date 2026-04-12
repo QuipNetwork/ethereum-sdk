@@ -37,4 +37,16 @@ contract WOTSPlusCodec__decodeExecute is WOTSPlusCodecTest {
         (,,,, bytes memory d) = codec.exposed_decodeExecute(payload);
         assertEq(d, opdata);
     }
+
+    function test_exposed_decodeExecute_revertsWhen_shortPayload() public {
+        bytes memory payload = _filledBytes(2200);
+        vm.expectRevert();
+        codec.exposed_decodeExecute(payload);
+    }
+
+    function test_exposed_decodeExecute_exactMinLength_succeeds() public view {
+        bytes memory payload = _filledBytes(2272);
+        (,,,, bytes memory d) = codec.exposed_decodeExecute(payload);
+        assertEq(d.length, 0);
+    }
 }

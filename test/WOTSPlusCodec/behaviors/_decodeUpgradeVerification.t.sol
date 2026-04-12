@@ -19,4 +19,9 @@ contract WOTSPlusCodec__decodeUpgradeVerification is WOTSPlusCodecTest {
             assertEq(sig.elements[i], bytes32(uint256(7 + 3000 + i)));
         }
     }
+
+    function test_exposed_decodeUpgradeVerification_revertsWhen_emptyPayload() public {
+        vm.expectRevert();
+        codec.exposed_decodeUpgradeVerification("");
+    }
 }

@@ -29,4 +29,32 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         assembly { actual := mload(add(migratorPayload, 32)) }
         assertEq(actual, expected);
     }
+
+    function test_exposed_decodeUpgradeMigration_revertsWhen_emptyPayload() public {
+        vm.expectRevert();
+        codec.exposed_decodeUpgradeMigration("");
+    }
+
+    function test_exposed_decodeUpgradeMigration_revertsWhen_shortPayload() public {
+        vm.expectRevert();
+        codec.exposed_decodeUpgradeMigration(_filledBytes(4416));
+    }
+
+    function test_exposed_decodeUpgradeMigration_revertsWhen_truncatedMigratorPayload() public {
+        vm.expectRevert();
+        codec.exposed_decodeUpgradeMigration(_filledBytes(5000));
+    }
+
+    function test_exposed_decodeUpgradeMigration_exactLength_succeeds() public view {
+        bytes memory payload = _filledBytes(5121);
+        (bool shouldMigrate, bytes memory mp) = codec.exposed_decodeUpgradeMigration(payload);
+        assertTrue(shouldMigrate);
+        assertEq(mp.length, 704);
+    }
+
+    function test_exposed_decodeUpgradeMigration_extraBytes_succeeds() public view {
+        bytes memory payload = _filledBytes(6000);
+        (, bytes memory mp) = codec.exposed_decodeUpgradeMigration(payload);
+        assertEq(mp.length, 704);
+    }
 }
