@@ -122,6 +122,34 @@ contract QuipWalletTest is QuipFactoryTest {
         );
     }
 
+    function _buildTransferOwnershipMessageHash(
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory nextPq,
+        address newOwner
+    ) internal view returns (bytes32) {
+        return Codec.transferOwnershipDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            newOwner
+        );
+    }
+
+    function _buildCompleteOwnershipHandoverMessageHash(
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory nextPq,
+        address pendingOwner
+    ) internal view returns (bytes32) {
+        return Codec.completeOwnershipHandoverDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            pendingOwner
+        );
+    }
+
     function _buildRecoveryUpgradeMessageHash(
         address wallet_,
         address newImplementation,

@@ -272,6 +272,18 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         revert RenounceDisabled();
     }
 
+    /// @dev Blocks the classical `transferOwnership(address)`.
+    ///      All ownership transfers MUST go through the WOTS+-authenticated `transferOwnership(bytes)`.
+    function transferOwnership(address) public payable override {
+        revert ClassicalTransferOwnershipDisabled();
+    }
+
+    /// @dev Blocks the classical `completeOwnershipHandover(address)`.
+    ///      All handovers MUST go through the WOTS+-authenticated `completeOwnershipHandover(bytes)`.
+    function completeOwnershipHandover(address) public payable override {
+        revert ClassicalCompleteOwnershipHandoverDisabled();
+    }
+
     /// @inheritdoc IQuipWallet
     function initialize(
         address payable newOwner,
@@ -469,6 +481,66 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _rotatePqOwner(nextPqOwner);
 
         ERC4337.withdrawDepositTo(to, amount);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function transferOwnership(bytes calldata payload) public payable onlyOwner {
+        (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address newOwner
+        ) = Codec.decodeOwnershipTransfer(payload);
+
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
+
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 digest = Codec.transferOwnershipDigest(
+            address(this),
+            block.chainid,
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            newOwner
+        );
+
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
+            revert InvalidSignature();
+
+        _rotatePqOwner(nextPqOwner);
+
+        Ownable.transferOwnership(newOwner);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function completeOwnershipHandover(bytes calldata payload) public payable onlyOwner {
+        (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address pendingOwner
+        ) = Codec.decodeOwnershipTransfer(payload);
+
+        _enforceNonZeroPqOwner(nextPqOwner);
+        _enforceDifferentPqOwner(nextPqOwner);
+
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 digest = Codec.completeOwnershipHandoverDigest(
+            address(this),
+            block.chainid,
+            $.pqOwner.publicSeed,
+            $.pqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash,
+            pendingOwner
+        );
+
+        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
+            revert InvalidSignature();
+
+        _rotatePqOwner(nextPqOwner);
+
+        Ownable.completeOwnershipHandover(pendingOwner);
     }
 
     /// @inheritdoc IQuipWallet

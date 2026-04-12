@@ -84,6 +84,8 @@ library WOTSPlusCodec {
     bytes32 internal constant UPGRADE_RECOVERY_TAG = keccak256("quip.digest.upgradeRecovery");
     bytes32 internal constant ERC4337_EXECUTE_TAG  = keccak256("quip.digest.erc4337Execute");
     bytes32 internal constant WITHDRAW_DEPOSIT_TAG = keccak256("quip.digest.withdrawDeposit");
+    bytes32 internal constant TRANSFER_OWNERSHIP_TAG          = keccak256("quip.digest.transferOwnership");
+    bytes32 internal constant COMPLETE_OWNERSHIP_HANDOVER_TAG = keccak256("quip.digest.completeOwnershipHandover");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
@@ -319,6 +321,31 @@ library WOTSPlusCodec {
         }
     }
 
+    /// @dev Decodes the ownership transfer payload.
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) newOwner.
+    ///      Used by transferOwnership(bytes) and completeOwnershipHandover(bytes).
+    /// @param payload The packed ownership transfer payload (2240 bytes).
+    /// @return nextPqOwner The next PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    /// @return newOwner The new classical owner at offset 2208 (left-padded).
+    function decodeOwnershipTransfer(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address newOwner
+        )
+    {
+        assembly {
+            nextPqOwner := payload.offset
+            pqSig := add(payload.offset, 64)
+            newOwner := calldataload(add(payload.offset, 2208))
+        }
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          ENCODERS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -412,6 +439,23 @@ library WOTSPlusCodec {
         return abi.encodePacked(
             nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
             pqSig.elements
+        );
+    }
+
+    /// @dev Encodes the ownership transfer payload.
+    /// @param nextPqOwner The next PQ owner key.
+    /// @param pqSig The PQ signature.
+    /// @param newOwner The new classical owner address.
+    /// @return The packed payload (2240 bytes).
+    function encodeOwnershipTransfer(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig,
+        address newOwner
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
+            pqSig.elements,
+            bytes32(uint256(uint160(newOwner)))
         );
     }
 
@@ -699,6 +743,62 @@ library WOTSPlusCodec {
             bytes32(uint256(uint160(wallet))),
             bytes32(uint256(uint160(newImplementation))),
             s1, h1, s2, h2
+        );
+    }
+
+    /// @dev keccak256(abi.encode(TRANSFER_OWNERSHIP_TAG, chainId, wallet, s1, h1, s2, h2, newOwner))
+    ///      Used by transferOwnership(bytes).
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param s1 The public seed of the current PQ owner.
+    /// @param h1 The public key hash of the current PQ owner.
+    /// @param s2 The public seed of the next PQ owner.
+    /// @param h2 The public key hash of the next PQ owner.
+    /// @param newOwner The new classical owner address.
+    /// @return The signing digest.
+    function transferOwnershipDigest(
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        address newOwner
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            TRANSFER_OWNERSHIP_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            s1, h1, s2, h2,
+            bytes32(uint256(uint160(newOwner)))
+        );
+    }
+
+    /// @dev keccak256(abi.encode(COMPLETE_OWNERSHIP_HANDOVER_TAG, chainId, wallet, s1, h1, s2, h2, pendingOwner))
+    ///      Used by completeOwnershipHandover(bytes).
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param s1 The public seed of the current PQ owner.
+    /// @param h1 The public key hash of the current PQ owner.
+    /// @param s2 The public seed of the next PQ owner.
+    /// @param h2 The public key hash of the next PQ owner.
+    /// @param pendingOwner The pending owner who previously requested the handover.
+    /// @return The signing digest.
+    function completeOwnershipHandoverDigest(
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        address pendingOwner
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            COMPLETE_OWNERSHIP_HANDOVER_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            s1, h1, s2, h2,
+            bytes32(uint256(uint160(pendingOwner)))
         );
     }
 }

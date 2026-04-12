@@ -43,6 +43,12 @@ interface IQuipWallet {
     /// @notice Thrown when the classical `withdrawDepositTo(address,uint256)` is called directly.
     /// @dev Only the WOTS+-authenticated `withdrawDepositTo(bytes)` path is permitted.
     error ClassicalWithdrawDisabled();
+    /// @notice Thrown when the classical `transferOwnership(address)` is called directly.
+    /// @dev Only the WOTS+-authenticated `transferOwnership(bytes)` path is permitted.
+    error ClassicalTransferOwnershipDisabled();
+    /// @notice Thrown when the classical `completeOwnershipHandover(address)` is called directly.
+    /// @dev Only the WOTS+-authenticated `completeOwnershipHandover(bytes)` path is permitted.
+    error ClassicalCompleteOwnershipHandoverDisabled();
 
     /// @notice Thrown when a recovery key is not in the registered set.
     error RecoveryKeyNotFound();
@@ -108,7 +114,6 @@ interface IQuipWallet {
         uint256 count
     );
 
-
     /// @notice Emitted when PQ state is migrated during an upgrade.
     /// @param newPqOwner The new post-quantum owner key set during migration.
     event WalletMigrated(WOTSPlus.WinternitzAddress newPqOwner);
@@ -126,7 +131,12 @@ interface IQuipWallet {
     /// @param value The ETH value attempted.
     /// @param dataHash The keccak256 hash of the calldata.
     /// @param result The revert data from the failed call.
-    event ExecutionReverted(address target, uint256 value, bytes32 dataHash, bytes result);
+    event ExecutionReverted(
+        address target,
+        uint256 value,
+        bytes32 dataHash,
+        bytes result
+    );
 
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;
@@ -196,7 +206,9 @@ interface IQuipWallet {
     ///      [2208:2240) target, [2240:2272) value, [2272:...) data.
     /// @param payload Packed execute data (>= 2272 bytes).
     /// @return The data returned by the call (empty for pure transfers).
-    function execute(bytes calldata payload) external payable returns (bytes memory);
+    function execute(
+        bytes calldata payload
+    ) external payable returns (bytes memory);
 
     /// @notice Withdraws ETH from the wallet's EntryPoint deposit, authorized by a WOTS+ signature.
     /// @dev Only callable by the classical owner. Rotates PQ key, then delegates to Solady's
@@ -204,6 +216,23 @@ interface IQuipWallet {
     ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) to, [2240:2272) amount.
     /// @param payload Packed withdrawDeposit data (2272 bytes).
     function withdrawDepositTo(bytes calldata payload) external payable;
+
+    /// @notice Transfers classical ownership to `newOwner`, authorized by a WOTS+ signature.
+    /// @dev Only callable by the classical owner. Rotates the post-quantum owner key and then
+    ///      delegates to the parent `Ownable.transferOwnership` which validates the new owner
+    ///      and updates the owner slot.
+    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) newOwner.
+    /// @param payload Packed ownership transfer data (2240 bytes).
+    function transferOwnership(bytes calldata payload) external payable;
+
+    /// @notice Completes a two-step ownership handover to `pendingOwner`, authorized by a WOTS+ signature.
+    /// @dev Only callable by the classical owner. Rotates the post-quantum owner key and then
+    ///      delegates to the parent `Ownable.completeOwnershipHandover` which verifies that the
+    ///      handover request exists and has not expired, clears the handover slot, and updates
+    ///      the owner slot.
+    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) pendingOwner.
+    /// @param payload Packed ownership transfer data (2240 bytes).
+    function completeOwnershipHandover(bytes calldata payload) external payable;
 
     /// @notice Returns the current execute fee as set by the factory.
     /// @return The execute fee in wei.

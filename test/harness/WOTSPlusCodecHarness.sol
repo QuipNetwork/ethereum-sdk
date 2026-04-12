@@ -292,4 +292,47 @@ contract WOTSPlusCodecHarness {
     ) external pure returns (bytes memory) {
         return Codec.encodeUserOpSignature(nextPqOwner, pqSig);
     }
+
+    function exposed_decodeOwnershipTransfer(bytes calldata payload)
+        external
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress memory nextPqOwner,
+            WOTSPlus.WinternitzElements memory pqSig,
+            address newOwner
+        )
+    {
+        (
+            WOTSPlus.WinternitzAddress calldata _pq,
+            WOTSPlus.WinternitzElements calldata _sig,
+            address _owner
+        ) = Codec.decodeOwnershipTransfer(payload);
+        nextPqOwner = _pq;
+        pqSig = _sig;
+        newOwner = _owner;
+    }
+
+    function exposed_encodeOwnershipTransfer(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig,
+        address newOwner
+    ) external pure returns (bytes memory) {
+        return Codec.encodeOwnershipTransfer(nextPqOwner, pqSig, newOwner);
+    }
+
+    function exposed_transferOwnershipDigest(
+        address wallet, uint256 chainId,
+        bytes32 s1, bytes32 h1, bytes32 s2, bytes32 h2,
+        address newOwner
+    ) external pure returns (bytes32) {
+        return Codec.transferOwnershipDigest(wallet, chainId, s1, h1, s2, h2, newOwner);
+    }
+
+    function exposed_completeOwnershipHandoverDigest(
+        address wallet, uint256 chainId,
+        bytes32 s1, bytes32 h1, bytes32 s2, bytes32 h2,
+        address pendingOwner
+    ) external pure returns (bytes32) {
+        return Codec.completeOwnershipHandoverDigest(wallet, chainId, s1, h1, s2, h2, pendingOwner);
+    }
 }
