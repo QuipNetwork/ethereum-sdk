@@ -54,7 +54,7 @@ contract QuipWallet__verifyInitialState is QuipWalletTest {
         // Set pqOwner.publicSeed (slot 1) and pqOwner.publicKeyHash (slot 2)
         vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 1), bytes32(uint256(1)));
         vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 2), bytes32(uint256(2)));
-        // Recovery key count is 0 != MAX_RECOVERY_KEYS (10)
+        // Recovery key count is 0 != MAX_KEYS (10)
         vm.expectRevert(IQuipWallet.IncorrectRecoveryKeyAmount.selector);
         bare.exposed_verifyInitialState();
     }

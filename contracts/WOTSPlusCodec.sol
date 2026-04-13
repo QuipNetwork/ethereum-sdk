@@ -86,6 +86,9 @@ library WOTSPlusCodec {
     bytes32 internal constant WITHDRAW_DEPOSIT_TAG = keccak256("quip.digest.withdrawDeposit");
     bytes32 internal constant TRANSFER_OWNERSHIP_TAG          = keccak256("quip.digest.transferOwnership");
     bytes32 internal constant COMPLETE_OWNERSHIP_HANDOVER_TAG = keccak256("quip.digest.completeOwnershipHandover");
+    bytes32 internal constant VERIFICATION_KEYSET_TAG         = keccak256("quip.digest.verificationKeyset");
+    bytes32 internal constant VERIFICATION_KEYSET_REPLACE_TAG = keccak256("quip.digest.verificationKeysetReplace");
+    bytes32 internal constant ERC1271_TAG                     = keccak256("quip.digest.erc1271");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                               */
@@ -346,6 +349,55 @@ library WOTSPlusCodec {
         }
     }
 
+    /// @dev Decodes the replaceVerificationKeyAt payload.
+    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) index,
+    ///              [2240:2304) newKey.
+    /// @param payload The packed replaceVerificationKeyAt payload (2304 bytes).
+    /// @return nextPqOwner The next PQ owner at offset 0.
+    /// @return pqSig The PQ signature at offset 64.
+    /// @return index The target index into the verification keyset.
+    /// @return newKey The replacement Winternitz address.
+    function decodeVerificationKeysetReplace(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            uint256 index,
+            WOTSPlus.WinternitzAddress calldata newKey
+        )
+    {
+        assembly {
+            nextPqOwner := payload.offset
+            pqSig := add(payload.offset, 64)
+            index := calldataload(add(payload.offset, 2208))
+            newKey := add(payload.offset, 2240)
+        }
+    }
+
+    /// @dev Decodes the ERC-1271 signature payload.
+    ///      Layout: [0:64) verifier, [64:2208) pqSig.
+    /// @param signature The packed ERC-1271 signature (2208 bytes).
+    /// @return verifier The Winternitz address that produced the signature.
+    /// @return pqSig The WOTS+ signature elements.
+    function decodeErc1271Signature(
+        bytes calldata signature
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            WOTSPlus.WinternitzElements calldata pqSig
+        )
+    {
+        assembly {
+            verifier := signature.offset
+            pqSig := add(signature.offset, 64)
+        }
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          ENCODERS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -456,6 +508,40 @@ library WOTSPlusCodec {
             nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
             pqSig.elements,
             bytes32(uint256(uint160(newOwner)))
+        );
+    }
+
+    /// @dev Encodes the replaceVerificationKeyAt payload.
+    /// @param nextPqOwner The next PQ owner key.
+    /// @param pqSig The PQ signature.
+    /// @param index The index of the verification key to replace.
+    /// @param newKey The replacement Winternitz address.
+    /// @return The packed payload (2304 bytes).
+    function encodeVerificationKeysetReplace(
+        WOTSPlus.WinternitzAddress memory nextPqOwner,
+        WOTSPlus.WinternitzElements memory pqSig,
+        uint256 index,
+        WOTSPlus.WinternitzAddress memory newKey
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            nextPqOwner.publicSeed, nextPqOwner.publicKeyHash,
+            pqSig.elements,
+            bytes32(index),
+            newKey.publicSeed, newKey.publicKeyHash
+        );
+    }
+
+    /// @dev Encodes the ERC-1271 signature payload.
+    /// @param verifier The Winternitz address used to sign.
+    /// @param pqSig The WOTS+ signature elements.
+    /// @return The packed signature (2208 bytes).
+    function encodeErc1271Signature(
+        WOTSPlus.WinternitzAddress memory verifier,
+        WOTSPlus.WinternitzElements memory pqSig
+    ) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            verifier.publicSeed, verifier.publicKeyHash,
+            pqSig.elements
         );
     }
 
@@ -799,6 +885,93 @@ library WOTSPlusCodec {
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
             bytes32(uint256(uint160(pendingOwner)))
+        );
+    }
+
+    /// @dev keccak256(abi.encode(VERIFICATION_KEYSET_TAG, chainId, wallet, s1, h1, s2, h2, keysHash))
+    ///      Used by addVerificationKeys and refreshVerificationKeyset. The mode is
+    ///      distinguished on-chain by the function entrypoint, not the digest.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param s1 The public seed of the current PQ owner.
+    /// @param h1 The public key hash of the current PQ owner.
+    /// @param s2 The public seed of the next PQ owner.
+    /// @param h2 The public key hash of the next PQ owner.
+    /// @param keysHash The keccak256 hash of the abi-encoded verification keys array.
+    /// @return The signing digest.
+    function verificationKeysetDigest(
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        bytes32 keysHash
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            VERIFICATION_KEYSET_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            s1, h1, s2, h2,
+            keysHash
+        );
+    }
+
+    /// @dev keccak256(abi.encode(VERIFICATION_KEYSET_REPLACE_TAG, chainId, wallet, s1, h1, s2, h2, index, newSeed, newHash))
+    ///      Used by replaceVerificationKeyAt. Binds the index and replacement key.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param s1 The public seed of the current PQ owner.
+    /// @param h1 The public key hash of the current PQ owner.
+    /// @param s2 The public seed of the next PQ owner.
+    /// @param h2 The public key hash of the next PQ owner.
+    /// @param index The target index in the verification keyset.
+    /// @param newSeed The public seed of the replacement key.
+    /// @param newHash The public key hash of the replacement key.
+    /// @return The signing digest.
+    function verificationKeysetReplaceDigest(
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        uint256 index,
+        bytes32 newSeed,
+        bytes32 newHash
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            VERIFICATION_KEYSET_REPLACE_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            s1, h1, s2, h2,
+            bytes32(index),
+            newSeed, newHash
+        );
+    }
+
+    /// @dev keccak256(abi.encode(ERC1271_TAG, chainId, wallet, verifierSeed, verifierHash, messageHash))
+    ///      Used by isValidSignature. Domain-separates ERC-1271 messages and binds
+    ///      the signed digest to the specific verifier key and wallet.
+    /// @param wallet The wallet address to bind the digest to.
+    /// @param chainId The chain ID to bind the digest to.
+    /// @param verifierSeed The public seed of the signing verifier key.
+    /// @param verifierHash The public key hash of the signing verifier key.
+    /// @param messageHash The 32-byte message hash being signed.
+    /// @return The signing digest.
+    function erc1271Digest(
+        address wallet,
+        uint256 chainId,
+        bytes32 verifierSeed,
+        bytes32 verifierHash,
+        bytes32 messageHash
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            ERC1271_TAG,
+            bytes32(chainId),
+            bytes32(uint256(uint160(wallet))),
+            verifierSeed, verifierHash,
+            messageHash
         );
     }
 }

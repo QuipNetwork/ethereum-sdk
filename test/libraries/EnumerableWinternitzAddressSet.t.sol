@@ -733,7 +733,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
         }
     }
 
-    /// @dev Stress test: 10 elements (matching MAX_RECOVERY_KEYS use case) with churn.
+    /// @dev Stress test: 10 elements (matching MAX_KEYS use case) with churn.
     function test_tenElements_addRemoveChurn() public {
         // Add 10 elements.
         for (uint256 i = 1; i <= 10; ++i) {

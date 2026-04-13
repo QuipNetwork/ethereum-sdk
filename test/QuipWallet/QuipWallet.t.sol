@@ -150,6 +150,82 @@ contract QuipWalletTest is QuipFactoryTest {
         );
     }
 
+    function _buildVerificationKeysetMessageHash(
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory nextPq,
+        WOTSPlus.WinternitzAddress[] memory newKeys
+    ) internal view returns (bytes32) {
+        return Codec.verificationKeysetDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            keccak256(abi.encode(newKeys))
+        );
+    }
+
+    function _buildVerificationKeysetReplaceMessageHash(
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory nextPq,
+        uint256 index,
+        WOTSPlus.WinternitzAddress memory newKey
+    ) internal view returns (bytes32) {
+        return Codec.verificationKeysetReplaceDigest(
+            wallet_, block.chainid,
+            currentPq.publicSeed, currentPq.publicKeyHash,
+            nextPq.publicSeed, nextPq.publicKeyHash,
+            index,
+            newKey.publicSeed, newKey.publicKeyHash
+        );
+    }
+
+    function _buildErc1271MessageHash(
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory verifier,
+        bytes32 messageHash
+    ) internal view returns (bytes32) {
+        return Codec.erc1271Digest(
+            wallet_, block.chainid,
+            verifier.publicSeed, verifier.publicKeyHash,
+            messageHash
+        );
+    }
+
+    /// @dev Seeds the default `wallet`'s verificationKeyset with `n` fresh keys by signing
+    ///      an `addVerificationKeys` call with the current pqOwner. Rotates `alicePubkey` /
+    ///      `alicePrivateKey` to a fresh pqOwner so downstream calls keep working.
+    /// @return keys The generated Winternitz public keys now in the keyset.
+    /// @return privateKeys Matching private keys for signing ERC-1271 messages.
+    function _seedVerificationKeyset(uint256 n)
+        internal
+        returns (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory privateKeys
+        )
+    {
+        keys = new WOTSPlus.WinternitzAddress[](n);
+        privateKeys = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) {
+            bytes32 seed = keccak256(abi.encodePacked("vk-seed", i));
+            (keys[i], privateKeys[i]) = _generateKeyPair(seed);
+        }
+
+        (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPqKey) =
+            _generateKeyPair(keccak256(abi.encodePacked(alicePrivateKey, "vk-seed-rotate", n)));
+
+        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+            address(wallet), alicePubkey, nextPq, keys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+
+        vm.prank(ALICE);
+        wallet.addVerificationKeys(Codec.encodeKeyManagement(nextPq, sig, keys));
+
+        alicePubkey = nextPq;
+        alicePrivateKey = nextPqKey;
+    }
+
     function _buildRecoveryUpgradeMessageHash(
         address wallet_,
         address newImplementation,

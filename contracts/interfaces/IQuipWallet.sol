@@ -54,8 +54,16 @@ interface IQuipWallet {
     error RecoveryKeyNotFound();
     /// @notice Thrown when the number of recovery keys provided is incorrect.
     error IncorrectRecoveryKeyAmount();
-    /// @notice Thrown when adding recovery keys would exceed `MAX_RECOVERY_KEYS`.
+    /// @notice Thrown when adding recovery keys would exceed `MAX_KEYS`.
     error RecoveryKeyLimitExceeded();
+    /// @notice Thrown when adding verification keys would exceed `MAX_KEYS`.
+    error VerificationKeyLimitExceeded();
+    /// @notice Thrown when a duplicate verification key is provided.
+    error DuplicateVerificationKey();
+    /// @notice Thrown when an empty verification key array is provided.
+    error EmptyVerificationKeys();
+    /// @notice Thrown when a verification key index is out of bounds.
+    error VerificationKeyIndexOutOfBounds();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
     /// @notice Thrown when upgradeToAndCall would reuse the current pqOwner key.
@@ -124,6 +132,30 @@ interface IQuipWallet {
     event RecoveryUpgrade(
         address indexed newImplementation,
         WOTSPlus.WinternitzAddress recoveryKey
+    );
+
+    /// @notice Emitted when new verification keys are added to the keyset.
+    /// @param nextPqOwner The new post-quantum owner key after rotation.
+    /// @param count The number of verification keys added.
+    event VerificationKeysAdded(
+        WOTSPlus.WinternitzAddress nextPqOwner,
+        uint256 count
+    );
+
+    /// @notice Emitted when the verification keyset is cleared and replaced.
+    /// @param nextPqOwner The new post-quantum owner key after rotation.
+    event VerificationKeysetRefreshed(WOTSPlus.WinternitzAddress nextPqOwner);
+
+    /// @notice Emitted when a verification key at a specific index is replaced.
+    /// @param index The index in the keyset that was replaced.
+    /// @param oldKey The removed key.
+    /// @param newKey The replacement key.
+    /// @param nextPqOwner The new post-quantum owner key after rotation.
+    event VerificationKeyReplaced(
+        uint256 index,
+        WOTSPlus.WinternitzAddress oldKey,
+        WOTSPlus.WinternitzAddress newKey,
+        WOTSPlus.WinternitzAddress nextPqOwner
     );
 
     /// @notice Emitted when the inner call of an ERC-4337 execution reverts but key rotation commits.
@@ -290,6 +322,39 @@ interface IQuipWallet {
     /// @notice Returns whether a key hash is a registered recovery key.
     /// @return True if the key hash is a registered recovery key.
     function isRecoveryKey(bytes32 keyHash) external view returns (bool);
+
+    /// @notice Appends new verification keys to the keyset, authorized by a WOTS+ signature.
+    /// @dev Payload layout matches `keyManagement`: [0:64) nextPqOwner, [64:2208) pqSig,
+    ///      [2208:...) keys (N x 64). Reverts if the total count would exceed `MAX_KEYS`
+    ///      or if any key is zero / already present.
+    /// @param payload Packed keyManagement data.
+    function addVerificationKeys(bytes calldata payload) external;
+
+    /// @notice Clears the verification keyset and installs a fresh batch.
+    /// @dev Payload layout matches `keyManagement`. Each new key must be non-zero and unique
+    ///      and the new batch must not exceed `MAX_KEYS`.
+    /// @param payload Packed keyManagement data.
+    function refreshVerificationKeyset(bytes calldata payload) external;
+
+    /// @notice Replaces a single verification key at the given index.
+    /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) index,
+    ///      [2240:2304) newKey.
+    /// @param payload Packed replace-verification-key data (2304 bytes).
+    function replaceVerificationKeyAt(bytes calldata payload) external;
+
+    /// @notice Returns the number of verification keys in the keyset.
+    function getVerificationKeyCount() external view returns (uint256);
+
+    /// @notice Returns the verification key at a given index.
+    /// @return The Winternitz public key stored at `index`.
+    function getVerificationKeyAt(
+        uint256 index
+    ) external view returns (WOTSPlus.WinternitzAddress memory);
+
+    /// @notice Returns whether the given Winternitz address is a registered verification key.
+    function isVerificationKey(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external view returns (bool);
 
     /// @notice Returns the implementation version of this wallet.
     /// @dev Reads the ERC-1967 implementation slot and queries the factory for
