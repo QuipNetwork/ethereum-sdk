@@ -25,6 +25,10 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 ///         operations by validating a per-wallet WOTS+ signature from a trusted backend signer.
 ///         Each sponsored wallet has its own WOTS+ verifier key chain, so key rotation
 ///         serializes per-wallet rather than globally.
+///
+///         The paymaster's WOTS+ digest is built from constituent UserOp fields (sender, nonce,
+///         callData) rather than the EntryPoint's userOpHash. This avoids a circular dependency:
+///         userOpHash includes paymasterAndData, which contains the paymaster's own signature.
 interface IQuipPaymaster is IPaymaster {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           ERRORS                              */

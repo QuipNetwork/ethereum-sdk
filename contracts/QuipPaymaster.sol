@@ -93,7 +93,7 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
         // [76:2220) WOTS+ signature (67 × 32 = 2144 bytes)
         bytes calldata paymasterData = userOp.paymasterAndData[_PAYMASTER_DATA_OFFSET:];
 
-        if (!_verifyAndRotate(userOp.sender, userOpHash, paymasterData))
+        if (!_verifyAndRotate(userOp.sender, userOp.nonce, userOp.callData, paymasterData))
             return ("", 1);
 
         // Pack validationData: [0:160) authorizer=0, [160:208) validUntil, [208:256) validAfter.
@@ -171,13 +171,17 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
     ///      the execution phase succeeds or fails. This is critical because WOTS+ is a
     ///      one-time signature scheme — the signing key is effectively compromised once
     ///      the signature is revealed on-chain.
+    ///
+    ///      The digest is built from constituent UserOp fields (sender, nonce, callData).
     /// @param sender The wallet address (userOp.sender).
-    /// @param userOpHash The EntryPoint-computed UserOp hash.
+    /// @param nonce The UserOp nonce.
+    /// @param callData_ The UserOp callData.
     /// @param paymasterData The paymaster data slice starting after the 52-byte header.
     /// @return valid True if the signature is valid and key rotation succeeded.
     function _verifyAndRotate(
         address sender,
-        bytes32 userOpHash,
+        uint256 nonce,
+        bytes calldata callData_,
         bytes calldata paymasterData
     ) internal returns (bool valid) {
         WOTSPlus.WinternitzAddress calldata nextVerifier;
@@ -203,7 +207,14 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
             nextVerifier.publicKeyHash == currentVerifier.publicKeyHash
         ) return false;
 
-        // Build domain-tagged digest and verify WOTS+ signature.
+        // Build domain-tagged digest from constituent UserOp fields.
+        // Using an intermediate opCommitment avoids exceeding EfficientHashLib's 8-arg limit.
+        bytes32 opCommitment = EfficientHashLib.hash(
+            bytes32(uint256(uint160(sender))),
+            bytes32(nonce),
+            EfficientHashLib.hashCalldata(callData_)
+        );
+
         bytes32 digest = EfficientHashLib.hash(
             _PAYMASTER_APPROVE_TAG,
             bytes32(block.chainid),
@@ -212,7 +223,7 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
             currentVerifier.publicKeyHash,
             nextVerifier.publicSeed,
             nextVerifier.publicKeyHash,
-            userOpHash
+            opCommitment
         );
 
         if (!WOTSPlus.verify(currentVerifier, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))

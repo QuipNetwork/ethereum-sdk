@@ -15,9 +15,10 @@ contract QuipPaymasterHarness is QuipPaymaster {
 
     function exposed_verifyAndRotate(
         address sender,
-        bytes32 userOpHash,
+        uint256 nonce,
+        bytes calldata callData_,
         bytes calldata paymasterData
     ) external returns (bool) {
-        return _verifyAndRotate(sender, userOpHash, paymasterData);
+        return _verifyAndRotate(sender, nonce, callData_, paymasterData);
     }
 }

@@ -109,8 +109,11 @@ contract QuipPaymasterTest is Test {
 
     /// @dev Build paymasterAndData with a valid WOTS+ signature for the given wallet.
     ///      Uses the current verifier key and rotates to nextPubkey.
+    ///      Digest is built from UserOp fields (not userOpHash) to avoid circular dependency.
     function _buildPaymasterAndData(
-        bytes32 userOpHash,
+        address sender_,
+        uint256 nonce_,
+        bytes memory callData_,
         uint48 validUntil,
         uint48 validAfter,
         WOTSPlus.WinternitzAddress memory currentPubkey,
@@ -118,6 +121,12 @@ contract QuipPaymasterTest is Test {
         WOTSPlus.WinternitzAddress memory nextPubkey
     ) internal view returns (bytes memory) {
         // Build domain-tagged digest matching the paymaster's validation logic.
+        bytes32 opCommitment = EfficientHashLib.hash(
+            bytes32(uint256(uint160(sender_))),
+            bytes32(nonce_),
+            EfficientHashLib.hash(callData_)
+        );
+
         bytes32 digest = EfficientHashLib.hash(
             _PAYMASTER_APPROVE_TAG,
             bytes32(block.chainid),
@@ -126,7 +135,7 @@ contract QuipPaymasterTest is Test {
             currentPubkey.publicKeyHash,
             nextPubkey.publicSeed,
             nextPubkey.publicKeyHash,
-            userOpHash
+            opCommitment
         );
 
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivateKey, digest);
