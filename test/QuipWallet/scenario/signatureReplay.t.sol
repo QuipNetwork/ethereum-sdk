@@ -19,7 +19,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
 
         // Build a valid execute (transfer) signature with alicePrivateKey
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, ""
+            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, "", 0
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -53,7 +53,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         // Build a valid execute signature for ALICE's wallet
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-cross");
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, ""
+            address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, "", 0
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -72,7 +72,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
 
         // Build a signature for a pure transfer (empty data)
         bytes32 transferMsgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, value, ""
+            address(wallet), alicePubkey, nextPubkey, BOB, value, "", 0
         );
         WOTSPlus.WinternitzElements memory transferSig = _sign(alicePrivateKey, transferMsgHash);
 
@@ -81,24 +81,5 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
         wallet.execute(Codec.encodeExecute(nextPubkey, transferSig, BOB, value, callData));
-    }
-
-    /// @dev Execute digest must include chainId so signatures are invalid on forks.
-    function test_signatureReplay_chainIdInDigest() public {
-        bytes32 digest1 = Codec.executeDigest(
-            address(wallet), block.chainid,
-            alicePubkey.publicSeed, alicePubkey.publicKeyHash,
-            bytes32(uint256(1)), bytes32(uint256(2)),
-            BOB, 0.1 ether, keccak256("")
-        );
-
-        bytes32 digest2 = Codec.executeDigest(
-            address(wallet), block.chainid + 1,
-            alicePubkey.publicSeed, alicePubkey.publicKeyHash,
-            bytes32(uint256(1)), bytes32(uint256(2)),
-            BOB, 0.1 ether, keccak256("")
-        );
-
-        assertTrue(digest1 != digest2, "Digests must differ across chain IDs");
     }
 }

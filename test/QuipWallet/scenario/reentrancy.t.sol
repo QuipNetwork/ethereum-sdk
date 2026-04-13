@@ -64,7 +64,7 @@ contract QuipWallet_reentrancy is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("reentrant-exec");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, address(attacker), 0, callData
+            address(wallet), alicePubkey, nextPubkey, address(attacker), 0, callData, 0
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -72,7 +72,7 @@ contract QuipWallet_reentrancy is QuipWalletTest {
         wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(attacker), 0, callData));
 
         // The reentrancy was attempted but failed (Unauthorized)
-        assertTrue(attacker.attacked(), "Reentrancy callback was triggered");
+        assertTrue(attacker.attacked(), "Reentrancy callback was not triggered");
 
         // Wallet state is consistent — pqOwner was rotated
         (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
@@ -89,7 +89,7 @@ contract QuipWallet_reentrancy is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("reentrant-transfer");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, address(attacker), transferAmount, ""
+            address(wallet), alicePubkey, nextPubkey, address(attacker), transferAmount, "", 0
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
@@ -97,7 +97,7 @@ contract QuipWallet_reentrancy is QuipWalletTest {
         wallet.execute(Codec.encodeExecute(nextPubkey, sig, address(attacker), transferAmount, ""));
 
         // The reentrancy was attempted but failed
-        assertTrue(attacker.attacked(), "Reentrancy callback was triggered");
+        assertTrue(attacker.attacked(), "Reentrancy callback was not triggered");
 
         // Wallet pqOwner rotated correctly
         (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
