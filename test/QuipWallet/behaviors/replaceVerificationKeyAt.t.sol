@@ -16,20 +16,20 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         string memory nextTag
     ) internal returns (WOTSPlus.WinternitzAddress memory nextPq) {
         (nextPq,) = _generateKeyPair(keccak256(abi.encodePacked(nextTag)));
-        bytes32 msgHash = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 msgHash = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, index, newKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
         vm.prank(ALICE);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, index, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, index, newKey)
         );
     }
 
     // ── Happy paths ──────────────────────────────────────────────────
 
     function test_replaceVerificationKeyAt_replacesAtIndex0() public {
-        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeyset(3);
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(3);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-0");
 
         _replace(0, newKey, "replace-0-next");
@@ -48,7 +48,7 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
     }
 
     function test_replaceVerificationKeyAt_replacesAtMiddle() public {
-        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeyset(3);
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(3);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-1");
 
         _replace(1, newKey, "replace-1-next");
@@ -60,7 +60,7 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
     }
 
     function test_replaceVerificationKeyAt_replacesAtLast() public {
-        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeyset(3);
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(3);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-2");
 
         _replace(2, newKey, "replace-2-next");
@@ -73,7 +73,7 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
 
     function test_replaceVerificationKeyAt_replacesInEagerPhase() public {
         // Seed 5 → lazy phase transitions to eager at 4th add.
-        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeyset(5);
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(5);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-eager");
 
         _replace(3, newKey, "replace-eager-next");
@@ -86,7 +86,7 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
     }
 
     function test_replaceVerificationKeyAt_rotatesPqOwner() public {
-        _seedVerificationKeyset(2);
+        _seedVerificationKeys(2);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-rot");
         WOTSPlus.WinternitzAddress memory nextPq = _replace(0, newKey, "replace-rot-next");
 
@@ -96,11 +96,11 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
     }
 
     function test_replaceVerificationKeyAt_emitsEvent() public {
-        _seedVerificationKeyset(2);
+        _seedVerificationKeys(2);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-ev");
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("replace-ev-next");
 
-        bytes32 msgHash = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 msgHash = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, 0, newKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -108,7 +108,7 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.recordLogs();
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 0, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 0, newKey)
         );
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -125,10 +125,10 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
     // ── Reverts ──────────────────────────────────────────────────────
 
     function test_replaceVerificationKeyAt_revertsWhen_callerNotOwner() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-auth");
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("replace-auth-next");
-        bytes32 msgHash = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 msgHash = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, 0, newKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -136,15 +136,15 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 0, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 0, newKey)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_indexOutOfBounds() public {
-        _seedVerificationKeyset(2);
+        _seedVerificationKeys(2);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-oob");
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("replace-oob-next");
-        bytes32 msgHash = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 msgHash = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, 5, newKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -152,14 +152,14 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.VerificationKeyIndexOutOfBounds.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 5, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 5, newKey)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_setEmpty() public {
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-empty");
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("replace-empty-next");
-        bytes32 msgHash = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 msgHash = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, 0, newKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -167,12 +167,12 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.VerificationKeyIndexOutOfBounds.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 0, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 0, newKey)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_invalidSignature() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-bad");
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("replace-bad-next");
         (, bytes32 wrong) = _generateKeyPair("replace-wrong");
@@ -181,12 +181,12 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, badSig, 0, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, badSig, 0, newKey)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_nextPqOwnerSeedIsZero() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-zns");
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(0),
@@ -197,12 +197,12 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(zeroPq, sig, 0, newKey)
+            Codec.encodeVerificationKeysReplace(zeroPq, sig, 0, newKey)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_nextPqOwnerHashIsZero() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-znh");
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32("x"),
@@ -213,24 +213,24 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(zeroPq, sig, 0, newKey)
+            Codec.encodeVerificationKeysReplace(zeroPq, sig, 0, newKey)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_pqOwnerReuse() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-reuse");
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, keccak256("d"));
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(alicePubkey, sig, 0, newKey)
+            Codec.encodeVerificationKeysReplace(alicePubkey, sig, 0, newKey)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_newKeySeedIsZero() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         WOTSPlus.WinternitzAddress memory bad = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(0),
             publicKeyHash: bytes32("x")
@@ -241,12 +241,12 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 0, bad)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 0, bad)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_newKeyHashIsZero() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         WOTSPlus.WinternitzAddress memory bad = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32("x"),
             publicKeyHash: bytes32(0)
@@ -257,17 +257,17 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 0, bad)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 0, bad)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_newKeyAlreadyInSet() public {
-        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeyset(2);
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(2);
 
         // Replace index 0 with the key already at index 1.
         WOTSPlus.WinternitzAddress memory dup = seeded[1];
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("replace-dup-next");
-        bytes32 msgHash = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 msgHash = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, 0, dup
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -275,17 +275,17 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.DuplicateVerificationKey.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 0, dup)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 0, dup)
         );
     }
 
     function test_replaceVerificationKeyAt_revertsWhen_digestIndexMismatch() public {
-        _seedVerificationKeyset(2);
+        _seedVerificationKeys(2);
         (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("replace-mismatch");
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("replace-mismatch-next");
 
         // Sign for index 0, submit for index 1.
-        bytes32 msgHash = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 msgHash = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, 0, newKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -293,7 +293,7 @@ contract QuipWallet_replaceVerificationKeyAt is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 1, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 1, newKey)
         );
     }
 }

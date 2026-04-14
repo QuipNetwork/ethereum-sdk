@@ -33,14 +33,12 @@ contract QuipWallet_replenishRecoveryKeys is QuipWalletTest {
 
         // Old keys are gone
         for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
-            bytes32 keyHash = keccak256(abi.encode(recoveryPubkeys[i].publicSeed, recoveryPubkeys[i].publicKeyHash));
-            assertFalse(wallet.isRecoveryKey(keyHash));
+            assertFalse(wallet.isRecoveryKey(recoveryPubkeys[i]));
         }
 
         // New keys are present
         for (uint256 i = 0; i < newKeys.length; i++) {
-            bytes32 keyHash = keccak256(abi.encode(newKeys[i].publicSeed, newKeys[i].publicKeyHash));
-            assertTrue(wallet.isRecoveryKey(keyHash));
+            assertTrue(wallet.isRecoveryKey(newKeys[i]));
         }
 
         // pqOwner rotated

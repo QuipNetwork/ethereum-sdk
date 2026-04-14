@@ -5,7 +5,6 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
-import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 
 /// @title Recovery Upgrade Flow Scenario Test
 /// @dev Emergency upgrade via recovery key when PQ key is compromised.
@@ -72,8 +71,7 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
 
         // 2c: Recovery key 0 consumed
         assertEq(wallet.getRecoveryKeyCount(), 9);
-        bytes32 keyHash = EfficientHashLib.hash(rKey.publicSeed, rKey.publicKeyHash);
-        assertFalse(wallet.isRecoveryKey(keyHash));
+        assertFalse(wallet.isRecoveryKey(rKey));
 
         // 2d: Balance and owner preserved
         assertEq(address(wallet).balance, balBefore);

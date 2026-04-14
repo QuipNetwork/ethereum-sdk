@@ -241,8 +241,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
 
         // Old recovery keys should be gone
         for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
-            bytes32 keyHash = keccak256(abi.encode(recoveryPubkeys[i].publicSeed, recoveryPubkeys[i].publicKeyHash));
-            assertFalse(wallet.isRecoveryKey(keyHash));
+            assertFalse(wallet.isRecoveryKey(recoveryPubkeys[i]));
         }
     }
 

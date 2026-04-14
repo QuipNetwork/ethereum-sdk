@@ -4,7 +4,6 @@ pragma solidity ^0.8.33;
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
@@ -33,8 +32,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
 
         // Recovery key consumed
         assertEq(wallet.getRecoveryKeyCount(), countBefore - 1);
-        bytes32 keyHash = EfficientHashLib.hash(rKey.publicSeed, rKey.publicKeyHash);
-        assertFalse(wallet.isRecoveryKey(keyHash));
+        assertFalse(wallet.isRecoveryKey(rKey));
     }
 
     function test_recoverWallet_emitsPqRecovery() public {

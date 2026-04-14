@@ -2,33 +2,29 @@
 pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
-import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract QuipWallet_isRecoveryKey is QuipWalletTest {
-    function test_isRecoveryKey_returnsTrueForRegisteredKeyHash() public view {
-        bytes32 keyHash = EfficientHashLib.hash(
-            recoveryPubkeys[0].publicSeed,
-            recoveryPubkeys[0].publicKeyHash
-        );
-        assertTrue(wallet.isRecoveryKey(keyHash));
+    function test_isRecoveryKey_returnsTrueForRegisteredKey() public view {
+        assertTrue(wallet.isRecoveryKey(recoveryPubkeys[0]));
     }
 
     function test_isRecoveryKey_returnsTrueForAllRegisteredKeys() public view {
         for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
-            bytes32 keyHash = EfficientHashLib.hash(
-                recoveryPubkeys[i].publicSeed,
-                recoveryPubkeys[i].publicKeyHash
-            );
-            assertTrue(wallet.isRecoveryKey(keyHash));
+            assertTrue(wallet.isRecoveryKey(recoveryPubkeys[i]));
         }
     }
 
-    function test_isRecoveryKey_returnsFalseForUnregisteredKeyHash() public view {
-        bytes32 fakeHash = keccak256("not-a-recovery-key");
-        assertFalse(wallet.isRecoveryKey(fakeHash));
+    function test_isRecoveryKey_returnsFalseForUnregisteredKey() public {
+        (WOTSPlus.WinternitzAddress memory other,) = _generateKeyPair("not-a-recovery-key");
+        assertFalse(wallet.isRecoveryKey(other));
     }
 
-    function test_isRecoveryKey_returnsFalseForZeroHash() public view {
-        assertFalse(wallet.isRecoveryKey(bytes32(0)));
+    function test_isRecoveryKey_returnsFalseForZeroKey() public view {
+        WOTSPlus.WinternitzAddress memory zero = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(0),
+            publicKeyHash: bytes32(0)
+        });
+        assertFalse(wallet.isRecoveryKey(zero));
     }
 }

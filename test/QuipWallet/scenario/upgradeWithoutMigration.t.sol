@@ -5,7 +5,6 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
-import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 
 /// @title Upgrade without Migration Scenario Test
 /// @dev Full upgrade-without-migration flow: deploy → use → upgrade with
@@ -121,10 +120,7 @@ contract QuipWallet_upgradeWithoutMigration is QuipWalletTest {
         // 3c: Recovery keys unchanged (still the original set)
         assertEq(wallet.getRecoveryKeyCount(), 10);
         for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
-            bytes32 keyHash = EfficientHashLib.hash(
-                recoveryPubkeys[i].publicSeed, recoveryPubkeys[i].publicKeyHash
-            );
-            assertTrue(wallet.isRecoveryKey(keyHash));
+            assertTrue(wallet.isRecoveryKey(recoveryPubkeys[i]));
         }
 
         // 3d: Balance and owner preserved

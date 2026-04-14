@@ -5,7 +5,7 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
-contract QuipWallet_scenario_verificationKeysetLifecycle is QuipWalletTest {
+contract QuipWallet_scenario_verificationKeysLifecycle is QuipWalletTest {
     bytes4 internal constant MAGIC = 0x1626ba7e;
     bytes4 internal constant FAIL = 0xffffffff;
 
@@ -25,7 +25,7 @@ contract QuipWallet_scenario_verificationKeysetLifecycle is QuipWalletTest {
 
     function _step2_seedThreeKeys() internal {
         (WOTSPlus.WinternitzAddress[] memory k, bytes32[] memory p) =
-            _seedVerificationKeyset(3);
+            _seedVerificationKeys(3);
         for (uint256 i = 0; i < k.length; i++) {
             seededKeys.push(k[i]);
             seededPriv.push(p[i]);
@@ -57,14 +57,14 @@ contract QuipWallet_scenario_verificationKeysetLifecycle is QuipWalletTest {
 
         (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextKey) =
             _generateKeyPair("lifecycle-next-2");
-        bytes32 digest = _buildVerificationKeysetReplaceMessageHash(
+        bytes32 digest = _buildVerificationKeysReplaceMessageHash(
             address(wallet), alicePubkey, nextPq, 1, newKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
 
         vm.prank(ALICE);
         wallet.replaceVerificationKeyAt(
-            Codec.encodeVerificationKeysetReplace(nextPq, sig, 1, newKey)
+            Codec.encodeVerificationKeysReplace(nextPq, sig, 1, newKey)
         );
         alicePubkey = nextPq;
         alicePrivateKey = nextKey;
@@ -83,13 +83,13 @@ contract QuipWallet_scenario_verificationKeysetLifecycle is QuipWalletTest {
 
         (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextKey) =
             _generateKeyPair("lifecycle-next-3");
-        bytes32 digest = _buildVerificationKeysetMessageHash(
+        bytes32 digest = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, freshKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
 
         vm.prank(ALICE);
-        wallet.refreshVerificationKeyset(Codec.encodeKeyManagement(nextPq, sig, freshKeys));
+        wallet.refreshVerificationKeys(Codec.encodeKeyManagement(nextPq, sig, freshKeys));
         alicePubkey = nextPq;
         alicePrivateKey = nextKey;
 
@@ -112,7 +112,7 @@ contract QuipWallet_scenario_verificationKeysetLifecycle is QuipWalletTest {
         assertTrue(s != initialPqSeed || h != initialPqHash, "final pqOwner equals initial");
     }
 
-    function test_simulation_verificationKeysetLifecycle() public {
+    function test_simulation_verificationKeysLifecycle() public {
         _step1_assertEmptyRejectsAll();
         _step2_seedThreeKeys();
         _step3_signWithEachKey();

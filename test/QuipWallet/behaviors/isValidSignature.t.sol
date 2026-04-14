@@ -14,7 +14,7 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
         (
             WOTSPlus.WinternitzAddress[] memory keys,
             bytes32[] memory priv
-        ) = _seedVerificationKeyset(3);
+        ) = _seedVerificationKeys(3);
 
         bytes32 msgHash = keccak256("erc1271-valid");
         bytes32 digest = _buildErc1271MessageHash(address(wallet), keys[1], msgHash);
@@ -28,7 +28,7 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
         (
             WOTSPlus.WinternitzAddress[] memory keys,
             bytes32[] memory priv
-        ) = _seedVerificationKeyset(3);
+        ) = _seedVerificationKeys(3);
 
         uint256 before = wallet.getVerificationKeyCount();
         bytes32 msgHash = keccak256("erc1271-nomutate");
@@ -43,7 +43,7 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
     }
 
     function test_isValidSignature_returnsFailureOnVerifierNotInSet() public {
-        _seedVerificationKeyset(2);
+        _seedVerificationKeys(2);
         (WOTSPlus.WinternitzAddress memory outsider, bytes32 outsiderKey) =
             _generateKeyPair("erc1271-outsider");
 
@@ -60,7 +60,7 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
     function test_isValidSignature_returnsFailureOnBadSignature() public {
         (
             WOTSPlus.WinternitzAddress[] memory keys,
-        ) = _seedVerificationKeyset(2);
+        ) = _seedVerificationKeys(2);
 
         // Sign with a different private key to produce a structurally valid but invalid sig
         (, bytes32 wrongKey) = _generateKeyPair("erc1271-wrong-key");
@@ -77,7 +77,7 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
         (
             WOTSPlus.WinternitzAddress[] memory keys,
             bytes32[] memory priv
-        ) = _seedVerificationKeyset(2);
+        ) = _seedVerificationKeys(2);
 
         bytes32 digest = _buildErc1271MessageHash(
             address(wallet), keys[0], keccak256("hash-A")
@@ -97,7 +97,7 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
         (
             WOTSPlus.WinternitzAddress[] memory keys,
             bytes32[] memory priv
-        ) = _seedVerificationKeyset(2);
+        ) = _seedVerificationKeys(2);
 
         // Sign a digest bound to a different wallet address.
         bytes32 digest = _buildErc1271MessageHash(
@@ -115,7 +115,7 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
     }
 
     function test_isValidSignature_returnsFailureOnWrongLength() public {
-        _seedVerificationKeyset(1);
+        _seedVerificationKeys(1);
         bytes32 msgHash = keccak256("erc1271-len");
 
         assertEq(wallet.isValidSignature(msgHash, bytes("")), FAIL);
