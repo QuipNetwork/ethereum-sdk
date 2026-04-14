@@ -150,13 +150,13 @@ contract QuipWalletTest is QuipFactoryTest {
         );
     }
 
-    function _buildVerificationKeysetMessageHash(
+    function _buildVerificationKeysMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
         WOTSPlus.WinternitzAddress[] memory newKeys
     ) internal view returns (bytes32) {
-        return Codec.verificationKeysetDigest(
+        return Codec.verificationKeysDigest(
             wallet_, block.chainid,
             currentPq.publicSeed, currentPq.publicKeyHash,
             nextPq.publicSeed, nextPq.publicKeyHash,
@@ -164,14 +164,14 @@ contract QuipWalletTest is QuipFactoryTest {
         );
     }
 
-    function _buildVerificationKeysetReplaceMessageHash(
+    function _buildVerificationKeysReplaceMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
         uint256 index,
         WOTSPlus.WinternitzAddress memory newKey
     ) internal view returns (bytes32) {
-        return Codec.verificationKeysetReplaceDigest(
+        return Codec.verificationKeysReplaceDigest(
             wallet_, block.chainid,
             currentPq.publicSeed, currentPq.publicKeyHash,
             nextPq.publicSeed, nextPq.publicKeyHash,
@@ -192,12 +192,12 @@ contract QuipWalletTest is QuipFactoryTest {
         );
     }
 
-    /// @dev Seeds the default `wallet`'s verificationKeyset with `n` fresh keys by signing
+    /// @dev Seeds the default `wallet`'s verificationKeys with `n` fresh keys by signing
     ///      an `addVerificationKeys` call with the current pqOwner. Rotates `alicePubkey` /
     ///      `alicePrivateKey` to a fresh pqOwner so downstream calls keep working.
-    /// @return keys The generated Winternitz public keys now in the keyset.
+    /// @return keys The generated Winternitz public keys now in the keys set.
     /// @return privateKeys Matching private keys for signing ERC-1271 messages.
-    function _seedVerificationKeyset(uint256 n)
+    function _seedVerificationKeys(uint256 n)
         internal
         returns (
             WOTSPlus.WinternitzAddress[] memory keys,
@@ -214,7 +214,7 @@ contract QuipWalletTest is QuipFactoryTest {
         (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPqKey) =
             _generateKeyPair(keccak256(abi.encodePacked(alicePrivateKey, "vk-seed-rotate", n)));
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, keys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);

@@ -46,6 +46,10 @@ contract IntegrationBase is Test {
         vm.createSelectFork(rpcUrl);
         vm.deal(ADMIN, 100 ether);
         vm.deal(ALICE, 100 ether);
+        // Clear any code at deterministic addresses that may collide with
+        // deployed contracts on the fork, so they behave as plain EOAs.
+        vm.etch(BOB, "");
+        vm.etch(BENEFICIARY, "");
     }
 
     // ── WOTS+ helpers ───────────────────────────────────────────────

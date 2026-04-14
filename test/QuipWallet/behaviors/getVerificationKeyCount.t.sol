@@ -11,7 +11,7 @@ contract QuipWallet_getVerificationKeyCount is QuipWalletTest {
     }
 
     function test_getVerificationKeyCount_tracksAddsAndRefreshes() public {
-        _seedVerificationKeyset(3);
+        _seedVerificationKeys(3);
         assertEq(wallet.getVerificationKeyCount(), 3);
 
         // Refresh with 5 fresh keys.
@@ -20,12 +20,12 @@ contract QuipWallet_getVerificationKeyCount is QuipWalletTest {
             (fresh[i],) = _generateKeyPair(keccak256(abi.encodePacked("count-refresh", i)));
         }
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("count-refresh-next");
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, fresh
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
         vm.prank(ALICE);
-        wallet.refreshVerificationKeyset(Codec.encodeKeyManagement(nextPq, sig, fresh));
+        wallet.refreshVerificationKeys(Codec.encodeKeyManagement(nextPq, sig, fresh));
 
         assertEq(wallet.getVerificationKeyCount(), 5);
     }

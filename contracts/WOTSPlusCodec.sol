@@ -86,8 +86,8 @@ library WOTSPlusCodec {
     bytes32 internal constant WITHDRAW_DEPOSIT_TAG = keccak256("quip.digest.withdrawDeposit");
     bytes32 internal constant TRANSFER_OWNERSHIP_TAG          = keccak256("quip.digest.transferOwnership");
     bytes32 internal constant COMPLETE_OWNERSHIP_HANDOVER_TAG = keccak256("quip.digest.completeOwnershipHandover");
-    bytes32 internal constant VERIFICATION_KEYSET_TAG         = keccak256("quip.digest.verificationKeyset");
-    bytes32 internal constant VERIFICATION_KEYSET_REPLACE_TAG = keccak256("quip.digest.verificationKeysetReplace");
+    bytes32 internal constant VERIFICATION_KEYS_TAG         = keccak256("quip.digest.verificationKeys");
+    bytes32 internal constant VERIFICATION_KEYS_REPLACE_TAG = keccak256("quip.digest.verificationKeysReplace");
     bytes32 internal constant ERC1271_TAG                     = keccak256("quip.digest.erc1271");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -355,9 +355,9 @@ library WOTSPlusCodec {
     /// @param payload The packed replaceVerificationKeyAt payload (2304 bytes).
     /// @return nextPqOwner The next PQ owner at offset 0.
     /// @return pqSig The PQ signature at offset 64.
-    /// @return index The target index into the verification keyset.
+    /// @return index The target index into the verification keys.
     /// @return newKey The replacement Winternitz address.
-    function decodeVerificationKeysetReplace(
+    function decodeVerificationKeysReplace(
         bytes calldata payload
     )
         internal
@@ -517,7 +517,7 @@ library WOTSPlusCodec {
     /// @param index The index of the verification key to replace.
     /// @param newKey The replacement Winternitz address.
     /// @return The packed payload (2304 bytes).
-    function encodeVerificationKeysetReplace(
+    function encodeVerificationKeysReplace(
         WOTSPlus.WinternitzAddress memory nextPqOwner,
         WOTSPlus.WinternitzElements memory pqSig,
         uint256 index,
@@ -888,8 +888,8 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(VERIFICATION_KEYSET_TAG, chainId, wallet, s1, h1, s2, h2, keysHash))
-    ///      Used by addVerificationKeys and refreshVerificationKeyset. The mode is
+    /// @dev keccak256(abi.encode(VERIFICATION_KEYS_TAG, chainId, wallet, s1, h1, s2, h2, keysHash))
+    ///      Used by addVerificationKeys and refreshVerificationKeys. The mode is
     ///      distinguished on-chain by the function entrypoint, not the digest.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
@@ -899,7 +899,7 @@ library WOTSPlusCodec {
     /// @param h2 The public key hash of the next PQ owner.
     /// @param keysHash The keccak256 hash of the abi-encoded verification keys array.
     /// @return The signing digest.
-    function verificationKeysetDigest(
+    function verificationKeysDigest(
         address wallet,
         uint256 chainId,
         bytes32 s1,
@@ -909,7 +909,7 @@ library WOTSPlusCodec {
         bytes32 keysHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            VERIFICATION_KEYSET_TAG,
+            VERIFICATION_KEYS_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,
@@ -917,7 +917,7 @@ library WOTSPlusCodec {
         );
     }
 
-    /// @dev keccak256(abi.encode(VERIFICATION_KEYSET_REPLACE_TAG, chainId, wallet, s1, h1, s2, h2, index, newSeed, newHash))
+    /// @dev keccak256(abi.encode(VERIFICATION_KEYS_REPLACE_TAG, chainId, wallet, s1, h1, s2, h2, index, newSeed, newHash))
     ///      Used by replaceVerificationKeyAt. Binds the index and replacement key.
     /// @param wallet The wallet address to bind the digest to.
     /// @param chainId The chain ID to bind the digest to.
@@ -925,11 +925,11 @@ library WOTSPlusCodec {
     /// @param h1 The public key hash of the current PQ owner.
     /// @param s2 The public seed of the next PQ owner.
     /// @param h2 The public key hash of the next PQ owner.
-    /// @param index The target index in the verification keyset.
+    /// @param index The target index in the verification keys.
     /// @param newSeed The public seed of the replacement key.
     /// @param newHash The public key hash of the replacement key.
     /// @return The signing digest.
-    function verificationKeysetReplaceDigest(
+    function verificationKeysReplaceDigest(
         address wallet,
         uint256 chainId,
         bytes32 s1,
@@ -941,7 +941,7 @@ library WOTSPlusCodec {
         bytes32 newHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(
-            VERIFICATION_KEYSET_REPLACE_TAG,
+            VERIFICATION_KEYS_REPLACE_TAG,
             bytes32(chainId),
             bytes32(uint256(uint160(wallet))),
             s1, h1, s2, h2,

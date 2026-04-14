@@ -5,7 +5,8 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from
+    "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
 
 /// @dev Tests for dynamic _addRecoveryKeys(WinternitzAddress[] calldata)
 contract QuipWallet__addRecoveryKeys is QuipWalletTest {
@@ -55,8 +56,7 @@ contract QuipWallet__addRecoveryKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory keys = _makeKeys(0xa000, 1);
         bare.exposed_addRecoveryKeys(keys);
         assertEq(bare.getRecoveryKeyCount(), 1);
-        bytes32 expectedHash = EfficientHashLib.hash(keys[0].publicSeed, keys[0].publicKeyHash);
-        assertTrue(bare.isRecoveryKey(expectedHash));
+        assertTrue(bare.isRecoveryKey(keys[0]));
     }
 
     function test_exposed_addRecoveryKeys_addsMultipleKeys() public {
@@ -64,8 +64,7 @@ contract QuipWallet__addRecoveryKeys is QuipWalletTest {
         bare.exposed_addRecoveryKeys(keys);
         assertEq(bare.getRecoveryKeyCount(), 3);
         for (uint256 i = 0; i < 3; i++) {
-            bytes32 expectedHash = EfficientHashLib.hash(keys[i].publicSeed, keys[i].publicKeyHash);
-            assertTrue(bare.isRecoveryKey(expectedHash));
+            assertTrue(bare.isRecoveryKey(keys[i]));
         }
     }
 
@@ -112,7 +111,7 @@ contract QuipWallet__addRecoveryKeys is QuipWalletTest {
     // Note: proxy already has 10 keys from init, so adding more exceeds MAX
     function test_exposed_addRecoveryKeys_revertsWhen_exceedsMax() public {
         WOTSPlus.WinternitzAddress[] memory keys = _makeKeys(0xff00, 1);
-        vm.expectRevert(); // Solady EnumerableSetLib overflow
+        vm.expectRevert(Keyset.ExceedsCapacity.selector);
         harnessProxy.exposed_addRecoveryKeys(keys);
     }
 }

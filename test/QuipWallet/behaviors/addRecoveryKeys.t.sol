@@ -72,8 +72,7 @@ contract QuipWallet_addRecoveryKeys is QuipWalletTest {
 
         assertEq(w.getRecoveryKeyCount(), 10);
 
-        bytes32 keyHash = keccak256(abi.encode(newKeys[0].publicSeed, newKeys[0].publicKeyHash));
-        assertTrue(w.isRecoveryKey(keyHash));
+        assertTrue(w.isRecoveryKey(newKeys[0]));
 
         (bytes32 publicSeed, bytes32 publicKeyHash) = w.pqOwner();
         assertEq(publicSeed, nextPq.publicSeed);

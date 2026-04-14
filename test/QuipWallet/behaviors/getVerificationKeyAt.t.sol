@@ -8,7 +8,7 @@ import {EnumerableWinternitzAddressSet as Keyset} from
 
 contract QuipWallet_getVerificationKeyAt is QuipWalletTest {
     function test_getVerificationKeyAt_returnsCorrectPair() public {
-        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeyset(3);
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(3);
 
         for (uint256 i = 0; i < 3; i++) {
             WOTSPlus.WinternitzAddress memory key = wallet.getVerificationKeyAt(i);
@@ -29,7 +29,7 @@ contract QuipWallet_getVerificationKeyAt is QuipWalletTest {
     }
 
     function test_getVerificationKeyAt_revertsWhen_outOfBounds() public {
-        _seedVerificationKeyset(2);
+        _seedVerificationKeys(2);
         vm.expectRevert(Keyset.IndexOutOfBounds.selector);
         wallet.getVerificationKeyAt(2);
     }

@@ -218,17 +218,13 @@ contract Integration_sponsoredTransaction is IntegrationBase {
     /// @dev Sponsored transaction with zero wallet deposit — proves wallet
     ///      literally cannot self-pay; sponsorship is the only path.
     function test_integration_sponsoredTransaction_walletHasNoDeposit() public {
-        // Withdraw any existing wallet deposit so it's provably zero
+        // Drain the wallet's EntryPoint deposit so it's provably zero.
+        // Use the EntryPoint's withdrawTo directly via prank — this is test
+        // setup, not the behavior under test.
         uint256 existingDeposit = IEntryPointStake(ENTRY_POINT).balanceOf(address(wallet));
         if (existingDeposit > 0) {
-            vm.prank(ALICE);
-            wallet.execute(
-                Codec.encodeExecute(
-                    alicePubkey, // dummy — we'll re-deploy fresh state
-                    _sign(alicePrivateKey, bytes32(0)),
-                    address(0), 0, ""
-                )
-            );
+            vm.prank(address(wallet));
+            IEntryPointStake(ENTRY_POINT).withdrawTo(payable(ALICE), existingDeposit);
         }
 
         // Confirm wallet has zero deposit

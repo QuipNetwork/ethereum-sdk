@@ -17,7 +17,6 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../libraries/EnumerableWinternitzAddressSet.sol";
 
 library WOTSPlusStorage {
@@ -26,10 +25,13 @@ library WOTSPlusStorage {
         /// @dev Set once during `initialize`; effectively immutable after deployment.
         address payable quipFactory;
         WOTSPlus.WinternitzAddress pqOwner;
-        EnumerableSetLib.Bytes32Set recoveryKeyHashes;
+        /// @dev Enumerable set of Winternitz public keys authorized to recover the wallet or
+        ///      authorize an emergency implementation upgrade. Consumed one-time on use.
+        ///      Capacity: `MAX_KEYS`.
+        Keyset.WinternitzAddressSet recoveryKeys;
         /// @dev Enumerable set of Winternitz public keys authorized to sign ERC-1271 messages.
         ///      Managed post-init via pqOwner-authenticated calls. Capacity: `MAX_KEYS`.
-        Keyset.WinternitzAddressSet verificationKeyset;
+        Keyset.WinternitzAddressSet verificationKeys;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.wotsplus")) - 1)) & ~bytes32(uint256(0xff))

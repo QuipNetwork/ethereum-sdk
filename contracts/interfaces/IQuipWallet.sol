@@ -134,7 +134,7 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress recoveryKey
     );
 
-    /// @notice Emitted when new verification keys are added to the keyset.
+    /// @notice Emitted when new verification keys are added.
     /// @param nextPqOwner The new post-quantum owner key after rotation.
     /// @param count The number of verification keys added.
     event VerificationKeysAdded(
@@ -142,12 +142,12 @@ interface IQuipWallet {
         uint256 count
     );
 
-    /// @notice Emitted when the verification keyset is cleared and replaced.
+    /// @notice Emitted when the verification keys are cleared and replaced.
     /// @param nextPqOwner The new post-quantum owner key after rotation.
-    event VerificationKeysetRefreshed(WOTSPlus.WinternitzAddress nextPqOwner);
+    event VerificationKeysRefreshed(WOTSPlus.WinternitzAddress nextPqOwner);
 
     /// @notice Emitted when a verification key at a specific index is replaced.
-    /// @param index The index in the keyset that was replaced.
+    /// @param index The index that was replaced.
     /// @param oldKey The removed key.
     /// @param newKey The replacement key.
     /// @param nextPqOwner The new post-quantum owner key after rotation.
@@ -310,31 +310,32 @@ interface IQuipWallet {
     ) external;
 
     /// @notice Returns the number of recovery keys in the set.
-    /// @return The number of registered recovery key hashes.
+    /// @return The number of registered recovery keys.
     function getRecoveryKeyCount() external view returns (uint256);
 
-    /// @notice Returns the recovery key hash at a given index.
-    /// @return The keccak256 hash of the recovery key at the given index.
-    function getRecoveryKeyHashAt(
+    /// @notice Returns the recovery key at a given index.
+    /// @return The Winternitz public key stored at `index`.
+    function getRecoveryKeyAt(
         uint256 index
-    ) external view returns (bytes32);
+    ) external view returns (WOTSPlus.WinternitzAddress memory);
 
-    /// @notice Returns whether a key hash is a registered recovery key.
-    /// @return True if the key hash is a registered recovery key.
-    function isRecoveryKey(bytes32 keyHash) external view returns (bool);
+    /// @notice Returns whether the given Winternitz address is a registered recovery key.
+    function isRecoveryKey(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external view returns (bool);
 
-    /// @notice Appends new verification keys to the keyset, authorized by a WOTS+ signature.
+    /// @notice Appends new verification keys, authorized by a WOTS+ signature.
     /// @dev Payload layout matches `keyManagement`: [0:64) nextPqOwner, [64:2208) pqSig,
     ///      [2208:...) keys (N x 64). Reverts if the total count would exceed `MAX_KEYS`
     ///      or if any key is zero / already present.
     /// @param payload Packed keyManagement data.
     function addVerificationKeys(bytes calldata payload) external;
 
-    /// @notice Clears the verification keyset and installs a fresh batch.
+    /// @notice Clears the verification keys and installs a fresh batch.
     /// @dev Payload layout matches `keyManagement`. Each new key must be non-zero and unique
     ///      and the new batch must not exceed `MAX_KEYS`.
     /// @param payload Packed keyManagement data.
-    function refreshVerificationKeyset(bytes calldata payload) external;
+    function refreshVerificationKeys(bytes calldata payload) external;
 
     /// @notice Replaces a single verification key at the given index.
     /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) index,
@@ -342,7 +343,7 @@ interface IQuipWallet {
     /// @param payload Packed replace-verification-key data (2304 bytes).
     function replaceVerificationKeyAt(bytes calldata payload) external;
 
-    /// @notice Returns the number of verification keys in the keyset.
+    /// @notice Returns the number of verification keys.
     function getVerificationKeyCount() external view returns (uint256);
 
     /// @notice Returns the verification key at a given index.

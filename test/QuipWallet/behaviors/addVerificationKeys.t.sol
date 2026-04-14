@@ -27,7 +27,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("add-3", 3);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-next-1");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -47,7 +47,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("add-rotate", 1);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-next-2");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -64,7 +64,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("add-ev", 2);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-next-ev");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -85,13 +85,13 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
     }
 
     function test_addVerificationKeys_appendsToExisting() public {
-        _seedVerificationKeyset(2);
+        _seedVerificationKeys(2);
         assertEq(wallet.getVerificationKeyCount(), 2);
 
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("add-more", 3);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-append-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -108,7 +108,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("add-auth", 1);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-auth-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -169,7 +169,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory empty = new WOTSPlus.WinternitzAddress[](0);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-empty-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, empty
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -180,11 +180,11 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
     }
 
     function test_addVerificationKeys_revertsWhen_capacityExceeded() public {
-        _seedVerificationKeyset(9);
+        _seedVerificationKeys(9);
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("cap-overflow", 2);
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-cap-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -202,7 +202,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         });
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-zseed-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, badKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -220,7 +220,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         });
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-zhash-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, badKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -236,7 +236,7 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
         dupKeys[1] = dupKeys[0];
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-dup-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, dupKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
@@ -247,13 +247,13 @@ contract QuipWallet_addVerificationKeys is QuipWalletTest {
     }
 
     function test_addVerificationKeys_revertsWhen_duplicateWithExisting() public {
-        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeyset(2);
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(2);
 
         WOTSPlus.WinternitzAddress[] memory dup = new WOTSPlus.WinternitzAddress[](1);
         dup[0] = seeded[0]; // already in set
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("addvk-dup-existing-next");
 
-        bytes32 msgHash = _buildVerificationKeysetMessageHash(
+        bytes32 msgHash = _buildVerificationKeysMessageHash(
             address(wallet), alicePubkey, nextPq, dup
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
