@@ -448,10 +448,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeUpgradeAuth(data);
 
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
-
         bytes32 digest = Codec.upgradeDigest(
             address(this),
             block.chainid,
@@ -462,20 +458,19 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             nextKey.publicKeyHash
         );
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
+        Storage.Layout storage $ = Storage.layout();
+        _verifyAndRotate(
+            $.transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
         LibCall.delegateCallContract(
             newImplementation,
             abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
         );
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         (bool shouldMigrate, bytes calldata migratorPayload) = Codec
             .decodeUpgradeMigration(data);
@@ -507,10 +502,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeChangeTransactionKey(payload);
 
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
-
         bytes32 digest = Codec.keyRotationDigest(
             address(this),
             block.chainid,
@@ -520,15 +511,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             nextKey.publicKeyHash
         );
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
+        _verifyAndRotate(
+            Storage.layout().transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
     }
 
     /// @inheritdoc IQuipWallet
@@ -543,10 +532,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             uint256 value,
             bytes calldata data
         ) = Codec.decodeExecute(payload);
-
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
 
         uint256 fee = getExecuteFee();
         if (address(this).balance < value + fee)
@@ -566,15 +551,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             fee
         );
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
+        Storage.Layout storage $ = Storage.layout();
+        _verifyAndRotate(
+            $.transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
         if (fee > 0) SafeTransferLib.safeTransferETH($.quipFactory, fee);
 
@@ -608,10 +592,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             uint256 amount
         ) = Codec.decodeWithdrawDeposit(payload);
 
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
-
         bytes32 digest = Codec.withdrawDepositDigest(
             address(this),
             block.chainid,
@@ -623,15 +603,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             amount
         );
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
+        _verifyAndRotate(
+            Storage.layout().transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
         ERC4337.withdrawDepositTo(to, amount);
     }
@@ -647,10 +625,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             address newOwner
         ) = Codec.decodeOwnershipTransfer(payload);
 
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
-
         bytes32 digest = Codec.transferOwnershipDigest(
             address(this),
             block.chainid,
@@ -661,15 +635,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             newOwner
         );
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
+        _verifyAndRotate(
+            Storage.layout().transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
         Ownable.transferOwnership(newOwner);
     }
@@ -685,10 +657,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             address pendingOwner
         ) = Codec.decodeOwnershipTransfer(payload);
 
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
-
         bytes32 digest = Codec.completeOwnershipHandoverDigest(
             address(this),
             block.chainid,
@@ -699,15 +667,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             pendingOwner
         );
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
+        _verifyAndRotate(
+            Storage.layout().transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
         Ownable.completeOwnershipHandover(pendingOwner);
     }
@@ -759,28 +725,19 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeKeyManagement(payload);
 
         if (newKeys.length == 0) revert EmptyKeys();
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
 
         bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
         bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
+        _verifyAndRotate(
+            Storage.layout().transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
-        if (kind == KeyType.Transaction) {
-            _rotateKeys($.transactionKeys, currentKey, nextKey);
-            _addKeys($.transactionKeys, newKeys);
-        } else {
-            _addKeys(_keyset(kind), newKeys);
-            _rotateKeys($.transactionKeys, currentKey, nextKey);
-        }
+        _addKeys(_keyset(kind), newKeys);
 
         emit KeysAdded(kind, nextKey, newKeys.length);
     }
@@ -800,26 +757,21 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeKeyManagement(payload);
 
         if (newKeys.length == 0) revert EmptyKeys();
-        Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
 
         bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
         bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
+        _verifyAndRotate(
+            Storage.layout().transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
         Keyset.WinternitzAddressSet storage target = _keyset(kind);
         _clearKeys(target);
         _addKeys(target, newKeys);
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         emit KeysRefreshed(kind, nextKey);
     }
@@ -835,8 +787,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeVerificationKeysReplace(payload);
 
         Storage.Layout storage $ = Storage.layout();
-        _enforceContained($.transactionKeys, currentKey);
-        _enforceUncontained($.transactionKeys, nextKey);
 
         if (index >= $.verificationKeys.length())
             revert VerificationKeyIndexOutOfBounds();
@@ -855,19 +805,17 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             newKey.publicKeyHash
         );
 
-        if (
-            !WOTSPlus.verify(
-                currentKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
+        _verifyAndRotate(
+            $.transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
 
         $.verificationKeys.remove(oldKey);
         // `add` enforces non-zero fields, and cap=MAX_KEYS is preserved since we just removed one.
         if (!$.verificationKeys.add(newKey, MAX_KEYS)) revert DuplicateKey();
-
-        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         emit VerificationKeyReplaced(index, oldKey, newKey, nextKey);
     }
@@ -1120,6 +1068,29 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         set.remove(currentKey);
         set.add(nextKey);
         emit KeyRotated(currentKey, nextKey);
+    }
+
+    /// @dev Fail-fast membership checks, WOTS+ signature verification, then rotation.
+    ///      Reverts with `UnknownKey` / `DuplicateKey` / `InvalidSignature` on failure.
+    ///      The pre-verify enforce pair short-circuits before paying WOTS+ verify gas
+    ///      on invalid inputs. Used by every owner-path that consumes a transaction key.
+    function _verifyAndRotate(
+        Keyset.WinternitzAddressSet storage set,
+        WOTSPlus.WinternitzAddress calldata currentKey,
+        WOTSPlus.WinternitzAddress calldata nextKey,
+        WOTSPlus.WinternitzElements calldata pqSig,
+        bytes32 digest
+    ) internal {
+        _enforceContained(set, currentKey);
+        _enforceUncontained(set, nextKey);
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
+        _rotateKeys(set, currentKey, nextKey);
     }
 
     /// @dev Returns the target keyset for `kind`.
