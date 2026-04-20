@@ -49,7 +49,8 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     EnumerableSetLib.Bytes32Set private _vettedCode;
 
     /// @inheritdoc IQuipFactory
-    mapping(bytes32 codehash => address walletImplementation) public vettedWalletImpls;
+    mapping(bytes32 codehash => address walletImplementation)
+        public vettedWalletImpls;
 
     /// @inheritdoc IQuipFactory
     mapping(bytes32 codehash => bool isDeprecated) public deprecatedImpls;
@@ -140,7 +141,11 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     }
 
     /// @inheritdoc IQuipFactory
-    function renounceOwnership() public override(IQuipFactory, OZOwnable) onlyOwner {
+    function renounceOwnership()
+        public
+        override(IQuipFactory, OZOwnable)
+        onlyOwner
+    {
         revert RenounceDisabled();
     }
 
@@ -159,10 +164,11 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     }
 
     /// @inheritdoc IQuipFactory
-    function getVettedCodeIndex(bytes32 codehash) external view returns (uint256) {
+    function getVettedCodeIndex(
+        bytes32 codehash
+    ) external view returns (uint256) {
         return _vettedCode.indexOf(codehash);
     }
-
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         PRIVATE                               */
@@ -174,8 +180,10 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     ///      insertion order, so `at(length() - 1)` is the most recently added.
     function _findLatestActive() internal view returns (address) {
         uint256 len = _vettedCode.length();
-        for (uint256 i = len; i > 0;) {
-            unchecked { --i; }
+        for (uint256 i = len; i > 0; ) {
+            unchecked {
+                --i;
+            }
             bytes32 codehash = _vettedCode.at(i);
             if (!deprecatedImpls[codehash]) {
                 return vettedWalletImpls[codehash];
@@ -203,9 +211,13 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         );
 
         if (to == address(0)) revert ZeroAddressOwner();
-        if (msg.value < creationFee) revert InsufficientCreationFee(msg.value, creationFee);
+        if (msg.value < creationFee)
+            revert InsufficientCreationFee(msg.value, creationFee);
         uint256 contractValue = msg.value - creationFee;
-        address contractAddr = CREATE3.deployDeterministic(proxyInitcode, vaultId);
+        address contractAddr = CREATE3.deployDeterministic(
+            proxyInitcode,
+            vaultId
+        );
 
         IQuipWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);

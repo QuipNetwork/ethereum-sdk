@@ -16,7 +16,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../libraries/EnumerableWinternitzAddressSet.sol";
 
 library WOTSPlusStorage {
@@ -24,13 +23,17 @@ library WOTSPlusStorage {
     struct Layout {
         /// @dev Set once during `initialize`; effectively immutable after deployment.
         address payable quipFactory;
-        WOTSPlus.WinternitzAddress pqOwner;
+        /// @dev Enumerable set of Winternitz public keys authorized to sign guarded
+        ///      transactions. Each op names a (currentKey, nextKey) pair; on success the
+        ///      current key is consumed and the next is installed, preserving WOTS+
+        ///      one-time-use while permitting parallel outstanding signatures.
+        Keyset.WinternitzAddressSet transactionKeys;
         /// @dev Enumerable set of Winternitz public keys authorized to recover the wallet or
         ///      authorize an emergency implementation upgrade. Consumed one-time on use.
         ///      Capacity: `MAX_KEYS`.
         Keyset.WinternitzAddressSet recoveryKeys;
         /// @dev Enumerable set of Winternitz public keys authorized to sign ERC-1271 messages.
-        ///      Managed post-init via pqOwner-authenticated calls. Capacity: `MAX_KEYS`.
+        ///      Managed post-init via transaction-key-authenticated calls. Capacity: `MAX_KEYS`.
         Keyset.WinternitzAddressSet verificationKeys;
     }
 

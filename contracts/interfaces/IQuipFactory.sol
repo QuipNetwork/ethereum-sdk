@@ -205,17 +205,23 @@ interface IQuipFactory {
     /// @notice Returns the index of a codehash in the vetted set.
     /// @param codehash The codehash to look up.
     /// @return The index in the vetted set, or `type(uint256).max` if not found.
-    function getVettedCodeIndex(bytes32 codehash) external view returns (uint256);
+    function getVettedCodeIndex(
+        bytes32 codehash
+    ) external view returns (uint256);
 
     /// @notice Returns the implementation address associated with a vetted codehash.
     /// @param codehash The codehash to look up.
     /// @return walletImplementation The implementation contract address.
-    function vettedWalletImpls(bytes32 codehash) external view returns (address walletImplementation);
+    function vettedWalletImpls(
+        bytes32 codehash
+    ) external view returns (address walletImplementation);
 
     /// @notice Returns whether a codehash has been deprecated.
     /// @param codehash The codehash to check.
     /// @return isDeprecated True if the codehash is deprecated.
-    function deprecatedImpls(bytes32 codehash) external view returns (bool isDeprecated);
+    function deprecatedImpls(
+        bytes32 codehash
+    ) external view returns (bool isDeprecated);
 
     /// @notice Returns the most recently vetted active implementation address.
     /// @return The latest active wallet implementation address, or `address(0)` if none.

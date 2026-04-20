@@ -81,7 +81,9 @@ library EnumerableWinternitzAddressSet {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Returns the number of elements in the set.
-    function length(WinternitzAddressSet storage set) internal view returns (uint256 result) {
+    function length(
+        WinternitzAddressSet storage set
+    ) internal view returns (uint256 result) {
         bytes32 rootSlot = _rootSlot(set);
         /// @solidity memory-safe-assembly
         assembly {
@@ -89,11 +91,17 @@ library EnumerableWinternitzAddressSet {
             result := shr(1, n)
             for {} iszero(n) {} {
                 result := 0
-                if iszero(sload(rootSlot)) { break }
+                if iszero(sload(rootSlot)) {
+                    break
+                }
                 result := 1
-                if iszero(sload(add(rootSlot, 2))) { break }
+                if iszero(sload(add(rootSlot, 2))) {
+                    break
+                }
                 result := 2
-                if iszero(sload(add(rootSlot, 4))) { break }
+                if iszero(sload(add(rootSlot, 4))) {
+                    break
+                }
                 result := 3
                 break
             }
@@ -117,15 +125,21 @@ library EnumerableWinternitzAddressSet {
                     if and(
                         eq(sload(rootSlot), publicSeed),
                         eq(sload(add(rootSlot, 1)), publicKeyHash)
-                    ) { break }
+                    ) {
+                        break
+                    }
                     if and(
                         eq(sload(add(rootSlot, 2)), publicSeed),
                         eq(sload(add(rootSlot, 3)), publicKeyHash)
-                    ) { break }
+                    ) {
+                        break
+                    }
                     if and(
                         eq(sload(add(rootSlot, 4)), publicSeed),
                         eq(sload(add(rootSlot, 5)), publicKeyHash)
-                    ) { break }
+                    ) {
+                        break
+                    }
                     result := 0
                     break
                 }
@@ -159,7 +173,9 @@ library EnumerableWinternitzAddressSet {
                 revert(0x1c, 0x04)
             }
 
-            for { let n := sload(not(rootSlot)) } 1 {} {
+            for {
+                let n := sload(not(rootSlot))
+            } 1 {} {
                 // --- Lazy phase ---
                 if iszero(n) {
                     // Element 0
@@ -170,7 +186,10 @@ library EnumerableWinternitzAddressSet {
                         result := 1
                         break
                     }
-                    if and(eq(s0, publicSeed), eq(sload(add(rootSlot, 1)), publicKeyHash)) {
+                    if and(
+                        eq(s0, publicSeed),
+                        eq(sload(add(rootSlot, 1)), publicKeyHash)
+                    ) {
                         break
                     }
                     // Element 1
@@ -181,7 +200,10 @@ library EnumerableWinternitzAddressSet {
                         result := 1
                         break
                     }
-                    if and(eq(s1, publicSeed), eq(sload(add(rootSlot, 3)), publicKeyHash)) {
+                    if and(
+                        eq(s1, publicSeed),
+                        eq(sload(add(rootSlot, 3)), publicKeyHash)
+                    ) {
                         break
                     }
                     // Element 2
@@ -192,7 +214,10 @@ library EnumerableWinternitzAddressSet {
                         result := 1
                         break
                     }
-                    if and(eq(s2, publicSeed), eq(sload(add(rootSlot, 5)), publicKeyHash)) {
+                    if and(
+                        eq(s2, publicSeed),
+                        eq(sload(add(rootSlot, 5)), publicKeyHash)
+                    ) {
                         break
                     }
 
@@ -281,7 +306,9 @@ library EnumerableWinternitzAddressSet {
         assembly {
             let publicSeed := mload(addr)
             let publicKeyHash := mload(add(addr, 0x20))
-            for { let n := sload(not(rootSlot)) } 1 {} {
+            for {
+                let n := sload(not(rootSlot))
+            } 1 {} {
                 // --- Lazy phase ---
                 if iszero(n) {
                     // Find element by linear scan. Shift subsequent elements down.
@@ -337,7 +364,9 @@ library EnumerableWinternitzAddressSet {
                 mstore(0x20, rootSlot)
                 let p := keccak256(0x00, 0x40)
                 let position := sload(p)
-                if iszero(position) { break }
+                if iszero(position) {
+                    break
+                }
 
                 n := sub(shr(1, n), 1) // last index
                 let removedIdx := sub(position, 1)
@@ -399,11 +428,17 @@ library EnumerableWinternitzAddressSet {
             for {} 1 {} {
                 if iszero(n) {
                     n := 0
-                    if iszero(sload(rootSlot)) { break }
+                    if iszero(sload(rootSlot)) {
+                        break
+                    }
                     n := 1
-                    if iszero(sload(add(rootSlot, 2))) { break }
+                    if iszero(sload(add(rootSlot, 2))) {
+                        break
+                    }
                     n := 2
-                    if iszero(sload(add(rootSlot, 4))) { break }
+                    if iszero(sload(add(rootSlot, 4))) {
+                        break
+                    }
                     n := 3
                     break
                 }
@@ -418,7 +453,11 @@ library EnumerableWinternitzAddressSet {
             let structs := add(ptrs, shl(5, n))
 
             // Populate.
-            for { let i := 0 } lt(i, n) { i := add(i, 1) } {
+            for {
+                let i := 0
+            } lt(i, n) {
+                i := add(i, 1)
+            } {
                 let off := add(rootSlot, shl(1, i))
                 let s := add(structs, mul(i, 0x40))
                 mstore(add(ptrs, shl(5, i)), s)
@@ -436,7 +475,9 @@ library EnumerableWinternitzAddressSet {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Returns the root slot derived from the set's storage slot.
-    function _rootSlot(WinternitzAddressSet storage s) private pure returns (bytes32 r) {
+    function _rootSlot(
+        WinternitzAddressSet storage s
+    ) private pure returns (bytes32 r) {
         /// @solidity memory-safe-assembly
         assembly {
             mstore(0x04, _SLOT_SEED)

@@ -22,14 +22,28 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz one-time signatures,
 ///         providing post-quantum security for ETH transfers and arbitrary calls.
 interface IQuipWallet {
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           TYPES                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Discriminator for the three PQ keysets managed by the wallet.
+    /// @dev Used by `addKeys` / `refreshKeys` to select the target keyset.
+    enum KeyType {
+        Transaction,
+        Recovery,
+        Verification
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           ERRORS                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
     /// @notice Thrown when the factory address is zero.
     error ZeroAddressFactory();
     /// @notice Thrown when the owner address is zero.
     error ZeroAddressOwner();
     /// @notice Thrown when the caller is not the immutable factory.
     error InvalidFactory();
-    /// @notice Thrown when a Winternitz public key has zero-value components.
-    error ZeroValuePqOwner();
 
     /// @notice Thrown when a Winternitz signature fails verification.
     error InvalidSignature();
@@ -50,40 +64,41 @@ interface IQuipWallet {
     /// @dev Only the WOTS+-authenticated `completeOwnershipHandover(bytes)` path is permitted.
     error ClassicalCompleteOwnershipHandoverDisabled();
 
-    /// @notice Thrown when a recovery key is not in the registered set.
-    error RecoveryKeyNotFound();
+    /// @notice Thrown when a provided key is already present in the target keyset,
+    ///         or when a rotation's `nextKey` collides with the active transaction-key set.
+    error DuplicateKey();
+    /// @notice Thrown when a provided key is not present in the keyset that was expected to contain it.
+    error UnknownKey();
+    /// @notice Thrown when an empty key array is provided to an add/refresh operation.
+    error EmptyKeys();
+    /// @notice Thrown when `refreshKeys` is called with `KeyType.Transaction`.
+    /// @dev Only `recoverWallet` may drain the transaction keyset.
+    error RefreshTransactionForbidden();
     /// @notice Thrown when the number of recovery keys provided is incorrect.
     error IncorrectRecoveryKeyAmount();
-    /// @notice Thrown when adding recovery keys would exceed `MAX_KEYS`.
-    error RecoveryKeyLimitExceeded();
-    /// @notice Thrown when adding verification keys would exceed `MAX_KEYS`.
-    error VerificationKeyLimitExceeded();
-    /// @notice Thrown when a duplicate verification key is provided.
-    error DuplicateVerificationKey();
-    /// @notice Thrown when an empty verification key array is provided.
-    error EmptyVerificationKeys();
     /// @notice Thrown when a verification key index is out of bounds.
     error VerificationKeyIndexOutOfBounds();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
-    /// @notice Thrown when upgradeToAndCall would reuse the current pqOwner key.
-    error PqOwnerReuse();
-    /// @notice Thrown when a duplicate recovery key is provided.
-    error DuplicateRecoveryKey();
-    /// @notice Thrown when an empty recovery key array is provided.
-    error EmptyRecoveryKeys();
+    /// @notice Thrown when the number of transaction keys provided to `initialize`/`migrate` is incorrect.
+    error IncorrectTransactionKeyAmount();
 
     /// @notice Thrown when the upgrade target's codehash is not in the factory's vetted set.
     error ImplementationNotVetted();
     /// @notice Thrown when the upgrade target's codehash has been deprecated.
     error ImplementationDeprecated();
 
-    /// @notice Emitted when the post-quantum owner key is rotated.
-    /// @param oldPqOwner The previous Winternitz public key.
-    /// @param newPqOwner The new Winternitz public key.
-    event PqOwnerRotated(
-        WOTSPlus.WinternitzAddress oldPqOwner,
-        WOTSPlus.WinternitzAddress newPqOwner
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           EVENTS                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Emitted when a transaction key is rotated (remove-then-add).
+    /// @dev Emitted by `_rotateKeys` on every transaction-key consumption path.
+    /// @param oldKey The removed Winternitz public key.
+    /// @param newKey The installed Winternitz public key.
+    event KeyRotated(
+        WOTSPlus.WinternitzAddress oldKey,
+        WOTSPlus.WinternitzAddress newKey
     );
 
     /// @notice Emitted when an execution call succeeds.
@@ -95,36 +110,48 @@ interface IQuipWallet {
     /// @notice Emitted when a wallet is initialized with its factory, owner, and keys.
     /// @param factory The QuipFactory that created this wallet.
     /// @param owner The classical owner address.
-    /// @param pqOwner The initial post-quantum owner key.
+    /// @param transactionKeys The initial set of 5 transaction keys.
     /// @param recoveryKeys The initial set of 10 recovery keys.
     event WalletInitialized(
         address indexed factory,
         address indexed owner,
-        WOTSPlus.WinternitzAddress pqOwner,
+        WOTSPlus.WinternitzAddress[5] transactionKeys,
         WOTSPlus.WinternitzAddress[10] recoveryKeys
     );
 
     /// @notice Emitted when the wallet is recovered using a recovery key.
     /// @param recoveryKey The recovery key that authorized the recovery.
-    /// @param newPqOwner The new post-quantum owner key set during recovery.
+    /// @param newTransactionKey The single transaction key seeded during recovery.
     event PqRecovery(
         WOTSPlus.WinternitzAddress recoveryKey,
-        WOTSPlus.WinternitzAddress newPqOwner
+        WOTSPlus.WinternitzAddress newTransactionKey
     );
-    /// @notice Emitted when all recovery keys are cleared and replaced.
-    /// @param nextPqOwner The new post-quantum owner key after rotation.
-    event RecoveryKeysReplenished(WOTSPlus.WinternitzAddress nextPqOwner);
-    /// @notice Emitted when new recovery keys are added to the existing set.
-    /// @param nextPqOwner The new post-quantum owner key after rotation.
-    /// @param count The number of recovery keys added.
-    event RecoveryKeysAdded(
-        WOTSPlus.WinternitzAddress nextPqOwner,
+
+    /// @notice Emitted when keys are added to a keyset via `addKeys`.
+    /// @param kind The keyset that received the additions.
+    /// @param nextKey The installed transaction key after rotation.
+    /// @param count The number of keys added.
+    event KeysAdded(
+        KeyType indexed kind,
+        WOTSPlus.WinternitzAddress nextKey,
         uint256 count
     );
 
+    /// @notice Emitted when a keyset is cleared and replaced via `refreshKeys`.
+    /// @param kind The keyset that was refreshed.
+    /// @param nextKey The installed transaction key after rotation.
+    event KeysRefreshed(
+        KeyType indexed kind,
+        WOTSPlus.WinternitzAddress nextKey
+    );
+
     /// @notice Emitted when PQ state is migrated during an upgrade.
-    /// @param newPqOwner The new post-quantum owner key set during migration.
-    event WalletMigrated(WOTSPlus.WinternitzAddress newPqOwner);
+    /// @param transactionKeysHash `keccak256(abi.encode(transactionKeys))` of the
+    ///        migrated transaction-key set. The full array is not emitted because
+    ///        topics + data would balloon the upgrade calldata; a hash is the
+    ///        cheapest useful commitment — off-chain indexers can recompute it from
+    ///        the migrator payload, which is itself available via calldata.
+    event WalletMigrated(bytes32 transactionKeysHash);
 
     /// @notice Emitted when a recovery key authorizes an emergency implementation upgrade.
     /// @param newImplementation The new implementation address.
@@ -134,28 +161,16 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress recoveryKey
     );
 
-    /// @notice Emitted when new verification keys are added.
-    /// @param nextPqOwner The new post-quantum owner key after rotation.
-    /// @param count The number of verification keys added.
-    event VerificationKeysAdded(
-        WOTSPlus.WinternitzAddress nextPqOwner,
-        uint256 count
-    );
-
-    /// @notice Emitted when the verification keys are cleared and replaced.
-    /// @param nextPqOwner The new post-quantum owner key after rotation.
-    event VerificationKeysRefreshed(WOTSPlus.WinternitzAddress nextPqOwner);
-
     /// @notice Emitted when a verification key at a specific index is replaced.
     /// @param index The index that was replaced.
     /// @param oldKey The removed key.
     /// @param newKey The replacement key.
-    /// @param nextPqOwner The new post-quantum owner key after rotation.
+    /// @param nextKey The installed transaction key after rotation.
     event VerificationKeyReplaced(
         uint256 index,
         WOTSPlus.WinternitzAddress oldKey,
         WOTSPlus.WinternitzAddress newKey,
-        WOTSPlus.WinternitzAddress nextPqOwner
+        WOTSPlus.WinternitzAddress nextKey
     );
 
     /// @notice Emitted when the inner call of an ERC-4337 execution reverts but key rotation commits.
@@ -170,61 +185,75 @@ interface IQuipWallet {
         bytes result
     );
 
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          FUNCTIONS                            */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;
 
     /// @notice Upgrades the wallet to a new implementation, verifying two PQ signatures and
     ///         optionally migrating state.
-    /// @dev First verifies the upgrade authorization against the current pqOwner using pqSig.
+    /// @dev First verifies the upgrade authorization against `currentKey` using pqSig.
     ///      Then delegatecalls `verifyUpgrade` on the new implementation, which independently
     ///      verifies a second signature from the verifier key embedded in the payload.
     ///      Optionally calls `migrate` if the payload includes migration data. Finally delegates
     ///      to the parent `upgradeToAndCall` with empty calldata.
     /// @param newImplementation The address of the new implementation contract.
-    /// @param data Packed upgrade data: [0:64) nextPqOwner, [64:2208) pqSig,
-    ///      [2208:2272) verifier, [2272:4416) verifySig,
-    ///      [4416] shouldMigrate, [4417:5121) migratorPayload.
+    /// @param data Packed upgrade data: [0:64) currentKey, [64:128) nextKey,
+    ///      [128:2272) pqSig, [2272:2336) verifier, [2336:4480) verifySig,
+    ///      [4480] shouldMigrate, [4481:5441) migratorPayload (new init layout, 960 bytes).
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
     ) external payable;
 
     /// @notice Verifies a PQ signature from the new implementation's verifier key.
-    /// @dev Called via delegatecall from both `upgradeToAndCall` and `recoveryUpgrade` on the
-    ///      new implementation. Factory vetting is the caller's responsibility; this function
-    ///      performs only scheme-specific verification. The verifier key and signature are
-    ///      extracted via `decodeUpgradeVerification` and verified against a
-    ///      `verificationDigest`. Future implementations may use a different PQ scheme.
+    /// @dev Called via delegatecall from `upgradeToAndCall` on the new implementation.
+    ///      Factory vetting is the caller's responsibility; this function performs only
+    ///      scheme-specific verification. Future implementations may use a different PQ scheme.
     /// @param newImplementation The address of the new implementation being upgraded to.
-    /// @param data Packed upgrade payload; verifier at [2208:2272), verifySig at [2272:4416).
+    /// @param data Packed upgrade payload; verifier at [2272:2336), verifySig at [2336:4480).
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data
     ) external view;
 
-    /// @notice Initializes the wallet with its classical owner, post-quantum owner, and recovery keys.
+    /// @notice Verifies a PQ signature from the new implementation's verifier key
+    ///         for the recoveryUpgrade path.
+    /// @dev Called via delegatecall from `recoveryUpgrade` on the new implementation.
+    ///      Differs from `verifyUpgrade` only in payload layout (recovery payloads omit
+    ///      the currentKey/nextKey pair, so the verifier sits at offset 2208 rather than 2272).
+    /// @param newImplementation The address of the new implementation being upgraded to.
+    /// @param data Packed recoveryUpgrade payload; verifier at [2208:2272), verifySig at [2272:4416).
+    function verifyRecoveryUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) external view;
+
+    /// @notice Initializes the wallet with its classical owner, transaction keys, and recovery keys.
     /// @dev Can only be called once by the FACTORY. Uses Solady's `initializer` modifier.
-    ///      Payload layout: [0:64) pqOwner, [64:704) recoveryKeys (10 × 64).
+    ///      Payload layout: [0:320) transactionKeys (5 x 64), [320:960) recoveryKeys (10 x 64).
     /// @param newOwner The classical owner address.
-    /// @param payload Packed init data: pqOwner ++ recoveryKeys[10].
+    /// @param payload Packed init data: transactionKeys[5] ++ recoveryKeys[10] (960 bytes).
     function initialize(
         address payable newOwner,
         bytes calldata payload
     ) external;
 
-    /// @notice Re-initializes the PQ state (pqOwner + recovery keys) during an upgrade.
+    /// @notice Re-initializes the PQ state (transaction keys + recovery keys) during an upgrade.
     /// @dev Only callable by the classical owner. Called via delegatecall from upgradeToAndCall
     ///      so that it executes against proxy storage.
-    ///      Payload layout: [0:64) new pqOwner, [64:704) new recoveryKeys[10].
+    ///      Payload layout: [0:320) transactionKeys (5 x 64), [320:960) recoveryKeys (10 x 64).
     /// @param payload Packed migration data matching the init layout.
     function migrate(bytes calldata payload) external;
 
-    /// @notice Rotates the post-quantum owner key to a new Winternitz public key.
+    /// @notice Rotates a transaction key without any other side effects.
     /// @dev Only callable by the classical owner. The signature must be valid over the
     ///      concatenation of the current and new public key components.
-    ///      Payload layout: [0:64) newPqOwner, [64:2208) pqSig.
-    /// @param payload Packed changePqOwner data (2208 bytes).
-    function changePqOwner(bytes calldata payload) external;
+    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig.
+    /// @param payload Packed changeTransactionKey data (2272 bytes).
+    function changeTransactionKey(bytes calldata payload) external;
 
     /// @notice Executes a post-quantum authenticated operation: either a pure ETH transfer
     ///         or an arbitrary contract call.
@@ -233,37 +262,38 @@ interface IQuipWallet {
     ///      owner cannot front-run the transaction by raising the fee.
     ///      For pure transfers (data is empty), uses SafeTransferLib.
     ///      For contract calls (data is non-empty), uses LibCall.callContract.
-    ///      Rotates the post-quantum owner key to `nextPqOwner` upon success.
-    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig,
-    ///      [2208:2240) target, [2240:2272) value, [2272:...) data.
-    /// @param payload Packed execute data (>= 2272 bytes).
+    ///      Consumes `currentKey` and installs `nextKey` upon success.
+    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///      [2272:2304) target, [2304:2336) value, [2336:...) data.
+    /// @param payload Packed execute data (>= 2336 bytes).
     /// @return The data returned by the call (empty for pure transfers).
     function execute(
         bytes calldata payload
     ) external payable returns (bytes memory);
 
     /// @notice Withdraws ETH from the wallet's EntryPoint deposit, authorized by a WOTS+ signature.
-    /// @dev Only callable by the classical owner. Rotates PQ key, then delegates to Solady's
-    ///      withdrawDepositTo which calls withdrawTo on the EntryPoint. No fee is charged.
-    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) to, [2240:2272) amount.
-    /// @param payload Packed withdrawDeposit data (2272 bytes).
+    /// @dev Only callable by the classical owner. Consumes `currentKey` and installs `nextKey`,
+    ///      then delegates to Solady's withdrawDepositTo which calls withdrawTo on the EntryPoint.
+    ///      No fee is charged.
+    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///      [2272:2304) to, [2304:2336) amount.
+    /// @param payload Packed withdrawDeposit data (2336 bytes).
     function withdrawDepositTo(bytes calldata payload) external payable;
 
     /// @notice Transfers classical ownership to `newOwner`, authorized by a WOTS+ signature.
-    /// @dev Only callable by the classical owner. Rotates the post-quantum owner key and then
-    ///      delegates to the parent `Ownable.transferOwnership` which validates the new owner
-    ///      and updates the owner slot.
-    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) newOwner.
-    /// @param payload Packed ownership transfer data (2240 bytes).
+    /// @dev Only callable by the classical owner. Consumes `currentKey` / installs `nextKey`,
+    ///      then delegates to the parent `Ownable.transferOwnership`.
+    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///      [2272:2304) newOwner.
+    /// @param payload Packed ownership transfer data (2304 bytes).
     function transferOwnership(bytes calldata payload) external payable;
 
     /// @notice Completes a two-step ownership handover to `pendingOwner`, authorized by a WOTS+ signature.
-    /// @dev Only callable by the classical owner. Rotates the post-quantum owner key and then
-    ///      delegates to the parent `Ownable.completeOwnershipHandover` which verifies that the
-    ///      handover request exists and has not expired, clears the handover slot, and updates
-    ///      the owner slot.
-    ///      Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) pendingOwner.
-    /// @param payload Packed ownership transfer data (2240 bytes).
+    /// @dev Only callable by the classical owner. Consumes `currentKey` / installs `nextKey`,
+    ///      then delegates to the parent `Ownable.completeOwnershipHandover`.
+    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///      [2272:2304) pendingOwner.
+    /// @param payload Packed ownership transfer data (2304 bytes).
     function completeOwnershipHandover(bytes calldata payload) external payable;
 
     /// @notice Returns the current execute fee as set by the factory.
@@ -274,34 +304,51 @@ interface IQuipWallet {
     /// @return The factory address.
     function quipFactory() external view returns (address payable);
 
-    /// @notice Returns the current post-quantum owner's Winternitz public key components.
-    /// @return publicSeed The public seed of the Winternitz address.
-    /// @return publicKeyHash The public key hash of the Winternitz address.
-    function pqOwner()
-        external
-        view
-        returns (bytes32 publicSeed, bytes32 publicKeyHash);
+    /// @notice Returns the number of active transaction keys in the set.
+    function getTransactionKeyCount() external view returns (uint256);
+
+    /// @notice Returns the transaction key at a given index.
+    function getTransactionKeyAt(
+        uint256 index
+    ) external view returns (WOTSPlus.WinternitzAddress memory);
+
+    /// @notice Returns whether the given Winternitz address is an active transaction key.
+    function isTransactionKey(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external view returns (bool);
 
     /// @notice Recovers the wallet using a pre-registered recovery key.
-    /// @dev Payload layout: [0:64) recoveryKey, [64:128) newPqOwner, [128:2272) pqSig.
+    /// @dev Drains the current transaction-key set and seeds exactly one new key.
+    ///      Payload layout: [0:64) recoveryKey, [64:128) newTransactionKey, [128:2272) pqSig.
     /// @param payload Packed recoverWallet data (2272 bytes).
     function recoverWallet(bytes calldata payload) external;
 
-    /// @notice Adds new recovery keys to the existing set.
-    /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:...) keys (N x 64).
-    /// @param payload Packed keyManagement data (>= 2208 bytes).
-    function addRecoveryKeys(bytes calldata payload) external;
+    /// @notice Appends new keys to the target keyset, authorized by a WOTS+ signature.
+    /// @dev Consumes `currentKey` / installs `nextKey` from the transaction keyset.
+    ///      For `KeyType.Transaction`, the extras are appended to the active transaction set
+    ///      after rotation; for `Recovery` / `Verification`, the target set is extended first
+    ///      and the transaction rotation is committed last.
+    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///      [2272:...) keys (N x 64).
+    /// @param kind Target keyset.
+    /// @param payload Packed keyManagement data (>= 2272 bytes).
+    function addKeys(KeyType kind, bytes calldata payload) external;
 
-    /// @notice Clears existing recovery keys and adds new ones.
-    /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:...) keys (N x 64).
-    /// @param payload Packed keyManagement data (>= 2208 bytes).
-    function replenishRecoveryKeys(bytes calldata payload) external;
+    /// @notice Clears the target keyset and installs a fresh batch.
+    /// @dev Reverts with `RefreshTransactionForbidden` for `KeyType.Transaction` —
+    ///      only `recoverWallet` may drain the transaction keyset.
+    ///      Consumes `currentKey` / installs `nextKey` from the transaction keyset.
+    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///      [2272:...) keys (N x 64).
+    /// @param kind Target keyset (`Recovery` or `Verification`).
+    /// @param payload Packed keyManagement data (>= 2272 bytes).
+    function refreshKeys(KeyType kind, bytes calldata payload) external;
 
     /// @notice Emergency upgrade authorized by a recovery key, without migration.
     /// @dev Verifies the recovery key signature, then delegatecalls `verifyUpgrade` on the
-    ///      new implementation so it can enforce scheme-specific checks (e.g. WOTS+ verification).
-    ///      No pqOwner rotation or migration is performed.
-    ///      Payload layout: [0:64) recoveryKey, [64:2208) pqSig, [2208:2272) verifier, [2272:4416) verifySig.
+    ///      new implementation. No transaction-key rotation or migration is performed.
+    ///      Payload layout: [0:64) recoveryKey, [64:2208) pqSig,
+    ///      [2208:2272) verifier, [2272:4416) verifySig.
     /// @param newImplementation The address of the new implementation contract.
     /// @param payload Packed recovery upgrade data (4416 bytes).
     function recoveryUpgrade(
@@ -324,23 +371,10 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress calldata key
     ) external view returns (bool);
 
-    /// @notice Appends new verification keys, authorized by a WOTS+ signature.
-    /// @dev Payload layout matches `keyManagement`: [0:64) nextPqOwner, [64:2208) pqSig,
-    ///      [2208:...) keys (N x 64). Reverts if the total count would exceed `MAX_KEYS`
-    ///      or if any key is zero / already present.
-    /// @param payload Packed keyManagement data.
-    function addVerificationKeys(bytes calldata payload) external;
-
-    /// @notice Clears the verification keys and installs a fresh batch.
-    /// @dev Payload layout matches `keyManagement`. Each new key must be non-zero and unique
-    ///      and the new batch must not exceed `MAX_KEYS`.
-    /// @param payload Packed keyManagement data.
-    function refreshVerificationKeys(bytes calldata payload) external;
-
     /// @notice Replaces a single verification key at the given index.
-    /// @dev Payload layout: [0:64) nextPqOwner, [64:2208) pqSig, [2208:2240) index,
-    ///      [2240:2304) newKey.
-    /// @param payload Packed replace-verification-key data (2304 bytes).
+    /// @dev Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///      [2272:2304) index, [2304:2368) newKey.
+    /// @param payload Packed replace-verification-key data (2368 bytes).
     function replaceVerificationKeyAt(bytes calldata payload) external;
 
     /// @notice Returns the number of verification keys.

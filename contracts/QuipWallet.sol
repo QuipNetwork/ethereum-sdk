@@ -44,13 +44,19 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
 
     /// @dev PQ storage base slot (ERC-7201 namespace: quip.storage.wallet.wotsplus).
-    /// quipFactory at base+0, pqOwner.publicSeed at base+1, pqOwner.publicKeyHash at base+2.
+    /// quipFactory at base+0; set storage structs at base+1..+3 (one spacer uint256 each).
     bytes32 private constant _PQ_FACTORY_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
-    bytes32 private constant _PQ_OWNER_SEED_SLOT =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701;
-    bytes32 private constant _PQ_OWNER_HASH_SLOT =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf702;
+
+    /// @dev Precomputed root slots for the three EnumerableWinternitzAddressSet instances.
+    /// Derived as `keccak256(abi.encodePacked(uint256(setSlot), uint32(0x3e9f5d6a)))`.
+    /// Element i occupies (root+2i, root+2i+1). Lazy-length lives at `not(root)`.
+    bytes32 private constant _TRANSACTION_KEYS_ROOT =
+        0x70676cffa4f928a2cac94d416f9a901e1fb7ed48eeb4d7b68fe529b0d0c86d63;
+    bytes32 private constant _RECOVERY_KEYS_ROOT =
+        0x01d4bc2dde322c34a1c5506a9fdc3716f81d8255d315b6fa38a6fe618e6b2b00;
+    bytes32 private constant _VERIFICATION_KEYS_ROOT =
+        0x42ad9bcd164b09025d1327c92679693c4d33f37b62b72e8ce3ca5ea4b9fcdbca;
 
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
@@ -74,19 +80,20 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev WOTS+ signature validation for ERC-4337 UserOps.
-    /// Decodes a WOTS+ one-time signature and the caller-supplied nextPqOwner from
-    /// `userOp.signature`, then verifies the signature against the current `pqOwner`.
+    /// Decodes a (currentKey, nextKey, pqSig) triple from `userOp.signature` and verifies
+    /// the signature against `currentKey`.
     ///
     /// Validation fails (returns 1) when:
-    ///   - `nextPqOwner` is zero (missing key material).
-    ///   - `nextPqOwner` equals the current `pqOwner` (key reuse / no rotation).
-    ///   - The WOTS+ signature does not verify against the current `pqOwner`.
+    ///   - `nextKey` is zero (missing key material).
+    ///   - `currentKey` is not a member of the active transactionKeys set.
+    ///   - `nextKey` is already a member of the active transactionKeys set.
+    ///   - The WOTS+ signature does not verify against `currentKey`.
     ///
-    /// On success the key rotation is committed immediately via `_rotatePqOwner`.
+    /// On success the key rotation is committed immediately via `_rotateKeys`.
     /// The EntryPoint's `handleOps` invokes validation and execution as two separate
     /// top-level calls on the account within the same transaction. Writing the rotation
-    /// during validation ensures the key is rotated
-    /// regardless of whether the execution phase succeeds or fails.
+    /// during validation ensures the key is rotated regardless of whether the execution
+    /// phase succeeds or fails.
     ///
     /// Security: because WOTS+ is a one-time signature scheme, the signing key is
     /// effectively compromised once the signature is revealed on-chain in the UserOp.
@@ -101,35 +108,40 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         bytes32 userOpHash
     ) internal override returns (uint256 validationData) {
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeUserOpSignature(userOp.signature);
 
-        if (nextPqOwner.publicSeed == bytes32(0) || nextPqOwner.publicKeyHash == bytes32(0))
-            return 1;
+        if (
+            nextKey.publicSeed == bytes32(0) ||
+            nextKey.publicKeyHash == bytes32(0)
+        ) return 1;
 
         Storage.Layout storage $ = Storage.layout();
-
-        if (
-            nextPqOwner.publicSeed == $.pqOwner.publicSeed &&
-            nextPqOwner.publicKeyHash == $.pqOwner.publicKeyHash
-        ) return 1;
+        if (!$.transactionKeys.contains(currentKey)) return 1;
+        if ($.transactionKeys.contains(nextKey)) return 1;
 
         bytes32 digest = Codec.erc4337ExecuteDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
             userOpHash,
             getExecuteFee()
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            return 1;
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) return 1;
 
-        _rotatePqOwner(nextPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         return 0;
     }
@@ -144,13 +156,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// execution phase rolls back (including the fee transfer). The EntryPoint
     /// still deducts gas costs from the wallet's prefund deposit.
     /// Owner must use `execute(bytes)` which has inline PQ auth.
-    function execute(address target, uint256 value, bytes calldata data)
-        public
-        payable
-        override
-        onlyEntryPoint
-        returns (bytes memory result)
-    {
+    function execute(
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) public payable override onlyEntryPoint returns (bytes memory result) {
         uint256 fee = getExecuteFee();
         if (fee > 0 && address(this).balance >= fee) {
             SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
@@ -162,13 +172,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// @dev Key rotation is committed during `_validateSignature`.
     /// Fee is only collected on success — if any call in the batch reverts,
     /// the entire execution phase rolls back (including the fee transfer).
-    function executeBatch(Call[] calldata calls)
-        public
-        payable
-        override
-        onlyEntryPoint
-        returns (bytes[] memory results)
-    {
+    function executeBatch(
+        Call[] calldata calls
+    ) public payable override onlyEntryPoint returns (bytes[] memory results) {
         uint256 fee = getExecuteFee();
         if (fee > 0 && address(this).balance >= fee) {
             SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
@@ -180,7 +186,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// @dev Key rotation is committed during `_validateSignature`.
     /// Fee is only collected on success — if the delegatecall reverts, the entire
     /// execution phase rolls back (including the fee transfer).
-    function delegateExecute(address delegate, bytes calldata data)
+    function delegateExecute(
+        address delegate,
+        bytes calldata data
+    )
         public
         payable
         override
@@ -197,13 +206,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
-    function storageStore(bytes32 storageSlot, bytes32 storageValue)
-        public
-        payable
-        override
-        onlyEntryPoint
-        storageStoreGuard(storageSlot)
-    {
+    function storageStore(
+        bytes32 storageSlot,
+        bytes32 storageValue
+    ) public payable override onlyEntryPoint storageStoreGuard(storageSlot) {
         /// @solidity memory-safe-assembly
         assembly {
             sstore(storageSlot, storageValue)
@@ -211,55 +217,152 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev Extends Solady's guard with PQ-specific protected slots.
+    ///      Blocks direct writes to: owner, ERC-1967 impl, quipFactory, and — for each
+    ///      of the three EnumerableWinternitzAddressSet instances — the lazy-length slot
+    ///      (`not(rootSlot)`) and the six lazy element slots (`rootSlot + [0..5]`).
+    ///      Position-mapping slots (keccak-derived) are unreachable via this guard and
+    ///      are therefore not protected; corrupting a position map cannot install a key
+    ///      that was never present in element storage, only shift membership.
     modifier storageStoreGuard(bytes32 storageSlot) override {
         /// @solidity memory-safe-assembly
         assembly {
+            // Static slots.
             if or(
-                or(eq(storageSlot, _OWNER_SLOT), eq(storageSlot, _ERC1967_IMPLEMENTATION_SLOT)),
                 or(
-                    eq(storageSlot, _PQ_FACTORY_SLOT),
-                    or(eq(storageSlot, _PQ_OWNER_SEED_SLOT), eq(storageSlot, _PQ_OWNER_HASH_SLOT))
-                )
+                    eq(storageSlot, _OWNER_SLOT),
+                    eq(storageSlot, _ERC1967_IMPLEMENTATION_SLOT)
+                ),
+                eq(storageSlot, _PQ_FACTORY_SLOT)
             ) {
+                revert(codesize(), 0x00)
+            }
+
+            // For each set: block length slot and the six lazy element slots.
+            // (slot - root) < 6 catches root..root+5.
+            if lt(sub(storageSlot, _TRANSACTION_KEYS_ROOT), 6) {
+                revert(codesize(), 0x00)
+            }
+            if eq(storageSlot, not(_TRANSACTION_KEYS_ROOT)) {
+                revert(codesize(), 0x00)
+            }
+
+            if lt(sub(storageSlot, _RECOVERY_KEYS_ROOT), 6) {
+                revert(codesize(), 0x00)
+            }
+            if eq(storageSlot, not(_RECOVERY_KEYS_ROOT)) {
+                revert(codesize(), 0x00)
+            }
+
+            if lt(sub(storageSlot, _VERIFICATION_KEYS_ROOT), 6) {
+                revert(codesize(), 0x00)
+            }
+            if eq(storageSlot, not(_VERIFICATION_KEYS_ROOT)) {
                 revert(codesize(), 0x00)
             }
         }
         _;
     }
 
-    /// @dev Extends Solady's guard with PQ-specific protected slots.
+    /// @dev Extends Solady's guard with PQ-specific protected slots. Snapshots
+    ///      owner/impl/factory plus (length, element0 seed, element0 hash) for each
+    ///      of the three keysets — 12 slots total, checked pre and post.
+    ///      Deeper-element tampering inside a delegatecall is a residual risk
+    ///      documented in INVARIANTS.md §6.
     modifier delegateExecuteGuard() override {
-        bytes32 ownerValue;
-        bytes32 implValue;
-        bytes32 factoryValue;
-        bytes32 seedValue;
-        bytes32 hashValue;
+        // Snapshot 12 slots into a contiguous memory buffer to avoid stack pressure.
+        bytes32[12] memory snapshot;
         /// @solidity memory-safe-assembly
         assembly {
-            ownerValue := sload(_OWNER_SLOT)
-            implValue := sload(_ERC1967_IMPLEMENTATION_SLOT)
-            factoryValue := sload(_PQ_FACTORY_SLOT)
-            seedValue := sload(_PQ_OWNER_SEED_SLOT)
-            hashValue := sload(_PQ_OWNER_HASH_SLOT)
+            mstore(snapshot, sload(_OWNER_SLOT))
+            mstore(add(snapshot, 0x20), sload(_ERC1967_IMPLEMENTATION_SLOT))
+            mstore(add(snapshot, 0x40), sload(_PQ_FACTORY_SLOT))
+            mstore(add(snapshot, 0x60), sload(not(_TRANSACTION_KEYS_ROOT)))
+            mstore(add(snapshot, 0x80), sload(_TRANSACTION_KEYS_ROOT))
+            mstore(add(snapshot, 0xa0), sload(add(_TRANSACTION_KEYS_ROOT, 1)))
+            mstore(add(snapshot, 0xc0), sload(not(_RECOVERY_KEYS_ROOT)))
+            mstore(add(snapshot, 0xe0), sload(_RECOVERY_KEYS_ROOT))
+            mstore(add(snapshot, 0x100), sload(add(_RECOVERY_KEYS_ROOT, 1)))
+            mstore(add(snapshot, 0x120), sload(not(_VERIFICATION_KEYS_ROOT)))
+            mstore(add(snapshot, 0x140), sload(_VERIFICATION_KEYS_ROOT))
+            mstore(add(snapshot, 0x160), sload(add(_VERIFICATION_KEYS_ROOT, 1)))
         }
         _;
         /// @solidity memory-safe-assembly
         assembly {
+            if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {
+                revert(codesize(), 0x00)
+            }
             if iszero(
-                and(
-                    and(
-                        eq(ownerValue, sload(_OWNER_SLOT)),
-                        eq(implValue, sload(_ERC1967_IMPLEMENTATION_SLOT))
-                    ),
-                    and(
-                        eq(factoryValue, sload(_PQ_FACTORY_SLOT)),
-                        and(
-                            eq(seedValue, sload(_PQ_OWNER_SEED_SLOT)),
-                            eq(hashValue, sload(_PQ_OWNER_HASH_SLOT))
-                        )
-                    )
+                eq(
+                    mload(add(snapshot, 0x20)),
+                    sload(_ERC1967_IMPLEMENTATION_SLOT)
                 )
-            ) { revert(codesize(), 0x00) }
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(eq(mload(add(snapshot, 0x40)), sload(_PQ_FACTORY_SLOT))) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x60)),
+                    sload(not(_TRANSACTION_KEYS_ROOT))
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(mload(add(snapshot, 0x80)), sload(_TRANSACTION_KEYS_ROOT))
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0xa0)),
+                    sload(add(_TRANSACTION_KEYS_ROOT, 1))
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(mload(add(snapshot, 0xc0)), sload(not(_RECOVERY_KEYS_ROOT)))
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(mload(add(snapshot, 0xe0)), sload(_RECOVERY_KEYS_ROOT))
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x100)),
+                    sload(add(_RECOVERY_KEYS_ROOT, 1))
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x120)),
+                    sload(not(_VERIFICATION_KEYS_ROOT))
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(mload(add(snapshot, 0x140)), sload(_VERIFICATION_KEYS_ROOT))
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x160)),
+                    sload(add(_VERIFICATION_KEYS_ROOT, 1))
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
         }
     }
 
@@ -268,7 +371,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipWallet
-    function renounceOwnership() public payable override(IQuipWallet, Ownable) onlyOwner {
+    function renounceOwnership()
+        public
+        payable
+        override(IQuipWallet, Ownable)
+        onlyOwner
+    {
         revert RenounceDisabled();
     }
 
@@ -293,20 +401,32 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
         (
-            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         ) = Codec.decodeInit(payload);
-        _enforceNonZeroPqOwner(newPqOwner);
 
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
         $.quipFactory = FACTORY;
-        $.pqOwner = newPqOwner;
 
-        _addRecoveryKeys(recoveryKeys);
+        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+            if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            if (!$.recoveryKeys.add(recoveryKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+
         _verifyInitialState();
 
-        emit WalletInitialized(FACTORY, newOwner, newPqOwner, recoveryKeys);
+        emit WalletInitialized(
+            FACTORY,
+            newOwner,
+            transactionKeys,
+            recoveryKeys
+        );
     }
 
     /// @inheritdoc IQuipWallet
@@ -322,39 +442,48 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (factory.deprecatedImpls(implCodehash))
             revert ImplementationDeprecated();
 
-        Storage.Layout storage $ = Storage.layout();
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeUpgradeAuth(data);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
+        Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
 
         bytes32 digest = Codec.upgradeDigest(
             address(this),
             block.chainid,
             newImplementation,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
         LibCall.delegateCallContract(
             newImplementation,
             abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
         );
 
-        _rotatePqOwner(nextPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
-        (bool shouldMigrate, bytes calldata migratorPayload) = Codec.decodeUpgradeMigration(data);
+        (bool shouldMigrate, bytes calldata migratorPayload) = Codec
+            .decodeUpgradeMigration(data);
         if (shouldMigrate) {
             uint256 slot = _UPGRADE_GUARD_SLOT;
-            assembly { tstore(slot, 1) }
+            assembly {
+                tstore(slot, 1)
+            }
             // abi.encodeCall re-serializes migratorPayload into fresh calldata,
             // so migrate's decodeInit reads from offset 0 of the init layout
             // regardless of where the slice sat in the original upgrade payload.
@@ -362,74 +491,90 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                 newImplementation,
                 abi.encodeCall(this.migrate, (migratorPayload))
             );
-            assembly { tstore(slot, 0) }
+            assembly {
+                tstore(slot, 0)
+            }
         }
 
         super.upgradeToAndCall(newImplementation, data[0:0]);
     }
 
     /// @inheritdoc IQuipWallet
-    function changePqOwner(bytes calldata payload) public onlyOwner {
+    function changeTransactionKey(bytes calldata payload) public onlyOwner {
         (
-            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig
-        ) = Codec.decodeChangePqOwner(payload);
-
-        _enforceNonZeroPqOwner(newPqOwner);
-        _enforceDifferentPqOwner(newPqOwner);
+        ) = Codec.decodeChangeTransactionKey(payload);
 
         Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
+
         bytes32 digest = Codec.keyRotationDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            newPqOwner.publicSeed,
-            newPqOwner.publicKeyHash
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
-        _rotatePqOwner(newPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
     }
 
     /// @inheritdoc IQuipWallet
-    function execute(bytes calldata payload) public payable onlyOwner returns (bytes memory) {
+    function execute(
+        bytes calldata payload
+    ) public payable onlyOwner returns (bytes memory) {
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             address target,
             uint256 value,
             bytes calldata data
         ) = Codec.decodeExecute(payload);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
+        Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
 
         uint256 fee = getExecuteFee();
         if (address(this).balance < value + fee)
             revert InsufficientBalance(value + fee, address(this).balance);
 
-        Storage.Layout storage $ = Storage.layout();
         bytes32 dataHash = EfficientHashLib.hashCalldata(data);
         bytes32 digest = Codec.executeDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
             target,
             value,
             dataHash,
             fee
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
-        _rotatePqOwner(nextPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         if (fee > 0) SafeTransferLib.safeTransferETH($.quipFactory, fee);
 
@@ -452,93 +597,117 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function withdrawDepositTo(bytes calldata payload) public payable onlyOwner {
+    function withdrawDepositTo(
+        bytes calldata payload
+    ) public payable onlyOwner {
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             address to,
             uint256 amount
         ) = Codec.decodeWithdrawDeposit(payload);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-
         Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
+
         bytes32 digest = Codec.withdrawDepositDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
             to,
             amount
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
-        _rotatePqOwner(nextPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         ERC4337.withdrawDepositTo(to, amount);
     }
 
     /// @inheritdoc IQuipWallet
-    function transferOwnership(bytes calldata payload) public payable onlyOwner {
+    function transferOwnership(
+        bytes calldata payload
+    ) public payable onlyOwner {
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             address newOwner
         ) = Codec.decodeOwnershipTransfer(payload);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-
         Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
+
         bytes32 digest = Codec.transferOwnershipDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
             newOwner
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
-        _rotatePqOwner(nextPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         Ownable.transferOwnership(newOwner);
     }
 
     /// @inheritdoc IQuipWallet
-    function completeOwnershipHandover(bytes calldata payload) public payable onlyOwner {
+    function completeOwnershipHandover(
+        bytes calldata payload
+    ) public payable onlyOwner {
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             address pendingOwner
         ) = Codec.decodeOwnershipTransfer(payload);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-
         Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
+
         bytes32 digest = Codec.completeOwnershipHandoverDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
             pendingOwner
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
-        _rotatePqOwner(nextPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
         Ownable.completeOwnershipHandover(pendingOwner);
     }
@@ -547,204 +716,128 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     function recoverWallet(bytes calldata payload) public onlyOwner {
         (
             WOTSPlus.WinternitzAddress calldata recoveryKey,
-            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzAddress calldata newTransactionKey,
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeRecoverWallet(payload);
 
         Storage.Layout storage $ = Storage.layout();
-        if (!$.recoveryKeys.contains(recoveryKey))
-            revert RecoveryKeyNotFound();
-
-        _enforceNonZeroPqOwner(newPqOwner);
-        _enforceDifferentPqOwner(newPqOwner);
+        _enforceContained($.recoveryKeys, recoveryKey);
+        _enforceUncontained($.transactionKeys, newTransactionKey);
 
         bytes32 digest = Codec.keyRotationDigest(
             address(this),
             block.chainid,
             recoveryKey.publicSeed,
             recoveryKey.publicKeyHash,
-            newPqOwner.publicSeed,
-            newPqOwner.publicKeyHash
+            newTransactionKey.publicSeed,
+            newTransactionKey.publicKeyHash
         );
 
-        if (!WOTSPlus.verify(recoveryKey, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                recoveryKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
         $.recoveryKeys.remove(recoveryKey);
-        _rotatePqOwner(newPqOwner);
 
-        emit PqRecovery(recoveryKey, newPqOwner);
+        _clearKeys($.transactionKeys);
+        $.transactionKeys.add(newTransactionKey);
+
+        emit PqRecovery(recoveryKey, newTransactionKey);
     }
 
     /// @inheritdoc IQuipWallet
-    function addRecoveryKeys(bytes calldata payload) public onlyOwner {
+    function addKeys(KeyType kind, bytes calldata payload) public onlyOwner {
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
-        ) = Codec.decodeKeyManagement(payload);
-
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-        if (getRecoveryKeyCount() + newRecoveryKeys.length > MAX_KEYS)
-            revert RecoveryKeyLimitExceeded();
-
-        Storage.Layout storage $ = Storage.layout();
-        bytes32 keysHash = EfficientHashLib.hash(abi.encode(newRecoveryKeys));
-        bytes32 digest = Codec.keyManagementDigest(
-            address(this),
-            block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
-            keysHash
-        );
-
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
-
-        _addRecoveryKeys(newRecoveryKeys);
-
-        _rotatePqOwner(nextPqOwner);
-
-        emit RecoveryKeysAdded(nextPqOwner, newRecoveryKeys.length);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function replenishRecoveryKeys(bytes calldata payload) public onlyOwner {
-        (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
-        ) = Codec.decodeKeyManagement(payload);
-
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-        if (newRecoveryKeys.length > MAX_KEYS)
-            revert RecoveryKeyLimitExceeded();
-
-        Storage.Layout storage $ = Storage.layout();
-        bytes32 keysHash = EfficientHashLib.hash(abi.encode(newRecoveryKeys));
-        bytes32 digest = Codec.keyManagementDigest(
-            address(this),
-            block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
-            keysHash
-        );
-
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
-
-        uint256 clearLen = $.recoveryKeys.length();
-        for (uint256 i = 0; i < clearLen; ++i) {
-            WOTSPlus.WinternitzAddress memory existing = $.recoveryKeys.at(0);
-            $.recoveryKeys.remove(existing);
-        }
-
-        _addRecoveryKeys(newRecoveryKeys);
-
-        _rotatePqOwner(nextPqOwner);
-
-        emit RecoveryKeysReplenished(nextPqOwner);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function addVerificationKeys(bytes calldata payload) public onlyOwner {
-        (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             WOTSPlus.WinternitzAddress[] calldata newKeys
         ) = Codec.decodeKeyManagement(payload);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-        if (newKeys.length == 0) revert EmptyVerificationKeys();
-
+        if (newKeys.length == 0) revert EmptyKeys();
         Storage.Layout storage $ = Storage.layout();
-        if ($.verificationKeys.length() + newKeys.length > MAX_KEYS)
-            revert VerificationKeyLimitExceeded();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
 
         bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
-        bytes32 digest = Codec.verificationKeysDigest(
-            address(this),
-            block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
-            keysHash
-        );
+        bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
-        _addVerificationKeys(newKeys);
+        if (kind == KeyType.Transaction) {
+            _rotateKeys($.transactionKeys, currentKey, nextKey);
+            _addKeys($.transactionKeys, newKeys);
+        } else {
+            _addKeys(_keyset($, kind), newKeys);
+            _rotateKeys($.transactionKeys, currentKey, nextKey);
+        }
 
-        _rotatePqOwner(nextPqOwner);
-
-        emit VerificationKeysAdded(nextPqOwner, newKeys.length);
+        emit KeysAdded(kind, nextKey, newKeys.length);
     }
 
     /// @inheritdoc IQuipWallet
-    function refreshVerificationKeys(bytes calldata payload) public onlyOwner {
+    function refreshKeys(
+        KeyType kind,
+        bytes calldata payload
+    ) public onlyOwner {
+        if (kind == KeyType.Transaction) revert RefreshTransactionForbidden();
+
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             WOTSPlus.WinternitzAddress[] calldata newKeys
         ) = Codec.decodeKeyManagement(payload);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-        if (newKeys.length == 0) revert EmptyVerificationKeys();
-        if (newKeys.length > MAX_KEYS) revert VerificationKeyLimitExceeded();
-
+        if (newKeys.length == 0) revert EmptyKeys();
         Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
+
         bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
-        bytes32 digest = Codec.verificationKeysDigest(
-            address(this),
-            block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
-            keysHash
-        );
+        bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
-        uint256 clearLen = $.verificationKeys.length();
-        for (uint256 i = 0; i < clearLen; ++i) {
-            WOTSPlus.WinternitzAddress memory existing = $.verificationKeys.at(0);
-            $.verificationKeys.remove(existing);
-        }
+        Keyset.WinternitzAddressSet storage target = _keyset($, kind);
+        _clearKeys(target);
+        _addKeys(target, newKeys);
 
-        _addVerificationKeys(newKeys);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
-        _rotatePqOwner(nextPqOwner);
-
-        emit VerificationKeysRefreshed(nextPqOwner);
+        emit KeysRefreshed(kind, nextKey);
     }
 
     /// @inheritdoc IQuipWallet
     function replaceVerificationKeyAt(bytes calldata payload) public onlyOwner {
         (
-            WOTSPlus.WinternitzAddress calldata nextPqOwner,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             uint256 index,
             WOTSPlus.WinternitzAddress calldata newKey
         ) = Codec.decodeVerificationKeysReplace(payload);
 
-        _enforceNonZeroPqOwner(nextPqOwner);
-        _enforceDifferentPqOwner(nextPqOwner);
-        if (newKey.publicSeed == bytes32(0) || newKey.publicKeyHash == bytes32(0))
-            revert ZeroValuePqOwner();
-
         Storage.Layout storage $ = Storage.layout();
+        _enforceContained($.transactionKeys, currentKey);
+        _enforceUncontained($.transactionKeys, nextKey);
+
         if (index >= $.verificationKeys.length())
             revert VerificationKeyIndexOutOfBounds();
 
@@ -753,28 +846,37 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         bytes32 digest = Codec.verificationKeysReplaceDigest(
             address(this),
             block.chainid,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash,
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
             index,
             newKey.publicSeed,
             newKey.publicKeyHash
         );
 
-        if (!WOTSPlus.verify($.pqOwner, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                currentKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
         $.verificationKeys.remove(oldKey);
-        if (!$.verificationKeys.add(newKey)) revert DuplicateVerificationKey();
+        // `add` enforces non-zero fields, and cap=MAX_KEYS is preserved since we just removed one.
+        if (!$.verificationKeys.add(newKey, MAX_KEYS)) revert DuplicateKey();
 
-        _rotatePqOwner(nextPqOwner);
+        _rotateKeys($.transactionKeys, currentKey, nextKey);
 
-        emit VerificationKeyReplaced(index, oldKey, newKey, nextPqOwner);
+        emit VerificationKeyReplaced(index, oldKey, newKey, nextKey);
     }
 
     /// @inheritdoc IQuipWallet
-    function recoveryUpgrade(address newImplementation, bytes calldata payload) public onlyOwner {
+    function recoveryUpgrade(
+        address newImplementation,
+        bytes calldata payload
+    ) public onlyOwner {
         // Vet implementation locally BEFORE any delegatecall.
         bytes32 implCodehash = newImplementation.codehash;
         IQuipFactory factory = IQuipFactory(FACTORY);
@@ -785,30 +887,35 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         (
             WOTSPlus.WinternitzAddress calldata recoveryKey,
             WOTSPlus.WinternitzElements calldata pqSig
-        ) = Codec.decodeUpgradeAuth(payload);
+        ) = Codec.decodeRecoveryUpgradeAuth(payload);
 
         Storage.Layout storage $ = Storage.layout();
 
-        if (!$.recoveryKeys.contains(recoveryKey))
-            revert RecoveryKeyNotFound();
+        _enforceContained($.recoveryKeys, recoveryKey);
 
         bytes32 digest = Codec.upgradeRecoveryDigest(
             address(this),
             block.chainid,
             newImplementation,
-            $.pqOwner.publicSeed,
-            $.pqOwner.publicKeyHash,
             recoveryKey.publicSeed,
             recoveryKey.publicKeyHash
         );
 
-        if (!WOTSPlus.verify(recoveryKey, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                recoveryKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
 
         // Delegatecall to vetted implementation (defense-in-depth).
         LibCall.delegateCallContract(
             newImplementation,
-            abi.encodeCall(this.verifyUpgrade, (newImplementation, payload))
+            abi.encodeCall(
+                this.verifyRecoveryUpgrade,
+                (newImplementation, payload)
+            )
         );
 
         $.recoveryKeys.remove(recoveryKey);
@@ -822,23 +929,26 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     function migrate(bytes calldata payload) external {
         if (_upgradeGuard() == 0) revert NotUpgrading();
         (
-            WOTSPlus.WinternitzAddress calldata newPqOwner,
+            WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         ) = Codec.decodeInit(payload);
-        _enforceNonZeroPqOwner(newPqOwner);
 
         Storage.Layout storage $ = Storage.layout();
-        $.pqOwner = newPqOwner;
 
-        uint256 clearLen = $.recoveryKeys.length();
-        for (uint256 i = 0; i < clearLen; ++i) {
-            WOTSPlus.WinternitzAddress memory existing = $.recoveryKeys.at(0);
-            $.recoveryKeys.remove(existing);
+        _clearKeys($.transactionKeys);
+        _clearKeys($.recoveryKeys);
+
+        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+            if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
+                revert DuplicateKey();
         }
-        _addRecoveryKeys(recoveryKeys);
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            if (!$.recoveryKeys.add(recoveryKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
         _verifyInitialState();
 
-        emit WalletMigrated(newPqOwner);
+        emit WalletMigrated(EfficientHashLib.hash(abi.encode(transactionKeys)));
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -863,8 +973,40 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             verifier.publicKeyHash
         );
 
-        if (!WOTSPlus.verify(verifier, WOTSPlus.WinternitzMessage({ messageHash: digest }), verifySig))
-            revert InvalidSignature();
+        if (
+            !WOTSPlus.verify(
+                verifier,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                verifySig
+            )
+        ) revert InvalidSignature();
+    }
+
+    /// @inheritdoc IQuipWallet
+    function verifyRecoveryUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) public view {
+        (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            WOTSPlus.WinternitzElements calldata verifySig
+        ) = Codec.decodeRecoveryUpgradeVerification(data);
+
+        bytes32 digest = Codec.verificationDigest(
+            address(this),
+            block.chainid,
+            newImplementation,
+            verifier.publicSeed,
+            verifier.publicKeyHash
+        );
+
+        if (
+            !WOTSPlus.verify(
+                verifier,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                verifySig
+            )
+        ) revert InvalidSignature();
     }
 
     /// @inheritdoc IQuipWallet
@@ -873,13 +1015,22 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function pqOwner()
-        public
-        view
-        returns (bytes32 publicSeed, bytes32 publicKeyHash)
-    {
-        Storage.Layout storage $ = Storage.layout();
-        return ($.pqOwner.publicSeed, $.pqOwner.publicKeyHash);
+    function getTransactionKeyCount() public view returns (uint256) {
+        return Storage.layout().transactionKeys.length();
+    }
+
+    /// @inheritdoc IQuipWallet
+    function getTransactionKeyAt(
+        uint256 index
+    ) public view returns (WOTSPlus.WinternitzAddress memory) {
+        return Storage.layout().transactionKeys.at(index);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function isTransactionKey(
+        WOTSPlus.WinternitzAddress calldata key
+    ) public view returns (bool) {
+        return Storage.layout().transactionKeys.contains(key);
     }
 
     /// @inheritdoc IQuipWallet
@@ -944,8 +1095,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             verifier.publicKeyHash,
             hash
         );
-        if (!WOTSPlus.verify(verifier, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            return 0xffffffff;
+        if (
+            !WOTSPlus.verify(
+                verifier,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) return 0xffffffff;
 
         return 0x1626ba7e;
     }
@@ -968,88 +1124,117 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /*                        INTERNALS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function _enforceNonZeroPqOwner(
-        WOTSPlus.WinternitzAddress calldata pqOwner
-    ) internal pure {
-        if (
-            pqOwner.publicSeed == bytes32(0) ||
-            pqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
-    }
-
-    function _enforceDifferentPqOwner(
-        WOTSPlus.WinternitzAddress calldata nextPqOwner
-    ) internal view {
-        Storage.Layout storage $ = Storage.layout();
-        if (
-            nextPqOwner.publicSeed == $.pqOwner.publicSeed &&
-            nextPqOwner.publicKeyHash == $.pqOwner.publicKeyHash
-        ) revert PqOwnerReuse();
-    }
-
-    /// @dev Validates and adds recovery keys to the set. Reverts if any key has zero fields,
-    ///      is a duplicate, or if the set would exceed `MAX_KEYS`.
-    function _addRecoveryKeys(
+    /// @dev Appends calldata-provided keys to `set`, capped at `MAX_KEYS`.
+    ///      Library `add` enforces non-zero fields and capacity; duplicates return
+    ///      false and surface here as `DuplicateKey`.
+    function _addKeys(
+        Keyset.WinternitzAddressSet storage set,
         WOTSPlus.WinternitzAddress[] calldata keys
     ) internal {
-        if (keys.length == 0) revert EmptyRecoveryKeys();
-        Keyset.WinternitzAddressSet storage set = Storage.layout().recoveryKeys;
         uint256 len = keys.length;
         for (uint256 i = 0; i < len; ++i) {
-            if (
-                keys[i].publicSeed == bytes32(0) ||
-                keys[i].publicKeyHash == bytes32(0)
-            ) revert ZeroValuePqOwner();
-            if (!set.add(keys[i], MAX_KEYS)) revert DuplicateRecoveryKey();
+            if (!set.add(keys[i], MAX_KEYS)) revert DuplicateKey();
         }
     }
 
-    /// @dev Fixed-size overload used by initialize (codec returns WinternitzAddress[10]).
-    function _addRecoveryKeys(
-        WOTSPlus.WinternitzAddress[10] calldata keys
-    ) internal {
-        Keyset.WinternitzAddressSet storage set = Storage.layout().recoveryKeys;
-        for (uint256 i = 0; i < MAX_KEYS; ++i) {
-            if (
-                keys[i].publicSeed == bytes32(0) ||
-                keys[i].publicKeyHash == bytes32(0)
-            ) revert ZeroValuePqOwner();
-            if (!set.add(keys[i], MAX_KEYS)) revert DuplicateRecoveryKey();
+    /// @dev Drains all entries from `set`.
+    function _clearKeys(Keyset.WinternitzAddressSet storage set) internal {
+        uint256 n = set.length();
+        for (uint256 i = 0; i < n; ++i) {
+            WOTSPlus.WinternitzAddress memory existing = set.at(0);
+            set.remove(existing);
         }
+    }
+
+    /// @dev Removes `currentKey` and installs `nextKey` in `set`. Remove-then-add
+    ///      preserves size so a rotation at full capacity cannot trip the `MAX_KEYS` cap.
+    function _rotateKeys(
+        Keyset.WinternitzAddressSet storage set,
+        WOTSPlus.WinternitzAddress calldata currentKey,
+        WOTSPlus.WinternitzAddress calldata nextKey
+    ) internal {
+        set.remove(currentKey);
+        set.add(nextKey);
+        emit KeyRotated(currentKey, nextKey);
+    }
+
+    /// @dev Returns the target keyset for `kind` from `$`.
+    function _keyset(
+        Storage.Layout storage $,
+        KeyType kind
+    ) internal view returns (Keyset.WinternitzAddressSet storage set) {
+        if (kind == KeyType.Transaction) return $.transactionKeys;
+        if (kind == KeyType.Recovery) return $.recoveryKeys;
+        return $.verificationKeys;
+    }
+
+    /// @dev Returns the `addKeys`/`refreshKeys` digest for the target keyset.
+    ///      Distinct tag per keyset prevents cross-type signature replay.
+    function _addDigest(
+        KeyType kind,
+        WOTSPlus.WinternitzAddress calldata currentKey,
+        WOTSPlus.WinternitzAddress calldata nextKey,
+        bytes32 keysHash
+    ) internal view returns (bytes32) {
+        if (kind == KeyType.Transaction) {
+            return
+                Codec.addTransactionKeysDigest(
+                    address(this),
+                    block.chainid,
+                    currentKey.publicSeed,
+                    currentKey.publicKeyHash,
+                    nextKey.publicSeed,
+                    nextKey.publicKeyHash,
+                    keysHash
+                );
+        }
+        if (kind == KeyType.Verification) {
+            return
+                Codec.verificationKeysDigest(
+                    address(this),
+                    block.chainid,
+                    currentKey.publicSeed,
+                    currentKey.publicKeyHash,
+                    nextKey.publicSeed,
+                    nextKey.publicKeyHash,
+                    keysHash
+                );
+        }
+        return
+            Codec.keyManagementDigest(
+                address(this),
+                block.chainid,
+                currentKey.publicSeed,
+                currentKey.publicKeyHash,
+                nextKey.publicSeed,
+                nextKey.publicKeyHash,
+                keysHash
+            );
+    }
+
+    /// @dev Reverts with `UnknownKey` if `key` is not a member of `set`.
+    function _enforceContained(
+        Keyset.WinternitzAddressSet storage set,
+        WOTSPlus.WinternitzAddress calldata key
+    ) internal view {
+        if (!set.contains(key)) revert UnknownKey();
+    }
+
+    /// @dev Reverts with `DuplicateKey` if `key` is already a member of `set`.
+    function _enforceUncontained(
+        Keyset.WinternitzAddressSet storage set,
+        WOTSPlus.WinternitzAddress calldata key
+    ) internal view {
+        if (set.contains(key)) revert DuplicateKey();
     }
 
     function _verifyInitialState() internal view {
         Storage.Layout storage $ = Storage.layout();
         if ($.quipFactory == address(0)) revert ZeroAddressFactory();
-        if (
-            $.pqOwner.publicSeed == bytes32(0) ||
-            $.pqOwner.publicKeyHash == bytes32(0)
-        ) revert ZeroValuePqOwner();
-        if ($.recoveryKeys.length() != MAX_KEYS) revert IncorrectRecoveryKeyAmount();
-    }
-
-    /// @dev Validates and adds verification keys. Reverts on zero-field,
-    ///      duplicate, or capacity-exceeded.
-    function _addVerificationKeys(
-        WOTSPlus.WinternitzAddress[] calldata keys
-    ) internal {
-        Keyset.WinternitzAddressSet storage set = Storage.layout().verificationKeys;
-        uint256 len = keys.length;
-        for (uint256 i = 0; i < len; ++i) {
-            if (
-                keys[i].publicSeed == bytes32(0) ||
-                keys[i].publicKeyHash == bytes32(0)
-            ) revert ZeroValuePqOwner();
-            if (!set.add(keys[i], MAX_KEYS)) revert DuplicateVerificationKey();
-        }
-    }
-
-    /// @dev Rotates the post-quantum owner key and emits `PqOwnerRotated`.
-    function _rotatePqOwner(WOTSPlus.WinternitzAddress calldata nextPqOwner) internal {
-        Storage.Layout storage $ = Storage.layout();
-        WOTSPlus.WinternitzAddress memory oldPqOwner = $.pqOwner;
-        $.pqOwner = nextPqOwner;
-        emit PqOwnerRotated(oldPqOwner, nextPqOwner);
+        if ($.transactionKeys.length() != Codec.TRANSACTION_KEY_INIT_AMOUNT)
+            revert IncorrectTransactionKeyAmount();
+        if ($.recoveryKeys.length() != MAX_KEYS)
+            revert IncorrectRecoveryKeyAmount();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -1058,6 +1243,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     function _upgradeGuard() internal view returns (uint256 v) {
         uint256 slot = _UPGRADE_GUARD_SLOT;
-        assembly { v := tload(slot) }
+        assembly {
+            v := tload(slot)
+        }
     }
 }

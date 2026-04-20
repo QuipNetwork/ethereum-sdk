@@ -21,8 +21,7 @@ import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {IPaymaster, IEntryPointStake, PackedUserOperation} from
-    "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {IPaymaster, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {IQuipPaymaster} from "./interfaces/IQuipPaymaster.sol";
 import {QuipPaymasterStorage as Storage} from "./storage/QuipPaymasterStorage.sol";
 
@@ -31,20 +30,27 @@ import {QuipPaymasterStorage as Storage} from "./storage/QuipPaymasterStorage.so
 ///      signatures from a trusted backend to authorize gas sponsorship for QuipWallet
 ///      UserOperations. Each sponsored wallet has its own WOTS+ key chain, so key
 ///      rotation serializes per-wallet rather than globally.
-contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializable {
+contract QuipPaymaster is
+    IQuipPaymaster,
+    Ownable,
+    UUPSUpgradeable,
+    Initializable
+{
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          CONSTANTS                            */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev ERC-4337 v0.7 EntryPoint singleton address.
-    address public constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address public constant ENTRY_POINT =
+        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     /// @dev Offset into `paymasterAndData` where custom paymaster data begins.
     ///      [0:20) paymaster address, [20:36) verificationGasLimit, [36:52) postOpGasLimit.
     uint256 private constant _PAYMASTER_DATA_OFFSET = 52;
 
     /// @dev Domain tag for paymaster approval digests (WOTS+ domain-tagged, not EIP-712).
-    bytes32 private constant _PAYMASTER_APPROVE_TAG = keccak256("quip.digest.paymasterApprove");
+    bytes32 private constant _PAYMASTER_APPROVE_TAG =
+        keccak256("quip.digest.paymasterApprove");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         CONSTRUCTOR                           */
@@ -53,7 +59,6 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
     constructor() {
         _disableInitializers();
     }
-
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                      INTERNAL OVERRIDES                       */
@@ -91,15 +96,24 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
         // [6:12)    validAfter (uint48)
         // [12:76)   nextVerifier (WinternitzAddress: 32 bytes publicSeed + 32 bytes publicKeyHash)
         // [76:2220) WOTS+ signature (67 × 32 = 2144 bytes)
-        bytes calldata paymasterData = userOp.paymasterAndData[_PAYMASTER_DATA_OFFSET:];
+        bytes calldata paymasterData = userOp
+            .paymasterAndData[_PAYMASTER_DATA_OFFSET:];
 
-        if (!_verifyAndRotate(userOp.sender, userOp.nonce, userOp.callData, paymasterData))
-            return ("", 1);
+        if (
+            !_verifyAndRotate(
+                userOp.sender,
+                userOp.nonce,
+                userOp.callData,
+                paymasterData
+            )
+        ) return ("", 1);
 
         // Pack validationData: [0:160) authorizer=0, [160:208) validUntil, [208:256) validAfter.
         uint48 validUntil = uint48(bytes6(paymasterData[:6]));
         uint48 validAfter = uint48(bytes6(paymasterData[6:12]));
-        validationData = (uint256(validUntil) << 160) | (uint256(validAfter) << 208);
+        validationData =
+            (uint256(validUntil) << 160) |
+            (uint256(validAfter) << 208);
         context = "";
     }
 
@@ -118,8 +132,10 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
         address wallet,
         WOTSPlus.WinternitzAddress calldata verifier
     ) external onlyOwner {
-        if (verifier.publicSeed == bytes32(0) || verifier.publicKeyHash == bytes32(0))
-            revert ZeroValuePqVerifierKey();
+        if (
+            verifier.publicSeed == bytes32(0) ||
+            verifier.publicKeyHash == bytes32(0)
+        ) revert ZeroValuePqVerifierKey();
 
         Storage.Layout storage $ = Storage.layout();
         $.verifiers[wallet] = verifier;
@@ -130,8 +146,10 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
     function removePqVerifier(address wallet) external onlyOwner {
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress storage existing = $.verifiers[wallet];
-        if (existing.publicSeed == bytes32(0) && existing.publicKeyHash == bytes32(0))
-            revert PqVerifierNotRegistered();
+        if (
+            existing.publicSeed == bytes32(0) &&
+            existing.publicKeyHash == bytes32(0)
+        ) revert PqVerifierNotRegistered();
 
         delete $.verifiers[wallet];
         emit PqVerifierRemoved(wallet);
@@ -139,7 +157,9 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
 
     /// @inheritdoc IQuipPaymaster
     function deposit() external payable {
-        IEntryPointStake(ENTRY_POINT).depositTo{value: msg.value}(address(this));
+        IEntryPointStake(ENTRY_POINT).depositTo{value: msg.value}(
+            address(this)
+        );
     }
 
     /// @inheritdoc IQuipPaymaster
@@ -149,7 +169,9 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
 
     /// @inheritdoc IQuipPaymaster
     function addStake(uint32 unstakeDelaySec) external payable onlyOwner {
-        IEntryPointStake(ENTRY_POINT).addStake{value: msg.value}(unstakeDelaySec);
+        IEntryPointStake(ENTRY_POINT).addStake{value: msg.value}(
+            unstakeDelaySec
+        );
     }
 
     /// @inheritdoc IQuipPaymaster
@@ -192,14 +214,20 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
         }
 
         // Reject zero-value next verifier.
-        if (nextVerifier.publicSeed == bytes32(0) || nextVerifier.publicKeyHash == bytes32(0))
-            return false;
+        if (
+            nextVerifier.publicSeed == bytes32(0) ||
+            nextVerifier.publicKeyHash == bytes32(0)
+        ) return false;
 
-        WOTSPlus.WinternitzAddress storage currentVerifier = Storage.layout().verifiers[sender];
+        WOTSPlus.WinternitzAddress storage currentVerifier = Storage
+            .layout()
+            .verifiers[sender];
 
         // Reject if no verifier set for this wallet.
-        if (currentVerifier.publicSeed == bytes32(0) && currentVerifier.publicKeyHash == bytes32(0))
-            return false;
+        if (
+            currentVerifier.publicSeed == bytes32(0) &&
+            currentVerifier.publicKeyHash == bytes32(0)
+        ) return false;
 
         // Reject key reuse (next must differ from current).
         if (
@@ -226,8 +254,13 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
             opCommitment
         );
 
-        if (!WOTSPlus.verify(currentVerifier, WOTSPlus.WinternitzMessage({ messageHash: digest }), pqSig))
-            return false;
+        if (
+            !WOTSPlus.verify(
+                currentVerifier,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) return false;
 
         // Emit before rotating so currentVerifier fields are still the old values.
         emit PqVerifierRotated(sender, currentVerifier, nextVerifier);
@@ -243,7 +276,9 @@ contract QuipPaymaster is IQuipPaymaster, Ownable, UUPSUpgradeable, Initializabl
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipPaymaster
-    function getPqVerifier(address wallet) external view returns (WOTSPlus.WinternitzAddress memory) {
+    function getPqVerifier(
+        address wallet
+    ) external view returns (WOTSPlus.WinternitzAddress memory) {
         return Storage.layout().verifiers[wallet];
     }
 

@@ -16,8 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {IPaymaster, PackedUserOperation} from
-    "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {IPaymaster, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipPaymaster
@@ -57,7 +56,10 @@ interface IQuipPaymaster is IPaymaster {
     /// @notice Emitted when a per-wallet WOTS+ verifier is set.
     /// @param wallet The wallet address the verifier is set for.
     /// @param verifier The WOTS+ verifier.
-    event PqVerifierSet(address indexed wallet, WOTSPlus.WinternitzAddress verifier);
+    event PqVerifierSet(
+        address indexed wallet,
+        WOTSPlus.WinternitzAddress verifier
+    );
 
     /// @notice Emitted when a per-wallet WOTS+ verifier key is removed.
     /// @param wallet The wallet address whose verifier was removed.
@@ -128,5 +130,7 @@ interface IQuipPaymaster is IPaymaster {
     /// @notice Returns the WOTS+ verifier for a specific wallet.
     /// @param wallet The wallet address to query.
     /// @return The verifier's WinternitzAddress (zero if none set).
-    function getPqVerifier(address wallet) external view returns (WOTSPlus.WinternitzAddress memory);
+    function getPqVerifier(
+        address wallet
+    ) external view returns (WOTSPlus.WinternitzAddress memory);
 }
