@@ -304,16 +304,25 @@ interface IQuipWallet {
     /// @return The factory address.
     function quipFactory() external view returns (address payable);
 
-    /// @notice Returns the number of active transaction keys in the set.
-    function getTransactionKeyCount() external view returns (uint256);
+    /// @notice Returns the number of keys in the selected keyset.
+    /// @param kind The keyset to query.
+    /// @return The number of active keys in that keyset.
+    function keyCount(KeyType kind) external view returns (uint256);
 
-    /// @notice Returns the transaction key at a given index.
-    function getTransactionKeyAt(
+    /// @notice Returns the key at a given index within the selected keyset.
+    /// @param kind The keyset to query.
+    /// @param index The zero-based index into the keyset.
+    /// @return The Winternitz public key stored at `index`.
+    function keyAt(
+        KeyType kind,
         uint256 index
     ) external view returns (WOTSPlus.WinternitzAddress memory);
 
-    /// @notice Returns whether the given Winternitz address is an active transaction key.
-    function isTransactionKey(
+    /// @notice Returns whether the given Winternitz address is a member of the selected keyset.
+    /// @param kind The keyset to query.
+    /// @param key The Winternitz public key to check.
+    function isKey(
+        KeyType kind,
         WOTSPlus.WinternitzAddress calldata key
     ) external view returns (bool);
 
@@ -356,40 +365,11 @@ interface IQuipWallet {
         bytes calldata payload
     ) external;
 
-    /// @notice Returns the number of recovery keys in the set.
-    /// @return The number of registered recovery keys.
-    function getRecoveryKeyCount() external view returns (uint256);
-
-    /// @notice Returns the recovery key at a given index.
-    /// @return The Winternitz public key stored at `index`.
-    function getRecoveryKeyAt(
-        uint256 index
-    ) external view returns (WOTSPlus.WinternitzAddress memory);
-
-    /// @notice Returns whether the given Winternitz address is a registered recovery key.
-    function isRecoveryKey(
-        WOTSPlus.WinternitzAddress calldata key
-    ) external view returns (bool);
-
     /// @notice Replaces a single verification key at the given index.
     /// @dev Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
     ///      [2272:2304) index, [2304:2368) newKey.
     /// @param payload Packed replace-verification-key data (2368 bytes).
     function replaceVerificationKeyAt(bytes calldata payload) external;
-
-    /// @notice Returns the number of verification keys.
-    function getVerificationKeyCount() external view returns (uint256);
-
-    /// @notice Returns the verification key at a given index.
-    /// @return The Winternitz public key stored at `index`.
-    function getVerificationKeyAt(
-        uint256 index
-    ) external view returns (WOTSPlus.WinternitzAddress memory);
-
-    /// @notice Returns whether the given Winternitz address is a registered verification key.
-    function isVerificationKey(
-        WOTSPlus.WinternitzAddress calldata key
-    ) external view returns (bool);
 
     /// @notice Returns the implementation version of this wallet.
     /// @dev Reads the ERC-1967 implementation slot and queries the factory for

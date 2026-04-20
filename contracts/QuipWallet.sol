@@ -778,7 +778,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             _rotateKeys($.transactionKeys, currentKey, nextKey);
             _addKeys($.transactionKeys, newKeys);
         } else {
-            _addKeys(_keyset($, kind), newKeys);
+            _addKeys(_keyset(kind), newKeys);
             _rotateKeys($.transactionKeys, currentKey, nextKey);
         }
 
@@ -815,7 +815,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             )
         ) revert InvalidSignature();
 
-        Keyset.WinternitzAddressSet storage target = _keyset($, kind);
+        Keyset.WinternitzAddressSet storage target = _keyset(kind);
         _clearKeys(target);
         _addKeys(target, newKeys);
 
@@ -1015,60 +1015,24 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function getTransactionKeyCount() public view returns (uint256) {
-        return Storage.layout().transactionKeys.length();
+    function keyCount(KeyType kind) public view returns (uint256) {
+        return _keyset(kind).length();
     }
 
     /// @inheritdoc IQuipWallet
-    function getTransactionKeyAt(
+    function keyAt(
+        KeyType kind,
         uint256 index
     ) public view returns (WOTSPlus.WinternitzAddress memory) {
-        return Storage.layout().transactionKeys.at(index);
+        return _keyset(kind).at(index);
     }
 
     /// @inheritdoc IQuipWallet
-    function isTransactionKey(
+    function isKey(
+        KeyType kind,
         WOTSPlus.WinternitzAddress calldata key
     ) public view returns (bool) {
-        return Storage.layout().transactionKeys.contains(key);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function getRecoveryKeyCount() public view returns (uint256) {
-        return Storage.layout().recoveryKeys.length();
-    }
-
-    /// @inheritdoc IQuipWallet
-    function getRecoveryKeyAt(
-        uint256 index
-    ) public view returns (WOTSPlus.WinternitzAddress memory) {
-        return Storage.layout().recoveryKeys.at(index);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function isRecoveryKey(
-        WOTSPlus.WinternitzAddress calldata key
-    ) public view returns (bool) {
-        return Storage.layout().recoveryKeys.contains(key);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function getVerificationKeyCount() public view returns (uint256) {
-        return Storage.layout().verificationKeys.length();
-    }
-
-    /// @inheritdoc IQuipWallet
-    function getVerificationKeyAt(
-        uint256 index
-    ) public view returns (WOTSPlus.WinternitzAddress memory) {
-        return Storage.layout().verificationKeys.at(index);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function isVerificationKey(
-        WOTSPlus.WinternitzAddress calldata key
-    ) public view returns (bool) {
-        return Storage.layout().verificationKeys.contains(key);
+        return _keyset(kind).contains(key);
     }
 
     /// @notice ERC-1271 validation via a Winternitz key in `verificationKeys`.
@@ -1158,11 +1122,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         emit KeyRotated(currentKey, nextKey);
     }
 
-    /// @dev Returns the target keyset for `kind` from `$`.
+    /// @dev Returns the target keyset for `kind`.
     function _keyset(
-        Storage.Layout storage $,
         KeyType kind
     ) internal view returns (Keyset.WinternitzAddressSet storage set) {
+        Storage.Layout storage $ = Storage.layout();
         if (kind == KeyType.Transaction) return $.transactionKeys;
         if (kind == KeyType.Recovery) return $.recoveryKeys;
         return $.verificationKeys;
