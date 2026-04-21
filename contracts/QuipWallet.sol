@@ -406,20 +406,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeInit(payload);
 
         _initializeOwner(newOwner);
-        Storage.Layout storage $ = Storage.layout();
-        $.quipFactory = FACTORY;
-
-        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
-            if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
-                revert DuplicateKey();
-        }
-
-        for (uint256 i = 0; i < MAX_KEYS; ++i) {
-            if (!$.recoveryKeys.add(recoveryKeys[i], MAX_KEYS))
-                revert DuplicateKey();
-        }
-
-        _verifyInitialState();
+        Storage.layout().quipFactory = FACTORY;
+        _installInitialKeys(transactionKeys, recoveryKeys);
 
         emit WalletInitialized(
             FACTORY,
@@ -831,19 +819,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeInit(payload);
 
         Storage.Layout storage $ = Storage.layout();
-
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
-
-        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
-            if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
-                revert DuplicateKey();
-        }
-        for (uint256 i = 0; i < MAX_KEYS; ++i) {
-            if (!$.recoveryKeys.add(recoveryKeys[i], MAX_KEYS))
-                revert DuplicateKey();
-        }
-        _verifyInitialState();
+        _installInitialKeys(transactionKeys, recoveryKeys);
 
         emit WalletMigrated(EfficientHashLib.hash(abi.encode(transactionKeys)));
     }
@@ -1147,6 +1125,25 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         WOTSPlus.WinternitzAddress calldata key
     ) internal view {
         if (set.contains(key)) revert DuplicateKey();
+    }
+
+    /// @dev Loads the initial transaction- and recovery-key batches into storage
+    ///      and asserts the post-state invariants. Shared by `initialize` and
+    ///      `migrate`; the caller is responsible for clearing any prior state.
+    function _installInitialKeys(
+        WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
+        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+    ) internal {
+        Storage.Layout storage $ = Storage.layout();
+        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+            if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            if (!$.recoveryKeys.add(recoveryKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+        _verifyInitialState();
     }
 
     function _verifyInitialState() internal view {
