@@ -92,6 +92,11 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [64:128)    WinternitzAddress     — nextKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///
+///      ERC-1271 signature layout (2273 bytes, used by isValidSignature):
+///      [0:64)      WinternitzAddress     — verifier
+///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
+///      [2208:2273) bytes                 — ecdsaSig (r(32) ++ s(32) ++ v(1))
+///
 ///      Constants:
 ///        TRANSACTION_KEY_INIT_AMOUNT = 5
 ///        RECOVERY_KEY_AMOUNT         = 10
@@ -506,7 +511,10 @@ library WOTSPlusCodec {
     }
 
     /// @dev Decodes the ERC-1271 signature payload.
-    ///      Layout: [0:64) verifier, [64:2208) pqSig.
+    ///      Layout: [0:64) verifier, [64:2208) pqSig, [2208:2273) ecdsaSig (r ++ s ++ v).
+    ///      The ECDSA half is a standard 65-byte secp256k1 signature over the raw
+    ///      ERC-1271 hash (no domain tag) — it is an AND-mode failsafe on top of the
+    ///      WOTS+ half, recovered against the wallet's classical `owner()`.
     function decodeErc1271Signature(
         bytes calldata signature
     )
@@ -514,13 +522,15 @@ library WOTSPlusCodec {
         pure
         returns (
             WOTSPlus.WinternitzAddress calldata verifier,
-            WOTSPlus.WinternitzElements calldata pqSig
+            WOTSPlus.WinternitzElements calldata pqSig,
+            bytes calldata ecdsaSig
         )
     {
         assembly {
             verifier := signature.offset
             pqSig := add(signature.offset, 64)
         }
+        ecdsaSig = signature[2208:2273];
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -715,16 +725,19 @@ library WOTSPlusCodec {
     }
 
     /// @dev Encodes the ERC-1271 signature payload.
-    /// @return The packed signature (2208 bytes).
+    /// @param ecdsaSig Standard 65-byte secp256k1 signature (r ++ s ++ v).
+    /// @return The packed signature (2273 bytes).
     function encodeErc1271Signature(
         WOTSPlus.WinternitzAddress memory verifier,
-        WOTSPlus.WinternitzElements memory pqSig
+        WOTSPlus.WinternitzElements memory pqSig,
+        bytes memory ecdsaSig
     ) internal pure returns (bytes memory) {
         return
             abi.encodePacked(
                 verifier.publicSeed,
                 verifier.publicKeyHash,
-                pqSig.elements
+                pqSig.elements,
+                ecdsaSig
             );
     }
 

@@ -23,6 +23,7 @@ import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
+import {ECDSA} from "solady-0.1.26/src/utils/ECDSA.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
@@ -864,19 +865,35 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         return _keyset(kind).contains(key);
     }
 
-    /// @notice ERC-1271 validation via a Winternitz key in `verificationKeys`.
-    /// @dev Stateless/view: does NOT consume the key. Callers must rotate used keys
-    ///      out-of-band via `replaceVerificationKeyAt` to avoid WOTS+ key reuse.
-    ///      Signature layout: [0:64) verifier, [64:2208) pqSig.
+    /// @notice ERC-1271 validation. Requires BOTH a valid WOTS+ signature from a
+    ///         verification-keyset member AND a valid ECDSA signature from the
+    ///         classical `owner()` over the raw `hash`.
+    /// @dev Stateless/view: does NOT consume the WOTS+ key. Callers must rotate
+    ///      used verification keys out-of-band via `replaceVerificationKeyAt` to
+    ///      avoid WOTS+ key reuse.
+    ///
+    ///      AND semantics + raw-hash ECDSA is a failsafe: if the WOTS+ half ever
+    ///      breaks (scheme bug, verifier flaw), the ECDSA half still binds the
+    ///      hash to a signature from the wallet's classical owner. The ECDSA
+    ///      check requires `owner()` to be an EOA so `ecrecover` can return a
+    ///      meaningful address — contract owners do not currently satisfy this
+    ///      path.
+    ///
+    ///      Signature layout: [0:64) verifier, [64:2208) pqSig, [2208:2273) ecdsaSig.
     function isValidSignature(
         bytes32 hash,
         bytes calldata signature
     ) public view override returns (bytes4) {
-        if (signature.length != 2208) return 0xffffffff;
+        if (signature.length != 2273) return 0xffffffff;
         (
             WOTSPlus.WinternitzAddress calldata verifier,
-            WOTSPlus.WinternitzElements calldata pqSig
+            WOTSPlus.WinternitzElements calldata pqSig,
+            bytes calldata ecdsaSig
         ) = Codec.decodeErc1271Signature(signature);
+
+        address recovered = ECDSA.tryRecoverCalldata(hash, ecdsaSig);
+        if (recovered == address(0) || recovered != owner())
+            return 0xffffffff;
 
         Storage.Layout storage $ = Storage.layout();
         if (!$.verificationKeys.contains(verifier)) return 0xffffffff;
