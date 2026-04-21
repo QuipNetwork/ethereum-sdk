@@ -152,40 +152,27 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
-    /// Fee is only collected on success — if the inner call reverts, the entire
-    /// execution phase rolls back (including the fee transfer). The EntryPoint
-    /// still deducts gas costs from the wallet's prefund deposit.
     /// Owner must use `execute(bytes)` which has inline PQ auth.
     function execute(
         address target,
         uint256 value,
         bytes calldata data
     ) public payable override onlyEntryPoint returns (bytes memory result) {
-        uint256 fee = getExecuteFee();
-        if (fee > 0 && address(this).balance >= fee) {
-            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
-        }
+        _collectExecuteFee();
         result = super.execute(target, value, data);
     }
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
-    /// Fee is only collected on success — if any call in the batch reverts,
-    /// the entire execution phase rolls back (including the fee transfer).
     function executeBatch(
         Call[] calldata calls
     ) public payable override onlyEntryPoint returns (bytes[] memory results) {
-        uint256 fee = getExecuteFee();
-        if (fee > 0 && address(this).balance >= fee) {
-            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
-        }
+        _collectExecuteFee();
         results = super.executeBatch(calls);
     }
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
-    /// Fee is only collected on success — if the delegatecall reverts, the entire
-    /// execution phase rolls back (including the fee transfer).
     function delegateExecute(
         address delegate,
         bytes calldata data
@@ -197,10 +184,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         delegateExecuteGuard
         returns (bytes memory result)
     {
-        uint256 fee = getExecuteFee();
-        if (fee > 0 && address(this).balance >= fee) {
-            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
-        }
+        _collectExecuteFee();
         result = super.delegateExecute(delegate, data);
     }
 
@@ -839,22 +823,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             WOTSPlus.WinternitzAddress calldata verifier,
             WOTSPlus.WinternitzElements calldata verifySig
         ) = Codec.decodeUpgradeVerification(data);
-
-        bytes32 digest = Codec.verificationDigest(
-            address(this),
-            block.chainid,
-            newImplementation,
-            verifier.publicSeed,
-            verifier.publicKeyHash
-        );
-
-        if (
-            !WOTSPlus.verify(
-                verifier,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                verifySig
-            )
-        ) revert InvalidSignature();
+        _verifyImplementationSig(newImplementation, verifier, verifySig);
     }
 
     /// @inheritdoc IQuipWallet
@@ -866,22 +835,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             WOTSPlus.WinternitzAddress calldata verifier,
             WOTSPlus.WinternitzElements calldata verifySig
         ) = Codec.decodeRecoveryUpgradeVerification(data);
-
-        bytes32 digest = Codec.verificationDigest(
-            address(this),
-            block.chainid,
-            newImplementation,
-            verifier.publicSeed,
-            verifier.publicKeyHash
-        );
-
-        if (
-            !WOTSPlus.verify(
-                verifier,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                verifySig
-            )
-        ) revert InvalidSignature();
+        _verifyImplementationSig(newImplementation, verifier, verifySig);
     }
 
     /// @inheritdoc IQuipWallet
@@ -1125,6 +1079,44 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         WOTSPlus.WinternitzAddress calldata key
     ) internal view {
         if (set.contains(key)) revert DuplicateKey();
+    }
+
+    /// @dev Verifies a WOTS+ signature over the verification digest for an upgrade.
+    ///      Shared by `verifyUpgrade` (called via delegatecall from `upgradeToAndCall`)
+    ///      and `verifyRecoveryUpgrade` (called via delegatecall from `recoveryUpgrade`).
+    ///      The two public entry points differ only in which portion of their payload
+    ///      they decode the verifier from; the verification logic is identical.
+    function _verifyImplementationSig(
+        address newImplementation,
+        WOTSPlus.WinternitzAddress calldata verifier,
+        WOTSPlus.WinternitzElements calldata verifySig
+    ) internal view {
+        bytes32 digest = Codec.verificationDigest(
+            address(this),
+            block.chainid,
+            newImplementation,
+            verifier.publicSeed,
+            verifier.publicKeyHash
+        );
+        if (
+            !WOTSPlus.verify(
+                verifier,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                verifySig
+            )
+        ) revert InvalidSignature();
+    }
+
+    /// @dev Collects the current execute fee from the wallet balance, if affordable.
+    ///      Shared prelude for the three ERC-4337 execution entry points. The fee
+    ///      transfer is part of the execution phase, so if the inner call reverts
+    ///      the whole phase rolls back including the fee — the EntryPoint still
+    ///      charges gas from the wallet's prefund deposit regardless.
+    function _collectExecuteFee() internal {
+        uint256 fee = getExecuteFee();
+        if (fee > 0 && address(this).balance >= fee) {
+            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
+        }
     }
 
     /// @dev Loads the initial transaction- and recovery-key batches into storage
