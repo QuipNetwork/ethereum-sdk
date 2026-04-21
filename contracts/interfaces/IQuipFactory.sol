@@ -83,14 +83,17 @@ interface IQuipFactory {
     /// @param when The block timestamp at which the wallet was created.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param creator The classical address that owns the new wallet.
-    /// @param pqPubkey The post-quantum Winternitz public key assigned to the wallet.
+    /// @param disasterRecoveryKey The wallet's disaster recovery Winternitz public key —
+    ///        the backstop that authorizes `saveWallet` if transaction and recovery keysets
+    ///        are ever corrupted. This key is the most stable identifier an off-chain indexer
+    ///        can associate with the wallet, since it rotates only on emergency rescue.
     /// @param quip The address of the newly deployed QuipWallet proxy.
     event QuipCreated(
         uint256 amount,
         uint256 when,
         bytes32 vaultId,
         address creator,
-        WOTSPlus.WinternitzAddress pqPubkey,
+        WOTSPlus.WinternitzAddress disasterRecoveryKey,
         address quip
     );
 

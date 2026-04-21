@@ -17,12 +17,20 @@
 pragma solidity ^0.8.33;
 
 import {EnumerableWinternitzAddressSet as Keyset} from "../libraries/EnumerableWinternitzAddressSet.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 library WOTSPlusStorage {
     /// @custom:storage-location erc7201:quip.storage.wallet.wotsplus
     struct Layout {
         /// @dev Set once during `initialize`; effectively immutable after deployment.
         address payable quipFactory;
+        /// @dev Single Winternitz public key that authorizes `saveWallet` — the last-resort
+        ///      rescue that resets `transactionKeys` and `recoveryKeys` when both sets have
+        ///      been compromised or corrupted. Rotates on use (WOTS+ one-time-use). Occupies
+        ///      two storage slots (publicSeed + publicKeyHash); both are guarded unconditionally
+        ///      by `storageStoreGuard` and snapshotted by `delegateExecuteGuard`. Placed ahead
+        ///      of the three keysets so its slot offsets are fixed across future layout changes.
+        WOTSPlus.WinternitzAddress disasterRecoveryKey;
         /// @dev Enumerable set of Winternitz public keys authorized to sign guarded
         ///      transactions. Each op names a (currentKey, nextKey) pair; on success the
         ///      current key is consumed and the next is installed, preserving WOTS+

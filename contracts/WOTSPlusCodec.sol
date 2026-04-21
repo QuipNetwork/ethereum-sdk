@@ -23,18 +23,19 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 /// @dev All guarded operations carry an explicit (currentKey, nextKey) pair up front,
 ///      naming the transaction key being consumed and the replacement being installed.
 ///
-///      Init payload layout (960 bytes, used by initialize & migrate):
-///      [0:320)     WinternitzAddress[5]  — transactionKeys (5 x 64)
-///      [320:960)   WinternitzAddress[10] — recoveryKeys (10 x 64)
+///      Init payload layout (1024 bytes, used by initialize & migrate):
+///      [0:64)      WinternitzAddress     — disasterRecoveryKey
+///      [64:384)    WinternitzAddress[5]  — transactionKeys (5 x 64)
+///      [384:1024)  WinternitzAddress[10] — recoveryKeys (10 x 64)
 ///
-///      upgradeToAndCall payload layout (5441 bytes):
+///      upgradeToAndCall payload layout (5505 bytes):
 ///      [0:64)      WinternitzAddress     — currentKey (publicSeed ++ publicKeyHash)
 ///      [64:128)    WinternitzAddress     — nextKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///      [2272:2336) WinternitzAddress     — verifier
 ///      [2336:4480) WinternitzElements    — verifySig (67 x 32)
 ///      [4480]      uint8                 — shouldMigrate (0x00 = false, 0x01 = true)
-///      [4481:5441) bytes                 — migratorPayload (init layout, 960 bytes)
+///      [4481:5505) bytes                 — migratorPayload (init layout, 1024 bytes)
 ///
 ///      recoveryUpgrade payload layout (4416 bytes, no rotation):
 ///      [0:64)      WinternitzAddress     — recoveryKey
@@ -183,30 +184,66 @@ library WOTSPlusCodec {
     bytes32 internal constant VERIFICATION_KEYS_REPLACE_TAG =
         keccak256("quip.digest.verificationKeysReplace");
     bytes32 internal constant ERC1271_TAG = keccak256("quip.digest.erc1271");
+    /// @dev Disaster-recovery domain tag. Used by `saveWalletDigest` to bind a
+    ///      `saveWallet` signature to a specific wallet, chain, and key-rotation pair.
+    bytes32 internal constant SAVE_WALLET_TAG =
+        keccak256("quip.digest.saveWallet");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         DECODERS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Decodes the init payload into transaction keys and recovery keys.
-    ///      Layout: [0:320) transactionKeys[5], [320:960) recoveryKeys[10].
+    /// @dev Decodes the init payload into disaster recovery key, transaction keys, and
+    ///      recovery keys.
+    ///      Layout: [0:64) disasterRecoveryKey, [64:384) transactionKeys[5],
+    ///              [384:1024) recoveryKeys[10].
     ///      Used by initialize() and migrate().
-    /// @param payload The packed init or migrator payload (960 bytes).
-    /// @return transactionKeys The 5 initial transaction keys at offset 0.
-    /// @return recoveryKeys The 10 recovery keys at offset 320.
+    /// @param payload The packed init or migrator payload (1024 bytes).
+    /// @return disasterRecoveryKey The last-resort WOTS+ rescue key at offset 0.
+    /// @return transactionKeys The 5 initial transaction keys at offset 64.
+    /// @return recoveryKeys The 10 recovery keys at offset 384.
     function decodeInit(
         bytes calldata payload
     )
         internal
         pure
         returns (
+            WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
             WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         )
     {
         assembly {
-            transactionKeys := payload.offset
-            recoveryKeys := add(payload.offset, 320)
+            disasterRecoveryKey := payload.offset
+            transactionKeys := add(payload.offset, 64)
+            recoveryKeys := add(payload.offset, 384)
+        }
+    }
+
+    /// @dev Decodes the saveWallet payload.
+    ///      Layout: [0:64) currentDisasterKey, [64:128) newDisasterKey,
+    ///              [128:2272) pqSig, [2272:2592) newTransactionKeys[5],
+    ///              [2592:3232) newRecoveryKeys[10].
+    /// @param payload The packed saveWallet payload (3232 bytes).
+    function decodeSaveWallet(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata currentDisasterKey,
+            WOTSPlus.WinternitzAddress calldata newDisasterKey,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
+        )
+    {
+        assembly {
+            currentDisasterKey := payload.offset
+            newDisasterKey := add(payload.offset, 64)
+            pqSig := add(payload.offset, 128)
+            newTransactionKeys := add(payload.offset, 2272)
+            newRecoveryKeys := add(payload.offset, 2592)
         }
     }
 
@@ -259,7 +296,7 @@ library WOTSPlusCodec {
     /// @dev Decodes the upgradeToAndCall payload's verification portion.
     ///      Layout: [2272:2336) verifier, [2336:4480) verifySig.
     ///      Used by verifyUpgrade() in the upgradeToAndCall path.
-    /// @param data The packed upgrade payload (5441 bytes).
+    /// @param data The packed upgrade payload (5505 bytes).
     /// @return verifier The verifier's WinternitzAddress at offset 2272.
     /// @return verifySig The verifier's WinternitzElements at offset 2336.
     function decodeUpgradeVerification(
@@ -300,10 +337,10 @@ library WOTSPlusCodec {
     }
 
     /// @dev Decodes the upgradeToAndCall payload's migration portion.
-    ///      Layout: [4480] shouldMigrate, [4481:5441) migratorPayload.
-    /// @param data The packed upgrade payload (5441 bytes).
+    ///      Layout: [4480] shouldMigrate, [4481:5505) migratorPayload.
+    /// @param data The packed upgrade payload (5505 bytes).
     /// @return shouldMigrate True if state migration is required.
-    /// @return migratorPayload The 960-byte init-layout payload for the new implementation.
+    /// @return migratorPayload The 1024-byte init-layout payload for the new implementation.
     function decodeUpgradeMigration(
         bytes calldata data
     )
@@ -312,7 +349,7 @@ library WOTSPlusCodec {
         returns (bool shouldMigrate, bytes calldata migratorPayload)
     {
         shouldMigrate = uint8(data[4480]) != 0;
-        migratorPayload = data[4481:5441];
+        migratorPayload = data[4481:5505];
     }
 
     /// @dev Decodes the changeTransactionKey payload.
@@ -537,13 +574,50 @@ library WOTSPlusCodec {
     /*                          ENCODERS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @dev Encodes the saveWallet payload.
+    /// @return The packed payload (3232 bytes).
+    function encodeSaveWallet(
+        WOTSPlus.WinternitzAddress memory currentDisasterKey,
+        WOTSPlus.WinternitzAddress memory newDisasterKey,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+    ) internal pure returns (bytes memory) {
+        bytes memory payload = abi.encodePacked(
+            currentDisasterKey.publicSeed,
+            currentDisasterKey.publicKeyHash,
+            newDisasterKey.publicSeed,
+            newDisasterKey.publicKeyHash,
+            pqSig.elements
+        );
+        for (uint256 i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newTransactionKeys[i].publicSeed,
+                newTransactionKeys[i].publicKeyHash
+            );
+        }
+        for (uint256 i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newRecoveryKeys[i].publicSeed,
+                newRecoveryKeys[i].publicKeyHash
+            );
+        }
+        return payload;
+    }
+
     /// @dev Encodes the init payload.
-    /// @return The packed payload (960 bytes).
+    /// @return The packed payload (1024 bytes).
     function encodeInit(
+        WOTSPlus.WinternitzAddress memory disasterRecoveryKey,
         WOTSPlus.WinternitzAddress[5] memory transactionKeys,
         WOTSPlus.WinternitzAddress[10] memory recoveryKeys
     ) internal pure returns (bytes memory) {
-        bytes memory payload;
+        bytes memory payload = abi.encodePacked(
+            disasterRecoveryKey.publicSeed,
+            disasterRecoveryKey.publicKeyHash
+        );
         for (uint256 i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
             payload = abi.encodePacked(
                 payload,
@@ -761,7 +835,7 @@ library WOTSPlusCodec {
     }
 
     /// @dev Encodes the full upgradeToAndCall payload (auth + verification + migration).
-    /// @return The packed payload (5441 bytes).
+    /// @return The packed payload (5505 bytes).
     function encodeUpgradeToAndCall(
         WOTSPlus.WinternitzAddress memory currentKey,
         WOTSPlus.WinternitzAddress memory nextKey,
@@ -1079,6 +1153,31 @@ library WOTSPlusCodec {
                 verifierSeed,
                 verifierHash,
                 messageHash
+            );
+    }
+
+    /// @dev keccak256(abi.encode(SAVE_WALLET_TAG, chainId, wallet, currentSeed,
+    ///                           currentHash, newSeed, newHash, keysHash))
+    ///      where `keysHash = keccak256(abi.encode(newTransactionKeys, newRecoveryKeys))`.
+    function saveWalletDigest(
+        address wallet,
+        uint256 chainId,
+        bytes32 currentSeed,
+        bytes32 currentHash,
+        bytes32 newSeed,
+        bytes32 newHash,
+        bytes32 keysHash
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                SAVE_WALLET_TAG,
+                bytes32(chainId),
+                bytes32(uint256(uint160(wallet))),
+                currentSeed,
+                currentHash,
+                newSeed,
+                newHash,
+                keysHash
             );
     }
 }

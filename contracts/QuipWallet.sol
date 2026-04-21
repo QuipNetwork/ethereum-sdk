@@ -45,19 +45,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
 
     /// @dev PQ storage base slot (ERC-7201 namespace: quip.storage.wallet.wotsplus).
-    /// quipFactory at base+0; set storage structs at base+1..+3 (one spacer uint256 each).
+    /// Layout: quipFactory at base+0, disasterRecoveryKey at base+1 (seed) and base+2 (hash),
+    /// keyset spacer structs at base+3..+5. Keyset element slots are derived dynamically by
+    /// `EnumerableWinternitzAddressSet._rootSlot` and are NOT guarded — the disaster recovery
+    /// key is the rescue path if any keyset is corrupted via delegatecall or storageStore.
     bytes32 private constant _PQ_FACTORY_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
-
-    /// @dev Precomputed root slots for the three EnumerableWinternitzAddressSet instances.
-    /// Derived as `keccak256(abi.encodePacked(uint256(setSlot), uint32(0x3e9f5d6a)))`.
-    /// Element i occupies (root+2i, root+2i+1). Lazy-length lives at `not(root)`.
-    bytes32 private constant _TRANSACTION_KEYS_ROOT =
-        0x70676cffa4f928a2cac94d416f9a901e1fb7ed48eeb4d7b68fe529b0d0c86d63;
-    bytes32 private constant _RECOVERY_KEYS_ROOT =
-        0x01d4bc2dde322c34a1c5506a9fdc3716f81d8255d315b6fa38a6fe618e6b2b00;
-    bytes32 private constant _VERIFICATION_KEYS_ROOT =
-        0x42ad9bcd164b09025d1327c92679693c4d33f37b62b72e8ce3ca5ea4b9fcdbca;
+    bytes32 private constant _DISASTER_KEY_SEED_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701;
+    bytes32 private constant _DISASTER_KEY_HASH_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf702;
 
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
@@ -202,46 +199,32 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev Extends Solady's guard with PQ-specific protected slots.
-    ///      Blocks direct writes to: owner, ERC-1967 impl, quipFactory, and — for each
-    ///      of the three EnumerableWinternitzAddressSet instances — the lazy-length slot
-    ///      (`not(rootSlot)`) and the six lazy element slots (`rootSlot + [0..5]`).
-    ///      Position-mapping slots (keccak-derived) are unreachable via this guard and
-    ///      are therefore not protected; corrupting a position map cannot install a key
-    ///      that was never present in element storage, only shift membership.
+    ///      Blocks direct writes to: owner, ERC-1967 impl, quipFactory, and the two
+    ///      slots of the `disasterRecoveryKey` (publicSeed + publicKeyHash).
+    ///
+    ///      The three keysets' root/element/length slots are intentionally NOT guarded
+    ///      here — guarding them required ~60 lines of repeated assembly and could never
+    ///      protect the position-mapping slots anyway. If a bad delegate corrupts any
+    ///      keyset, the wallet can still be rescued via `saveWallet`, which is auth'd by
+    ///      `disasterRecoveryKey` (whose storage slots ARE guarded). Owner / impl /
+    ///      factory are still guarded to keep `saveWallet` reachable and the ERC-4337
+    ///      validation path intact.
     modifier storageStoreGuard(bytes32 storageSlot) override {
         /// @solidity memory-safe-assembly
         assembly {
-            // Static slots.
             if or(
                 or(
-                    eq(storageSlot, _OWNER_SLOT),
-                    eq(storageSlot, _ERC1967_IMPLEMENTATION_SLOT)
+                    or(
+                        eq(storageSlot, _OWNER_SLOT),
+                        eq(storageSlot, _ERC1967_IMPLEMENTATION_SLOT)
+                    ),
+                    eq(storageSlot, _PQ_FACTORY_SLOT)
                 ),
-                eq(storageSlot, _PQ_FACTORY_SLOT)
+                or(
+                    eq(storageSlot, _DISASTER_KEY_SEED_SLOT),
+                    eq(storageSlot, _DISASTER_KEY_HASH_SLOT)
+                )
             ) {
-                revert(codesize(), 0x00)
-            }
-
-            // For each set: block length slot and the six lazy element slots.
-            // (slot - root) < 6 catches root..root+5.
-            if lt(sub(storageSlot, _TRANSACTION_KEYS_ROOT), 6) {
-                revert(codesize(), 0x00)
-            }
-            if eq(storageSlot, not(_TRANSACTION_KEYS_ROOT)) {
-                revert(codesize(), 0x00)
-            }
-
-            if lt(sub(storageSlot, _RECOVERY_KEYS_ROOT), 6) {
-                revert(codesize(), 0x00)
-            }
-            if eq(storageSlot, not(_RECOVERY_KEYS_ROOT)) {
-                revert(codesize(), 0x00)
-            }
-
-            if lt(sub(storageSlot, _VERIFICATION_KEYS_ROOT), 6) {
-                revert(codesize(), 0x00)
-            }
-            if eq(storageSlot, not(_VERIFICATION_KEYS_ROOT)) {
                 revert(codesize(), 0x00)
             }
         }
@@ -249,27 +232,18 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev Extends Solady's guard with PQ-specific protected slots. Snapshots
-    ///      owner/impl/factory plus (length, element0 seed, element0 hash) for each
-    ///      of the three keysets — 12 slots total, checked pre and post.
-    ///      Deeper-element tampering inside a delegatecall is a residual risk
-    ///      documented in INVARIANTS.md §6.
+    ///      owner, impl, factory, and both disaster-recovery-key slots — 5 slots
+    ///      total, checked pre and post. See `storageStoreGuard` for the rationale
+    ///      on why keyset slots are excluded.
     modifier delegateExecuteGuard() override {
-        // Snapshot 12 slots into a contiguous memory buffer to avoid stack pressure.
-        bytes32[12] memory snapshot;
+        bytes32[5] memory snapshot;
         /// @solidity memory-safe-assembly
         assembly {
             mstore(snapshot, sload(_OWNER_SLOT))
             mstore(add(snapshot, 0x20), sload(_ERC1967_IMPLEMENTATION_SLOT))
             mstore(add(snapshot, 0x40), sload(_PQ_FACTORY_SLOT))
-            mstore(add(snapshot, 0x60), sload(not(_TRANSACTION_KEYS_ROOT)))
-            mstore(add(snapshot, 0x80), sload(_TRANSACTION_KEYS_ROOT))
-            mstore(add(snapshot, 0xa0), sload(add(_TRANSACTION_KEYS_ROOT, 1)))
-            mstore(add(snapshot, 0xc0), sload(not(_RECOVERY_KEYS_ROOT)))
-            mstore(add(snapshot, 0xe0), sload(_RECOVERY_KEYS_ROOT))
-            mstore(add(snapshot, 0x100), sload(add(_RECOVERY_KEYS_ROOT, 1)))
-            mstore(add(snapshot, 0x120), sload(not(_VERIFICATION_KEYS_ROOT)))
-            mstore(add(snapshot, 0x140), sload(_VERIFICATION_KEYS_ROOT))
-            mstore(add(snapshot, 0x160), sload(add(_VERIFICATION_KEYS_ROOT, 1)))
+            mstore(add(snapshot, 0x60), sload(_DISASTER_KEY_SEED_SLOT))
+            mstore(add(snapshot, 0x80), sload(_DISASTER_KEY_HASH_SLOT))
         }
         _;
         /// @solidity memory-safe-assembly
@@ -291,59 +265,15 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             if iszero(
                 eq(
                     mload(add(snapshot, 0x60)),
-                    sload(not(_TRANSACTION_KEYS_ROOT))
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0x80)), sload(_TRANSACTION_KEYS_ROOT))
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0xa0)),
-                    sload(add(_TRANSACTION_KEYS_ROOT, 1))
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0xc0)), sload(not(_RECOVERY_KEYS_ROOT)))
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0xe0)), sload(_RECOVERY_KEYS_ROOT))
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0x100)),
-                    sload(add(_RECOVERY_KEYS_ROOT, 1))
+                    sload(_DISASTER_KEY_SEED_SLOT)
                 )
             ) {
                 revert(codesize(), 0x00)
             }
             if iszero(
                 eq(
-                    mload(add(snapshot, 0x120)),
-                    sload(not(_VERIFICATION_KEYS_ROOT))
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0x140)), sload(_VERIFICATION_KEYS_ROOT))
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0x160)),
-                    sload(add(_VERIFICATION_KEYS_ROOT, 1))
+                    mload(add(snapshot, 0x80)),
+                    sload(_DISASTER_KEY_HASH_SLOT)
                 )
             ) {
                 revert(codesize(), 0x00)
@@ -386,13 +316,18 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
         (
+            WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
             WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         ) = Codec.decodeInit(payload);
 
         _initializeOwner(newOwner);
         Storage.layout().quipFactory = FACTORY;
-        _installInitialKeys(transactionKeys, recoveryKeys);
+        _installInitialKeys(
+            disasterRecoveryKey,
+            transactionKeys,
+            recoveryKeys
+        );
 
         emit WalletInitialized(
             FACTORY,
@@ -689,6 +624,77 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    function saveWallet(bytes calldata payload) public {
+        (
+            WOTSPlus.WinternitzAddress calldata currentDisasterKey,
+            WOTSPlus.WinternitzAddress calldata newDisasterKey,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
+        ) = Codec.decodeSaveWallet(payload);
+
+        Storage.Layout storage $ = Storage.layout();
+
+        // The provided currentDisasterKey must match the stored one exactly.
+        if (
+            $.disasterRecoveryKey.publicSeed != currentDisasterKey.publicSeed ||
+            $.disasterRecoveryKey.publicKeyHash !=
+            currentDisasterKey.publicKeyHash
+        ) revert UnknownDisasterRecoveryKey();
+
+        // WOTS+ is one-time — the replacement must be distinct.
+        if (
+            newDisasterKey.publicSeed == currentDisasterKey.publicSeed &&
+            newDisasterKey.publicKeyHash == currentDisasterKey.publicKeyHash
+        ) revert DuplicateDisasterRecoveryKey();
+        if (
+            newDisasterKey.publicSeed == bytes32(0) ||
+            newDisasterKey.publicKeyHash == bytes32(0)
+        ) revert UnknownDisasterRecoveryKey();
+
+        bytes32 keysHash = EfficientHashLib.hash(
+            abi.encode(newTransactionKeys, newRecoveryKeys)
+        );
+        bytes32 digest = Codec.saveWalletDigest(
+            address(this),
+            block.chainid,
+            currentDisasterKey.publicSeed,
+            currentDisasterKey.publicKeyHash,
+            newDisasterKey.publicSeed,
+            newDisasterKey.publicKeyHash,
+            keysHash
+        );
+
+        if (
+            !WOTSPlus.verify(
+                currentDisasterKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
+
+        // Consume the disaster key first, then reset txn + recovery keysets.
+        $.disasterRecoveryKey = newDisasterKey;
+        _clearKeys($.transactionKeys);
+        _clearKeys($.recoveryKeys);
+        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+            if (!$.transactionKeys.add(newTransactionKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            if (!$.recoveryKeys.add(newRecoveryKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+
+        emit WalletSaved(
+            currentDisasterKey,
+            newDisasterKey,
+            EfficientHashLib.hash(abi.encode(newTransactionKeys)),
+            EfficientHashLib.hash(abi.encode(newRecoveryKeys))
+        );
+    }
+
+    /// @inheritdoc IQuipWallet
     function addKeys(bytes calldata payload) public onlyOwner {
         _manageKeys(payload, false);
     }
@@ -799,6 +805,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     function migrate(bytes calldata payload) external {
         if (_upgradeGuard() == 0) revert NotUpgrading();
         (
+            WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
             WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         ) = Codec.decodeInit(payload);
@@ -806,7 +813,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         Storage.Layout storage $ = Storage.layout();
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
-        _installInitialKeys(transactionKeys, recoveryKeys);
+        _installInitialKeys(
+            disasterRecoveryKey,
+            transactionKeys,
+            recoveryKeys
+        );
 
         emit WalletMigrated(EfficientHashLib.hash(abi.encode(transactionKeys)));
     }
@@ -1101,14 +1112,17 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Loads the initial transaction- and recovery-key batches into storage
-    ///      and asserts the post-state invariants. Shared by `initialize` and
-    ///      `migrate`; the caller is responsible for clearing any prior state.
+    /// @dev Loads the disaster recovery key and the initial transaction- and
+    ///      recovery-key batches into storage, then asserts the post-state invariants.
+    ///      Shared by `initialize` and `migrate`; the caller is responsible for
+    ///      clearing any prior keyset state.
     function _installInitialKeys(
+        WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
         WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
     ) internal {
         Storage.Layout storage $ = Storage.layout();
+        $.disasterRecoveryKey = disasterRecoveryKey;
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
             if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
                 revert DuplicateKey();
@@ -1123,6 +1137,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     function _verifyInitialState() internal view {
         Storage.Layout storage $ = Storage.layout();
         if ($.quipFactory == address(0)) revert ZeroAddressFactory();
+        if (
+            $.disasterRecoveryKey.publicSeed == bytes32(0) ||
+            $.disasterRecoveryKey.publicKeyHash == bytes32(0)
+        ) revert UnknownDisasterRecoveryKey();
         if ($.transactionKeys.length() != Codec.TRANSACTION_KEY_INIT_AMOUNT)
             revert IncorrectTransactionKeyAmount();
         if ($.recoveryKeys.length() != MAX_KEYS)
