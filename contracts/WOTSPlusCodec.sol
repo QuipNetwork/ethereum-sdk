@@ -18,7 +18,6 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
-import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 
 /// @title WOTSPlusCodec
 /// @dev All guarded operations carry an explicit (currentKey, nextKey) pair up front,
@@ -97,6 +96,21 @@ import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 ///        TRANSACTION_KEY_INIT_AMOUNT = 5
 ///        RECOVERY_KEY_AMOUNT         = 10
 library WOTSPlusCodec {
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           TYPES                               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Discriminator for the three PQ keysets managed by a QuipWallet.
+    /// @dev Travels at the head of the `keyManagement` payload and selects the
+    ///      target keyset for `addKeys` / `refreshKeys`. The enum cast performed
+    ///      by `decodeKeyManagement` implicitly validates that the on-wire value
+    ///      falls within `[0, 2]` (reverts via Solidity 0.8 panic otherwise).
+    enum KeyType {
+        Transaction,
+        Recovery,
+        Verification
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         CONSTANTS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -427,7 +441,7 @@ library WOTSPlusCodec {
         internal
         pure
         returns (
-            IQuipWallet.KeyType kind,
+            KeyType kind,
             WOTSPlus.WinternitzAddress calldata currentKey,
             WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
@@ -443,7 +457,7 @@ library WOTSPlusCodec {
             keys.offset := add(payload.offset, 2304)
             keys.length := div(sub(payload.length, 2304), 64)
         }
-        kind = IQuipWallet.KeyType(raw);
+        kind = KeyType(raw);
     }
 
     /// @dev Decodes the ownership transfer payload.
@@ -599,7 +613,7 @@ library WOTSPlusCodec {
     /// @dev Encodes a keyManagement-style payload.
     /// @return The packed payload (2304 + N*64 bytes).
     function encodeKeyManagement(
-        IQuipWallet.KeyType kind,
+        KeyType kind,
         WOTSPlus.WinternitzAddress memory currentKey,
         WOTSPlus.WinternitzAddress memory nextKey,
         WOTSPlus.WinternitzElements memory pqSig,

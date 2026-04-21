@@ -17,23 +17,12 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec} from "../WOTSPlusCodec.sol";
 
 /// @title IQuipWallet
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz one-time signatures,
 ///         providing post-quantum security for ETH transfers and arbitrary calls.
 interface IQuipWallet {
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                           TYPES                               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// @notice Discriminator for the three PQ keysets managed by the wallet.
-    /// @dev Used by `addKeys` / `refreshKeys` to select the target keyset.
-    enum KeyType {
-        Transaction,
-        Recovery,
-        Verification
-    }
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           ERRORS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -71,7 +60,7 @@ interface IQuipWallet {
     error UnknownKey();
     /// @notice Thrown when an empty key array is provided to an add/refresh operation.
     error EmptyKeys();
-    /// @notice Thrown when `refreshKeys` is called with `KeyType.Transaction`.
+    /// @notice Thrown when `refreshKeys` is called with `WOTSPlusCodec.KeyType.Transaction`.
     /// @dev Only `recoverWallet` may drain the transaction keyset.
     error RefreshTransactionForbidden();
     /// @notice Thrown when the number of recovery keys provided is incorrect.
@@ -132,7 +121,7 @@ interface IQuipWallet {
     /// @param nextKey The installed transaction key after rotation.
     /// @param count The number of keys added.
     event KeysAdded(
-        KeyType indexed kind,
+        WOTSPlusCodec.KeyType indexed kind,
         WOTSPlus.WinternitzAddress nextKey,
         uint256 count
     );
@@ -141,7 +130,7 @@ interface IQuipWallet {
     /// @param kind The keyset that was refreshed.
     /// @param nextKey The installed transaction key after rotation.
     event KeysRefreshed(
-        KeyType indexed kind,
+        WOTSPlusCodec.KeyType indexed kind,
         WOTSPlus.WinternitzAddress nextKey
     );
 
@@ -307,14 +296,14 @@ interface IQuipWallet {
     /// @notice Returns the number of keys in the selected keyset.
     /// @param kind The keyset to query.
     /// @return The number of active keys in that keyset.
-    function keyCount(KeyType kind) external view returns (uint256);
+    function keyCount(WOTSPlusCodec.KeyType kind) external view returns (uint256);
 
     /// @notice Returns the key at a given index within the selected keyset.
     /// @param kind The keyset to query.
     /// @param index The zero-based index into the keyset.
     /// @return The Winternitz public key stored at `index`.
     function keyAt(
-        KeyType kind,
+        WOTSPlusCodec.KeyType kind,
         uint256 index
     ) external view returns (WOTSPlus.WinternitzAddress memory);
 
@@ -322,7 +311,7 @@ interface IQuipWallet {
     /// @param kind The keyset to query.
     /// @param key The Winternitz public key to check.
     function isKey(
-        KeyType kind,
+        WOTSPlusCodec.KeyType kind,
         WOTSPlus.WinternitzAddress calldata key
     ) external view returns (bool);
 
@@ -334,7 +323,7 @@ interface IQuipWallet {
 
     /// @notice Appends new keys to the target keyset, authorized by a WOTS+ signature.
     /// @dev Consumes `currentKey` / installs `nextKey` from the transaction keyset.
-    ///      For `KeyType.Transaction`, the extras are appended to the active transaction set;
+    ///      For `WOTSPlusCodec.KeyType.Transaction`, the extras are appended to the active transaction set;
     ///      for `Recovery` / `Verification`, the target set is extended.
     ///      The transaction rotation is committed before the target-set write.
     ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
@@ -343,7 +332,7 @@ interface IQuipWallet {
     function addKeys(bytes calldata payload) external;
 
     /// @notice Clears the target keyset and installs a fresh batch.
-    /// @dev Reverts with `RefreshTransactionForbidden` when `kind == KeyType.Transaction` —
+    /// @dev Reverts with `RefreshTransactionForbidden` when `kind == WOTSPlusCodec.KeyType.Transaction` —
     ///      only `recoverWallet` may drain the transaction keyset.
     ///      Consumes `currentKey` / installs `nextKey` from the transaction keyset.
     ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,

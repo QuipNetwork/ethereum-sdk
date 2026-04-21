@@ -912,13 +912,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function keyCount(KeyType kind) public view returns (uint256) {
+    function keyCount(Codec.KeyType kind) public view returns (uint256) {
         return _keyset(kind).length();
     }
 
     /// @inheritdoc IQuipWallet
     function keyAt(
-        KeyType kind,
+        Codec.KeyType kind,
         uint256 index
     ) public view returns (WOTSPlus.WinternitzAddress memory) {
         return _keyset(kind).at(index);
@@ -926,7 +926,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @inheritdoc IQuipWallet
     function isKey(
-        KeyType kind,
+        Codec.KeyType kind,
         WOTSPlus.WinternitzAddress calldata key
     ) public view returns (bool) {
         return _keyset(kind).contains(key);
@@ -1045,18 +1045,18 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// @dev Shared worker for `addKeys` (append) and `refreshKeys` (clear-then-replace).
     ///      Decodes the payload, enforces/verifies/rotates the transaction keyset, then
     ///      applies the side-effect on the target keyset selected by `kind`.
-    ///      For `replace == true`, disallows `KeyType.Transaction` and clears the target
+    ///      For `replace == true`, disallows `Codec.KeyType.Transaction` and clears the target
     ///      before appending — emits `KeysRefreshed`. Otherwise emits `KeysAdded`.
     function _manageKeys(bytes calldata payload, bool replace) internal {
         (
-            KeyType kind,
+            Codec.KeyType kind,
             WOTSPlus.WinternitzAddress calldata currentKey,
             WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             WOTSPlus.WinternitzAddress[] calldata newKeys
         ) = Codec.decodeKeyManagement(payload);
 
-        if (replace && kind == KeyType.Transaction)
+        if (replace && kind == Codec.KeyType.Transaction)
             revert RefreshTransactionForbidden();
         if (newKeys.length == 0) revert EmptyKeys();
 
@@ -1081,23 +1081,23 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @dev Returns the target keyset for `kind`.
     function _keyset(
-        KeyType kind
+        Codec.KeyType kind
     ) internal view returns (Keyset.WinternitzAddressSet storage set) {
         Storage.Layout storage $ = Storage.layout();
-        if (kind == KeyType.Transaction) return $.transactionKeys;
-        if (kind == KeyType.Recovery) return $.recoveryKeys;
+        if (kind == Codec.KeyType.Transaction) return $.transactionKeys;
+        if (kind == Codec.KeyType.Recovery) return $.recoveryKeys;
         return $.verificationKeys;
     }
 
     /// @dev Returns the `addKeys`/`refreshKeys` digest for the target keyset.
     ///      Distinct tag per keyset prevents cross-type signature replay.
     function _addDigest(
-        KeyType kind,
+        Codec.KeyType kind,
         WOTSPlus.WinternitzAddress calldata currentKey,
         WOTSPlus.WinternitzAddress calldata nextKey,
         bytes32 keysHash
     ) internal view returns (bytes32) {
-        if (kind == KeyType.Transaction) {
+        if (kind == Codec.KeyType.Transaction) {
             return
                 Codec.addTransactionKeysDigest(
                     address(this),
@@ -1109,7 +1109,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     keysHash
                 );
         }
-        if (kind == KeyType.Verification) {
+        if (kind == Codec.KeyType.Verification) {
             return
                 Codec.verificationKeysDigest(
                     address(this),
