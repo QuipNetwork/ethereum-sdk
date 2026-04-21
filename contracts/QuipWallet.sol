@@ -993,7 +993,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (newKeys.length == 0) revert EmptyKeys();
 
         bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
-        bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
+        bytes32 digest = Codec.keysetDigest(
+            kind,
+            address(this),
+            block.chainid,
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
+            keysHash
+        );
 
         _verifyAndRotate(
             Storage.layout().transactionKeys,
@@ -1019,50 +1028,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (kind == Codec.KeyType.Transaction) return $.transactionKeys;
         if (kind == Codec.KeyType.Recovery) return $.recoveryKeys;
         return $.verificationKeys;
-    }
-
-    /// @dev Returns the `addKeys`/`refreshKeys` digest for the target keyset.
-    ///      Distinct tag per keyset prevents cross-type signature replay.
-    function _addDigest(
-        Codec.KeyType kind,
-        WOTSPlus.WinternitzAddress calldata currentKey,
-        WOTSPlus.WinternitzAddress calldata nextKey,
-        bytes32 keysHash
-    ) internal view returns (bytes32) {
-        if (kind == Codec.KeyType.Transaction) {
-            return
-                Codec.addTransactionKeysDigest(
-                    address(this),
-                    block.chainid,
-                    currentKey.publicSeed,
-                    currentKey.publicKeyHash,
-                    nextKey.publicSeed,
-                    nextKey.publicKeyHash,
-                    keysHash
-                );
-        }
-        if (kind == Codec.KeyType.Verification) {
-            return
-                Codec.verificationKeysDigest(
-                    address(this),
-                    block.chainid,
-                    currentKey.publicSeed,
-                    currentKey.publicKeyHash,
-                    nextKey.publicSeed,
-                    nextKey.publicKeyHash,
-                    keysHash
-                );
-        }
-        return
-            Codec.keyManagementDigest(
-                address(this),
-                block.chainid,
-                currentKey.publicSeed,
-                currentKey.publicKeyHash,
-                nextKey.publicSeed,
-                nextKey.publicKeyHash,
-                keysHash
-            );
     }
 
     /// @dev Reverts with `UnknownKey` if `key` is not a member of `set`.

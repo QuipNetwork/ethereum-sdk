@@ -141,21 +141,20 @@ library WOTSPlusCodec {
     //
     // The three `*_TAG` constants below (ADD_TRANSACTION_KEYS_TAG,
     // KEY_MGMT_TAG for Recovery, VERIFICATION_KEYS_TAG for Verification) are
-    // what prevent that. `QuipWallet._addDigest(KeyType, ...)` dispatches on
-    // the requested kind and calls the matching `*Digest(...)` helper below,
-    // so the signature preimage includes a kind-specific tag. A signature
-    // over one tag does not verify against any of the other two. Do not
-    // unify these tags or their helpers — the distinct tags are load-bearing
-    // security, not cosmetic.
+    // what prevent that. `keysetDigest(KeyType, ...)` selects the tag from the
+    // `kind` argument so the signature preimage includes a kind-specific tag.
+    // A signature over one tag does not verify against any of the other two.
+    // Do not unify these tags — the distinct tags are load-bearing security,
+    // not cosmetic.
     bytes32 internal constant KEY_ROTATION_TAG =
         keccak256("quip.digest.keyRotation");
     bytes32 internal constant EXECUTE_TAG = keccak256("quip.digest.execute");
-    /// @dev Recovery-keyset domain tag. Used by `keyManagementDigest`, which
-    ///      is the digest for `addKeys(Recovery, …)` / `refreshKeys(Recovery, …)`.
+    /// @dev Recovery-keyset domain tag. Selected by `keysetDigest` when
+    ///      `kind == KeyType.Recovery`.
     bytes32 internal constant KEY_MGMT_TAG =
         keccak256("quip.digest.keyManagement");
-    /// @dev Transaction-keyset domain tag. Used by `addTransactionKeysDigest`,
-    ///      which is the digest for `addKeys(Transaction, …)`.
+    /// @dev Transaction-keyset domain tag. Selected by `keysetDigest` when
+    ///      `kind == KeyType.Transaction`.
     ///      `refreshKeys(Transaction, …)` is forbidden at the contract level.
     bytes32 internal constant ADD_TRANSACTION_KEYS_TAG =
         keccak256("quip.digest.addTransactionKeys");
@@ -172,9 +171,8 @@ library WOTSPlusCodec {
         keccak256("quip.digest.transferOwnership");
     bytes32 internal constant COMPLETE_OWNERSHIP_HANDOVER_TAG =
         keccak256("quip.digest.completeOwnershipHandover");
-    /// @dev Verification-keyset domain tag. Used by `verificationKeysDigest`,
-    ///      which is the digest for `addKeys(Verification, …)` /
-    ///      `refreshKeys(Verification, …)`.
+    /// @dev Verification-keyset domain tag. Selected by `keysetDigest` when
+    ///      `kind == KeyType.Verification`.
     bytes32 internal constant VERIFICATION_KEYS_TAG =
         keccak256("quip.digest.verificationKeys");
     bytes32 internal constant VERIFICATION_KEYS_REPLACE_TAG =
@@ -857,11 +855,14 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(KEY_MGMT_TAG, chainId, wallet, s1, h1, s2, h2, keysHash))
-    ///      Used by addKeys / refreshKeys for the Recovery keyset. Distinct from
-    ///      `addTransactionKeysDigest` and `verificationKeysDigest` to prevent
-    ///      cross-type signature replay.
-    function keyManagementDigest(
+    /// @dev Returns the digest that `addKeys` / `refreshKeys` sign over. The domain
+    ///      tag is selected per `kind` so a signature authorizing one keyset cannot
+    ///      be replayed against another. Equivalent to:
+    ///        keccak256(abi.encode(tag(kind), chainId, wallet, s1, h1, s2, h2, keysHash))
+    ///      where `tag` maps Transaction → `ADD_TRANSACTION_KEYS_TAG`,
+    ///      Verification → `VERIFICATION_KEYS_TAG`, Recovery → `KEY_MGMT_TAG`.
+    function keysetDigest(
+        KeyType kind,
         address wallet,
         uint256 chainId,
         bytes32 s1,
@@ -870,35 +871,14 @@ library WOTSPlusCodec {
         bytes32 h2,
         bytes32 keysHash
     ) internal pure returns (bytes32) {
+        bytes32 tag = kind == KeyType.Transaction
+            ? ADD_TRANSACTION_KEYS_TAG
+            : kind == KeyType.Verification
+                ? VERIFICATION_KEYS_TAG
+                : KEY_MGMT_TAG;
         return
             EfficientHashLib.hash(
-                KEY_MGMT_TAG,
-                bytes32(chainId),
-                bytes32(uint256(uint160(wallet))),
-                s1,
-                h1,
-                s2,
-                h2,
-                keysHash
-            );
-    }
-
-    /// @dev keccak256(abi.encode(ADD_TRANSACTION_KEYS_TAG, chainId, wallet, s1, h1, s2, h2, keysHash))
-    ///      Used by `addKeys(KeyType.Transaction, …)`. Distinct from
-    ///      `keyManagementDigest` and `verificationKeysDigest` to prevent
-    ///      cross-type signature replay.
-    function addTransactionKeysDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        bytes32 keysHash
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                ADD_TRANSACTION_KEYS_TAG,
+                tag,
                 bytes32(chainId),
                 bytes32(uint256(uint160(wallet))),
                 s1,
@@ -1040,32 +1020,6 @@ library WOTSPlusCodec {
                 s2,
                 h2,
                 bytes32(uint256(uint160(pendingOwner)))
-            );
-    }
-
-    /// @dev keccak256(abi.encode(VERIFICATION_KEYS_TAG, chainId, wallet, s1, h1, s2, h2, keysHash))
-    ///      Used by `addKeys` / `refreshKeys` for the Verification keyset. Distinct from
-    ///      `addTransactionKeysDigest` and `keyManagementDigest` to prevent
-    ///      cross-type signature replay.
-    function verificationKeysDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        bytes32 keysHash
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                VERIFICATION_KEYS_TAG,
-                bytes32(chainId),
-                bytes32(uint256(uint160(wallet))),
-                s1,
-                h1,
-                s2,
-                h2,
-                keysHash
             );
     }
 
