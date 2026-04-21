@@ -716,64 +716,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function addKeys(KeyType kind, bytes calldata payload) public onlyOwner {
-        (
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            WOTSPlus.WinternitzAddress[] calldata newKeys
-        ) = Codec.decodeKeyManagement(payload);
-
-        if (newKeys.length == 0) revert EmptyKeys();
-
-        bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
-        bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
-
-        _verifyAndRotate(
-            Storage.layout().transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
-
-        _addKeys(_keyset(kind), newKeys);
-
-        emit KeysAdded(kind, nextKey, newKeys.length);
+    function addKeys(bytes calldata payload) public onlyOwner {
+        _manageKeys(payload, false);
     }
 
     /// @inheritdoc IQuipWallet
-    function refreshKeys(
-        KeyType kind,
-        bytes calldata payload
-    ) public onlyOwner {
-        if (kind == KeyType.Transaction) revert RefreshTransactionForbidden();
-
-        (
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            WOTSPlus.WinternitzAddress[] calldata newKeys
-        ) = Codec.decodeKeyManagement(payload);
-
-        if (newKeys.length == 0) revert EmptyKeys();
-
-        bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
-        bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
-
-        _verifyAndRotate(
-            Storage.layout().transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
-
-        Keyset.WinternitzAddressSet storage target = _keyset(kind);
-        _clearKeys(target);
-        _addKeys(target, newKeys);
-
-        emit KeysRefreshed(kind, nextKey);
+    function refreshKeys(bytes calldata payload) public onlyOwner {
+        _manageKeys(payload, true);
     }
 
     /// @inheritdoc IQuipWallet
@@ -1091,6 +1040,43 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             )
         ) revert InvalidSignature();
         _rotateKeys(set, currentKey, nextKey);
+    }
+
+    /// @dev Shared worker for `addKeys` (append) and `refreshKeys` (clear-then-replace).
+    ///      Decodes the payload, enforces/verifies/rotates the transaction keyset, then
+    ///      applies the side-effect on the target keyset selected by `kind`.
+    ///      For `replace == true`, disallows `KeyType.Transaction` and clears the target
+    ///      before appending — emits `KeysRefreshed`. Otherwise emits `KeysAdded`.
+    function _manageKeys(bytes calldata payload, bool replace) internal {
+        (
+            KeyType kind,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[] calldata newKeys
+        ) = Codec.decodeKeyManagement(payload);
+
+        if (replace && kind == KeyType.Transaction)
+            revert RefreshTransactionForbidden();
+        if (newKeys.length == 0) revert EmptyKeys();
+
+        bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
+        bytes32 digest = _addDigest(kind, currentKey, nextKey, keysHash);
+
+        _verifyAndRotate(
+            Storage.layout().transactionKeys,
+            currentKey,
+            nextKey,
+            pqSig,
+            digest
+        );
+
+        Keyset.WinternitzAddressSet storage target = _keyset(kind);
+        if (replace) _clearKeys(target);
+        _addKeys(target, newKeys);
+
+        if (replace) emit KeysRefreshed(kind, nextKey);
+        else emit KeysAdded(kind, nextKey, newKeys.length);
     }
 
     /// @dev Returns the target keyset for `kind`.

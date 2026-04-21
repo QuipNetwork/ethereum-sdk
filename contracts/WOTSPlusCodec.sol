@@ -18,6 +18,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
+import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 
 /// @title WOTSPlusCodec
 /// @dev All guarded operations carry an explicit (currentKey, nextKey) pair up front,
@@ -73,11 +74,12 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [64:128)    WinternitzAddress     — newTransactionKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///
-///      keyManagement payload layout (2272 + N*64 bytes, used by addKeys and refreshKeys):
-///      [0:64)      WinternitzAddress     — currentKey
-///      [64:128)    WinternitzAddress     — nextKey
-///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
-///      [2272:...)  WinternitzAddress[]   — keys (N x 64)
+///      keyManagement payload layout (2304 + N*64 bytes, used by addKeys and refreshKeys):
+///      [0:32)      uint256               — kind (KeyType enum: 0=Txn, 1=Recovery, 2=Verification)
+///      [32:96)     WinternitzAddress     — currentKey
+///      [96:160)    WinternitzAddress     — nextKey
+///      [160:2304)  WinternitzElements    — pqSig (67 x 32)
+///      [2304:...)  WinternitzAddress[]   — keys (N x 64)
 ///
 ///      verificationKeysReplace payload layout (2368 bytes):
 ///      [0:64)      WinternitzAddress     — currentKey
@@ -413,28 +415,35 @@ library WOTSPlusCodec {
         }
     }
 
-    /// @dev Decodes a keyManagement-style payload (currentKey, nextKey, pqSig, keys[]).
-    ///      Layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig, [2272:...) keys.
-    /// @param payload The packed keyManagement payload (>= 2272 bytes).
+    /// @dev Decodes a keyManagement-style payload (kind, currentKey, nextKey, pqSig, keys[]).
+    ///      Layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey, [160:2304) pqSig,
+    ///              [2304:...) keys.
+    ///      The `kind` field is encoded as a left-padded uint256; decoding implicitly validates
+    ///      the range via the enum cast (reverts on out-of-range).
+    /// @param payload The packed keyManagement payload (>= 2304 bytes).
     function decodeKeyManagement(
         bytes calldata payload
     )
         internal
         pure
         returns (
+            IQuipWallet.KeyType kind,
             WOTSPlus.WinternitzAddress calldata currentKey,
             WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             WOTSPlus.WinternitzAddress[] calldata keys
         )
     {
+        uint256 raw;
         assembly {
-            currentKey := payload.offset
-            nextKey := add(payload.offset, 64)
-            pqSig := add(payload.offset, 128)
-            keys.offset := add(payload.offset, 2272)
-            keys.length := div(sub(payload.length, 2272), 64)
+            raw := calldataload(payload.offset)
+            currentKey := add(payload.offset, 32)
+            nextKey := add(payload.offset, 96)
+            pqSig := add(payload.offset, 160)
+            keys.offset := add(payload.offset, 2304)
+            keys.length := div(sub(payload.length, 2304), 64)
         }
+        kind = IQuipWallet.KeyType(raw);
     }
 
     /// @dev Decodes the ownership transfer payload.
@@ -588,14 +597,16 @@ library WOTSPlusCodec {
     }
 
     /// @dev Encodes a keyManagement-style payload.
-    /// @return The packed payload (2272 + N*64 bytes).
+    /// @return The packed payload (2304 + N*64 bytes).
     function encodeKeyManagement(
+        IQuipWallet.KeyType kind,
         WOTSPlus.WinternitzAddress memory currentKey,
         WOTSPlus.WinternitzAddress memory nextKey,
         WOTSPlus.WinternitzElements memory pqSig,
         WOTSPlus.WinternitzAddress[] memory keys
     ) internal pure returns (bytes memory) {
         bytes memory payload = abi.encodePacked(
+            bytes32(uint256(kind)),
             currentKey.publicSeed,
             currentKey.publicKeyHash,
             nextKey.publicSeed,

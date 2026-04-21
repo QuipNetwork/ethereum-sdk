@@ -334,24 +334,22 @@ interface IQuipWallet {
 
     /// @notice Appends new keys to the target keyset, authorized by a WOTS+ signature.
     /// @dev Consumes `currentKey` / installs `nextKey` from the transaction keyset.
-    ///      For `KeyType.Transaction`, the extras are appended to the active transaction set
-    ///      after rotation; for `Recovery` / `Verification`, the target set is extended first
-    ///      and the transaction rotation is committed last.
-    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
-    ///      [2272:...) keys (N x 64).
-    /// @param kind Target keyset.
-    /// @param payload Packed keyManagement data (>= 2272 bytes).
-    function addKeys(KeyType kind, bytes calldata payload) external;
+    ///      For `KeyType.Transaction`, the extras are appended to the active transaction set;
+    ///      for `Recovery` / `Verification`, the target set is extended.
+    ///      The transaction rotation is committed before the target-set write.
+    ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
+    ///      [160:2304) pqSig, [2304:...) keys (N x 64).
+    /// @param payload Packed keyManagement data (>= 2304 bytes).
+    function addKeys(bytes calldata payload) external;
 
     /// @notice Clears the target keyset and installs a fresh batch.
-    /// @dev Reverts with `RefreshTransactionForbidden` for `KeyType.Transaction` —
+    /// @dev Reverts with `RefreshTransactionForbidden` when `kind == KeyType.Transaction` —
     ///      only `recoverWallet` may drain the transaction keyset.
     ///      Consumes `currentKey` / installs `nextKey` from the transaction keyset.
-    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
-    ///      [2272:...) keys (N x 64).
-    /// @param kind Target keyset (`Recovery` or `Verification`).
-    /// @param payload Packed keyManagement data (>= 2272 bytes).
-    function refreshKeys(KeyType kind, bytes calldata payload) external;
+    ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
+    ///      [160:2304) pqSig, [2304:...) keys (N x 64).
+    /// @param payload Packed keyManagement data (>= 2304 bytes).
+    function refreshKeys(bytes calldata payload) external;
 
     /// @notice Emergency upgrade authorized by a recovery key, without migration.
     /// @dev Verifies the recovery key signature, then delegatecalls `verifyUpgrade` on the
