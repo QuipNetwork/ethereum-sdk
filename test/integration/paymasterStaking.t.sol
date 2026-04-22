@@ -77,7 +77,9 @@ contract Integration_paymasterStaking is IntegrationBase {
         paymaster.deposit{value: 3 ether}();
 
         uint256 reported = paymaster.getDeposit();
-        uint256 actual = IEntryPointStake(ENTRY_POINT).balanceOf(address(paymaster));
+        uint256 actual = IEntryPointStake(ENTRY_POINT).balanceOf(
+            address(paymaster)
+        );
 
         assertEq(reported, actual);
     }

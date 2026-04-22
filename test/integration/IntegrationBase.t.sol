@@ -9,12 +9,13 @@ import {QuipWallet} from "../../contracts/QuipWallet.sol";
 import {QuipPaymaster} from "../../contracts/QuipPaymaster.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
-import {IEntryPoint, IEntryPointStake, PackedUserOperation} from
-    "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 /// @dev Minimal extension of IEntryPoint to expose getUserOpHash on the fork.
 interface IEntryPointExt is IEntryPoint {
-    function getUserOpHash(PackedUserOperation calldata userOp) external view returns (bytes32);
+    function getUserOpHash(
+        PackedUserOperation calldata userOp
+    ) external view returns (bytes32);
 }
 
 /// @title Integration Test Base
@@ -23,7 +24,8 @@ interface IEntryPointExt is IEntryPoint {
 contract IntegrationBase is Test {
     string constant BASE_SEPOLIA_RPC_ENV = "API_URL_BASE_SEPOLIA";
 
-    address public constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address public constant ENTRY_POINT =
+        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
     address public ADMIN = makeAddr("admin");
     address public ALICE = makeAddr("alice");
     address public BOB = makeAddr("bob");
@@ -54,7 +56,9 @@ contract IntegrationBase is Test {
 
     // ── WOTS+ helpers ───────────────────────────────────────────────
 
-    function _generateKeyPair(bytes32 seed)
+    function _generateKeyPair(
+        bytes32 seed
+    )
         internal
         pure
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
@@ -62,26 +66,27 @@ contract IntegrationBase is Test {
         return WOTSPlus.generateKeyPair(seed);
     }
 
-    function _sign(bytes32 privateKey, bytes32 messageHash)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzElements memory)
-    {
-        WOTSPlus.WinternitzMessage memory message =
-            WOTSPlus.WinternitzMessage({messageHash: messageHash});
+    function _sign(
+        bytes32 privateKey,
+        bytes32 messageHash
+    ) internal pure returns (WOTSPlus.WinternitzElements memory) {
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: messageHash
+        });
         bytes32[67] memory elements = WOTSPlus.sign(privateKey, message);
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 
-    function _generateRecoveryKeys(bytes32 privateKey, uint256 count)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzAddress[] memory pubkeys)
-    {
+    function _generateRecoveryKeys(
+        bytes32 privateKey,
+        uint256 count
+    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory pubkeys) {
         pubkeys = new WOTSPlus.WinternitzAddress[](count);
         for (uint256 i = 0; i < count; i++) {
-            bytes32 seed = keccak256(abi.encodePacked(privateKey, "recovery", i));
-            (pubkeys[i],) = WOTSPlus.generateKeyPair(seed);
+            bytes32 seed = keccak256(
+                abi.encodePacked(privateKey, "recovery", i)
+            );
+            (pubkeys[i], ) = WOTSPlus.generateKeyPair(seed);
         }
     }
 
@@ -89,10 +94,64 @@ contract IntegrationBase is Test {
         WOTSPlus.WinternitzAddress memory pqOwner,
         WOTSPlus.WinternitzAddress[] memory recoveryKeys
     ) internal pure returns (bytes memory) {
-        bytes memory payload = abi.encodePacked(pqOwner.publicSeed, pqOwner.publicKeyHash);
-        for (uint256 i = 0; i < recoveryKeys.length; i++) {
+        require(recoveryKeys.length == 10, "recoveryKeys length must be 10");
+        // Init layout (1088 bytes):
+        //   [0:64)     disasterRecoveryKey (deterministic filler)
+        //   [64:128)   ownershipKey         (deterministic filler)
+        //   [128:448)  transactionKeys[5]   (pqOwner at slot 0 + 4 fillers)
+        //   [448:1088) recoveryKeys[10]
+        // pqOwner is the primary transaction key so tests can sign with
+        // alicePrivateKey against the first transaction-keyset slot.
+        (WOTSPlus.WinternitzAddress memory disaster, ) = WOTSPlus
+            .generateKeyPair(
+                keccak256(
+                    abi.encodePacked(
+                        pqOwner.publicSeed,
+                        pqOwner.publicKeyHash,
+                        "disaster-fill"
+                    )
+                )
+            );
+        (WOTSPlus.WinternitzAddress memory ownership, ) = WOTSPlus
+            .generateKeyPair(
+                keccak256(
+                    abi.encodePacked(
+                        pqOwner.publicSeed,
+                        pqOwner.publicKeyHash,
+                        "ownership-fill"
+                    )
+                )
+            );
+        bytes memory payload = abi.encodePacked(
+            disaster.publicSeed,
+            disaster.publicKeyHash,
+            ownership.publicSeed,
+            ownership.publicKeyHash,
+            pqOwner.publicSeed,
+            pqOwner.publicKeyHash
+        );
+        for (uint256 i = 1; i < 5; i++) {
+            bytes32 seed = keccak256(
+                abi.encodePacked(
+                    pqOwner.publicSeed,
+                    pqOwner.publicKeyHash,
+                    "txn-fill",
+                    i
+                )
+            );
+            (WOTSPlus.WinternitzAddress memory filler, ) = WOTSPlus
+                .generateKeyPair(seed);
             payload = abi.encodePacked(
-                payload, recoveryKeys[i].publicSeed, recoveryKeys[i].publicKeyHash
+                payload,
+                filler.publicSeed,
+                filler.publicKeyHash
+            );
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            payload = abi.encodePacked(
+                payload,
+                recoveryKeys[i].publicSeed,
+                recoveryKeys[i].publicKeyHash
             );
         }
         return payload;
@@ -104,29 +163,44 @@ contract IntegrationBase is Test {
     function _deployWalletStack() internal {
         deployer = new Deployer();
 
-        bytes memory factoryBytecode =
-            abi.encodePacked(type(QuipFactory).creationCode, abi.encode(ADMIN, 0.1 ether));
-        address factoryAddr = deployer.deploy(factoryBytecode, keccak256("QuipFactory-integration"));
+        bytes memory factoryBytecode = abi.encodePacked(
+            type(QuipFactory).creationCode,
+            abi.encode(ADMIN, 0.1 ether)
+        );
+        address factoryAddr = deployer.deploy(
+            factoryBytecode,
+            keccak256("QuipFactory-integration")
+        );
         factory = QuipFactory(payable(factoryAddr));
 
         walletImpl = new QuipWallet(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(walletImpl));
 
-        (alicePubkey, alicePrivateKey) = _generateKeyPair("alice-integration-vault");
-        WOTSPlus.WinternitzAddress[] memory recoveryKeys = _generateRecoveryKeys(alicePrivateKey, 10);
+        (alicePubkey, alicePrivateKey) = _generateKeyPair(
+            "alice-integration-vault"
+        );
+        WOTSPlus.WinternitzAddress[]
+            memory recoveryKeys = _generateRecoveryKeys(alicePrivateKey, 10);
         for (uint256 i = 0; i < recoveryKeys.length; i++) {
             recoveryPubkeys.push(recoveryKeys[i]);
         }
-        bytes memory initPayload = _encodeInitPayload(alicePubkey, recoveryKeys);
+        bytes memory initPayload = _encodeInitPayload(
+            alicePubkey,
+            recoveryKeys
+        );
 
         vm.prank(ALICE);
         address walletAddr = factory.deployLatestWalletProxy{value: 1 ether}(
-            keccak256("integration-vault"), payable(ALICE), initPayload
+            keccak256("integration-vault"),
+            payable(ALICE),
+            initPayload
         );
         wallet = QuipWallet(payable(walletAddr));
 
-        IEntryPointStake(ENTRY_POINT).depositTo{value: 5 ether}(address(wallet));
+        IEntryPointStake(ENTRY_POINT).depositTo{value: 5 ether}(
+            address(wallet)
+        );
     }
 
     /// @dev Deploy paymaster proxy and initialize.
@@ -140,9 +214,14 @@ contract IntegrationBase is Test {
             hex"5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076",
             hex"cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3"
         );
-        paymaster = QuipPaymaster(payable(
-            CREATE3.deployDeterministic(proxyInitcode, keccak256("integration-paymaster"))
-        ));
+        paymaster = QuipPaymaster(
+            payable(
+                CREATE3.deployDeterministic(
+                    proxyInitcode,
+                    keccak256("integration-paymaster")
+                )
+            )
+        );
 
         paymaster.initialize(ADMIN);
     }
@@ -150,21 +229,26 @@ contract IntegrationBase is Test {
     // ── UserOp helpers ──────────────────────────────────────────────
 
     /// @dev Build a PackedUserOperation for execute(address,uint256,bytes).
-    function _buildUserOp(address target, uint256 value, bytes memory data)
-        internal
-        view
-        returns (PackedUserOperation memory userOp)
-    {
+    function _buildUserOp(
+        address target,
+        uint256 value,
+        bytes memory data
+    ) internal view returns (PackedUserOperation memory userOp) {
         userOp = PackedUserOperation({
             sender: address(wallet),
             nonce: 0,
             initCode: "",
             callData: abi.encodeWithSelector(
-                bytes4(keccak256("execute(address,uint256,bytes)")), target, value, data
+                bytes4(keccak256("execute(address,uint256,bytes)")),
+                target,
+                value,
+                data
             ),
-            accountGasLimits: bytes32(uint256(5_000_000) << 128 | uint256(500_000)),
+            accountGasLimits: bytes32(
+                (uint256(5_000_000) << 128) | uint256(500_000)
+            ),
             preVerificationGas: 100_000,
-            gasFees: bytes32(uint256(1 gwei) << 128 | uint256(10 gwei)),
+            gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
             paymasterAndData: "",
             signature: ""
         });
@@ -192,6 +276,6 @@ contract IntegrationBase is Test {
         );
 
         WOTSPlus.WinternitzElements memory sig = _sign(privateKey, digest);
-        userOp.signature = Codec.encodeUserOpSignature(nextPq, sig);
+        userOp.signature = Codec.encodeUserOpSignature(currentPq, nextPq, sig);
     }
 }
