@@ -46,15 +46,21 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @dev PQ storage base slot (ERC-7201 namespace: quip.storage.wallet.wotsplus).
     /// Layout: quipFactory at base+0, disasterRecoveryKey at base+1 (seed) and base+2 (hash),
-    /// keyset spacer structs at base+3..+5. Keyset element slots are derived dynamically by
-    /// `EnumerableWinternitzAddressSet._rootSlot` and are NOT guarded — the disaster recovery
-    /// key is the rescue path if any keyset is corrupted via delegatecall or storageStore.
+    /// ownershipKey at base+3 (seed) and base+4 (hash), keyset spacer structs at base+5..+7.
+    /// Keyset element slots are derived dynamically by `EnumerableWinternitzAddressSet._rootSlot`
+    /// and are NOT guarded — the disaster recovery key is the rescue path if any keyset is
+    /// corrupted via delegatecall or storageStore, and the ownership key is the backstop that
+    /// still allows a compromised wallet to be handed over to a clean principal.
     bytes32 private constant _PQ_FACTORY_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
     bytes32 private constant _DISASTER_KEY_SEED_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701;
     bytes32 private constant _DISASTER_KEY_HASH_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf702;
+    bytes32 private constant _OWNERSHIP_KEY_SEED_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf703;
+    bytes32 private constant _OWNERSHIP_KEY_HASH_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf704;
 
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
@@ -199,30 +205,38 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev Extends Solady's guard with PQ-specific protected slots.
-    ///      Blocks direct writes to: owner, ERC-1967 impl, quipFactory, and the two
-    ///      slots of the `disasterRecoveryKey` (publicSeed + publicKeyHash).
+    ///      Blocks direct writes to: owner, ERC-1967 impl, quipFactory, both
+    ///      `disasterRecoveryKey` slots (publicSeed + publicKeyHash), and both
+    ///      `ownershipKey` slots.
     ///
     ///      The three keysets' root/element/length slots are intentionally NOT guarded
     ///      here — guarding them required ~60 lines of repeated assembly and could never
     ///      protect the position-mapping slots anyway. If a bad delegate corrupts any
-    ///      keyset, the wallet can still be rescued via `saveWallet`, which is auth'd by
-    ///      `disasterRecoveryKey` (whose storage slots ARE guarded). Owner / impl /
-    ///      factory are still guarded to keep `saveWallet` reachable and the ERC-4337
-    ///      validation path intact.
+    ///      keyset, the wallet can still be rescued via `saveWallet` (disaster key) or
+    ///      transferred to a clean principal via `transferOwnership` (ownership key);
+    ///      both backstop keys live in guarded slots. Owner / impl / factory are still
+    ///      guarded to keep those rescue paths reachable and the ERC-4337 validation
+    ///      path intact.
     modifier storageStoreGuard(bytes32 storageSlot) override {
         /// @solidity memory-safe-assembly
         assembly {
             if or(
                 or(
                     or(
-                        eq(storageSlot, _OWNER_SLOT),
-                        eq(storageSlot, _ERC1967_IMPLEMENTATION_SLOT)
+                        or(
+                            eq(storageSlot, _OWNER_SLOT),
+                            eq(storageSlot, _ERC1967_IMPLEMENTATION_SLOT)
+                        ),
+                        eq(storageSlot, _PQ_FACTORY_SLOT)
                     ),
-                    eq(storageSlot, _PQ_FACTORY_SLOT)
+                    or(
+                        eq(storageSlot, _DISASTER_KEY_SEED_SLOT),
+                        eq(storageSlot, _DISASTER_KEY_HASH_SLOT)
+                    )
                 ),
                 or(
-                    eq(storageSlot, _DISASTER_KEY_SEED_SLOT),
-                    eq(storageSlot, _DISASTER_KEY_HASH_SLOT)
+                    eq(storageSlot, _OWNERSHIP_KEY_SEED_SLOT),
+                    eq(storageSlot, _OWNERSHIP_KEY_HASH_SLOT)
                 )
             ) {
                 revert(codesize(), 0x00)
@@ -232,11 +246,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev Extends Solady's guard with PQ-specific protected slots. Snapshots
-    ///      owner, impl, factory, and both disaster-recovery-key slots — 5 slots
-    ///      total, checked pre and post. See `storageStoreGuard` for the rationale
-    ///      on why keyset slots are excluded.
+    ///      owner, impl, factory, both disaster-recovery-key slots, and both
+    ///      ownership-key slots — 7 slots total, checked pre and post. See
+    ///      `storageStoreGuard` for the rationale on why keyset slots are excluded.
     modifier delegateExecuteGuard() override {
-        bytes32[5] memory snapshot;
+        bytes32[7] memory snapshot;
         /// @solidity memory-safe-assembly
         assembly {
             mstore(snapshot, sload(_OWNER_SLOT))
@@ -244,6 +258,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             mstore(add(snapshot, 0x40), sload(_PQ_FACTORY_SLOT))
             mstore(add(snapshot, 0x60), sload(_DISASTER_KEY_SEED_SLOT))
             mstore(add(snapshot, 0x80), sload(_DISASTER_KEY_HASH_SLOT))
+            mstore(add(snapshot, 0xa0), sload(_OWNERSHIP_KEY_SEED_SLOT))
+            mstore(add(snapshot, 0xc0), sload(_OWNERSHIP_KEY_HASH_SLOT))
         }
         _;
         /// @solidity memory-safe-assembly
@@ -274,6 +290,22 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                 eq(
                     mload(add(snapshot, 0x80)),
                     sload(_DISASTER_KEY_HASH_SLOT)
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0xa0)),
+                    sload(_OWNERSHIP_KEY_SEED_SLOT)
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0xc0)),
+                    sload(_OWNERSHIP_KEY_HASH_SLOT)
                 )
             ) {
                 revert(codesize(), 0x00)
@@ -317,6 +349,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         (
             WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
+            WOTSPlus.WinternitzAddress calldata ownershipKey,
             WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         ) = Codec.decodeInit(payload);
@@ -325,6 +358,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         Storage.layout().quipFactory = FACTORY;
         _installInitialKeys(
             disasterRecoveryKey,
+            ownershipKey,
             transactionKeys,
             recoveryKeys
         );
@@ -526,64 +560,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     function transferOwnership(
         bytes calldata payload
     ) public payable onlyOwner {
-        (
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            address newOwner
-        ) = Codec.decodeOwnershipTransfer(payload);
-
-        bytes32 digest = Codec.transferOwnershipDigest(
-            address(this),
-            block.chainid,
-            currentKey.publicSeed,
-            currentKey.publicKeyHash,
-            nextKey.publicSeed,
-            nextKey.publicKeyHash,
-            newOwner
-        );
-
-        _verifyAndRotate(
-            Storage.layout().transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
-
-        Ownable.transferOwnership(newOwner);
+        _reinitializeAndTransferOwnership(payload, false);
     }
 
     /// @inheritdoc IQuipWallet
     function completeOwnershipHandover(
         bytes calldata payload
     ) public payable onlyOwner {
-        (
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            address pendingOwner
-        ) = Codec.decodeOwnershipTransfer(payload);
-
-        bytes32 digest = Codec.completeOwnershipHandoverDigest(
-            address(this),
-            block.chainid,
-            currentKey.publicSeed,
-            currentKey.publicKeyHash,
-            nextKey.publicSeed,
-            nextKey.publicKeyHash,
-            pendingOwner
-        );
-
-        _verifyAndRotate(
-            Storage.layout().transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
-
-        Ownable.completeOwnershipHandover(pendingOwner);
+        _reinitializeAndTransferOwnership(payload, true);
     }
 
     /// @inheritdoc IQuipWallet
@@ -806,6 +790,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (_upgradeGuard() == 0) revert NotUpgrading();
         (
             WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
+            WOTSPlus.WinternitzAddress calldata ownershipKey,
             WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         ) = Codec.decodeInit(payload);
@@ -815,6 +800,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _clearKeys($.recoveryKeys);
         _installInitialKeys(
             disasterRecoveryKey,
+            ownershipKey,
             transactionKeys,
             recoveryKeys
         );
@@ -1112,17 +1098,128 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Loads the disaster recovery key and the initial transaction- and
-    ///      recovery-key batches into storage, then asserts the post-state invariants.
+    /// @dev Shared worker for `transferOwnership` and `completeOwnershipHandover`. Both call
+    ///      paths are full re-initializations of the wallet's PQ state on behalf of the new
+    ///      owner: the existing `ownershipKey` authorizes a bundle of (newOwner, new
+    ///      `ownershipKey`, new `disasterRecoveryKey`, new transactionKeys[5], new
+    ///      recoveryKeys[10]); on success the existing ownership key rotates, the disaster
+    ///      key is replaced, the transaction and recovery keysets are cleared and repopulated,
+    ///      and the verification keyset is cleared (the new owner re-seeds it out-of-band).
+    ///
+    ///      `isHandover` selects the domain tag on the signed digest so a signature produced
+    ///      for `transferOwnership` cannot be replayed against `completeOwnershipHandover`
+    ///      and vice versa.
+    function _reinitializeAndTransferOwnership(
+        bytes calldata payload,
+        bool isHandover
+    ) internal {
+        (
+            WOTSPlus.WinternitzAddress calldata currentOwnershipKey,
+            WOTSPlus.WinternitzAddress calldata newOwnershipKey,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            address newOwner,
+            WOTSPlus.WinternitzAddress calldata newDisasterKey,
+            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
+        ) = Codec.decodeOwnershipTransfer(payload);
+
+        if (newOwner == address(0)) revert ZeroAddressOwner();
+
+        Storage.Layout storage $ = Storage.layout();
+
+        if (
+            $.ownershipKey.publicSeed != currentOwnershipKey.publicSeed ||
+            $.ownershipKey.publicKeyHash != currentOwnershipKey.publicKeyHash
+        ) revert UnknownOwnershipKey();
+
+        if (
+            newOwnershipKey.publicSeed == bytes32(0) ||
+            newOwnershipKey.publicKeyHash == bytes32(0)
+        ) revert UnknownOwnershipKey();
+        if (
+            newOwnershipKey.publicSeed == currentOwnershipKey.publicSeed &&
+            newOwnershipKey.publicKeyHash == currentOwnershipKey.publicKeyHash
+        ) revert DuplicateOwnershipKey();
+
+        if (
+            newDisasterKey.publicSeed == bytes32(0) ||
+            newDisasterKey.publicKeyHash == bytes32(0)
+        ) revert UnknownDisasterRecoveryKey();
+
+        bytes32 keysHash = EfficientHashLib.hash(
+            abi.encode(newDisasterKey, newTransactionKeys, newRecoveryKeys)
+        );
+        bytes32 digest = isHandover
+            ? Codec.completeOwnershipHandoverDigest(
+                address(this),
+                block.chainid,
+                currentOwnershipKey.publicSeed,
+                currentOwnershipKey.publicKeyHash,
+                newOwnershipKey.publicSeed,
+                newOwnershipKey.publicKeyHash,
+                newOwner,
+                keysHash
+            )
+            : Codec.transferOwnershipDigest(
+                address(this),
+                block.chainid,
+                currentOwnershipKey.publicSeed,
+                currentOwnershipKey.publicKeyHash,
+                newOwnershipKey.publicSeed,
+                newOwnershipKey.publicKeyHash,
+                newOwner,
+                keysHash
+            );
+
+        if (
+            !WOTSPlus.verify(
+                currentOwnershipKey,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) revert InvalidSignature();
+
+        // Rotate ownership key, replace disaster key, wipe keysets, reinstall fresh ones.
+        $.ownershipKey = newOwnershipKey;
+        $.disasterRecoveryKey = newDisasterKey;
+        _clearKeys($.transactionKeys);
+        _clearKeys($.recoveryKeys);
+        _clearKeys($.verificationKeys);
+        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+            if (!$.transactionKeys.add(newTransactionKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            if (!$.recoveryKeys.add(newRecoveryKeys[i], MAX_KEYS))
+                revert DuplicateKey();
+        }
+
+        if (isHandover) Ownable.completeOwnershipHandover(newOwner);
+        else Ownable.transferOwnership(newOwner);
+
+        emit OwnershipReinitialized(
+            currentOwnershipKey,
+            newOwnershipKey,
+            newOwner,
+            newDisasterKey,
+            EfficientHashLib.hash(abi.encode(newTransactionKeys)),
+            EfficientHashLib.hash(abi.encode(newRecoveryKeys))
+        );
+    }
+
+    /// @dev Loads the disaster recovery key, ownership key, and the initial transaction-
+    ///      and recovery-key batches into storage, then asserts the post-state invariants.
     ///      Shared by `initialize` and `migrate`; the caller is responsible for
     ///      clearing any prior keyset state.
     function _installInitialKeys(
         WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
+        WOTSPlus.WinternitzAddress calldata ownershipKey,
         WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
     ) internal {
         Storage.Layout storage $ = Storage.layout();
         $.disasterRecoveryKey = disasterRecoveryKey;
+        $.ownershipKey = ownershipKey;
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
             if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
                 revert DuplicateKey();
@@ -1141,6 +1238,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             $.disasterRecoveryKey.publicSeed == bytes32(0) ||
             $.disasterRecoveryKey.publicKeyHash == bytes32(0)
         ) revert UnknownDisasterRecoveryKey();
+        if (
+            $.ownershipKey.publicSeed == bytes32(0) ||
+            $.ownershipKey.publicKeyHash == bytes32(0)
+        ) revert UnknownOwnershipKey();
         if ($.transactionKeys.length() != Codec.TRANSACTION_KEY_INIT_AMOUNT)
             revert IncorrectTransactionKeyAmount();
         if ($.recoveryKeys.length() != MAX_KEYS)

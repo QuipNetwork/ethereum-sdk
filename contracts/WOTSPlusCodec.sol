@@ -23,19 +23,20 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 /// @dev All guarded operations carry an explicit (currentKey, nextKey) pair up front,
 ///      naming the transaction key being consumed and the replacement being installed.
 ///
-///      Init payload layout (1024 bytes, used by initialize & migrate):
+///      Init payload layout (1088 bytes, used by initialize & migrate):
 ///      [0:64)      WinternitzAddress     — disasterRecoveryKey
-///      [64:384)    WinternitzAddress[5]  — transactionKeys (5 x 64)
-///      [384:1024)  WinternitzAddress[10] — recoveryKeys (10 x 64)
+///      [64:128)    WinternitzAddress     — ownershipKey
+///      [128:448)   WinternitzAddress[5]  — transactionKeys (5 x 64)
+///      [448:1088)  WinternitzAddress[10] — recoveryKeys (10 x 64)
 ///
-///      upgradeToAndCall payload layout (5505 bytes):
+///      upgradeToAndCall payload layout (5569 bytes):
 ///      [0:64)      WinternitzAddress     — currentKey (publicSeed ++ publicKeyHash)
 ///      [64:128)    WinternitzAddress     — nextKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///      [2272:2336) WinternitzAddress     — verifier
 ///      [2336:4480) WinternitzElements    — verifySig (67 x 32)
 ///      [4480]      uint8                 — shouldMigrate (0x00 = false, 0x01 = true)
-///      [4481:5505) bytes                 — migratorPayload (init layout, 1024 bytes)
+///      [4481:5569) bytes                 — migratorPayload (init layout, 1088 bytes)
 ///
 ///      recoveryUpgrade payload layout (4416 bytes, no rotation):
 ///      [0:64)      WinternitzAddress     — recoveryKey
@@ -63,11 +64,15 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [2272:2304) bytes32               — to (left-padded address)
 ///      [2304:2336) uint256               — amount
 ///
-///      ownershipTransfer payload layout (2304 bytes):
-///      [0:64)      WinternitzAddress     — currentKey
-///      [64:128)    WinternitzAddress     — nextKey
+///      ownershipTransfer payload layout (3328 bytes, used by transferOwnership and
+///      completeOwnershipHandover):
+///      [0:64)      WinternitzAddress     — currentOwnershipKey
+///      [64:128)    WinternitzAddress     — newOwnershipKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///      [2272:2304) bytes32               — newOwner (left-padded address)
+///      [2304:2368) WinternitzAddress     — newDisasterKey
+///      [2368:2688) WinternitzAddress[5]  — newTransactionKeys (5 x 64)
+///      [2688:3328) WinternitzAddress[10] — newRecoveryKeys (10 x 64)
 ///
 ///      recoverWallet payload layout (2272 bytes):
 ///      [0:64)      WinternitzAddress     — recoveryKey
@@ -193,15 +198,16 @@ library WOTSPlusCodec {
     /*                         DECODERS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Decodes the init payload into disaster recovery key, transaction keys, and
-    ///      recovery keys.
-    ///      Layout: [0:64) disasterRecoveryKey, [64:384) transactionKeys[5],
-    ///              [384:1024) recoveryKeys[10].
+    /// @dev Decodes the init payload into disaster recovery key, ownership key, transaction
+    ///      keys, and recovery keys.
+    ///      Layout: [0:64) disasterRecoveryKey, [64:128) ownershipKey,
+    ///              [128:448) transactionKeys[5], [448:1088) recoveryKeys[10].
     ///      Used by initialize() and migrate().
-    /// @param payload The packed init or migrator payload (1024 bytes).
+    /// @param payload The packed init or migrator payload (1088 bytes).
     /// @return disasterRecoveryKey The last-resort WOTS+ rescue key at offset 0.
-    /// @return transactionKeys The 5 initial transaction keys at offset 64.
-    /// @return recoveryKeys The 10 recovery keys at offset 384.
+    /// @return ownershipKey The ownership-transfer WOTS+ key at offset 64.
+    /// @return transactionKeys The 5 initial transaction keys at offset 128.
+    /// @return recoveryKeys The 10 recovery keys at offset 448.
     function decodeInit(
         bytes calldata payload
     )
@@ -209,14 +215,16 @@ library WOTSPlusCodec {
         pure
         returns (
             WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
+            WOTSPlus.WinternitzAddress calldata ownershipKey,
             WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         )
     {
         assembly {
             disasterRecoveryKey := payload.offset
-            transactionKeys := add(payload.offset, 64)
-            recoveryKeys := add(payload.offset, 384)
+            ownershipKey := add(payload.offset, 64)
+            transactionKeys := add(payload.offset, 128)
+            recoveryKeys := add(payload.offset, 448)
         }
     }
 
@@ -337,10 +345,10 @@ library WOTSPlusCodec {
     }
 
     /// @dev Decodes the upgradeToAndCall payload's migration portion.
-    ///      Layout: [4480] shouldMigrate, [4481:5505) migratorPayload.
-    /// @param data The packed upgrade payload (5505 bytes).
+    ///      Layout: [4480] shouldMigrate, [4481:5569) migratorPayload.
+    /// @param data The packed upgrade payload (5569 bytes).
     /// @return shouldMigrate True if state migration is required.
-    /// @return migratorPayload The 1024-byte init-layout payload for the new implementation.
+    /// @return migratorPayload The 1088-byte init-layout payload for the new implementation.
     function decodeUpgradeMigration(
         bytes calldata data
     )
@@ -349,7 +357,7 @@ library WOTSPlusCodec {
         returns (bool shouldMigrate, bytes calldata migratorPayload)
     {
         shouldMigrate = uint8(data[4480]) != 0;
-        migratorPayload = data[4481:5505];
+        migratorPayload = data[4481:5569];
     }
 
     /// @dev Decodes the changeTransactionKey payload.
@@ -500,25 +508,39 @@ library WOTSPlusCodec {
         kind = KeyType(raw);
     }
 
-    /// @dev Decodes the ownership transfer payload.
-    ///      Layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig, [2272:2304) newOwner.
+    /// @dev Decodes the transferOwnership / completeOwnershipHandover payload.
+    ///      The call is a full re-initialization: the caller hands the wallet to a new
+    ///      classical owner along with a fresh set of PQ key material that the new owner
+    ///      alone controls. The existing `ownershipKey` authorizes the whole bundle and
+    ///      rotates on use.
+    ///      Layout: [0:64) currentOwnershipKey, [64:128) newOwnershipKey,
+    ///              [128:2272) pqSig, [2272:2304) newOwner,
+    ///              [2304:2368) newDisasterKey, [2368:2688) newTransactionKeys[5],
+    ///              [2688:3328) newRecoveryKeys[10].
+    /// @param payload The packed ownership-transfer payload (3328 bytes).
     function decodeOwnershipTransfer(
         bytes calldata payload
     )
         internal
         pure
         returns (
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
+            WOTSPlus.WinternitzAddress calldata currentOwnershipKey,
+            WOTSPlus.WinternitzAddress calldata newOwnershipKey,
             WOTSPlus.WinternitzElements calldata pqSig,
-            address newOwner
+            address newOwner,
+            WOTSPlus.WinternitzAddress calldata newDisasterKey,
+            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
         )
     {
         assembly {
-            currentKey := payload.offset
-            nextKey := add(payload.offset, 64)
+            currentOwnershipKey := payload.offset
+            newOwnershipKey := add(payload.offset, 64)
             pqSig := add(payload.offset, 128)
             newOwner := calldataload(add(payload.offset, 2272))
+            newDisasterKey := add(payload.offset, 2304)
+            newTransactionKeys := add(payload.offset, 2368)
+            newRecoveryKeys := add(payload.offset, 2688)
         }
     }
 
@@ -608,15 +630,18 @@ library WOTSPlusCodec {
     }
 
     /// @dev Encodes the init payload.
-    /// @return The packed payload (1024 bytes).
+    /// @return The packed payload (1088 bytes).
     function encodeInit(
         WOTSPlus.WinternitzAddress memory disasterRecoveryKey,
+        WOTSPlus.WinternitzAddress memory ownershipKey,
         WOTSPlus.WinternitzAddress[5] memory transactionKeys,
         WOTSPlus.WinternitzAddress[10] memory recoveryKeys
     ) internal pure returns (bytes memory) {
         bytes memory payload = abi.encodePacked(
             disasterRecoveryKey.publicSeed,
-            disasterRecoveryKey.publicKeyHash
+            disasterRecoveryKey.publicKeyHash,
+            ownershipKey.publicSeed,
+            ownershipKey.publicKeyHash
         );
         for (uint256 i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
             payload = abi.encodePacked(
@@ -757,23 +782,42 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev Encodes the ownership transfer payload.
-    /// @return The packed payload (2304 bytes).
+    /// @dev Encodes the transferOwnership / completeOwnershipHandover payload.
+    /// @return The packed payload (3328 bytes).
     function encodeOwnershipTransfer(
-        WOTSPlus.WinternitzAddress memory currentKey,
-        WOTSPlus.WinternitzAddress memory nextKey,
+        WOTSPlus.WinternitzAddress memory currentOwnershipKey,
+        WOTSPlus.WinternitzAddress memory newOwnershipKey,
         WOTSPlus.WinternitzElements memory pqSig,
-        address newOwner
+        address newOwner,
+        WOTSPlus.WinternitzAddress memory newDisasterKey,
+        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
     ) internal pure returns (bytes memory) {
-        return
-            abi.encodePacked(
-                currentKey.publicSeed,
-                currentKey.publicKeyHash,
-                nextKey.publicSeed,
-                nextKey.publicKeyHash,
-                pqSig.elements,
-                bytes32(uint256(uint160(newOwner)))
+        bytes memory payload = abi.encodePacked(
+            currentOwnershipKey.publicSeed,
+            currentOwnershipKey.publicKeyHash,
+            newOwnershipKey.publicSeed,
+            newOwnershipKey.publicKeyHash,
+            pqSig.elements,
+            bytes32(uint256(uint160(newOwner))),
+            newDisasterKey.publicSeed,
+            newDisasterKey.publicKeyHash
+        );
+        for (uint256 i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newTransactionKeys[i].publicSeed,
+                newTransactionKeys[i].publicKeyHash
             );
+        }
+        for (uint256 i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newRecoveryKeys[i].publicSeed,
+                newRecoveryKeys[i].publicKeyHash
+            );
+        }
+        return payload;
     }
 
     /// @dev Encodes the replaceVerificationKeyAt payload.
@@ -1064,7 +1108,12 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(TRANSFER_OWNERSHIP_TAG, chainId, wallet, s1, h1, s2, h2, newOwner))
+    /// @dev keccak256(abi.encode(TRANSFER_OWNERSHIP_TAG, chainId, wallet, s1, h1, s2, h2,
+    ///                           newOwner, keysHash))
+    ///      where `keysHash = keccak256(abi.encode(newDisasterKey, newTransactionKeys,
+    ///      newRecoveryKeys))`. The ownership-transfer digest commits to the entire
+    ///      re-initialization bundle so the WOTS+ signature cannot be separated from
+    ///      the key material it installs.
     function transferOwnershipDigest(
         address wallet,
         uint256 chainId,
@@ -1072,7 +1121,8 @@ library WOTSPlusCodec {
         bytes32 h1,
         bytes32 s2,
         bytes32 h2,
-        address newOwner
+        address newOwner,
+        bytes32 keysHash
     ) internal pure returns (bytes32) {
         return
             EfficientHashLib.hash(
@@ -1083,11 +1133,15 @@ library WOTSPlusCodec {
                 h1,
                 s2,
                 h2,
-                bytes32(uint256(uint160(newOwner)))
+                bytes32(uint256(uint160(newOwner))),
+                keysHash
             );
     }
 
-    /// @dev keccak256(abi.encode(COMPLETE_OWNERSHIP_HANDOVER_TAG, chainId, wallet, s1, h1, s2, h2, pendingOwner))
+    /// @dev keccak256(abi.encode(COMPLETE_OWNERSHIP_HANDOVER_TAG, chainId, wallet, s1, h1, s2,
+    ///                           h2, pendingOwner, keysHash))
+    ///      where `keysHash = keccak256(abi.encode(newDisasterKey, newTransactionKeys,
+    ///      newRecoveryKeys))`.
     function completeOwnershipHandoverDigest(
         address wallet,
         uint256 chainId,
@@ -1095,7 +1149,8 @@ library WOTSPlusCodec {
         bytes32 h1,
         bytes32 s2,
         bytes32 h2,
-        address pendingOwner
+        address pendingOwner,
+        bytes32 keysHash
     ) internal pure returns (bytes32) {
         return
             EfficientHashLib.hash(
@@ -1106,7 +1161,8 @@ library WOTSPlusCodec {
                 h1,
                 s2,
                 h2,
-                bytes32(uint256(uint160(pendingOwner)))
+                bytes32(uint256(uint160(pendingOwner))),
+                keysHash
             );
     }
 

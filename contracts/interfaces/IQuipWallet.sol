@@ -83,6 +83,13 @@ interface IQuipWallet {
     ///         which would violate WOTS+ one-time-use on the disaster recovery slot.
     error DuplicateDisasterRecoveryKey();
 
+    /// @notice Thrown when a provided `ownershipKey` does not match the stored one,
+    ///         or when a replacement `ownershipKey` has a zero component.
+    error UnknownOwnershipKey();
+    /// @notice Thrown when a rotation's new `ownershipKey` equals the current one,
+    ///         which would violate WOTS+ one-time-use on the ownership-key slot.
+    error DuplicateOwnershipKey();
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -131,6 +138,23 @@ interface IQuipWallet {
     ///        installed recovery-key batch.
     event WalletSaved(
         WOTSPlus.WinternitzAddress oldDisasterRecoveryKey,
+        WOTSPlus.WinternitzAddress newDisasterRecoveryKey,
+        bytes32 newTransactionKeysHash,
+        bytes32 newRecoveryKeysHash
+    );
+
+    /// @notice Emitted when ownership is transferred (or handed over) and the PQ state is
+    ///         fully re-initialized for the incoming owner.
+    /// @param oldOwnershipKey The consumed ownership key.
+    /// @param newOwnershipKey The installed replacement ownership key.
+    /// @param newOwner The classical address that now owns the wallet.
+    /// @param newDisasterRecoveryKey The installed replacement disaster recovery key.
+    /// @param newTransactionKeysHash `keccak256(abi.encode(newTransactionKeys))`.
+    /// @param newRecoveryKeysHash `keccak256(abi.encode(newRecoveryKeys))`.
+    event OwnershipReinitialized(
+        WOTSPlus.WinternitzAddress oldOwnershipKey,
+        WOTSPlus.WinternitzAddress newOwnershipKey,
+        address newOwner,
         WOTSPlus.WinternitzAddress newDisasterRecoveryKey,
         bytes32 newTransactionKeysHash,
         bytes32 newRecoveryKeysHash
@@ -211,7 +235,7 @@ interface IQuipWallet {
     /// @param newImplementation The address of the new implementation contract.
     /// @param data Packed upgrade data: [0:64) currentKey, [64:128) nextKey,
     ///      [128:2272) pqSig, [2272:2336) verifier, [2336:4480) verifySig,
-    ///      [4480] shouldMigrate, [4481:5505) migratorPayload (new init layout, 1024 bytes).
+    ///      [4480] shouldMigrate, [4481:5569) migratorPayload (new init layout, 1088 bytes).
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
@@ -241,22 +265,22 @@ interface IQuipWallet {
     ) external view;
 
     /// @notice Initializes the wallet with its classical owner, disaster recovery key,
-    ///         transaction keys, and recovery keys.
+    ///         ownership key, transaction keys, and recovery keys.
     /// @dev Can only be called once by the FACTORY. Uses Solady's `initializer` modifier.
-    ///      Payload layout: [0:64) disasterRecoveryKey, [64:384) transactionKeys (5 x 64),
-    ///      [384:1024) recoveryKeys (10 x 64).
+    ///      Payload layout: [0:64) disasterRecoveryKey, [64:128) ownershipKey,
+    ///      [128:448) transactionKeys (5 x 64), [448:1088) recoveryKeys (10 x 64).
     /// @param newOwner The classical owner address.
-    /// @param payload Packed init data (1024 bytes).
+    /// @param payload Packed init data (1088 bytes).
     function initialize(
         address payable newOwner,
         bytes calldata payload
     ) external;
 
-    /// @notice Re-initializes the PQ state (disaster recovery key + transaction + recovery keys)
-    ///         during an upgrade.
+    /// @notice Re-initializes the PQ state (disaster recovery key + ownership key + transaction
+    ///         + recovery keys) during an upgrade.
     /// @dev Only callable by the classical owner. Called via delegatecall from upgradeToAndCall
     ///      so that it executes against proxy storage.
-    ///      Payload layout matches `initialize` (1024 bytes).
+    ///      Payload layout matches `initialize` (1088 bytes).
     /// @param payload Packed migration data matching the init layout.
     function migrate(bytes calldata payload) external;
 
@@ -292,20 +316,27 @@ interface IQuipWallet {
     /// @param payload Packed withdrawDeposit data (2336 bytes).
     function withdrawDepositTo(bytes calldata payload) external payable;
 
-    /// @notice Transfers classical ownership to `newOwner`, authorized by a WOTS+ signature.
-    /// @dev Only callable by the classical owner. Consumes `currentKey` / installs `nextKey`,
-    ///      then delegates to the parent `Ownable.transferOwnership`.
-    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
-    ///      [2272:2304) newOwner.
-    /// @param payload Packed ownership transfer data (2304 bytes).
+    /// @notice Transfers ownership to `newOwner` and fully re-initializes PQ state.
+    /// @dev Authorized by the wallet's dedicated `ownershipKey` — a guarded WOTS+ slot
+    ///      separate from the transaction keyset. The old owner knows all the current PQ key
+    ///      material by virtue of having used it, so ownership transfer is treated as a full
+    ///      re-initialization: the caller supplies a fresh `ownershipKey`, `disasterRecoveryKey`,
+    ///      transaction keyset, and recovery keyset that the incoming owner alone controls.
+    ///      The existing verification keyset is cleared (the new owner re-seeds it as needed).
+    ///      The existing `ownershipKey` rotates to the supplied replacement (one-time-use).
+    ///      Payload layout: [0:64) currentOwnershipKey, [64:128) newOwnershipKey,
+    ///      [128:2272) pqSig, [2272:2304) newOwner, [2304:2368) newDisasterKey,
+    ///      [2368:2688) newTransactionKeys[5], [2688:3328) newRecoveryKeys[10].
+    /// @param payload Packed ownership-transfer data (3328 bytes).
     function transferOwnership(bytes calldata payload) external payable;
 
-    /// @notice Completes a two-step ownership handover to `pendingOwner`, authorized by a WOTS+ signature.
-    /// @dev Only callable by the classical owner. Consumes `currentKey` / installs `nextKey`,
-    ///      then delegates to the parent `Ownable.completeOwnershipHandover`.
-    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
-    ///      [2272:2304) pendingOwner.
-    /// @param payload Packed ownership transfer data (2304 bytes).
+    /// @notice Completes a two-step ownership handover to `pendingOwner` and fully re-initializes
+    ///         PQ state for the new owner.
+    /// @dev Same re-initialization semantics as `transferOwnership`; the difference is only the
+    ///      domain tag on the signed digest (so a signature cannot be lifted between the two
+    ///      code paths) and the final call into Solady's `completeOwnershipHandover`.
+    ///      Payload layout matches `transferOwnership` (3328 bytes).
+    /// @param payload Packed ownership-transfer data (3328 bytes).
     function completeOwnershipHandover(bytes calldata payload) external payable;
 
     /// @notice Returns the current execute fee as set by the factory.

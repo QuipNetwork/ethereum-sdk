@@ -31,6 +31,14 @@ library WOTSPlusStorage {
         ///      by `storageStoreGuard` and snapshotted by `delegateExecuteGuard`. Placed ahead
         ///      of the three keysets so its slot offsets are fixed across future layout changes.
         WOTSPlus.WinternitzAddress disasterRecoveryKey;
+        /// @dev Single Winternitz public key that authorizes `transferOwnership` and
+        ///      `completeOwnershipHandover` — the ownership-transfer backstop. Rotates on use
+        ///      (WOTS+ one-time-use). Occupies two storage slots (publicSeed + publicKeyHash);
+        ///      both are guarded unconditionally by `storageStoreGuard` and snapshotted by
+        ///      `delegateExecuteGuard` so a malicious delegate cannot replace it. Separated
+        ///      from `transactionKeys` so ownership transfer survives transaction-keyset
+        ///      corruption and vice versa.
+        WOTSPlus.WinternitzAddress ownershipKey;
         /// @dev Enumerable set of Winternitz public keys authorized to sign guarded
         ///      transactions. Each op names a (currentKey, nextKey) pair; on success the
         ///      current key is consumed and the next is installed, preserving WOTS+
