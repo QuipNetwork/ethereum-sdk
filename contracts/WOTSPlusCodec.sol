@@ -87,12 +87,13 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [160:2304)  WinternitzElements    — pqSig (67 x 32)
 ///      [2304:...)  WinternitzAddress[]   — keys (N x 64)
 ///
-///      verificationKeysReplace payload layout (2368 bytes):
-///      [0:64)      WinternitzAddress     — currentKey
-///      [64:128)    WinternitzAddress     — nextKey
-///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
-///      [2272:2304) uint256               — index
-///      [2304:2368) WinternitzAddress     — newKey
+///      replaceKeyAt payload layout (2400 bytes, used for all 3 keysets):
+///      [0:32)      uint256               — kind (KeyType enum)
+///      [32:96)     WinternitzAddress     — currentKey (auth; consumed from tx keyset)
+///      [96:160)    WinternitzAddress     — nextKey (auth replacement in tx keyset)
+///      [160:2304)  WinternitzElements    — pqSig (67 x 32)
+///      [2304:2336) uint256               — index (into target keyset)
+///      [2336:2400) WinternitzAddress     — newKey (replacement at index)
 ///
 ///      ERC-4337 UserOp signature layout (2272 bytes, used by validateUserOp):
 ///      [0:64)      WinternitzAddress     — currentKey
@@ -187,8 +188,17 @@ library WOTSPlusCodec {
     ///      `kind == KeyType.Verification`.
     bytes32 internal constant VERIFICATION_KEYS_TAG =
         keccak256("quip.digest.verificationKeys");
-    bytes32 internal constant VERIFICATION_KEYS_REPLACE_TAG =
-        keccak256("quip.digest.verificationKeysReplace");
+    /// @dev Per-kind domain tags for `replaceKeyAtDigest`. Distinct tags prevent a
+    ///      signature authorizing `replaceKeyAt(Transaction, i, newKey)` from being
+    ///      lifted and replayed against `replaceKeyAt(Recovery, ...)` or
+    ///      `replaceKeyAt(Verification, ...)` with the same `(currentKey, nextKey,
+    ///      index, newKey)` tuple. `replaceKeyAtDigest` selects the tag per `kind`.
+    bytes32 internal constant REPLACE_TRANSACTION_KEY_AT_TAG =
+        keccak256("quip.digest.replaceTransactionKeyAt");
+    bytes32 internal constant REPLACE_RECOVERY_KEY_AT_TAG =
+        keccak256("quip.digest.replaceRecoveryKeyAt");
+    bytes32 internal constant REPLACE_VERIFICATION_KEY_AT_TAG =
+        keccak256("quip.digest.replaceVerificationKeyAt");
     bytes32 internal constant ERC1271_TAG = keccak256("quip.digest.erc1271");
     /// @dev Disaster-recovery domain tag. Used by `saveWalletDigest` to bind a
     ///      `saveWallet` signature to a specific wallet, chain, and key-rotation pair.
@@ -550,15 +560,18 @@ library WOTSPlusCodec {
         }
     }
 
-    /// @dev Decodes the replaceVerificationKeyAt payload.
-    ///      Layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
-    ///              [2272:2304) index, [2304:2368) newKey.
-    function decodeVerificationKeysReplace(
+    /// @dev Decodes the replaceKeyAt payload.
+    ///      Layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
+    ///              [160:2304) pqSig, [2304:2336) index, [2336:2400) newKey.
+    ///      `kind` is encoded as a left-padded uint256; the enum cast implicitly
+    ///      validates the range via Solidity 0.8 panic.
+    function decodeReplaceKeyAt(
         bytes calldata payload
     )
         internal
         pure
         returns (
+            KeyType kind,
             WOTSPlus.WinternitzAddress calldata currentKey,
             WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
@@ -566,13 +579,16 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress calldata newKey
         )
     {
+        uint256 raw;
         assembly {
-            currentKey := payload.offset
-            nextKey := add(payload.offset, 64)
-            pqSig := add(payload.offset, 128)
-            index := calldataload(add(payload.offset, 2272))
-            newKey := add(payload.offset, 2304)
+            raw := calldataload(payload.offset)
+            currentKey := add(payload.offset, 32)
+            nextKey := add(payload.offset, 96)
+            pqSig := add(payload.offset, 160)
+            index := calldataload(add(payload.offset, 2304))
+            newKey := add(payload.offset, 2336)
         }
+        kind = KeyType(raw);
     }
 
     /// @dev Decodes the ERC-1271 signature payload.
@@ -826,9 +842,10 @@ library WOTSPlusCodec {
         return payload;
     }
 
-    /// @dev Encodes the replaceVerificationKeyAt payload.
-    /// @return The packed payload (2368 bytes).
-    function encodeVerificationKeysReplace(
+    /// @dev Encodes the replaceKeyAt payload.
+    /// @return The packed payload (2400 bytes).
+    function encodeReplaceKeyAt(
+        KeyType kind,
         WOTSPlus.WinternitzAddress memory currentKey,
         WOTSPlus.WinternitzAddress memory nextKey,
         WOTSPlus.WinternitzElements memory pqSig,
@@ -837,6 +854,7 @@ library WOTSPlusCodec {
     ) internal pure returns (bytes memory) {
         return
             abi.encodePacked(
+                bytes32(uint256(kind)),
                 currentKey.publicSeed,
                 currentKey.publicKeyHash,
                 nextKey.publicSeed,
@@ -1181,8 +1199,15 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(VERIFICATION_KEYS_REPLACE_TAG, chainId, wallet, s1, h1, s2, h2, index, newSeed, newHash))
-    function verificationKeysReplaceDigest(
+    /// @dev Returns the digest that `replaceKeyAt` signs over. The domain tag is
+    ///      selected per `kind` so a signature authorizing one keyset's indexed
+    ///      replacement cannot be replayed against another.
+    ///        Transaction  → `REPLACE_TRANSACTION_KEY_AT_TAG`
+    ///        Recovery     → `REPLACE_RECOVERY_KEY_AT_TAG`
+    ///        Verification → `REPLACE_VERIFICATION_KEY_AT_TAG`
+    ///      keccak256(abi.encode(tag, chainId, wallet, s1, h1, s2, h2, index, newSeed, newHash))
+    function replaceKeyAtDigest(
+        KeyType kind,
         address wallet,
         uint256 chainId,
         bytes32 s1,
@@ -1193,9 +1218,14 @@ library WOTSPlusCodec {
         bytes32 newSeed,
         bytes32 newHash
     ) internal pure returns (bytes32) {
+        bytes32 tag = kind == KeyType.Transaction
+            ? REPLACE_TRANSACTION_KEY_AT_TAG
+            : kind == KeyType.Recovery
+                ? REPLACE_RECOVERY_KEY_AT_TAG
+                : REPLACE_VERIFICATION_KEY_AT_TAG;
         return
             EfficientHashLib.hash(
-                VERIFICATION_KEYS_REPLACE_TAG,
+                tag,
                 bytes32(chainId),
                 bytes32(uint256(uint160(wallet))),
                 s1,

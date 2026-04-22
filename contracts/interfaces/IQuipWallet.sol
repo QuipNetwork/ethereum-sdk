@@ -65,8 +65,10 @@ interface IQuipWallet {
     error RefreshTransactionForbidden();
     /// @notice Thrown when the number of recovery keys provided is incorrect.
     error IncorrectRecoveryKeyAmount();
-    /// @notice Thrown when a verification key index is out of bounds.
-    error VerificationKeyIndexOutOfBounds();
+    /// @notice Thrown when `replaceKeyAt(Transaction, index, newKey)` targets the same
+    ///         key the caller is signing with. The auth rotation already consumes that
+    ///         key; use `changeTransactionKey` for a direct rotation instead.
+    error ReplaceAuthKeyForbidden();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
     /// @notice Thrown when the number of transaction keys provided to `initialize`/`migrate` is incorrect.
@@ -199,12 +201,14 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress recoveryKey
     );
 
-    /// @notice Emitted when a verification key at a specific index is replaced.
+    /// @notice Emitted when a key at a specific index is replaced via `replaceKeyAt`.
+    /// @param kind The keyset whose entry was replaced.
     /// @param index The index that was replaced.
     /// @param oldKey The removed key.
     /// @param newKey The replacement key.
-    /// @param nextKey The installed transaction key after rotation.
-    event VerificationKeyReplaced(
+    /// @param nextKey The installed transaction key after the auth rotation.
+    event KeyReplaced(
+        WOTSPlusCodec.KeyType indexed kind,
         uint256 index,
         WOTSPlus.WinternitzAddress oldKey,
         WOTSPlus.WinternitzAddress newKey,
@@ -426,11 +430,20 @@ interface IQuipWallet {
         bytes calldata payload
     ) external;
 
-    /// @notice Replaces a single verification key at the given index.
-    /// @dev Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
-    ///      [2272:2304) index, [2304:2368) newKey.
-    /// @param payload Packed replace-verification-key data (2368 bytes).
-    function replaceVerificationKeyAt(bytes calldata payload) external;
+    /// @notice Replaces a single key at the given index in the keyset selected by
+    ///         `kind`. Authorized by a transaction-key rotation.
+    /// @dev Removes the key at `index` and installs `newKey` in its place on the
+    ///      target keyset. The auth rotation (currentKey → nextKey) always runs on
+    ///      the transaction keyset. For `kind == Transaction` the target keyset is
+    ///      the same as the auth keyset — the key at `index` must NOT equal
+    ///      `currentKey` (reverts with `ReplaceAuthKeyForbidden`); use
+    ///      `changeTransactionKey` to rotate the signing key itself. The two
+    ///      operations ordering is read-oldKey → auth-rotate → remove-oldKey →
+    ///      add-newKey, so `oldKey` is captured from the pre-rotation snapshot.
+    ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
+    ///      [160:2304) pqSig, [2304:2336) index, [2336:2400) newKey.
+    /// @param payload Packed replaceKeyAt data (2400 bytes).
+    function replaceKeyAt(bytes calldata payload) external;
 
     /// @notice Returns the implementation version of this wallet.
     /// @dev Reads the ERC-1967 implementation slot and queries the factory for

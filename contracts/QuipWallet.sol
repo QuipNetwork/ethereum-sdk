@@ -250,67 +250,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///      ownership-key slots — 7 slots total, checked pre and post. See
     ///      `storageStoreGuard` for the rationale on why keyset slots are excluded.
     modifier delegateExecuteGuard() override {
-        bytes32[7] memory snapshot;
-        /// @solidity memory-safe-assembly
-        assembly {
-            mstore(snapshot, sload(_OWNER_SLOT))
-            mstore(add(snapshot, 0x20), sload(_ERC1967_IMPLEMENTATION_SLOT))
-            mstore(add(snapshot, 0x40), sload(_PQ_FACTORY_SLOT))
-            mstore(add(snapshot, 0x60), sload(_DISASTER_KEY_SEED_SLOT))
-            mstore(add(snapshot, 0x80), sload(_DISASTER_KEY_HASH_SLOT))
-            mstore(add(snapshot, 0xa0), sload(_OWNERSHIP_KEY_SEED_SLOT))
-            mstore(add(snapshot, 0xc0), sload(_OWNERSHIP_KEY_HASH_SLOT))
-        }
+        bytes32[7] memory snapshot = _snapshotGuardedSlots();
         _;
-        /// @solidity memory-safe-assembly
-        assembly {
-            if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0x20)),
-                    sload(_ERC1967_IMPLEMENTATION_SLOT)
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(eq(mload(add(snapshot, 0x40)), sload(_PQ_FACTORY_SLOT))) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0x60)),
-                    sload(_DISASTER_KEY_SEED_SLOT)
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0x80)),
-                    sload(_DISASTER_KEY_HASH_SLOT)
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0xa0)),
-                    sload(_OWNERSHIP_KEY_SEED_SLOT)
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0xc0)),
-                    sload(_OWNERSHIP_KEY_HASH_SLOT)
-                )
-            ) {
-                revert(codesize(), 0x00)
-            }
-        }
+        _assertGuardedSlotsUnchanged(snapshot);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -409,10 +351,17 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
+        // `verifyUpgrade` is declared view on this implementation, but we are about to
+        // execute the NEW implementation's bytecode in our storage context. Snapshot
+        // the guarded slots pre-call and assert they're unchanged post-call so a rogue
+        // or buggy vetted impl cannot smuggle SSTOREs to owner/impl/factory/disaster/
+        // ownership slots through the verify path.
+        bytes32[7] memory verifyGuard = _snapshotGuardedSlots();
         LibCall.delegateCallContract(
             newImplementation,
             abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
         );
+        _assertGuardedSlotsUnchanged(verifyGuard);
 
         (bool shouldMigrate, bytes calldata migratorPayload) = Codec
             .decodeUpgradeMigration(data);
@@ -689,23 +638,36 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function replaceVerificationKeyAt(bytes calldata payload) public onlyOwner {
+    function replaceKeyAt(bytes calldata payload) public onlyOwner {
         (
+            Codec.KeyType kind,
             WOTSPlus.WinternitzAddress calldata currentKey,
             WOTSPlus.WinternitzAddress calldata nextKey,
             WOTSPlus.WinternitzElements calldata pqSig,
             uint256 index,
             WOTSPlus.WinternitzAddress calldata newKey
-        ) = Codec.decodeVerificationKeysReplace(payload);
+        ) = Codec.decodeReplaceKeyAt(payload);
 
         Storage.Layout storage $ = Storage.layout();
+        Keyset.WinternitzAddressSet storage target = _keyset(kind);
 
-        if (index >= $.verificationKeys.length())
-            revert VerificationKeyIndexOutOfBounds();
+        // Snapshot `oldKey` before the auth rotation so the position reference is
+        // stable. `at` reverts with `Keyset.IndexOutOfBounds` if `index` is out of
+        // range, so no separate bounds check is needed here.
+        //
+        // For kind == Transaction, the auth rotation operates on the same set;
+        // forbid replacing the auth key itself (the rotation already does it via
+        // `changeTransactionKey`) so we don't both remove `currentKey` via rotation
+        // and then try to remove it again here.
+        WOTSPlus.WinternitzAddress memory oldKey = target.at(index);
+        if (
+            kind == Codec.KeyType.Transaction &&
+            oldKey.publicSeed == currentKey.publicSeed &&
+            oldKey.publicKeyHash == currentKey.publicKeyHash
+        ) revert ReplaceAuthKeyForbidden();
 
-        WOTSPlus.WinternitzAddress memory oldKey = $.verificationKeys.at(index);
-
-        bytes32 digest = Codec.verificationKeysReplaceDigest(
+        bytes32 digest = Codec.replaceKeyAtDigest(
+            kind,
             address(this),
             block.chainid,
             currentKey.publicSeed,
@@ -725,11 +687,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
-        $.verificationKeys.remove(oldKey);
-        // `add` enforces non-zero fields, and cap=MAX_KEYS is preserved since we just removed one.
-        if (!$.verificationKeys.add(newKey, MAX_KEYS)) revert DuplicateKey();
+        target.remove(oldKey);
+        // `add` enforces non-zero fields; cap=MAX_KEYS is preserved since we just
+        // removed one from `target` (the auth rotation on `$.transactionKeys` is
+        // size-neutral regardless of which keyset is the replacement target).
+        if (!target.add(newKey, MAX_KEYS)) revert DuplicateKey();
 
-        emit VerificationKeyReplaced(index, oldKey, newKey, nextKey);
+        emit KeyReplaced(kind, index, oldKey, newKey, nextKey);
     }
 
     /// @inheritdoc IQuipWallet
@@ -771,7 +735,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
-        // Delegatecall to vetted implementation (defense-in-depth).
+        // Delegatecall to vetted implementation (defense-in-depth). Guarded: snapshot
+        // the 7 PQ-sensitive slots pre-call and assert they're unchanged post-call so
+        // a rogue or buggy vetted impl cannot smuggle SSTOREs through the verify path.
+        bytes32[7] memory verifyGuard = _snapshotGuardedSlots();
         LibCall.delegateCallContract(
             newImplementation,
             abi.encodeCall(
@@ -779,6 +746,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                 (newImplementation, payload)
             )
         );
+        _assertGuardedSlotsUnchanged(verifyGuard);
 
         super.upgradeToAndCall(newImplementation, payload[0:0]);
 
@@ -866,7 +834,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///         verification-keyset member AND a valid ECDSA signature from the
     ///         classical `owner()` over the raw `hash`.
     /// @dev Stateless/view: does NOT consume the WOTS+ key. Callers must rotate
-    ///      used verification keys out-of-band via `replaceVerificationKeyAt` to
+    ///      used verification keys out-of-band via `replaceKeyAt` to
     ///      avoid WOTS+ key reuse.
     ///
     ///      AND semantics + raw-hash ECDSA is a failsafe: if the WOTS+ half ever
@@ -1258,6 +1226,86 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         uint256 slot = _UPGRADE_GUARD_SLOT;
         assembly {
             v := tload(slot)
+        }
+    }
+
+    /// @dev Snapshots the 7 slots protected by `storageStoreGuard` into memory so a
+    ///      caller can later verify none were modified by an intervening delegatecall.
+    ///      Shared by `delegateExecuteGuard` and the upgrade/recoveryUpgrade verify
+    ///      delegatecalls. Protected slots: owner, ERC-1967 impl, quipFactory, both
+    ///      `disasterRecoveryKey` slots, both `ownershipKey` slots.
+    function _snapshotGuardedSlots()
+        private
+        view
+        returns (bytes32[7] memory snapshot)
+    {
+        /// @solidity memory-safe-assembly
+        assembly {
+            mstore(snapshot, sload(_OWNER_SLOT))
+            mstore(add(snapshot, 0x20), sload(_ERC1967_IMPLEMENTATION_SLOT))
+            mstore(add(snapshot, 0x40), sload(_PQ_FACTORY_SLOT))
+            mstore(add(snapshot, 0x60), sload(_DISASTER_KEY_SEED_SLOT))
+            mstore(add(snapshot, 0x80), sload(_DISASTER_KEY_HASH_SLOT))
+            mstore(add(snapshot, 0xa0), sload(_OWNERSHIP_KEY_SEED_SLOT))
+            mstore(add(snapshot, 0xc0), sload(_OWNERSHIP_KEY_HASH_SLOT))
+        }
+    }
+
+    /// @dev Reverts with empty data if any of the 7 guarded slots has changed since
+    ///      `_snapshotGuardedSlots` was called. Plain-bytes revert matches the style
+    ///      of Solady's parent guards; the caller context (delegatecall target) is
+    ///      already known to the operator by construction.
+    function _assertGuardedSlotsUnchanged(
+        bytes32[7] memory snapshot
+    ) private view {
+        /// @solidity memory-safe-assembly
+        assembly {
+            if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x20)),
+                    sload(_ERC1967_IMPLEMENTATION_SLOT)
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(eq(mload(add(snapshot, 0x40)), sload(_PQ_FACTORY_SLOT))) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x60)),
+                    sload(_DISASTER_KEY_SEED_SLOT)
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x80)),
+                    sload(_DISASTER_KEY_HASH_SLOT)
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0xa0)),
+                    sload(_OWNERSHIP_KEY_SEED_SLOT)
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0xc0)),
+                    sload(_OWNERSHIP_KEY_HASH_SLOT)
+                )
+            ) {
+                revert(codesize(), 0x00)
+            }
         }
     }
 }
