@@ -16,15 +16,40 @@ contract WOTSPlusCodec__upgradeDigest is WOTSPlusCodecTest {
         bytes32 tag = keccak256("quip.digest.upgrade");
         address impl = address(0xDEAD);
         bytes32 expected = EfficientHashLib.hash(
-            tag, bytes32(C), bytes32(uint256(uint160(W))),
-            bytes32(uint256(uint160(impl))), S1, H1, S2, H2
+            tag,
+            bytes32(C),
+            bytes32(uint256(uint160(W))),
+            bytes32(uint256(uint160(impl))),
+            S1,
+            H1,
+            S2,
+            H2
         );
-        assertEq(codec.exposed_upgradeDigest(W, C, impl, S1, H1, S2, H2), expected);
+        assertEq(
+            codec.exposed_upgradeDigest(W, C, impl, S1, H1, S2, H2),
+            expected
+        );
     }
 
     function test_exposed_upgradeDigest_differsByImplementation() public view {
-        bytes32 a = codec.exposed_upgradeDigest(W, C, address(0x1), S1, H1, S2, H2);
-        bytes32 b = codec.exposed_upgradeDigest(W, C, address(0x2), S1, H1, S2, H2);
+        bytes32 a = codec.exposed_upgradeDigest(
+            W,
+            C,
+            address(0x1),
+            S1,
+            H1,
+            S2,
+            H2
+        );
+        bytes32 b = codec.exposed_upgradeDigest(
+            W,
+            C,
+            address(0x2),
+            S1,
+            H1,
+            S2,
+            H2
+        );
         assertTrue(a != b);
     }
 }

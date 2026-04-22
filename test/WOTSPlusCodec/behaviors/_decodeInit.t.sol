@@ -7,34 +7,56 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
     function test_exposed_decodeInit_decodesCorrectly() public view {
         bytes memory payload = _buildInitPayload(42);
-        (WOTSPlus.WinternitzAddress memory pq, WOTSPlus.WinternitzAddress[10] memory keys) =
-            codec.exposed_decodeInit(payload);
+        (
+            WOTSPlus.WinternitzAddress memory disasterKey,
+            WOTSPlus.WinternitzAddress memory ownershipKey,
+            WOTSPlus.WinternitzAddress[5] memory txnKeys,
+            WOTSPlus.WinternitzAddress[10] memory recKeys
+        ) = codec.exposed_decodeInit(payload);
 
-        assertEq(pq.publicSeed, bytes32(uint256(42)));
-        assertEq(pq.publicKeyHash, bytes32(uint256(43)));
+        assertEq(disasterKey.publicSeed, bytes32(uint256(42 + 500)));
+        assertEq(disasterKey.publicKeyHash, bytes32(uint256(42 + 501)));
+        assertEq(ownershipKey.publicSeed, bytes32(uint256(42 + 600)));
+        assertEq(ownershipKey.publicKeyHash, bytes32(uint256(42 + 601)));
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(txnKeys[i].publicSeed, bytes32(uint256(42 + i * 2)));
+            assertEq(
+                txnKeys[i].publicKeyHash,
+                bytes32(uint256(42 + 1 + i * 2))
+            );
+        }
         for (uint256 i = 0; i < 10; i++) {
-            assertEq(keys[i].publicSeed, bytes32(uint256(42 + 100 + i * 2)));
-            assertEq(keys[i].publicKeyHash, bytes32(uint256(42 + 101 + i * 2)));
+            assertEq(recKeys[i].publicSeed, bytes32(uint256(42 + 100 + i * 2)));
+            assertEq(
+                recKeys[i].publicKeyHash,
+                bytes32(uint256(42 + 101 + i * 2))
+            );
         }
     }
 
     function test_exposed_decodeInit_extraBytes_ignored() public view {
         bytes memory payload = _buildInitPayload(42);
-        payload = abi.encodePacked(payload, bytes32(uint256(0xFF)), bytes32(uint256(0xFF)), bytes32(uint256(0xFF)));
-        (WOTSPlus.WinternitzAddress memory pq,) = codec.exposed_decodeInit(payload);
-        assertEq(pq.publicSeed, bytes32(uint256(42)));
+        payload = abi.encodePacked(
+            payload,
+            bytes32(uint256(0xFF)),
+            bytes32(uint256(0xFF)),
+            bytes32(uint256(0xFF))
+        );
+        (, , WOTSPlus.WinternitzAddress[5] memory txnKeys, ) = codec
+            .exposed_decodeInit(payload);
+        assertEq(txnKeys[0].publicSeed, bytes32(uint256(42)));
     }
 
     function test_exposed_decodeInit_handlesMaxValues() public view {
-        bytes memory payload = abi.encodePacked(
-            bytes32(type(uint256).max), bytes32(type(uint256).max)
-        );
-        for (uint256 i = 0; i < 10; i++) {
-            payload = abi.encodePacked(payload, bytes32(type(uint256).max), bytes32(type(uint256).max));
+        bytes memory payload = new bytes(0);
+        // disaster (2) + ownership (2) + txn (10) + rec (20) = 34 bytes32 slots.
+        for (uint256 i = 0; i < 34; i++) {
+            payload = abi.encodePacked(payload, bytes32(type(uint256).max));
         }
-        (WOTSPlus.WinternitzAddress memory pq,) = codec.exposed_decodeInit(payload);
-        assertEq(pq.publicSeed, bytes32(type(uint256).max));
-        assertEq(pq.publicKeyHash, bytes32(type(uint256).max));
+        (, , WOTSPlus.WinternitzAddress[5] memory txnKeys, ) = codec
+            .exposed_decodeInit(payload);
+        assertEq(txnKeys[0].publicSeed, bytes32(type(uint256).max));
+        assertEq(txnKeys[0].publicKeyHash, bytes32(type(uint256).max));
     }
 
     function test_exposed_decodeInit_revertsWhen_emptyPayload() public {
@@ -43,7 +65,10 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
     }
 
     function test_exposed_decodeInit_revertsWhen_truncatedPayload() public {
-        bytes memory payload = abi.encodePacked(bytes32(uint256(1)), bytes32(uint256(2)));
+        bytes memory payload = abi.encodePacked(
+            bytes32(uint256(1)),
+            bytes32(uint256(2))
+        );
         vm.expectRevert();
         codec.exposed_decodeInit(payload);
     }

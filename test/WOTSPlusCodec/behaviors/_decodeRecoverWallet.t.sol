@@ -22,7 +22,9 @@ contract WOTSPlusCodec__decodeRecoverWallet is WOTSPlusCodecTest {
         }
     }
 
-    function test_exposed_decodeRecoverWallet_revertsWhen_emptyPayload() public {
+    function test_exposed_decodeRecoverWallet_revertsWhen_emptyPayload()
+        public
+    {
         vm.expectRevert();
         codec.exposed_decodeRecoverWallet("");
     }

@@ -6,24 +6,34 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 
 contract WOTSPlusCodec__decodeWithdrawDeposit is WOTSPlusCodecTest {
     function test_exposed_decodeWithdrawDeposit_decodesCorrectly() public view {
-        bytes memory base = _buildChangePqOwnerPayload(10);
+        bytes memory base = _buildChangeTransactionKeyPayload(10);
         address to = address(0xBEEF);
         uint256 amount = 1.5 ether;
-        bytes memory payload = abi.encodePacked(base, bytes32(uint256(uint160(to))), amount);
+        bytes memory payload = abi.encodePacked(
+            base,
+            bytes32(uint256(uint160(to))),
+            amount
+        );
 
         (
-            WOTSPlus.WinternitzAddress memory pq,,
+            WOTSPlus.WinternitzAddress memory cur,
+            WOTSPlus.WinternitzAddress memory nxt,
+            ,
             address decodedTo,
             uint256 decodedAmount
         ) = codec.exposed_decodeWithdrawDeposit(payload);
 
-        assertEq(pq.publicSeed, bytes32(uint256(10)));
-        assertEq(pq.publicKeyHash, bytes32(uint256(11)));
+        assertEq(cur.publicSeed, bytes32(uint256(10)));
+        assertEq(cur.publicKeyHash, bytes32(uint256(11)));
+        assertEq(nxt.publicSeed, bytes32(uint256(12)));
+        assertEq(nxt.publicKeyHash, bytes32(uint256(13)));
         assertEq(decodedTo, to);
         assertEq(decodedAmount, amount);
     }
 
-    function test_exposed_decodeWithdrawDeposit_revertsWhen_emptyPayload() public {
+    function test_exposed_decodeWithdrawDeposit_revertsWhen_emptyPayload()
+        public
+    {
         vm.expectRevert();
         codec.exposed_decodeWithdrawDeposit("");
     }

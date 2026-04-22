@@ -1,18 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
+
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeKeyManagement is WOTSPlusCodecTest {
-    function test_exposed_decodeKeyManagement_decodesWithMultipleKeys() public view {
-        bytes memory payload = _buildKeyManagementPayload(30, 3);
+    function test_exposed_decodeKeyManagement_decodesWithMultipleKeys()
+        public
+        view
+    {
+        bytes memory payload = _buildKeyManagementPayload(
+            30,
+            3,
+            Codec.KeyType.Recovery
+        );
         (
-            WOTSPlus.WinternitzAddress memory pq,,
+            Codec.KeyType kind,
+            WOTSPlus.WinternitzAddress memory cur,
+            WOTSPlus.WinternitzAddress memory nxt,
+            ,
             WOTSPlus.WinternitzAddress[] memory keys
         ) = codec.exposed_decodeKeyManagement(payload);
 
-        assertEq(pq.publicSeed, bytes32(uint256(30)));
+        assertTrue(kind == Codec.KeyType.Recovery);
+        assertEq(cur.publicSeed, bytes32(uint256(30)));
+        assertEq(cur.publicKeyHash, bytes32(uint256(31)));
+        assertEq(nxt.publicSeed, bytes32(uint256(32)));
+        assertEq(nxt.publicKeyHash, bytes32(uint256(33)));
         assertEq(keys.length, 3);
         for (uint256 i = 0; i < 3; i++) {
             assertEq(keys[i].publicSeed, bytes32(uint256(30 + 500 + i * 2)));
@@ -20,33 +36,89 @@ contract WOTSPlusCodec__decodeKeyManagement is WOTSPlusCodecTest {
         }
     }
 
-    function test_exposed_decodeKeyManagement_decodesWithZeroKeys() public view {
-        bytes memory payload = _buildKeyManagementPayload(30, 0);
-        (,, WOTSPlus.WinternitzAddress[] memory keys) = codec.exposed_decodeKeyManagement(payload);
+    function test_exposed_decodeKeyManagement_decodesWithZeroKeys()
+        public
+        view
+    {
+        bytes memory payload = _buildKeyManagementPayload(
+            30,
+            0,
+            Codec.KeyType.Verification
+        );
+        (
+            Codec.KeyType kind,
+            ,
+            ,
+            ,
+            WOTSPlus.WinternitzAddress[] memory keys
+        ) = codec.exposed_decodeKeyManagement(payload);
+        assertTrue(kind == Codec.KeyType.Verification);
         assertEq(keys.length, 0);
     }
 
     function test_exposed_decodeKeyManagement_decodesWithMaxKeys() public view {
-        bytes memory payload = _buildKeyManagementPayload(30, 10);
-        (,, WOTSPlus.WinternitzAddress[] memory keys) = codec.exposed_decodeKeyManagement(payload);
+        bytes memory payload = _buildKeyManagementPayload(
+            30,
+            10,
+            Codec.KeyType.Transaction
+        );
+        (
+            Codec.KeyType kind,
+            ,
+            ,
+            ,
+            WOTSPlus.WinternitzAddress[] memory keys
+        ) = codec.exposed_decodeKeyManagement(payload);
+        assertTrue(kind == Codec.KeyType.Transaction);
         assertEq(keys.length, 10);
     }
 
-    function test_exposed_decodeKeyManagement_revertsWhen_shortPayload() public {
+    function test_exposed_decodeKeyManagement_revertsWhen_shortPayload()
+        public
+    {
         bytes memory payload = _filledBytes(100);
         vm.expectRevert();
         codec.exposed_decodeKeyManagement(payload);
     }
 
-    function test_exposed_decodeKeyManagement_exactMinLength_succeeds() public view {
-        bytes memory payload = _filledBytes(2208);
-        (,, WOTSPlus.WinternitzAddress[] memory keys) = codec.exposed_decodeKeyManagement(payload);
+    function test_exposed_decodeKeyManagement_exactMinLength_succeeds()
+        public
+        view
+    {
+        // 2304 bytes: leading 32-byte kind (=0, Transaction) + currentKey(64)
+        // + nextKey(64) + pqSig(2144). No trailing keys.
+        bytes memory payload = new bytes(2304);
+        (
+            ,
+            ,
+            ,
+            ,
+            WOTSPlus.WinternitzAddress[] memory keys
+        ) = codec.exposed_decodeKeyManagement(payload);
         assertEq(keys.length, 0);
     }
 
+    function test_exposed_decodeKeyManagement_revertsWhen_kindOutOfRange()
+        public
+    {
+        // A filled 2304-byte payload has a leading 0xAB…AB kind value far out of
+        // the KeyType enum range; the implicit enum cast must revert.
+        bytes memory payload = _filledBytes(2304);
+        vm.expectRevert();
+        codec.exposed_decodeKeyManagement(payload);
+    }
+
     function test_exposed_decodeKeyManagement_unalignedLength() public view {
-        bytes memory payload = _filledBytes(2240);
-        (,, WOTSPlus.WinternitzAddress[] memory keys) = codec.exposed_decodeKeyManagement(payload);
+        // 2336 bytes: 2304 baseline + 32 trailing bytes (not a full 64-byte key).
+        // Integer division floors trailing-key length to 0.
+        bytes memory payload = new bytes(2336);
+        (
+            ,
+            ,
+            ,
+            ,
+            WOTSPlus.WinternitzAddress[] memory keys
+        ) = codec.exposed_decodeKeyManagement(payload);
         assertEq(keys.length, 0);
     }
 }
