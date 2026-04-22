@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.33;
+
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
+import {QuipWalletTest} from "../QuipWallet.t.sol";
+import {QuipWalletHarness, HarnessKeyset} from "../../harness/QuipWalletHarness.sol";
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+
+/// @dev Behaviour tests for `_verifyAndRotate(set, current, next, pqSig, digest)`.
+///      Enforces (a) `current ∈ set`, (b) `next ∉ set`, (c) valid WOTS+ sig over
+///      `digest`. On success, rotates `current → next` in place.
+contract QuipWallet__verifyAndRotate is QuipWalletTest {
+    QuipWalletHarness public harnessProxy;
+
+    // Seeded WOTS+ keypair used as the "current" key across tests.
+    WOTSPlus.WinternitzAddress internal currentKey;
+    bytes32 internal currentPriv;
+
+    function setUp() public override {
+        super.setUp();
+        QuipWalletHarness harnessImpl = new QuipWalletHarness(
+            payable(address(factory))
+        );
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(harnessImpl));
+
+        (currentKey, currentPriv) = _generateKeyPair("h-vr-current");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
+            currentPriv,
+            10
+        );
+        bytes memory payload = _encodeInitPayload(currentKey, rKeys);
+
+        vm.prank(ALICE);
+        address proxyAddr = factory.deployLatestWalletProxy{
+            value: INITIAL_DEPOSIT
+        }(keccak256("h-vr-vault"), payable(ALICE), payload);
+        harnessProxy = QuipWalletHarness(payable(proxyAddr));
+    }
+
+    function test_exposed_verifyAndRotate_happyPath() public {
+        (
+            WOTSPlus.WinternitzAddress memory nextKey,
+
+        ) = _generateKeyPair("h-vr-next");
+        bytes32 digest = keccak256("vr-happy");
+        WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, digest);
+
+        harnessProxy.exposed_verifyAndRotate(
+            HarnessKeyset.Transaction,
+            currentKey,
+            nextKey,
+            sig,
+            digest
+        );
+
+        assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, currentKey));
+        assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, nextKey));
+    }
+
+    function test_exposed_verifyAndRotate_revertsWhen_currentAbsent() public {
+        (
+            WOTSPlus.WinternitzAddress memory stray,
+            bytes32 strayPriv
+        ) = _generateKeyPair("h-vr-stray");
+        (
+            WOTSPlus.WinternitzAddress memory nextKey,
+
+        ) = _generateKeyPair("h-vr-next-2");
+        bytes32 digest = keccak256("vr-absent");
+        WOTSPlus.WinternitzElements memory sig = _sign(strayPriv, digest);
+
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
+        harnessProxy.exposed_verifyAndRotate(
+            HarnessKeyset.Transaction,
+            stray,
+            nextKey,
+            sig,
+            digest
+        );
+    }
+
+    function test_exposed_verifyAndRotate_revertsWhen_nextAlreadyPresent()
+        public
+    {
+        // Pick another existing transaction key as `next`.
+        WOTSPlus.WinternitzAddress memory next = harnessProxy
+            .keyAt(Codec.KeyType.Transaction, 1);
+        bytes32 digest = keccak256("vr-dup");
+        WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, digest);
+
+        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        harnessProxy.exposed_verifyAndRotate(
+            HarnessKeyset.Transaction,
+            currentKey,
+            next,
+            sig,
+            digest
+        );
+    }
+
+    function test_exposed_verifyAndRotate_revertsWhen_signatureInvalid()
+        public
+    {
+        (
+            WOTSPlus.WinternitzAddress memory nextKey,
+
+        ) = _generateKeyPair("h-vr-next-3");
+        bytes32 digest = keccak256("vr-sig-bad");
+        // Sign a *different* digest so verification fails on the real one.
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            currentPriv,
+            keccak256("not-the-digest")
+        );
+
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        harnessProxy.exposed_verifyAndRotate(
+            HarnessKeyset.Transaction,
+            currentKey,
+            nextKey,
+            sig,
+            digest
+        );
+    }
+}

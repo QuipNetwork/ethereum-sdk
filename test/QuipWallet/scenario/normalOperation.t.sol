@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {DummyContract} from "../../../contracts/test/DummyContract.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
@@ -32,12 +34,20 @@ contract QuipWallet_normalOperation is QuipWalletTest {
 
         uint256 fee = wallet.getExecuteFee();
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), currentPq, nextPq, to, amount, "", fee
+            address(wallet),
+            currentPq,
+            nextPq,
+            to,
+            amount,
+            "",
+            fee
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(Codec.encodeExecute(nextPq, sig, to, amount, ""));
+        wallet.execute(
+            Codec.encodeExecute(currentPq, nextPq, sig, to, amount, "")
+        );
 
         currentPq = nextPq;
         currentPrivKey = nextPrivKey;
@@ -55,29 +65,43 @@ contract QuipWallet_normalOperation is QuipWalletTest {
 
         uint256 fee = wallet.getExecuteFee();
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), currentPq, nextPq, target, value, data, fee
+            address(wallet),
+            currentPq,
+            nextPq,
+            target,
+            value,
+            data,
+            fee
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(Codec.encodeExecute(nextPq, sig, target, value, data));
+        wallet.execute(
+            Codec.encodeExecute(currentPq, nextPq, sig, target, value, data)
+        );
 
         currentPq = nextPq;
         currentPrivKey = nextPrivKey;
     }
 
     /// @dev Rotate key via changePqOwner.
-    function _rotateKey(bytes32 nextSeed) internal returns (bytes32 nextPrivKey) {
+    function _rotateKey(
+        bytes32 nextSeed
+    ) internal returns (bytes32 nextPrivKey) {
         WOTSPlus.WinternitzAddress memory nextPq;
         (nextPq, nextPrivKey) = _generateKeyPair(nextSeed);
 
         bytes32 msgHash = _buildChangePqOwnerMessageHash(
-            address(wallet), currentPq, nextPq
+            address(wallet),
+            currentPq,
+            nextPq
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.changePqOwner(Codec.encodeChangePqOwner(nextPq, sig));
+        wallet.changeTransactionKey(
+            Codec.encodeChangeTransactionKey(currentPq, nextPq, sig)
+        );
 
         currentPq = nextPq;
         currentPrivKey = nextPrivKey;
@@ -98,20 +122,19 @@ contract QuipWallet_normalOperation is QuipWalletTest {
         assertEq(BOB.balance, bobBalBefore + 0.1 ether);
 
         // Step 3: pqOwner should have rotated
-        (bytes32 s, bytes32 h) = wallet.pqOwner();
-        assertEq(s, currentPq.publicSeed);
-        assertEq(h, currentPq.publicKeyHash);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, currentPq));
 
         // Step 4: Execute a contract call (setValue on DummyContract)
-        bytes memory callData = abi.encodeWithSelector(DummyContract.setValueNoFee.selector, 42);
+        bytes memory callData = abi.encodeWithSelector(
+            DummyContract.setValueNoFee.selector,
+            42
+        );
         _executeCall(address(dummy), 0, callData, "lifecycle-key-2");
         assertEq(dummy.value(), 42);
 
-        // Step 5: Rotate key via changePqOwner
+        // Step 5: Rotate key via changeTransactionKey
         _rotateKey("lifecycle-key-3");
-        (s, h) = wallet.pqOwner();
-        assertEq(s, currentPq.publicSeed);
-        assertEq(h, currentPq.publicKeyHash);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, currentPq));
 
         // Step 6: Execute another transfer with the rotated key
         uint256 bobBalBefore2 = BOB.balance;

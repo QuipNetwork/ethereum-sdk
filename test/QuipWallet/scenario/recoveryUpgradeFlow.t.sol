@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
@@ -21,37 +23,57 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
 
     function _buildRecoveryUpgradePayload(
         WOTSPlus.WinternitzAddress memory rKey,
+        WOTSPlus.WinternitzAddress memory newRKey,
         WOTSPlus.WinternitzElements memory sig,
         address impl,
         bytes32 verifierSeed
     ) internal view returns (bytes memory) {
-        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair(verifierSeed);
+        (
+            WOTSPlus.WinternitzAddress memory vPub,
+            bytes32 vPriv
+        ) = _generateKeyPair(verifierSeed);
         bytes32 vHash = Codec.verificationDigest(
-            address(wallet), block.chainid, impl,
-            vPub.publicSeed, vPub.publicKeyHash
+            address(wallet),
+            block.chainid,
+            impl,
+            vPub.publicSeed,
+            vPub.publicKeyHash
         );
         WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
 
-        return Codec.encodeRecoveryUpgrade(rKey, sig, vPub, vSig);
+        return
+            Codec.encodeRecoveryUpgrade(rKey, newRKey, sig, vPub, vSig);
     }
 
     /// @dev Emergency upgrade via recovery key → recoverWallet → resume operations.
     function test_simulation_recoveryUpgradeFlow() public {
         // Step 1: Simulate PQ key compromised — we still have recovery keys.
-        //         Use recovery key 0 to perform emergency upgrade.
+        //         Use recovery key 0 to perform emergency upgrade; the key
+        //         rotates in place so the recovery pool stays full.
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
         bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
+        (WOTSPlus.WinternitzAddress memory newRKey, ) = _generateKeyPair(
+            "recovery-upgrade-new-rkey"
+        );
 
         bytes32 msgHash = _buildRecoveryUpgradeMessageHash(
-            address(wallet), address(newImpl), alicePubkey, rKey
+            address(wallet),
+            address(newImpl),
+            rKey,
+            newRKey
         );
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
         bytes memory payload = _buildRecoveryUpgradePayload(
-            rKey, sig, address(newImpl), "recovery-upgrade-verifier"
+            rKey,
+            newRKey,
+            sig,
+            address(newImpl),
+            "recovery-upgrade-verifier"
         );
 
-        (bytes32 pqSeedBefore, bytes32 pqHashBefore) = wallet.pqOwner();
+        uint256 txnCountBefore = wallet.keyCount(Codec.KeyType.Transaction);
+        bool aliceActiveBefore = wallet.isKey(Codec.KeyType.Transaction, alicePubkey);
         uint256 balBefore = address(wallet).balance;
 
         vm.prank(ALICE);
@@ -64,51 +86,79 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
             factory.getVettedCodeIndex(address(newImpl).codehash)
         );
 
-        // 2b: PQ owner NOT rotated (critical: recoveryUpgrade doesn't rotate)
-        (bytes32 pqSeedAfter, bytes32 pqHashAfter) = wallet.pqOwner();
-        assertEq(pqSeedAfter, pqSeedBefore);
-        assertEq(pqHashAfter, pqHashBefore);
+        // 2b: Transaction keys NOT rotated (critical: recoveryUpgrade doesn't rotate)
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), txnCountBefore);
+        assertEq(wallet.isKey(Codec.KeyType.Transaction, alicePubkey), aliceActiveBefore);
 
-        // 2c: Recovery key 0 consumed
-        assertEq(wallet.getRecoveryKeyCount(), 9);
-        assertFalse(wallet.isRecoveryKey(rKey));
+        // 2c: Recovery key 0 consumed and replaced in place — count preserved.
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertFalse(wallet.isKey(Codec.KeyType.Recovery, rKey));
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, newRKey));
 
         // 2d: Balance and owner preserved
         assertEq(address(wallet).balance, balBefore);
         assertEq(wallet.owner(), ALICE);
 
         // Step 3: Fix the compromised PQ key via recoverWallet (using recovery key 1)
-        (WOTSPlus.WinternitzAddress memory newPqOwner, bytes32 newPqPrivKey) =
-            _generateKeyPair("new-pq-after-recovery-upgrade");
+        (
+            WOTSPlus.WinternitzAddress memory newPqOwner,
+            bytes32 newPqPrivKey
+        ) = _generateKeyPair("new-pq-after-recovery-upgrade");
 
         WOTSPlus.WinternitzAddress memory rKey1 = recoveryPubkeys[1];
         bytes32 rPrivKey1 = _recoverySigningKey(alicePrivateKey, 1);
 
         bytes32 recoverHash = _buildRecoverWalletMessageHash(
-            address(wallet), rKey1, newPqOwner
+            address(wallet),
+            rKey1,
+            newPqOwner
         );
-        WOTSPlus.WinternitzElements memory recoverSig = _sign(rPrivKey1, recoverHash);
+        WOTSPlus.WinternitzElements memory recoverSig = _sign(
+            rPrivKey1,
+            recoverHash
+        );
 
         vm.prank(ALICE);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey1, newPqOwner, recoverSig));
+        wallet.recoverWallet(
+            Codec.encodeRecoverWallet(rKey1, newPqOwner, recoverSig)
+        );
 
-        // PQ key now fixed
-        (bytes32 s, bytes32 h) = wallet.pqOwner();
-        assertEq(s, newPqOwner.publicSeed);
-        assertEq(h, newPqOwner.publicKeyHash);
-        assertEq(wallet.getRecoveryKeyCount(), 8);
+        // PQ key now fixed; recoverWallet consumed recovery key 1 (no replacement),
+        // so the pool drops from 10 to 9.
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPqOwner));
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
 
         // Step 4: Resume normal operations with the new key
-        (WOTSPlus.WinternitzAddress memory postPq,) = _generateKeyPair("post-recovery-upgrade-key");
+        (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(
+            "post-recovery-upgrade-key"
+        );
         uint256 fee = wallet.getExecuteFee();
         bytes32 execHash = _buildExecuteMessageHash(
-            address(wallet), newPqOwner, postPq, BOB, 0.05 ether, "", fee
+            address(wallet),
+            newPqOwner,
+            postPq,
+            BOB,
+            0.05 ether,
+            "",
+            fee
         );
-        WOTSPlus.WinternitzElements memory execSig = _sign(newPqPrivKey, execHash);
+        WOTSPlus.WinternitzElements memory execSig = _sign(
+            newPqPrivKey,
+            execHash
+        );
 
         uint256 bobBal = BOB.balance;
         vm.prank(ALICE);
-        wallet.execute(Codec.encodeExecute(postPq, execSig, BOB, 0.05 ether, ""));
+        wallet.execute(
+            Codec.encodeExecute(
+                newPqOwner,
+                postPq,
+                execSig,
+                BOB,
+                0.05 ether,
+                ""
+            )
+        );
         assertEq(BOB.balance, bobBal + 0.05 ether);
     }
 }

@@ -7,6 +7,25 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
+
+/// @dev Minimal "rogue vetted impl" used to prove the verify-delegatecall guard
+///      catches SSTOREs to any guarded slot. The fallback overwrites the
+///      `ownershipKey` publicSeed slot (ERC-7201 base + 3) — one of the seven
+///      slots snapshotted by the guard. If the guard did not fire, this SSTORE
+///      would silently succeed against the wallet's storage and brick the
+///      ownership-transfer path.
+contract RogueUpgradeImpl_WritesGuardedSlot {
+    fallback() external payable {
+        /// @solidity memory-safe-assembly
+        assembly {
+            sstore(
+                0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf703,
+                0xdeadbeef
+            )
+        }
+    }
+}
 
 contract QuipWallet_upgradeToAndCall is QuipWalletTest {
     QuipWallet public newImpl;
@@ -19,10 +38,10 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         factory.vetImplementation(address(newImpl));
     }
 
-    /// @dev Builds the full upgrade data payload (5121 bytes).
-    ///      Layout: [0:64) nextPqOwner, [64:2208) pqSig,
-    ///              [2208:2272) verifier, [2272:4416) verifySig,
-    ///              [4416] shouldMigrate, [4417:5121) migratorPayload.
+    /// @dev Builds the full upgrade data payload (5441 bytes).
+    ///      Layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
+    ///              [2272:2336) verifier, [2336:4480) verifySig,
+    ///              [4480] shouldMigrate, [4481:5441) migratorPayload.
     function _buildUpgradeData(
         address newImplementation_,
         bytes32 signingKey,
@@ -33,7 +52,6 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory migratePqOwner,
         WOTSPlus.WinternitzAddress[] memory migrateRecoveryKeys
     ) internal view returns (bytes memory) {
-        // Build the upgrade digest — s1,h1 = current storage owner; s2,h2 = next owner from calldata
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
             block.chainid,
@@ -44,66 +62,82 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             nextPqOwner.publicKeyHash
         );
 
-        // Sign with the current owner's private key
         WOTSPlus.WinternitzElements memory sig = _sign(signingKey, digest);
 
-        // Pack nextPqOwner as the pqSigner field (64 bytes)
-        bytes memory pqSigner = abi.encodePacked(nextPqOwner.publicSeed, nextPqOwner.publicKeyHash);
+        // [0:64) currentKey + [64:128) nextKey
+        bytes memory keyHeader = abi.encodePacked(
+            currentPqOwner.publicSeed,
+            currentPqOwner.publicKeyHash,
+            nextPqOwner.publicSeed,
+            nextPqOwner.publicKeyHash
+        );
 
-        // Pack pqSig (2144 bytes)
+        // [128:2272) pqSig (2144 bytes)
         bytes memory pqSig;
         for (uint256 i = 0; i < 67; i++) {
             pqSig = abi.encodePacked(pqSig, sig.elements[i]);
         }
 
-        // Verifier data (2208 bytes): verifier address (64) + verifier sig (2144)
-        bytes memory verifierData = _buildVerifierData(newImplementation_, verifierSeed);
-
-        // shouldMigrate flag (1 byte)
-        bytes memory migrateFlag = abi.encodePacked(shouldMigrate ? uint8(1) : uint8(0));
-
-        // Migrator payload (704 bytes): pqOwner (64) + recoveryKeys[10] (640)
-        bytes memory migratorPayload = abi.encodePacked(
-            migratePqOwner.publicSeed,
-            migratePqOwner.publicKeyHash
+        // [2272:4480) verifier (64) + verifySig (2144)
+        bytes memory verifierData = _buildVerifierData(
+            newImplementation_,
+            verifierSeed
         );
+
+        // [4480] shouldMigrate flag
+        bytes memory migrateFlag = abi.encodePacked(
+            shouldMigrate ? uint8(1) : uint8(0)
+        );
+
+        // [4481:5441) migratorPayload (960 bytes): init-layout, 5 txn keys + 10 recovery keys
+        WOTSPlus.WinternitzAddress[]
+            memory recKeys = new WOTSPlus.WinternitzAddress[](10);
         for (uint256 i = 0; i < 10; i++) {
             if (i < migrateRecoveryKeys.length) {
-                migratorPayload = abi.encodePacked(
-                    migratorPayload,
-                    migrateRecoveryKeys[i].publicSeed,
-                    migrateRecoveryKeys[i].publicKeyHash
-                );
+                recKeys[i] = migrateRecoveryKeys[i];
             } else {
-                migratorPayload = abi.encodePacked(
-                    migratorPayload,
-                    bytes32(uint256(i + 1)),
-                    bytes32(uint256(i + 100))
-                );
+                recKeys[i] = WOTSPlus.WinternitzAddress({
+                    publicSeed: bytes32(uint256(i + 1)),
+                    publicKeyHash: bytes32(uint256(i + 100))
+                });
             }
         }
-
-        return abi.encodePacked(
-            pqSigner,       // [0:64)
-            pqSig,          // [64:2208)
-            verifierData,   // [2208:4416)
-            migrateFlag,    // [4416]
-            migratorPayload // [4417:5121)
+        bytes memory migratorPayload = _encodeInitPayload(
+            migratePqOwner,
+            recKeys
         );
+
+        return
+            abi.encodePacked(
+                keyHeader, // [0:128)
+                pqSig, // [128:2272)
+                verifierData, // [2272:4480)
+                migrateFlag, // [4480]
+                migratorPayload // [4481:5441)
+            );
     }
 
     function _buildVerifierData(
         address newImplementation_,
         bytes32 verifierSeed
     ) internal view returns (bytes memory) {
-        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair(verifierSeed);
+        (
+            WOTSPlus.WinternitzAddress memory vPub,
+            bytes32 vPriv
+        ) = _generateKeyPair(verifierSeed);
         bytes32 vHash = Codec.verificationDigest(
-            address(wallet), block.chainid, newImplementation_,
-            vPub.publicSeed, vPub.publicKeyHash
+            address(wallet),
+            block.chainid,
+            newImplementation_,
+            vPub.publicSeed,
+            vPub.publicKeyHash
         );
         WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
 
-        bytes memory data = abi.encodePacked(vPub.publicSeed, vPub.publicKeyHash);
+        bytes memory data = abi.encodePacked(
+            vPub.publicSeed,
+            vPub.publicKeyHash
+        );
         for (uint256 i = 0; i < 67; i++) {
             data = abi.encodePacked(data, vSig.elements[i]);
         }
@@ -117,12 +151,15 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
     }
 
     function test_upgradeToAndCall_upgradesImplementation() public {
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "upgrade-next-pq"
+        );
         WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
             address(newImpl),
@@ -139,16 +176,21 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(newImpl), data);
 
         assertEq(wallet.owner(), ALICE);
-        (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
-        assertEq(publicSeed, nextPq.publicSeed);
-        assertEq(publicKeyHash, nextPq.publicKeyHash);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
     }
 
     function test_upgradeToAndCall_migratesStateWhenFlagSet() public {
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
-        (WOTSPlus.WinternitzAddress memory newMigratePq,) = _generateKeyPair("migrate-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "upgrade-next-pq"
+        );
+        (WOTSPlus.WinternitzAddress memory newMigratePq, ) = _generateKeyPair(
+            "migrate-pq"
+        );
         bytes32 migrateBase = keccak256("migrate-recovery");
-        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(migrateBase, 10);
+        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(
+            migrateBase,
+            10
+        );
 
         bytes memory data = _buildUpgradeData(
             address(newImpl),
@@ -165,20 +207,21 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(newImpl), data);
 
         // pqOwner should be the migrator's pqOwner (migrate overwrites the C-1 rotation)
-        (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
-        assertEq(publicSeed, newMigratePq.publicSeed);
-        assertEq(publicKeyHash, newMigratePq.publicKeyHash);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newMigratePq));
 
-        assertEq(wallet.getRecoveryKeyCount(), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
     }
 
     function test_upgradeToAndCall_skipsMigrationWhenFlagUnset() public {
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "upgrade-next-pq"
+        );
         WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
             address(newImpl),
@@ -195,27 +238,34 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(newImpl), data);
 
         // pqOwner should be nextPq (C-1 rotation, no migration)
-        (bytes32 publicSeed, bytes32 publicKeyHash) = wallet.pqOwner();
-        assertEq(publicSeed, nextPq.publicSeed);
-        assertEq(publicKeyHash, nextPq.publicKeyHash);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
 
-        assertEq(wallet.getRecoveryKeyCount(), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
     }
 
     function test_upgradeToAndCall_preservesBalanceAndOwner() public {
         uint256 balBefore = address(wallet).balance;
         address ownerBefore = wallet.owner();
 
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-preserve");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "upgrade-preserve"
+        );
         WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl), alicePrivateKey, alicePubkey, nextPq,
-            "verifier", false, dummyPq, emptyKeys
+            address(newImpl),
+            alicePrivateKey,
+            alicePubkey,
+            nextPq,
+            "verifier",
+            false,
+            dummyPq,
+            emptyKeys
         );
 
         vm.prank(ALICE);
@@ -226,14 +276,27 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
     }
 
     function test_upgradeToAndCall_migrateInvalidatesOldRecoveryKeys() public {
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-migrate-keys");
-        (WOTSPlus.WinternitzAddress memory newMigratePq,) = _generateKeyPair("migrate-pq-keys");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "upgrade-migrate-keys"
+        );
+        (WOTSPlus.WinternitzAddress memory newMigratePq, ) = _generateKeyPair(
+            "migrate-pq-keys"
+        );
         bytes32 migrateBase = keccak256("migrate-keys-recovery");
-        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(migrateBase, 10);
+        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(
+            migrateBase,
+            10
+        );
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl), alicePrivateKey, alicePubkey, nextPq,
-            "verifier", true, newMigratePq, migrateKeys
+            address(newImpl),
+            alicePrivateKey,
+            alicePubkey,
+            nextPq,
+            "verifier",
+            true,
+            newMigratePq,
+            migrateKeys
         );
 
         vm.prank(ALICE);
@@ -241,7 +304,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
 
         // Old recovery keys should be gone
         for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
-            assertFalse(wallet.isRecoveryKey(recoveryPubkeys[i]));
+            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
         }
     }
 
@@ -252,9 +315,12 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
-        (WOTSPlus.WinternitzAddress memory nextPq_,) = _generateKeyPair("revert-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
+            "revert-next-pq"
+        );
         bytes memory data = _buildUpgradeData(
             address(newImpl),
             alicePrivateKey,
@@ -276,10 +342,13 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         // Use a wrong signing key
-        (WOTSPlus.WinternitzAddress memory nextPq_,) = _generateKeyPair("inv-sig-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
+            "inv-sig-next-pq"
+        );
         (, bytes32 wrongKey) = _generateKeyPair("wrong-key");
         bytes memory data = _buildUpgradeData(
             address(newImpl),
@@ -298,8 +367,13 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
     }
 
     function test_migrate_revertsWhen_calledDirectly() public {
-        (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("migrate-direct");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(keccak256("migrate-r"), 10);
+        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
+            "migrate-direct"
+        );
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
+            keccak256("migrate-r"),
+            10
+        );
         bytes memory migratorPayload = _encodeInitPayload(newPq, rKeys);
 
         vm.prank(ALICE);
@@ -312,9 +386,14 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             publicSeed: bytes32(0),
             publicKeyHash: bytes32(0)
         });
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(keccak256("migrate-r"), 10);
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
+            keccak256("migrate-r"),
+            10
+        );
 
-        (WOTSPlus.WinternitzAddress memory nextPq_,) = _generateKeyPair("zero-migrate-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
+            "zero-migrate-next-pq"
+        );
         bytes memory data = _buildUpgradeData(
             address(newImpl),
             alicePrivateKey,
@@ -327,7 +406,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
@@ -336,7 +415,8 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         // Use current alicePubkey as nextPq — should trigger PqOwnerReuse
         bytes memory data = _buildUpgradeData(
@@ -351,7 +431,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.PqOwnerReuse.selector);
+        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
@@ -364,7 +444,8 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
             address(newImpl),
@@ -378,7 +459,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
@@ -391,7 +472,8 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
             address(newImpl),
@@ -405,20 +487,25 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.ZeroValuePqOwner.selector);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_implementationNotVetted() public {
+    function test_upgradeToAndCall_revertsWhen_implementationNotVetted()
+        public
+    {
         // Deploy but do NOT vet
         QuipWallet unvetted = new QuipWallet(payable(address(factory)));
 
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("unvetted-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "unvetted-next-pq"
+        );
         WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
             address(unvetted),
@@ -436,17 +523,22 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(unvetted), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_implementationDeprecated() public {
+    function test_upgradeToAndCall_revertsWhen_implementationDeprecated()
+        public
+    {
         // Deprecate the already-vetted newImpl
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(newImpl));
 
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("deprecated-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "deprecated-next-pq"
+        );
         WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
         });
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
             address(newImpl),
@@ -462,5 +554,44 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.ImplementationDeprecated.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
+    }
+
+    /// @dev Belt-and-suspenders test for the verify-delegatecall storage guard.
+    ///      A rogue but factory-vetted impl whose `verifyUpgrade` delegatecall
+    ///      SSTOREs to a guarded slot must be caught by the post-delegatecall
+    ///      snapshot assert in `upgradeToAndCall`.
+    function test_upgradeToAndCall_revertsWhen_verifyDelegateCallMutatesGuardedSlot()
+        public
+    {
+        RogueUpgradeImpl_WritesGuardedSlot rogue = new RogueUpgradeImpl_WritesGuardedSlot();
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(rogue));
+
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "rogue-next-pq"
+        );
+        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(uint256(1)),
+            publicKeyHash: bytes32(uint256(2))
+        });
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+
+        bytes memory data = _buildUpgradeData(
+            address(rogue),
+            alicePrivateKey,
+            alicePubkey,
+            nextPq,
+            "rogue-verifier",
+            false,
+            dummyPq,
+            emptyKeys
+        );
+
+        // The guard reverts with empty data (plain revert), consistent with
+        // Solady's parent guard style.
+        vm.prank(ALICE);
+        vm.expectRevert();
+        wallet.upgradeToAndCall(address(rogue), data);
     }
 }

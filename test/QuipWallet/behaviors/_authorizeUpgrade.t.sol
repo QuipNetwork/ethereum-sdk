@@ -11,18 +11,26 @@ contract QuipWallet__authorizeUpgrade is QuipWalletTest {
 
     function setUp() public override {
         super.setUp();
-        QuipWalletHarness harnessImpl = new QuipWalletHarness(payable(address(factory)));
+        QuipWalletHarness harnessImpl = new QuipWalletHarness(
+            payable(address(factory))
+        );
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-auth");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
+        (
+            WOTSPlus.WinternitzAddress memory pub,
+            bytes32 priv
+        ) = _generateKeyPair("h-auth");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
+            priv,
+            10
+        );
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
-            keccak256("h-auth-vault"), payable(ALICE), payload
-        );
+        address proxyAddr = factory.deployLatestWalletProxy{
+            value: INITIAL_DEPOSIT
+        }(keccak256("h-auth-vault"), payable(ALICE), payload);
         harnessProxy = QuipWalletHarness(payable(proxyAddr));
     }
 

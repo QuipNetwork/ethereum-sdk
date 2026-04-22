@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
@@ -25,15 +27,22 @@ contract QuipWallet_upgradeWithMigration is QuipWalletTest {
     function _buildVerifierData(
         address impl,
         bytes32 verifierSeed
-    ) internal view returns (
-        WOTSPlus.WinternitzAddress memory vPub,
-        WOTSPlus.WinternitzElements memory vSig
-    ) {
+    )
+        internal
+        view
+        returns (
+            WOTSPlus.WinternitzAddress memory vPub,
+            WOTSPlus.WinternitzElements memory vSig
+        )
+    {
         bytes32 vPriv;
         (vPub, vPriv) = _generateKeyPair(verifierSeed);
         bytes32 vHash = Codec.verificationDigest(
-            address(wallet), block.chainid, impl,
-            vPub.publicSeed, vPub.publicKeyHash
+            address(wallet),
+            block.chainid,
+            impl,
+            vPub.publicSeed,
+            vPub.publicKeyHash
         );
         vSig = _sign(vPriv, vHash);
     }
@@ -43,15 +52,24 @@ contract QuipWallet_upgradeWithMigration is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory migratePq,
         WOTSPlus.WinternitzAddress[] memory migrateRecoveryKeys
     ) internal {
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "upgrade-next-pq"
+        );
 
         // Auth signature
         bytes32 digest = Codec.upgradeDigest(
-            address(wallet), block.chainid, impl,
-            currentPq.publicSeed, currentPq.publicKeyHash,
-            nextPq.publicSeed, nextPq.publicKeyHash
+            address(wallet),
+            block.chainid,
+            impl,
+            currentPq.publicSeed,
+            currentPq.publicKeyHash,
+            nextPq.publicSeed,
+            nextPq.publicKeyHash
         );
-        WOTSPlus.WinternitzElements memory pqSig = _sign(currentPrivKey, digest);
+        WOTSPlus.WinternitzElements memory pqSig = _sign(
+            currentPrivKey,
+            digest
+        );
 
         // Verifier
         (
@@ -60,10 +78,19 @@ contract QuipWallet_upgradeWithMigration is QuipWalletTest {
         ) = _buildVerifierData(impl, "migrate-verifier");
 
         // Migrator payload (704 bytes init layout)
-        bytes memory migratorPayload = _encodeInitPayload(migratePq, migrateRecoveryKeys);
+        bytes memory migratorPayload = _encodeInitPayload(
+            migratePq,
+            migrateRecoveryKeys
+        );
 
         bytes memory data = Codec.encodeUpgradeToAndCall(
-            nextPq, pqSig, vPub, vSig, true, migratorPayload
+            currentPq,
+            nextPq,
+            pqSig,
+            vPub,
+            vSig,
+            true,
+            migratorPayload
         );
 
         vm.prank(ALICE);
@@ -77,27 +104,44 @@ contract QuipWallet_upgradeWithMigration is QuipWalletTest {
 
         // Step 1: Execute a transfer before upgrading (wallet is operational)
         {
-            (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) =
-                _generateKeyPair("pre-upgrade-key");
+            (
+                WOTSPlus.WinternitzAddress memory nextPq,
+                bytes32 nextPriv
+            ) = _generateKeyPair("pre-upgrade-key");
             uint256 fee = wallet.getExecuteFee();
             bytes32 msgHash = _buildExecuteMessageHash(
-                address(wallet), currentPq, nextPq, BOB, 0.1 ether, "", fee
+                address(wallet),
+                currentPq,
+                nextPq,
+                BOB,
+                0.1 ether,
+                "",
+                fee
             );
-            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
+            WOTSPlus.WinternitzElements memory sig = _sign(
+                currentPrivKey,
+                msgHash
+            );
 
             vm.prank(ALICE);
-            wallet.execute(Codec.encodeExecute(nextPq, sig, BOB, 0.1 ether, ""));
+            wallet.execute(
+                Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.1 ether, "")
+            );
 
             currentPq = nextPq;
             currentPrivKey = nextPriv;
         }
 
         // Step 2: Prepare migration state
-        (WOTSPlus.WinternitzAddress memory migratePq, bytes32 migratePriv) =
-            _generateKeyPair("migrate-pq");
+        (
+            WOTSPlus.WinternitzAddress memory migratePq,
+            bytes32 migratePriv
+        ) = _generateKeyPair("migrate-pq");
         bytes32 migrateRecBase = keccak256("migrate-recovery-base");
-        WOTSPlus.WinternitzAddress[] memory migrateKeys =
-            _generateRecoveryKeys(migrateRecBase, 10);
+        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(
+            migrateRecBase,
+            10
+        );
 
         uint256 balBefore = address(wallet).balance;
 
@@ -112,19 +156,17 @@ contract QuipWallet_upgradeWithMigration is QuipWalletTest {
         );
 
         // 4b: pqOwner is the migrate payload's key (migrate overwrites the auth rotation)
-        (bytes32 s, bytes32 h) = wallet.pqOwner();
-        assertEq(s, migratePq.publicSeed);
-        assertEq(h, migratePq.publicKeyHash);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, migratePq));
 
         // 4c: Recovery keys are the new set from migration
-        assertEq(wallet.getRecoveryKeyCount(), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
         for (uint256 i = 0; i < migrateKeys.length; i++) {
-            assertTrue(wallet.isRecoveryKey(migrateKeys[i]));
+            assertTrue(wallet.isKey(Codec.KeyType.Recovery, migrateKeys[i]));
         }
 
         // 4d: Old recovery keys are gone
         for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
-            assertFalse(wallet.isRecoveryKey(recoveryPubkeys[i]));
+            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
         }
 
         // 4e: Balance and owner preserved
@@ -135,16 +177,29 @@ contract QuipWallet_upgradeWithMigration is QuipWalletTest {
         currentPq = migratePq;
         currentPrivKey = migratePriv;
 
-        (WOTSPlus.WinternitzAddress memory postPq,) = _generateKeyPair("post-migrate-key");
+        (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(
+            "post-migrate-key"
+        );
         uint256 fee = wallet.getExecuteFee();
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), currentPq, postPq, BOB, 0.05 ether, "", fee
+            address(wallet),
+            currentPq,
+            postPq,
+            BOB,
+            0.05 ether,
+            "",
+            fee
         );
-        WOTSPlus.WinternitzElements memory postSig = _sign(currentPrivKey, msgHash);
+        WOTSPlus.WinternitzElements memory postSig = _sign(
+            currentPrivKey,
+            msgHash
+        );
 
         uint256 bobBal = BOB.balance;
         vm.prank(ALICE);
-        wallet.execute(Codec.encodeExecute(postPq, postSig, BOB, 0.05 ether, ""));
+        wallet.execute(
+            Codec.encodeExecute(currentPq, postPq, postSig, BOB, 0.05 ether, "")
+        );
         assertEq(BOB.balance, bobBal + 0.05 ether);
     }
 }

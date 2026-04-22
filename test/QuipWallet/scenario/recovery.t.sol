@@ -25,14 +25,31 @@ contract QuipWallet_recovery is QuipWalletTest {
         (newPqOwner, newPrivKey) = _generateKeyPair(newPqSeed);
 
         WOTSPlus.WinternitzAddress memory rKey = rPubkeys[keyIndex];
-        bytes32 rKeySeed = keccak256(abi.encodePacked(rBaseSeed, "recovery", keyIndex));
+        bytes32 rKeySeed = keccak256(
+            abi.encodePacked(rBaseSeed, "recovery", keyIndex)
+        );
         (, bytes32 rKeyPriv) = WOTSPlus.generateKeyPair(rKeySeed);
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, newPqOwner);
+        bytes32 msgHash = _buildRecoverWalletMessageHash(
+            address(wallet),
+            rKey,
+            newPqOwner
+        );
         WOTSPlus.WinternitzElements memory sig = _sign(rKeyPriv, msgHash);
 
         vm.prank(wallet.owner());
         wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPqOwner, sig));
+
+        // `recoverWallet` drains the entire transaction keyset and installs
+        // exactly one replacement — a load-bearing invariant. Pinning it here
+        // in the helper means every scenario step exercising recovery checks
+        // the post-state is a single-key txn set.
+        assertEq(
+            wallet.keyCount(Codec.KeyType.Transaction),
+            1,
+            "recoverWallet did not drain+install exactly one txn key"
+        );
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPqOwner));
 
         currentPq = newPqOwner;
         currentPrivKey = newPrivKey;
@@ -51,12 +68,16 @@ contract QuipWallet_recovery is QuipWalletTest {
         newKeys = _generateRecoveryKeys(newRecoverySeed, 10);
 
         bytes32 digest = _buildReplenishRecoveryKeysMessageHash(
-            address(wallet), currentPq, nextPq, newKeys
+            address(wallet),
+            currentPq,
+            nextPq,
+            newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, digest);
 
         vm.prank(wallet.owner());
-        wallet.replenishRecoveryKeys(Codec.encodeKeyManagement(nextPq, sig, newKeys));
+        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, currentPq, nextPq, sig, newKeys)
+        );
 
         currentPq = nextPq;
         currentPrivKey = nextPrivKey;
@@ -64,38 +85,67 @@ contract QuipWallet_recovery is QuipWalletTest {
 
     /// @dev Lose primary key, recover via recovery key, resume operations.
     function test_simulation_recoveryFlow() public {
-        (WOTSPlus.WinternitzAddress memory newPqOwner, bytes32 newPqPrivKey) =
-            _generateKeyPair("recovery-new-pq");
+        (
+            WOTSPlus.WinternitzAddress memory newPqOwner,
+            bytes32 newPqPrivKey
+        ) = _generateKeyPair("recovery-new-pq");
 
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
         bytes32 recoverySigningKey = _recoverySigningKey(alicePrivateKey, 0);
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, newPqOwner);
-        WOTSPlus.WinternitzElements memory sig = _sign(recoverySigningKey, msgHash);
+        bytes32 msgHash = _buildRecoverWalletMessageHash(
+            address(wallet),
+            rKey,
+            newPqOwner
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            recoverySigningKey,
+            msgHash
+        );
 
         vm.prank(ALICE);
         wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPqOwner, sig));
 
-        // Verify pqOwner changed and key consumed
-        (bytes32 s, bytes32 h) = wallet.pqOwner();
-        assertEq(s, newPqOwner.publicSeed);
-        assertEq(h, newPqOwner.publicKeyHash);
-        assertEq(wallet.getRecoveryKeyCount(), 9);
+        // Verify pqOwner changed and key consumed — and that the full txn
+        // keyset was drained and replaced with exactly one key.
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPqOwner));
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 1);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
 
         // Resume operations with new key
         currentPq = newPqOwner;
         currentPrivKey = newPqPrivKey;
 
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("post-recovery-key");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "post-recovery-key"
+        );
         uint256 fee = wallet.getExecuteFee();
         bytes32 execHash = _buildExecuteMessageHash(
-            address(wallet), currentPq, nextPq, BOB, 0.05 ether, "", fee
+            address(wallet),
+            currentPq,
+            nextPq,
+            BOB,
+            0.05 ether,
+            "",
+            fee
         );
-        WOTSPlus.WinternitzElements memory execSig = _sign(currentPrivKey, execHash);
+        WOTSPlus.WinternitzElements memory execSig = _sign(
+            currentPrivKey,
+            execHash
+        );
 
         uint256 bobBalBefore = BOB.balance;
         vm.prank(ALICE);
-        wallet.execute(Codec.encodeExecute(nextPq, execSig, BOB, 0.05 ether, ""));
+        wallet.execute(
+            Codec.encodeExecute(
+                newPqOwner,
+                nextPq,
+                execSig,
+                BOB,
+                0.05 ether,
+                ""
+            )
+        );
         assertEq(BOB.balance, bobBalBefore + 0.05 ether);
     }
 
@@ -106,16 +156,18 @@ contract QuipWallet_recovery is QuipWalletTest {
 
         // Step 1: Consume recovery key 0
         _recoverWith(0, recoveryPubkeys, alicePrivateKey, "replenish-pq-1");
-        assertEq(wallet.getRecoveryKeyCount(), 9);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
 
         // Step 2: Replenish with fresh 10 recovery keys
         bytes32 newRecoverySeed = keccak256("new-recovery-seed");
-        WOTSPlus.WinternitzAddress[] memory newKeys = _replenishKeys(newRecoverySeed);
-        assertEq(wallet.getRecoveryKeyCount(), 10);
+        WOTSPlus.WinternitzAddress[] memory newKeys = _replenishKeys(
+            newRecoverySeed
+        );
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
         // Step 3: Recover with one of the new keys
         _recoverWith(0, newKeys, newRecoverySeed, "replenish-pq-3");
-        assertEq(wallet.getRecoveryKeyCount(), 9);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
     }
 
     /// @dev Exhaust all 10 recovery keys, verify further recovery fails,
@@ -132,30 +184,38 @@ contract QuipWallet_recovery is QuipWalletTest {
                 alicePrivateKey,
                 bytes32(keccak256(abi.encodePacked("exhaust-pq-", i)))
             );
-            assertEq(wallet.getRecoveryKeyCount(), 9 - i);
+            assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9 - i);
         }
 
         // All recovery keys exhausted
-        assertEq(wallet.getRecoveryKeyCount(), 0);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 0);
 
         // Further recovery attempt fails
-        (WOTSPlus.WinternitzAddress memory fakePq,) = _generateKeyPair("fake-pq");
+        (WOTSPlus.WinternitzAddress memory fakePq, ) = _generateKeyPair(
+            "fake-pq"
+        );
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
         bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-        bytes32 msgHash = _buildRecoverWalletMessageHash(address(wallet), rKey, fakePq);
+        bytes32 msgHash = _buildRecoverWalletMessageHash(
+            address(wallet),
+            rKey,
+            fakePq
+        );
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.RecoveryKeyNotFound.selector);
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
         wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, fakePq, sig));
 
         // Replenish with fresh keys
         bytes32 freshSeed = keccak256("fresh-recovery-seed");
-        WOTSPlus.WinternitzAddress[] memory freshKeys = _replenishKeys(freshSeed);
-        assertEq(wallet.getRecoveryKeyCount(), 10);
+        WOTSPlus.WinternitzAddress[] memory freshKeys = _replenishKeys(
+            freshSeed
+        );
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
         // Recover with a fresh key
         _recoverWith(0, freshKeys, freshSeed, "post-exhaust-pq");
-        assertEq(wallet.getRecoveryKeyCount(), 9);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
     }
 }

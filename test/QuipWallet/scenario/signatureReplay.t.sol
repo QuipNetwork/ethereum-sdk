@@ -15,29 +15,63 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
     ///      must not be accepted.
     function test_signatureReplay_oldSignatureFailsAfterKeyRotation() public {
         uint256 transferAmount = 0.1 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "next-key-1"
+        );
 
         // Build a valid execute (transfer) signature with alicePrivateKey
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, "", 0
+            address(wallet),
+            alicePubkey,
+            nextPubkey,
+            BOB,
+            transferAmount,
+            "",
+            0
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
 
         // Rotate key via changePqOwner (consumes a different signature)
-        (WOTSPlus.WinternitzAddress memory rotatedPubkey, bytes32 rotatedPrivKey) =
-            _generateKeyPair("rotated-key");
+        (
+            WOTSPlus.WinternitzAddress memory rotatedPubkey,
+            bytes32 rotatedPrivKey
+        ) = _generateKeyPair("rotated-key");
         bytes32 rotateMsgHash = _buildChangePqOwnerMessageHash(
-            address(wallet), alicePubkey, rotatedPubkey
+            address(wallet),
+            alicePubkey,
+            rotatedPubkey
         );
-        WOTSPlus.WinternitzElements memory rotateSig = _sign(alicePrivateKey, rotateMsgHash);
+        WOTSPlus.WinternitzElements memory rotateSig = _sign(
+            alicePrivateKey,
+            rotateMsgHash
+        );
 
         vm.prank(ALICE);
-        wallet.changePqOwner(Codec.encodeChangePqOwner(rotatedPubkey, rotateSig));
+        wallet.changeTransactionKey(
+            Codec.encodeChangeTransactionKey(
+                alicePubkey,
+                rotatedPubkey,
+                rotateSig
+            )
+        );
 
-        // Now try to replay the original signature — pqOwner has changed
+        // Now try to replay the original signature — alicePubkey was consumed
+        // by the rotation above, so it is no longer a member of the set.
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, transferAmount, ""));
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
+        wallet.execute(
+            Codec.encodeExecute(
+                alicePubkey,
+                nextPubkey,
+                sig,
+                BOB,
+                transferAmount,
+                ""
+            )
+        );
     }
 
     /// @dev A signature computed for wallet A must not work on wallet B,
@@ -48,38 +82,81 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
             address bobWalletAddr,
             WOTSPlus.WinternitzAddress memory bobPubkey,
             bytes32 bobPrivateKey,
+
         ) = _createWallet(BOB, "bob-replay-vault", INITIAL_DEPOSIT);
 
         // Build a valid execute signature for ALICE's wallet
-        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-cross");
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, "", 0
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "next-key-cross"
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPubkey,
+            BOB,
+            0.1 ether,
+            "",
+            0
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
 
-        // Try to use Alice's signature on Bob's wallet — digest includes wallet address
+        // Try to use Alice's signature on Bob's wallet — alicePubkey is not
+        // a transaction key in Bob's wallet, so it fails at the key-set check
+        // before signature verification.
         QuipWallet bobWallet = QuipWallet(payable(bobWalletAddr));
         vm.prank(BOB);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        bobWallet.execute(Codec.encodeExecute(nextPubkey, sig, BOB, 0.1 ether, ""));
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
+        bobWallet.execute(
+            Codec.encodeExecute(
+                alicePubkey,
+                nextPubkey,
+                sig,
+                BOB,
+                0.1 ether,
+                ""
+            )
+        );
     }
 
     /// @dev A signature for a pure transfer (empty data) cannot be used for a
     ///      contract call (non-empty data), because the dataHash differs.
     function test_signatureReplay_dataHashDifferentiatesOperations() public {
         uint256 value = 0.1 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-cross-op");
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "next-key-cross-op"
+        );
 
         // Build a signature for a pure transfer (empty data)
         bytes32 transferMsgHash = _buildExecuteMessageHash(
-            address(wallet), alicePubkey, nextPubkey, BOB, value, "", 0
+            address(wallet),
+            alicePubkey,
+            nextPubkey,
+            BOB,
+            value,
+            "",
+            0
         );
-        WOTSPlus.WinternitzElements memory transferSig = _sign(alicePrivateKey, transferMsgHash);
+        WOTSPlus.WinternitzElements memory transferSig = _sign(
+            alicePrivateKey,
+            transferMsgHash
+        );
 
         // Try using it for a call with non-empty data — different dataHash
         bytes memory callData = abi.encodeWithSignature("nonExistent()");
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.execute(Codec.encodeExecute(nextPubkey, transferSig, BOB, value, callData));
+        wallet.execute(
+            Codec.encodeExecute(
+                alicePubkey,
+                nextPubkey,
+                transferSig,
+                BOB,
+                value,
+                callData
+            )
+        );
     }
 }
