@@ -27,7 +27,9 @@ contract QuipPaymaster_removePqVerifier is QuipPaymasterTest {
         vm.startPrank(ADMIN);
         paymaster.removePqVerifier(WALLET);
 
-        (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("new-key");
+        (WOTSPlus.WinternitzAddress memory newKey, ) = _generateKeyPair(
+            "new-key"
+        );
         paymaster.setPqVerifier(WALLET, newKey);
         vm.stopPrank();
 

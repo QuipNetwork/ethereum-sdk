@@ -9,7 +9,9 @@ import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
     function test_setPqVerifier_setsVerifierKey() public {
         address wallet2 = makeAddr("wallet2");
-        (WOTSPlus.WinternitzAddress memory key,) = _generateKeyPair("wallet2-verifier");
+        (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
+            "wallet2-verifier"
+        );
 
         vm.prank(ADMIN);
         paymaster.setPqVerifier(wallet2, key);
@@ -21,7 +23,9 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
 
     function test_setPqVerifier_overwritesExistingKey() public {
         // WALLET already has a verifier from setUp — overwrite it
-        (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("overwrite-key");
+        (WOTSPlus.WinternitzAddress memory newKey, ) = _generateKeyPair(
+            "overwrite-key"
+        );
 
         vm.prank(ADMIN);
         paymaster.setPqVerifier(WALLET, newKey);
@@ -33,7 +37,9 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
 
     function test_setPqVerifier_emitsPqVerifierSet() public {
         address wallet2 = makeAddr("wallet2");
-        (WOTSPlus.WinternitzAddress memory key,) = _generateKeyPair("wallet2-verifier");
+        (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
+            "wallet2-verifier"
+        );
 
         vm.prank(ADMIN);
         vm.expectEmit(true, false, false, true);
@@ -43,7 +49,9 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
 
     function test_setPqVerifier_revertsWhen_notOwner() public {
         address wallet2 = makeAddr("wallet2");
-        (WOTSPlus.WinternitzAddress memory key,) = _generateKeyPair("wallet2-verifier");
+        (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
+            "wallet2-verifier"
+        );
 
         vm.prank(ALICE);
         vm.expectRevert(Ownable.Unauthorized.selector);

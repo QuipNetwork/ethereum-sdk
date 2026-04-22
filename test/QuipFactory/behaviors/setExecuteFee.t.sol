@@ -32,7 +32,12 @@ contract QuipFactory_setExecuteFee is QuipFactoryTest {
 
     function test_setExecuteFee_revertsWhen_callerNotAdmin() public {
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Ownable.OwnableUnauthorizedAccount.selector,
+                ALICE
+            )
+        );
         factory.setExecuteFee(EXECUTE_FEE);
     }
 
@@ -57,7 +62,13 @@ contract QuipFactory_setExecuteFee is QuipFactoryTest {
         uint256 maxFee = factory.MAX_FEE();
         uint256 excessFee = maxFee + 1;
         vm.prank(ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(IQuipFactory.FeeExceedsMax.selector, excessFee, maxFee));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipFactory.FeeExceedsMax.selector,
+                excessFee,
+                maxFee
+            )
+        );
         factory.setExecuteFee(excessFee);
     }
 }

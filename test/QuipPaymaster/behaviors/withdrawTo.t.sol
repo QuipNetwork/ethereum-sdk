@@ -8,7 +8,11 @@ contract QuipPaymaster_withdrawTo is QuipPaymasterTest {
     function test_withdrawTo_withdrawsFromEntryPoint() public {
         vm.mockCall(
             ENTRY_POINT,
-            abi.encodeWithSignature("withdrawTo(address,uint256)", BOB, 1 ether),
+            abi.encodeWithSignature(
+                "withdrawTo(address,uint256)",
+                BOB,
+                1 ether
+            ),
             ""
         );
 

@@ -8,8 +8,7 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {QuipPaymaster} from "../../contracts/QuipPaymaster.sol";
 import {QuipPaymasterHarness} from "../harness/QuipPaymasterHarness.sol";
 import {IQuipPaymaster} from "../../contracts/interfaces/IQuipPaymaster.sol";
-import {PackedUserOperation} from
-    "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 /// @title QuipPaymaster Base Test
 /// @dev Base contract for testing QuipPaymaster. Deploys an ERC-1967 proxy
@@ -26,10 +25,12 @@ contract QuipPaymasterTest is Test {
     address public BOB = makeAddr("bob");
     address public WALLET = address(0xdead);
 
-    address public constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address public constant ENTRY_POINT =
+        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     /// @dev Domain tag for paymaster approval digests (must match QuipPaymaster._PAYMASTER_APPROVE_TAG).
-    bytes32 private constant _PAYMASTER_APPROVE_TAG = keccak256("quip.digest.paymasterApprove");
+    bytes32 private constant _PAYMASTER_APPROVE_TAG =
+        keccak256("quip.digest.paymasterApprove");
 
     /// @dev WOTS+ verifier key state for the default WALLET sender.
     WOTSPlus.WinternitzAddress public verifierPubkey;
@@ -40,15 +41,23 @@ contract QuipPaymasterTest is Test {
         vm.deal(ALICE, 100 ether);
 
         // Generate initial WOTS+ verifier keypair
-        (verifierPubkey, verifierPrivateKey) = _generateKeyPair("verifier-seed-0");
+        (verifierPubkey, verifierPrivateKey) = _generateKeyPair(
+            "verifier-seed-0"
+        );
 
         // Deploy implementation
         implementation = new QuipPaymaster();
         harnessImpl = new QuipPaymasterHarness();
 
         // Deploy proxies via CREATE3
-        paymaster = QuipPaymaster(payable(_deployProxy(address(implementation), keccak256("paymaster"))));
-        harness = QuipPaymasterHarness(payable(_deployProxy(address(harnessImpl), keccak256("harness"))));
+        paymaster = QuipPaymaster(
+            payable(
+                _deployProxy(address(implementation), keccak256("paymaster"))
+            )
+        );
+        harness = QuipPaymasterHarness(
+            payable(_deployProxy(address(harnessImpl), keccak256("harness")))
+        );
 
         // Initialize
         paymaster.initialize(ADMIN);
@@ -74,7 +83,10 @@ contract QuipPaymasterTest is Test {
     // --- Helpers ---
 
     /// @dev Deploy a minimal ERC-1967 proxy via CREATE3 (same bytecode as QuipFactory).
-    function _deployProxy(address impl, bytes32 salt) internal returns (address) {
+    function _deployProxy(
+        address impl,
+        bytes32 salt
+    ) internal returns (address) {
         bytes memory proxyInitcode = abi.encodePacked(
             hex"603d3d8160223d3973",
             impl,
@@ -86,7 +98,9 @@ contract QuipPaymasterTest is Test {
     }
 
     /// @dev Generate a WOTS+ keypair from a deterministic seed.
-    function _generateKeyPair(bytes32 seed)
+    function _generateKeyPair(
+        bytes32 seed
+    )
         internal
         pure
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
@@ -95,11 +109,10 @@ contract QuipPaymasterTest is Test {
     }
 
     /// @dev Sign a message with a WOTS+ private key.
-    function _sign(bytes32 privateKey, bytes32 messageHash)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzElements memory)
-    {
+    function _sign(
+        bytes32 privateKey,
+        bytes32 messageHash
+    ) internal pure returns (WOTSPlus.WinternitzElements memory) {
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: messageHash
         });
@@ -138,49 +151,53 @@ contract QuipPaymasterTest is Test {
             opCommitment
         );
 
-        WOTSPlus.WinternitzElements memory sig = _sign(currentPrivateKey, digest);
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            currentPrivateKey,
+            digest
+        );
 
         // Pack: [0:20) paymaster, [20:36) verificationGasLimit, [36:52) postOpGasLimit,
         //        [52:58) validUntil, [58:64) validAfter,
         //        [64:128) nextVerifierKey (publicSeed + publicKeyHash),
         //        [128:2272) WOTS+ signature (67 × 32)
-        return abi.encodePacked(
-            address(paymaster),
-            uint128(100_000),   // paymasterVerificationGasLimit
-            uint128(50_000),    // paymasterPostOpGasLimit
-            validUntil,
-            validAfter,
-            nextPubkey.publicSeed,
-            nextPubkey.publicKeyHash,
-            sig.elements
-        );
+        return
+            abi.encodePacked(
+                address(paymaster),
+                uint128(100_000), // paymasterVerificationGasLimit
+                uint128(50_000), // paymasterPostOpGasLimit
+                validUntil,
+                validAfter,
+                nextPubkey.publicSeed,
+                nextPubkey.publicKeyHash,
+                sig.elements
+            );
     }
 
     /// @dev Build a mock PackedUserOperation with the given paymasterAndData and sender.
-    function _mockUserOp(bytes memory paymasterData_, address sender_)
-        internal
-        pure
-        returns (PackedUserOperation memory)
-    {
-        return PackedUserOperation({
-            sender: sender_,
-            nonce: 0,
-            initCode: "",
-            callData: "",
-            accountGasLimits: bytes32(uint256(100_000) << 128 | uint256(100_000)),
-            preVerificationGas: 21_000,
-            gasFees: bytes32(uint256(1 gwei) << 128 | uint256(10 gwei)),
-            paymasterAndData: paymasterData_,
-            signature: ""
-        });
+    function _mockUserOp(
+        bytes memory paymasterData_,
+        address sender_
+    ) internal pure returns (PackedUserOperation memory) {
+        return
+            PackedUserOperation({
+                sender: sender_,
+                nonce: 0,
+                initCode: "",
+                callData: "",
+                accountGasLimits: bytes32(
+                    (uint256(100_000) << 128) | uint256(100_000)
+                ),
+                preVerificationGas: 21_000,
+                gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
+                paymasterAndData: paymasterData_,
+                signature: ""
+            });
     }
 
     /// @dev Build a mock PackedUserOperation with the default WALLET sender.
-    function _mockUserOp(bytes memory paymasterData_)
-        internal
-        view
-        returns (PackedUserOperation memory)
-    {
+    function _mockUserOp(
+        bytes memory paymasterData_
+    ) internal view returns (PackedUserOperation memory) {
         return _mockUserOp(paymasterData_, WALLET);
     }
 }
