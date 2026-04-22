@@ -18,8 +18,12 @@ contract QuipFactoryTest is Test {
     QuipWallet public walletImplementation;
 
     address public ADMIN = makeAddr("admin");
-    address public ALICE = makeAddr("alice");
     address public BOB = makeAddr("bob");
+
+    /// @dev ALICE is materialized with her ECDSA private key so tests that exercise
+    ///      ERC-1271 (which requires ECDSA from the classical owner) can sign on her behalf.
+    address public ALICE;
+    uint256 public ALICE_KEY;
 
     // Standard test amounts
     uint256 public constant INITIAL_DEPOSIT = 1 ether;
@@ -27,6 +31,7 @@ contract QuipFactoryTest is Test {
     uint256 public constant EXECUTE_FEE = 0.002 ether;
 
     function setUp() public virtual {
+        (ALICE, ALICE_KEY) = makeAddrAndKey("alice");
         // Fund test accounts
         vm.deal(ADMIN, 100 ether);
         vm.deal(ALICE, 100 ether);
@@ -61,7 +66,9 @@ contract QuipFactoryTest is Test {
     // --- Helpers ---
 
     /// @dev Generate a WOTS+ keypair from a deterministic seed
-    function _generateKeyPair(bytes32 seed)
+    function _generateKeyPair(
+        bytes32 seed
+    )
         internal
         pure
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
@@ -70,11 +77,10 @@ contract QuipFactoryTest is Test {
     }
 
     /// @dev Sign a message with a WOTS+ private key
-    function _sign(bytes32 privateKey, bytes32 messageHash)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzElements memory)
-    {
+    function _sign(
+        bytes32 privateKey,
+        bytes32 messageHash
+    ) internal pure returns (WOTSPlus.WinternitzElements memory) {
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: messageHash
         });
@@ -83,30 +89,79 @@ contract QuipFactoryTest is Test {
     }
 
     /// @dev Generate recovery key public keys from a private key
-    function _generateRecoveryKeys(bytes32 privateKey, uint256 count)
-        internal
-        pure
-        returns (WOTSPlus.WinternitzAddress[] memory pubkeys)
-    {
+    function _generateRecoveryKeys(
+        bytes32 privateKey,
+        uint256 count
+    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory pubkeys) {
         pubkeys = new WOTSPlus.WinternitzAddress[](count);
         for (uint256 i = 0; i < count; i++) {
-            bytes32 seed = keccak256(abi.encodePacked(privateKey, "recovery", i));
-            (pubkeys[i],) = WOTSPlus.generateKeyPair(seed);
+            bytes32 seed = keccak256(
+                abi.encodePacked(privateKey, "recovery", i)
+            );
+            (pubkeys[i], ) = WOTSPlus.generateKeyPair(seed);
         }
     }
 
     /// @dev Derive the signing key for a recovery key at a given index
-    function _recoverySigningKey(bytes32 privateKey, uint256 index)
-        internal
-        pure
-        returns (bytes32)
-    {
-        bytes32 seed = keccak256(abi.encodePacked(privateKey, "recovery", index));
+    function _recoverySigningKey(
+        bytes32 privateKey,
+        uint256 index
+    ) internal pure returns (bytes32) {
+        bytes32 seed = keccak256(
+            abi.encodePacked(privateKey, "recovery", index)
+        );
         (, bytes32 signingKey) = WOTSPlus.generateKeyPair(seed);
         return signingKey;
     }
 
-    /// @dev Deploy a QuipWallet proxy through the factory and return its address
+    /// @dev Derive the disaster recovery keypair deterministically from a vault seed.
+    ///      Tests that exercise `saveWallet` can re-derive the same keypair by feeding
+    ///      the vault seed back in.
+    function _generateDisasterRecoveryKey(
+        bytes32 vaultSeed
+    )
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
+    {
+        bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "disaster"));
+        (pubkey, privateKey) = WOTSPlus.generateKeyPair(seed);
+    }
+
+    /// @dev Derive the ownership keypair deterministically from a vault seed.
+    ///      Tests that exercise `transferOwnership` / `completeOwnershipHandover` can
+    ///      re-derive the same keypair by feeding the vault seed back in.
+    function _generateOwnershipKey(
+        bytes32 vaultSeed
+    )
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
+    {
+        bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "ownership"));
+        (pubkey, privateKey) = WOTSPlus.generateKeyPair(seed);
+    }
+
+    /// @dev Generate the 5 initial transaction keys deterministically from a vault seed.
+    function _generateTransactionKeys(
+        bytes32 vaultSeed
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress[5] memory pubkeys,
+            bytes32[5] memory privateKeys
+        )
+    {
+        for (uint256 i = 0; i < 5; i++) {
+            bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "txn", i));
+            (pubkeys[i], privateKeys[i]) = WOTSPlus.generateKeyPair(seed);
+        }
+    }
+
+    /// @dev Deploy a QuipWallet proxy through the factory and return its address.
+    ///      Returns the FIRST (index 0) transaction key as the "primary" signing key for
+    ///      convenience. Other 4 transaction keys are returned in `txnPubkeys`/`txnPrivkeys`.
     function _createWallet(
         address owner,
         bytes32 vaultSeed,
@@ -120,11 +175,53 @@ contract QuipFactoryTest is Test {
             WOTSPlus.WinternitzAddress[] memory recoveryPubkeys
         )
     {
-        bytes32 vaultId = keccak256(abi.encodePacked(vaultSeed));
-        (pubkey, privateKey) = _generateKeyPair(vaultSeed);
-        recoveryPubkeys = _generateRecoveryKeys(privateKey, 10);
+        WOTSPlus.WinternitzAddress[5] memory txnPubkeys;
+        bytes32[5] memory txnPrivkeys;
+        (
+            walletAddr,
+            txnPubkeys,
+            txnPrivkeys,
+            recoveryPubkeys
+        ) = _createWalletFull(owner, vaultSeed, deposit);
+        pubkey = txnPubkeys[0];
+        privateKey = txnPrivkeys[0];
+    }
 
-        bytes memory payload = _encodeInitPayload(pubkey, recoveryPubkeys);
+    /// @dev Full-form _createWallet that exposes all 5 transaction keys.
+    function _createWalletFull(
+        address owner,
+        bytes32 vaultSeed,
+        uint256 deposit
+    )
+        internal
+        returns (
+            address walletAddr,
+            WOTSPlus.WinternitzAddress[5] memory txnPubkeys,
+            bytes32[5] memory txnPrivkeys,
+            WOTSPlus.WinternitzAddress[] memory recoveryPubkeys
+        )
+    {
+        bytes32 vaultId = keccak256(abi.encodePacked(vaultSeed));
+        (txnPubkeys, txnPrivkeys) = _generateTransactionKeys(vaultSeed);
+        // Derive recovery keys from the first txn private key for determinism.
+        recoveryPubkeys = _generateRecoveryKeys(txnPrivkeys[0], 10);
+        (
+            WOTSPlus.WinternitzAddress memory disasterKey,
+
+        ) = _generateDisasterRecoveryKey(vaultSeed);
+        (
+            WOTSPlus.WinternitzAddress memory ownershipKey,
+
+        ) = _generateOwnershipKey(vaultSeed);
+
+        WOTSPlus.WinternitzAddress[10] memory recFixed;
+        for (uint256 i = 0; i < 10; i++) recFixed[i] = recoveryPubkeys[i];
+        bytes memory payload = Codec.encodeInit(
+            disasterKey,
+            ownershipKey,
+            txnPubkeys,
+            recFixed
+        );
 
         vm.prank(owner);
         walletAddr = factory.deployLatestWalletProxy{value: deposit}(
@@ -134,28 +231,58 @@ contract QuipFactoryTest is Test {
         );
     }
 
-    /// @dev Encode init payload: [0:64) pqOwner + [64:704) recoveryKeys
+    /// @dev Encode init payload from a single "pqOwner" key (legacy shim).
+    ///      The single `pqOwner` becomes txn key 0; the other 4 are derived deterministically
+    ///      from its private-key hash. Use only where callers do not already have 5 keys.
     function _encodeInitPayload(
         WOTSPlus.WinternitzAddress memory pqOwner,
         WOTSPlus.WinternitzAddress[] memory recoveryKeys
     ) internal pure returns (bytes memory) {
-        bytes memory payload = abi.encodePacked(pqOwner.publicSeed, pqOwner.publicKeyHash);
-        for (uint256 i = 0; i < recoveryKeys.length; i++) {
-            payload = abi.encodePacked(
-                payload,
-                recoveryKeys[i].publicSeed,
-                recoveryKeys[i].publicKeyHash
+        require(recoveryKeys.length == 10, "recoveryKeys length must be 10");
+        WOTSPlus.WinternitzAddress[5] memory txnFixed;
+        txnFixed[0] = pqOwner;
+        for (uint256 i = 1; i < 5; i++) {
+            bytes32 seed = keccak256(
+                abi.encodePacked(
+                    pqOwner.publicSeed,
+                    pqOwner.publicKeyHash,
+                    "txn-fill",
+                    i
+                )
             );
+            (txnFixed[i], ) = WOTSPlus.generateKeyPair(seed);
         }
-        return payload;
+        WOTSPlus.WinternitzAddress[10] memory recFixed;
+        for (uint256 i = 0; i < 10; i++) recFixed[i] = recoveryKeys[i];
+        // Derive a stable disaster recovery key from pqOwner for legacy single-key helper.
+        bytes32 disasterSeedBytes = keccak256(
+            abi.encodePacked(
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                "disaster-legacy"
+            )
+        );
+        (WOTSPlus.WinternitzAddress memory disasterKey, ) = WOTSPlus
+            .generateKeyPair(disasterSeedBytes);
+        // Likewise derive a stable ownership key from pqOwner for legacy single-key helper.
+        bytes32 ownershipSeedBytes = keccak256(
+            abi.encodePacked(
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                "ownership-legacy"
+            )
+        );
+        (WOTSPlus.WinternitzAddress memory ownershipKey, ) = WOTSPlus
+            .generateKeyPair(ownershipSeedBytes);
+        return
+            Codec.encodeInit(disasterKey, ownershipKey, txnFixed, recFixed);
     }
 
     /// @dev Compute the expected CREATE3 address for a QuipWallet
-    function _computeWalletAddress(bytes32 vaultId, address)
-        internal
-        view
-        returns (address)
-    {
+    function _computeWalletAddress(
+        bytes32 vaultId,
+        address
+    ) internal view returns (address) {
         return CREATE3.predictDeterministicAddress(vaultId, address(factory));
     }
 
@@ -171,5 +298,4 @@ contract QuipFactoryTest is Test {
         address proxyAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
         return QuipWallet(payable(proxyAddr));
     }
-
 }

@@ -5,7 +5,10 @@ import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 
 contract QuipFactory_getVettedCodeAt is QuipFactoryTest {
-    function test_getVettedCodeAt_returnsCorrectCodehashAtIndexZero() public view {
+    function test_getVettedCodeAt_returnsCorrectCodehashAtIndexZero()
+        public
+        view
+    {
         bytes32 expectedCodehash = address(walletImplementation).codehash;
         assertEq(factory.getVettedCodeAt(0), expectedCodehash);
     }

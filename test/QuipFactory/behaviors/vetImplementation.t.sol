@@ -28,12 +28,16 @@ contract QuipFactory_vetImplementation is QuipFactoryTest {
 
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(walletImplementation));
-        assertTrue(factory.deprecatedImpls(address(walletImplementation).codehash));
+        assertTrue(
+            factory.deprecatedImpls(address(walletImplementation).codehash)
+        );
 
         // Re-activate the first impl — latestWalletImpl should NOT change
         vm.prank(ADMIN);
         factory.vetImplementation(address(walletImplementation));
-        assertFalse(factory.deprecatedImpls(address(walletImplementation).codehash));
+        assertFalse(
+            factory.deprecatedImpls(address(walletImplementation).codehash)
+        );
         assertEq(factory.latestWalletImpl(), address(impl2));
     }
 
@@ -55,8 +59,13 @@ contract QuipFactory_vetImplementation is QuipFactoryTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IQuipFactory.ImplementationVetted.selector) {
-                assertEq(logs[i].topics[1], bytes32(uint256(uint160(address(impl2)))));
+            if (
+                logs[i].topics[0] == IQuipFactory.ImplementationVetted.selector
+            ) {
+                assertEq(
+                    logs[i].topics[1],
+                    bytes32(uint256(uint160(address(impl2))))
+                );
                 found = true;
                 break;
             }
@@ -74,7 +83,12 @@ contract QuipFactory_vetImplementation is QuipFactoryTest {
 
     function test_vetImplementation_revertsWhen_callerNotOwner() public {
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Ownable.OwnableUnauthorizedAccount.selector,
+                ALICE
+            )
+        );
         factory.vetImplementation(address(walletImplementation));
     }
 
@@ -88,7 +102,9 @@ contract QuipFactory_vetImplementation is QuipFactoryTest {
         assertEq(factory.latestWalletImpl(), address(walletImplementation));
     }
 
-    function test_vetImplementation_reVetDoesNotChangeLatestWhenOneActive() public {
+    function test_vetImplementation_reVetDoesNotChangeLatestWhenOneActive()
+        public
+    {
         QuipWallet impl2 = new QuipWallet(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(impl2));
