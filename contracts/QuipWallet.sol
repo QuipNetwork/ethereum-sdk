@@ -314,6 +314,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    /// @dev Migrate is invoked via `LibCall.delegateCallContract` rather than folded
+    ///      into `super.upgradeToAndCall(newImpl, migrateCalldata)` because Solady's
+    ///      `upgradeToAndCall` takes `bytes calldata` and reads the payload via
+    ///      `calldatacopy`, while `abi.encodeCall(this.migrate, (migratorPayload))`
+    ///      produces `bytes memory` with no implicit memory→calldata conversion on
+    ///      a super call. The explicit LibCall resolves this.
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
