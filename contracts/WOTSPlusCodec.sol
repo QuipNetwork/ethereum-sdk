@@ -38,11 +38,12 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [4480]      uint8                 — shouldMigrate (0x00 = false, 0x01 = true)
 ///      [4481:5569) bytes                 — migratorPayload (init layout, 1088 bytes)
 ///
-///      recoveryUpgrade payload layout (4416 bytes, no rotation):
-///      [0:64)      WinternitzAddress     — recoveryKey
-///      [64:2208)   WinternitzElements    — pqSig (67 x 32)
-///      [2208:2272) WinternitzAddress     — verifier
-///      [2272:4416) WinternitzElements    — verifySig (67 x 32)
+///      recoveryUpgrade payload layout (4480 bytes):
+///      [0:64)      WinternitzAddress     — currentRecoveryKey (consumed, replaced by newRecoveryKey)
+///      [64:128)    WinternitzAddress     — newRecoveryKey
+///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
+///      [2272:2336) WinternitzAddress     — verifier
+///      [2336:4480) WinternitzElements    — verifySig (67 x 32)
 ///
 ///      changeTransactionKey payload layout (2272 bytes):
 ///      [0:64)      WinternitzAddress     — currentKey
@@ -280,24 +281,29 @@ library WOTSPlusCodec {
     }
 
     /// @dev Decodes the recoveryUpgrade payload's authentication portion.
-    ///      Layout: [0:64) recoveryKey, [64:2208) pqSig.
-    ///      Distinct from upgradeToAndCall because no rotation occurs.
-    /// @param data The packed recoveryUpgrade payload (4416 bytes).
-    /// @return recoveryKey The recovery key at offset 0.
-    /// @return pqSig The PQ signature at offset 64.
+    ///      Layout: [0:64) currentRecoveryKey, [64:128) newRecoveryKey,
+    ///              [128:2272) pqSig.
+    ///      The current recovery key is consumed and replaced in-place by
+    ///      `newRecoveryKey` so the recovery keyset size stays stable.
+    /// @param data The packed recoveryUpgrade payload (4480 bytes).
+    /// @return currentRecoveryKey The consumed recovery key at offset 0.
+    /// @return newRecoveryKey The replacement recovery key at offset 64.
+    /// @return pqSig The PQ signature at offset 128.
     function decodeRecoveryUpgradeAuth(
         bytes calldata data
     )
         internal
         pure
         returns (
-            WOTSPlus.WinternitzAddress calldata recoveryKey,
+            WOTSPlus.WinternitzAddress calldata currentRecoveryKey,
+            WOTSPlus.WinternitzAddress calldata newRecoveryKey,
             WOTSPlus.WinternitzElements calldata pqSig
         )
     {
         assembly {
-            recoveryKey := data.offset
-            pqSig := add(data.offset, 64)
+            currentRecoveryKey := data.offset
+            newRecoveryKey := add(data.offset, 64)
+            pqSig := add(data.offset, 128)
         }
     }
 
@@ -324,10 +330,10 @@ library WOTSPlusCodec {
     }
 
     /// @dev Decodes the recoveryUpgrade payload's verification portion.
-    ///      Layout: [2208:2272) verifier, [2272:4416) verifySig.
-    /// @param data The packed recoveryUpgrade payload (4416 bytes).
-    /// @return verifier The verifier's WinternitzAddress at offset 2208.
-    /// @return verifySig The verifier's WinternitzElements at offset 2272.
+    ///      Layout: [2272:2336) verifier, [2336:4480) verifySig.
+    /// @param data The packed recoveryUpgrade payload (4480 bytes).
+    /// @return verifier The verifier's WinternitzAddress at offset 2272.
+    /// @return verifySig The verifier's WinternitzElements at offset 2336.
     function decodeRecoveryUpgradeVerification(
         bytes calldata data
     )
@@ -339,8 +345,8 @@ library WOTSPlusCodec {
         )
     {
         assembly {
-            verifier := add(data.offset, 2208)
-            verifySig := add(data.offset, 2272)
+            verifier := add(data.offset, 2272)
+            verifySig := add(data.offset, 2336)
         }
     }
 
@@ -860,17 +866,20 @@ library WOTSPlusCodec {
     }
 
     /// @dev Encodes the recoveryUpgrade payload (auth + verification portions).
-    /// @return The packed payload (4416 bytes).
+    /// @return The packed payload (4480 bytes).
     function encodeRecoveryUpgrade(
-        WOTSPlus.WinternitzAddress memory recoveryKey,
+        WOTSPlus.WinternitzAddress memory currentRecoveryKey,
+        WOTSPlus.WinternitzAddress memory newRecoveryKey,
         WOTSPlus.WinternitzElements memory pqSig,
         WOTSPlus.WinternitzAddress memory verifier,
         WOTSPlus.WinternitzElements memory verifySig
     ) internal pure returns (bytes memory) {
         return
             abi.encodePacked(
-                recoveryKey.publicSeed,
-                recoveryKey.publicKeyHash,
+                currentRecoveryKey.publicSeed,
+                currentRecoveryKey.publicKeyHash,
+                newRecoveryKey.publicSeed,
+                newRecoveryKey.publicKeyHash,
                 pqSig.elements,
                 verifier.publicSeed,
                 verifier.publicKeyHash,
@@ -1087,15 +1096,19 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(UPGRADE_RECOVERY_TAG, chainId, wallet, newImpl, recoverySeed, recoveryHash))
-    ///      Used by recoveryUpgrade. Binds chain/wallet/newImpl/recoveryKey only — no
-    ///      transaction-key fields are mixed in because recoveryUpgrade does not rotate.
+    /// @dev keccak256(abi.encode(UPGRADE_RECOVERY_TAG, chainId, wallet, newImpl,
+    ///                           currentSeed, currentHash, newSeed, newHash))
+    ///      Used by recoveryUpgrade. Binds the current (consumed) recovery key and the
+    ///      replacement recovery key so a signature cannot be separated from the key
+    ///      pair it authorizes.
     function upgradeRecoveryDigest(
         address wallet,
         uint256 chainId,
         address newImplementation,
-        bytes32 recoverySeed,
-        bytes32 recoveryHash
+        bytes32 currentSeed,
+        bytes32 currentHash,
+        bytes32 newSeed,
+        bytes32 newHash
     ) internal pure returns (bytes32) {
         return
             EfficientHashLib.hash(
@@ -1103,8 +1116,10 @@ library WOTSPlusCodec {
                 bytes32(chainId),
                 bytes32(uint256(uint160(wallet))),
                 bytes32(uint256(uint160(newImplementation))),
-                recoverySeed,
-                recoveryHash
+                currentSeed,
+                currentHash,
+                newSeed,
+                newHash
             );
     }
 

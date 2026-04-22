@@ -745,29 +745,31 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (factory.deprecatedImpls(implCodehash))
             revert ImplementationDeprecated();
         (
-            WOTSPlus.WinternitzAddress calldata recoveryKey,
+            WOTSPlus.WinternitzAddress calldata currentRecoveryKey,
+            WOTSPlus.WinternitzAddress calldata newRecoveryKey,
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeRecoveryUpgradeAuth(payload);
-
-        Storage.Layout storage $ = Storage.layout();
-
-        _enforceContained($.recoveryKeys, recoveryKey);
 
         bytes32 digest = Codec.upgradeRecoveryDigest(
             address(this),
             block.chainid,
             newImplementation,
-            recoveryKey.publicSeed,
-            recoveryKey.publicKeyHash
+            currentRecoveryKey.publicSeed,
+            currentRecoveryKey.publicKeyHash,
+            newRecoveryKey.publicSeed,
+            newRecoveryKey.publicKeyHash
         );
 
-        if (
-            !WOTSPlus.verify(
-                recoveryKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
+        // Enforce + verify + rotate the recovery key in place. Remove-then-add keeps
+        // the recovery-key count stable at MAX_KEYS so a recoveryUpgrade does not
+        // erode the defense-in-depth pool.
+        _verifyAndRotate(
+            Storage.layout().recoveryKeys,
+            currentRecoveryKey,
+            newRecoveryKey,
+            pqSig,
+            digest
+        );
 
         // Delegatecall to vetted implementation (defense-in-depth).
         LibCall.delegateCallContract(
@@ -778,11 +780,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             )
         );
 
-        $.recoveryKeys.remove(recoveryKey);
-
         super.upgradeToAndCall(newImplementation, payload[0:0]);
 
-        emit RecoveryUpgrade(newImplementation, recoveryKey);
+        emit RecoveryUpgrade(newImplementation, currentRecoveryKey);
     }
 
     /// @inheritdoc IQuipWallet
@@ -968,7 +968,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// @dev Fail-fast membership checks, WOTS+ signature verification, then rotation.
     ///      Reverts with `UnknownKey` / `DuplicateKey` / `InvalidSignature` on failure.
     ///      The pre-verify enforce pair short-circuits before paying WOTS+ verify gas
-    ///      on invalid inputs. Used by every owner-path that consumes a transaction key.
+    ///      on invalid inputs. Used by every owner-path that consumes a one-time WOTS+
+    ///      key from a keyset — transaction keys for most ops, recovery keys for
+    ///      `recoveryUpgrade`.
     function _verifyAndRotate(
         Keyset.WinternitzAddressSet storage set,
         WOTSPlus.WinternitzAddress calldata currentKey,

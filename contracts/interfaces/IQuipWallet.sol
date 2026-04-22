@@ -94,8 +94,13 @@ interface IQuipWallet {
     /*                           EVENTS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Emitted when a transaction key is rotated (remove-then-add).
-    /// @dev Emitted by `_rotateKeys` on every transaction-key consumption path.
+    /// @notice Emitted when a WOTS+ key is rotated in place (remove-then-add) within
+    ///         one of the wallet's keysets.
+    /// @dev Emitted by `_rotateKeys` on every key-consumption path — most callers
+    ///      rotate within the transaction keyset, but `recoveryUpgrade` rotates within
+    ///      the recovery keyset. The event alone does not distinguish which keyset was
+    ///      touched; the surrounding op-specific event (e.g. `RecoveryUpgrade`,
+    ///      `ExecutionSucceeded`) provides that context.
     /// @param oldKey The removed Winternitz public key.
     /// @param newKey The installed Winternitz public key.
     event KeyRotated(
@@ -255,10 +260,10 @@ interface IQuipWallet {
     /// @notice Verifies a PQ signature from the new implementation's verifier key
     ///         for the recoveryUpgrade path.
     /// @dev Called via delegatecall from `recoveryUpgrade` on the new implementation.
-    ///      Differs from `verifyUpgrade` only in payload layout (recovery payloads omit
-    ///      the currentKey/nextKey pair, so the verifier sits at offset 2208 rather than 2272).
+    ///      Shares the same (currentKey, newKey, pqSig) auth shape as `upgradeToAndCall`
+    ///      since the recovery path now rotates the consumed recovery key in place.
     /// @param newImplementation The address of the new implementation being upgraded to.
-    /// @param data Packed recoveryUpgrade payload; verifier at [2208:2272), verifySig at [2272:4416).
+    /// @param data Packed recoveryUpgrade payload; verifier at [2272:2336), verifySig at [2336:4480).
     function verifyRecoveryUpgrade(
         address newImplementation,
         bytes calldata data
@@ -407,12 +412,15 @@ interface IQuipWallet {
     function refreshKeys(bytes calldata payload) external;
 
     /// @notice Emergency upgrade authorized by a recovery key, without migration.
-    /// @dev Verifies the recovery key signature, then delegatecalls `verifyUpgrade` on the
-    ///      new implementation. No transaction-key rotation or migration is performed.
-    ///      Payload layout: [0:64) recoveryKey, [64:2208) pqSig,
-    ///      [2208:2272) verifier, [2272:4416) verifySig.
+    /// @dev Verifies the recovery-key signature, delegatecalls `verifyRecoveryUpgrade` on
+    ///      the new implementation, then rotates the consumed recovery key in place —
+    ///      `currentRecoveryKey` is removed and `newRecoveryKey` is installed so the
+    ///      recovery keyset size stays stable. No transaction-key rotation or migration
+    ///      is performed.
+    ///      Payload layout: [0:64) currentRecoveryKey, [64:128) newRecoveryKey,
+    ///      [128:2272) pqSig, [2272:2336) verifier, [2336:4480) verifySig.
     /// @param newImplementation The address of the new implementation contract.
-    /// @param payload Packed recovery upgrade data (4416 bytes).
+    /// @param payload Packed recovery upgrade data (4480 bytes).
     function recoveryUpgrade(
         address newImplementation,
         bytes calldata payload
