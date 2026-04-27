@@ -10,6 +10,7 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
+import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 
 contract QuipWallet_execute is QuipWalletTest {
     DummyContract public dummy;
@@ -556,13 +557,9 @@ contract QuipWallet_execute is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IQuipWallet.InsufficientBalance.selector,
-                tooMuch + EXECUTE_FEE,
-                address(wallet).balance
-            )
-        );
+        // Fee is collected successfully (balance >= fee), then the inner
+        // ETH transfer of `tooMuch` to BOB reverts via SafeTransferLib.
+        vm.expectRevert(SafeTransferLib.ETHTransferFailed.selector);
         wallet.execute(
             Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, tooMuch, "")
         );

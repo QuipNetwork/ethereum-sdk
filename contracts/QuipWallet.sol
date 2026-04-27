@@ -431,9 +431,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeExecute(payload);
 
         uint256 fee = getExecuteFee();
-        if (address(this).balance < value + fee)
-            revert InsufficientBalance(value + fee, address(this).balance);
-
         bytes32 dataHash = EfficientHashLib.hashCalldata(data);
         bytes32 digest = Codec.executeDigest(
             address(this),
@@ -457,7 +454,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
-        if (fee > 0) SafeTransferLib.safeTransferETH($.quipFactory, fee);
+        _collectExecuteFee();
 
         bytes memory result;
         if (data.length == 0) {
@@ -1062,14 +1059,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) revert InvalidSignature();
     }
 
-    /// @dev Collects the current execute fee from the wallet balance, if affordable.
-    ///      Shared prelude for the three ERC-4337 execution entry points. The fee
-    ///      transfer is part of the execution phase, so if the inner call reverts
-    ///      the whole phase rolls back including the fee — the EntryPoint still
-    ///      charges gas from the wallet's prefund deposit regardless.
+    /// @dev Collects the current execute fee from the wallet balance. Shared
+    ///      prelude for the three ERC-4337 execution entry points. The fee is a
+    ///      required term of execution - if the wallet cannot
+    ///      cover it, `safeTransferETH` reverts with `ETHTransferFailed()` and
+    ///      the whole execution phase rolls back.
     function _collectExecuteFee() internal {
         uint256 fee = getExecuteFee();
-        if (fee > 0 && address(this).balance >= fee) {
+        if (fee > 0) {
             SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
         }
     }
@@ -1241,7 +1238,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///      delegatecalls. Protected slots: owner, ERC-1967 impl, quipFactory, both
     ///      `disasterRecoveryKey` slots, both `ownershipKey` slots.
     function _snapshotGuardedSlots()
-        private
+        internal
         view
         returns (bytes32[7] memory snapshot)
     {
@@ -1263,7 +1260,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///      already known to the operator by construction.
     function _assertGuardedSlotsUnchanged(
         bytes32[7] memory snapshot
-    ) private view {
+    ) internal view {
         /// @solidity memory-safe-assembly
         assembly {
             if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {

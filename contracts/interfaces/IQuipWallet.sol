@@ -37,10 +37,6 @@ interface IQuipWallet {
     /// @notice Thrown when a Winternitz signature fails verification.
     error InvalidSignature();
 
-    /// @notice Thrown when the wallet balance is insufficient for the requested operation.
-    /// @param requested The amount required.
-    /// @param available The current balance.
-    error InsufficientBalance(uint256 requested, uint256 available);
     /// @notice Thrown when `renounceOwnership` is called (always reverts).
     error RenounceDisabled();
     /// @notice Thrown when the classical `withdrawDepositTo(address,uint256)` is called directly.

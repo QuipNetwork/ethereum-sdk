@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
+import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 
 /// @dev Inline target contract for execute-via-EntryPoint tests. `echo` returns
 ///      its input bytes so we can assert `execute` propagates returndata. The
@@ -24,7 +25,8 @@ contract ExecuteTarget {
 /// @dev Behaviour tests for the ERC-4337 `execute(address, uint256, bytes)`
 ///      override. Guarded by `onlyEntryPoint` (tighter than Solady's
 ///      `onlyEntryPointOrOwner`). Pays the execute fee via `_collectExecuteFee`
-///      before forwarding to Solady's inner `execute`.
+///      before forwarding to Solady's inner `execute`; reverts if the wallet
+///      cannot cover the fee.
 contract QuipWallet_execute_erc4337 is QuipWalletTest {
     ExecuteTarget internal target;
 
@@ -91,20 +93,18 @@ contract QuipWallet_execute_erc4337 is QuipWalletTest {
         wallet.execute(address(target), 0, payload);
     }
 
-    // Fee collection is best-effort inside `_collectExecuteFee`: if the wallet
-    // balance is below the fee at entry, the collection is skipped (no revert).
-    function test_execute_erc4337_noFeeCollectedWhenBalanceBelowFee() public {
+    // Fee collection is strict inside `_collectExecuteFee`: if the wallet
+    // balance is below the fee at entry, execution reverts.
+    function test_execute_erc4337_revertsWhen_balanceBelowFee() public {
         // Read first so `vm.prank` below is not consumed by the MAX_FEE() view call.
         uint256 maxFee = factory.MAX_FEE();
         vm.prank(ADMIN);
         factory.setExecuteFee(maxFee);
 
         vm.deal(address(wallet), maxFee - 1);
-        uint256 factoryBefore = address(factory).balance;
 
         vm.prank(ENTRY_POINT);
+        vm.expectRevert(SafeTransferLib.ETHTransferFailed.selector);
         wallet.execute(address(target), 0, "");
-
-        assertEq(address(factory).balance, factoryBefore);
     }
 }
