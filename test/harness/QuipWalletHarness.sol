@@ -48,6 +48,20 @@ contract QuipWalletHarness is QuipWallet {
         _rotateKeys(_set(kind), currentKey, nextKey);
     }
 
+    function exposed_safeAddKey(
+        HarnessKeyset kind,
+        WOTSPlus.WinternitzAddress calldata key
+    ) external {
+        _safeAddKey(_set(kind), key);
+    }
+
+    function exposed_safeRemoveKey(
+        HarnessKeyset kind,
+        WOTSPlus.WinternitzAddress calldata key
+    ) external {
+        _safeRemoveKey(_set(kind), key);
+    }
+
     function exposed_enforceContained(
         HarnessKeyset kind,
         WOTSPlus.WinternitzAddress calldata key

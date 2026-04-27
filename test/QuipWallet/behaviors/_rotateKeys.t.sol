@@ -10,11 +10,12 @@ import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libra
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 /// @dev Behaviour tests for the `_rotateKeys(set, current, next)` primitive.
-///      `_rotateKeys` is deliberately thin: it calls `set.remove(current)` then
-///      `set.add(next)` and emits `KeyRotated`. Neither underlying library call
-///      reverts on "current absent" or "next already present" — those checks
-///      belong to `_enforceContained` / `_enforceUncontained` upstream. The only
-///      library-level revert path is `ZeroValueWinternitzAddress` on `add`.
+///      `_rotateKeys` calls `_safeRemoveKey(current)` then `_safeAddKey(next)` and
+///      emits `KeyRotated`. The safe wrappers revert with `KeyRemovalFailed` /
+///      `KeyAdditionFailed` if the underlying library call returns false — silent
+///      under-rotation in a one-time-signature scheme would be catastrophic.
+///      Library-level reverts (e.g. `ZeroValueWinternitzAddress` on `add`) still
+///      bubble through.
 contract QuipWallet__rotateKeys is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
     QuipWalletHarness public bare;
@@ -174,42 +175,27 @@ contract QuipWallet__rotateKeys is QuipWalletTest {
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
     }
 
-    // Quirk documented by the bodies of `_rotateKeys` itself: remove is
-    // idempotent on "not present" (returns false silently) and add is
-    // idempotent on "already present" — so the primitive does not enforce
-    // "current must be present". The set grows by one in that pathological
-    // case. Callers must go through `_verifyAndRotate` / the enforcement
-    // helpers to get the enforced behaviour.
-    function test_exposed_rotateKeys_currentAbsent_netAddsNext() public {
+    // The safe wrappers revert when the underlying op returns false. Callers are
+    // expected to gate via `_enforceContained` / `_enforceUncontained` (or
+    // `_clearKeys`-then-add) — these tests assert that if a caller skips the
+    // gate and the primitive's preconditions are violated, we revert hard
+    // rather than silently under-rotate.
+    function test_exposed_rotateKeys_revertsWhen_currentAbsent() public {
         WOTSPlus.WinternitzAddress memory stray = _makeKey(0x6666);
         WOTSPlus.WinternitzAddress memory next = _makeKey(0x6667);
 
-        uint256 sizeBefore = bare.keyCount(Codec.KeyType.Verification);
+        vm.expectRevert(IQuipWallet.KeyRemovalFailed.selector);
         bare.exposed_rotateKeys(HarnessKeyset.Verification, stray, next);
-
-        assertEq(bare.keyCount(Codec.KeyType.Verification), sizeBefore + 1);
-        assertTrue(bare.isKey(Codec.KeyType.Verification, next));
     }
 
-    // Quirk: when `next` is already present, the library `add` returns false
-    // silently; `remove(current)` still removes, net-effect is size-1.
-    function test_exposed_rotateKeys_nextAlreadyPresent_netRemovesCurrent()
-        public
-    {
+    function test_exposed_rotateKeys_revertsWhen_nextAlreadyPresent() public {
         WOTSPlus.WinternitzAddress memory current = harnessProxy
             .keyAt(Codec.KeyType.Recovery, 0);
         // Pick another existing key as `next` so the "already present" path triggers.
         WOTSPlus.WinternitzAddress memory next = harnessProxy
             .keyAt(Codec.KeyType.Recovery, 1);
 
-        uint256 sizeBefore = harnessProxy.keyCount(Codec.KeyType.Recovery);
+        vm.expectRevert(IQuipWallet.KeyAdditionFailed.selector);
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
-
-        assertEq(
-            harnessProxy.keyCount(Codec.KeyType.Recovery),
-            sizeBefore - 1
-        );
-        assertFalse(harnessProxy.isKey(Codec.KeyType.Recovery, current));
-        assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, next));
     }
 }
