@@ -104,6 +104,9 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
             WOTSPlus.WinternitzAddress memory newPqOwner,
             bytes32 newPqPrivKey
         ) = _generateKeyPair("new-pq-after-recovery-upgrade");
+        (
+            WOTSPlus.WinternitzAddress memory newRk,
+        ) = _generateKeyPair("new-rk-after-recovery-upgrade");
 
         WOTSPlus.WinternitzAddress memory rKey1 = recoveryPubkeys[1];
         bytes32 rPrivKey1 = _recoverySigningKey(alicePrivateKey, 1);
@@ -111,6 +114,7 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
         bytes32 recoverHash = _buildRecoverWalletMessageHash(
             address(wallet),
             rKey1,
+            newRk,
             newPqOwner
         );
         WOTSPlus.WinternitzElements memory recoverSig = _sign(
@@ -120,13 +124,15 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
 
         vm.prank(ALICE);
         wallet.recoverWallet(
-            Codec.encodeRecoverWallet(rKey1, newPqOwner, recoverSig)
+            Codec.encodeRecoverWallet(rKey1, newRk, newPqOwner, recoverSig)
         );
 
-        // PQ key now fixed; recoverWallet consumed recovery key 1 (no replacement),
-        // so the pool drops from 10 to 9.
+        // PQ key now fixed; recoverWallet rotated recovery key 1 in-place (size
+        // preserved at 10) and reseeded the transaction keyset.
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPqOwner));
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
+        assertFalse(wallet.isKey(Codec.KeyType.Recovery, rKey1));
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, newRk));
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
         // Step 4: Resume normal operations with the new key
         (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(

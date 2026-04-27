@@ -40,6 +40,19 @@ contract QuipWalletHarness is QuipWallet {
         _clearKeys(_set(kind));
     }
 
+    /// @dev Test-only escape hatch: removes `key` from the selected keyset
+    ///      without going through the normal auth flow. Used to set up
+    ///      arbitrary keyset states (e.g. open a slot in a full set) for
+    ///      tests that target downstream behaviour and don't want to thread
+    ///      a full WOTS+-authenticated rotation through setup. NOT a path
+    ///      that exists on the production contract.
+    function burnKey(
+        HarnessKeyset kind,
+        WOTSPlus.WinternitzAddress calldata key
+    ) external {
+        _safeRemoveKey(_set(kind), key);
+    }
+
     function exposed_rotateKeys(
         HarnessKeyset kind,
         WOTSPlus.WinternitzAddress calldata currentKey,

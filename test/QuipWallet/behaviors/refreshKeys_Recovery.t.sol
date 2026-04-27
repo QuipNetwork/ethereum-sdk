@@ -10,22 +10,68 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
 
+/// @dev Tests for `refreshKeys(KeyType.Recovery, ...)`.
+///
+///      `refreshKeys` rotates the auth transaction key (currentKey → nextKey),
+///      then clears the target keyset and replaces it with the supplied batch.
+///      Atomic: signature verification happens before the clear, so a bad sig
+///      leaves the original keyset untouched.
 contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
-    // ── Happy paths ──────────────────────────────────────────────────
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       STATE CHANGES                            */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function test_refreshKeys_Recovery_clearsAndAddsNewKeys() public {
-        // wallet has 10 recovery keys from setUp
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-
-        bytes32 replenishBase = keccak256(
-            abi.encodePacked(alicePrivateKey, "replenish")
-        );
+    function test_refreshKeys_Recovery_clearsRecoverySet() public {
         WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            replenishBase,
+            keccak256("clears-recovery"),
             5
         );
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq-replenish"
+            "clears-recovery-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
+            assertTrue(
+                wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
+            );
+        }
+
+        vm.prank(ALICE);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
+        );
+
+        for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
+            assertFalse(
+                wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
+            );
+        }
+    }
+
+    function test_refreshKeys_Recovery_installsAllNewKeys() public {
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256("installs-all"),
+            5
+        );
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "installs-all-next-pq"
         );
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -40,36 +86,279 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, newKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
         );
 
-        // Count is now 5
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 5);
-
-        // Old keys are gone
-        for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
-            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
-        }
-
-        // New keys are present
         for (uint256 i = 0; i < newKeys.length; i++) {
             assertTrue(wallet.isKey(Codec.KeyType.Recovery, newKeys[i]));
         }
+    }
 
-        // pqOwner rotated
+    function test_refreshKeys_Recovery_resizesRecoveryKeysetToBatchLength()
+        public
+    {
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256("resize-recovery"),
+            5
+        );
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "resize-recovery-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
+        );
+
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), newKeys.length);
+    }
+
+    function test_refreshKeys_Recovery_rotatesAuthTransactionKey() public {
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256("rotate-auth"),
+            5
+        );
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "rotate-auth-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, nextPq));
+
+        vm.prank(ALICE);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
+        );
+
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
     }
 
-    function test_refreshKeys_Recovery_emitsKeysRefreshed() public {
-        bytes32 replenishBase = keccak256(
-            abi.encodePacked(alicePrivateKey, "replenish-event")
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          BOUNDARY                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_refreshKeys_Recovery_acceptsExactlyMaxKeysBatch() public {
+        WOTSPlus.WinternitzAddress[] memory maxKeys = _generateRecoveryKeys(
+            keccak256("max-keys-batch"),
+            10
         );
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "max-keys-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            maxKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                maxKeys
+            )
+        );
+
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  POST-REFRESH OPERATIONS                       */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_refreshKeys_Recovery_replenishedKeyCanRecoverWallet() public {
+        bytes32 replenishBase = keccak256("post-refresh-recover");
         WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
             replenishBase,
             5
         );
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq-event"
+            "post-refresh-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
+        );
+
+        // Use the first replenished recovery key to recover the wallet.
+        (WOTSPlus.WinternitzAddress memory recoveredPq, ) = _generateKeyPair(
+            "post-refresh-recovered-pq"
+        );
+        (WOTSPlus.WinternitzAddress memory recoveredRk, ) = _generateKeyPair(
+            "post-refresh-recovered-rk"
+        );
+
+        bytes32 recoverMsg = _buildRecoverWalletMessageHash(
+            address(wallet),
+            newKeys[0],
+            recoveredRk,
+            recoveredPq
+        );
+        WOTSPlus.WinternitzElements memory recoverSig = _sign(
+            _recoverySigningKey(replenishBase, 0),
+            recoverMsg
+        );
+
+        vm.prank(ALICE);
+        wallet.recoverWallet(
+            Codec.encodeRecoverWallet(
+                newKeys[0],
+                recoveredRk,
+                recoveredPq,
+                recoverSig
+            )
+        );
+
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, recoveredPq));
+        assertFalse(wallet.isKey(Codec.KeyType.Recovery, newKeys[0]));
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveredRk));
+    }
+
+    function test_refreshKeys_Recovery_replacedKeysCannotRecoverWalletAfterRefresh()
+        public
+    {
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256("replaced-keys-invalid"),
+            5
+        );
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "replaced-keys-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
+        );
+
+        // Try recoverWallet with one of the replaced (now-cleared) keys.
+        WOTSPlus.WinternitzAddress memory replacedKey = recoveryPubkeys[0];
+        (WOTSPlus.WinternitzAddress memory recoveredPq, ) = _generateKeyPair(
+            "replaced-recovered-pq"
+        );
+        (WOTSPlus.WinternitzAddress memory recoveredRk, ) = _generateKeyPair(
+            "replaced-recovered-rk"
+        );
+        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
+        bytes32 recoverMsg = _buildRecoverWalletMessageHash(
+            address(wallet),
+            replacedKey,
+            recoveredRk,
+            recoveredPq
+        );
+        WOTSPlus.WinternitzElements memory recoverSig = _sign(
+            rPrivKey,
+            recoverMsg
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
+        wallet.recoverWallet(
+            Codec.encodeRecoverWallet(
+                replacedKey,
+                recoveredRk,
+                recoveredPq,
+                recoverSig
+            )
+        );
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          EVENTS                                */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_refreshKeys_Recovery_emitsKeysRefreshedEvent() public {
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256("emits-event"),
+            5
+        );
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "emits-event-next-pq"
         );
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -85,7 +374,14 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.recordLogs();
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, newKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
         );
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -99,97 +395,17 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
         assertTrue(found, "KeysRefreshed event not emitted");
     }
 
-    function test_refreshKeys_Recovery_newKeysWorkForRecovery() public {
-        bytes32 replenishBase = keccak256(
-            abi.encodePacked(alicePrivateKey, "replenish")
-        );
-        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            replenishBase,
-            5
-        );
-        (
-            WOTSPlus.WinternitzAddress memory nextPq,
-            bytes32 nextPqPrivKey
-        ) = _generateKeyPair("next-pq-replenish");
-
-        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            newKeys
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
-
-        vm.prank(ALICE);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, newKeys)
-        );
-
-        // Now use the first new recovery key
-        (WOTSPlus.WinternitzAddress memory recoveredPq, ) = _generateKeyPair(
-            "recovered-pq"
-        );
-
-        bytes32 recoverMsg = _buildRecoverWalletMessageHash(
-            address(wallet),
-            newKeys[0],
-            recoveredPq
-        );
-        WOTSPlus.WinternitzElements memory recoverSig = _sign(
-            _recoverySigningKey(replenishBase, 0),
-            recoverMsg
-        );
-
-        vm.prank(ALICE);
-        wallet.recoverWallet(
-            Codec.encodeRecoverWallet(newKeys[0], recoveredPq, recoverSig)
-        );
-
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, recoveredPq));
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 4);
-    }
-
-    function test_refreshKeys_Recovery_exactlyMaxKeys() public {
-        bytes32 replenishBase = keccak256(
-            abi.encodePacked(alicePrivateKey, "max-keys")
-        );
-        WOTSPlus.WinternitzAddress[] memory maxKeys = _generateRecoveryKeys(
-            replenishBase,
-            10
-        );
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq-max"
-        );
-
-        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            maxKeys
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
-
-        vm.prank(ALICE);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, maxKeys)
-        );
-
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-    }
-
-    // ── Reverts ──────────────────────────────────────────────────────
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      ACCESS CONTROL                            */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     function test_refreshKeys_Recovery_revertsWhen_callerNotOwner() public {
         WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            keccak256(abi.encodePacked(alicePrivateKey, "replenish")),
+            keccak256("not-owner-recovery"),
             3
         );
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq"
+            "not-owner-next-pq"
         );
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -205,85 +421,53 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, newKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                newKeys
+            )
         );
     }
 
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  SIGNATURE INTEGRITY                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
     function test_refreshKeys_Recovery_revertsWhen_invalidSignature() public {
         WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            keccak256(abi.encodePacked(alicePrivateKey, "replenish")),
+            keccak256("invalid-sig-recovery"),
             3
         );
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq"
+            "invalid-sig-next-pq"
         );
 
         WOTSPlus.WinternitzElements memory badSig = _sign(
             alicePrivateKey,
-            keccak256("wrong")
+            keccak256("not the digest")
         );
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, badSig, newKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                badSig,
+                newKeys
+            )
         );
     }
 
-    function test_refreshKeys_Recovery_revertsWhen_newKeyIsZero() public {
-        WOTSPlus.WinternitzAddress[]
-            memory badKeys = new WOTSPlus.WinternitzAddress[](1);
-        badKeys[0] = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32("non-empty"),
-            publicKeyHash: bytes32(0)
-        });
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq"
-        );
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  AUTH-KEY VALIDATION                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            badKeys
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
-
-        vm.prank(ALICE);
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, badKeys)
-        );
-    }
-
-    function test_refreshKeys_Recovery_revertsWhen_tooManyNewKeys() public {
-        WOTSPlus.WinternitzAddress[] memory tooMany = _generateRecoveryKeys(
-            keccak256(abi.encodePacked(alicePrivateKey, "overflow")),
-            11
-        );
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq"
-        );
-
-        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            tooMany
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
-
-        vm.prank(ALICE);
-        vm.expectRevert(Keyset.ExceedsCapacity.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, tooMany)
-        );
-    }
-
-    function test_refreshKeys_Recovery_revertsWhen_nextPqOwnerSeedIsZero()
+    function test_refreshKeys_Recovery_revertsWhen_nextTransactionKeySeedZero()
         public
     {
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
@@ -291,7 +475,7 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
             publicKeyHash: bytes32("non-empty")
         });
         WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            keccak256("replenish"),
+            keccak256("zero-seed-pq"),
             3
         );
         WOTSPlus.WinternitzElements memory dummySig = _sign(
@@ -301,11 +485,18 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, zeroPq, dummySig, newKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                zeroPq,
+                dummySig,
+                newKeys
+            )
         );
     }
 
-    function test_refreshKeys_Recovery_revertsWhen_nextPqOwnerHashIsZero()
+    function test_refreshKeys_Recovery_revertsWhen_nextTransactionKeyHashZero()
         public
     {
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
@@ -313,7 +504,7 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
             publicKeyHash: bytes32(0)
         });
         WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            keccak256("replenish"),
+            keccak256("zero-hash-pq"),
             3
         );
         WOTSPlus.WinternitzElements memory dummySig = _sign(
@@ -323,15 +514,58 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, zeroPq, dummySig, newKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                zeroPq,
+                dummySig,
+                newKeys
+            )
         );
     }
 
-    function test_refreshKeys_Recovery_revertsWhen_emptyArray() public {
+    function test_refreshKeys_Recovery_revertsWhen_nextTransactionKeyEqualsCurrentTransactionKey()
+        public
+    {
+        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
+            keccak256("next-equals-current"),
+            5
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            alicePubkey,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                alicePubkey,
+                sig,
+                newKeys
+            )
+        );
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    PAYLOAD VALIDATION                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_refreshKeys_Recovery_revertsWhen_keysArrayEmpty() public {
         WOTSPlus.WinternitzAddress[]
             memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq-empty"
+            "empty-array-next-pq"
         );
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
@@ -347,11 +581,96 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.EmptyKeys.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, emptyKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                emptyKeys
+            )
         );
     }
 
-    function test_refreshKeys_Recovery_revertsWhen_duplicateKeyInBatch()
+    function test_refreshKeys_Recovery_revertsWhen_newRecoveryKeySeedZero()
+        public
+    {
+        WOTSPlus.WinternitzAddress[]
+            memory badKeys = new WOTSPlus.WinternitzAddress[](1);
+        badKeys[0] = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(0),
+            publicKeyHash: bytes32("non-empty")
+        });
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "zero-seed-recovery-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            badKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                badKeys
+            )
+        );
+    }
+
+    function test_refreshKeys_Recovery_revertsWhen_newRecoveryKeyHashZero()
+        public
+    {
+        WOTSPlus.WinternitzAddress[]
+            memory badKeys = new WOTSPlus.WinternitzAddress[](1);
+        badKeys[0] = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32("non-empty"),
+            publicKeyHash: bytes32(0)
+        });
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "zero-hash-recovery-next-pq"
+        );
+
+        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            badKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                badKeys
+            )
+        );
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                 UNIQUENESS / CAPACITY                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_refreshKeys_Recovery_revertsWhen_batchContainsDuplicateKeys()
         public
     {
         WOTSPlus.WinternitzAddress[]
@@ -360,7 +679,7 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
         dupKeys[1] = dupKeys[0]; // duplicate
 
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq-dup"
+            "dup-batch-next-pq"
         );
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
             address(wallet),
@@ -375,27 +694,33 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.DuplicateKey.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, dupKeys)
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                dupKeys
+            )
         );
     }
 
-    function test_refreshKeys_Recovery_oldKeysInvalidAfterReplenish() public {
-        bytes32 replenishBase = keccak256(
-            abi.encodePacked(alicePrivateKey, "replenish-old")
-        );
-        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            replenishBase,
-            5
+    function test_refreshKeys_Recovery_revertsWhen_batchExceedsRecoveryKeysetCapacity()
+        public
+    {
+        WOTSPlus.WinternitzAddress[] memory tooMany = _generateRecoveryKeys(
+            keccak256("over-capacity"),
+            11
         );
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-pq-old-check"
+            "over-capacity-next-pq"
         );
 
         bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
-            newKeys
+            tooMany
         );
         WOTSPlus.WinternitzElements memory sig = _sign(
             alicePrivateKey,
@@ -403,55 +728,15 @@ contract QuipWallet_refreshKeys_Recovery is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, nextPq, sig, newKeys)
-        );
-
-        // Try recovery with old key[0] — should fail
-        WOTSPlus.WinternitzAddress memory oldKey = recoveryPubkeys[0];
-        (WOTSPlus.WinternitzAddress memory recoveredPq, ) = _generateKeyPair(
-            "recovered-old"
-        );
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-        bytes32 recoverMsg = _buildRecoverWalletMessageHash(
-            address(wallet),
-            oldKey,
-            recoveredPq
-        );
-        WOTSPlus.WinternitzElements memory recoverSig = _sign(
-            rPrivKey,
-            recoverMsg
-        );
-
-        vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.UnknownKey.selector);
-        wallet.recoverWallet(
-            Codec.encodeRecoverWallet(oldKey, recoveredPq, recoverSig)
-        );
-    }
-
-    function test_refreshKeys_Recovery_revertsWhen_pqOwnerReuse() public {
-        bytes32 replenishBase = keccak256(
-            abi.encodePacked(alicePrivateKey, "replenish-reuse")
-        );
-        WOTSPlus.WinternitzAddress[] memory newKeys = _generateRecoveryKeys(
-            replenishBase,
-            5
-        );
-
-        bytes32 msgHash = _buildReplenishRecoveryKeysMessageHash(
-            address(wallet),
-            alicePubkey,
-            alicePubkey,
-            newKeys
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
-
-        vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, alicePubkey, alicePubkey, sig, newKeys)
+        vm.expectRevert(Keyset.ExceedsCapacity.selector);
+        wallet.refreshKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Recovery,
+                alicePubkey,
+                nextPq,
+                sig,
+                tooMany
+            )
         );
     }
 }

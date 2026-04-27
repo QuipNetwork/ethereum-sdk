@@ -9,360 +9,573 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
 
+/// @dev Behaviour tests for `recoverWallet(bytes)`.
+///
+///      `recoverWallet` performs an atomic three-key change:
+///        1. `recoveryKey` is rotated out of `recoveryKeys` and replaced by
+///           `newRecoveryKey` (size-preserving).
+///        2. The transaction keyset is fully cleared.
+///        3. `newTransactionKey` is installed as the sole transaction key.
+///
+///      The signed digest binds `(recoveryKey, newRecoveryKey,
+///      newTransactionKey)` under the `RECOVER_WALLET_TAG` domain so a
+///      signature for any other flow does not validate here.
 contract QuipWallet_recoverWallet is QuipWalletTest {
-    // ── Happy paths ──────────────────────────────────────────────────
-
-    function test_recoverWallet_updatesOwnerAndConsumesKey() public {
-        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-            "new-pq-after-recovery"
-        );
-
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey,
-            newPq
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        uint256 countBefore = wallet.keyCount(Codec.KeyType.Recovery);
-
-        vm.prank(ALICE);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq, sig));
-
-        // pqOwner updated
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPq));
-
-        // Recovery key consumed
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), countBefore - 1);
-        assertFalse(wallet.isKey(Codec.KeyType.Recovery, rKey));
+    /// @dev Bundle of inputs for a `recoverWallet` call. Tests build a canonical
+    ///      valid call via `_buildStandardRecoverCall` then optionally tweak a
+    ///      single field (and re-sign) for negative-path tests.
+    struct RecoverCall {
+        WOTSPlus.WinternitzAddress recoveryKey;
+        bytes32 recoveryKeyPriv;
+        WOTSPlus.WinternitzAddress newRk;
+        bytes32 newRkPriv;
+        WOTSPlus.WinternitzAddress newPq;
+        bytes32 newPqPriv;
+        WOTSPlus.WinternitzElements sig;
     }
 
-    function test_recoverWallet_emitsPqRecovery() public {
-        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-            "new-pq-event"
+    /// @dev Builds a fully-signed recoverWallet call using
+    ///      `recoveryPubkeys[keyIndex]` as the consumed recovery key.
+    ///      Derives `newRk` and `newPq` deterministically from `seed`.
+    function _buildRecoverCallAt(
+        uint256 keyIndex,
+        bytes32 seed
+    ) internal view returns (RecoverCall memory call) {
+        call.recoveryKey = recoveryPubkeys[keyIndex];
+        call.recoveryKeyPriv = _recoverySigningKey(alicePrivateKey, keyIndex);
+
+        (call.newRk, call.newRkPriv) = _generateKeyPair(
+            keccak256(abi.encodePacked(seed, "rk"))
+        );
+        (call.newPq, call.newPqPriv) = _generateKeyPair(
+            keccak256(abi.encodePacked(seed, "pq"))
         );
 
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
+        bytes32 digest = _buildRecoverWalletMessageHash(
             address(wallet),
-            rKey,
-            newPq
+            call.recoveryKey,
+            call.newRk,
+            call.newPq
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
+        call.sig = _sign(call.recoveryKeyPriv, digest);
+    }
 
+    function _buildStandardRecoverCall(
+        bytes32 seed
+    ) internal view returns (RecoverCall memory) {
+        return _buildRecoverCallAt(0, seed);
+    }
+
+    /// @dev Re-sign `call.sig` against the canonical digest derived from
+    ///      `call`'s current `(recoveryKey, newRk, newPq)`. Used when a test
+    ///      tweaks one of those fields and needs to keep the signature valid
+    ///      against the tweak (so reverts originate from the tweaked field's
+    ///      side-effect, not from a stale signature).
+    function _resignCall(RecoverCall memory call) internal view {
+        bytes32 digest = _buildRecoverWalletMessageHash(
+            address(wallet),
+            call.recoveryKey,
+            call.newRk,
+            call.newPq
+        );
+        call.sig = _sign(call.recoveryKeyPriv, digest);
+    }
+
+    function _encodeRecoverCall(
+        RecoverCall memory call
+    ) internal pure returns (bytes memory) {
+        return
+            Codec.encodeRecoverWallet(
+                call.recoveryKey,
+                call.newRk,
+                call.newPq,
+                call.sig
+            );
+    }
+
+    function _executeRecoverCallAsOwner(RecoverCall memory call) internal {
         vm.prank(ALICE);
-        vm.recordLogs();
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq, sig));
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
 
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bool found = false;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IQuipWallet.PqRecovery.selector) {
-                found = true;
-                break;
-            }
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       STATE CHANGES                            */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_burnsConsumedRecoveryKey() public {
+        RecoverCall memory call = _buildStandardRecoverCall("burn-consumed");
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, call.recoveryKey));
+
+        _executeRecoverCallAsOwner(call);
+
+        assertFalse(wallet.isKey(Codec.KeyType.Recovery, call.recoveryKey));
+    }
+
+    function test_recoverWallet_installsNewRecoveryKey() public {
+        RecoverCall memory call = _buildStandardRecoverCall("install-rk");
+        assertFalse(wallet.isKey(Codec.KeyType.Recovery, call.newRk));
+
+        _executeRecoverCallAsOwner(call);
+
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, call.newRk));
+    }
+
+    function test_recoverWallet_preservesRecoveryKeysetSize() public {
+        RecoverCall memory call = _buildStandardRecoverCall("preserves-size");
+        uint256 sizeBefore = wallet.keyCount(Codec.KeyType.Recovery);
+
+        _executeRecoverCallAsOwner(call);
+
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), sizeBefore);
+    }
+
+    function test_recoverWallet_clearsTransactionKeyset() public {
+        RecoverCall memory call = _buildStandardRecoverCall("clears-txn");
+        // Snapshot all 5 active txn keys before recovery; assert each is gone.
+        for (uint256 i = 0; i < 5; i++) {
+            assertTrue(
+                wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i])
+            );
         }
-        assertTrue(found, "PqRecovery event not emitted");
+
+        _executeRecoverCallAsOwner(call);
+
+        for (uint256 i = 0; i < 5; i++) {
+            assertFalse(
+                wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i])
+            );
+        }
     }
 
-    function test_recoverWallet_multipleIndependentRecoveries() public {
-        // First recovery
-        (WOTSPlus.WinternitzAddress memory newPq1, ) = _generateKeyPair(
-            "new-pq-1"
-        );
-        WOTSPlus.WinternitzAddress memory rKey0 = recoveryPubkeys[0];
-        bytes32 msgHash1 = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey0,
-            newPq1
-        );
-        WOTSPlus.WinternitzElements memory sig1 = _sign(
-            _recoverySigningKey(alicePrivateKey, 0),
-            msgHash1
-        );
+    function test_recoverWallet_installsNewTransactionKey() public {
+        RecoverCall memory call = _buildStandardRecoverCall("install-pq");
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, call.newPq));
 
-        vm.prank(ALICE);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey0, newPq1, sig1));
+        _executeRecoverCallAsOwner(call);
 
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
-
-        // Second recovery with a different key
-        (WOTSPlus.WinternitzAddress memory newPq2, ) = _generateKeyPair(
-            "new-pq-2"
-        );
-        WOTSPlus.WinternitzAddress memory rKey1 = recoveryPubkeys[1];
-        bytes32 msgHash2 = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey1,
-            newPq2
-        );
-        WOTSPlus.WinternitzElements memory sig2 = _sign(
-            _recoverySigningKey(alicePrivateKey, 1),
-            msgHash2
-        );
-
-        vm.prank(ALICE);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey1, newPq2, sig2));
-
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 8);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, call.newPq));
     }
 
-    function test_recoverWallet_walletOperationsWorkWithNewPqOwner() public {
-        // Recover
-        (
-            WOTSPlus.WinternitzAddress memory newPq,
-            bytes32 newPqPrivKey
-        ) = _generateKeyPair("new-pq-for-ops");
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
+    function test_recoverWallet_transactionKeysetHasExactlyOneKey() public {
+        RecoverCall memory call = _buildStandardRecoverCall("txn-count");
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey,
-            newPq
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            _recoverySigningKey(alicePrivateKey, 0),
-            msgHash
-        );
+        _executeRecoverCallAsOwner(call);
 
-        vm.prank(ALICE);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq, sig));
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 1);
+    }
 
-        // Now do a transfer with the new pqOwner
-        uint256 transferAmount = 0.1 ether;
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          EVENTS                                */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_emitsPqRecoveryWithAllThreeKeys() public {
+        RecoverCall memory call = _buildStandardRecoverCall("emit-pq-recovery");
+
+        vm.expectEmit(true, true, true, true, address(wallet));
+        emit IQuipWallet.PqRecovery(call.recoveryKey, call.newRk, call.newPq);
+        _executeRecoverCallAsOwner(call);
+    }
+
+    function test_recoverWallet_emitsKeyRotatedForRecoveryKey() public {
+        RecoverCall memory call = _buildStandardRecoverCall("emit-rotated");
+
+        vm.expectEmit(true, true, true, true, address(wallet));
+        emit IQuipWallet.KeyRotated(call.recoveryKey, call.newRk);
+        _executeRecoverCallAsOwner(call);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  POST-RECOVERY OPERATIONS                      */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_newTransactionKeyCanExecute() public {
+        RecoverCall memory call = _buildStandardRecoverCall("post-execute");
+        _executeRecoverCallAsOwner(call);
+
+        // Spend from the wallet using the freshly-installed transaction key.
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "next-after-recovery"
+            "post-execute-next"
         );
-
-        bytes32 transferMsgHash = _buildExecuteMessageHash(
+        uint256 fee = wallet.getExecuteFee();
+        bytes32 execHash = _buildExecuteMessageHash(
             address(wallet),
-            newPq,
+            call.newPq,
             nextPq,
             BOB,
-            transferAmount,
+            0.05 ether,
             "",
-            0
+            fee
         );
-        WOTSPlus.WinternitzElements memory transferSig = _sign(
-            newPqPrivKey,
-            transferMsgHash
+        WOTSPlus.WinternitzElements memory execSig = _sign(
+            call.newPqPriv,
+            execHash
         );
 
         uint256 bobBalBefore = BOB.balance;
-
         vm.prank(ALICE);
         wallet.execute(
             Codec.encodeExecute(
-                newPq,
+                call.newPq,
                 nextPq,
-                transferSig,
+                execSig,
                 BOB,
-                transferAmount,
+                0.05 ether,
                 ""
             )
         );
-
-        assertEq(BOB.balance, bobBalBefore + transferAmount);
+        assertEq(BOB.balance, bobBalBefore + 0.05 ether);
     }
 
-    function test_recoverWallet_doesNotChangeClassicalOwner() public {
-        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-            "new-pq-classical"
-        );
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
+    function test_recoverWallet_replacementRecoveryKeyCanRecoverAgain() public {
+        // First recovery installs `newRk` into the recovery set.
+        RecoverCall memory first = _buildStandardRecoverCall("again-1");
+        _executeRecoverCallAsOwner(first);
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, first.newRk));
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey,
-            newPq
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        vm.prank(ALICE);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq, sig));
-
-        assertEq(wallet.owner(), ALICE);
-    }
-
-    // ── Reverts ──────────────────────────────────────────────────────
-
-    function test_recoverWallet_revertsWhen_callerNotOwner() public {
-        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-            "new-pq"
-        );
-
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey,
-            newPq
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        vm.prank(BOB);
-        vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq, sig));
-    }
-
-    function test_recoverWallet_revertsWhen_keyNotInSet() public {
-        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-            "new-pq"
-        );
+        // Build a second recovery whose consumed key IS that replacement.
         (
-            WOTSPlus.WinternitzAddress memory fakeKey,
-            bytes32 fakePrivKey
-        ) = _generateKeyPair("fake-recovery");
+            WOTSPlus.WinternitzAddress memory secondNewRk,
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
+        ) = _generateKeyPair("again-2-rk");
+        (
+            WOTSPlus.WinternitzAddress memory secondNewPq,
+
+        ) = _generateKeyPair("again-2-pq");
+
+        bytes32 digest = _buildRecoverWalletMessageHash(
             address(wallet),
-            fakeKey,
-            newPq
+            first.newRk,
+            secondNewRk,
+            secondNewPq
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(fakePrivKey, msgHash);
+        WOTSPlus.WinternitzElements memory sig = _sign(first.newRkPriv, digest);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.UnknownKey.selector);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(fakeKey, newPq, sig));
+        wallet.recoverWallet(
+            Codec.encodeRecoverWallet(
+                first.newRk,
+                secondNewRk,
+                secondNewPq,
+                sig
+            )
+        );
+
+        assertFalse(wallet.isKey(Codec.KeyType.Recovery, first.newRk));
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, secondNewRk));
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, secondNewPq));
     }
 
-    function test_recoverWallet_revertsWhen_newPqOwnerIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(0)
-        });
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                MULTI-RECOVERY SEQUENCE                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
+    function test_recoverWallet_consecutiveRecoveriesPreserveCapacity() public {
+        // Burn all 10 originals across 10 successive recoveries. After each
+        // call, recoveryKeys.length must remain 10 (size-preserving rotation).
+        for (uint256 i = 0; i < 10; i++) {
+            RecoverCall memory call = _buildRecoverCallAt(i, bytes32(i));
+            _executeRecoverCallAsOwner(call);
+            assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        }
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
+        // None of the original 10 recovery keys are still active.
+        for (uint256 i = 0; i < 10; i++) {
+            assertFalse(
+                wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
+            );
+        }
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*               DOMAIN / REPLAY SEPARATION                       */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_revertsWhen_signatureBoundToDifferentChainId()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("wrong-chain");
+
+        // Re-sign the WOTS+ commitment over a digest built with the wrong chainId.
+        bytes32 wrongDigest = Codec.recoverWalletDigest(
             address(wallet),
-            rKey,
-            zeroPq
+            block.chainid + 1,
+            call.recoveryKey.publicSeed,
+            call.recoveryKey.publicKeyHash,
+            call.newRk.publicSeed,
+            call.newRk.publicKeyHash,
+            call.newPq.publicSeed,
+            call.newPq.publicKeyHash
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        vm.prank(ALICE);
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, zeroPq, sig));
-    }
-
-    function test_recoverWallet_revertsWhen_invalidSignature() public {
-        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-            "new-pq"
-        );
-
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-
-        // Sign a wrong message
-        bytes32 wrongMsgHash = keccak256("wrong message");
-        WOTSPlus.WinternitzElements memory badSig = _sign(
-            rPrivKey,
-            wrongMsgHash
-        );
+        call.sig = _sign(call.recoveryKeyPriv, wrongDigest);
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq, badSig));
+        wallet.recoverWallet(_encodeRecoverCall(call));
     }
 
-    function test_recoverWallet_revertsWhen_recoveryKeyAlreadyConsumed()
+    function test_recoverWallet_revertsWhen_signatureBoundToDifferentWallet()
         public
     {
-        (WOTSPlus.WinternitzAddress memory newPq1, ) = _generateKeyPair(
-            "new-pq-consumed-1"
-        );
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
+        RecoverCall memory call = _buildStandardRecoverCall("wrong-wallet");
 
-        bytes32 msgHash1 = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey,
-            newPq1
+        // Re-sign using a digest bound to a different wallet address.
+        bytes32 wrongDigest = Codec.recoverWalletDigest(
+            address(0xDEADBEEF),
+            block.chainid,
+            call.recoveryKey.publicSeed,
+            call.recoveryKey.publicKeyHash,
+            call.newRk.publicSeed,
+            call.newRk.publicKeyHash,
+            call.newPq.publicSeed,
+            call.newPq.publicKeyHash
         );
-        WOTSPlus.WinternitzElements memory sig1 = _sign(rPrivKey, msgHash1);
-
-        vm.prank(ALICE);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq1, sig1));
-
-        // Try again with consumed key
-        (WOTSPlus.WinternitzAddress memory newPq2, ) = _generateKeyPair(
-            "new-pq-consumed-2"
-        );
-        bytes32 msgHash2 = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey,
-            newPq2
-        );
-        WOTSPlus.WinternitzElements memory sig2 = _sign(rPrivKey, msgHash2);
+        call.sig = _sign(call.recoveryKeyPriv, wrongDigest);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.UnknownKey.selector);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq2, sig2));
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
     }
 
-    function test_recoverWallet_allKeysExhausted() public {
-        for (uint256 i = 0; i < 10; i++) {
-            (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-                bytes32(keccak256(abi.encodePacked("exhaust-pq", i)))
-            );
-            WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[i];
-            bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, i);
+    function test_recoverWallet_revertsWhen_signatureUsesKeyRotationTag()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("wrong-tag");
 
-            bytes32 msgHash = _buildRecoverWalletMessageHash(
-                address(wallet),
-                rKey,
-                newPq
-            );
-            WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-            vm.prank(ALICE);
-            wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, newPq, sig));
-        }
-
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 0);
-
-        // One more attempt should fail
-        (WOTSPlus.WinternitzAddress memory extraPq, ) = _generateKeyPair(
-            "extra-pq"
+        // Re-sign over `keyRotationDigest` (the tag used by changeTransactionKey)
+        // instead of `recoverWalletDigest`. Distinct domain tags make the two
+        // digests collision-free even on the same key tuple.
+        bytes32 wrongTagDigest = Codec.keyRotationDigest(
+            address(wallet),
+            block.chainid,
+            call.recoveryKey.publicSeed,
+            call.recoveryKey.publicKeyHash,
+            call.newRk.publicSeed,
+            call.newRk.publicKeyHash
         );
+        call.sig = _sign(call.recoveryKeyPriv, wrongTagDigest);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  SIGNATURE INTEGRITY                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_revertsWhen_invalidSignature() public {
+        RecoverCall memory call = _buildStandardRecoverCall("invalid-sig");
+
+        // Sign over a totally unrelated message — produces a valid WOTS+ sig
+        // but for the wrong digest.
+        call.sig = _sign(call.recoveryKeyPriv, keccak256("not the digest"));
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    function test_recoverWallet_revertsWhen_signatureBindsDifferentNewRecoveryKey()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("sig-other-rk");
+
+        // A different newRk that's not in the active recovery set so the
+        // pre-checks all pass and we reach signature verification.
         (
-            WOTSPlus.WinternitzAddress memory fakeKey,
-            bytes32 fakePrivKey
-        ) = _generateKeyPair("fake-recovery");
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
+            WOTSPlus.WinternitzAddress memory differentRk,
+
+        ) = _generateKeyPair("decoy-rk");
+
+        // Sign a digest binding `differentRk`, but submit the payload with the
+        // original `call.newRk`. Contract recomputes its digest with the
+        // submitted `newRk`, so the signature does not validate.
+        bytes32 sigDigest = _buildRecoverWalletMessageHash(
             address(wallet),
-            fakeKey,
-            extraPq
+            call.recoveryKey,
+            differentRk,
+            call.newPq
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(fakePrivKey, msgHash);
+        call.sig = _sign(call.recoveryKeyPriv, sigDigest);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    function test_recoverWallet_revertsWhen_signatureBindsDifferentNewTransactionKey()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("sig-other-pq");
+
+        (
+            WOTSPlus.WinternitzAddress memory differentPq,
+
+        ) = _generateKeyPair("decoy-pq");
+
+        bytes32 sigDigest = _buildRecoverWalletMessageHash(
+            address(wallet),
+            call.recoveryKey,
+            call.newRk,
+            differentPq
+        );
+        call.sig = _sign(call.recoveryKeyPriv, sigDigest);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                PRE-CHECK MEMBERSHIP REVERTS                    */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_revertsWhen_recoveryKeyNotInRecoverySet()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("not-in-set");
+
+        // Replace recoveryKey with a freshly-generated key that was never installed.
+        (
+            WOTSPlus.WinternitzAddress memory orphan,
+            bytes32 orphanPriv
+        ) = _generateKeyPair("orphan-rec");
+        call.recoveryKey = orphan;
+        call.recoveryKeyPriv = orphanPriv;
+        _resignCall(call);
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.UnknownKey.selector);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(fakeKey, extraPq, sig));
+        wallet.recoverWallet(_encodeRecoverCall(call));
     }
 
-    function test_recoverWallet_revertsWhen_pqOwnerReuse() public {
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
+    function test_recoverWallet_revertsWhen_recoveryKeyAlreadyBurned() public {
+        RecoverCall memory first = _buildStandardRecoverCall("burned-1");
+        _executeRecoverCallAsOwner(first);
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
-            address(wallet),
-            rKey,
-            alicePubkey
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
+        // Try a second recovery using the SAME recovery key. The key has
+        // been rotated out of the set, so the pre-check fires UnknownKey.
+        RecoverCall memory second = _buildStandardRecoverCall("burned-2");
+        // Force second.recoveryKey back to first's burned key (with its priv).
+        second.recoveryKey = first.recoveryKey;
+        second.recoveryKeyPriv = first.recoveryKeyPriv;
+        _resignCall(second);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
+        wallet.recoverWallet(_encodeRecoverCall(second));
+    }
+
+    function test_recoverWallet_revertsWhen_newRecoveryKeyAlreadyInRecoverySet()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("collide-rk");
+
+        // Use a *different* active recovery key as newRk → DuplicateKey.
+        call.newRk = recoveryPubkeys[1];
+        _resignCall(call);
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.DuplicateKey.selector);
-        wallet.recoverWallet(Codec.encodeRecoverWallet(rKey, alicePubkey, sig));
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    function test_recoverWallet_revertsWhen_newRecoveryKeyEqualsBurnedRecoveryKey()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("self-collide-rk");
+
+        // newRk == recoveryKey: re-installing the very key being burned would
+        // leave a spent WOTS+ key live in the active set. The pre-check
+        // (`_enforceUncontained` against the still-populated recovery set)
+        // fires DuplicateKey before any rotation runs.
+        call.newRk = call.recoveryKey;
+        _resignCall(call);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    function test_recoverWallet_revertsWhen_newTransactionKeyAlreadyInTransactionSet()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall("collide-pq");
+
+        // alicePubkey is an active transaction key.
+        call.newPq = alicePubkey;
+        _resignCall(call);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                     ZERO-KEY REVERTS                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_revertsWhen_newRecoveryKeySeedZero() public {
+        RecoverCall memory call = _buildStandardRecoverCall("zero-seed-rk");
+        call.newRk = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(0),
+            publicKeyHash: bytes32(uint256(1))
+        });
+        _resignCall(call);
+
+        vm.prank(ALICE);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    function test_recoverWallet_revertsWhen_newRecoveryKeyHashZero() public {
+        RecoverCall memory call = _buildStandardRecoverCall("zero-hash-rk");
+        call.newRk = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(uint256(1)),
+            publicKeyHash: bytes32(0)
+        });
+        _resignCall(call);
+
+        vm.prank(ALICE);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    function test_recoverWallet_revertsWhen_newTransactionKeySeedZero() public {
+        RecoverCall memory call = _buildStandardRecoverCall("zero-seed-pq");
+        call.newPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(0),
+            publicKeyHash: bytes32(uint256(1))
+        });
+        _resignCall(call);
+
+        vm.prank(ALICE);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    function test_recoverWallet_revertsWhen_newTransactionKeyHashZero() public {
+        RecoverCall memory call = _buildStandardRecoverCall("zero-hash-pq");
+        call.newPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(uint256(1)),
+            publicKeyHash: bytes32(0)
+        });
+        _resignCall(call);
+
+        vm.prank(ALICE);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    ACCESS CONTROL                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_recoverWallet_revertsWhen_callerNotOwner() public {
+        RecoverCall memory call = _buildStandardRecoverCall("not-owner");
+
+        vm.prank(BOB);
+        vm.expectRevert(SoladyOwnable.Unauthorized.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
     }
 }

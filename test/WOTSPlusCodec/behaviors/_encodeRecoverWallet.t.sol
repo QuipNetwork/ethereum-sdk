@@ -13,19 +13,32 @@ contract WOTSPlusCodec__encodeRecoverWallet is WOTSPlusCodecTest {
             bytes32(uint256(1)),
             bytes32(uint256(2))
         );
+        WOTSPlus.WinternitzAddress memory newRk = WOTSPlus.WinternitzAddress(
+            bytes32(uint256(5)),
+            bytes32(uint256(6))
+        );
         WOTSPlus.WinternitzAddress memory pq = WOTSPlus.WinternitzAddress(
             bytes32(uint256(3)),
             bytes32(uint256(4))
         );
         WOTSPlus.WinternitzElements memory sig;
-        bytes memory encoded = codec.exposed_encodeRecoverWallet(rk, pq, sig);
-        assertEq(encoded.length, 2272);
+        bytes memory encoded = codec.exposed_encodeRecoverWallet(
+            rk,
+            newRk,
+            pq,
+            sig
+        );
+        assertEq(encoded.length, 2336);
     }
 
     function test_exposed_encodeRecoverWallet_roundtrips() public view {
         WOTSPlus.WinternitzAddress memory rk = WOTSPlus.WinternitzAddress(
             bytes32(uint256(1)),
             bytes32(uint256(2))
+        );
+        WOTSPlus.WinternitzAddress memory newRk = WOTSPlus.WinternitzAddress(
+            bytes32(uint256(5)),
+            bytes32(uint256(6))
         );
         WOTSPlus.WinternitzAddress memory pq = WOTSPlus.WinternitzAddress(
             bytes32(uint256(3)),
@@ -34,15 +47,23 @@ contract WOTSPlusCodec__encodeRecoverWallet is WOTSPlusCodecTest {
         WOTSPlus.WinternitzElements memory sig;
         for (uint256 i = 0; i < 67; i++) sig.elements[i] = bytes32(i + 50);
 
-        bytes memory encoded = codec.exposed_encodeRecoverWallet(rk, pq, sig);
+        bytes memory encoded = codec.exposed_encodeRecoverWallet(
+            rk,
+            newRk,
+            pq,
+            sig
+        );
         (
             WOTSPlus.WinternitzAddress memory dRk,
+            WOTSPlus.WinternitzAddress memory dNewRk,
             WOTSPlus.WinternitzAddress memory dPq,
             WOTSPlus.WinternitzElements memory dSig
         ) = codec.exposed_decodeRecoverWallet(encoded);
 
         assertEq(dRk.publicSeed, rk.publicSeed);
         assertEq(dRk.publicKeyHash, rk.publicKeyHash);
+        assertEq(dNewRk.publicSeed, newRk.publicSeed);
+        assertEq(dNewRk.publicKeyHash, newRk.publicKeyHash);
         assertEq(dPq.publicSeed, pq.publicSeed);
         assertEq(dPq.publicKeyHash, pq.publicKeyHash);
         for (uint256 i = 0; i < 67; i++)

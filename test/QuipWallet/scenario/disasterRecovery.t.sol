@@ -165,10 +165,14 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
                 WOTSPlus.WinternitzAddress memory postRecoveryPq,
 
             ) = _generateKeyPair("disaster-post-recovery-pq");
+            (
+                WOTSPlus.WinternitzAddress memory postRecoveryRk,
+            ) = _generateKeyPair("disaster-post-recovery-rk");
 
             bytes32 recHash = _buildRecoverWalletMessageHash(
                 address(wallet),
                 freshRec[0],
+                postRecoveryRk,
                 postRecoveryPq
             );
             WOTSPlus.WinternitzElements memory recSig = _sign(
@@ -178,7 +182,12 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
 
             vm.prank(ALICE);
             wallet.recoverWallet(
-                Codec.encodeRecoverWallet(freshRec[0], postRecoveryPq, recSig)
+                Codec.encodeRecoverWallet(
+                    freshRec[0],
+                    postRecoveryRk,
+                    postRecoveryPq,
+                    recSig
+                )
             );
 
             // recoverWallet drains the txn set, installing exactly one new key.
@@ -186,9 +195,11 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
             assertTrue(
                 wallet.isKey(Codec.KeyType.Transaction, postRecoveryPq)
             );
-            // Consumed recovery key is gone; pool drops to 9.
+            // Consumed recovery key rotated in-place: original gone, replacement
+            // installed, pool size preserved at 10.
             assertFalse(wallet.isKey(Codec.KeyType.Recovery, freshRec[0]));
-            assertEq(wallet.keyCount(Codec.KeyType.Recovery), 9);
+            assertTrue(wallet.isKey(Codec.KeyType.Recovery, postRecoveryRk));
+            assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
         }
     }
 

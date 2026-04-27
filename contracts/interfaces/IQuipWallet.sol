@@ -137,10 +137,14 @@ interface IQuipWallet {
     );
 
     /// @notice Emitted when the wallet is recovered using a recovery key.
-    /// @param recoveryKey The recovery key that authorized the recovery.
-    /// @param newTransactionKey The single transaction key seeded during recovery.
+    /// @param recoveryKey The recovery key that authorized (and was burned by) the recovery.
+    /// @param newRecoveryKey The replacement recovery key installed in the recovery keyset
+    ///        in the burned key's place — preserves the wallet's recovery capacity.
+    /// @param newTransactionKey The single transaction key seeded during recovery (the
+    ///        transaction keyset is cleared and reseeded with this key alone).
     event PqRecovery(
         WOTSPlus.WinternitzAddress recoveryKey,
+        WOTSPlus.WinternitzAddress newRecoveryKey,
         WOTSPlus.WinternitzAddress newTransactionKey
     );
 

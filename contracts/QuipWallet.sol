@@ -523,22 +523,37 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    /// @dev Rotates a recovery key and reseeds the transaction keyset in one atomic
+    ///      step. The signed digest binds (recoveryKey, newRecoveryKey, newTransactionKey)
+    ///      so the WOTS+ signature commits to *both* the replacement recovery key and
+    ///      the seed transaction key — neither is malleable post-sign.
+    ///
+    ///      Side effects:
+    ///        - `recoveryKey` is burned; `newRecoveryKey` is installed in its place
+    ///          via `_rotateKeys` (size-preserving — recovery capacity is conserved).
+    ///        - The transaction keyset is fully cleared and reseeded with the single
+    ///          `newTransactionKey`. Any in-flight transaction keys that may have been
+    ///          observed/leaked are revoked.
     function recoverWallet(bytes calldata payload) public onlyOwner {
         (
             WOTSPlus.WinternitzAddress calldata recoveryKey,
+            WOTSPlus.WinternitzAddress calldata newRecoveryKey,
             WOTSPlus.WinternitzAddress calldata newTransactionKey,
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeRecoverWallet(payload);
 
         Storage.Layout storage $ = Storage.layout();
         _enforceContained($.recoveryKeys, recoveryKey);
+        _enforceUncontained($.recoveryKeys, newRecoveryKey);
         _enforceUncontained($.transactionKeys, newTransactionKey);
 
-        bytes32 digest = Codec.keyRotationDigest(
+        bytes32 digest = Codec.recoverWalletDigest(
             address(this),
             block.chainid,
             recoveryKey.publicSeed,
             recoveryKey.publicKeyHash,
+            newRecoveryKey.publicSeed,
+            newRecoveryKey.publicKeyHash,
             newTransactionKey.publicSeed,
             newTransactionKey.publicKeyHash
         );
@@ -551,12 +566,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             )
         ) revert InvalidSignature();
 
-        _safeRemoveKey($.recoveryKeys, recoveryKey);
+        _rotateKeys($.recoveryKeys, recoveryKey, newRecoveryKey);
 
         _clearKeys($.transactionKeys);
         _safeAddKey($.transactionKeys, newTransactionKey);
 
-        emit PqRecovery(recoveryKey, newTransactionKey);
+        emit PqRecovery(recoveryKey, newRecoveryKey, newTransactionKey);
     }
 
     /// @inheritdoc IQuipWallet
@@ -690,7 +705,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
-        _rotateKeys(set, oldkey, newKey);
+        _safeRemoveKey(target, oldKey);
+        // `add` enforces non-zero fields; cap=MAX_KEYS is preserved since we just
+        // removed one from `target` (the auth rotation on `$.transactionKeys` is
+        // size-neutral regardless of which keyset is the replacement target).
+        // The bool check stays as `DuplicateKey`: when `kind != Transaction`, no
+        // membership proof has been done on `newKey` in `target`, so a collision
+        // here is legitimate user input error, not a library invariant violation.
+        if (!target.add(newKey, MAX_KEYS)) revert DuplicateKey();
 
         emit KeyReplaced(kind, index, oldKey, newKey, nextKey);
     }

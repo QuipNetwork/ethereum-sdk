@@ -126,14 +126,16 @@ contract WOTSPlusCodecTest is Test {
         payload = abi.encodePacked(payload, data);
     }
 
-    /// @dev Build a 2272-byte recoverWallet payload.
-    ///      Layout: recoveryKey(64) + newTransactionKey(64) + pqSig(2144).
+    /// @dev Build a 2336-byte recoverWallet payload.
+    ///      Layout: recoveryKey(64) + newRecoveryKey(64) + newTransactionKey(64) + pqSig(2144).
     function _buildRecoverWalletPayload(
         uint256 seed
     ) internal pure returns (bytes memory payload) {
         payload = abi.encodePacked(
             bytes32(seed),
             bytes32(seed + 1), // recoveryKey
+            bytes32(seed + 5),
+            bytes32(seed + 6), // newRecoveryKey
             bytes32(seed + 10),
             bytes32(seed + 11) // newTransactionKey
         );
