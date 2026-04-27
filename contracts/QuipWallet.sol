@@ -551,10 +551,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             )
         ) revert InvalidSignature();
 
-        $.recoveryKeys.remove(recoveryKey);
+        _safeRemoveKey($.recoveryKeys, recoveryKey);
 
         _clearKeys($.transactionKeys);
-        $.transactionKeys.add(newTransactionKey);
+        _safeAddKey($.transactionKeys, newTransactionKey);
 
         emit PqRecovery(recoveryKey, newTransactionKey);
     }
@@ -690,11 +690,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
-        target.remove(oldKey);
-        // `add` enforces non-zero fields; cap=MAX_KEYS is preserved since we just
-        // removed one from `target` (the auth rotation on `$.transactionKeys` is
-        // size-neutral regardless of which keyset is the replacement target).
-        if (!target.add(newKey, MAX_KEYS)) revert DuplicateKey();
+        _rotateKeys(set, oldkey, newKey);
 
         emit KeyReplaced(kind, index, oldKey, newKey, nextKey);
     }
@@ -915,12 +911,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Drains all entries from `set`.
+    /// @dev Drains all entries from `set`. Each removal goes through `_safeRemoveKey`
+    ///      so a library invariant violation surfaces as a revert rather than silently
+    ///      leaving stale entries behind.
     function _clearKeys(Keyset.WinternitzAddressSet storage set) internal {
         uint256 n = set.length();
         for (uint256 i = 0; i < n; ++i) {
             WOTSPlus.WinternitzAddress memory existing = set.at(0);
-            set.remove(existing);
+            _safeRemoveKey(set, existing);
         }
     }
 
@@ -931,8 +929,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         WOTSPlus.WinternitzAddress calldata currentKey,
         WOTSPlus.WinternitzAddress calldata nextKey
     ) internal {
-        set.remove(currentKey);
-        set.add(nextKey);
+        _safeRemoveKey(set, currentKey);
+        _safeAddKey(set, nextKey);
         emit KeyRotated(currentKey, nextKey);
     }
 
@@ -1031,6 +1029,31 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         WOTSPlus.WinternitzAddress calldata key
     ) internal view {
         if (set.contains(key)) revert DuplicateKey();
+    }
+
+    /// @dev Wraps `set.add(key, MAX_KEYS)` with a hard revert on bool=false. Used by
+    ///      rotation primitives where the call site has already proven `key` is not
+    ///      a member (via `_enforceUncontained` or `_clearKeys`-then-add). A false
+    ///      return indicates a library/storage invariant violation, not a user input
+    ///      error — so we revert with `KeyAdditionFailed` rather than `DuplicateKey`.
+    ///      Silent under-rotation in a one-time-signature scheme is catastrophic.
+    function _safeAddKey(
+        Keyset.WinternitzAddressSet storage set,
+        WOTSPlus.WinternitzAddress memory key
+    ) internal {
+        if (!set.add(key, MAX_KEYS)) revert KeyAdditionFailed();
+    }
+
+    /// @dev Wraps `set.remove(key)` with a hard revert on bool=false. Used by rotation
+    ///      primitives where the call site has already proven `key` is a member (via
+    ///      `_enforceContained` or `at(index)`). A false return indicates a library/
+    ///      storage invariant violation — reverting prevents emitting `KeyRotated`
+    ///      over a no-op that would leave a spent WOTS+ key live in the active set.
+    function _safeRemoveKey(
+        Keyset.WinternitzAddressSet storage set,
+        WOTSPlus.WinternitzAddress memory key
+    ) internal {
+        if (!set.remove(key)) revert KeyRemovalFailed();
     }
 
     /// @dev Verifies a WOTS+ signature over the verification digest for an upgrade.

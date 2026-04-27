@@ -54,6 +54,18 @@ interface IQuipWallet {
     error DuplicateKey();
     /// @notice Thrown when a provided key is not present in the keyset that was expected to contain it.
     error UnknownKey();
+    /// @notice Thrown when the underlying keyset `add` returns false during a rotation primitive
+    ///         (`_safeAddKey`). Indicates a library/storage invariant violation, since callers gate
+    ///         the add behind a prior `_enforceUncontained` or equivalent check. Catastrophic for a
+    ///         one-time-signature scheme, so we revert loudly instead of emitting `KeyRotated` over
+    ///         a no-op.
+    error KeyAdditionFailed();
+    /// @notice Thrown when the underlying keyset `remove` returns false during a rotation primitive
+    ///         (`_safeRemoveKey`). Indicates a library/storage invariant violation, since callers gate
+    ///         the remove behind a prior `_enforceContained` or `at(index)` proof of presence.
+    ///         Catastrophic for a one-time-signature scheme — silent under-rotation would leave a
+    ///         spent WOTS+ key live in the active set.
+    error KeyRemovalFailed();
     /// @notice Thrown when an empty key array is provided to an add/refresh operation.
     error EmptyKeys();
     /// @notice Thrown when `refreshKeys` is called with `WOTSPlusCodec.KeyType.Transaction`.
