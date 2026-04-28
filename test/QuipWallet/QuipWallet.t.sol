@@ -99,22 +99,6 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
-    function _buildChangePqOwnerMessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory newPq
-    ) internal view returns (bytes32) {
-        return
-            Codec.keyRotationDigest(
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                newPq.publicSeed,
-                newPq.publicKeyHash
-            );
-    }
-
     function _buildRecoverWalletMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory recoveryKey,

@@ -18,7 +18,7 @@ contract WOTSPlusCodec__decodeReplaceKeyAt is WOTSPlusCodecTest {
         payload = abi.encodePacked(bytes32(uint256(kind)));
         payload = abi.encodePacked(
             payload,
-            _buildChangeTransactionKeyPayload(seed)
+            _buildAuthPrefixPayload(seed)
         );
         payload = abi.encodePacked(payload, bytes32(index));
         payload = abi.encodePacked(

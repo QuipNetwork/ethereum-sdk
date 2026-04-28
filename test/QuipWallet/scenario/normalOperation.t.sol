@@ -84,31 +84,8 @@ contract QuipWallet_normalOperation is QuipWalletTest {
         currentPrivKey = nextPrivKey;
     }
 
-    /// @dev Rotate key via changePqOwner.
-    function _rotateKey(
-        bytes32 nextSeed
-    ) internal returns (bytes32 nextPrivKey) {
-        WOTSPlus.WinternitzAddress memory nextPq;
-        (nextPq, nextPrivKey) = _generateKeyPair(nextSeed);
-
-        bytes32 msgHash = _buildChangePqOwnerMessageHash(
-            address(wallet),
-            currentPq,
-            nextPq
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
-
-        vm.prank(ALICE);
-        wallet.changeTransactionKey(
-            Codec.encodeChangeTransactionKey(currentPq, nextPq, sig)
-        );
-
-        currentPq = nextPq;
-        currentPrivKey = nextPrivKey;
-    }
-
     /// @dev Full happy path: deploy -> fund -> execute transfer -> execute contract call
-    ///      -> rotate key -> execute with rotated key
+    ///      -> execute another transfer (auth key has rotated implicitly across each step).
     function test_simulation_fullNormalOperation() public {
         // Step 1: Wallet already deployed and funded in setUp
         assertEq(wallet.owner(), ALICE);
@@ -132,13 +109,9 @@ contract QuipWallet_normalOperation is QuipWalletTest {
         _executeCall(address(dummy), 0, callData, "lifecycle-key-2");
         assertEq(dummy.value(), 42);
 
-        // Step 5: Rotate key via changeTransactionKey
-        _rotateKey("lifecycle-key-3");
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, currentPq));
-
-        // Step 6: Execute another transfer with the rotated key
+        // Step 5: Execute another transfer; the auth key rotates implicitly.
         uint256 bobBalBefore2 = BOB.balance;
-        _executeTransfer(BOB, 0.05 ether, "lifecycle-key-4");
+        _executeTransfer(BOB, 0.05 ether, "lifecycle-key-3");
         assertEq(BOB.balance, bobBalBefore2 + 0.05 ether);
     }
 }

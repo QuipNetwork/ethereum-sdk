@@ -75,7 +75,7 @@ interface IQuipWallet {
     error IncorrectRecoveryKeyAmount();
     /// @notice Thrown when `replaceKeyAt(Transaction, index, newKey)` targets the same
     ///         key the caller is signing with. The auth rotation already consumes that
-    ///         key; use `changeTransactionKey` for a direct rotation instead.
+    ///         key; replacing it again in the same call is nonsensical.
     error ReplaceAuthKeyForbidden();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
@@ -305,13 +305,6 @@ interface IQuipWallet {
     /// @param payload Packed migration data matching the init layout.
     function migrate(bytes calldata payload) external;
 
-    /// @notice Rotates a transaction key without any other side effects.
-    /// @dev Only callable by the classical owner. The signature must be valid over the
-    ///      concatenation of the current and new public key components.
-    ///      Payload layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig.
-    /// @param payload Packed changeTransactionKey data (2272 bytes).
-    function changeTransactionKey(bytes calldata payload) external;
-
     /// @notice Executes a post-quantum authenticated operation: either a pure ETH transfer
     ///         or an arbitrary contract call.
     /// @dev Only callable by the classical owner. The fee is deducted from the wallet balance
@@ -448,8 +441,7 @@ interface IQuipWallet {
     ///      target keyset. The auth rotation (currentKey → nextKey) always runs on
     ///      the transaction keyset. For `kind == Transaction` the target keyset is
     ///      the same as the auth keyset — the key at `index` must NOT equal
-    ///      `currentKey` (reverts with `ReplaceAuthKeyForbidden`); use
-    ///      `changeTransactionKey` to rotate the signing key itself. The two
+    ///      `currentKey` (reverts with `ReplaceAuthKeyForbidden`). The two
     ///      operations ordering is read-oldKey → auth-rotate → remove-oldKey →
     ///      add-newKey, so `oldKey` is captured from the pre-rotation snapshot.
     ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,

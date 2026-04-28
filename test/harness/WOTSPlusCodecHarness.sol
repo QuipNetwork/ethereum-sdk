@@ -78,27 +78,6 @@ contract WOTSPlusCodecHarness {
         migratorPayload = _p;
     }
 
-    function exposed_decodeChangeTransactionKey(
-        bytes calldata payload
-    )
-        external
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress memory currentKey,
-            WOTSPlus.WinternitzAddress memory nextKey,
-            WOTSPlus.WinternitzElements memory pqSig
-        )
-    {
-        (
-            WOTSPlus.WinternitzAddress calldata _c,
-            WOTSPlus.WinternitzAddress calldata _n,
-            WOTSPlus.WinternitzElements calldata _sig
-        ) = Codec.decodeChangeTransactionKey(payload);
-        currentKey = _c;
-        nextKey = _n;
-        pqSig = _sig;
-    }
-
     function exposed_decodeExecute(
         bytes calldata payload
     )
@@ -185,14 +164,6 @@ contract WOTSPlusCodecHarness {
 
     // --- Encoders ---
 
-    function exposed_encodeChangeTransactionKey(
-        WOTSPlus.WinternitzAddress memory currentKey,
-        WOTSPlus.WinternitzAddress memory nextKey,
-        WOTSPlus.WinternitzElements memory pqSig
-    ) external pure returns (bytes memory) {
-        return Codec.encodeChangeTransactionKey(currentKey, nextKey, pqSig);
-    }
-
     function exposed_encodeExecute(
         WOTSPlus.WinternitzAddress memory currentKey,
         WOTSPlus.WinternitzAddress memory nextKey,
@@ -245,17 +216,6 @@ contract WOTSPlusCodecHarness {
     }
 
     // --- Hashers ---
-
-    function exposed_keyRotationDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2
-    ) external pure returns (bytes32) {
-        return Codec.keyRotationDigest(wallet, chainId, s1, h1, s2, h2);
-    }
 
     function exposed_recoverWalletDigest(
         address wallet,

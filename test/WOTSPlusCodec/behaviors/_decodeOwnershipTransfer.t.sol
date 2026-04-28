@@ -9,8 +9,8 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
         uint256 seed,
         address newOwner
     ) internal pure returns (bytes memory payload) {
-        // Auth portion matches _buildChangeTransactionKeyPayload shape.
-        payload = _buildChangeTransactionKeyPayload(seed);
+        // Auth portion matches _buildAuthPrefixPayload shape.
+        payload = _buildAuthPrefixPayload(seed);
         payload = abi.encodePacked(
             payload,
             bytes32(uint256(uint160(newOwner)))

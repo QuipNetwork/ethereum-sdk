@@ -6,12 +6,12 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 
 contract WOTSPlusCodec__encodeUserOpSignature is WOTSPlusCodecTest {
     function test_exposed_encodeUserOpSignature_roundtrip() public view {
-        bytes memory payload = _buildChangeTransactionKeyPayload(77);
+        bytes memory payload = _buildAuthPrefixPayload(77);
         (
             WOTSPlus.WinternitzAddress memory cur,
             WOTSPlus.WinternitzAddress memory nxt,
             WOTSPlus.WinternitzElements memory sig
-        ) = codec.exposed_decodeChangeTransactionKey(payload);
+        ) = codec.exposed_decodeUserOpSignature(payload);
 
         bytes memory encoded = codec.exposed_encodeUserOpSignature(
             cur,
@@ -37,12 +37,12 @@ contract WOTSPlusCodec__encodeUserOpSignature is WOTSPlusCodecTest {
         public
         view
     {
-        bytes memory payload = _buildChangeTransactionKeyPayload(77);
+        bytes memory payload = _buildAuthPrefixPayload(77);
         (
             WOTSPlus.WinternitzAddress memory cur,
             WOTSPlus.WinternitzAddress memory nxt,
             WOTSPlus.WinternitzElements memory sig
-        ) = codec.exposed_decodeChangeTransactionKey(payload);
+        ) = codec.exposed_decodeUserOpSignature(payload);
         bytes memory encoded = codec.exposed_encodeUserOpSignature(
             cur,
             nxt,

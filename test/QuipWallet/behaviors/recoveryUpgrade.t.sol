@@ -212,21 +212,26 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
     function test_recoveryUpgrade_walletOperationalAfterUpgrade() public {
         _doRecoveryUpgrade(address(newImpl), 0);
 
-        // The original pqOwner key should still work for operations
+        // The original pqOwner key should still work for operations.
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "next-pq-after-recovery"
         );
 
-        bytes32 digest = _buildChangePqOwnerMessageHash(
+        uint256 fee = wallet.getExecuteFee();
+        bytes32 digest = _buildExecuteMessageHash(
             address(wallet),
             alicePubkey,
-            nextPq
+            nextPq,
+            BOB,
+            0,
+            "",
+            fee
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
 
         vm.prank(ALICE);
-        wallet.changeTransactionKey(
-            Codec.encodeChangeTransactionKey(alicePubkey, nextPq, sig)
+        wallet.execute(
+            Codec.encodeExecute(alicePubkey, nextPq, sig, BOB, 0, "")
         );
 
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));

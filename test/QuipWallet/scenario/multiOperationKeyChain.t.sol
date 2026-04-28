@@ -8,18 +8,17 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 /// @title Multi-Operation Key Chain Scenario Test
-/// @dev Verifies an unbroken WOTS+ key chain across 10 different operation
+/// @dev Verifies an unbroken WOTS+ key chain across 9 different operation
 ///      types spanning every keyset:
 ///        1. execute (transfer)
 ///        2. execute (call)
-///        3. changeTransactionKey
-///        4. refreshKeys(Recovery)
-///        5. execute
-///        6. addKeys(Verification)              — extends to the Verification keyset
-///        7. isValidSignature (ERC-1271)         — stateless; uses a verification key
-///        8. replaceKeyAt(Verification)          — rotates a verification key
-///        9. transferOwnership                   — wipes the verification keyset
-///       10. execute (as new owner BOB)
+///        3. refreshKeys(Recovery)
+///        4. execute
+///        5. addKeys(Verification)              — extends to the Verification keyset
+///        6. isValidSignature (ERC-1271)         — stateless; uses a verification key
+///        7. replaceKeyAt(Verification)          — rotates a verification key
+///        8. transferOwnership                   — wipes the verification keyset
+///        9. execute (as new owner BOB)
 ///      Each state-mutating operation rotates the PQ key; the next uses the rotated key.
 contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
     DummyContract public dummy;
@@ -121,34 +120,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             currentPrivKey = nextPriv;
         }
 
-        // ── Op 3: changePqOwner ─────────────────────────────────────
-        {
-            (
-                WOTSPlus.WinternitzAddress memory nextPq,
-                bytes32 nextPriv
-            ) = _advance("chain-3-rotate");
-            bytes32 msgHash = _buildChangePqOwnerMessageHash(
-                address(wallet),
-                currentPq,
-                nextPq
-            );
-            WOTSPlus.WinternitzElements memory sig = _sign(
-                currentPrivKey,
-                msgHash
-            );
-
-            vm.prank(ALICE);
-            wallet.changeTransactionKey(
-                Codec.encodeChangeTransactionKey(currentPq, nextPq, sig)
-            );
-
-            assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
-
-            currentPq = nextPq;
-            currentPrivKey = nextPriv;
-        }
-
-        // ── Op 4: refreshKeys(Recovery) (keyManagement digest domain) ──
+        // ── Op 3: refreshKeys(Recovery) (keyManagement digest domain) ──
         {
             (
                 WOTSPlus.WinternitzAddress memory nextPq,
@@ -180,7 +152,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             currentPrivKey = nextPriv;
         }
 
-        // ── Op 5: execute (another transfer) ────────────────────────
+        // ── Op 4: execute (another transfer) ────────────────────────
         {
             (
                 WOTSPlus.WinternitzAddress memory nextPq,
@@ -210,7 +182,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             currentPrivKey = nextPriv;
         }
 
-        // ── Op 6: addKeys(Verification, 3) ──────────────────────────
+        // ── Op 5: addKeys(Verification, 3) ──────────────────────────
         //   Extends the unbroken chain to the Verification keyset. The auth
         //   rotation still runs on the Transaction keyset via the shared
         //   `keyManagement` flow; the verifier material is stored separately.
@@ -253,7 +225,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             currentPrivKey = nextPriv;
         }
 
-        // ── Op 7: ERC-1271 isValidSignature (stateless — no PQ rotation) ──
+        // ── Op 6: ERC-1271 isValidSignature (stateless — no PQ rotation) ──
         //   Uses verifierPubs[0] to sign an ERC-1271 hash AND the classical
         //   owner's ECDSA over the raw hash. View-only — the PQ chain is
         //   untouched and Op 8 continues signing with the Op 6 nextPq.
@@ -278,7 +250,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             assertEq(result, bytes4(0x1626ba7e));
         }
 
-        // ── Op 8: replaceKeyAt(Verification, 1) ─────────────────────
+        // ── Op 7: replaceKeyAt(Verification, 1) ─────────────────────
         //   Swap the verifier at index 1 for a fresh key. Rotates the
         //   transaction-key chain via the shared auth rotation.
         {
@@ -321,7 +293,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             currentPrivKey = nextPriv;
         }
 
-        // ── Op 9: transferOwnership to BOB ──────────────────────────
+        // ── Op 8: transferOwnership to BOB ──────────────────────────
         //   transferOwnership is authed by the wallet's dedicated ownershipKey
         //   (not a transaction key), and is a full re-init — the transaction key
         //   chain from prior ops is discarded here and replaced by a fresh batch
@@ -380,7 +352,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             assertEq(wallet.keyCount(Codec.KeyType.Verification), 0);
         }
 
-        // ── Op 10: BOB operates with one of the freshly installed txn keys ──
+        // ── Op 9: BOB operates with one of the freshly installed txn keys ──
         {
             currentPq = bobTxnPubs[0];
             currentPrivKey = bobTxnPrivs[0];

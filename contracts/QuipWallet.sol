@@ -392,32 +392,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function changeTransactionKey(bytes calldata payload) public onlyOwner {
-        (
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig
-        ) = Codec.decodeChangeTransactionKey(payload);
-
-        bytes32 digest = Codec.keyRotationDigest(
-            address(this),
-            block.chainid,
-            currentKey.publicSeed,
-            currentKey.publicKeyHash,
-            nextKey.publicSeed,
-            nextKey.publicKeyHash
-        );
-
-        _verifyAndRotate(
-            Storage.layout().transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
-    }
-
-    /// @inheritdoc IQuipWallet
     function execute(
         bytes calldata payload
     ) public payable onlyOwner returns (bytes memory) {
@@ -674,9 +648,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         // range, so no separate bounds check is needed here.
         //
         // For kind == Transaction, the auth rotation operates on the same set;
-        // forbid replacing the auth key itself (the rotation already does it via
-        // `changeTransactionKey`) so we don't both remove `currentKey` via rotation
-        // and then try to remove it again here.
+        // forbid replacing the auth key itself so we don't both remove
+        // `currentKey` via rotation and then try to remove it again here. The
+        // rotation alone (without an indexed replacement) is achievable via any
+        // other transaction-key-bearing operation.
         WOTSPlus.WinternitzAddress memory oldKey = target.at(index);
         if (
             kind == Codec.KeyType.Transaction &&

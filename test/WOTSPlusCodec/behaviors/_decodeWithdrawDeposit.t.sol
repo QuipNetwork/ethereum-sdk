@@ -6,7 +6,7 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 
 contract WOTSPlusCodec__decodeWithdrawDeposit is WOTSPlusCodecTest {
     function test_exposed_decodeWithdrawDeposit_decodesCorrectly() public view {
-        bytes memory base = _buildChangeTransactionKeyPayload(10);
+        bytes memory base = _buildAuthPrefixPayload(10);
         address to = address(0xBEEF);
         uint256 amount = 1.5 ether;
         bytes memory payload = abi.encodePacked(

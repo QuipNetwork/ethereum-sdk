@@ -6,7 +6,7 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 
 contract WOTSPlusCodec__decodeUserOpSignature is WOTSPlusCodecTest {
     function test_exposed_decodeUserOpSignature_decodesCorrectly() public view {
-        bytes memory payload = _buildChangeTransactionKeyPayload(55);
+        bytes memory payload = _buildAuthPrefixPayload(55);
         (
             WOTSPlus.WinternitzAddress memory cur,
             WOTSPlus.WinternitzAddress memory nxt,

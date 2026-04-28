@@ -451,8 +451,7 @@ contract QuipWallet_replaceKeyAt is QuipWalletTest {
     }
 
     /// @dev Transaction-specific guard: replacing the auth key at its own index is
-    ///      forbidden because the auth rotation already consumes it; use
-    ///      `changeTransactionKey` for that operation.
+    ///      forbidden because the auth rotation already consumes it.
     function test_replaceKeyAt_transaction_revertsWhen_indexIsAuthKey() public {
         (WOTSPlus.WinternitzAddress memory newKey, ) = _generateKeyPair(
             "txn-self"

@@ -184,8 +184,15 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
 
             vm.prank(ALICE);
             vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-            wallet.changeTransactionKey(
-                Codec.encodeChangeTransactionKey(alicePubkey, dummyPq, dummySig)
+            wallet.execute(
+                Codec.encodeExecute(
+                    alicePubkey,
+                    dummyPq,
+                    dummySig,
+                    BOB,
+                    0,
+                    ""
+                )
             );
         }
     }
@@ -224,19 +231,24 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(
             "bob-post-handover-key"
         );
-        bytes32 rotateHash = _buildChangePqOwnerMessageHash(
+        uint256 fee = wallet.getExecuteFee();
+        bytes32 execHash = _buildExecuteMessageHash(
             address(wallet),
             currentPq,
-            postPq
+            postPq,
+            BOB,
+            0.01 ether,
+            "",
+            fee
         );
-        WOTSPlus.WinternitzElements memory rotateSig = _sign(
+        WOTSPlus.WinternitzElements memory execSig = _sign(
             currentPrivKey,
-            rotateHash
+            execHash
         );
 
         vm.prank(BOB);
-        wallet.changeTransactionKey(
-            Codec.encodeChangeTransactionKey(currentPq, postPq, rotateSig)
+        wallet.execute(
+            Codec.encodeExecute(currentPq, postPq, execSig, BOB, 0.01 ether, "")
         );
 
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, postPq));
@@ -244,8 +256,8 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
         // Step 4: ALICE locked out
         vm.prank(ALICE);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.changeTransactionKey(
-            Codec.encodeChangeTransactionKey(alicePubkey, postPq, rotateSig)
+        wallet.execute(
+            Codec.encodeExecute(alicePubkey, postPq, execSig, BOB, 0, "")
         );
     }
 }

@@ -34,15 +34,21 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
             msgHash
         );
 
-        // Rotate key via changePqOwner (consumes a different signature)
+        // Consume alicePubkey via a benign execute that rotates it out of the
+        // transaction set.
         (
             WOTSPlus.WinternitzAddress memory rotatedPubkey,
             bytes32 rotatedPrivKey
         ) = _generateKeyPair("rotated-key");
-        bytes32 rotateMsgHash = _buildChangePqOwnerMessageHash(
+        uint256 rotateFee = wallet.getExecuteFee();
+        bytes32 rotateMsgHash = _buildExecuteMessageHash(
             address(wallet),
             alicePubkey,
-            rotatedPubkey
+            rotatedPubkey,
+            BOB,
+            0,
+            "",
+            rotateFee
         );
         WOTSPlus.WinternitzElements memory rotateSig = _sign(
             alicePrivateKey,
@@ -50,11 +56,14 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        wallet.changeTransactionKey(
-            Codec.encodeChangeTransactionKey(
+        wallet.execute(
+            Codec.encodeExecute(
                 alicePubkey,
                 rotatedPubkey,
-                rotateSig
+                rotateSig,
+                BOB,
+                0,
+                ""
             )
         );
 

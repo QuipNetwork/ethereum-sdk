@@ -45,11 +45,6 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [2272:2336) WinternitzAddress     — verifier
 ///      [2336:4480) WinternitzElements    — verifySig (67 x 32)
 ///
-///      changeTransactionKey payload layout (2272 bytes):
-///      [0:64)      WinternitzAddress     — currentKey
-///      [64:128)    WinternitzAddress     — nextKey
-///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
-///
 ///      execute payload layout (2336 + N bytes):
 ///      [0:64)      WinternitzAddress     — currentKey
 ///      [64:128)    WinternitzAddress     — nextKey
@@ -159,8 +154,6 @@ library WOTSPlusCodec {
     // A signature over one tag does not verify against any of the other two.
     // Do not unify these tags — the distinct tags are load-bearing security,
     // not cosmetic.
-    bytes32 internal constant KEY_ROTATION_TAG =
-        keccak256("quip.digest.keyRotation");
     bytes32 internal constant EXECUTE_TAG = keccak256("quip.digest.execute");
     /// @dev Recovery-keyset domain tag. Selected by `keysetDigest` when
     ///      `kind == KeyType.Recovery`.
@@ -204,12 +197,9 @@ library WOTSPlusCodec {
     ///      `saveWallet` signature to a specific wallet, chain, and key-rotation pair.
     bytes32 internal constant SAVE_WALLET_TAG =
         keccak256("quip.digest.saveWallet");
-    /// @dev `recoverWallet` domain tag. Distinct from `KEY_ROTATION_TAG` because
-    ///      `recoverWallet` binds three keys (the burned recovery key, its
-    ///      replacement, and the fresh transaction key) and has different
-    ///      side-effects (clears the transaction keyset). Tag separation prevents
-    ///      a `changeTransactionKey` signature from being lifted into a
-    ///      `recoverWallet` payload or vice versa.
+    /// @dev `recoverWallet` domain tag. Binds the three keys consumed/installed
+    ///      by `recoverWallet` (burned recovery key, its replacement, fresh
+    ///      transaction key). Distinct tag prevents cross-flow signature replay.
     bytes32 internal constant RECOVER_WALLET_TAG =
         keccak256("quip.digest.recoverWallet");
 
@@ -382,27 +372,6 @@ library WOTSPlusCodec {
     {
         shouldMigrate = uint8(data[4480]) != 0;
         migratorPayload = data[4481:5569];
-    }
-
-    /// @dev Decodes the changeTransactionKey payload.
-    ///      Layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig.
-    /// @param payload The packed changeTransactionKey payload (2272 bytes).
-    function decodeChangeTransactionKey(
-        bytes calldata payload
-    )
-        internal
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig
-        )
-    {
-        assembly {
-            currentKey := payload.offset
-            nextKey := add(payload.offset, 64)
-            pqSig := add(payload.offset, 128)
-        }
     }
 
     /// @dev Decodes the ERC-4337 UserOp signature payload.
@@ -693,23 +662,6 @@ library WOTSPlusCodec {
         return payload;
     }
 
-    /// @dev Encodes the changeTransactionKey payload.
-    /// @return The packed payload (2272 bytes).
-    function encodeChangeTransactionKey(
-        WOTSPlus.WinternitzAddress memory currentKey,
-        WOTSPlus.WinternitzAddress memory nextKey,
-        WOTSPlus.WinternitzElements memory pqSig
-    ) internal pure returns (bytes memory) {
-        return
-            abi.encodePacked(
-                currentKey.publicSeed,
-                currentKey.publicKeyHash,
-                nextKey.publicSeed,
-                nextKey.publicKeyHash,
-                pqSig.elements
-            );
-    }
-
     /// @dev Encodes the execute payload.
     /// @return The packed payload (>= 2336 bytes).
     function encodeExecute(
@@ -950,28 +902,6 @@ library WOTSPlusCodec {
     /*  NOTE: WOTS+ signatures are incompatible with EIP-712. These  */
     /*  digests use domain tags instead of EIP-712 structured data.  */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// @dev keccak256(abi.encode(KEY_ROTATION_TAG, chainId, wallet, s1, h1, s2, h2))
-    ///      Used by changeTransactionKey.
-    function keyRotationDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                KEY_ROTATION_TAG,
-                bytes32(chainId),
-                bytes32(uint256(uint160(wallet))),
-                s1,
-                h1,
-                s2,
-                h2
-            );
-    }
 
     /// @dev keccak256(abi.encode(RECOVER_WALLET_TAG, chainId, wallet,
     ///      recoverySeed, recoveryHash, newRecoverySeed, newRecoveryHash,

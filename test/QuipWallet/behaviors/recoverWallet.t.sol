@@ -336,21 +336,26 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         wallet.recoverWallet(_encodeRecoverCall(call));
     }
 
-    function test_recoverWallet_revertsWhen_signatureUsesKeyRotationTag()
+    function test_recoverWallet_revertsWhen_signatureUsesUnrelatedDigestTag()
         public
     {
         RecoverCall memory call = _buildStandardRecoverCall("wrong-tag");
 
-        // Re-sign over `keyRotationDigest` (the tag used by changeTransactionKey)
-        // instead of `recoverWalletDigest`. Distinct domain tags make the two
-        // digests collision-free even on the same key tuple.
-        bytes32 wrongTagDigest = Codec.keyRotationDigest(
-            address(wallet),
-            block.chainid,
-            call.recoveryKey.publicSeed,
-            call.recoveryKey.publicKeyHash,
-            call.newRk.publicSeed,
-            call.newRk.publicKeyHash
+        // Re-sign over a digest carrying a different domain tag. The recoverWallet
+        // digest is bound to RECOVER_WALLET_TAG; a signature over any other tag
+        // must not validate, even when the (s1, h1, s2, h2) key components match.
+        bytes32 wrongTagDigest = keccak256(
+            abi.encode(
+                keccak256("quip.digest.notRecoverWallet"),
+                block.chainid,
+                address(wallet),
+                call.recoveryKey.publicSeed,
+                call.recoveryKey.publicKeyHash,
+                call.newRk.publicSeed,
+                call.newRk.publicKeyHash,
+                call.newPq.publicSeed,
+                call.newPq.publicKeyHash
+            )
         );
         call.sig = _sign(call.recoveryKeyPriv, wrongTagDigest);
 

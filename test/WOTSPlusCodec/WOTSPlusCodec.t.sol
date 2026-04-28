@@ -93,9 +93,12 @@ contract WOTSPlusCodecTest is Test {
         payload = abi.encodePacked(payload, _buildInitPayload(seed + 5000));
     }
 
-    /// @dev Build a 2272-byte changeTransactionKey payload.
+    /// @dev Build a 2272-byte auth-rotation prefix payload — the shared
+    ///      `currentKey | nextKey | pqSig` shape that prefixes most authenticated
+    ///      payloads (execute, withdrawDeposit, replaceKeyAt, ownership transfer,
+    ///      4337 user-op signature).
     ///      Layout: currentKey(64) + nextKey(64) + pqSig(2144).
-    function _buildChangeTransactionKeyPayload(
+    function _buildAuthPrefixPayload(
         uint256 seed
     ) internal pure returns (bytes memory payload) {
         payload = abi.encodePacked(bytes32(seed), bytes32(seed + 1)); // currentKey
@@ -110,14 +113,14 @@ contract WOTSPlusCodecTest is Test {
     }
 
     /// @dev Build an execute payload (≥ 2336 bytes).
-    ///      Layout: changeTransactionKey(2272) + target(32) + value(32) + data.
+    ///      Layout: authPrefix(2272) + target(32) + value(32) + data.
     function _buildExecutePayload(
         uint256 seed,
         address target,
         uint256 value,
         bytes memory data
     ) internal pure returns (bytes memory payload) {
-        payload = _buildChangeTransactionKeyPayload(seed);
+        payload = _buildAuthPrefixPayload(seed);
         payload = abi.encodePacked(
             payload,
             bytes32(uint256(uint160(target))),
@@ -153,7 +156,7 @@ contract WOTSPlusCodecTest is Test {
         payload = abi.encodePacked(bytes32(uint256(kind)));
         payload = abi.encodePacked(
             payload,
-            _buildChangeTransactionKeyPayload(seed)
+            _buildAuthPrefixPayload(seed)
         );
         for (uint256 i = 0; i < numKeys; i++) {
             payload = abi.encodePacked(
