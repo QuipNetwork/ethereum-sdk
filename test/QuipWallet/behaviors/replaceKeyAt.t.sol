@@ -401,7 +401,11 @@ contract QuipWallet_replaceKeyAt is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        // The replacement now goes through `_rotateKeys` (safe wrappers); a
+        // collision with an existing target-set key surfaces the safe-add
+        // wrapper's `KeyAdditionFailed` rather than the old direct-add bool
+        // check's `DuplicateKey`.
+        vm.expectRevert(IQuipWallet.KeyAdditionFailed.selector);
         wallet.replaceKeyAt(
             Codec.encodeReplaceKeyAt(
                 Codec.KeyType.Verification,
@@ -446,6 +450,101 @@ contract QuipWallet_replaceKeyAt is QuipWalletTest {
                 sig,
                 0,
                 zeroKey
+            )
+        );
+    }
+
+    /// @dev Transaction-specific guard: `newKey == currentKey` would re-install
+    ///      the just-spent WOTS+ key whose secret has been half-revealed by the
+    ///      auth rotation's signature. Reverts with `ReinstallSpentKeyForbidden`.
+    function test_replaceKeyAt_transaction_revertsWhen_newKeyEqualsCurrentKey()
+        public
+    {
+        // Pick a non-auth slot for `oldKey` so the prior `ReplaceAuthKeyForbidden`
+        // guard doesn't preempt this one.
+        uint256 idx = type(uint256).max;
+        for (uint256 i = 0; i < wallet.keyCount(Codec.KeyType.Transaction); i++) {
+            WOTSPlus.WinternitzAddress memory at = wallet.keyAt(
+                Codec.KeyType.Transaction,
+                i
+            );
+            if (
+                at.publicSeed != alicePubkey.publicSeed ||
+                at.publicKeyHash != alicePubkey.publicKeyHash
+            ) {
+                idx = i;
+                break;
+            }
+        }
+        require(idx != type(uint256).max, "no non-auth txn slot found");
+
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "reinstall-spent-next"
+        );
+        // newKey == alicePubkey (the auth key being consumed)
+        bytes32 msgHash = _buildReplaceKeyAtMessageHash(
+            Codec.KeyType.Transaction,
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            idx,
+            alicePubkey
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.ReinstallSpentKeyForbidden.selector);
+        wallet.replaceKeyAt(
+            Codec.encodeReplaceKeyAt(
+                Codec.KeyType.Transaction,
+                alicePubkey,
+                nextPq,
+                sig,
+                idx,
+                alicePubkey
+            )
+        );
+    }
+
+    /// @dev `newKey == oldKey` is a no-op-shaped operation (remove-then-add of
+    ///      the same key). Reverts with `RedundantKeyReplacement`. Tested for
+    ///      Verification — the guard is keyset-agnostic.
+    function test_replaceKeyAt_revertsWhen_newKeyEqualsOldKey() public {
+        (WOTSPlus.WinternitzAddress[] memory seeded, ) = _seedVerificationKeys(
+            3
+        );
+
+        WOTSPlus.WinternitzAddress memory dupKey = seeded[1];
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "redundant-next"
+        );
+        // newKey == oldKey == seeded[1] at index 1
+        bytes32 msgHash = _buildReplaceKeyAtMessageHash(
+            Codec.KeyType.Verification,
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            1,
+            dupKey
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.RedundantKeyReplacement.selector);
+        wallet.replaceKeyAt(
+            Codec.encodeReplaceKeyAt(
+                Codec.KeyType.Verification,
+                alicePubkey,
+                nextPq,
+                sig,
+                1,
+                dupKey
             )
         );
     }

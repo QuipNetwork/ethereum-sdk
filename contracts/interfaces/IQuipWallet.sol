@@ -77,6 +77,17 @@ interface IQuipWallet {
     ///         key the caller is signing with. The auth rotation already consumes that
     ///         key; replacing it again in the same call is nonsensical.
     error ReplaceAuthKeyForbidden();
+    /// @notice Thrown when `replaceKeyAt(Transaction, ..., newKey)` would install
+    ///         `newKey == currentKey` — i.e. the key the caller is signing with.
+    ///         The WOTS+ signature consumed during the auth rotation already
+    ///         reveals roughly half of `currentKey`'s secret, so re-installing
+    ///         it would seat a known-compromised key in the active set.
+    error ReinstallSpentKeyForbidden();
+    /// @notice Thrown when `replaceKeyAt(..., index, newKey)` is called with
+    ///         `newKey == target[index]` — a remove-then-add of the same key,
+    ///         which is a no-op shaped operation almost certainly indicating a
+    ///         payload-builder bug.
+    error RedundantKeyReplacement();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
     /// @notice Thrown when the number of transaction keys provided to `initialize`/`migrate` is incorrect.

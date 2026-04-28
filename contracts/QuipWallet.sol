@@ -646,18 +646,32 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         // Snapshot `oldKey` before the auth rotation so the position reference is
         // stable. `at` reverts with `Keyset.IndexOutOfBounds` if `index` is out of
         // range, so no separate bounds check is needed here.
-        //
-        // For kind == Transaction, the auth rotation operates on the same set;
-        // forbid replacing the auth key itself so we don't both remove
-        // `currentKey` via rotation and then try to remove it again here. The
-        // rotation alone (without an indexed replacement) is achievable via any
-        // other transaction-key-bearing operation.
         WOTSPlus.WinternitzAddress memory oldKey = target.at(index);
+
+        // Pre-verify guards. Catch malformed payloads before paying for digest
+        // hashing and WOTS+ verification.
+        //
+        // 1. `oldKey == currentKey` (Transaction only): the auth rotation
+        //    consumes `currentKey`, so trying to also replace it at its own
+        //    slot would double-remove. Standalone rotation is achievable via
+        //    any other transaction-key-bearing operation.
         if (
             kind == Codec.KeyType.Transaction &&
             oldKey.publicSeed == currentKey.publicSeed &&
             oldKey.publicKeyHash == currentKey.publicKeyHash
         ) revert ReplaceAuthKeyForbidden();
+        // 2. `newKey == currentKey` (Transaction only): prevent double use of WOTS
+        if (
+            kind == Codec.KeyType.Transaction &&
+            newKey.publicSeed == currentKey.publicSeed &&
+            newKey.publicKeyHash == currentKey.publicKeyHash
+        ) revert ReinstallSpentKeyForbidden();
+        // 3. `newKey == oldKey` (any kind): a remove-then-add of the same key
+        //    is a no-op shaped operation, almost certainly a payload-builder bug.
+        if (
+            newKey.publicSeed == oldKey.publicSeed &&
+            newKey.publicKeyHash == oldKey.publicKeyHash
+        ) revert RedundantKeyReplacement();
 
         bytes32 digest = Codec.replaceKeyAtDigest(
             kind,
@@ -680,14 +694,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
-        _safeRemoveKey(target, oldKey);
-        // `add` enforces non-zero fields; cap=MAX_KEYS is preserved since we just
-        // removed one from `target` (the auth rotation on `$.transactionKeys` is
-        // size-neutral regardless of which keyset is the replacement target).
-        // The bool check stays as `DuplicateKey`: when `kind != Transaction`, no
-        // membership proof has been done on `newKey` in `target`, so a collision
-        // here is legitimate user input error, not a library invariant violation.
-        if (!target.add(newKey, MAX_KEYS)) revert DuplicateKey();
+        // Indexed replacement on `target`. Goes through `_rotateKeys` (which
+        // wraps the safe remove + safe add primitives) so a library-level
+        // bool=false on either op reverts loudly via `KeyRemovalFailed` /
+        // `KeyAdditionFailed`. The size-neutral remove-then-add preserves the
+        // MAX_KEYS cap.
+        _rotateKeys(target, oldKey, newKey);
 
         emit KeyReplaced(kind, index, oldKey, newKey, nextKey);
     }
@@ -921,10 +933,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @dev Removes `currentKey` and installs `nextKey` in `set`. Remove-then-add
     ///      preserves size so a rotation at full capacity cannot trip the `MAX_KEYS` cap.
+    ///      Memory-typed parameters so callers can pass either calldata (auto-copied)
+    ///      or memory keys (e.g. from `target.at(index)` in `replaceKeyAt`).
     function _rotateKeys(
         Keyset.WinternitzAddressSet storage set,
-        WOTSPlus.WinternitzAddress calldata currentKey,
-        WOTSPlus.WinternitzAddress calldata nextKey
+        WOTSPlus.WinternitzAddress memory currentKey,
+        WOTSPlus.WinternitzAddress memory nextKey
     ) internal {
         _safeRemoveKey(set, currentKey);
         _safeAddKey(set, nextKey);
