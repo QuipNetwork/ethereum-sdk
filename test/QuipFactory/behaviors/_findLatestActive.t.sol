@@ -56,12 +56,12 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
         assertEq(harness.exposed_findLatestActive(), address(0));
     }
 
-    function test_exposed_findLatestActive_returnsReVettedImpl() public {
+    function test_exposed_findLatestActive_returnsUndeprecatedImpl() public {
         QuipWallet impl1 = new QuipWallet(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
         harness.deprecateImplementation(address(impl1));
-        harness.vetImplementation(address(impl1)); // re-vet
+        harness.undeprecateImplementation(address(impl1));
         vm.stopPrank();
 
         assertEq(harness.exposed_findLatestActive(), address(impl1));

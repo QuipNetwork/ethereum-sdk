@@ -19,28 +19,6 @@ contract QuipFactory_vetImplementation is QuipFactoryTest {
         );
     }
 
-    function test_vetImplementation_reactivatesDeprecated() public {
-        // Vet a second impl so latestWalletImpl points to it
-        QuipWallet impl2 = new QuipWallet(payable(address(factory)));
-        vm.prank(ADMIN);
-        factory.vetImplementation(address(impl2));
-        assertEq(factory.latestWalletImpl(), address(impl2));
-
-        vm.prank(ADMIN);
-        factory.deprecateImplementation(address(walletImplementation));
-        assertTrue(
-            factory.deprecatedImpls(address(walletImplementation).codehash)
-        );
-
-        // Re-activate the first impl — latestWalletImpl should NOT change
-        vm.prank(ADMIN);
-        factory.vetImplementation(address(walletImplementation));
-        assertFalse(
-            factory.deprecatedImpls(address(walletImplementation).codehash)
-        );
-        assertEq(factory.latestWalletImpl(), address(impl2));
-    }
-
     function test_vetImplementation_setsLatestWalletImpl() public {
         QuipWallet impl2 = new QuipWallet(payable(address(factory)));
         vm.prank(ADMIN);
@@ -92,30 +70,26 @@ contract QuipFactory_vetImplementation is QuipFactoryTest {
         factory.vetImplementation(address(walletImplementation));
     }
 
-    function test_vetImplementation_reVetUpdatesLatestWhenNoneActive() public {
-        vm.prank(ADMIN);
-        factory.deprecateImplementation(address(walletImplementation));
-        assertEq(factory.latestWalletImpl(), address(0));
-
-        vm.prank(ADMIN);
-        factory.vetImplementation(address(walletImplementation));
-        assertEq(factory.latestWalletImpl(), address(walletImplementation));
-    }
-
-    function test_vetImplementation_reVetDoesNotChangeLatestWhenOneActive()
+    /// @dev Re-vetting a codehash that's already in the vetted set must revert,
+    ///      regardless of its deprecation status. Reactivation flows through
+    ///      `undeprecateImplementation` so observers can reconstruct the
+    ///      vet/sunset/undeprecate lifecycle from events alone.
+    function test_vetImplementation_revertsWhen_alreadyVettedAndActive()
         public
     {
-        QuipWallet impl2 = new QuipWallet(payable(address(factory)));
         vm.prank(ADMIN);
-        factory.vetImplementation(address(impl2));
+        vm.expectRevert(IQuipFactory.AlreadyVetted.selector);
+        factory.vetImplementation(address(walletImplementation));
+    }
 
+    function test_vetImplementation_revertsWhen_alreadyVettedAndDeprecated()
+        public
+    {
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(walletImplementation));
 
-        assertEq(factory.latestWalletImpl(), address(impl2));
-
         vm.prank(ADMIN);
+        vm.expectRevert(IQuipFactory.AlreadyVetted.selector);
         factory.vetImplementation(address(walletImplementation));
-        assertEq(factory.latestWalletImpl(), address(impl2));
     }
 }

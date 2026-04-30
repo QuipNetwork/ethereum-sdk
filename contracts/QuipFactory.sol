@@ -76,11 +76,30 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     function vetImplementation(address impl) external onlyOwner {
         bytes32 codehash = impl.codehash;
         if (codehash == 0) revert EmptyCode();
-        bool added = _vettedCode.add(codehash);
+        if (!_vettedCode.add(codehash)) revert AlreadyVetted();
         vettedWalletImpls[codehash] = impl;
-        deprecatedImpls[codehash] = false;
-        if (added || latestWalletImpl == address(0)) latestWalletImpl = impl;
+        // A freshly-added entry is, by construction, at `length() - 1` — the
+        // most recently inserted slot that `_findLatestActive` would return —
+        // so it is unconditionally the new latest active implementation.
+        latestWalletImpl = impl;
         emit ImplementationVetted(impl, codehash);
+    }
+
+    /// @inheritdoc IQuipFactory
+    function undeprecateImplementation(address impl) external onlyOwner {
+        bytes32 codehash = impl.codehash;
+        if (!_vettedCode.contains(codehash)) revert ImplementationNotVetted();
+        if (!deprecatedImpls[codehash]) revert NotDeprecated();
+        deprecatedImpls[codehash] = false;
+        // Re-bind the address pointer so a redeploy of the same bytecode at a
+        // different address can replace the original. Same-codehash means same
+        // behavior, so this is a benign address swap, not a security boundary.
+        vettedWalletImpls[codehash] = impl;
+        // Recompute via the insertion-order backward scan: if the reactivated
+        // entry is at the highest index among non-deprecated entries it becomes
+        // the latest, otherwise the previously latest entry is preserved.
+        latestWalletImpl = _findLatestActive();
+        emit ImplementationUndeprecated(impl, codehash);
     }
 
     /// @inheritdoc IQuipFactory

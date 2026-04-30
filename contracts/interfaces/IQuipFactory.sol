@@ -41,6 +41,13 @@ interface IQuipFactory {
     error ImplementationNotVetted();
     /// @notice Thrown when attempting to deploy with a deprecated implementation.
     error ImplementationDeprecated();
+    /// @notice Thrown when `vetImplementation` is called with a codehash already in
+    ///         the vetted set (whether currently active or deprecated). Reactivating
+    ///         a deprecated codehash MUST go through `undeprecateImplementation`.
+    error AlreadyVetted();
+    /// @notice Thrown when `undeprecateImplementation` is called on a vetted codehash
+    ///         that is not currently deprecated.
+    error NotDeprecated();
     /// @notice Thrown when no active (non-deprecated) implementation exists.
     error NoActiveImplementation();
     /// @notice Thrown when msg.value is less than the creation fee.
@@ -58,7 +65,9 @@ interface IQuipFactory {
     /*                          EVENTS                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Emitted when an implementation is vetted or re-activated.
+    /// @notice Emitted when a fresh implementation codehash is added to the vetted
+    ///         set. Reactivation of a deprecated codehash is signaled by
+    ///         `ImplementationUndeprecated`, not by re-emitting this event.
     /// @param impl The implementation contract address.
     /// @param codehash The codehash of the implementation.
     event ImplementationVetted(address indexed impl, bytes32 codehash);
@@ -67,6 +76,14 @@ interface IQuipFactory {
     /// @param impl The implementation contract address.
     /// @param codehash The codehash of the implementation.
     event ImplementationSunset(address indexed impl, bytes32 codehash);
+
+    /// @notice Emitted when a previously deprecated implementation codehash is
+    ///         reactivated via `undeprecateImplementation`.
+    /// @param impl The implementation contract address (may differ from the
+    ///        address originally vetted, since `vettedWalletImpls[codehash]` is
+    ///        re-bound on undeprecate).
+    /// @param codehash The codehash of the implementation.
+    event ImplementationUndeprecated(address indexed impl, bytes32 codehash);
 
     /// @notice Emitted when the creation fee is updated.
     /// @param oldFee The previous creation fee.
@@ -106,17 +123,33 @@ interface IQuipFactory {
     /*                       FUNCTIONS                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Approves an implementation's codehash for proxy deployment.
+    /// @notice Approves a fresh implementation's codehash for proxy deployment.
     /// @dev Only callable by the admin. Computes `extcodehash` of `impl` and adds it
-    ///      to the vetted set. If the codehash was previously deprecated, re-activates it.
+    ///      to the vetted set as a new entry. Reverts with `AlreadyVetted` if the
+    ///      codehash is already present (whether active or deprecated) — reactivation
+    ///      flows through `undeprecateImplementation` so the lifecycle stays
+    ///      reconstructable from events alone. Sets `latestWalletImpl` to the new impl.
     /// @param impl The deployed implementation contract address.
     function vetImplementation(address impl) external;
 
     /// @notice Marks an implementation's codehash as deprecated.
     /// @dev Only callable by the admin. The codehash remains in the set (preserving indices)
-    ///      but cannot be used for new proxy deployments until re-vetted.
+    ///      but cannot be used for new proxy deployments until reactivated via
+    ///      `undeprecateImplementation`.
     /// @param impl The deployed implementation contract address.
     function deprecateImplementation(address impl) external;
+
+    /// @notice Reactivates a previously deprecated implementation codehash.
+    /// @dev Only callable by the admin. The codehash MUST already be in the vetted
+    ///      set and currently flagged as deprecated; otherwise reverts with
+    ///      `ImplementationNotVetted` or `NotDeprecated`. Re-binds
+    ///      `vettedWalletImpls[codehash]` to the supplied address (so a redeploy of
+    ///      identical bytecode at a different address can replace the original
+    ///      pointer) and recomputes `latestWalletImpl` via the insertion-order
+    ///      backward scan, so reactivating the highest-index entry restores it as
+    ///      the latest active implementation. Emits `ImplementationUndeprecated`.
+    /// @param impl The deployed implementation contract address.
+    function undeprecateImplementation(address impl) external;
 
     /// @notice Deploys a new QuipWallet proxy using the latest active implementation,
     ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
