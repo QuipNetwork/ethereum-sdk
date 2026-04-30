@@ -108,7 +108,7 @@ contract QuipWallet_migrate is QuipWalletTest {
         harnessProxy.migrate(payload);
     }
 
-    function test_migrate_revertsWhen_duplicateTransactionKey() public {
+    function test_migrate_revertsWhen_transactionKeyAlreadyInUse() public {
         WOTSPlus.WinternitzAddress[5] memory txn;
         WOTSPlus.WinternitzAddress[10] memory rec;
         for (uint256 i; i < 5; i++) txn[i] = _mkKey(0x5000 + i * 2);
@@ -121,7 +121,7 @@ contract QuipWallet_migrate is QuipWalletTest {
             rec
         );
 
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
     }
 
@@ -138,7 +138,7 @@ contract QuipWallet_migrate is QuipWalletTest {
             rec
         );
 
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
     }
 
@@ -197,6 +197,140 @@ contract QuipWallet_migrate is QuipWalletTest {
         );
 
         vm.expectRevert(IQuipWallet.UnknownOwnershipKey.selector);
+        harnessProxy.exposed_migrateInUpgradeContext(payload);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  CROSS-SET KEY REUSE                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Build 5 txn + 10 rec keys deterministically from `base` so the
+    ///      caller can mutate one entry to stage a cross-set collision.
+    function _freshKeyArrays(
+        uint256 base
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        )
+    {
+        for (uint256 i = 0; i < 5; i++) txn[i] = _mkKey(base + i * 2);
+        for (uint256 i = 0; i < 10; i++) rec[i] = _mkKey(base + 0x100 + i * 2);
+    }
+
+    // A recovery key collides with a transaction key. The txn loop installs
+    // first; the recovery loop's `_safeAddKey` → `_enforceUnusedKey` sees
+    // the key in `transactionKeys` and reverts `KeyInUse`.
+    function test_migrate_revertsWhen_recoveryKeyAlsoInTxnSet() public {
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays(0x2000);
+        rec[3] = txn[1];
+        bytes memory payload = Codec.encodeInit(
+            _mkKey(0x2900),
+            _mkKey(0x2a00),
+            txn,
+            rec
+        );
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        harnessProxy.exposed_migrateInUpgradeContext(payload);
+    }
+
+    // A txn key matches the disaster recovery key. Disaster is stored before
+    // either keyset loop runs, so the txn loop's pre-check fires `KeyInUse`.
+    function test_migrate_revertsWhen_txnKeyEqualsDisasterKey() public {
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays(0x3000);
+        WOTSPlus.WinternitzAddress memory disaster = _mkKey(0x3900);
+        txn[2] = disaster;
+        bytes memory payload = Codec.encodeInit(
+            disaster,
+            _mkKey(0x3a00),
+            txn,
+            rec
+        );
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        harnessProxy.exposed_migrateInUpgradeContext(payload);
+    }
+
+    // A txn key matches the ownership key. Ownership is stored before the
+    // keyset loops; the txn loop's pre-check fires `KeyInUse`.
+    function test_migrate_revertsWhen_txnKeyEqualsOwnershipKey() public {
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays(0x4000);
+        WOTSPlus.WinternitzAddress memory ownership = _mkKey(0x4a00);
+        txn[4] = ownership;
+        bytes memory payload = Codec.encodeInit(
+            _mkKey(0x4900),
+            ownership,
+            txn,
+            rec
+        );
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        harnessProxy.exposed_migrateInUpgradeContext(payload);
+    }
+
+    // A recovery key matches the disaster recovery key. Caught by the
+    // recovery loop after the txn loop runs cleanly.
+    function test_migrate_revertsWhen_recoveryKeyEqualsDisasterKey() public {
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays(0x5000);
+        WOTSPlus.WinternitzAddress memory disaster = _mkKey(0x5900);
+        rec[6] = disaster;
+        bytes memory payload = Codec.encodeInit(
+            disaster,
+            _mkKey(0x5a00),
+            txn,
+            rec
+        );
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        harnessProxy.exposed_migrateInUpgradeContext(payload);
+    }
+
+    // A recovery key matches the ownership key. Caught by the recovery loop.
+    function test_migrate_revertsWhen_recoveryKeyEqualsOwnershipKey() public {
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays(0x6000);
+        WOTSPlus.WinternitzAddress memory ownership = _mkKey(0x6a00);
+        rec[2] = ownership;
+        bytes memory payload = Codec.encodeInit(
+            _mkKey(0x6900),
+            ownership,
+            txn,
+            rec
+        );
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        harnessProxy.exposed_migrateInUpgradeContext(payload);
+    }
+
+    // ownershipKey == disasterRecoveryKey. Disaster is enforced + stored
+    // first; the next call to `_enforceUnusedKey(ownershipKey)` sees the
+    // disaster slot match and reverts before any keyset loop runs.
+    function test_migrate_revertsWhen_ownershipKeyEqualsDisasterKey() public {
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays(0x7000);
+        WOTSPlus.WinternitzAddress memory shared = _mkKey(0x7900);
+        bytes memory payload = Codec.encodeInit(shared, shared, txn, rec);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
     }
 }

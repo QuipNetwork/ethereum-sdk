@@ -318,7 +318,7 @@ contract QuipWallet_completeOwnershipHandover is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateOwnershipKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.completeOwnershipHandover(payload);
     }
 

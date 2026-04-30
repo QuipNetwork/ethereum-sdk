@@ -216,7 +216,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Verification, alicePubkey, alicePubkey, sig, keys)
         );
     }
@@ -290,7 +290,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Verification, alicePubkey, nextPq, sig, dup)
         );
     }

@@ -289,7 +289,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         c.newOwnership = ownershipPub;
         bytes memory payload = _encodeTransfer(c);
 
-        vm.expectRevert(IQuipWallet.DuplicateOwnershipKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         vm.prank(ALICE);
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
     }
@@ -332,7 +332,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         c.newTxn[3] = c.newTxn[0]; // collide two transaction-key entries
         bytes memory payload = _encodeTransfer(c);
 
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         vm.prank(ALICE);
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
     }
@@ -344,7 +344,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         c.newRec[5] = c.newRec[0]; // collide two recovery-key entries
         bytes memory payload = _encodeTransfer(c);
 
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         vm.prank(ALICE);
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
     }

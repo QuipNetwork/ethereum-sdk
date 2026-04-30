@@ -89,6 +89,42 @@ contract QuipWalletHarness is QuipWallet {
         _enforceUncontained(_set(kind), key);
     }
 
+    function exposed_isKeyInUse(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external view returns (bool) {
+        return _isKeyInUse(key);
+    }
+
+    function exposed_enforceUnusedKey(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external view {
+        _enforceUnusedKey(key);
+    }
+
+    function exposed_enforceDifferentKeys(
+        WOTSPlus.WinternitzAddress calldata a,
+        WOTSPlus.WinternitzAddress calldata b
+    ) external pure {
+        _enforceDifferentKeys(a, b);
+    }
+
+    /// @dev Test-only escape hatch: writes the disaster recovery key directly so
+    ///      tests can stage cross-keyset uniqueness scenarios without going through
+    ///      `_installInitialKeys` (which also requires keyset payloads).
+    function setDisasterRecoveryKey(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external {
+        Storage.layout().disasterRecoveryKey = key;
+    }
+
+    /// @dev Test-only escape hatch: writes the ownership key directly. See
+    ///      `setDisasterRecoveryKey` for rationale.
+    function setOwnershipKey(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external {
+        Storage.layout().ownershipKey = key;
+    }
+
     function exposed_verifyInitialState() external view {
         _verifyInitialState();
     }

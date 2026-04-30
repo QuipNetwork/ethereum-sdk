@@ -407,8 +407,9 @@ contract QuipWallet_addKeys_Recovery is QuipWalletTest {
             1
         );
 
-        // nextTransactionKey == currentTransactionKey: pre-rotation
-        // `_enforceUncontained` on the txn set fires DuplicateKey.
+        // nextTransactionKey == currentTransactionKey: caught by
+        // `_enforceDifferentKeys(currentKey, nextKey)` at the top of
+        // `_verifyAndRotate` before any storage reads or WOTS+ verify.
         bytes32 msgHash = _buildAddRecoveryKeysMessageHash(
             address(harnessProxy),
             alicePubkey,
@@ -421,7 +422,7 @@ contract QuipWallet_addKeys_Recovery is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         harnessProxy.addKeys(
             Codec.encodeKeyManagement(
                 Codec.KeyType.Recovery,
@@ -573,7 +574,7 @@ contract QuipWallet_addKeys_Recovery is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.addKeys(
             Codec.encodeKeyManagement(
                 Codec.KeyType.Recovery,
@@ -610,7 +611,7 @@ contract QuipWallet_addKeys_Recovery is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.addKeys(
             Codec.encodeKeyManagement(
                 Codec.KeyType.Recovery,

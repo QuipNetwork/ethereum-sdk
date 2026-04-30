@@ -90,7 +90,7 @@ contract QuipWallet__verifyAndRotate is QuipWalletTest {
         bytes32 digest = keccak256("vr-dup");
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, digest);
 
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.exposed_verifyAndRotate(
             HarnessKeyset.Transaction,
             currentKey,

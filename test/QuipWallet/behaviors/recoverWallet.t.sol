@@ -471,17 +471,36 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         wallet.recoverWallet(_encodeRecoverCall(second));
     }
 
+    /// @dev `newRecoveryKey == newTransactionKey` is a payload-builder bug:
+    ///      installing the same WOTS+ public key in two different role slots
+    ///      breaks the one-time-use guarantee. Caught up-front by
+    ///      `_enforceDifferentKeys(newRecoveryKey, newTransactionKey)` before
+    ///      WOTS+ verify or any rotation runs.
+    function test_recoverWallet_revertsWhen_newRecoveryKeyEqualsNewTransactionKey()
+        public
+    {
+        RecoverCall memory call = _buildStandardRecoverCall(
+            "newRk-equals-newPq"
+        );
+        call.newPq = call.newRk;
+        _resignCall(call);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
+        wallet.recoverWallet(_encodeRecoverCall(call));
+    }
+
     function test_recoverWallet_revertsWhen_newRecoveryKeyAlreadyInRecoverySet()
         public
     {
         RecoverCall memory call = _buildStandardRecoverCall("collide-rk");
 
-        // Use a *different* active recovery key as newRk → DuplicateKey.
+        // Use a *different* active recovery key as newRk → KeyInUse.
         call.newRk = recoveryPubkeys[1];
         _resignCall(call);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.recoverWallet(_encodeRecoverCall(call));
     }
 
@@ -492,13 +511,13 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
 
         // newRk == recoveryKey: re-installing the very key being burned would
         // leave a spent WOTS+ key live in the active set. The pre-check
-        // (`_enforceUncontained` against the still-populated recovery set)
-        // fires DuplicateKey before any rotation runs.
+        // `_enforceDifferentKeys(recoveryKey, newRecoveryKey)` fires SameKey
+        // before any storage reads or rotation runs.
         call.newRk = call.recoveryKey;
         _resignCall(call);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.recoverWallet(_encodeRecoverCall(call));
     }
 
@@ -512,7 +531,7 @@ contract QuipWallet_recoverWallet is QuipWalletTest {
         _resignCall(call);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.recoverWallet(_encodeRecoverCall(call));
     }
 

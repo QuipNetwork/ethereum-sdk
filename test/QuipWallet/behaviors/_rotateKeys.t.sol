@@ -188,6 +188,10 @@ contract QuipWallet__rotateKeys is QuipWalletTest {
         bare.exposed_rotateKeys(HarnessKeyset.Verification, stray, next);
     }
 
+    // After the safe-remove of `current`, `_safeAddKey(next)` runs the global
+    // `_enforceUnusedKey(next)` pre-check. With `next` still in the recovery
+    // set (it was a different existing entry), the pre-check reverts `KeyInUse`
+    // before `set.add` runs.
     function test_exposed_rotateKeys_revertsWhen_nextAlreadyPresent() public {
         WOTSPlus.WinternitzAddress memory current = harnessProxy
             .keyAt(Codec.KeyType.Recovery, 0);
@@ -195,7 +199,7 @@ contract QuipWallet__rotateKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory next = harnessProxy
             .keyAt(Codec.KeyType.Recovery, 1);
 
-        vm.expectRevert(IQuipWallet.KeyAdditionFailed.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
     }
 }

@@ -320,7 +320,7 @@ contract QuipWallet_recoveryUpgrade is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.recoveryUpgrade(address(newImpl), payload);
     }
 

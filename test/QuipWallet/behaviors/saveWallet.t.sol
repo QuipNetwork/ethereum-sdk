@@ -214,7 +214,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         bytes32 digest = _buildSaveWalletDigest(disasterPub, disasterPub);
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
-        vm.expectRevert(IQuipWallet.DuplicateDisasterRecoveryKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.saveWallet(
             Codec.encodeSaveWallet(
                 disasterPub,
@@ -261,6 +261,148 @@ contract QuipWallet_saveWallet is QuipWalletTest {
                 disasterPub,
                 newDisaster,
                 bad,
+                freshTxnKeys,
+                freshRecoveryKeys
+            )
+        );
+    }
+
+    // ── Cross-set key reuse (KeyInUse) ───────────────────────────────
+
+    /// @dev `newDisasterKey == ownershipKey`. Caught by
+    ///      `_enforceUnusedKey(newDisasterKey)` BEFORE WOTS+ verify, since the
+    ///      ownership slot is still populated at that point.
+    function test_saveWallet_revertsWhen_newDisasterKeyEqualsOwnershipKey()
+        public
+    {
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, ownershipPubkey);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(
+            Codec.encodeSaveWallet(
+                disasterPub,
+                ownershipPubkey,
+                sig,
+                freshTxnKeys,
+                freshRecoveryKeys
+            )
+        );
+    }
+
+    /// @dev A new transaction key collides with the just-installed
+    ///      `newDisasterKey`. Caught by the txn loop's `_safeAddKey` →
+    ///      `_enforceUnusedKey` → `KeyInUse`.
+    function test_saveWallet_revertsWhen_newTxnKeyEqualsNewDisasterKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "txn-eq-disaster"
+        );
+        freshTxnKeys[2] = newDisaster;
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(
+            Codec.encodeSaveWallet(
+                disasterPub,
+                newDisaster,
+                sig,
+                freshTxnKeys,
+                freshRecoveryKeys
+            )
+        );
+    }
+
+    /// @dev A new transaction key collides with the still-installed
+    ///      ownership key (saveWallet does not touch `ownershipKey`).
+    function test_saveWallet_revertsWhen_newTxnKeyEqualsOwnershipKey() public {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "txn-eq-own-d"
+        );
+        freshTxnKeys[1] = ownershipPubkey;
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(
+            Codec.encodeSaveWallet(
+                disasterPub,
+                newDisaster,
+                sig,
+                freshTxnKeys,
+                freshRecoveryKeys
+            )
+        );
+    }
+
+    /// @dev A new recovery key collides with `newDisasterKey`. Caught by the
+    ///      recovery loop's `_safeAddKey` after the txn loop has run cleanly.
+    function test_saveWallet_revertsWhen_newRecoveryKeyEqualsNewDisasterKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "rec-eq-disaster"
+        );
+        freshRecoveryKeys[5] = newDisaster;
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(
+            Codec.encodeSaveWallet(
+                disasterPub,
+                newDisaster,
+                sig,
+                freshTxnKeys,
+                freshRecoveryKeys
+            )
+        );
+    }
+
+    /// @dev A new recovery key collides with the still-installed ownership key.
+    function test_saveWallet_revertsWhen_newRecoveryKeyEqualsOwnershipKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "rec-eq-own-d"
+        );
+        freshRecoveryKeys[3] = ownershipPubkey;
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(
+            Codec.encodeSaveWallet(
+                disasterPub,
+                newDisaster,
+                sig,
+                freshTxnKeys,
+                freshRecoveryKeys
+            )
+        );
+    }
+
+    /// @dev Cross-input collision: a recovery-key entry equals one of the
+    ///      transaction-key entries. The txn loop runs first; the recovery
+    ///      loop's `_safeAddKey` sees the key already in `transactionKeys`.
+    function test_saveWallet_revertsWhen_newRecoveryKeyEqualsNewTxnKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "rec-eq-txn-d"
+        );
+        freshRecoveryKeys[4] = freshTxnKeys[0];
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(
+            Codec.encodeSaveWallet(
+                disasterPub,
+                newDisaster,
+                sig,
                 freshTxnKeys,
                 freshRecoveryKeys
             )

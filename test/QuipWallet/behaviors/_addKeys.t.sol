@@ -115,12 +115,15 @@ contract QuipWallet__addKeys is QuipWalletTest {
         bare.exposed_addKeys(HarnessKeyset.Verification, keys);
     }
 
-    function test_exposed_addKeys_revertsWhen_duplicateKey() public {
+    // The first occurrence of `_makeKey(0xdead)` adds successfully; the second
+    // is rejected by `_safeAddKey`'s global uniqueness pre-check (the key is now
+    // in the recovery set), surfacing as `KeyInUse`.
+    function test_exposed_addKeys_revertsWhen_keyInUse() public {
         WOTSPlus.WinternitzAddress[]
             memory keys = new WOTSPlus.WinternitzAddress[](2);
         keys[0] = _makeKey(0xdead);
         keys[1] = _makeKey(0xdead);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         bare.exposed_addKeys(HarnessKeyset.Recovery, keys);
     }
 
@@ -150,8 +153,8 @@ contract QuipWallet__addKeys is QuipWalletTest {
     }
 
     // Adds a key, then attempts to add the same key again in a follow-up call.
-    // The library returns false on "already present" with no side effect, and
-    // `_addKeys` surfaces that as `DuplicateKey`.
+    // `_safeAddKey`'s global pre-check sees the key in the verification set and
+    // reverts `KeyInUse` before the underlying `set.add` runs.
     function test_exposed_addKeys_revertsWhen_duplicatesExistingMember() public {
         WOTSPlus.WinternitzAddress[] memory first = _makeKeys(0xaa00, 1);
         bare.exposed_addKeys(HarnessKeyset.Verification, first);
@@ -160,7 +163,7 @@ contract QuipWallet__addKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[]
             memory again = new WOTSPlus.WinternitzAddress[](1);
         again[0] = first[0];
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         bare.exposed_addKeys(HarnessKeyset.Verification, again);
     }
 

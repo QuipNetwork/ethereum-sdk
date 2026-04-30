@@ -410,7 +410,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_pqOwnerReuse() public {
+    function test_upgradeToAndCall_revertsWhen_nextKeyEqualsCurrentKey() public {
         WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(uint256(2))
@@ -431,7 +431,76 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
+        wallet.upgradeToAndCall(address(newImpl), data);
+    }
+
+    // ── Cross-set: nextKey collides with another keyset / single ──────
+    //
+    // The auth rotation goes through `_verifyAndRotate(transactionKeys, ...)`,
+    // which runs `_enforceUnusedKey(nextKey)` against ALL keysets and both
+    // single keys. Each of these tests stages a cross-set collision and
+    // asserts `KeyInUse` before WOTS+ verify.
+
+    function _runUpgradeWithNextPq(
+        WOTSPlus.WinternitzAddress memory nextPq,
+        bytes32 verifierTag
+    ) internal returns (bytes memory data) {
+        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(uint256(1)),
+            publicKeyHash: bytes32(uint256(2))
+        });
+        WOTSPlus.WinternitzAddress[]
+            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        data = _buildUpgradeData(
+            address(newImpl),
+            alicePrivateKey,
+            alicePubkey,
+            nextPq,
+            verifierTag,
+            false,
+            dummyPq,
+            emptyKeys
+        );
+    }
+
+    function test_upgradeToAndCall_revertsWhen_nextKeyInRecoverySet() public {
+        bytes memory data = _runUpgradeWithNextPq(
+            recoveryPubkeys[2],
+            "verifier-rec"
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.upgradeToAndCall(address(newImpl), data);
+    }
+
+    function test_upgradeToAndCall_revertsWhen_nextKeyEqualsOwnershipKey()
+        public
+    {
+        bytes memory data = _runUpgradeWithNextPq(
+            ownershipPubkey,
+            "verifier-own"
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.upgradeToAndCall(address(newImpl), data);
+    }
+
+    function test_upgradeToAndCall_revertsWhen_nextKeyEqualsDisasterKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory disasterPub, ) = _generateDisasterRecoveryKey(
+            VAULT_SEED
+        );
+        bytes memory data = _runUpgradeWithNextPq(
+            disasterPub,
+            "verifier-dis"
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 

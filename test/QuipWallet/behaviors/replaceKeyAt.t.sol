@@ -401,11 +401,11 @@ contract QuipWallet_replaceKeyAt is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        // The replacement now goes through `_rotateKeys` (safe wrappers); a
-        // collision with an existing target-set key surfaces the safe-add
-        // wrapper's `KeyAdditionFailed` rather than the old direct-add bool
-        // check's `DuplicateKey`.
-        vm.expectRevert(IQuipWallet.KeyAdditionFailed.selector);
+        // The replacement goes through `_rotateKeys(target, oldKey, newKey)` →
+        // `_safeAddKey(target, newKey)` → `_enforceUnusedKey(newKey)`. A
+        // collision with an existing target-set key fires the global pre-check
+        // and reverts `KeyInUse`.
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.replaceKeyAt(
             Codec.encodeReplaceKeyAt(
                 Codec.KeyType.Verification,
@@ -510,8 +510,8 @@ contract QuipWallet_replaceKeyAt is QuipWalletTest {
     }
 
     /// @dev `newKey == oldKey` is a no-op-shaped operation (remove-then-add of
-    ///      the same key). Reverts with `RedundantKeyReplacement`. Tested for
-    ///      Verification — the guard is keyset-agnostic.
+    ///      the same key). `_enforceDifferentKeys(oldKey, newKey)` reverts
+    ///      `SameKey`. Tested for Verification — the guard is keyset-agnostic.
     function test_replaceKeyAt_revertsWhen_newKeyEqualsOldKey() public {
         (WOTSPlus.WinternitzAddress[] memory seeded, ) = _seedVerificationKeys(
             3
@@ -536,7 +536,7 @@ contract QuipWallet_replaceKeyAt is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.RedundantKeyReplacement.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.replaceKeyAt(
             Codec.encodeReplaceKeyAt(
                 Codec.KeyType.Verification,

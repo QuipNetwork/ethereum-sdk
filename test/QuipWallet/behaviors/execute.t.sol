@@ -674,7 +674,7 @@ contract QuipWallet_execute is QuipWalletTest {
         );
     }
 
-    function test_execute_revertsWhen_pqOwnerReuse() public {
+    function test_execute_revertsWhen_nextKeyAlreadyInUse() public {
         bytes32 msgHash = _buildExecuteMessageHash(
             address(wallet),
             alicePubkey,
@@ -690,7 +690,7 @@ contract QuipWallet_execute is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.execute(
             Codec.encodeExecute(
                 alicePubkey,

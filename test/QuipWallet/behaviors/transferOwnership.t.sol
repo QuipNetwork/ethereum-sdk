@@ -328,7 +328,7 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateOwnershipKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.transferOwnership(payload);
     }
 
@@ -359,6 +359,160 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.UnknownDisasterRecoveryKey.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    // ── Cross-set key reuse (KeyInUse / SameKey) ─────────────────────
+
+    /// @dev `newOwnershipKey == newDisasterKey`: caught by the second
+    ///      `_enforceDifferentKeys(newOwnershipKey, newDisasterKey)` pre-WOTS+
+    ///      verify check → `SameKey`.
+    function test_transferOwnership_revertsWhen_newOwnershipEqualsNewDisaster()
+        public
+    {
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newOwnershipKey // newDisasterKey == newOwnershipKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newOwnershipKey` collides with an active transaction key
+    ///      (still in storage at the `_enforceUnusedKey(newOwnershipKey)`
+    ///      check, before the txn keyset is cleared) → `KeyInUse`.
+    function test_transferOwnership_revertsWhen_newOwnershipKeyInTxnSet()
+        public
+    {
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            aliceTxnPubkeys[2],
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newDisasterKey` collides with the recovery keyset (still in
+    ///      storage when `_enforceUnusedKey(newDisasterKey)` runs).
+    function test_transferOwnership_revertsWhen_newDisasterKeyInRecoverySet()
+        public
+    {
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            recoveryPubkeys[1]
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newTxnKey == newOwnershipKey`. The ownership key is set before
+    ///      the keyset loops, so the txn loop's `_safeAddKey` sees the
+    ///      collision.
+    function test_transferOwnership_revertsWhen_newTxnKeyEqualsNewOwnershipKey()
+        public
+    {
+        freshTxnKeys[3] = newOwnershipKey;
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newTxnKey == newDisasterKey`. Disaster is set after ownership,
+    ///      both before the loops, so the txn loop catches it.
+    function test_transferOwnership_revertsWhen_newTxnKeyEqualsNewDisasterKey()
+        public
+    {
+        freshTxnKeys[1] = newDisasterKey;
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newRecoveryKey == newDisasterKey`. Caught by the recovery loop
+    ///      after the txn loop runs cleanly.
+    function test_transferOwnership_revertsWhen_newRecKeyEqualsNewDisasterKey()
+        public
+    {
+        freshRecoveryKeys[6] = newDisasterKey;
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newRecoveryKey == newOwnershipKey`. Caught by the recovery loop.
+    function test_transferOwnership_revertsWhen_newRecKeyEqualsNewOwnershipKey()
+        public
+    {
+        freshRecoveryKeys[2] = newOwnershipKey;
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev Cross-input: a recovery-key entry equals a transaction-key entry.
+    ///      The txn loop installs first; the recovery loop catches the
+    ///      collision against `transactionKeys`.
+    function test_transferOwnership_revertsWhen_newRecKeyEqualsNewTxnKey()
+        public
+    {
+        freshRecoveryKeys[7] = freshTxnKeys[0];
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.transferOwnership(payload);
     }
 

@@ -340,7 +340,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         harnessProxy.exposed_manageKeys(payload, false);
     }
 
-    function test_exposed_manageKeys_revertsWhen_duplicateNewKey() public {
+    function test_exposed_manageKeys_revertsWhen_newKeyInUse() public {
         (
             WOTSPlus.WinternitzAddress memory next,
 
@@ -357,7 +357,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
             dup
         );
 
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         harnessProxy.exposed_manageKeys(payload, false);
     }
 

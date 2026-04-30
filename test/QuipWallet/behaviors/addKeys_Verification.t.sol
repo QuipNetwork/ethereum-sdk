@@ -228,7 +228,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.SameKey.selector);
         wallet.addKeys(Codec.encodeKeyManagement(Codec.KeyType.Verification, alicePubkey, alicePubkey, sig, newKeys)
         );
     }
@@ -340,7 +340,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         );
     }
 
-    function test_addKeys_Verification_revertsWhen_duplicateInBatch() public {
+    function test_addKeys_Verification_revertsWhen_keyInBatchAlreadyInUse() public {
         WOTSPlus.WinternitzAddress[]
             memory dupKeys = new WOTSPlus.WinternitzAddress[](2);
         (dupKeys[0], ) = _generateKeyPair("dup-batch");
@@ -361,12 +361,12 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.addKeys(Codec.encodeKeyManagement(Codec.KeyType.Verification, alicePubkey, nextPq, sig, dupKeys)
         );
     }
 
-    function test_addKeys_Verification_revertsWhen_duplicateWithExisting()
+    function test_addKeys_Verification_revertsWhen_keyAlreadyInUse()
         public
     {
         (WOTSPlus.WinternitzAddress[] memory seeded, ) = _seedVerificationKeys(
@@ -392,7 +392,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.DuplicateKey.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.addKeys(Codec.encodeKeyManagement(Codec.KeyType.Verification, alicePubkey, nextPq, sig, dup)
         );
     }

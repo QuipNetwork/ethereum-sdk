@@ -8,10 +8,12 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
 
-/// @dev Behaviour tests for `_safeAddKey(set, key)`. Wraps `set.add(key, MAX_KEYS)`
-///      and reverts with `KeyAdditionFailed` if the underlying op returns false.
-///      Library-level reverts (`ZeroValueWinternitzAddress`, `ExceedsCapacity`)
-///      preempt the bool check and bubble through unchanged.
+/// @dev Behaviour tests for `_safeAddKey(set, key)`. The function calls
+///      `_enforceUnusedKey(key)` (revert `KeyInUse` on global collision)
+///      and then `set.add(key, MAX_KEYS)` (revert `KeyAdditionFailed` on
+///      bool=false — now exclusively cap excess since the global pre-check
+///      caught any duplicate). Library-level reverts (`ZeroValueWinternitzAddress`,
+///      `ExceedsCapacity`) preempt the bool check and bubble through unchanged.
 contract QuipWallet__safeAddKey is QuipWalletTest {
     QuipWalletHarness public bare;
 
@@ -60,12 +62,110 @@ contract QuipWallet__safeAddKey is QuipWalletTest {
         assertTrue(bare.isKey(Codec.KeyType.Recovery, key));
     }
 
+    // The global uniqueness pre-check catches the in-set duplicate case before
+    // `set.add` runs, so re-adding the same key reverts with `KeyInUse` rather
+    // than `KeyAdditionFailed`.
     function test_exposed_safeAddKey_revertsWhen_keyAlreadyPresent() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xaa30);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
 
-        vm.expectRevert(IQuipWallet.KeyAdditionFailed.selector);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
+    }
+
+    // ── Cross-keyset uniqueness (KeyInUse) ─────────────────────────────
+
+    function test_exposed_safeAddKey_revertsWhen_keyInTransactionSet_targetRecovery()
+        public
+    {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb00);
+        bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
+    }
+
+    function test_exposed_safeAddKey_revertsWhen_keyInTransactionSet_targetVerification()
+        public
+    {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb10);
+        bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
+    }
+
+    function test_exposed_safeAddKey_revertsWhen_keyInRecoverySet_targetTransaction()
+        public
+    {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb20);
+        bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
+    }
+
+    function test_exposed_safeAddKey_revertsWhen_keyInRecoverySet_targetVerification()
+        public
+    {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb30);
+        bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
+    }
+
+    function test_exposed_safeAddKey_revertsWhen_keyInVerificationSet_targetTransaction()
+        public
+    {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb40);
+        bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
+    }
+
+    function test_exposed_safeAddKey_revertsWhen_keyInVerificationSet_targetRecovery()
+        public
+    {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb50);
+        bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
+    }
+
+    function test_exposed_safeAddKey_revertsWhen_keyEqualsDisasterRecoveryKey()
+        public
+    {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb60);
+        bare.setDisasterRecoveryKey(key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
+    }
+
+    function test_exposed_safeAddKey_revertsWhen_keyEqualsOwnershipKey() public {
+        WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb70);
+        bare.setOwnershipKey(key);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
+    }
+
+    function test_exposed_safeAddKey_succeeds_whenGloballyUnique() public {
+        // Populate every other slot with distinct keys, then confirm a fresh
+        // key still admits.
+        bare.exposed_safeAddKey(HarnessKeyset.Transaction, _makeKey(0xcc00));
+        bare.exposed_safeAddKey(HarnessKeyset.Recovery, _makeKey(0xcc10));
+        bare.exposed_safeAddKey(HarnessKeyset.Verification, _makeKey(0xcc20));
+        bare.setDisasterRecoveryKey(_makeKey(0xcc30));
+        bare.setOwnershipKey(_makeKey(0xcc40));
+
+        WOTSPlus.WinternitzAddress memory fresh = _makeKey(0xcc50);
+        bare.exposed_safeAddKey(HarnessKeyset.Recovery, fresh);
+
+        assertTrue(bare.isKey(Codec.KeyType.Recovery, fresh));
     }
 
     // ── Library-level reverts (preempt the bool check) ─────────────────
