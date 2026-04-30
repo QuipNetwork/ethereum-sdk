@@ -3,13 +3,15 @@ pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @dev Behaviour tests for `_assertGuardedSlotsUnchanged(snapshot)`.
 ///      Compares a prior snapshot against the current SLOADs of the 7 guarded
-///      slots; no-op if all match, reverts with empty data otherwise. This file
-///      exercises one revert branch per slot (7 total) plus the happy path and
-///      a "no pre-read" edge case.
+///      slots; no-op if all match, reverts with `GuardedSlotTampered(idx)`
+///      otherwise. This file exercises one revert branch per slot (7 total),
+///      verifies the slot index matches the documented mapping, and covers
+///      the happy path plus a "no pre-read" edge case.
 contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
@@ -66,7 +68,12 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
     {
         bytes32[7] memory s = _snap();
         vm.store(address(harnessProxy), _OWNER_SLOT, bytes32(uint256(0xaaaa)));
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(0)
+            )
+        );
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
@@ -86,7 +93,12 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
             _ERC1967_IMPLEMENTATION_SLOT,
             bytes32(uint256(0xbbbb))
         );
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(1)
+            )
+        );
         bare.exposed_assertGuardedSlotsUnchanged(s);
     }
 
@@ -99,7 +111,12 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
             _PQ_FACTORY_SLOT,
             bytes32(uint256(0xcccc))
         );
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(2)
+            )
+        );
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
@@ -112,7 +129,12 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
             _DISASTER_KEY_SEED_SLOT,
             bytes32(uint256(0xdddd))
         );
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(3)
+            )
+        );
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
@@ -125,7 +147,12 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
             _DISASTER_KEY_HASH_SLOT,
             bytes32(uint256(0xeeee))
         );
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(4)
+            )
+        );
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
@@ -138,7 +165,12 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
             _OWNERSHIP_KEY_SEED_SLOT,
             bytes32(uint256(0xffff))
         );
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(5)
+            )
+        );
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
@@ -151,17 +183,27 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
             _OWNERSHIP_KEY_HASH_SLOT,
             bytes32(uint256(0x1234))
         );
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(6)
+            )
+        );
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
     // Supplying a zero-filled snapshot against a live, initialised wallet
-    // should revert on the very first comparison (owner ≠ 0).
+    // should revert on the very first comparison (owner ≠ 0) → index 0.
     function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_snapshotAllZero()
         public
     {
         bytes32[7] memory zero;
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipWallet.GuardedSlotTampered.selector,
+                uint8(0)
+            )
+        );
         harnessProxy.exposed_assertGuardedSlotsUnchanged(zero);
     }
 }

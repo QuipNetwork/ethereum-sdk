@@ -111,6 +111,14 @@ interface IQuipWallet {
     ///         or when a replacement `ownershipKey` has a zero component.
     error UnknownOwnershipKey();
 
+    /// @notice Thrown when a delegatecall body modified one of the seven slots that
+    ///         `delegateExecuteGuard` snapshots and re-checks. The tampered slot is
+    ///         not in calldata, so the index is surfaced for incident response.
+    /// @param slotIndex 0=owner, 1=ERC-1967 impl, 2=quipFactory,
+    ///                  3=disasterRecoveryKey seed, 4=disasterRecoveryKey hash,
+    ///                  5=ownershipKey seed, 6=ownershipKey hash.
+    error GuardedSlotTampered(uint8 slotIndex);
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

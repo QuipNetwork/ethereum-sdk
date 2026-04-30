@@ -1381,17 +1381,26 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Reverts with empty data if any of the 7 guarded slots has changed since
-    ///      `_snapshotGuardedSlots` was called. Plain-bytes revert matches the style
-    ///      of Solady's parent guards; the caller context (delegatecall target) is
-    ///      already known to the operator by construction.
+    /// @dev Reverts with `GuardedSlotTampered(slotIndex)` if any of the 7 guarded
+    ///      slots has changed since `_snapshotGuardedSlots` was called. Unlike
+    ///      `storageStoreGuard` (where the tampered slot is the caller-supplied
+    ///      argument and thus already in calldata), here the offending slot was
+    ///      written by the delegatecall body and is otherwise unobservable from
+    ///      tx data without a re-simulate — so the index is surfaced for incident
+    ///      response. Index mapping is documented on the error in `IQuipWallet`.
     function _assertGuardedSlotsUnchanged(
         bytes32[7] memory snapshot
     ) internal view {
+        bytes4 selector = GuardedSlotTampered.selector;
         /// @solidity memory-safe-assembly
         assembly {
+            function revertWithIndex(sel, idx) {
+                mstore(0x00, sel)
+                mstore(0x04, idx)
+                revert(0x00, 0x24)
+            }
             if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {
-                revert(codesize(), 0x00)
+                revertWithIndex(selector, 0)
             }
             if iszero(
                 eq(
@@ -1399,10 +1408,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     sload(_ERC1967_IMPLEMENTATION_SLOT)
                 )
             ) {
-                revert(codesize(), 0x00)
+                revertWithIndex(selector, 1)
             }
             if iszero(eq(mload(add(snapshot, 0x40)), sload(_PQ_FACTORY_SLOT))) {
-                revert(codesize(), 0x00)
+                revertWithIndex(selector, 2)
             }
             if iszero(
                 eq(
@@ -1410,7 +1419,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     sload(_DISASTER_KEY_SEED_SLOT)
                 )
             ) {
-                revert(codesize(), 0x00)
+                revertWithIndex(selector, 3)
             }
             if iszero(
                 eq(
@@ -1418,7 +1427,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     sload(_DISASTER_KEY_HASH_SLOT)
                 )
             ) {
-                revert(codesize(), 0x00)
+                revertWithIndex(selector, 4)
             }
             if iszero(
                 eq(
@@ -1426,7 +1435,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     sload(_OWNERSHIP_KEY_SEED_SLOT)
                 )
             ) {
-                revert(codesize(), 0x00)
+                revertWithIndex(selector, 5)
             }
             if iszero(
                 eq(
@@ -1434,7 +1443,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     sload(_OWNERSHIP_KEY_HASH_SLOT)
                 )
             ) {
-                revert(codesize(), 0x00)
+                revertWithIndex(selector, 6)
             }
         }
     }
