@@ -38,11 +38,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     uint256 public constant MAX_KEYS = 10;
     address payable public immutable FACTORY;
 
-    /// @dev uint256(keccak256("quip.wallet.upgrade.guard")) - 1
-    /// Transient storage slot used to gate `migrate` to the `upgradeToAndCall` context.
+    /// @dev Transient storage slot used to gate `migrate` to the `upgradeToAndCall` context.
     /// @notice REQUIRES EIP-1153 (transient storage opcodes TSTORE/TLOAD).
     uint256 private constant _UPGRADE_GUARD_SLOT =
-        0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
+        uint256(keccak256("quip.wallet.upgrade.guard")) - 1;
 
     /// @dev PQ storage base slot (ERC-7201 namespace: quip.storage.wallet.wotsplus).
     /// Layout: quipFactory at base+0, disasterRecoveryKey at base+1 (seed) and base+2 (hash),
