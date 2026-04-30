@@ -52,6 +52,17 @@ interface IQuipWallet {
     /// @notice Thrown when a provided key is already present in the target keyset,
     ///         or when a rotation's `nextKey` collides with the active transaction-key set.
     error DuplicateKey();
+    /// @notice Thrown when a key being installed already exists somewhere in the wallet's
+    ///         PQ state — any of the three keysets (`transactionKeys`, `recoveryKeys`,
+    ///         `verificationKeys`) or either single key (`disasterRecoveryKey`,
+    ///         `ownershipKey`). WOTS+ keys are one-time-use, so the same public key in two
+    ///         slots means a single revealed signature burns it for both purposes.
+    error KeyInUse();
+    /// @notice Thrown when a rotation pair (currentKey, nextKey) collapses to the same
+    ///         WOTS+ public key, or two new-key inputs in a multi-key flow are equal —
+    ///         a "rotation to self" that would burn the WOTS+ signing capability without
+    ///         producing a meaningful state change. Surfaced by `_enforceDifferentKeys`.
+    error SameKey();
     /// @notice Thrown when a provided key is not present in the keyset that was expected to contain it.
     error UnknownKey();
     /// @notice Thrown when the underlying keyset `add` returns false during a rotation primitive
@@ -83,11 +94,6 @@ interface IQuipWallet {
     ///         reveals roughly half of `currentKey`'s secret, so re-installing
     ///         it would seat a known-compromised key in the active set.
     error ReinstallSpentKeyForbidden();
-    /// @notice Thrown when `replaceKeyAt(..., index, newKey)` is called with
-    ///         `newKey == target[index]` — a remove-then-add of the same key,
-    ///         which is a no-op shaped operation almost certainly indicating a
-    ///         payload-builder bug.
-    error RedundantKeyReplacement();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
     /// @notice Thrown when the number of transaction keys provided to `initialize`/`migrate` is incorrect.
@@ -100,16 +106,10 @@ interface IQuipWallet {
 
     /// @notice Thrown when a provided `disasterRecoveryKey` does not match the stored one.
     error UnknownDisasterRecoveryKey();
-    /// @notice Thrown when a rotation's new `disasterRecoveryKey` equals the current one,
-    ///         which would violate WOTS+ one-time-use on the disaster recovery slot.
-    error DuplicateDisasterRecoveryKey();
 
     /// @notice Thrown when a provided `ownershipKey` does not match the stored one,
     ///         or when a replacement `ownershipKey` has a zero component.
     error UnknownOwnershipKey();
-    /// @notice Thrown when a rotation's new `ownershipKey` equals the current one,
-    ///         which would violate WOTS+ one-time-use on the ownership-key slot.
-    error DuplicateOwnershipKey();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                              */

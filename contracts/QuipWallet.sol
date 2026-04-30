@@ -90,7 +90,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// Validation fails (returns 1) when:
     ///   - `nextKey` is zero (missing key material).
     ///   - `currentKey` is not a member of the active transactionKeys set.
-    ///   - `nextKey` is already a member of the active transactionKeys set.
+    ///   - `nextKey` is already known to the wallet — present in any keyset
+    ///     (transaction / recovery / verification) or matching either single PQ
+    ///     key (disasterRecoveryKey, ownershipKey).
     ///   - The WOTS+ signature does not verify against `currentKey`.
     ///
     /// On success the key rotation is committed immediately via `_rotateKeys`.
@@ -124,7 +126,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         if (!$.transactionKeys.contains(currentKey)) return 1;
-        if ($.transactionKeys.contains(nextKey)) return 1;
+        // Global uniqueness check: `_safeAddKey` would revert on a cross-keyset or
+        // single-key collision, but ERC-4337 validation must report failure via
+        // `validationData == 1` rather than revert. Catching the collision here
+        // keeps the EntryPoint's nonce / refund accounting clean.
+        if (_isKeyInUse(nextKey)) return 1;
 
         bytes32 digest = Codec.erc4337ExecuteDigest(
             address(this),
@@ -517,9 +523,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeRecoverWallet(payload);
 
         Storage.Layout storage $ = Storage.layout();
+        // Cheapest-first fail-fast pre-checks before WOTS+ verify (~500k gas).
+        // The two `_enforceDifferentKeys` calls reject self-rotation and the
+        // newRecoveryKey/newTransactionKey collision (which would otherwise
+        // surface only at the trailing `_safeAddKey($.transactionKeys, ...)`
+        // long after WOTS+ verify and the recovery rotation have run).
+        _enforceDifferentKeys(recoveryKey, newRecoveryKey);
+        _enforceDifferentKeys(newRecoveryKey, newTransactionKey);
         _enforceContained($.recoveryKeys, recoveryKey);
-        _enforceUncontained($.recoveryKeys, newRecoveryKey);
-        _enforceUncontained($.transactionKeys, newTransactionKey);
+        _enforceUnusedKey(newRecoveryKey);
+        _enforceUnusedKey(newTransactionKey);
 
         bytes32 digest = Codec.recoverWalletDigest(
             address(this),
@@ -568,14 +581,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) revert UnknownDisasterRecoveryKey();
 
         // WOTS+ is one-time — the replacement must be distinct.
-        if (
-            newDisasterKey.publicSeed == currentDisasterKey.publicSeed &&
-            newDisasterKey.publicKeyHash == currentDisasterKey.publicKeyHash
-        ) revert DuplicateDisasterRecoveryKey();
+        _enforceDifferentKeys(currentDisasterKey, newDisasterKey);
         if (
             newDisasterKey.publicSeed == bytes32(0) ||
             newDisasterKey.publicKeyHash == bytes32(0)
         ) revert UnknownDisasterRecoveryKey();
+        _enforceUnusedKey(newDisasterKey);
 
         bytes32 keysHash = EfficientHashLib.hash(
             abi.encode(newTransactionKeys, newRecoveryKeys)
@@ -603,12 +614,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
-            if (!$.transactionKeys.add(newTransactionKeys[i], MAX_KEYS))
-                revert DuplicateKey();
+            _safeAddKey($.transactionKeys, newTransactionKeys[i]);
         }
         for (uint256 i = 0; i < MAX_KEYS; ++i) {
-            if (!$.recoveryKeys.add(newRecoveryKeys[i], MAX_KEYS))
-                revert DuplicateKey();
+            _safeAddKey($.recoveryKeys, newRecoveryKeys[i]);
         }
 
         emit WalletSaved(
@@ -667,11 +676,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             newKey.publicKeyHash == currentKey.publicKeyHash
         ) revert ReinstallSpentKeyForbidden();
         // 3. `newKey == oldKey` (any kind): a remove-then-add of the same key
-        //    is a no-op shaped operation, almost certainly a payload-builder bug.
-        if (
-            newKey.publicSeed == oldKey.publicSeed &&
-            newKey.publicKeyHash == oldKey.publicKeyHash
-        ) revert RedundantKeyReplacement();
+        //    is a no-op shaped operation, almost certainly a payload-builder
+        //    bug. `_enforceDifferentKeys` reverts `SameKey`.
+        _enforceDifferentKeys(oldKey, newKey);
 
         bytes32 digest = Codec.replaceKeyAtDigest(
             kind,
@@ -907,16 +914,17 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /*                        INTERNALS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Appends calldata-provided keys to `set`, capped at `MAX_KEYS`.
-    ///      Library `add` enforces non-zero fields and capacity; duplicates return
-    ///      false and surface here as `DuplicateKey`.
+    /// @dev Appends calldata-provided keys to `set`, capped at `MAX_KEYS`. Each add
+    ///      goes through `_safeAddKey` so the global uniqueness pre-check catches
+    ///      cross-keyset collisions (`KeyInUse`) and within-batch duplicates
+    ///      (the second occurrence finds the first already in `set`).
     function _addKeys(
         Keyset.WinternitzAddressSet storage set,
         WOTSPlus.WinternitzAddress[] calldata keys
     ) internal {
         uint256 len = keys.length;
         for (uint256 i = 0; i < len; ++i) {
-            if (!set.add(keys[i], MAX_KEYS)) revert DuplicateKey();
+            _safeAddKey(set, keys[i]);
         }
     }
 
@@ -946,10 +954,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev Fail-fast membership checks, WOTS+ signature verification, then rotation.
-    ///      Reverts with `UnknownKey` / `DuplicateKey` / `InvalidSignature` on failure.
-    ///      The pre-verify enforce pair short-circuits before paying WOTS+ verify gas
-    ///      on invalid inputs. Used by every owner-path that consumes a one-time WOTS+
-    ///      key from a keyset — transaction keys for most ops, recovery keys for
+    ///      Reverts with `SameKey` / `UnknownKey` / `KeyInUse` / `InvalidSignature`
+    ///      on failure. Checks are ordered cheapest-first so a malformed payload
+    ///      bails before we pay storage / WOTS+ verify gas:
+    ///        1. `_enforceDifferentKeys(currentKey, nextKey)` — pure equality.
+    ///        2. `_enforceContained(set, currentKey)` — one storage read.
+    ///        3. `_enforceUnusedKey(nextKey)` — multiple storage reads, also
+    ///           catches cross-keyset / single-key collisions.
+    ///        4. WOTS+ verify (~500k gas).
+    ///      Used by every owner-path that consumes a one-time WOTS+ key from a
+    ///      keyset — transaction keys for most ops, recovery keys for
     ///      `recoveryUpgrade`.
     function _verifyAndRotate(
         Keyset.WinternitzAddressSet storage set,
@@ -958,8 +972,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         WOTSPlus.WinternitzElements calldata pqSig,
         bytes32 digest
     ) internal {
+        _enforceDifferentKeys(currentKey, nextKey);
         _enforceContained(set, currentKey);
-        _enforceUncontained(set, nextKey);
         if (
             !WOTSPlus.verify(
                 currentKey,
@@ -1042,16 +1056,80 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (set.contains(key)) revert DuplicateKey();
     }
 
-    /// @dev Wraps `set.add(key, MAX_KEYS)` with a hard revert on bool=false. Used by
-    ///      rotation primitives where the call site has already proven `key` is not
-    ///      a member (via `_enforceUncontained` or `_clearKeys`-then-add). A false
-    ///      return indicates a library/storage invariant violation, not a user input
-    ///      error — so we revert with `KeyAdditionFailed` rather than `DuplicateKey`.
-    ///      Silent under-rotation in a one-time-signature scheme is catastrophic.
+    /// @dev Returns true if `key` is already known to this wallet — either a member
+    ///      of any keyset (transaction / recovery / verification) or matching either
+    ///      single PQ key (`disasterRecoveryKey`, `ownershipKey`). Used by
+    ///      `_enforceUnusedKey` and the ERC-4337 validation path, which must
+    ///      report failure via `validationData == 1` rather than revert.
+    ///
+    ///      A zero-valued probe (`publicSeed == 0` or `publicKeyHash == 0`) returns
+    ///      false: zero keys are intrinsically invalid and will be rejected by the
+    ///      keyset library's `ZeroValueWinternitzAddress` check downstream. The
+    ///      short-circuit avoids a false positive against an uninitialized
+    ///      `disasterRecoveryKey` / `ownershipKey` slot (which holds zero by default
+    ///      until `initialize` runs) — this only matters in tests since production
+    ///      flows always populate the singles before any add path is reachable, but
+    ///      the guard keeps the helper robust regardless of caller context.
+    function _isKeyInUse(
+        WOTSPlus.WinternitzAddress memory key
+    ) internal view returns (bool) {
+        if (key.publicSeed == bytes32(0) || key.publicKeyHash == bytes32(0))
+            return false;
+        Storage.Layout storage $ = Storage.layout();
+        if ($.transactionKeys.contains(key)) return true;
+        if ($.recoveryKeys.contains(key)) return true;
+        if ($.verificationKeys.contains(key)) return true;
+        if (
+            $.disasterRecoveryKey.publicSeed == key.publicSeed &&
+            $.disasterRecoveryKey.publicKeyHash == key.publicKeyHash
+        ) return true;
+        if (
+            $.ownershipKey.publicSeed == key.publicSeed &&
+            $.ownershipKey.publicKeyHash == key.publicKeyHash
+        ) return true;
+        return false;
+    }
+
+    /// @dev Reverts with `KeyInUse` if `key` is already known to this wallet in any
+    ///      keyset or single-key slot. WOTS+ is one-time-use: the same public key
+    ///      living in two slots means one revealed signature burns it for every
+    ///      purpose, so installation is forbidden across the board.
+    function _enforceUnusedKey(
+        WOTSPlus.WinternitzAddress memory key
+    ) internal view {
+        if (_isKeyInUse(key)) revert KeyInUse();
+    }
+
+    /// @dev Reverts with `SameKey` if `a` and `b` are the same WOTS+ public key
+    ///      (both fields equal). Called at the top of every rotation site before
+    ///      WOTS+ verify so a "rotate to self" payload fails fast without burning
+    ///      verify gas and without producing a misleading no-op-shaped state
+    ///      transition that would still consume the one-time WOTS+ signing
+    ///      capability. Also used for cross-input checks where two new keys in
+    ///      the same call must be distinct (e.g. `recoverWallet`'s
+    ///      `newRecoveryKey` vs `newTransactionKey`).
+    function _enforceDifferentKeys(
+        WOTSPlus.WinternitzAddress memory a,
+        WOTSPlus.WinternitzAddress memory b
+    ) internal pure {
+        if (a.publicSeed == b.publicSeed && a.publicKeyHash == b.publicKeyHash)
+            revert SameKey();
+    }
+
+    /// @dev Wraps `set.add(key, MAX_KEYS)` with a global uniqueness pre-check and a
+    ///      hard revert on bool=false. The pre-check rejects any key already known
+    ///      to the wallet (any keyset or single-key slot) with `KeyInUse`. Because
+    ///      that pre-check subsumes the in-set duplicate case, a `false` return
+    ///      from `set.add` here can only mean cap excess — surfaced as
+    ///      `KeyAdditionFailed` since the call sites have already proven non-cap
+    ///      preconditions (`_clearKeys`-then-add, `_safeRemoveKey` in `_rotateKeys`,
+    ///      `at(index)` in `replaceKeyAt`). Silent under-rotation in a one-time-
+    ///      signature scheme is catastrophic; revert loudly.
     function _safeAddKey(
         Keyset.WinternitzAddressSet storage set,
         WOTSPlus.WinternitzAddress memory key
     ) internal {
+        _enforceUnusedKey(key);
         if (!set.add(key, MAX_KEYS)) revert KeyAdditionFailed();
     }
 
@@ -1143,10 +1221,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             newOwnershipKey.publicSeed == bytes32(0) ||
             newOwnershipKey.publicKeyHash == bytes32(0)
         ) revert UnknownOwnershipKey();
-        if (
-            newOwnershipKey.publicSeed == currentOwnershipKey.publicSeed &&
-            newOwnershipKey.publicKeyHash == currentOwnershipKey.publicKeyHash
-        ) revert DuplicateOwnershipKey();
+        // Auth rotation must be to a fresh key, and the two new singles must
+        // be distinct (otherwise the trailing single-key uniqueness checks
+        // would still catch it but only after WOTS+ verify).
+        _enforceDifferentKeys(currentOwnershipKey, newOwnershipKey);
+        _enforceDifferentKeys(newOwnershipKey, newDisasterKey);
 
         if (
             newDisasterKey.publicSeed == bytes32(0) ||
@@ -1187,18 +1266,26 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) revert InvalidSignature();
 
         // Rotate ownership key, replace disaster key, wipe keysets, reinstall fresh ones.
+        // Each single-key assignment is preceded by `_enforceUnusedKey` so the new
+        // value cannot collide with anything currently in storage. Order matters:
+        // ownership is enforced + assigned first, then disaster is enforced against the
+        // freshly-set ownership. The keyset loops then run through `_safeAddKey`, which
+        // re-checks against the new singles. Note this newly forbids
+        // `newDisasterKey == oldDisasterKey` (caught here at the disaster-uniqueness
+        // step, since the old value is still in storage) — a deliberate tightening for
+        // WOTS+ one-time-use hygiene.
+        _enforceUnusedKey(newOwnershipKey);
         $.ownershipKey = newOwnershipKey;
+        _enforceUnusedKey(newDisasterKey);
         $.disasterRecoveryKey = newDisasterKey;
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
         _clearKeys($.verificationKeys);
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
-            if (!$.transactionKeys.add(newTransactionKeys[i], MAX_KEYS))
-                revert DuplicateKey();
+            _safeAddKey($.transactionKeys, newTransactionKeys[i]);
         }
         for (uint256 i = 0; i < MAX_KEYS; ++i) {
-            if (!$.recoveryKeys.add(newRecoveryKeys[i], MAX_KEYS))
-                revert DuplicateKey();
+            _safeAddKey($.recoveryKeys, newRecoveryKeys[i]);
         }
 
         if (isHandover) Ownable.completeOwnershipHandover(newOwner);
@@ -1225,15 +1312,22 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
     ) internal {
         Storage.Layout storage $ = Storage.layout();
+        // Each single-key assignment is preceded by `_enforceUnusedKey` so the new
+        // value cannot collide with anything currently in storage (relevant for the
+        // `migrate` path, where the old singles + the still-populated verification
+        // keyset are visible at this point). Order matters: disaster is enforced +
+        // assigned first, then ownership is enforced against the freshly-set disaster.
+        // The keyset loops then run through `_safeAddKey`, which re-checks against
+        // both new singles.
+        _enforceUnusedKey(disasterRecoveryKey);
         $.disasterRecoveryKey = disasterRecoveryKey;
+        _enforceUnusedKey(ownershipKey);
         $.ownershipKey = ownershipKey;
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
-            if (!$.transactionKeys.add(transactionKeys[i], MAX_KEYS))
-                revert DuplicateKey();
+            _safeAddKey($.transactionKeys, transactionKeys[i]);
         }
         for (uint256 i = 0; i < MAX_KEYS; ++i) {
-            if (!$.recoveryKeys.add(recoveryKeys[i], MAX_KEYS))
-                revert DuplicateKey();
+            _safeAddKey($.recoveryKeys, recoveryKeys[i]);
         }
         _verifyInitialState();
     }
