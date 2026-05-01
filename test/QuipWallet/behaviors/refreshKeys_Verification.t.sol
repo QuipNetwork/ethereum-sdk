@@ -86,7 +86,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         assertTrue(wallet.isKey(Codec.KeyType.Verification, fresh[0]));
     }
 
-    function test_refreshKeys_Verification_rotatesPqOwner() public {
+    function test_refreshKeys_Verification_rotatesKey() public {
         WOTSPlus.WinternitzAddress[] memory keys = _genKeys("refresh-rot", 2);
         WOTSPlus.WinternitzAddress memory nextPq = _refresh(
             keys,
@@ -170,7 +170,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         );
     }
 
-    function test_refreshKeys_Verification_revertsWhen_nextPqOwnerSeedIsZero()
+    function test_refreshKeys_Verification_revertsWhen_nextKeySeedIsZero()
         public
     {
         WOTSPlus.WinternitzAddress[] memory keys = _genKeys("refresh-zs", 1);
@@ -189,7 +189,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         );
     }
 
-    function test_refreshKeys_Verification_revertsWhen_nextPqOwnerHashIsZero()
+    function test_refreshKeys_Verification_revertsWhen_nextKeyHashIsZero()
         public
     {
         WOTSPlus.WinternitzAddress[] memory keys = _genKeys("refresh-zh", 1);
@@ -208,7 +208,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         );
     }
 
-    function test_refreshKeys_Verification_revertsWhen_pqOwnerReuse() public {
+    function test_refreshKeys_Verification_revertsWhen_nextKeyEqualsCurrentKey() public {
         WOTSPlus.WinternitzAddress[] memory keys = _genKeys("refresh-reuse", 1);
         WOTSPlus.WinternitzElements memory sig = _sign(
             alicePrivateKey,

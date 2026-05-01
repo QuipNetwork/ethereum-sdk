@@ -7,7 +7,7 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
 contract QuipWallet_refreshKeys_Transaction_reverts is QuipWalletTest {
-    function test_refreshKeys_Transaction_reverts() public {
+    function test_refreshKeys_revertsWhen_kindIsTransaction() public {
         WOTSPlus.WinternitzAddress[]
             memory keys = new WOTSPlus.WinternitzAddress[](1);
         (keys[0], ) = _generateKeyPair("refresh-tx-forbidden-key");

@@ -275,7 +275,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.migrate(migratorPayload);
     }
 
-    function test_migrate_revertsWhen_newPqOwnerIsZero() public {
+    function test_migrate_revertsWhen_initialKeyIsZero() public {
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(0),
             publicKeyHash: bytes32(0)
@@ -312,7 +312,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         WOTSPlus.WinternitzAddress[]
             memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
-        // Use current alicePubkey as nextPq — should trigger PqOwnerReuse
+        // Use current alicePubkey as nextKey — should trigger SameKey
         bytes memory data = _buildUpgradeData(
             address(newImpl),
             alicePrivateKey,
@@ -398,7 +398,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_nextPqOwnerSeedIsZero() public {
+    function test_upgradeToAndCall_revertsWhen_nextKeySeedIsZero() public {
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(0),
             publicKeyHash: bytes32("non-empty")
@@ -426,7 +426,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_nextPqOwnerHashIsZero() public {
+    function test_upgradeToAndCall_revertsWhen_nextKeyHashIsZero() public {
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32("non-empty"),
             publicKeyHash: bytes32(0)

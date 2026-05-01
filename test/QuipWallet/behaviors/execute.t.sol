@@ -61,7 +61,7 @@ contract QuipWallet_execute is QuipWalletTest {
         assertEq(address(wallet).balance, walletBalBefore - transferAmount);
     }
 
-    function test_execute_emitsPqOwnerRotatedAndExecutionSucceeded() public {
+    function test_execute_emitsKeyRotatedAndExecutionSucceeded() public {
         uint256 transferAmount = 0.3 ether;
         (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
             "event-next"
@@ -105,7 +105,7 @@ contract QuipWallet_execute is QuipWalletTest {
                 foundSucceeded = true;
             }
         }
-        assertTrue(foundRotated, "PqOwnerRotated event not emitted");
+        assertTrue(foundRotated, "KeyRotated event not emitted");
         assertTrue(foundSucceeded, "ExecutionSucceeded event not emitted");
     }
 
@@ -149,7 +149,7 @@ contract QuipWallet_execute is QuipWalletTest {
         assertEq(address(factory).balance, factoryBalBefore + EXECUTE_FEE);
     }
 
-    function test_execute_rotatesPqOwner() public {
+    function test_execute_rotatesKey() public {
         (
             WOTSPlus.WinternitzAddress memory nextPubkey,
             bytes32 nextPrivKey
@@ -632,7 +632,7 @@ contract QuipWallet_execute is QuipWalletTest {
         );
     }
 
-    function test_execute_revertsWhen_nextPqOwnerSeedIsZero() public {
+    function test_execute_revertsWhen_nextKeySeedIsZero() public {
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(0),
             publicKeyHash: bytes32(uint256(1))
@@ -653,7 +653,7 @@ contract QuipWallet_execute is QuipWalletTest {
         );
     }
 
-    function test_execute_revertsWhen_nextPqOwnerHashIsZero() public {
+    function test_execute_revertsWhen_nextKeyHashIsZero() public {
         WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
             publicSeed: bytes32(uint256(1)),
             publicKeyHash: bytes32(0)

@@ -52,7 +52,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         }
     }
 
-    function test_addKeys_Verification_rotatesPqOwner() public {
+    function test_addKeys_Verification_rotatesKey() public {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("add-rotate", 1);
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "addvk-next-2"
@@ -182,7 +182,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         );
     }
 
-    function test_addKeys_Verification_revertsWhen_nextPqOwnerSeedIsZero()
+    function test_addKeys_Verification_revertsWhen_nextKeySeedIsZero()
         public
     {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("zs", 1);
@@ -201,7 +201,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         );
     }
 
-    function test_addKeys_Verification_revertsWhen_nextPqOwnerHashIsZero()
+    function test_addKeys_Verification_revertsWhen_nextKeyHashIsZero()
         public
     {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("zh", 1);
@@ -220,7 +220,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
         );
     }
 
-    function test_addKeys_Verification_revertsWhen_pqOwnerReuse() public {
+    function test_addKeys_Verification_revertsWhen_nextKeyEqualsCurrentKey() public {
         WOTSPlus.WinternitzAddress[] memory newKeys = _genKeys("reuse", 1);
         WOTSPlus.WinternitzElements memory sig = _sign(
             alicePrivateKey,

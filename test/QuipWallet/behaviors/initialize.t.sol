@@ -12,12 +12,54 @@ import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
 
 contract QuipWallet_initialize is QuipWalletTest {
+    /// @dev ERC-7201 base slot for WOTSPlusStorage.Layout. Layout: quipFactory at +0,
+    ///      disasterRecoveryKey.publicSeed at +1, .publicKeyHash at +2,
+    ///      ownershipKey.publicSeed at +3, .publicKeyHash at +4.
+    bytes32 internal constant STORAGE_BASE =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
+
+    /// @dev Builds 5 transaction keys and 10 recovery keys deterministically
+    ///      from `tag`. Returns fresh-shape arrays the caller can mutate
+    ///      before encoding.
+    function _freshKeyArrays(
+        string memory tag
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        )
+    {
+        for (uint256 i = 0; i < 5; i++) {
+            (txn[i], ) = WOTSPlus.generateKeyPair(
+                keccak256(abi.encodePacked(tag, "-txn-", i))
+            );
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            (rec[i], ) = WOTSPlus.generateKeyPair(
+                keccak256(abi.encodePacked(tag, "-rec-", i))
+            );
+        }
+    }
+
+    function _key(
+        string memory tag
+    ) internal pure returns (WOTSPlus.WinternitzAddress memory pub) {
+        (pub, ) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(tag)));
+    }
+
     function test_initialize_setsOwner() public view {
         assertEq(wallet.owner(), ALICE);
     }
 
-    function test_initialize_setsPqOwner() public view {
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
+    function test_initialize_setsTransactionKeys() public view {
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        for (uint256 i = 0; i < 5; i++) {
+            assertTrue(
+                wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i])
+            );
+        }
     }
 
     function test_initialize_setsRecoveryKeys() public view {
@@ -27,6 +69,64 @@ contract QuipWallet_initialize is QuipWalletTest {
         }
     }
 
+    function test_initialize_setsDisasterRecoveryKey() public {
+        QuipWallet freshWallet = _deployFreshProxy("set-disaster");
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays("set-disaster");
+        WOTSPlus.WinternitzAddress memory disaster = _key("set-disaster-d");
+        WOTSPlus.WinternitzAddress memory ownership = _key("set-disaster-o");
+        bytes memory payload = Codec.encodeInit(disaster, ownership, txn, rec);
+
+        vm.prank(address(factory));
+        freshWallet.initialize(payable(ALICE), payload);
+
+        assertEq(
+            vm.load(
+                address(freshWallet),
+                bytes32(uint256(STORAGE_BASE) + 1)
+            ),
+            disaster.publicSeed
+        );
+        assertEq(
+            vm.load(
+                address(freshWallet),
+                bytes32(uint256(STORAGE_BASE) + 2)
+            ),
+            disaster.publicKeyHash
+        );
+    }
+
+    function test_initialize_setsOwnershipKey() public {
+        QuipWallet freshWallet = _deployFreshProxy("set-ownership");
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays("set-ownership");
+        WOTSPlus.WinternitzAddress memory disaster = _key("set-ownership-d");
+        WOTSPlus.WinternitzAddress memory ownership = _key("set-ownership-o");
+        bytes memory payload = Codec.encodeInit(disaster, ownership, txn, rec);
+
+        vm.prank(address(factory));
+        freshWallet.initialize(payable(ALICE), payload);
+
+        assertEq(
+            vm.load(
+                address(freshWallet),
+                bytes32(uint256(STORAGE_BASE) + 3)
+            ),
+            ownership.publicSeed
+        );
+        assertEq(
+            vm.load(
+                address(freshWallet),
+                bytes32(uint256(STORAGE_BASE) + 4)
+            ),
+            ownership.publicKeyHash
+        );
+    }
+
     function test_initialize_setsQuipFactory() public view {
         assertEq(address(wallet.quipFactory()), address(factory));
     }
@@ -34,28 +134,18 @@ contract QuipWallet_initialize is QuipWalletTest {
     function test_initialize_emitsWalletInitialized() public {
         QuipWallet freshWallet = _deployFreshProxy("fresh-event");
         (
-            WOTSPlus.WinternitzAddress memory newPubkey,
-            bytes32 newPrivKey
-        ) = _generateKeyPair("event-seed");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            newPrivKey,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(newPubkey, rKeys);
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays("emit");
+        WOTSPlus.WinternitzAddress memory disaster = _key("emit-d");
+        WOTSPlus.WinternitzAddress memory ownership = _key("emit-o");
+        bytes memory payload = Codec.encodeInit(disaster, ownership, txn, rec);
+
+        vm.expectEmit(true, true, false, true, address(freshWallet));
+        emit IQuipWallet.WalletInitialized(address(factory), ALICE, txn, rec);
 
         vm.prank(address(factory));
-        vm.recordLogs();
         freshWallet.initialize(payable(ALICE), payload);
-
-        Vm.Log[] memory logs = vm.getRecordedLogs();
-        bool found = false;
-        for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IQuipWallet.WalletInitialized.selector) {
-                found = true;
-                break;
-            }
-        }
-        assertTrue(found, "WalletInitialized event not emitted");
     }
 
     function test_initialize_revertsWhen_ownerIsZero() public {
@@ -130,7 +220,7 @@ contract QuipWallet_initialize is QuipWalletTest {
         freshWallet.initialize(payable(ALICE), payload);
     }
 
-    function test_initialize_revertsWhen_publicSeedEmpty() public {
+    function test_initialize_revertsWhen_transactionKeySeedIsZero() public {
         QuipWallet freshWallet = _deployFreshProxy("fresh-empty-seed");
         WOTSPlus.WinternitzAddress memory emptyPubkey = WOTSPlus
             .WinternitzAddress({
@@ -149,7 +239,7 @@ contract QuipWallet_initialize is QuipWalletTest {
         freshWallet.initialize(payable(ALICE), payload);
     }
 
-    function test_initialize_revertsWhen_publicKeyHashEmpty() public {
+    function test_initialize_revertsWhen_transactionKeyHashIsZero() public {
         QuipWallet freshWallet = _deployFreshProxy("fresh-empty-hash");
         WOTSPlus.WinternitzAddress memory emptyPubkey = WOTSPlus
             .WinternitzAddress({
@@ -168,7 +258,7 @@ contract QuipWallet_initialize is QuipWalletTest {
         freshWallet.initialize(payable(ALICE), payload);
     }
 
-    function test_initialize_revertsWhen_recoveryKeyHasZeroSeed() public {
+    function test_initialize_revertsWhen_recoveryKeySeedIsZero() public {
         QuipWallet freshWallet = _deployFreshProxy("fresh-zero-recovery");
         (
             WOTSPlus.WinternitzAddress memory newPubkey,
@@ -208,40 +298,74 @@ contract QuipWallet_initialize is QuipWalletTest {
         freshWallet.initialize(payable(ALICE), payload);
     }
 
+    function test_initialize_revertsWhen_disasterRecoveryKeyIsZero() public {
+        QuipWallet freshWallet = _deployFreshProxy("zero-disaster");
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays("zero-disaster");
+        WOTSPlus.WinternitzAddress memory zeroDisaster = WOTSPlus
+            .WinternitzAddress({
+                publicSeed: bytes32(0),
+                publicKeyHash: bytes32(0)
+            });
+        bytes memory payload = Codec.encodeInit(
+            zeroDisaster,
+            _key("zero-disaster-o"),
+            txn,
+            rec
+        );
+
+        vm.prank(address(factory));
+        vm.expectRevert(IQuipWallet.UnknownDisasterRecoveryKey.selector);
+        freshWallet.initialize(payable(ALICE), payload);
+    }
+
+    function test_initialize_revertsWhen_ownershipKeyIsZero() public {
+        QuipWallet freshWallet = _deployFreshProxy("zero-ownership");
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays("zero-ownership");
+        WOTSPlus.WinternitzAddress memory zeroOwnership = WOTSPlus
+            .WinternitzAddress({
+                publicSeed: bytes32(0),
+                publicKeyHash: bytes32(0)
+            });
+        bytes memory payload = Codec.encodeInit(
+            _key("zero-ownership-d"),
+            zeroOwnership,
+            txn,
+            rec
+        );
+
+        vm.prank(address(factory));
+        vm.expectRevert(IQuipWallet.UnknownOwnershipKey.selector);
+        freshWallet.initialize(payable(ALICE), payload);
+    }
+
+    function test_initialize_revertsWhen_txnKeyEqualsAnotherTxnKey() public {
+        QuipWallet freshWallet = _deployFreshProxy("dup-txn");
+        (
+            WOTSPlus.WinternitzAddress[5] memory txn,
+            WOTSPlus.WinternitzAddress[10] memory rec
+        ) = _freshKeyArrays("dup-txn");
+        txn[3] = txn[1];
+        bytes memory payload = Codec.encodeInit(
+            _key("dup-txn-d"),
+            _key("dup-txn-o"),
+            txn,
+            rec
+        );
+
+        vm.prank(address(factory));
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        freshWallet.initialize(payable(ALICE), payload);
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                  CROSS-SET KEY REUSE                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// @dev Builds 5 transaction keys and 10 recovery keys deterministically
-    ///      from `tag`. Returns fresh-shape arrays the caller can mutate
-    ///      before encoding.
-    function _freshKeyArrays(
-        string memory tag
-    )
-        internal
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress[5] memory txn,
-            WOTSPlus.WinternitzAddress[10] memory rec
-        )
-    {
-        for (uint256 i = 0; i < 5; i++) {
-            (txn[i], ) = WOTSPlus.generateKeyPair(
-                keccak256(abi.encodePacked(tag, "-txn-", i))
-            );
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            (rec[i], ) = WOTSPlus.generateKeyPair(
-                keccak256(abi.encodePacked(tag, "-rec-", i))
-            );
-        }
-    }
-
-    function _key(
-        string memory tag
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory pub) {
-        (pub, ) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(tag)));
-    }
 
     // A recovery key collides with a transaction key. The txn loop installs
     // first; the recovery loop's `_safeAddKey` → `_enforceUnusedKey` sees the
