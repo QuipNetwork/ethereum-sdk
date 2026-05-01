@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
+import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeRecoveryUpgradeVerification is
@@ -55,7 +56,26 @@ contract WOTSPlusCodec__decodeRecoveryUpgradeVerification is
     function test_exposed_decodeRecoveryUpgradeVerification_revertsWhen_emptyPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                4480,
+                0
+            )
+        );
         codec.exposed_decodeRecoveryUpgradeVerification("");
+    }
+
+    function test_exposed_decodeRecoveryUpgradeVerification_revertsWhen_wrongLength()
+        public
+    {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                4480,
+                5569
+            )
+        );
+        codec.exposed_decodeRecoveryUpgradeVerification(_filledBytes(5569));
     }
 }

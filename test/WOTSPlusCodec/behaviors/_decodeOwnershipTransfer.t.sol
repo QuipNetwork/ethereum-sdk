@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
+import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
@@ -88,7 +89,26 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
     function test_exposed_decodeOwnershipTransfer_revertsWhen_emptyPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                3328,
+                0
+            )
+        );
         codec.exposed_decodeOwnershipTransfer("");
+    }
+
+    function test_exposed_decodeOwnershipTransfer_revertsWhen_wrongLength()
+        public
+    {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                3328,
+                3327
+            )
+        );
+        codec.exposed_decodeOwnershipTransfer(_filledBytes(3327));
     }
 }

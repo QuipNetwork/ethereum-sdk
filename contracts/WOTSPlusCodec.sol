@@ -105,6 +105,19 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///        RECOVERY_KEY_AMOUNT         = 10
 library WOTSPlusCodec {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                           ERRORS                              */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Thrown when a decoder is invoked with a payload whose length does
+    ///         not match the layout it expects. For variable-length decoders
+    ///         (`decodeExecute`, `decodeKeyManagement`), `expected` is the minimum
+    ///         required size — `actual` either falls below that minimum or, for
+    ///         `decodeKeyManagement`, fails the per-key-stride alignment.
+    /// @param expected The exact (or minimum) size the decoder requires.
+    /// @param actual The actual length of the payload provided.
+    error MalformedPayload(uint256 expected, uint256 actual);
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           TYPES                               */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
@@ -229,6 +242,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
         )
     {
+        if (payload.length != 1088)
+            revert MalformedPayload(1088, payload.length);
         assembly {
             disasterRecoveryKey := payload.offset
             ownershipKey := add(payload.offset, 64)
@@ -255,6 +270,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
         )
     {
+        if (payload.length != 3232)
+            revert MalformedPayload(3232, payload.length);
         assembly {
             currentDisasterKey := payload.offset
             newDisasterKey := add(payload.offset, 64)
@@ -281,6 +298,9 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata pqSig
         )
     {
+        // The full upgrade payload is shared between auth/verification/migration
+        // decoders, so the length precondition is the full 5569 bytes.
+        if (data.length != 5569) revert MalformedPayload(5569, data.length);
         assembly {
             currentKey := data.offset
             nextKey := add(data.offset, 64)
@@ -308,6 +328,9 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata pqSig
         )
     {
+        // The full recoveryUpgrade payload is shared between auth and verification
+        // decoders, so the length precondition is the full 4480 bytes.
+        if (data.length != 4480) revert MalformedPayload(4480, data.length);
         assembly {
             currentRecoveryKey := data.offset
             newRecoveryKey := add(data.offset, 64)
@@ -331,6 +354,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata verifySig
         )
     {
+        // Operates on the full 5569-byte upgrade payload (shared with auth/migration).
+        if (data.length != 5569) revert MalformedPayload(5569, data.length);
         assembly {
             verifier := add(data.offset, 2272)
             verifySig := add(data.offset, 2336)
@@ -352,6 +377,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata verifySig
         )
     {
+        // Operates on the full 4480-byte recoveryUpgrade payload (shared with auth).
+        if (data.length != 4480) revert MalformedPayload(4480, data.length);
         assembly {
             verifier := add(data.offset, 2272)
             verifySig := add(data.offset, 2336)
@@ -370,6 +397,9 @@ library WOTSPlusCodec {
         pure
         returns (bool shouldMigrate, bytes calldata migratorPayload)
     {
+        // Solidity indexing on the body below would already bounds-check, but
+        // raise an explicit MalformedPayload for codec-wide uniformity.
+        if (data.length != 5569) revert MalformedPayload(5569, data.length);
         shouldMigrate = uint8(data[4480]) != 0;
         migratorPayload = data[4481:5569];
     }
@@ -388,6 +418,7 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata pqSig
         )
     {
+        if (sig.length != 2272) revert MalformedPayload(2272, sig.length);
         assembly {
             currentKey := sig.offset
             nextKey := add(sig.offset, 64)
@@ -413,6 +444,10 @@ library WOTSPlusCodec {
             bytes calldata data
         )
     {
+        // Variable-length: header is 2336 bytes; the trailing `data` slice may be
+        // empty (length == 2336) or arbitrarily long.
+        if (payload.length < 2336)
+            revert MalformedPayload(2336, payload.length);
         assembly {
             currentKey := payload.offset
             nextKey := add(payload.offset, 64)
@@ -440,6 +475,8 @@ library WOTSPlusCodec {
             uint256 amount
         )
     {
+        if (payload.length != 2336)
+            revert MalformedPayload(2336, payload.length);
         assembly {
             currentKey := payload.offset
             nextKey := add(payload.offset, 64)
@@ -465,6 +502,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata pqSig
         )
     {
+        if (payload.length != 2336)
+            revert MalformedPayload(2336, payload.length);
         assembly {
             recoveryKey := payload.offset
             newRecoveryKey := add(payload.offset, 64)
@@ -492,6 +531,14 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[] calldata keys
         )
     {
+        // Variable-length: header is 2304 bytes; the trailing `keys[]` array is
+        // a clean multiple of 64 bytes (one WinternitzAddress per key). Without
+        // the bounds + alignment check, `keys.length := div(sub(payload.length,
+        // 2304), 64)` underflows in Yul on short input and produces a huge
+        // length, turning any keys-iterating caller into a gas bomb.
+        if (
+            payload.length < 2304 || (payload.length - 2304) % 64 != 0
+        ) revert MalformedPayload(2304, payload.length);
         uint256 raw;
         assembly {
             raw := calldataload(payload.offset)
@@ -529,6 +576,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
         )
     {
+        if (payload.length != 3328)
+            revert MalformedPayload(3328, payload.length);
         assembly {
             currentOwnershipKey := payload.offset
             newOwnershipKey := add(payload.offset, 64)
@@ -559,6 +608,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress calldata newKey
         )
     {
+        if (payload.length != 2400)
+            revert MalformedPayload(2400, payload.length);
         uint256 raw;
         assembly {
             raw := calldataload(payload.offset)
@@ -587,6 +638,8 @@ library WOTSPlusCodec {
             bytes calldata ecdsaSig
         )
     {
+        if (signature.length != 2273)
+            revert MalformedPayload(2273, signature.length);
         assembly {
             verifier := signature.offset
             pqSig := add(signature.offset, 64)

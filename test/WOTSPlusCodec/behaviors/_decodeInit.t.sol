@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
+import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
@@ -34,7 +35,7 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         }
     }
 
-    function test_exposed_decodeInit_extraBytes_ignored() public view {
+    function test_exposed_decodeInit_revertsWhen_extraBytes() public {
         bytes memory payload = _buildInitPayload(42);
         payload = abi.encodePacked(
             payload,
@@ -42,9 +43,14 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
             bytes32(uint256(0xFF)),
             bytes32(uint256(0xFF))
         );
-        (, , WOTSPlus.WinternitzAddress[5] memory txnKeys, ) = codec
-            .exposed_decodeInit(payload);
-        assertEq(txnKeys[0].publicSeed, bytes32(uint256(42)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                1088,
+                1184
+            )
+        );
+        codec.exposed_decodeInit(payload);
     }
 
     function test_exposed_decodeInit_handlesMaxValues() public view {
@@ -60,7 +66,13 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
     }
 
     function test_exposed_decodeInit_revertsWhen_emptyPayload() public {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                1088,
+                0
+            )
+        );
         codec.exposed_decodeInit("");
     }
 
@@ -69,7 +81,13 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
             bytes32(uint256(1)),
             bytes32(uint256(2))
         );
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                1088,
+                64
+            )
+        );
         codec.exposed_decodeInit(payload);
     }
 }

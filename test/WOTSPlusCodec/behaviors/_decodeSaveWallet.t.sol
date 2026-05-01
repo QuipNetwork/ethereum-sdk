@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
+import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeSaveWallet is WOTSPlusCodecTest {
@@ -69,23 +70,40 @@ contract WOTSPlusCodec__decodeSaveWallet is WOTSPlusCodecTest {
         }
     }
 
-    function test_exposed_decodeSaveWallet_extraBytes_ignored() public view {
+    function test_exposed_decodeSaveWallet_revertsWhen_extraBytes() public {
         bytes memory payload = _buildSaveWalletPayload(42);
         payload = abi.encodePacked(payload, bytes32(uint256(0xFF)));
-        (WOTSPlus.WinternitzAddress memory cur, , , , ) = codec
-            .exposed_decodeSaveWallet(payload);
-        assertEq(cur.publicSeed, bytes32(uint256(42)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                3232,
+                3264
+            )
+        );
+        codec.exposed_decodeSaveWallet(payload);
     }
 
     function test_exposed_decodeSaveWallet_revertsWhen_emptyPayload() public {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                3232,
+                0
+            )
+        );
         codec.exposed_decodeSaveWallet("");
     }
 
     function test_exposed_decodeSaveWallet_revertsWhen_truncatedPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                3232,
+                3000
+            )
+        );
         codec.exposed_decodeSaveWallet(_filledBytes(3000));
     }
 }

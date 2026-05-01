@@ -77,7 +77,13 @@ contract WOTSPlusCodec__decodeKeyManagement is WOTSPlusCodecTest {
         public
     {
         bytes memory payload = _filledBytes(100);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2304,
+                100
+            )
+        );
         codec.exposed_decodeKeyManagement(payload);
     }
 
@@ -108,17 +114,37 @@ contract WOTSPlusCodec__decodeKeyManagement is WOTSPlusCodecTest {
         codec.exposed_decodeKeyManagement(payload);
     }
 
-    function test_exposed_decodeKeyManagement_unalignedLength() public view {
+    function test_exposed_decodeKeyManagement_revertsWhen_unalignedLength()
+        public
+    {
         // 2336 bytes: 2304 baseline + 32 trailing bytes (not a full 64-byte key).
-        // Integer division floors trailing-key length to 0.
+        // Pre-fix: integer division silently floored trailing-key length to 0.
+        // Post-fix: alignment is contractually enforced.
         bytes memory payload = new bytes(2336);
-        (
-            ,
-            ,
-            ,
-            ,
-            WOTSPlus.WinternitzAddress[] memory keys
-        ) = codec.exposed_decodeKeyManagement(payload);
-        assertEq(keys.length, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2304,
+                2336
+            )
+        );
+        codec.exposed_decodeKeyManagement(payload);
+    }
+
+    // Direct check on the bug the strict length check fixes: a payload short
+    // by even one byte used to make `keys.length := div(sub(2303, 2304), 64)`
+    // wrap to ~2^250 in Yul, turning any keys-iterating caller into a gas bomb.
+    function test_exposed_decodeKeyManagement_revertsWhen_oneByteShort_blocksUnderflow()
+        public
+    {
+        bytes memory payload = new bytes(2303);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2304,
+                2303
+            )
+        );
+        codec.exposed_decodeKeyManagement(payload);
     }
 }

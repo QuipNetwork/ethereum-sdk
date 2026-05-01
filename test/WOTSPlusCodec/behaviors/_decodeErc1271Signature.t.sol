@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
+import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeErc1271Signature is WOTSPlusCodecTest {
@@ -61,7 +62,26 @@ contract WOTSPlusCodec__decodeErc1271Signature is WOTSPlusCodecTest {
     function test_exposed_decodeErc1271Signature_revertsWhen_truncatedPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                2273,
+                2200
+            )
+        );
         codec.exposed_decodeErc1271Signature(_filledBytes(2200));
+    }
+
+    function test_exposed_decodeErc1271Signature_revertsWhen_extraBytes()
+        public
+    {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                2273,
+                2274
+            )
+        );
+        codec.exposed_decodeErc1271Signature(_filledBytes(2274));
     }
 }

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
+import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 
 contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
     function test_exposed_decodeUpgradeMigration_decodesTrue() public view {
@@ -38,21 +39,39 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
     function test_exposed_decodeUpgradeMigration_revertsWhen_emptyPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                5569,
+                0
+            )
+        );
         codec.exposed_decodeUpgradeMigration("");
     }
 
     function test_exposed_decodeUpgradeMigration_revertsWhen_shortPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                5569,
+                4480
+            )
+        );
         codec.exposed_decodeUpgradeMigration(_filledBytes(4480));
     }
 
     function test_exposed_decodeUpgradeMigration_revertsWhen_truncatedMigratorPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                5569,
+                5000
+            )
+        );
         codec.exposed_decodeUpgradeMigration(_filledBytes(5000));
     }
 
@@ -67,12 +86,17 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         assertEq(mp.length, 1088);
     }
 
-    function test_exposed_decodeUpgradeMigration_extraBytes_succeeds()
+    function test_exposed_decodeUpgradeMigration_revertsWhen_extraBytes()
         public
-        view
     {
         bytes memory payload = _filledBytes(6000);
-        (, bytes memory mp) = codec.exposed_decodeUpgradeMigration(payload);
-        assertEq(mp.length, 1088);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                5569,
+                6000
+            )
+        );
+        codec.exposed_decodeUpgradeMigration(payload);
     }
 }

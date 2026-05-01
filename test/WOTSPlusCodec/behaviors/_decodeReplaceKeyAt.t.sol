@@ -97,14 +97,37 @@ contract WOTSPlusCodec__decodeReplaceKeyAt is WOTSPlusCodecTest {
     }
 
     function test_exposed_decodeReplaceKeyAt_revertsWhen_emptyPayload() public {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2400,
+                0
+            )
+        );
         codec.exposed_decodeReplaceKeyAt("");
     }
 
     function test_exposed_decodeReplaceKeyAt_revertsWhen_truncatedPayload()
         public
     {
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2400,
+                2000
+            )
+        );
         codec.exposed_decodeReplaceKeyAt(_filledBytes(2000));
+    }
+
+    function test_exposed_decodeReplaceKeyAt_revertsWhen_extraBytes() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2400,
+                2401
+            )
+        );
+        codec.exposed_decodeReplaceKeyAt(_filledBytes(2401));
     }
 }

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
+import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeExecute is WOTSPlusCodecTest {
@@ -49,7 +50,13 @@ contract WOTSPlusCodec__decodeExecute is WOTSPlusCodecTest {
 
     function test_exposed_decodeExecute_revertsWhen_shortPayload() public {
         bytes memory payload = _filledBytes(2300);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                2336,
+                2300
+            )
+        );
         codec.exposed_decodeExecute(payload);
     }
 
