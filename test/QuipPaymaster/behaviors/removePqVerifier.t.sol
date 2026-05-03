@@ -7,6 +7,13 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 
 contract QuipPaymaster_removePqVerifier is QuipPaymasterTest {
+    /// @dev ERC-7201 namespace slot for `QuipPaymasterStorage.Layout`. Mirrors
+    ///      the constant in the storage library so the half-zero corruption
+    ///      tests below can derive `verifiers[wallet]`'s storage location
+    ///      without touching contract code.
+    bytes32 private constant _PAYMASTER_STORAGE_SLOT =
+        0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00;
+
     function test_removePqVerifier_deletesVerifierKey() public {
         vm.prank(ADMIN);
         paymaster.removePqVerifier(WALLET);
@@ -81,5 +88,42 @@ contract QuipPaymaster_removePqVerifier is QuipPaymasterTest {
         vm.prank(ADMIN);
         vm.expectRevert(IQuipPaymaster.VerifierKeyInUse.selector);
         paymaster.setPqVerifier(WALLET, verifierPubkey);
+    }
+
+    /// @dev Half-zero corruption regression: `setPqVerifier` enforces "both
+    ///      fields non-zero" so any registered entry is fully populated. If
+    ///      storage ever ends up half-zero (publicSeed cleared, publicKeyHash
+    ///      retained) — e.g. from a malformed upgrade, slot collision, or
+    ///      unexpected delegatecall — `removePqVerifier` MUST surface the
+    ///      corruption as `PqVerifierNotRegistered` rather than silently
+    ///      delete. Forces the corruption via `vm.store` because the path
+    ///      isn't naturally reachable through public APIs.
+    function test_removePqVerifier_revertsWhen_storageHalfZero_seedCleared()
+        public
+    {
+        bytes32 root = keccak256(
+            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
+        );
+        // root + 0 = publicSeed; clearing it leaves publicKeyHash populated.
+        vm.store(address(paymaster), root, bytes32(0));
+
+        vm.prank(ADMIN);
+        vm.expectRevert(IQuipPaymaster.PqVerifierNotRegistered.selector);
+        paymaster.removePqVerifier(WALLET);
+    }
+
+    function test_removePqVerifier_revertsWhen_storageHalfZero_hashCleared()
+        public
+    {
+        bytes32 root = keccak256(
+            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
+        );
+        // root + 1 = publicKeyHash; clearing it leaves publicSeed populated.
+        bytes32 hashSlot = bytes32(uint256(root) + 1);
+        vm.store(address(paymaster), hashSlot, bytes32(0));
+
+        vm.prank(ADMIN);
+        vm.expectRevert(IQuipPaymaster.PqVerifierNotRegistered.selector);
+        paymaster.removePqVerifier(WALLET);
     }
 }

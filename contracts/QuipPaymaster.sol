@@ -211,8 +211,9 @@ contract QuipPaymaster is
     function removePqVerifier(address wallet) external onlyOwner {
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress storage existing = $.verifiers[wallet];
+   
         if (
-            existing.publicSeed == bytes32(0) &&
+            existing.publicSeed == bytes32(0) ||
             existing.publicKeyHash == bytes32(0)
         ) revert PqVerifierNotRegistered();
 
@@ -299,9 +300,9 @@ contract QuipPaymaster is
             .layout()
             .verifiers[sender];
 
-        // Reject if no verifier set for this wallet.
+
         if (
-            currentVerifier.publicSeed == bytes32(0) &&
+            currentVerifier.publicSeed == bytes32(0) ||
             currentVerifier.publicKeyHash == bytes32(0)
         ) {
             emit PaymasterValidationRejected(

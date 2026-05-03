@@ -13,6 +13,11 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     bytes32 private constant _PAYMASTER_APPROVE_TAG =
         keccak256("quip.digest.paymasterApprove");
 
+    /// @dev ERC-7201 namespace slot for `QuipPaymasterStorage.Layout`. Used
+    ///      by the half-zero corruption regression tests below.
+    bytes32 private constant _PAYMASTER_STORAGE_SLOT =
+        0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00;
+
     function test_exposed_verifyAndRotate_returnsTrueAndRotates() public {
         (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
             "verifier-seed-1"
@@ -633,6 +638,91 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         vm.prank(ADMIN);
         vm.expectRevert(IQuipPaymaster.VerifierKeyInUse.selector);
         harness.setPqVerifier(WALLET, verifierPubkey);
+    }
+
+    /// @dev Half-zero corruption regression for the validation path. If
+    ///      `verifiers[wallet]` is half-zero (one field cleared, one set) —
+    ///      e.g. from a malformed upgrade, slot collision, or unexpected
+    ///      delegatecall — `_verifyAndRotate` MUST short-circuit at the
+    ///      "no verifier registered" check rather than progress to WOTS+
+    ///      verify against garbage. The `||` check (mirroring
+    ///      `setPqVerifier`'s zero invariant) is what makes this happen;
+    ///      `&&` would slip through and continue to digest construction.
+    function test_exposed_verifyAndRotate_returnsFalseWhen_storageHalfZero_seedCleared()
+        public
+    {
+        bytes32 root = keccak256(
+            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
+        );
+        vm.store(address(harness), root, bytes32(0));
+
+        // Build any well-formed paymasterData (digest/sig don't matter — we
+        // expect rejection BEFORE WOTS+ verify).
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "half-zero-seed-cleared-next"
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            verifierPrivateKey,
+            bytes32(0)
+        );
+        bytes memory paymasterData = abi.encodePacked(
+            uint48(block.timestamp + 1 hours),
+            uint48(0),
+            nextPubkey.publicSeed,
+            nextPubkey.publicKeyHash,
+            sig.elements
+        );
+
+        vm.expectEmit(address(harness));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.NoVerifierRegistered
+        );
+        bool valid = harness.exposed_verifyAndRotate(
+            WALLET,
+            0,
+            "",
+            paymasterData
+        );
+        assertFalse(valid);
+    }
+
+    function test_exposed_verifyAndRotate_returnsFalseWhen_storageHalfZero_hashCleared()
+        public
+    {
+        bytes32 root = keccak256(
+            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
+        );
+        bytes32 hashSlot = bytes32(uint256(root) + 1);
+        vm.store(address(harness), hashSlot, bytes32(0));
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "half-zero-hash-cleared-next"
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            verifierPrivateKey,
+            bytes32(0)
+        );
+        bytes memory paymasterData = abi.encodePacked(
+            uint48(block.timestamp + 1 hours),
+            uint48(0),
+            nextPubkey.publicSeed,
+            nextPubkey.publicKeyHash,
+            sig.elements
+        );
+
+        vm.expectEmit(address(harness));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.NoVerifierRegistered
+        );
+        bool valid = harness.exposed_verifyAndRotate(
+            WALLET,
+            0,
+            "",
+            paymasterData
+        );
+        assertFalse(valid);
     }
 
     /// @dev A rotation cannot re-target a previously-spent verifier. Wallet B
