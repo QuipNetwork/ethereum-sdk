@@ -80,6 +80,12 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         view
     {
         bytes memory payload = _filledBytes(5569);
+        // `_filledBytes` writes 0xAB everywhere, including byte 4480 — but
+        // the strict shouldMigrate check rejects anything outside {0x00,
+        // 0x01}. Overwrite byte 4480 to a valid sentinel so this test
+        // exercises the length-only branch without crossing the
+        // byte-range check.
+        payload[4480] = 0x01;
         (bool shouldMigrate, bytes memory mp) = codec
             .exposed_decodeUpgradeMigration(payload);
         assertTrue(shouldMigrate);
@@ -114,5 +120,71 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
             )
         );
         codec.exposed_decodeUpgradeMigration(_filledBytes(len));
+    }
+
+    /// @dev The shouldMigrate byte is contractually 0x00 or 0x01. 0x02
+    ///      onward must revert with `MalformedPayload(1, badByte)` — without
+    ///      this strict check, a malformed off-chain encoder could smuggle
+    ///      shouldMigrate=true via any non-zero byte (the prior
+    ///      `uint8(...) != 0` semantics).
+    function test_exposed_decodeUpgradeMigration_revertsWhen_shouldMigrateByte_0x02()
+        public
+    {
+        bytes memory payload = _filledBytes(5569);
+        payload[4480] = 0x02;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                1,
+                2
+            )
+        );
+        codec.exposed_decodeUpgradeMigration(payload);
+    }
+
+    function test_exposed_decodeUpgradeMigration_revertsWhen_shouldMigrateByte_0xff()
+        public
+    {
+        bytes memory payload = _filledBytes(5569);
+        payload[4480] = 0xff;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                1,
+                255
+            )
+        );
+        codec.exposed_decodeUpgradeMigration(payload);
+    }
+
+    /// @dev Positive sentinel test: 0x00 decodes to shouldMigrate=false,
+    ///      complementing `_decodesFalse` above (which uses the encoder
+    ///      path) by going through the raw-byte branch.
+    function test_exposed_decodeUpgradeMigration_shouldMigrateByte_0x00_decodesFalse()
+        public
+        view
+    {
+        bytes memory payload = _filledBytes(5569);
+        payload[4480] = 0x00;
+        (bool shouldMigrate, ) = codec.exposed_decodeUpgradeMigration(payload);
+        assertFalse(shouldMigrate);
+    }
+
+    /// @dev Property: only 0x00 and 0x01 are accepted at byte 4480; every
+    ///      other value reverts with `MalformedPayload(1, badByte)`.
+    function testFuzz_exposed_decodeUpgradeMigration_revertsWhen_shouldMigrateByteOutOfRange(
+        uint8 badByte
+    ) public {
+        vm.assume(badByte > 1);
+        bytes memory payload = _filledBytes(5569);
+        payload[4480] = bytes1(badByte);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                1,
+                uint256(badByte)
+            )
+        );
+        codec.exposed_decodeUpgradeMigration(payload);
     }
 }

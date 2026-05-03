@@ -400,7 +400,14 @@ library WOTSPlusCodec {
         // Solidity indexing on the body below would already bounds-check, but
         // raise an explicit MalformedPayload for codec-wide uniformity.
         if (data.length != 5569) revert MalformedPayload(5569, data.length);
-        shouldMigrate = uint8(data[4480]) != 0;
+        // The on-wire contract is "0x00 = false, 0x01 = true" — strictly
+        // reject 0x02..0xff so an off-chain encoder bug can't smuggle
+        // shouldMigrate=true via an undefined byte value. `MalformedPayload`
+        // is reused here with (1, badByte) interpreted as "expected ≤ 1, got
+        // badByte" to keep the codec-wide error API uniform.
+        uint8 b = uint8(data[4480]);
+        if (b > 1) revert MalformedPayload(1, b);
+        shouldMigrate = b == 1;
         migratorPayload = data[4481:5569];
     }
 
