@@ -374,6 +374,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         );
 
         Storage.Layout storage $ = Storage.layout();
+        // SECURITY — Checks-Effects-Interactions (CEI). DO NOT BREAK CEI HERE.
+        // This rotation IS the Effect that prevents signed-payload REPLAY
+        // ATTACKS: `_verifyAndRotate` removes `currentKey` from
+        // `transactionKeys`, so a re-entrant call (e.g., from a malicious
+        // vetted impl during the delegatecall below) replaying the same
+        // upgrade payload reverts with `UnknownKey`. Every delegatecall and
+        // `super.upgradeToAndCall` below is an Interaction. Reordering any of
+        // them before this rotation re-opens the replay surface.
         _verifyAndRotate(
             $.transactionKeys,
             currentKey,
@@ -387,6 +395,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         // the guarded slots pre-call and assert they're unchanged post-call so a rogue
         // or buggy vetted impl cannot smuggle SSTOREs to owner/impl/factory/disaster/
         // ownership slots through the verify path.
+        // SECURITY (CEI): Interactions below MUST remain after
+        // `_verifyAndRotate` above to preserve replay-attack protection.
         bytes32[7] memory verifyGuard = _snapshotGuardedSlots();
         LibCall.delegateCallContract(
             newImplementation,
@@ -445,6 +455,18 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         );
 
         Storage.Layout storage $ = Storage.layout();
+        // SECURITY — Checks-Effects-Interactions (CEI). DO NOT BREAK CEI HERE.
+        // This rotation IS the Effect that prevents signed-payload REPLAY
+        // ATTACKS: `_verifyAndRotate` removes `currentKey` from
+        // `transactionKeys`, so if a callee below re-enters `execute(bytes)`
+        // with the same signed payload, the next `_verifyAndRotate` reverts
+        // with `UnknownKey` because `currentKey` is no longer in the keyset.
+        // Every line below this point is an Interaction (fee transfer to
+        // factory, user-directed external call to `target`). A future refactor
+        // that moves any Interaction before this rotation — or moves the
+        // rotation after an Interaction — breaks CEI and re-opens the replay
+        // surface, allowing an attacker to drain the wallet by re-executing
+        // the same signed payload through a malicious target.
         _verifyAndRotate(
             $.transactionKeys,
             currentKey,
@@ -453,6 +475,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
+        // SECURITY (CEI): Interaction. MUST remain after `_verifyAndRotate`
+        // above to preserve replay-attack protection.
         _collectExecuteFee();
 
         // Empty execute (value == 0 && data.length == 0): the signature was
@@ -467,8 +491,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         bytes memory result;
         if (data.length == 0) {
+            // SECURITY (CEI): Interaction. MUST remain after `_verifyAndRotate`
+            // above to preserve replay-attack protection.
             SafeTransferLib.safeTransferETH(target, value);
         } else {
+            // SECURITY (CEI): Interaction. MUST remain after `_verifyAndRotate`
+            // above to preserve replay-attack protection.
             result = LibCall.callContract(target, value, data);
         }
 
@@ -506,6 +534,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             amount
         );
 
+        // SECURITY — Checks-Effects-Interactions (CEI). DO NOT BREAK CEI HERE.
+        // This rotation IS the Effect that prevents signed-payload REPLAY
+        // ATTACKS: `_verifyAndRotate` removes `currentKey` from
+        // `transactionKeys`, so a re-entrant call replaying the same withdraw
+        // payload reverts with `UnknownKey`. The `ERC4337.withdrawDepositTo`
+        // call below is an Interaction (sends ETH from the EntryPoint deposit
+        // to `to`); reordering it before this rotation re-opens the replay
+        // surface and allows draining the deposit by re-execution.
         _verifyAndRotate(
             Storage.layout().transactionKeys,
             currentKey,
@@ -514,6 +550,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             digest
         );
 
+        // SECURITY (CEI): Interaction. MUST remain after `_verifyAndRotate`
+        // above to preserve replay-attack protection.
         ERC4337.withdrawDepositTo(to, amount);
     }
 
@@ -771,6 +809,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         // Enforce + verify + rotate the recovery key in place. Remove-then-add keeps
         // the recovery-key count stable at MAX_KEYS so a recoveryUpgrade does not
         // erode the defense-in-depth pool.
+        // SECURITY — Checks-Effects-Interactions (CEI). DO NOT BREAK CEI HERE.
+        // This rotation IS the Effect that prevents signed-payload REPLAY
+        // ATTACKS: `_verifyAndRotate` removes `currentRecoveryKey` from
+        // `recoveryKeys`, so a re-entrant call (e.g., from a malicious vetted
+        // impl during the delegatecall below) replaying the same recovery
+        // upgrade payload reverts with `UnknownKey`. Every delegatecall and
+        // `super.upgradeToAndCall` below is an Interaction. Reordering any of
+        // them before this rotation re-opens the replay surface.
         _verifyAndRotate(
             Storage.layout().recoveryKeys,
             currentRecoveryKey,
@@ -782,6 +828,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         // Delegatecall to vetted implementation (defense-in-depth). Guarded: snapshot
         // the 7 PQ-sensitive slots pre-call and assert they're unchanged post-call so
         // a rogue or buggy vetted impl cannot smuggle SSTOREs through the verify path.
+        // SECURITY (CEI): Interactions below MUST remain after
+        // `_verifyAndRotate` above to preserve replay-attack protection.
         bytes32[7] memory verifyGuard = _snapshotGuardedSlots();
         LibCall.delegateCallContract(
             newImplementation,

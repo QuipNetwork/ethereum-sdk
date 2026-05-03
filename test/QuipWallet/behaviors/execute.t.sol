@@ -12,6 +12,40 @@ import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 
+/// @dev Contract-owner test harness for reentrancy testing of `execute(bytes)`.
+///      `execute(bytes)` is `onlyOwner`, so a malicious target's re-entry can
+///      only reach `_verifyAndRotate` if the caller-of-the-re-entry IS the
+///      wallet's owner. We sidestep the EOA-owner case by making this contract
+///      itself the owner: `fire()` is the outer call (msg.sender to wallet =
+///      this contract = owner ✓), and `attack()` is invoked by the wallet
+///      mid-execute and re-enters `wallet.execute(savedPayload)` (msg.sender
+///      to wallet on the re-entry = this contract = owner ✓). The rotation
+///      that committed before the wallet's outer external call is what
+///      prevents the re-entry from succeeding.
+contract ReentrantReplayer {
+    address public wallet;
+    bytes public storedPayload;
+
+    function setup(address _wallet, bytes calldata _payload) external {
+        wallet = _wallet;
+        storedPayload = _payload;
+    }
+
+    function fire() external payable {
+        IQuipWallet(wallet).execute(storedPayload);
+    }
+
+    /// @dev Called by the wallet during the outer `execute(P)`. Re-enters
+    ///      `execute(P)` with the same payload — the rotation invariant
+    ///      should make the inner `_verifyAndRotate` revert with `UnknownKey`,
+    ///      which bubbles up and reverts the outer call.
+    function attack() external payable {
+        IQuipWallet(wallet).execute(storedPayload);
+    }
+
+    receive() external payable {}
+}
+
 contract QuipWallet_execute is QuipWalletTest {
     DummyContract public dummy;
 
@@ -107,6 +141,144 @@ contract QuipWallet_execute is QuipWalletTest {
         }
         assertTrue(foundRotated, "KeyRotated event not emitted");
         assertTrue(foundSucceeded, "ExecutionSucceeded event not emitted");
+    }
+
+    // CEI / reentrancy regression: a malicious target that the wallet calls
+    // into during `execute(P)` cannot succeed in re-entering `execute(P)`
+    // with the same signed payload. The mechanism is the rotation:
+    // `_verifyAndRotate` removes `currentKey` from `transactionKeys` BEFORE
+    // the external call runs, so the re-entered inner `_verifyAndRotate`
+    // reverts at `_enforceContained` with `UnknownKey`. The inner revert
+    // bubbles through `LibCall.callContract` and reverts the outer call —
+    // the wallet's state is fully rolled back and no funds move.
+    //
+    // This test exercises the actual reentrancy code path the SECURITY
+    // comments warn about. A future refactor that moves any of the
+    // Interactions before the rotation would let the inner call's
+    // `_verifyAndRotate` find `currentKey` still present and the re-entry
+    // would succeed — this test would fail.
+    //
+    // Setup uses a contract-owner pattern so the inner re-entered call's
+    // `onlyOwner` gate passes; an EOA owner cannot be impersonated by a
+    // malicious target, so this is the only way to exercise the rotation
+    // invariant in isolation.
+    function test_execute_revertsWhen_targetReentersWithSamePayload() public {
+        ReentrantReplayer replayer = new ReentrantReplayer();
+        vm.deal(address(replayer), 1 ether);
+
+        // Deploy a fresh wallet whose owner is the malicious replayer.
+        (
+            address rWalletAddr,
+            WOTSPlus.WinternitzAddress memory rPubkey,
+            bytes32 rPrivKey,
+
+        ) = _createWallet(
+                address(replayer),
+                keccak256("reentrant"),
+                INITIAL_DEPOSIT
+            );
+        QuipWallet rWallet = QuipWallet(payable(rWalletAddr));
+
+        // Build a signed payload P targeting the replayer with data =
+        // attack-selector. When the wallet executes P it will call
+        // replayer.attack(), which re-enters wallet.execute(P).
+        bytes memory callData = abi.encodeWithSelector(
+            ReentrantReplayer.attack.selector
+        );
+        (
+            WOTSPlus.WinternitzAddress memory rNextKey,
+
+        ) = _generateKeyPair("reentrant-next");
+        bytes32 msgHash = _buildExecuteMessageHash(
+            rWalletAddr,
+            rPubkey,
+            rNextKey,
+            address(replayer),
+            0,
+            callData,
+            0
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
+        bytes memory payload = Codec.encodeExecute(
+            rPubkey,
+            rNextKey,
+            sig,
+            address(replayer),
+            0,
+            callData
+        );
+
+        replayer.setup(rWalletAddr, payload);
+
+        // Outer flow:
+        //   replayer.fire() -> wallet.execute(P)
+        //     wallet rotates rPubkey -> rNextKey (Effect)
+        //     wallet calls replayer.attack() (Interaction)
+        //       replayer.attack() calls wallet.execute(P) (re-entry)
+        //         wallet's _verifyAndRotate fails at _enforceContained
+        //         because rPubkey was just rotated out -> UnknownKey
+        //       inner revert bubbles up
+        //     replayer.attack() reverts
+        //   LibCall.callContract bubbles the inner revert
+        //   outer wallet.execute reverts with UnknownKey
+        //   replayer.fire() reverts
+        //   ALL state rolls back
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
+        replayer.fire();
+
+        // State must be unchanged: rPubkey still present, rNextKey not.
+        assertTrue(rWallet.isKey(Codec.KeyType.Transaction, rPubkey));
+        assertFalse(rWallet.isKey(Codec.KeyType.Transaction, rNextKey));
+    }
+
+    // CEI / replay-protection regression: a second `execute(P)` with the same
+    // signed payload must revert because `_verifyAndRotate` already removed
+    // `alicePubkey` from `transactionKeys` on the first call. Pins the
+    // rotate-before-external-call invariant called out in the SECURITY
+    // comment block in `QuipWallet.execute(bytes)` — a future refactor that
+    // moves rotation after the external call would let a malicious target
+    // re-enter `execute(P)` with the same payload and drain the wallet.
+    function test_execute_revertsWhen_payloadReplayedAfterRotation() public {
+        uint256 transferAmount = 0.1 ether;
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "replay-next"
+        );
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPubkey,
+            BOB,
+            transferAmount,
+            "",
+            0
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+        bytes memory payload = Codec.encodeExecute(
+            alicePubkey,
+            nextPubkey,
+            sig,
+            BOB,
+            transferAmount,
+            ""
+        );
+
+        // First call: consumes alicePubkey, rotates to nextPubkey.
+        vm.prank(ALICE);
+        wallet.execute(payload);
+
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPubkey));
+
+        // Replay: alicePubkey is no longer in transactionKeys, so
+        // `_verifyAndRotate` reverts at `_enforceContained` with `UnknownKey`.
+        // This is the rotation invariant doing its job.
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.UnknownKey.selector);
+        wallet.execute(payload);
     }
 
     // Empty execute (value == 0 && data.length == 0): the signature is still
