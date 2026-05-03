@@ -349,4 +349,75 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         vm.expectRevert(IQuipPaymaster.InvalidEntryPoint.selector);
         paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
     }
+
+    /// @dev Wrong-length `paymasterAndData` is rejected up-front with
+    ///      `MalformedPayload` instead of a calldata-out-of-bounds panic.
+    ///      Mirrors the strict-length guarantees the WOTS+ codec enforces;
+    ///      a future change to the on-wire layout would otherwise either
+    ///      silently truncate (overlong) or panic opaquely (short).
+    function test_validatePaymasterUserOp_returnsOneWhen_paymasterAndDataTooShort()
+        public
+    {
+        // 2271 bytes — one short of the 2272 protocol length.
+        bytes memory shortData = new bytes(2271);
+        // Encode the paymaster address into the first 20 bytes so the
+        // EntryPoint-routing slice is at least syntactically valid.
+        bytes20 pmAddr = bytes20(address(paymaster));
+        for (uint256 i = 0; i < 20; i++) {
+            shortData[i] = pmAddr[i];
+        }
+        PackedUserOperation memory userOp = _mockUserOp(shortData);
+
+        vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.MalformedPayload
+        );
+        (bytes memory context, uint256 validationData) = paymaster
+            .validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
+        assertEq(context.length, 0);
+        assertEq(validationData, 1);
+    }
+
+    function test_validatePaymasterUserOp_returnsOneWhen_paymasterAndDataTooLong()
+        public
+    {
+        uint48 validUntil = uint48(block.timestamp + 1 hours);
+        uint48 validAfter = uint48(block.timestamp);
+        (WOTSPlus.WinternitzAddress memory nextKey, ) = _generateKeyPair(
+            "malformed-overlong-next"
+        );
+
+        bytes memory base = _buildPaymasterAndData(
+            WALLET,
+            0,
+            "",
+            validUntil,
+            validAfter,
+            verifierPubkey,
+            verifierPrivateKey,
+            nextKey
+        );
+        // Append an extra byte — a well-formed prefix won't save it from
+        // the strict equality check.
+        bytes memory overlong = abi.encodePacked(base, hex"00");
+        PackedUserOperation memory userOp = _mockUserOp(overlong);
+
+        vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.MalformedPayload
+        );
+        (bytes memory context, uint256 validationData) = paymaster
+            .validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
+        assertEq(context.length, 0);
+        assertEq(validationData, 1);
+
+        // No rotation happened.
+        WOTSPlus.WinternitzAddress memory v = paymaster.getPqVerifier(WALLET);
+        assertEq(v.publicSeed, verifierPubkey.publicSeed);
+        assertEq(v.publicKeyHash, verifierPubkey.publicKeyHash);
+    }
 }

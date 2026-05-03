@@ -23,6 +23,11 @@ library QuipPaymasterStorage {
     struct Layout {
         /// @dev Per-wallet WOTS+ verifier keys for gas sponsorship authorization.
         mapping(address wallet => WOTSPlus.WinternitzAddress verifier) verifiers;
+        /// @dev Monotonic global occupancy index keyed by
+        ///      `EfficientHashLib.hash(seed, keyHash)`. Marks a verifier key as
+        ///      ever-registered across the whole paymaster — once `true`, the
+        ///      flag is never cleared.
+        mapping(bytes32 keyHash => bool used) verifierKeyUsed;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.paymaster")) - 1)) & ~bytes32(uint256(0xff))

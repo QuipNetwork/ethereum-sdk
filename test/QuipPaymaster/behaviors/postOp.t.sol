@@ -69,4 +69,35 @@ contract QuipPaymaster_postOp is QuipPaymasterTest {
             10 gwei
         );
     }
+
+    /// @dev `postOp` decodes the sponsored wallet from `context`; the encoding
+    ///      `abi.encode(address)` always produces 32 bytes. Any shorter context
+    ///      must abort with an abi-decode revert rather than be silently
+    ///      processed against a zero address. Locks down the invariant that
+    ///      validatePaymasterUserOp is the sole authoritative source of
+    ///      context bytes (always 32) and prevents a future regression where
+    ///      a different code path emits a shorter context.
+    function test_postOp_revertsWhen_contextTooShort() public {
+        bytes memory shortCtx = new bytes(31); // one byte short
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert();
+        paymaster.postOp(
+            IPaymaster.PostOpMode.opSucceeded,
+            shortCtx,
+            21_000,
+            10 gwei
+        );
+    }
+
+    function test_postOp_revertsWhen_contextEmpty() public {
+        bytes memory emptyCtx = "";
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert();
+        paymaster.postOp(
+            IPaymaster.PostOpMode.opSucceeded,
+            emptyCtx,
+            21_000,
+            10 gwei
+        );
+    }
 }

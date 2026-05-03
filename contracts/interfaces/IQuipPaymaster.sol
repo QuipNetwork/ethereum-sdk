@@ -45,6 +45,12 @@ interface IQuipPaymaster is IPaymaster {
     /// @notice Thrown when attempting to remove a PQ verifier for a wallet that has none.
     error PqVerifierNotRegistered();
 
+    /// @notice Thrown by `setPqVerifier` when the supplied verifier is already
+    ///         registered as the verifier for some other wallet. Cross-wallet
+    ///         reuse would let a single revealed WOTS+ signature burn both
+    ///         wallets' verifiers, so installation is forbidden.
+    error VerifierKeyInUse();
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                           EVENTS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -84,9 +90,11 @@ interface IQuipPaymaster is IPaymaster {
     ///      attempt), and "bad sig" (attack) is operationally critical for a
     ///      paymaster operator triaging failed sponsored UserOps.
     enum PaymasterValidationFailure {
+        MalformedPayload,
         ZeroNextVerifier,
         NoVerifierRegistered,
         NextEqualsCurrent,
+        NextVerifierKeyInUse,
         InvalidSignature
     }
 

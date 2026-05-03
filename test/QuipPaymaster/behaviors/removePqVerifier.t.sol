@@ -51,4 +51,35 @@ contract QuipPaymaster_removePqVerifier is QuipPaymasterTest {
         vm.expectRevert(IQuipPaymaster.PqVerifierNotRegistered.selector);
         paymaster.removePqVerifier(wallet2);
     }
+
+    /// @dev Removing a wallet's verifier MUST NOT release the global occupancy
+    ///      hash. WOTS+ is one-time-use: a registered verifier may already
+    ///      have signed and revealed its key chain on-chain, and the index
+    ///      cannot distinguish "registered but unused" from "registered and
+    ///      used" — so the conservative invariant is that any key ever
+    ///      registered stays permanently locked, even after retirement.
+    function test_removePqVerifier_keepsKeyLocked() public {
+        // WALLET initially holds `verifierPubkey` (from base setUp).
+        vm.prank(ADMIN);
+        paymaster.removePqVerifier(WALLET);
+
+        // The verifier is no longer bound to WALLET — `getPqVerifier(WALLET)`
+        // returns zero — but the hash is still locked in the index.
+        address wallet2 = makeAddr("wallet2-reuse-after-remove");
+        vm.prank(ADMIN);
+        vm.expectRevert(IQuipPaymaster.VerifierKeyInUse.selector);
+        paymaster.setPqVerifier(wallet2, verifierPubkey);
+    }
+
+    /// @dev Even WALLET itself cannot re-adopt its own removed verifier — the
+    ///      occupancy index is fully monotonic, with no exception for
+    ///      "the wallet that originally held it." Once removed, gone for good.
+    function test_removePqVerifier_cannotReAdoptForOriginalWallet() public {
+        vm.prank(ADMIN);
+        paymaster.removePqVerifier(WALLET);
+
+        vm.prank(ADMIN);
+        vm.expectRevert(IQuipPaymaster.VerifierKeyInUse.selector);
+        paymaster.setPqVerifier(WALLET, verifierPubkey);
+    }
 }

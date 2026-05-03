@@ -48,6 +48,11 @@ contract QuipPaymaster is
     ///      [0:20) paymaster address, [20:36) verificationGasLimit, [36:52) postOpGasLimit.
     uint256 private constant _PAYMASTER_DATA_OFFSET = 52;
 
+    /// @dev Total expected `userOp.paymasterAndData` length in bytes:
+    ///      52-byte EIP-mandated header + 6 (validUntil) + 6 (validAfter)
+    ///      + 64 (next verifier) + 2144 (WOTS+ signature: 67 × 32) = 2272.
+    uint256 private constant _PAYMASTER_AND_DATA_LEN = 2272;
+
     /// @dev Domain tag for paymaster approval digests (WOTS+ domain-tagged, not EIP-712).
     bytes32 private constant _PAYMASTER_APPROVE_TAG =
         keccak256("quip.digest.paymasterApprove");
@@ -90,6 +95,19 @@ contract QuipPaymaster is
         uint256 /* maxCost */
     ) external override returns (bytes memory context, uint256 validationData) {
         if (msg.sender != ENTRY_POINT) revert InvalidEntryPoint();
+
+        // Reject any paymasterAndData whose length doesn't match the fixed
+        // protocol layout. Out-of-bounds calldata reads inside `_verifyAndRotate`
+        // would otherwise revert with an opaque panic; surplus bytes would be
+        // silently ignored. Returning validationData=1 keeps the failure path
+        // consistent with every other rejection branch.
+        if (userOp.paymasterAndData.length != _PAYMASTER_AND_DATA_LEN) {
+            emit PaymasterValidationRejected(
+                userOp.sender,
+                PaymasterValidationFailure.MalformedPayload
+            );
+            return ("", 1);
+        }
 
         // Decode custom paymaster data from paymasterAndData[52:].
         // [0:6)     validUntil (uint48)
@@ -155,7 +173,37 @@ contract QuipPaymaster is
         ) revert ZeroValuePqVerifierKey();
 
         Storage.Layout storage $ = Storage.layout();
+
+        // Re-binding the same key on the same wallet is a no-op (the key was
+        // already registered for this wallet on a prior call). Allow it for
+        // ergonomics — but skip the in-use check, which would otherwise fire
+        // on this wallet's own existing entry in the monotonic index.
+        WOTSPlus.WinternitzAddress storage existing = $.verifiers[wallet];
+        if (
+            existing.publicSeed == verifier.publicSeed &&
+            existing.publicKeyHash == verifier.publicKeyHash
+        ) {
+            emit PqVerifierSet(wallet, verifier);
+            return;
+        }
+
+        // The occupancy index is MONOTONIC: once a verifier hash is set, it
+        // is never cleared — not on overwrite, not on removal, not on
+        // rotation. WOTS+ is a one-time-signature scheme: a verifier that
+        // ever produced a signature has had its key chain revealed on-chain,
+        // so re-binding it (here or for any other wallet) would let an
+        // observer forge paymaster sigs against the rebind target. Even
+        // never-used registered keys stay locked because the on-chain index
+        // can't tell "registered but never signed" from "registered and
+        // signed" — the conservative invariant is "once seen, never reused."
+        bytes32 newHash = _verifierHash(
+            verifier.publicSeed,
+            verifier.publicKeyHash
+        );
+        if ($.verifierKeyUsed[newHash]) revert VerifierKeyInUse();
+
         $.verifiers[wallet] = verifier;
+        $.verifierKeyUsed[newHash] = true;
         emit PqVerifierSet(wallet, verifier);
     }
 
@@ -168,6 +216,11 @@ contract QuipPaymaster is
             existing.publicKeyHash == bytes32(0)
         ) revert PqVerifierNotRegistered();
 
+        // Deliberately do NOT clear `verifierKeyUsed[hash(existing)]`. The
+        // occupancy index is monotonic — see `setPqVerifier` for the full
+        // rationale. Removal only drops the wallet→verifier binding so the
+        // wallet can no longer sponsor; the key itself stays permanently
+        // locked from re-registration.
         delete $.verifiers[wallet];
         emit PqVerifierRemoved(wallet);
     }
@@ -270,6 +323,28 @@ contract QuipPaymaster is
             return false;
         }
 
+        // Reject if `nextVerifier` is already the verifier for ANY wallet.
+        // Cross-wallet reuse would let a single revealed WOTS+ signature
+        // burn both wallets' verifiers — checked here so a sponsoring backend
+        // bug or compromised signer can't quietly entangle two wallets via
+        // the rotation path. Cheaper than WOTS+ verify, so it runs first.
+        // The hash is recomputed at the end of the function rather than held
+        // across the WOTS+ verify to keep the stack within solc's bounds.
+        if (
+            Storage.layout().verifierKeyUsed[
+                _verifierHash(
+                    nextVerifier.publicSeed,
+                    nextVerifier.publicKeyHash
+                )
+            ]
+        ) {
+            emit PaymasterValidationRejected(
+                sender,
+                PaymasterValidationFailure.NextVerifierKeyInUse
+            );
+            return false;
+        }
+
         // Build domain-tagged digest from constituent UserOp fields.
         // Using an intermediate opCommitment avoids exceeding EfficientHashLib's 8-arg limit.
         bytes32 opCommitment = EfficientHashLib.hash(
@@ -306,10 +381,27 @@ contract QuipPaymaster is
         // Emit before rotating so currentVerifier fields are still the old values.
         emit PqVerifierRotated(sender, currentVerifier, nextVerifier);
 
-        // Rotate verifier.
+        // Rotate verifier and spend the new hash in the occupancy index. The
+        // `currentVerifier` hash is deliberately NOT cleared: it just produced
+        // a WOTS+ signature on-chain, which reveals key-chain material that
+        // would let an observer forge sigs against any future re-binding of
+        // the same public key. The index is monotonic — see `setPqVerifier`.
         Storage.layout().verifiers[sender] = nextVerifier;
+        Storage.layout().verifierKeyUsed[
+            _verifierHash(nextVerifier.publicSeed, nextVerifier.publicKeyHash)
+        ] = true;
 
         return true;
+    }
+
+    /// @dev Hashes a WOTS+ verifier into the key used by `verifierKeyUsed`.
+    ///      Two-arg `EfficientHashLib.hash` mirrors the project's preference
+    ///      for solady hashing helpers over raw `keccak256`/inline asm.
+    function _verifierHash(
+        bytes32 publicSeed,
+        bytes32 publicKeyHash
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(publicSeed, publicKeyHash);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

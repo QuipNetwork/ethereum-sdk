@@ -328,18 +328,24 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     function test_exposed_verifyAndRotate_returnsFalseWhen_senderMismatch()
         public
     {
-        // Register a second wallet with the SAME verifier key — reaches the
-        // sig-verify branch for walletB rather than short-circuiting on "no
-        // verifier".
+        // Register a second wallet with a DIFFERENT verifier — the global
+        // `verifierKeyUsed` check forbids two wallets from sharing a verifier,
+        // so we use distinct keys. The sender-binding property is still
+        // exercised: the paymaster rebuilds the digest from sender=WALLET_B,
+        // and that digest no longer matches the signature WALLET signed.
         address WALLET_B = makeAddr("wallet-b-binding");
+        (
+            WOTSPlus.WinternitzAddress memory verifierBPubkey,
+
+        ) = _generateKeyPair("verifier-seed-b");
         vm.prank(ADMIN);
-        harness.setPqVerifier(WALLET_B, verifierPubkey);
+        harness.setPqVerifier(WALLET_B, verifierBPubkey);
 
         (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
             "sender-binding-next"
         );
 
-        // Sign for sender=WALLET...
+        // Sign for sender=WALLET using WALLET's verifier privkey...
         bytes memory paymasterData = _buildPaymasterDataForTuple(
             WALLET,
             0,
@@ -349,8 +355,9 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
             nextPubkey
         );
 
-        // ...but submit as sender=WALLET_B. The paymaster rebuilds the digest
-        // with sender=WALLET_B, which no longer matches the signed digest.
+        // ...but submit as sender=WALLET_B. Inside `_verifyAndRotate` the
+        // digest is rebuilt with (sender=WALLET_B, currentVerifier=WALLET_B's
+        // stored verifier), so the WOTS+ verify against the supplied sig fails.
         bool valid = harness.exposed_verifyAndRotate(
             WALLET_B,
             0,
@@ -366,7 +373,7 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         );
         assertEq(
             harness.getPqVerifier(WALLET_B).publicSeed,
-            verifierPubkey.publicSeed
+            verifierBPubkey.publicSeed
         );
     }
 
@@ -526,5 +533,176 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
                 );
             }
         }
+    }
+
+    /// @dev Cross-wallet collision via the rotation path: WALLET attempts to
+    ///      rotate its verifier to a key already registered for WALLET_B.
+    ///      `_verifyAndRotate` must reject before the WOTS+ verify and before
+    ///      touching state, emitting the typed `NextVerifierKeyInUse` reason.
+    ///      Locks down the runtime side of the same invariant `setPqVerifier`
+    ///      enforces at admin time.
+    function test_exposed_verifyAndRotate_returnsFalseWhen_nextKeyInUseElsewhere()
+        public
+    {
+        // Register a second wallet with its own verifier so its hash is
+        // present in the global occupancy index.
+        address WALLET_B = makeAddr("wallet-b-collision");
+        (
+            WOTSPlus.WinternitzAddress memory walletBVerifier,
+
+        ) = _generateKeyPair("verifier-seed-b-collision");
+        vm.prank(ADMIN);
+        harness.setPqVerifier(WALLET_B, walletBVerifier);
+
+        // WALLET tries to rotate its own verifier to WALLET_B's verifier.
+        bytes memory paymasterData = _buildPaymasterDataForTuple(
+            WALLET,
+            0,
+            "",
+            verifierPubkey,
+            verifierPrivateKey,
+            walletBVerifier
+        );
+
+        vm.expectEmit(address(harness));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
+        );
+        bool valid = harness.exposed_verifyAndRotate(
+            WALLET,
+            0,
+            "",
+            paymasterData
+        );
+        assertFalse(valid);
+
+        // Neither wallet's verifier rotated; index still has both entries.
+        WOTSPlus.WinternitzAddress memory storedA = harness.getPqVerifier(
+            WALLET
+        );
+        assertEq(storedA.publicSeed, verifierPubkey.publicSeed);
+        assertEq(storedA.publicKeyHash, verifierPubkey.publicKeyHash);
+        WOTSPlus.WinternitzAddress memory storedB = harness.getPqVerifier(
+            WALLET_B
+        );
+        assertEq(storedB.publicSeed, walletBVerifier.publicSeed);
+        assertEq(storedB.publicKeyHash, walletBVerifier.publicKeyHash);
+    }
+
+    /// @dev After rotation the SPENT verifier (which just produced an on-chain
+    ///      WOTS+ signature) must remain permanently locked in the occupancy
+    ///      index. WOTS+ reveals key-chain material every time it signs, so
+    ///      the public key is forever forgeable from that moment on; allowing
+    ///      it to be re-bound elsewhere would let an observer of the original
+    ///      rotation forge sigs against the rebind target. This is the most
+    ///      load-bearing test of the monotonic-index invariant.
+    function test_exposed_verifyAndRotate_spentKeyStaysLockedAfterRotation()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "spent-key-locked-next"
+        );
+
+        bytes memory paymasterData = _buildPaymasterDataForTuple(
+            WALLET,
+            0,
+            "",
+            verifierPubkey,
+            verifierPrivateKey,
+            nextPubkey
+        );
+
+        bool valid = harness.exposed_verifyAndRotate(
+            WALLET,
+            0,
+            "",
+            paymasterData
+        );
+        assertTrue(valid);
+
+        // The original `verifierPubkey` JUST signed the rotation digest — its
+        // WOTS+ chain is revealed on-chain. Re-binding it to ANY wallet
+        // (including the original) must revert.
+        address wallet2 = makeAddr("wallet2-after-rotation");
+        vm.prank(ADMIN);
+        vm.expectRevert(IQuipPaymaster.VerifierKeyInUse.selector);
+        harness.setPqVerifier(wallet2, verifierPubkey);
+
+        // Even the original WALLET cannot re-adopt the spent key.
+        vm.prank(ADMIN);
+        vm.expectRevert(IQuipPaymaster.VerifierKeyInUse.selector);
+        harness.setPqVerifier(WALLET, verifierPubkey);
+    }
+
+    /// @dev A rotation cannot re-target a previously-spent verifier. Wallet B
+    ///      rotates K_b → K_b'; later, wallet A's userOp tries to rotate to
+    ///      K_b' (which is now spent). Must reject with `NextVerifierKeyInUse`.
+    ///      Combined with the test above, this proves the post-rotation lock
+    ///      protects every entry path: admin set, wallet self-rebind, and
+    ///      cross-wallet rotation.
+    function test_exposed_verifyAndRotate_revertsWhen_nextEqualsSpentKey()
+        public
+    {
+        // Wallet B starts with its own verifier and rotates once.
+        address WALLET_B = makeAddr("wallet-b-spent");
+        (
+            WOTSPlus.WinternitzAddress memory bCurr,
+            bytes32 bCurrPriv
+        ) = _generateKeyPair("wallet-b-curr");
+        vm.prank(ADMIN);
+        harness.setPqVerifier(WALLET_B, bCurr);
+
+        (WOTSPlus.WinternitzAddress memory bNext, ) = _generateKeyPair(
+            "wallet-b-next"
+        );
+        bytes memory bData = _buildPaymasterDataForTuple(
+            WALLET_B,
+            0,
+            "",
+            bCurr,
+            bCurrPriv,
+            bNext
+        );
+        assertTrue(harness.exposed_verifyAndRotate(WALLET_B, 0, "", bData));
+
+        // Wallet A now tries to rotate to wallet B's NEW (now-current) key —
+        // also blocked, but via the standard "key registered for B" path.
+        bytes memory aDataToBNext = _buildPaymasterDataForTuple(
+            WALLET,
+            0,
+            "",
+            verifierPubkey,
+            verifierPrivateKey,
+            bNext
+        );
+        vm.expectEmit(address(harness));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
+        );
+        assertFalse(
+            harness.exposed_verifyAndRotate(WALLET, 0, "", aDataToBNext)
+        );
+
+        // Now the more pointed case: wallet A tries to rotate to wallet B's
+        // SPENT old key. This is the regression test for "spent keys must
+        // stay locked even after the wallet that spent them rotated away."
+        bytes memory aDataToBSpent = _buildPaymasterDataForTuple(
+            WALLET,
+            0,
+            "",
+            verifierPubkey,
+            verifierPrivateKey,
+            bCurr
+        );
+        vm.expectEmit(address(harness));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
+        );
+        assertFalse(
+            harness.exposed_verifyAndRotate(WALLET, 0, "", aDataToBSpent)
+        );
     }
 }
