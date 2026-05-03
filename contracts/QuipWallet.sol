@@ -35,6 +35,10 @@ import {EnumerableWinternitzAddressSet as Keyset} from "./libraries/EnumerableWi
 contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     using Keyset for Keyset.WinternitzAddressSet;
 
+    /// @dev Per-keyset capacity bound. Distinct from `Codec.RECOVERY_KEY_AMOUNT`
+    ///      (the protocol-required INITIAL recovery-set size, currently 10) and
+    ///      `Codec.TRANSACTION_KEY_INIT_AMOUNT` (initial transaction-set size,
+    ///      currently 5).
     uint256 public constant MAX_KEYS = 10;
     address payable public immutable FACTORY;
 
@@ -683,7 +687,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
             _safeAddKey($.transactionKeys, newTransactionKeys[i]);
         }
-        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+        for (uint256 i = 0; i < Codec.RECOVERY_KEY_AMOUNT; ++i) {
             _safeAddKey($.recoveryKeys, newRecoveryKeys[i]);
         }
 
@@ -1362,7 +1366,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
             _safeAddKey($.transactionKeys, newTransactionKeys[i]);
         }
-        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+        for (uint256 i = 0; i < Codec.RECOVERY_KEY_AMOUNT; ++i) {
             _safeAddKey($.recoveryKeys, newRecoveryKeys[i]);
         }
 
@@ -1404,7 +1408,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
             _safeAddKey($.transactionKeys, transactionKeys[i]);
         }
-        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+        for (uint256 i = 0; i < Codec.RECOVERY_KEY_AMOUNT; ++i) {
             _safeAddKey($.recoveryKeys, recoveryKeys[i]);
         }
         _verifyInitialState();
@@ -1423,7 +1427,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) revert UnknownOwnershipKey();
         if ($.transactionKeys.length() != Codec.TRANSACTION_KEY_INIT_AMOUNT)
             revert IncorrectTransactionKeyAmount();
-        if ($.recoveryKeys.length() != MAX_KEYS)
+        if ($.recoveryKeys.length() != Codec.RECOVERY_KEY_AMOUNT)
             revert IncorrectRecoveryKeyAmount();
     }
 
