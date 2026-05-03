@@ -130,6 +130,123 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         );
     }
 
+    /// @dev Two distinct in-keyset auth keys X and Y rotate independently:
+    ///      one execute consumes X→X', the next consumes Y→Y', both land. Locks
+    ///      down keyset independence so a future "single rotation per block",
+    ///      shared-cooldown, or transient-mutex refactor cannot silently
+    ///      degrade UX by serializing rotations across distinct keys.
+    function test_signatureReplay_distinctAuthKeysRotateIndependently()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory nextX, ) = _generateKeyPair(
+            "indep-next-X"
+        );
+        (WOTSPlus.WinternitzAddress memory nextY, ) = _generateKeyPair(
+            "indep-next-Y"
+        );
+
+        uint256 amountX = 0.05 ether;
+        uint256 amountY = 0.07 ether;
+
+        bytes memory payloadX = _signedTransferPayload(
+            aliceTxnPubkeys[0],
+            aliceTxnPrivkeys[0],
+            nextX,
+            amountX
+        );
+        bytes memory payloadY = _signedTransferPayload(
+            aliceTxnPubkeys[1],
+            aliceTxnPrivkeys[1],
+            nextY,
+            amountY
+        );
+
+        uint256 bobBalBefore = BOB.balance;
+
+        vm.prank(ALICE);
+        wallet.execute(payloadX);
+
+        vm.prank(ALICE);
+        wallet.execute(payloadY);
+
+        // Both rotations landed: X and Y are gone, their successors present.
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[1]));
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextX));
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextY));
+
+        // Both transfers landed.
+        assertEq(BOB.balance, bobBalBefore + amountX + amountY);
+    }
+
+    /// @dev Two distinct auth keys X and Y signing payloads that share the
+    ///      SAME nextKey N: the first lands and installs N; the second reverts
+    ///      with `KeyInUse` because `_safeAddKey(N)` runs `_enforceUnusedKey`
+    ///      against the fully-updated keyset. Locks down the cross-tx
+    ///      uniqueness check so a future refactor relaxing the "no key already
+    ///      present" rule (e.g. a recently-rotated grace period) cannot
+    ///      silently let one WOTS+ public key live in two slots — which would
+    ///      let a single revealed signature consume it twice.
+    function test_signatureReplay_collidingNextKeyRevertsWithKeyInUse()
+        public
+    {
+        // Same nextKey N for both payloads — owner-side mistake (or attacker
+        // post-leak) that the wallet must catch.
+        (WOTSPlus.WinternitzAddress memory nextN, ) = _generateKeyPair(
+            "colliding-next-N"
+        );
+
+        bytes memory payloadX = _signedTransferPayload(
+            aliceTxnPubkeys[0],
+            aliceTxnPrivkeys[0],
+            nextN,
+            0.05 ether
+        );
+        bytes memory payloadY = _signedTransferPayload(
+            aliceTxnPubkeys[1],
+            aliceTxnPrivkeys[1],
+            nextN,
+            0.07 ether
+        );
+
+        // First payload lands: X rotated out, N installed.
+        vm.prank(ALICE);
+        wallet.execute(payloadX);
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextN));
+
+        // Second payload reverts at `_safeAddKey(N)` → `_enforceUnusedKey` →
+        // `KeyInUse`. The earlier `_safeRemoveKey(Y)` is rolled back.
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.execute(payloadY);
+
+        // Y must still be present; the failed tx's removal was reverted.
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[1]));
+    }
+
+    /// @dev Builds a fully-signed `execute` payload that transfers `value` to
+    ///      BOB and rotates `currentKey` to `nextKey`. Extracted so the
+    ///      multi-signature replay tests stay stack-bounded.
+    function _signedTransferPayload(
+        WOTSPlus.WinternitzAddress memory currentKey,
+        bytes32 currentPriv,
+        WOTSPlus.WinternitzAddress memory nextKey,
+        uint256 value
+    ) internal view returns (bytes memory) {
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet),
+            currentKey,
+            nextKey,
+            BOB,
+            value,
+            "",
+            0
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, msgHash);
+        return Codec.encodeExecute(currentKey, nextKey, sig, BOB, value, "");
+    }
+
     /// @dev A signature for a pure transfer (empty data) cannot be used for a
     ///      contract call (non-empty data), because the dataHash differs.
     function test_signatureReplay_dataHashDifferentiatesOperations() public {
