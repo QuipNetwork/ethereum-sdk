@@ -101,6 +101,26 @@ interface IQuipPaymaster is IPaymaster {
         PaymasterValidationFailure indexed reason
     );
 
+    /// @notice Emitted from `postOp` for every UserOp the paymaster sponsored.
+    /// @dev Provides an on-chain audit trail of paymaster spend per wallet:
+    ///      who was sponsored, whether the inner UserOp succeeded or reverted,
+    ///      and how much gas the paymaster was charged. Used for off-chain
+    ///      analytics, dispute resolution, and any future per-wallet policy.
+    ///      Unlike `PaymasterValidationRejected`, this event survives in the
+    ///      final block log because `postOp` runs after the validation/exec
+    ///      phase that the EntryPoint can revert.
+    /// @param wallet The userOp.sender that was sponsored.
+    /// @param mode 0 = inner op succeeded, 1 = inner op reverted, 2 = re-entry
+    ///        after a prior postOp call reverted.
+    /// @param actualGasCost The wei amount the paymaster was charged.
+    /// @param actualUserOpFeePerGas The gas price the EntryPoint used.
+    event UserOpSponsored(
+        address indexed wallet,
+        PostOpMode indexed mode,
+        uint256 actualGasCost,
+        uint256 actualUserOpFeePerGas
+    );
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         FUNCTIONS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

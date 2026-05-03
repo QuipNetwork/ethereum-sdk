@@ -114,17 +114,34 @@ contract QuipPaymaster is
         validationData =
             (uint256(validUntil) << 160) |
             (uint256(validAfter) << 208);
-        context = "";
+        // Pack the sponsored wallet into context so postOp can attribute the
+        // gas cost. EntryPoint forwards this verbatim to postOp on success.
+        context = abi.encode(userOp.sender);
     }
 
     /// @inheritdoc IPaymaster
+    /// @dev Decodes the sponsored wallet from `context` and emits
+    ///      `UserOpSponsored` with the EntryPoint's mode + gas accounting so
+    ///      every sponsored UserOp leaves an on-chain audit record — including
+    ///      the `postOpReverted` re-entry path, where an audit trail is most
+    ///      valuable precisely because something abnormal occurred. The
+    ///      EntryPoint forwards the same context bytes the paymaster returned
+    ///      from `validatePaymasterUserOp`, so the decode is trusting our own
+    ///      output.
     function postOp(
-        PostOpMode,
-        bytes calldata,
-        uint256,
-        uint256
+        PostOpMode mode,
+        bytes calldata context,
+        uint256 actualGasCost,
+        uint256 actualUserOpFeePerGas
     ) external override {
         if (msg.sender != ENTRY_POINT) revert InvalidEntryPoint();
+        address wallet = abi.decode(context, (address));
+        emit UserOpSponsored(
+            wallet,
+            mode,
+            actualGasCost,
+            actualUserOpFeePerGas
+        );
     }
 
     /// @inheritdoc IQuipPaymaster

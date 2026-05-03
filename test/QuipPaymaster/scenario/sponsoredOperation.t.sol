@@ -39,8 +39,8 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
         // Validation should succeed (authorizer address = 0 means success)
         assertEq(uint160(validationData), 0);
 
-        // Context is empty — this paymaster does not use postOp context
-        assertEq(context.length, 0);
+        // Context carries the sponsored wallet so postOp can attribute spend.
+        assertEq(context, abi.encode(WALLET));
 
         // Verifier should have rotated
         WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(

@@ -31,8 +31,8 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         (bytes memory context, uint256 validationData) = paymaster
             .validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
 
-        // Context should be empty for verifying paymaster
-        assertEq(context.length, 0);
+        // Context carries the sponsored wallet so postOp can attribute spend.
+        assertEq(context, abi.encode(WALLET));
 
         // Unpack validationData: authorizer=0 (success), validUntil, validAfter
         address authorizer = address(uint160(validationData));
@@ -124,7 +124,7 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         (bytes memory context, uint256 validationData) = paymaster
             .validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
 
-        assertEq(context.length, 0);
+        assertEq(context, abi.encode(WALLET));
         assertEq(address(uint160(validationData)), address(0));
         assertEq(uint48(validationData >> 160), 0);
     }
