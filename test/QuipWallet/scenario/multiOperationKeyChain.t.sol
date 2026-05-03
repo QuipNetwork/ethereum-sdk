@@ -382,4 +382,256 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             assertEq(BOB.balance, bobBal + 0.01 ether);
         }
     }
+
+    /// @dev Chained public-API rotations while the Transaction keyset is at
+    ///      `MAX_KEYS == 10`. The harness-level
+    ///      `test_exposed_rotateKeys_succeedsAtFullCapacity` proves the
+    ///      storage primitive's remove-then-add ordering preserves size for a
+    ///      single rotation; this scenario walks every rotation-bearing
+    ///      public entry point that goes through `_verifyAndRotate` and
+    ///      asserts `keyCount(Transaction) == 10` after each op. A future
+    ///      refactor that reorders any public path into add-then-remove (or
+    ///      otherwise breaks the size invariant) would silently trip the
+    ///      `MAX_KEYS` cap only when the wallet is at capacity — exactly the
+    ///      production state a long-lived wallet drifts toward.
+    function test_simulation_keyChain_atMaxTransactionCapacity() public {
+        // ── Phase 0: Fill the Transaction keyset 5 → 10 ─────────────
+        // `addKeys(Transaction, …)` auth-rotates `alicePubkey → fA` (size
+        // stays 5) then appends 5 new keys (size becomes 10). The auth
+        // rotation alone is at-capacity-adjacent (4→5→4→5 across remove/add)
+        // so every subsequent op is the actual at-MAX regression target.
+        currentPq = alicePubkey;
+        currentPrivKey = alicePrivateKey;
+        {
+            WOTSPlus.WinternitzAddress[] memory fillKeys = new WOTSPlus.WinternitzAddress[](5);
+            for (uint256 i = 0; i < 5; i++) {
+                (fillKeys[i], ) = _generateKeyPair(
+                    keccak256(abi.encodePacked("max-cap-fill", i))
+                );
+            }
+            (
+                WOTSPlus.WinternitzAddress memory nextPq,
+                bytes32 nextPriv
+            ) = _advance("max-cap-rotate-into-fill");
+            // Inline keyset digest (Transaction kind has no dedicated builder
+            // in QuipWalletTest, only Recovery/Verification/replaceKeyAt).
+            bytes32 msgHash = Codec.keysetDigest(
+                Codec.KeyType.Transaction,
+                address(wallet),
+                block.chainid,
+                currentPq.publicSeed,
+                currentPq.publicKeyHash,
+                nextPq.publicSeed,
+                nextPq.publicKeyHash,
+                keccak256(abi.encode(fillKeys))
+            );
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
+
+            vm.prank(ALICE);
+            wallet.addKeys(
+                Codec.encodeKeyManagement(
+                    Codec.KeyType.Transaction,
+                    currentPq,
+                    nextPq,
+                    sig,
+                    fillKeys
+                )
+            );
+            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
+
+            currentPq = nextPq;
+            currentPrivKey = nextPriv;
+        }
+
+        // ── Op A: execute at MAX (basic remove-then-add via _rotateKeys) ──
+        {
+            (
+                WOTSPlus.WinternitzAddress memory nextPq,
+                bytes32 nextPriv
+            ) = _advance("max-cap-op-a-execute");
+            uint256 fee = wallet.getExecuteFee();
+            bytes32 msgHash = _buildExecuteMessageHash(
+                address(wallet),
+                currentPq,
+                nextPq,
+                BOB,
+                0.01 ether,
+                "",
+                fee
+            );
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
+
+            WOTSPlus.WinternitzAddress memory consumed = currentPq;
+            vm.prank(ALICE);
+            wallet.execute(
+                Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.01 ether, "")
+            );
+            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, consumed));
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
+
+            currentPq = nextPq;
+            currentPrivKey = nextPriv;
+        }
+
+        // ── Op B: replaceKeyAt(Recovery) — auth rotation while at MAX ───
+        // Recovery is independently at MAX (10) from init, so this also
+        // confirms the target keyset's at-capacity replace works through the
+        // public path — even though the Transaction-set size is what we're
+        // primarily locking down here.
+        {
+            (
+                WOTSPlus.WinternitzAddress memory nextPq,
+                bytes32 nextPriv
+            ) = _advance("max-cap-op-b-replace-rec");
+            (WOTSPlus.WinternitzAddress memory replacement, ) = _generateKeyPair(
+                "max-cap-op-b-rec-replacement"
+            );
+            bytes32 msgHash = _buildReplaceKeyAtMessageHash(
+                Codec.KeyType.Recovery,
+                address(wallet),
+                currentPq,
+                nextPq,
+                0,
+                replacement
+            );
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
+
+            WOTSPlus.WinternitzAddress memory consumed = currentPq;
+            vm.prank(ALICE);
+            wallet.replaceKeyAt(
+                Codec.encodeReplaceKeyAt(
+                    Codec.KeyType.Recovery,
+                    currentPq,
+                    nextPq,
+                    sig,
+                    0,
+                    replacement
+                )
+            );
+            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+            assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, consumed));
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
+
+            currentPq = nextPq;
+            currentPrivKey = nextPriv;
+        }
+
+        // ── Op C: addKeys(Verification, 3) — extends a different keyset ──
+        // The Transaction-set rotation runs the same primitive; appending to
+        // a sibling keyset (Verification) doesn't widen the auth set.
+        WOTSPlus.WinternitzAddress[] memory verifierPubs = new WOTSPlus.WinternitzAddress[](3);
+        for (uint256 i = 0; i < 3; i++) {
+            (verifierPubs[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked("max-cap-op-c-verifier", i))
+            );
+        }
+        {
+            (
+                WOTSPlus.WinternitzAddress memory nextPq,
+                bytes32 nextPriv
+            ) = _advance("max-cap-op-c-add-verif");
+            bytes32 msgHash = _buildVerificationKeysMessageHash(
+                address(wallet),
+                currentPq,
+                nextPq,
+                verifierPubs
+            );
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
+
+            WOTSPlus.WinternitzAddress memory consumed = currentPq;
+            vm.prank(ALICE);
+            wallet.addKeys(
+                Codec.encodeKeyManagement(
+                    Codec.KeyType.Verification,
+                    currentPq,
+                    nextPq,
+                    sig,
+                    verifierPubs
+                )
+            );
+            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+            assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, consumed));
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
+
+            currentPq = nextPq;
+            currentPrivKey = nextPriv;
+        }
+
+        // ── Op D: replaceKeyAt(Verification) at single-key edge of Verification ──
+        // Verification has 3 entries; replaces idx=0. Combined with Op B,
+        // this proves replaceKeyAt rotates the Transaction auth set without
+        // size drift regardless of which target keyset is being touched.
+        {
+            (
+                WOTSPlus.WinternitzAddress memory nextPq,
+                bytes32 nextPriv
+            ) = _advance("max-cap-op-d-replace-verif");
+            (WOTSPlus.WinternitzAddress memory replacement, ) = _generateKeyPair(
+                "max-cap-op-d-verif-replacement"
+            );
+            bytes32 msgHash = _buildReplaceKeyAtMessageHash(
+                Codec.KeyType.Verification,
+                address(wallet),
+                currentPq,
+                nextPq,
+                0,
+                replacement
+            );
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
+
+            WOTSPlus.WinternitzAddress memory consumed = currentPq;
+            vm.prank(ALICE);
+            wallet.replaceKeyAt(
+                Codec.encodeReplaceKeyAt(
+                    Codec.KeyType.Verification,
+                    currentPq,
+                    nextPq,
+                    sig,
+                    0,
+                    replacement
+                )
+            );
+            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+            assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
+            assertFalse(wallet.isKey(Codec.KeyType.Verification, verifierPubs[0]));
+            assertTrue(wallet.isKey(Codec.KeyType.Verification, replacement));
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, consumed));
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
+
+            currentPq = nextPq;
+            currentPrivKey = nextPriv;
+        }
+
+        // ── Op E: final execute — sanity check the chain is still live ──
+        {
+            (WOTSPlus.WinternitzAddress memory nextPq, ) = _advance(
+                "max-cap-op-e-final-execute"
+            );
+            uint256 fee = wallet.getExecuteFee();
+            bytes32 msgHash = _buildExecuteMessageHash(
+                address(wallet),
+                currentPq,
+                nextPq,
+                BOB,
+                0.01 ether,
+                "",
+                fee
+            );
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
+
+            WOTSPlus.WinternitzAddress memory consumed = currentPq;
+            vm.prank(ALICE);
+            wallet.execute(
+                Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.01 ether, "")
+            );
+            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, consumed));
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
+        }
+    }
 }
