@@ -75,6 +75,32 @@ interface IQuipPaymaster is IPaymaster {
         WOTSPlus.WinternitzAddress nextVerifier
     );
 
+    /// @notice Discriminates the four reasons `validatePaymasterUserOp` may
+    ///         return `validationData == 1` (signature failure) to the EntryPoint.
+    /// @dev Surfaced to off-chain simulators (`eth_call` / `debug_traceCall`)
+    ///      via `PaymasterValidationRejected` since ERC-4337 forbids reverting
+    ///      with a reason from `validatePaymasterUserOp`. Distinguishing
+    ///      "no verifier registered" (config error), "key reuse" (replay
+    ///      attempt), and "bad sig" (attack) is operationally critical for a
+    ///      paymaster operator triaging failed sponsored UserOps.
+    enum PaymasterValidationFailure {
+        ZeroNextVerifier,
+        NoVerifierRegistered,
+        NextEqualsCurrent,
+        InvalidSignature
+    }
+
+    /// @notice Emitted on each `validationData == 1` exit of `_verifyAndRotate`.
+    /// @dev On-chain this event is rolled back when the EntryPoint reverts the
+    ///      UserOp on signature failure, but bundlers / simulators observe it
+    ///      via `debug_traceCall` traces during pre-flight simulation.
+    /// @param wallet The userOp.sender the rejection applies to.
+    /// @param reason The classification of the rejection.
+    event PaymasterValidationRejected(
+        address indexed wallet,
+        PaymasterValidationFailure indexed reason
+    );
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         FUNCTIONS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

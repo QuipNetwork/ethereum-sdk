@@ -155,6 +155,11 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
 
         vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.InvalidSignature
+        );
         (, uint256 validationData) = paymaster.validatePaymasterUserOp(
             userOp,
             bytes32(0),
@@ -190,6 +195,11 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         );
 
         vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            unregisteredWallet,
+            IQuipPaymaster.PaymasterValidationFailure.NoVerifierRegistered
+        );
         (, uint256 validationData) = paymaster.validatePaymasterUserOp(
             userOp,
             bytes32(0),
@@ -222,6 +232,11 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         userOp.callData = hex"deadbeef";
 
         vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.InvalidSignature
+        );
         (, uint256 validationData) = paymaster.validatePaymasterUserOp(
             userOp,
             bytes32(0),
@@ -259,6 +274,11 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
 
         vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.ZeroNextVerifier
+        );
         (, uint256 validationData) = paymaster.validatePaymasterUserOp(
             userOp,
             bytes32(0),
@@ -291,6 +311,11 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
         PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
 
         vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(
+            WALLET,
+            IQuipPaymaster.PaymasterValidationFailure.NextEqualsCurrent
+        );
         (, uint256 validationData) = paymaster.validatePaymasterUserOp(
             userOp,
             bytes32(0),

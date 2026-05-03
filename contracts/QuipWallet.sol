@@ -121,15 +121,30 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (
             nextKey.publicSeed == bytes32(0) ||
             nextKey.publicKeyHash == bytes32(0)
-        ) return 1;
+        ) {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.ZeroNextKey
+            );
+            return 1;
+        }
 
         Storage.Layout storage $ = Storage.layout();
-        if (!$.transactionKeys.contains(currentKey)) return 1;
+        if (!$.transactionKeys.contains(currentKey)) {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.StaleCurrentKey
+            );
+            return 1;
+        }
         // Global uniqueness check: `_safeAddKey` would revert on a cross-keyset or
         // single-key collision, but ERC-4337 validation must report failure via
         // `validationData == 1` rather than revert. Catching the collision here
         // keeps the EntryPoint's nonce / refund accounting clean.
-        if (_isKeyInUse(nextKey)) return 1;
+        if (_isKeyInUse(nextKey)) {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.NextKeyAlreadyInUse
+            );
+            return 1;
+        }
 
         bytes32 digest = Codec.erc4337ExecuteDigest(
             address(this),
@@ -148,7 +163,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                 WOTSPlus.WinternitzMessage({messageHash: digest}),
                 pqSig
             )
-        ) return 1;
+        ) {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.InvalidSignature
+            );
+            return 1;
+        }
 
         _rotateKeys($.transactionKeys, currentKey, nextKey);
 

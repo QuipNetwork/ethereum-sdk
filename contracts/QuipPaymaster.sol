@@ -217,7 +217,13 @@ contract QuipPaymaster is
         if (
             nextVerifier.publicSeed == bytes32(0) ||
             nextVerifier.publicKeyHash == bytes32(0)
-        ) return false;
+        ) {
+            emit PaymasterValidationRejected(
+                sender,
+                PaymasterValidationFailure.ZeroNextVerifier
+            );
+            return false;
+        }
 
         WOTSPlus.WinternitzAddress storage currentVerifier = Storage
             .layout()
@@ -227,13 +233,25 @@ contract QuipPaymaster is
         if (
             currentVerifier.publicSeed == bytes32(0) &&
             currentVerifier.publicKeyHash == bytes32(0)
-        ) return false;
+        ) {
+            emit PaymasterValidationRejected(
+                sender,
+                PaymasterValidationFailure.NoVerifierRegistered
+            );
+            return false;
+        }
 
         // Reject key reuse (next must differ from current).
         if (
             nextVerifier.publicSeed == currentVerifier.publicSeed &&
             nextVerifier.publicKeyHash == currentVerifier.publicKeyHash
-        ) return false;
+        ) {
+            emit PaymasterValidationRejected(
+                sender,
+                PaymasterValidationFailure.NextEqualsCurrent
+            );
+            return false;
+        }
 
         // Build domain-tagged digest from constituent UserOp fields.
         // Using an intermediate opCommitment avoids exceeding EfficientHashLib's 8-arg limit.
@@ -260,7 +278,13 @@ contract QuipPaymaster is
                 WOTSPlus.WinternitzMessage({messageHash: digest}),
                 pqSig
             )
-        ) return false;
+        ) {
+            emit PaymasterValidationRejected(
+                sender,
+                PaymasterValidationFailure.InvalidSignature
+            );
+            return false;
+        }
 
         // Emit before rotating so currentVerifier fields are still the old values.
         emit PqVerifierRotated(sender, currentVerifier, nextVerifier);

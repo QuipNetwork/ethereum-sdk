@@ -258,6 +258,27 @@ interface IQuipWallet {
         bytes result
     );
 
+    /// @notice Discriminates the four reasons `_validateSignature` may return
+    ///         `validationData == 1` (signature failure) to the EntryPoint.
+    /// @dev Surfaced to off-chain simulators (`eth_call` / `debug_traceCall`)
+    ///      via `UserOpValidationRejected` since ERC-4337 forbids reverting
+    ///      with a reason from `validateUserOp`.
+    enum UserOpValidationFailure {
+        ZeroNextKey,
+        StaleCurrentKey,
+        NextKeyAlreadyInUse,
+        InvalidSignature
+    }
+
+    /// @notice Emitted on each `validationData == 1` exit of `_validateSignature`.
+    /// @dev On-chain this event is rolled back when the EntryPoint reverts the
+    ///      UserOp on signature failure, but bundlers / simulators observe it
+    ///      via `debug_traceCall` traces during pre-flight simulation. Provides
+    ///      operators a typed reason code for triaging failed sponsored UserOps
+    ///      without requiring a manual trace dive.
+    /// @param reason The classification of the rejection.
+    event UserOpValidationRejected(UserOpValidationFailure indexed reason);
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          FUNCTIONS                            */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

@@ -4,8 +4,10 @@ pragma solidity ^0.8.33;
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
+import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 /// @dev Behaviour tests for `_validateSignature(PackedUserOperation, userOpHash) → uint256`.
 ///      Returns 0 on valid signature (and commits the key rotation); returns 1
@@ -90,8 +92,19 @@ contract QuipWallet__validateSignature is QuipWalletTest {
         );
 
         ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
+        // Happy path emits no UserOpValidationRejected event; recordLogs lets us
+        // scan post-call to confirm absence rather than just trust expectEmit.
+        vm.recordLogs();
         uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
         assertEq(rv, 0);
+        bytes32 rejectedSig = IQuipWallet.UserOpValidationRejected.selector;
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i = 0; i < logs.length; i++) {
+            assertTrue(
+                logs[i].topics.length == 0 ||
+                    logs[i].topics[0] != rejectedSig
+            );
+        }
 
         assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, currentKey));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, nextKey));
@@ -114,6 +127,10 @@ contract QuipWallet__validateSignature is QuipWalletTest {
         );
 
         ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
+        vm.expectEmit(address(harnessProxy));
+        emit IQuipWallet.UserOpValidationRejected(
+            IQuipWallet.UserOpValidationFailure.ZeroNextKey
+        );
         uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
         assertEq(rv, 1);
     }
@@ -135,6 +152,10 @@ contract QuipWallet__validateSignature is QuipWalletTest {
         );
 
         ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
+        vm.expectEmit(address(harnessProxy));
+        emit IQuipWallet.UserOpValidationRejected(
+            IQuipWallet.UserOpValidationFailure.ZeroNextKey
+        );
         uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
         assertEq(rv, 1);
     }
@@ -161,6 +182,10 @@ contract QuipWallet__validateSignature is QuipWalletTest {
         );
 
         ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
+        vm.expectEmit(address(harnessProxy));
+        emit IQuipWallet.UserOpValidationRejected(
+            IQuipWallet.UserOpValidationFailure.StaleCurrentKey
+        );
         uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
         assertEq(rv, 1);
     }
@@ -186,6 +211,10 @@ contract QuipWallet__validateSignature is QuipWalletTest {
         );
 
         ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
+        vm.expectEmit(address(harnessProxy));
+        emit IQuipWallet.UserOpValidationRejected(
+            IQuipWallet.UserOpValidationFailure.NextKeyAlreadyInUse
+        );
         uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
         assertEq(rv, 1);
     }
@@ -211,6 +240,10 @@ contract QuipWallet__validateSignature is QuipWalletTest {
         );
 
         ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
+        vm.expectEmit(address(harnessProxy));
+        emit IQuipWallet.UserOpValidationRejected(
+            IQuipWallet.UserOpValidationFailure.InvalidSignature
+        );
         uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
         assertEq(rv, 1);
 
