@@ -143,6 +143,21 @@ interface IQuipWallet {
     /// @param dataHash The keccak256 hash of the calldata.
     event ExecutionSucceeded(address target, uint256 value, bytes32 dataHash);
 
+    /// @notice Emitted in place of `ExecutionSucceeded` when `execute(bytes)` is
+    ///         signed with `value == 0 && data.length == 0`.
+    /// @dev Empty executes are not an intended key-burn primitive, but a user
+    ///      who signs one still pays the fee and burns the consumed
+    ///      transaction key (rotation commits inside `_verifyAndRotate` before
+    ///      the inner call would run). This event makes the no-op conspicuous
+    ///      so an indexer / wallet UI can distinguish it from a real transfer
+    ///      with `target == 0 && value == 0`.
+    /// @param currentKey The consumed (rotated-out) transaction key.
+    /// @param nextKey The replacement transaction key installed in its place.
+    event KeyRotationOnly(
+        WOTSPlus.WinternitzAddress currentKey,
+        WOTSPlus.WinternitzAddress nextKey
+    );
+
     /// @notice Emitted when a wallet is initialized with its factory, owner, and keys.
     /// @param factory The QuipFactory that created this wallet.
     /// @param owner The classical owner address.

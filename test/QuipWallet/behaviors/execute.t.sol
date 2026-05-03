@@ -109,6 +109,69 @@ contract QuipWallet_execute is QuipWalletTest {
         assertTrue(foundSucceeded, "ExecutionSucceeded event not emitted");
     }
 
+    // Empty execute (value == 0 && data.length == 0): the signature is still
+    // consumed and the key still rotates, but the no-op must surface as
+    // `KeyRotationOnly`, not `ExecutionSucceeded`. The fee still collects.
+    function test_execute_emitsKeyRotationOnlyForEmptyExecute() public {
+        vm.prank(ADMIN);
+        factory.setExecuteFee(EXECUTE_FEE);
+
+        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
+            "empty-exec-next"
+        );
+
+        bytes32 msgHash = _buildExecuteMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPubkey,
+            BOB,
+            0,
+            "",
+            EXECUTE_FEE
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            msgHash
+        );
+
+        uint256 walletBalBefore = address(wallet).balance;
+        uint256 factoryBalBefore = address(factory).balance;
+        uint256 bobBalBefore = BOB.balance;
+
+        vm.prank(ALICE);
+        vm.recordLogs();
+        wallet.execute(
+            Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0, "")
+        );
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool foundRotationOnly = false;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (
+                logs[i].topics[0] == IQuipWallet.KeyRotationOnly.selector &&
+                logs[i].emitter == address(wallet)
+            ) {
+                foundRotationOnly = true;
+            }
+            // ExecutionSucceeded must NOT appear for the zero/zero case.
+            assertTrue(
+                logs[i].topics[0] != IQuipWallet.ExecutionSucceeded.selector ||
+                    logs[i].emitter != address(wallet),
+                "ExecutionSucceeded must not fire for empty execute"
+            );
+        }
+        assertTrue(foundRotationOnly, "KeyRotationOnly event not emitted");
+
+        // Key still rotated.
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPubkey));
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
+
+        // Fee still collected; nothing else moved.
+        assertEq(address(wallet).balance, walletBalBefore - EXECUTE_FEE);
+        assertEq(address(factory).balance, factoryBalBefore + EXECUTE_FEE);
+        assertEq(BOB.balance, bobBalBefore);
+    }
+
     function test_execute_collectsFees() public {
         vm.prank(ADMIN);
         factory.setExecuteFee(EXECUTE_FEE);

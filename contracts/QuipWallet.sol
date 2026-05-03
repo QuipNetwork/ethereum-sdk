@@ -455,9 +455,19 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
         _collectExecuteFee();
 
+        // Empty execute (value == 0 && data.length == 0): the signature was
+        // valid and the key already rotated in `_verifyAndRotate`, so the only
+        // remaining work is paying the fee (already done) and surfacing a
+        // distinct event so an indexer / wallet UI can tell this apart from a
+        // real transfer to `target` with zero value.
+        if (value == 0 && data.length == 0) {
+            emit KeyRotationOnly(currentKey, nextKey);
+            return "";
+        }
+
         bytes memory result;
         if (data.length == 0) {
-            if (value > 0) SafeTransferLib.safeTransferETH(target, value);
+            SafeTransferLib.safeTransferETH(target, value);
         } else {
             result = LibCall.callContract(target, value, data);
         }
