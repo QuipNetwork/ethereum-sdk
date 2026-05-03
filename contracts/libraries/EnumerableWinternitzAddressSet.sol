@@ -399,6 +399,75 @@ library EnumerableWinternitzAddressSet {
         }
     }
 
+    /// @dev Drains all elements from `set` in a single pass. Returns the
+    ///      number of elements cleared so the caller can assert the wipe was
+    ///      total (e.g., matches a pre-call `length()`).
+    ///
+    ///      Cheaper than n calls to `remove(set, at(0))` because it skips the
+    ///      per-iteration swap-and-pop dance, the redundant `_rootSlot`
+    ///      recomputation, and the bounds-check / length SLOADs each call
+    ///      site does. After the call the length slot is reset to the
+    ///      lazy-phase marker (0); a set previously in eager phase will
+    ///      operate as a fresh lazy-phase set on the next add.
+    ///
+    ///      Lazy phase (length slot == 0): the position mapping was never
+    ///      written, so this just zeroes the up-to-3 in-place element slots.
+    ///      Eager phase: zeroes each populated element slot and its
+    ///      corresponding position-mapping entry, then resets the length
+    ///      slot.
+    function clear(
+        WinternitzAddressSet storage set
+    ) internal returns (uint256 cleared) {
+        bytes32 rootSlot = _rootSlot(set);
+        /// @solidity memory-safe-assembly
+        assembly {
+            let n := sload(not(rootSlot))
+            switch iszero(n)
+            case 1 {
+                // Lazy phase — count populated slots while zeroing them.
+                if iszero(iszero(sload(rootSlot))) {
+                    sstore(rootSlot, 0)
+                    sstore(add(rootSlot, 1), 0)
+                    cleared := 1
+                    if iszero(iszero(sload(add(rootSlot, 2)))) {
+                        sstore(add(rootSlot, 2), 0)
+                        sstore(add(rootSlot, 3), 0)
+                        cleared := 2
+                        if iszero(iszero(sload(add(rootSlot, 4)))) {
+                            sstore(add(rootSlot, 4), 0)
+                            sstore(add(rootSlot, 5), 0)
+                            cleared := 3
+                        }
+                    }
+                }
+            }
+            default {
+                // Eager phase — iterate, zero element slots + position mapping.
+                let len := shr(1, n)
+                for {
+                    let i := 0
+                } lt(i, len) {
+                    i := add(i, 1)
+                } {
+                    let off := shl(1, i)
+                    let pSeed := sload(add(rootSlot, off))
+                    let pHash := sload(add(rootSlot, add(off, 1)))
+                    sstore(add(rootSlot, off), 0)
+                    sstore(add(rootSlot, add(off, 1)), 0)
+                    mstore(0x00, pSeed)
+                    mstore(0x20, pHash)
+                    let keyHash := keccak256(0x00, 0x40)
+                    mstore(0x00, keyHash)
+                    mstore(0x20, rootSlot)
+                    sstore(keccak256(0x00, 0x40), 0)
+                }
+                // Reset length slot to the lazy-phase marker.
+                sstore(not(rootSlot), 0)
+                cleared := len
+            }
+        }
+    }
+
     /// @dev Returns the pair at index `i` in the set. Reverts if `i` is out-of-bounds.
     function at(
         WinternitzAddressSet storage set,

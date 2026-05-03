@@ -957,15 +957,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Drains all entries from `set`. Each removal goes through `_safeRemoveKey`
-    ///      so a library invariant violation surfaces as a revert rather than silently
-    ///      leaving stale entries behind.
+    /// @dev Drains all entries from `set` via the library's single-pass
+    ///      `clear()` helper. Snapshots the prior length and asserts the
+    ///      returned count matches so a library invariant violation still
+    ///      surfaces as a revert rather than silently leaving stale entries
+    ///      behind — preserving the safety net the previous per-element
+    ///      `_safeRemoveKey` loop provided.
     function _clearKeys(Keyset.WinternitzAddressSet storage set) internal {
-        uint256 n = set.length();
-        for (uint256 i = 0; i < n; ++i) {
-            WOTSPlus.WinternitzAddress memory existing = set.at(0);
-            _safeRemoveKey(set, existing);
-        }
+        uint256 expected = set.length();
+        uint256 cleared = set.clear();
+        if (cleared != expected) revert KeyRemovalFailed();
     }
 
     /// @dev Removes `currentKey` and installs `nextKey` in `set`. Remove-then-add

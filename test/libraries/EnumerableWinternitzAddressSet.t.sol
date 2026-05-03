@@ -57,6 +57,10 @@ contract SetHarness {
         return s.values();
     }
 
+    function clear() external returns (uint256) {
+        return s.clear();
+    }
+
     // --- Second set for collision testing ---
 
     function add2(
@@ -73,6 +77,10 @@ contract SetHarness {
 
     function length2() external view returns (uint256) {
         return s2.length();
+    }
+
+    function clear2() external returns (uint256) {
+        return s2.clear();
     }
 }
 
@@ -697,6 +705,344 @@ contract EnumerableWinternitzAddressSetTest is Test {
         assertEq(vals[1].publicKeyHash, A4.publicKeyHash);
         assertEq(vals[2].publicSeed, A3.publicSeed);
         assertEq(vals[2].publicKeyHash, A3.publicKeyHash);
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          CLEAR                                 */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function test_clear_empty() public {
+        assertEq(h.clear(), 0);
+        assertEq(h.length(), 0);
+    }
+
+    function test_clear_lazyOne() public {
+        h.add(A1);
+        assertEq(h.clear(), 1);
+        assertEq(h.length(), 0);
+        assertFalse(h.contains(A1));
+    }
+
+    function test_clear_lazyTwo() public {
+        h.add(A1);
+        h.add(A2);
+        assertEq(h.clear(), 2);
+        assertEq(h.length(), 0);
+        assertFalse(h.contains(A1));
+        assertFalse(h.contains(A2));
+    }
+
+    function test_clear_lazyFull() public {
+        h.add(A1);
+        h.add(A2);
+        h.add(A3);
+        assertEq(h.clear(), 3);
+        assertEq(h.length(), 0);
+        assertFalse(h.contains(A1));
+        assertFalse(h.contains(A2));
+        assertFalse(h.contains(A3));
+    }
+
+    function test_clear_eagerSmall() public {
+        // 4 elements forces transition to eager phase.
+        h.add(A1);
+        h.add(A2);
+        h.add(A3);
+        h.add(A4);
+        assertEq(h.clear(), 4);
+        assertEq(h.length(), 0);
+        assertFalse(h.contains(A1));
+        assertFalse(h.contains(A2));
+        assertFalse(h.contains(A3));
+        assertFalse(h.contains(A4));
+    }
+
+    function test_clear_eagerFull() public {
+        h.add(A1);
+        h.add(A2);
+        h.add(A3);
+        h.add(A4);
+        h.add(A5);
+        assertEq(h.clear(), 5);
+        assertEq(h.length(), 0);
+    }
+
+    // Clear must wipe the position-mapping slots (eager phase) so that a
+    // subsequent re-add of the same address starts clean — without this the
+    // position mapping would still point into stale element slots.
+    function test_clear_eager_thenReuse() public {
+        h.add(A1);
+        h.add(A2);
+        h.add(A3);
+        h.add(A4);
+        h.clear();
+
+        // Re-add the same addresses; they must be `add() == true` (i.e., not
+        // already present) and queryable.
+        assertTrue(h.add(A1));
+        assertTrue(h.add(A2));
+        assertEq(h.length(), 2);
+        assertTrue(h.contains(A1));
+        assertTrue(h.contains(A2));
+        assertFalse(h.contains(A3));
+        assertFalse(h.contains(A4));
+    }
+
+    // Eager phase must reset back to lazy on clear, so the first re-add
+    // after clear should land in lazy slots and the length() helper must
+    // reflect the correct count via the lazy-phase scan.
+    function test_clear_eager_resetsToLazyPhase() public {
+        h.add(A1);
+        h.add(A2);
+        h.add(A3);
+        h.add(A4);
+        h.clear();
+        h.add(A1);
+        assertEq(h.length(), 1);
+        assertTrue(h.contains(A1));
+    }
+
+    // After eager-phase removals leave a hole in the array, clear must still
+    // wipe every slot the library considers populated (length() before clear).
+    function test_clear_eagerAfterRemoval() public {
+        h.add(A1);
+        h.add(A2);
+        h.add(A3);
+        h.add(A4);
+        h.add(A5);
+        h.remove(A2); // length now 4, A5 swapped into A2's index
+        assertEq(h.clear(), 4);
+        assertEq(h.length(), 0);
+        assertFalse(h.contains(A1));
+        assertFalse(h.contains(A3));
+        assertFalse(h.contains(A4));
+        assertFalse(h.contains(A5));
+    }
+
+    // Clear on one set must not touch a sibling set sharing the same parent
+    // contract — i.e., it correctly scopes to the rootSlot derived from the
+    // set's storage slot.
+    function test_clear_doesNotAffectOtherSet() public {
+        h.add(A1);
+        h.add(A2);
+        h.add2(A3);
+        h.add2(A4);
+
+        assertEq(h.clear(), 2);
+
+        assertEq(h.length(), 0);
+        assertEq(h.length2(), 2);
+        assertTrue(h.contains2(A3));
+        assertTrue(h.contains2(A4));
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       FUZZ: CLEAR                             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Force lazy phase: 1..3 distinct elements added, then clear.
+    ///      Cleared count must equal prior length; post-clear length must be
+    ///      zero; every added address must no longer be contained. Distinct
+    ///      seeds are guaranteed via the loop index so dedup never silently
+    ///      shrinks the populated size below `bound(...)`.
+    function test_fuzz_clear_lazyPhase(uint256 n) public {
+        LibPRNG.PRNG memory prng;
+        prng.state = n;
+        uint256 size = bound(prng.next(), 1, 3);
+
+        bytes32[] memory hashes = new bytes32[](size);
+        for (uint256 i; i < size; ++i) {
+            // Distinct seed per iteration → no add() collisions.
+            hashes[i] = bytes32(prng.next() | 1); // non-zero hash
+            h.add(
+                WOTSPlus.WinternitzAddress(
+                    bytes32(uint256(i) + 1),
+                    hashes[i]
+                )
+            );
+        }
+        assertEq(h.length(), size, "all distinct adds landed (lazy)");
+
+        uint256 cleared = h.clear();
+        assertEq(cleared, size, "cleared count vs prior length");
+        assertEq(h.length(), 0, "length after clear");
+
+        for (uint256 i; i < size; ++i) {
+            assertFalse(
+                h.contains(
+                    WOTSPlus.WinternitzAddress(
+                        bytes32(uint256(i) + 1),
+                        hashes[i]
+                    )
+                ),
+                "stale residue after lazy-phase clear"
+            );
+        }
+    }
+
+    /// @dev Force eager phase: 4..16 distinct elements, then clear. Same
+    ///      invariants as the lazy-phase fuzzer — but this path also
+    ///      exercises the position-mapping wipe inside `clear`'s eager
+    ///      branch, which is the bit a regression would silently break.
+    function test_fuzz_clear_eagerPhase(uint256 n) public {
+        LibPRNG.PRNG memory prng;
+        prng.state = n;
+        uint256 size = bound(prng.next(), 4, 16);
+
+        bytes32[] memory hashes = new bytes32[](size);
+        for (uint256 i; i < size; ++i) {
+            hashes[i] = bytes32(prng.next() | 1);
+            h.add(
+                WOTSPlus.WinternitzAddress(
+                    bytes32(uint256(i) + 1),
+                    hashes[i]
+                )
+            );
+        }
+        assertEq(h.length(), size, "all distinct adds landed (eager)");
+
+        uint256 cleared = h.clear();
+        assertEq(cleared, size, "cleared count vs prior length");
+        assertEq(h.length(), 0, "length after clear");
+
+        for (uint256 i; i < size; ++i) {
+            assertFalse(
+                h.contains(
+                    WOTSPlus.WinternitzAddress(
+                        bytes32(uint256(i) + 1),
+                        hashes[i]
+                    )
+                ),
+                "stale residue after eager-phase clear"
+            );
+        }
+    }
+
+    /// @dev Random churn (adds + removes against a reference model), but
+    ///      seeded with a guaranteed initial add so every iteration starts
+    ///      from a non-empty state. The reference array tracks the live set,
+    ///      and we assert clear's returned count matches the reference's
+    ///      final size — so we know clear was actually invoked on a
+    ///      meaningful state, not silently on an empty set.
+    function test_fuzz_clear_afterRandomChurn(uint256 n) public {
+        unchecked {
+            LibPRNG.PRNG memory prng;
+            prng.state = n;
+            uint256[] memory ref = _makePackedArray(0);
+            uint256 mask = prng.next() % 2 == 0 ? 7 : 15;
+
+            // Guarantee non-empty starting state so clear is never trivial.
+            // Distinct seed (0xfeed...) avoids collision with the churn loop's
+            // small-mask address space.
+            {
+                uint256 seedAnchor = uint256(0xfeed01);
+                uint256 hashAnchor = uint256(0xfeed02);
+                h.add(
+                    WOTSPlus.WinternitzAddress(
+                        bytes32(seedAnchor),
+                        bytes32(hashAnchor)
+                    )
+                );
+                _addToPacked(ref, (seedAnchor << 128) | hashAnchor);
+            }
+
+            uint256 iters;
+            do {
+                uint256 seed = (prng.next() & mask) + 1;
+                uint256 hash_ = (prng.next() & mask) + 1;
+                uint256 packed = (seed << 128) | hash_;
+                WOTSPlus.WinternitzAddress memory addr = WOTSPlus
+                    .WinternitzAddress(bytes32(seed), bytes32(hash_));
+
+                if (prng.next() % 2 == 0) {
+                    h.add(addr);
+                    _addToPacked(ref, packed);
+                } else {
+                    h.remove(addr);
+                    _removeFromPacked(ref, packed);
+                }
+
+                ++iters;
+                if (iters == 256) break;
+            } while (prng.next() % 8 != 0);
+
+            uint256 priorLen = h.length();
+            assertEq(priorLen, ref.length, "length pre-clear");
+            assertGt(priorLen, 0, "anchor add must persist or churn must net-positive");
+
+            uint256 cleared = h.clear();
+            assertEq(cleared, priorLen, "cleared count vs prior length");
+            assertEq(h.length(), 0, "length after clear");
+
+            for (uint256 i; i < ref.length; ++i) {
+                uint256 p = ref[i];
+                assertFalse(
+                    h.contains(
+                        WOTSPlus.WinternitzAddress(
+                            bytes32(p >> 128),
+                            bytes32(p & type(uint128).max)
+                        )
+                    ),
+                    "stale residue after clear"
+                );
+            }
+        }
+    }
+
+    /// @dev Random adds, clear, then a second random batch — both batches
+    ///      bounded to be non-empty and distinct-seeded. The post-clear adds
+    ///      must each return `true` (set is truly empty), length must match
+    ///      the second batch size, and contains must report only the second
+    ///      batch — proving the position-mapping wipe was total. If clear
+    ///      ever forgets to zero an eager-phase position-mapping slot, this
+    ///      test catches it the moment the second batch happens to pick a
+    ///      seed that hash-collides with a first-batch entry.
+    function test_fuzz_clear_thenReuse(uint256 n) public {
+        LibPRNG.PRNG memory prng;
+        prng.state = n;
+        uint256 firstSize = bound(prng.next(), 1, 12);
+        uint256 secondSize = bound(prng.next(), 1, 12);
+
+        // First batch — distinct seeds in range [1, firstSize].
+        for (uint256 i; i < firstSize; ++i) {
+            h.add(
+                WOTSPlus.WinternitzAddress(
+                    bytes32(uint256(i) + 1),
+                    bytes32(prng.next() | 1)
+                )
+            );
+        }
+        assertEq(h.length(), firstSize, "first batch landed");
+        h.clear();
+        assertEq(h.length(), 0, "clear emptied set");
+
+        // Second batch — overlapping seed range [1, secondSize] so any
+        // surviving position-mapping entries from the first batch would be
+        // hit. Hashes are independently random.
+        bytes32[] memory secondHashes = new bytes32[](secondSize);
+        for (uint256 i; i < secondSize; ++i) {
+            secondHashes[i] = bytes32(prng.next() | 1);
+            bool added = h.add(
+                WOTSPlus.WinternitzAddress(
+                    bytes32(uint256(i) + 1),
+                    secondHashes[i]
+                )
+            );
+            assertTrue(added, "post-clear add must succeed (no stale residue)");
+        }
+
+        assertEq(h.length(), secondSize, "length after reuse");
+        for (uint256 i; i < secondSize; ++i) {
+            assertTrue(
+                h.contains(
+                    WOTSPlus.WinternitzAddress(
+                        bytes32(uint256(i) + 1),
+                        secondHashes[i]
+                    )
+                ),
+                "missing post-clear addition"
+            );
+        }
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
