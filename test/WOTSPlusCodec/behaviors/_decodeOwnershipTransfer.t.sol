@@ -111,4 +111,20 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
         );
         codec.exposed_decodeOwnershipTransfer(_filledBytes(3327));
     }
+
+    /// @dev Property: any payload length other than 3328 reverts.
+    function testFuzz_exposed_decodeOwnershipTransfer_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 6000);
+        vm.assume(len != 3328);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                3328,
+                len
+            )
+        );
+        codec.exposed_decodeOwnershipTransfer(_filledBytes(len));
+    }
 }

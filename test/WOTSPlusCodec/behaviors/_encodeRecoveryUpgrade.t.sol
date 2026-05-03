@@ -104,4 +104,53 @@ contract WOTSPlusCodec__encodeRecoveryUpgrade is WOTSPlusCodecTest {
             assertEq(dVerifySig.elements[i], verifySig.elements[i]);
         }
     }
+
+    /// @dev Property: encode → decode preserves every field for any seed,
+    ///      across both halves of the 4480-byte recoveryUpgrade payload.
+    ///      The auth and verification decoders share the same payload but
+    ///      consume different offsets, so we verify both decoders see the
+    ///      same encoder output.
+    function testFuzz_exposed_encodeRecoveryUpgrade_roundtrips(
+        bytes32 seed
+    ) public view {
+        WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzElements memory pqSig = _fuzzWinternitzElements(seed);
+        WOTSPlus.WinternitzAddress memory verifier = _fuzzWinternitzAddress(seed, 2);
+        WOTSPlus.WinternitzElements memory verifySig = _fuzzWinternitzElementsAlt(seed);
+
+        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(
+            cur,
+            nxt,
+            pqSig,
+            verifier,
+            verifySig
+        );
+        assertEq(encoded.length, 4480);
+
+        (
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dPqSig
+        ) = codec.exposed_decodeRecoveryUpgradeAuth(encoded);
+
+        assertEq(dCur.publicSeed, cur.publicSeed);
+        assertEq(dCur.publicKeyHash, cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dPqSig.elements[i], pqSig.elements[i]);
+        }
+
+        (
+            WOTSPlus.WinternitzAddress memory dVerifier,
+            WOTSPlus.WinternitzElements memory dVerifySig
+        ) = codec.exposed_decodeRecoveryUpgradeVerification(encoded);
+
+        assertEq(dVerifier.publicSeed, verifier.publicSeed);
+        assertEq(dVerifier.publicKeyHash, verifier.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dVerifySig.elements[i], verifySig.elements[i]);
+        }
+    }
 }

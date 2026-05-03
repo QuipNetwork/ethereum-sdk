@@ -55,4 +55,36 @@ contract WOTSPlusCodec__encodeErc1271Signature is WOTSPlusCodecTest {
         assertEq(dEcdsa.length, 65);
         assertEq(dEcdsa, ecdsa);
     }
+
+    /// @dev Property: encode → decode preserves every field for any seed.
+    ///      Pins the 2273-byte ERC-1271 signature layout — note the 65-byte
+    ///      `ecdsaSig` tail is the only odd-aligned field in the codec.
+    function testFuzz_exposed_encodeErc1271Signature_roundtrips(
+        bytes32 seed
+    ) public view {
+        WOTSPlus.WinternitzAddress memory verifier = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
+        bytes memory ecdsa = _fuzzEcdsaSignature(seed);
+
+        bytes memory encoded = codec.exposed_encodeErc1271Signature(
+            verifier,
+            sig,
+            ecdsa
+        );
+        assertEq(encoded.length, 2273);
+
+        (
+            WOTSPlus.WinternitzAddress memory dVerifier,
+            WOTSPlus.WinternitzElements memory dSig,
+            bytes memory dEcdsa
+        ) = codec.exposed_decodeErc1271Signature(encoded);
+
+        assertEq(dVerifier.publicSeed, verifier.publicSeed);
+        assertEq(dVerifier.publicKeyHash, verifier.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+        assertEq(dEcdsa.length, 65);
+        assertEq(dEcdsa, ecdsa);
+    }
 }

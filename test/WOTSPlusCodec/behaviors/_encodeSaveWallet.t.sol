@@ -86,4 +86,49 @@ contract WOTSPlusCodec__encodeSaveWallet is WOTSPlusCodecTest {
             assertEq(dRec[i].publicKeyHash, b.rec[i].publicKeyHash);
         }
     }
+
+    /// @dev Property: encode → decode preserves every field for any seed.
+    ///      Pins the 3232-byte saveWallet layout against encoder/decoder drift.
+    function testFuzz_exposed_encodeSaveWallet_roundtrips(
+        bytes32 seed
+    ) public view {
+        WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
+        WOTSPlus.WinternitzAddress[5] memory txn = _fuzzTransactionKeys(seed);
+        WOTSPlus.WinternitzAddress[10] memory rec = _fuzzRecoveryKeys(seed);
+
+        bytes memory encoded = codec.exposed_encodeSaveWallet(
+            cur,
+            nxt,
+            sig,
+            txn,
+            rec
+        );
+        assertEq(encoded.length, 3232);
+
+        (
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dSig,
+            WOTSPlus.WinternitzAddress[5] memory dTxn,
+            WOTSPlus.WinternitzAddress[10] memory dRec
+        ) = codec.exposed_decodeSaveWallet(encoded);
+
+        assertEq(dCur.publicSeed, cur.publicSeed);
+        assertEq(dCur.publicKeyHash, cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(dTxn[i].publicSeed, txn[i].publicSeed);
+            assertEq(dTxn[i].publicKeyHash, txn[i].publicKeyHash);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(dRec[i].publicSeed, rec[i].publicSeed);
+            assertEq(dRec[i].publicKeyHash, rec[i].publicKeyHash);
+        }
+    }
 }

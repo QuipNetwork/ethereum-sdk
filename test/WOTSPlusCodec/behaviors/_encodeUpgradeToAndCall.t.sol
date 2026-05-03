@@ -159,4 +159,102 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
         assertEq(dMigrator.length, 1088);
         assertEq(dMigrator, migrator);
     }
+
+    struct UpgradeBundle {
+        WOTSPlus.WinternitzAddress cur;
+        WOTSPlus.WinternitzAddress nxt;
+        WOTSPlus.WinternitzElements pqSig;
+        WOTSPlus.WinternitzAddress verifier;
+        WOTSPlus.WinternitzElements verifySig;
+        bool shouldMigrate;
+        bytes migrator;
+    }
+
+    function _fuzzUpgradeBundle(
+        bytes32 seed,
+        bool shouldMigrate
+    ) internal view returns (UpgradeBundle memory b) {
+        b.cur = _fuzzWinternitzAddress(seed, 0);
+        b.nxt = _fuzzWinternitzAddress(seed, 1);
+        b.pqSig = _fuzzWinternitzElements(seed);
+        b.verifier = _fuzzWinternitzAddress(seed, 2);
+        b.verifySig = _fuzzWinternitzElementsAlt(seed);
+        b.shouldMigrate = shouldMigrate;
+        b.migrator = codec.exposed_encodeInit(
+            _fuzzWinternitzAddress(seed, 100),
+            _fuzzWinternitzAddress(seed, 101),
+            _fuzzTransactionKeys(bytes32(uint256(seed) ^ 0xDEAD)),
+            _fuzzRecoveryKeys(bytes32(uint256(seed) ^ 0xBEEF))
+        );
+    }
+
+    function _assertUpgradeAuth(
+        UpgradeBundle memory b,
+        bytes memory encoded
+    ) internal view {
+        (
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dPqSig
+        ) = codec.exposed_decodeUpgradeAuth(encoded);
+        assertEq(dCur.publicSeed, b.cur.publicSeed);
+        assertEq(dCur.publicKeyHash, b.cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, b.nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, b.nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dPqSig.elements[i], b.pqSig.elements[i]);
+        }
+    }
+
+    function _assertUpgradeVerification(
+        UpgradeBundle memory b,
+        bytes memory encoded
+    ) internal view {
+        (
+            WOTSPlus.WinternitzAddress memory dVerifier,
+            WOTSPlus.WinternitzElements memory dVerifySig
+        ) = codec.exposed_decodeUpgradeVerification(encoded);
+        assertEq(dVerifier.publicSeed, b.verifier.publicSeed);
+        assertEq(dVerifier.publicKeyHash, b.verifier.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dVerifySig.elements[i], b.verifySig.elements[i]);
+        }
+    }
+
+    function _assertUpgradeMigration(
+        UpgradeBundle memory b,
+        bytes memory encoded
+    ) internal view {
+        (bool dShouldMigrate, bytes memory dMigrator) = codec
+            .exposed_decodeUpgradeMigration(encoded);
+        assertEq(dShouldMigrate, b.shouldMigrate);
+        assertEq(dMigrator.length, 1088);
+        assertEq(dMigrator, b.migrator);
+    }
+
+    /// @dev Property: encode → decode preserves every field for any seed and
+    ///      `shouldMigrate` flag, across all three decoders that consume the
+    ///      shared 5569-byte upgrade payload (auth + verification + migration).
+    ///      Migrator payload is fixed at 1088 bytes — decodeUpgradeMigration
+    ///      slices a fixed-width [4481:5569) range, so any other size breaks
+    ///      the total length and would not roundtrip.
+    function testFuzz_exposed_encodeUpgradeToAndCall_roundtrips(
+        bytes32 seed,
+        bool shouldMigrate
+    ) public view {
+        UpgradeBundle memory b = _fuzzUpgradeBundle(seed, shouldMigrate);
+        bytes memory encoded = codec.exposed_encodeUpgradeToAndCall(
+            b.cur,
+            b.nxt,
+            b.pqSig,
+            b.verifier,
+            b.verifySig,
+            b.shouldMigrate,
+            b.migrator
+        );
+        assertEq(encoded.length, 5569);
+        _assertUpgradeAuth(b, encoded);
+        _assertUpgradeVerification(b, encoded);
+        _assertUpgradeMigration(b, encoded);
+    }
 }

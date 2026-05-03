@@ -179,4 +179,76 @@ contract WOTSPlusCodecTest is Test {
             data[i] = 0xAB;
         }
     }
+
+    // --- Fuzz helpers ---
+    //
+    // These derive WOTS+ keys and signatures from a single bytes32 seed by
+    // hashing into separate, non-colliding namespaces. Each helper is pure
+    // and deterministic so an encoder roundtrip test can rebuild the same
+    // values from the same seed.
+
+    function _fuzzWinternitzAddress(
+        bytes32 seed,
+        uint256 idx
+    ) internal pure returns (WOTSPlus.WinternitzAddress memory a) {
+        a.publicSeed = keccak256(abi.encode(seed, "addr_seed", idx));
+        a.publicKeyHash = keccak256(abi.encode(seed, "addr_hash", idx));
+    }
+
+    function _fuzzWinternitzElements(
+        bytes32 seed
+    ) internal pure returns (WOTSPlus.WinternitzElements memory s) {
+        for (uint256 i = 0; i < 67; i++) {
+            s.elements[i] = keccak256(abi.encode(seed, "sig", i));
+        }
+    }
+
+    /// @dev Second signature derived from the same seed in a separate namespace.
+    ///      Used by tests that need both a `pqSig` and a `verifySig` from the
+    ///      same fuzz input.
+    function _fuzzWinternitzElementsAlt(
+        bytes32 seed
+    ) internal pure returns (WOTSPlus.WinternitzElements memory s) {
+        for (uint256 i = 0; i < 67; i++) {
+            s.elements[i] = keccak256(abi.encode(seed, "sig2", i));
+        }
+    }
+
+    function _fuzzTransactionKeys(
+        bytes32 seed
+    ) internal pure returns (WOTSPlus.WinternitzAddress[5] memory arr) {
+        for (uint256 i = 0; i < 5; i++) {
+            arr[i] = _fuzzWinternitzAddress(seed, 1000 + i);
+        }
+    }
+
+    function _fuzzRecoveryKeys(
+        bytes32 seed
+    ) internal pure returns (WOTSPlus.WinternitzAddress[10] memory arr) {
+        for (uint256 i = 0; i < 10; i++) {
+            arr[i] = _fuzzWinternitzAddress(seed, 2000 + i);
+        }
+    }
+
+    function _fuzzWinternitzAddressArray(
+        bytes32 seed,
+        uint256 numKeys
+    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory arr) {
+        arr = new WOTSPlus.WinternitzAddress[](numKeys);
+        for (uint256 i = 0; i < numKeys; i++) {
+            arr[i] = _fuzzWinternitzAddress(seed, 3000 + i);
+        }
+    }
+
+    /// @dev 65-byte (r ++ s ++ v) ECDSA signature derived from a seed.
+    function _fuzzEcdsaSignature(
+        bytes32 seed
+    ) internal pure returns (bytes memory) {
+        return
+            abi.encodePacked(
+                keccak256(abi.encode(seed, "ecdsa_r")),
+                keccak256(abi.encode(seed, "ecdsa_s")),
+                uint8(uint256(seed) % 2 == 0 ? 27 : 28)
+            );
+    }
 }

@@ -52,4 +52,20 @@ contract WOTSPlusCodec__decodeUpgradeAuth is WOTSPlusCodecTest {
         );
         codec.exposed_decodeUpgradeAuth(_filledBytes(2272));
     }
+
+    /// @dev Property: any payload length other than 5569 reverts.
+    function testFuzz_exposed_decodeUpgradeAuth_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 9000);
+        vm.assume(len != 5569);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                5569,
+                len
+            )
+        );
+        codec.exposed_decodeUpgradeAuth(_filledBytes(len));
+    }
 }

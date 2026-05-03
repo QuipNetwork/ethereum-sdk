@@ -65,4 +65,44 @@ contract WOTSPlusCodec__encodeWithdrawDeposit is WOTSPlusCodecTest {
             assertEq(dSig.elements[i], sig.elements[i]);
         }
     }
+
+    /// @dev Property: encode → decode preserves every field for any inputs.
+    ///      Pins the 2336-byte withdrawDeposit layout against encoder/decoder
+    ///      drift around the 32-byte left-padded `to` and `amount` tail.
+    function testFuzz_exposed_encodeWithdrawDeposit_roundtrips(
+        bytes32 seed,
+        address to,
+        uint256 amount
+    ) public view {
+        WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
+
+        bytes memory encoded = codec.exposed_encodeWithdrawDeposit(
+            cur,
+            nxt,
+            sig,
+            to,
+            amount
+        );
+        assertEq(encoded.length, 2336);
+
+        (
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dSig,
+            address dTo,
+            uint256 dAmount
+        ) = codec.exposed_decodeWithdrawDeposit(encoded);
+
+        assertEq(dCur.publicSeed, cur.publicSeed);
+        assertEq(dCur.publicKeyHash, cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+        assertEq(dTo, to);
+        assertEq(dAmount, amount);
+    }
 }

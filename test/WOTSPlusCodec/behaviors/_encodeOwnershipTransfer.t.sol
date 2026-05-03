@@ -104,4 +104,74 @@ contract WOTSPlusCodec__encodeOwnershipTransfer is WOTSPlusCodecTest {
             assertEq(dSig.elements[i], b.sig.elements[i]);
         }
     }
+
+    function _fuzzBundle(
+        bytes32 seed,
+        address newOwner
+    ) internal pure returns (Bundle memory b) {
+        b.cur = _fuzzWinternitzAddress(seed, 0);
+        b.nxt = _fuzzWinternitzAddress(seed, 1);
+        b.sig = _fuzzWinternitzElements(seed);
+        b.newOwner = newOwner;
+        b.disaster = _fuzzWinternitzAddress(seed, 2);
+        for (uint256 i = 0; i < 5; i++) b.txn[i] = _fuzzWinternitzAddress(seed, 1000 + i);
+        for (uint256 i = 0; i < 10; i++) b.rec[i] = _fuzzWinternitzAddress(seed, 2000 + i);
+    }
+
+    function _assertBundleRoundtrip(
+        Bundle memory b,
+        bytes memory encoded
+    ) internal view {
+        (
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dSig,
+            address dOwner,
+            WOTSPlus.WinternitzAddress memory dDisaster,
+            WOTSPlus.WinternitzAddress[5] memory dTxn,
+            WOTSPlus.WinternitzAddress[10] memory dRec
+        ) = codec.exposed_decodeOwnershipTransfer(encoded);
+
+        assertEq(dCur.publicSeed, b.cur.publicSeed);
+        assertEq(dCur.publicKeyHash, b.cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, b.nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, b.nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], b.sig.elements[i]);
+        }
+        assertEq(dOwner, b.newOwner);
+        assertEq(dDisaster.publicSeed, b.disaster.publicSeed);
+        assertEq(dDisaster.publicKeyHash, b.disaster.publicKeyHash);
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(dTxn[i].publicSeed, b.txn[i].publicSeed);
+            assertEq(dTxn[i].publicKeyHash, b.txn[i].publicKeyHash);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(dRec[i].publicSeed, b.rec[i].publicSeed);
+            assertEq(dRec[i].publicKeyHash, b.rec[i].publicKeyHash);
+        }
+    }
+
+    /// @dev Property: encode → decode preserves every field for any inputs.
+    ///      Pins the 3328-byte ownership-transfer layout — the largest
+    ///      auth-prefix-shaped payload, with `newOwner` packed mid-payload
+    ///      between the signature tail and the disaster/txn/recovery keysets.
+    ///      Bundles inputs into a struct to keep stack depth manageable.
+    function testFuzz_exposed_encodeOwnershipTransfer_roundtrips(
+        bytes32 seed,
+        address newOwner
+    ) public view {
+        Bundle memory b = _fuzzBundle(seed, newOwner);
+        bytes memory encoded = codec.exposed_encodeOwnershipTransfer(
+            b.cur,
+            b.nxt,
+            b.sig,
+            b.newOwner,
+            b.disaster,
+            b.txn,
+            b.rec
+        );
+        assertEq(encoded.length, 3328);
+        _assertBundleRoundtrip(b, encoded);
+    }
 }

@@ -65,4 +65,22 @@ contract WOTSPlusCodec__decodeExecute is WOTSPlusCodecTest {
         (, , , , , bytes memory d) = codec.exposed_decodeExecute(payload);
         assertEq(d.length, 0);
     }
+
+    /// @dev Property: any payload shorter than the 2336-byte fixed header
+    ///      reverts. Execute is variable-length (header + arbitrary `data`
+    ///      tail), so only the lower bound is asserted; trailing data of any
+    ///      length is valid.
+    function testFuzz_exposed_decodeExecute_revertsWhen_short(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 2335);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                2336,
+                len
+            )
+        );
+        codec.exposed_decodeExecute(_filledBytes(len));
+    }
 }

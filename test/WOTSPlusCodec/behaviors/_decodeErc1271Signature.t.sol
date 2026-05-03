@@ -84,4 +84,22 @@ contract WOTSPlusCodec__decodeErc1271Signature is WOTSPlusCodecTest {
         );
         codec.exposed_decodeErc1271Signature(_filledBytes(2274));
     }
+
+    /// @dev Property: any payload length other than 2273 reverts. The
+    ///      signature comes off `isValidSignature` calldata and is the first
+    ///      attacker-controllable input, so the precondition is load-bearing.
+    function testFuzz_exposed_decodeErc1271Signature_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 5000);
+        vm.assume(len != 2273);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                2273,
+                len
+            )
+        );
+        codec.exposed_decodeErc1271Signature(_filledBytes(len));
+    }
 }

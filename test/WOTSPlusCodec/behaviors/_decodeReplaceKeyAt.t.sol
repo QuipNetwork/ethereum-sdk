@@ -130,4 +130,22 @@ contract WOTSPlusCodec__decodeReplaceKeyAt is WOTSPlusCodecTest {
         );
         codec.exposed_decodeReplaceKeyAt(_filledBytes(2401));
     }
+
+    /// @dev Property: any payload length other than 2400 reverts. The length
+    ///      precondition fires before the enum cast, so the kind byte content
+    ///      doesn't matter here.
+    function testFuzz_exposed_decodeReplaceKeyAt_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 5000);
+        vm.assume(len != 2400);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2400,
+                len
+            )
+        );
+        codec.exposed_decodeReplaceKeyAt(_filledBytes(len));
+    }
 }

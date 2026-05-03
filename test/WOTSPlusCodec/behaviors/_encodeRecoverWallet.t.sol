@@ -69,4 +69,41 @@ contract WOTSPlusCodec__encodeRecoverWallet is WOTSPlusCodecTest {
         for (uint256 i = 0; i < 67; i++)
             assertEq(dSig.elements[i], sig.elements[i]);
     }
+
+    /// @dev Property: encode → decode preserves every field for any seed.
+    ///      Pins the 2336-byte recoverWallet layout against encoder/decoder
+    ///      drift across the three keys + signature.
+    function testFuzz_exposed_encodeRecoverWallet_roundtrips(
+        bytes32 seed
+    ) public view {
+        WOTSPlus.WinternitzAddress memory rk = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory newRk = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzAddress memory newTxn = _fuzzWinternitzAddress(seed, 2);
+        WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
+
+        bytes memory encoded = codec.exposed_encodeRecoverWallet(
+            rk,
+            newRk,
+            newTxn,
+            sig
+        );
+        assertEq(encoded.length, 2336);
+
+        (
+            WOTSPlus.WinternitzAddress memory dRk,
+            WOTSPlus.WinternitzAddress memory dNewRk,
+            WOTSPlus.WinternitzAddress memory dNewTxn,
+            WOTSPlus.WinternitzElements memory dSig
+        ) = codec.exposed_decodeRecoverWallet(encoded);
+
+        assertEq(dRk.publicSeed, rk.publicSeed);
+        assertEq(dRk.publicKeyHash, rk.publicKeyHash);
+        assertEq(dNewRk.publicSeed, newRk.publicSeed);
+        assertEq(dNewRk.publicKeyHash, newRk.publicKeyHash);
+        assertEq(dNewTxn.publicSeed, newTxn.publicSeed);
+        assertEq(dNewTxn.publicKeyHash, newTxn.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+    }
 }

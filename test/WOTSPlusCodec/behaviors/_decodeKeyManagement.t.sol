@@ -147,4 +147,40 @@ contract WOTSPlusCodec__decodeKeyManagement is WOTSPlusCodecTest {
         );
         codec.exposed_decodeKeyManagement(payload);
     }
+
+    /// @dev Property: any payload shorter than the 2304-byte header reverts.
+    ///      Uses `new bytes(len)` (zero-filled) so the leading 32-byte `kind`
+    ///      cast doesn't fire ahead of the length check.
+    function testFuzz_exposed_decodeKeyManagement_revertsWhen_short(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 2303);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2304,
+                len
+            )
+        );
+        codec.exposed_decodeKeyManagement(new bytes(len));
+    }
+
+    /// @dev Property: a payload of length >= 2304 with a tail that's not a
+    ///      multiple of 64 bytes reverts. This is the alignment branch of the
+    ///      length precondition that prevents the trailing-keys array length
+    ///      from underflowing in Yul.
+    function testFuzz_exposed_decodeKeyManagement_revertsWhen_unalignedLength(
+        uint256 len
+    ) public {
+        len = bound(len, 2304, 5000);
+        vm.assume((len - 2304) % 64 != 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Codec.MalformedPayload.selector,
+                2304,
+                len
+            )
+        );
+        codec.exposed_decodeKeyManagement(new bytes(len));
+    }
 }

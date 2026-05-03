@@ -98,4 +98,42 @@ contract WOTSPlusCodec__encodeInit is WOTSPlusCodecTest {
             assertEq(dRec[i].publicKeyHash, rec[i].publicKeyHash);
         }
     }
+
+    /// @dev Property: encode → decode preserves every field for any seed.
+    ///      Catches encoder/decoder offset drift across the 1088-byte init
+    ///      layout that handwritten tests can miss.
+    function testFuzz_exposed_encodeInit_roundtrips(bytes32 seed) public view {
+        WOTSPlus.WinternitzAddress memory disaster = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory ownership = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzAddress[5] memory txn = _fuzzTransactionKeys(seed);
+        WOTSPlus.WinternitzAddress[10] memory rec = _fuzzRecoveryKeys(seed);
+
+        bytes memory encoded = codec.exposed_encodeInit(
+            disaster,
+            ownership,
+            txn,
+            rec
+        );
+        assertEq(encoded.length, 1088);
+
+        (
+            WOTSPlus.WinternitzAddress memory dDisaster,
+            WOTSPlus.WinternitzAddress memory dOwnership,
+            WOTSPlus.WinternitzAddress[5] memory dTxn,
+            WOTSPlus.WinternitzAddress[10] memory dRec
+        ) = codec.exposed_decodeInit(encoded);
+
+        assertEq(dDisaster.publicSeed, disaster.publicSeed);
+        assertEq(dDisaster.publicKeyHash, disaster.publicKeyHash);
+        assertEq(dOwnership.publicSeed, ownership.publicSeed);
+        assertEq(dOwnership.publicKeyHash, ownership.publicKeyHash);
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(dTxn[i].publicSeed, txn[i].publicSeed);
+            assertEq(dTxn[i].publicKeyHash, txn[i].publicKeyHash);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(dRec[i].publicSeed, rec[i].publicSeed);
+            assertEq(dRec[i].publicKeyHash, rec[i].publicKeyHash);
+        }
+    }
 }

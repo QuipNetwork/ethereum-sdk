@@ -90,4 +90,22 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         );
         codec.exposed_decodeInit(payload);
     }
+
+    /// @dev Property: any payload length other than 1088 reverts with
+    ///      MalformedPayload(1088, length). Fuzz across the full range to
+    ///      exhaust off-by-N drift in the length precondition.
+    function testFuzz_exposed_decodeInit_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 4000);
+        vm.assume(len != 1088);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                1088,
+                len
+            )
+        );
+        codec.exposed_decodeInit(_filledBytes(len));
+    }
 }

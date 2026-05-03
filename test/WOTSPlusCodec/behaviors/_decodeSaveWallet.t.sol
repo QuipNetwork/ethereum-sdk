@@ -106,4 +106,20 @@ contract WOTSPlusCodec__decodeSaveWallet is WOTSPlusCodecTest {
         );
         codec.exposed_decodeSaveWallet(_filledBytes(3000));
     }
+
+    /// @dev Property: any payload length other than 3232 reverts.
+    function testFuzz_exposed_decodeSaveWallet_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 6000);
+        vm.assume(len != 3232);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                3232,
+                len
+            )
+        );
+        codec.exposed_decodeSaveWallet(_filledBytes(len));
+    }
 }

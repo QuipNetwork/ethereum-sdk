@@ -88,4 +88,48 @@ contract WOTSPlusCodec__encodeExecute is WOTSPlusCodecTest {
         (, , , , , bytes memory dD) = codec.exposed_decodeExecute(encoded);
         assertEq(dD.length, 0);
     }
+
+    /// @dev Property: encode → decode preserves all fields for any inputs,
+    ///      including arbitrarily long trailing `data`. Catches offset drift
+    ///      across the variable-length 2336+N execute layout.
+    function testFuzz_exposed_encodeExecute_roundtrips(
+        bytes32 seed,
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) public view {
+        WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
+
+        bytes memory encoded = codec.exposed_encodeExecute(
+            cur,
+            nxt,
+            sig,
+            target,
+            value,
+            data
+        );
+        assertEq(encoded.length, 2336 + data.length);
+
+        (
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dSig,
+            address dTarget,
+            uint256 dValue,
+            bytes memory dData
+        ) = codec.exposed_decodeExecute(encoded);
+
+        assertEq(dCur.publicSeed, cur.publicSeed);
+        assertEq(dCur.publicKeyHash, cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+        assertEq(dTarget, target);
+        assertEq(dValue, value);
+        assertEq(dData, data);
+    }
 }

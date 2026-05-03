@@ -117,4 +117,52 @@ contract WOTSPlusCodec__encodeKeyManagement is WOTSPlusCodecTest {
         assertTrue(kind == Codec.KeyType.Transaction);
         assertEq(dKeys.length, 0);
     }
+
+    /// @dev Property: encode → decode preserves every field for any seed,
+    ///      key count, and KeyType. Catches offset drift across the
+    ///      variable-length 2304+N*64 keyManagement layout, including the
+    ///      32-byte left-padded `kind` prefix that's load-then-cast.
+    function testFuzz_exposed_encodeKeyManagement_roundtrips(
+        bytes32 seed,
+        uint8 kindRaw,
+        uint8 numKeys
+    ) public view {
+        Codec.KeyType kind = Codec.KeyType(kindRaw % 3);
+        uint256 n = numKeys % 21; // bound to [0, 20] to keep fuzz fast
+        WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
+        WOTSPlus.WinternitzAddress[] memory keys = _fuzzWinternitzAddressArray(seed, n);
+
+        bytes memory encoded = codec.exposed_encodeKeyManagement(
+            kind,
+            cur,
+            nxt,
+            sig,
+            keys
+        );
+        assertEq(encoded.length, 32 + 64 + 64 + 2144 + n * 64);
+
+        (
+            Codec.KeyType dKind,
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dSig,
+            WOTSPlus.WinternitzAddress[] memory dKeys
+        ) = codec.exposed_decodeKeyManagement(encoded);
+
+        assertTrue(dKind == kind);
+        assertEq(dCur.publicSeed, cur.publicSeed);
+        assertEq(dCur.publicKeyHash, cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+        assertEq(dKeys.length, n);
+        for (uint256 i = 0; i < n; i++) {
+            assertEq(dKeys[i].publicSeed, keys[i].publicSeed);
+            assertEq(dKeys[i].publicKeyHash, keys[i].publicKeyHash);
+        }
+    }
 }

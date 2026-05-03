@@ -100,4 +100,50 @@ contract WOTSPlusCodec__encodeReplaceKeyAt is WOTSPlusCodecTest {
         assertTrue(kind == Codec.KeyType.Recovery);
         assertEq(dIdx, 9);
     }
+
+    /// @dev Property: encode → decode preserves every field for any inputs.
+    ///      Pins the 2400-byte replaceKeyAt layout: 32-byte left-padded `kind`
+    ///      header, 32-byte left-padded `index` between sig and newKey.
+    function testFuzz_exposed_encodeReplaceKeyAt_roundtrips(
+        bytes32 seed,
+        uint8 kindRaw,
+        uint256 index
+    ) public view {
+        Codec.KeyType kind = Codec.KeyType(kindRaw % 3);
+        WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
+        WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
+        WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
+        WOTSPlus.WinternitzAddress memory newKey = _fuzzWinternitzAddress(seed, 2);
+
+        bytes memory encoded = codec.exposed_encodeReplaceKeyAt(
+            kind,
+            cur,
+            nxt,
+            sig,
+            index,
+            newKey
+        );
+        assertEq(encoded.length, 2400);
+
+        (
+            Codec.KeyType dKind,
+            WOTSPlus.WinternitzAddress memory dCur,
+            WOTSPlus.WinternitzAddress memory dNxt,
+            WOTSPlus.WinternitzElements memory dSig,
+            uint256 dIdx,
+            WOTSPlus.WinternitzAddress memory dNewKey
+        ) = codec.exposed_decodeReplaceKeyAt(encoded);
+
+        assertTrue(dKind == kind);
+        assertEq(dCur.publicSeed, cur.publicSeed);
+        assertEq(dCur.publicKeyHash, cur.publicKeyHash);
+        assertEq(dNxt.publicSeed, nxt.publicSeed);
+        assertEq(dNxt.publicKeyHash, nxt.publicKeyHash);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+        assertEq(dIdx, index);
+        assertEq(dNewKey.publicSeed, newKey.publicSeed);
+        assertEq(dNewKey.publicKeyHash, newKey.publicKeyHash);
+    }
 }

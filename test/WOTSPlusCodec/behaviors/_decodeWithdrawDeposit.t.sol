@@ -57,4 +57,20 @@ contract WOTSPlusCodec__decodeWithdrawDeposit is WOTSPlusCodecTest {
         );
         codec.exposed_decodeWithdrawDeposit(_filledBytes(2272));
     }
+
+    /// @dev Property: any payload length other than 2336 reverts.
+    function testFuzz_exposed_decodeWithdrawDeposit_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 5000);
+        vm.assume(len != 2336);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                2336,
+                len
+            )
+        );
+        codec.exposed_decodeWithdrawDeposit(_filledBytes(len));
+    }
 }

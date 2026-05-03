@@ -78,4 +78,20 @@ contract WOTSPlusCodec__decodeRecoveryUpgradeVerification is
         );
         codec.exposed_decodeRecoveryUpgradeVerification(_filledBytes(5569));
     }
+
+    /// @dev Property: any payload length other than 4480 reverts.
+    function testFuzz_exposed_decodeRecoveryUpgradeVerification_revertsWhen_wrongLength(
+        uint256 len
+    ) public {
+        len = bound(len, 0, 8000);
+        vm.assume(len != 4480);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WOTSPlusCodec.MalformedPayload.selector,
+                4480,
+                len
+            )
+        );
+        codec.exposed_decodeRecoveryUpgradeVerification(_filledBytes(len));
+    }
 }
