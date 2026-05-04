@@ -54,6 +54,11 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// and are NOT guarded — the disaster recovery key is the rescue path if any keyset is
     /// corrupted via delegatecall or storageStore, and the ownership key is the backstop that
     /// still allows a compromised wallet to be handed over to a clean principal.
+    ///
+    /// These literals are duplicated from `WOTSPlusStorage.sol` (where the
+    /// canonical hex values are declared as `internal constant`) because
+    /// Solidity's inline assembly only accepts direct numeric constants — it
+    /// rejects cross-library references and expressions like `base + N`.
     bytes32 private constant _PQ_FACTORY_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
     bytes32 private constant _DISASTER_KEY_SEED_SLOT =

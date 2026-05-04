@@ -53,9 +53,34 @@ library WOTSPlusStorage {
         Keyset.WinternitzAddressSet verificationKeys;
     }
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.wotsplus")) - 1)) & ~bytes32(uint256(0xff))
-    bytes32 private constant _WOTSPLUS_STORAGE_SLOT =
+    /// @dev `keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.wotsplus")) - 1)) & ~bytes32(uint256(0xff))`.
+    ///      Single source of truth for the ERC-7201 namespace base. All
+    ///      derived per-field constants below are aliased into
+    ///      `QuipWallet`'s `storageStoreGuard` / `delegateExecuteGuard` so
+    ///      the wallet's pre/post-snapshot Yul checks read from the same
+    ///      slots the library's `layout()` writes to. Solidity's inline
+    ///      assembly only accepts direct numeric constants (or references
+    ///      to them), which is why each derived offset is its own hex
+    ///      literal here rather than `base + N`.
+    bytes32 internal constant _WOTSPLUS_STORAGE_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
+
+    /// @dev Slots of the first five `Layout` fields that `QuipWallet`'s
+    ///      guard modifiers snapshot/check. Must be kept in lock-step with
+    ///      the field order of `Layout` above; `test/fixtures/QuipWallet.storageLayout.json`
+    ///      pins each field's slot offset and fails the suite on any drift.
+    ///      A namespace rename above must regenerate every literal below
+    ///      together — they aren't independently meaningful.
+    bytes32 internal constant _PQ_FACTORY_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
+    bytes32 internal constant _DISASTER_KEY_SEED_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701;
+    bytes32 internal constant _DISASTER_KEY_HASH_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf702;
+    bytes32 internal constant _OWNERSHIP_KEY_SEED_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf703;
+    bytes32 internal constant _OWNERSHIP_KEY_HASH_SLOT =
+        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf704;
 
     /// @dev Returns the ERC-7201 namespaced storage layout.
     function layout() internal pure returns (Layout storage $) {
