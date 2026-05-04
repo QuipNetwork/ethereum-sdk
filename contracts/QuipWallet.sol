@@ -931,39 +931,27 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///      path.
     ///
     ///      Signature layout: [0:64) verifier, [64:2208) pqSig, [2208:2273) ecdsaSig.
+    ///
+    ///      Defers to `_checkErc1271Signature` and collapses every non-`Ok`
+    ///      reason to the EIP-1271 failure magic. Callers that need to
+    ///      distinguish failure branches should `eth_call` `debugIsValidSignature`.
     function isValidSignature(
         bytes32 hash,
         bytes calldata signature
     ) public view override returns (bytes4) {
-        if (signature.length != 2273) return 0xffffffff;
-        (
-            WOTSPlus.WinternitzAddress calldata verifier,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            bytes calldata ecdsaSig
-        ) = Codec.decodeErc1271Signature(signature);
+        return
+            _checkErc1271Signature(hash, signature) ==
+                Erc1271ValidationResult.Ok
+                ? bytes4(0x1626ba7e)
+                : bytes4(0xffffffff);
+    }
 
-        address recovered = ECDSA.tryRecoverCalldata(hash, ecdsaSig);
-        if (recovered == address(0) || recovered != owner()) return 0xffffffff;
-
-        Storage.Layout storage $ = Storage.layout();
-        if (!$.verificationKeys.contains(verifier)) return 0xffffffff;
-
-        bytes32 digest = Codec.erc1271Digest(
-            address(this),
-            block.chainid,
-            verifier.publicSeed,
-            verifier.publicKeyHash,
-            hash
-        );
-        if (
-            !WOTSPlus.verify(
-                verifier,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) return 0xffffffff;
-
-        return 0x1626ba7e;
+    /// @inheritdoc IQuipWallet
+    function debugIsValidSignature(
+        bytes32 hash,
+        bytes calldata signature
+    ) external view returns (Erc1271ValidationResult) {
+        return _checkErc1271Signature(hash, signature);
     }
 
     /// @inheritdoc IQuipWallet
@@ -983,6 +971,53 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                     INTERNALS                          */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Shared core for `isValidSignature` and `debugIsValidSignature`.
+    ///      Returns the first failing branch, or `Ok` if every check passes.
+    ///      Order matches `isValidSignature`'s legacy short-circuit:
+    ///      length → ECDSA → keyset membership → WOTS+ verify.
+    function _checkErc1271Signature(
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view returns (Erc1271ValidationResult) {
+        if (signature.length != 2273) {
+            return Erc1271ValidationResult.BadSignatureLength;
+        }
+        (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            bytes calldata ecdsaSig
+        ) = Codec.decodeErc1271Signature(signature);
+
+        address recovered = ECDSA.tryRecoverCalldata(hash, ecdsaSig);
+        if (recovered == address(0) || recovered != owner()) {
+            return Erc1271ValidationResult.InvalidEcdsaSignature;
+        }
+
+        Storage.Layout storage $ = Storage.layout();
+        if (!$.verificationKeys.contains(verifier)) {
+            return Erc1271ValidationResult.UnknownVerifier;
+        }
+
+        bytes32 digest = Codec.erc1271Digest(
+            address(this),
+            block.chainid,
+            verifier.publicSeed,
+            verifier.publicKeyHash,
+            hash
+        );
+        if (
+            !WOTSPlus.verify(
+                verifier,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                pqSig
+            )
+        ) {
+            return Erc1271ValidationResult.InvalidPqSignature;
+        }
+
+        return Erc1271ValidationResult.Ok;
+    }
 
     /// @dev Appends calldata-provided keys to `set`, capped at `MAX_KEYS`. Each add
     ///      goes through `_safeAddKey` so the global uniqueness pre-check catches

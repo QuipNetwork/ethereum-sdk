@@ -299,6 +299,20 @@ interface IQuipWallet {
     /// @param reason The classification of the rejection.
     event UserOpValidationRejected(UserOpValidationFailure indexed reason);
 
+    /// @notice Discriminates the four reasons `isValidSignature` may return the
+    ///         ERC-1271 failure magic (`0xffffffff`), plus an `Ok` success
+    ///         sentinel surfaced by `debugIsValidSignature`.
+    /// @dev `isValidSignature` is `view`, so unlike the ERC-4337 paths there is
+    ///      no event channel for these reason codes — `debugIsValidSignature`
+    ///      is the only way to recover the specific failure branch off-chain.
+    enum Erc1271ValidationResult {
+        Ok,
+        BadSignatureLength,
+        InvalidEcdsaSignature,
+        UnknownVerifier,
+        InvalidPqSignature
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -519,4 +533,19 @@ interface IQuipWallet {
     ///      the index of its codehash in the vetted set.
     /// @return The index in the factory's vetted set, or `type(uint256).max` if not found.
     function version() external view returns (uint256);
+
+    /// @notice Off-chain diagnostic for `isValidSignature`.
+    /// @dev EIP-1271 only allows `isValidSignature` to return `0x1626ba7e` or
+    ///      `0xffffffff`, collapsing four distinct failure modes
+    ///      (bad signature length, ECDSA recovery mismatch, verifier not in
+    ///      keyset, WOTS+ verify fails) into a single magic. Integration
+    ///      debuggers can call this view via `eth_call` to recover the specific
+    ///      reason. Not part of EIP-1271; do not call from on-chain consumers.
+    /// @param hash The 32-byte digest the caller signed.
+    /// @param signature The 2273-byte ERC-1271 signature payload.
+    /// @return Reason code; `Ok` mirrors the magic, anything else mirrors `0xffffffff`.
+    function debugIsValidSignature(
+        bytes32 hash,
+        bytes calldata signature
+    ) external view returns (Erc1271ValidationResult);
 }
