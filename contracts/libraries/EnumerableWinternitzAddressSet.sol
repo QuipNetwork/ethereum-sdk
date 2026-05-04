@@ -474,13 +474,46 @@ library EnumerableWinternitzAddressSet {
         uint256 i
     ) internal view returns (WOTSPlus.WinternitzAddress memory addr) {
         bytes32 rootSlot = _rootSlot(set);
+        bytes4 selector = IndexOutOfBounds.selector;
         /// @solidity memory-safe-assembly
         assembly {
+            // Bounds-check first so OOB skips the two element SLOADs. The
+            // length computation mirrors `length()` exactly: in the eager
+            // phase the length slot stores `or(1, shl(1, len))`, so
+            // `shr(1, n)` recovers `len`; in the lazy phase the length slot
+            // is zero and the actual length is the count of non-zero
+            // element pairs at offsets 0/2/4. Reusing `rootSlot` avoids the
+            // redundant keccak that calling `length(set)` from Solidity
+            // would compute. The lazy-phase SLOADs (rootSlot, rootSlot+2,
+            // rootSlot+4) are warm by the time the data load runs at
+            // `off = rootSlot + 2*i`, so happy-path gas matches the prior
+            // ordering.
+            let n := sload(not(rootSlot))
+            let len := shr(1, n)
+            for {} iszero(n) {} {
+                len := 0
+                if iszero(sload(rootSlot)) {
+                    break
+                }
+                len := 1
+                if iszero(sload(add(rootSlot, 2))) {
+                    break
+                }
+                len := 2
+                if iszero(sload(add(rootSlot, 4))) {
+                    break
+                }
+                len := 3
+                break
+            }
+            if iszero(lt(i, len)) {
+                mstore(0x00, selector)
+                revert(0x00, 0x04)
+            }
             let off := add(rootSlot, shl(1, i))
             mstore(addr, sload(off))
             mstore(add(addr, 0x20), sload(add(off, 1)))
         }
-        if (i >= length(set)) revert IndexOutOfBounds();
     }
 
     /// @dev Returns all pairs in the set.
