@@ -10,13 +10,15 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
 contract QuipWallet_initialize is QuipWalletTest {
-    /// @dev ERC-7201 base slot for WOTSPlusStorage.Layout. Layout: quipFactory at +0,
-    ///      disasterRecoveryKey.publicSeed at +1, .publicKeyHash at +2,
-    ///      ownershipKey.publicSeed at +3, .publicKeyHash at +4.
-    bytes32 internal constant STORAGE_BASE =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
+    /// @dev ERC-7201 base slot for `WOTSPlusStorage.Layout`. Layout:
+    ///      quipFactory at +0, disasterRecoveryKey.publicSeed at +1,
+    ///      .publicKeyHash at +2, ownershipKey.publicSeed at +3,
+    ///      .publicKeyHash at +4. Imported so any drift between this test
+    ///      and the storage library shows up here too.
+    bytes32 internal constant STORAGE_BASE = Storage._WOTSPLUS_STORAGE_SLOT;
 
     /// @dev Builds 5 transaction keys and 10 recovery keys deterministically
     ///      from `tag`. Returns fresh-shape arrays the caller can mutate

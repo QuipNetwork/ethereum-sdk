@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipWalletTest} from "../QuipWallet.t.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
 /// @dev Benign delegate — writes to a slot outside the 7 guarded slots.
 ///      Picks an arbitrary high slot (not aliased to owner/impl/factory/
@@ -21,15 +22,14 @@ contract BenignDelegate {
 
 /// @dev Rogue delegate — SSTOREs to the disaster-recovery-key seed slot, which
 ///      is one of the 7 snapshotted-and-checked slots. The post-call assert
-///      must fire and revert.
+///      must fire and revert. Slot loaded from `WOTSPlusStorage` via a local
+///      variable because Yul rejects direct cross-library constant references.
 contract RogueDelegate_WritesDisasterSlot {
     fallback() external payable {
+        bytes32 slot = Storage._DISASTER_KEY_SEED_SLOT;
         /// @solidity memory-safe-assembly
         assembly {
-            sstore(
-                0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701,
-                0xdeadbeef
-            )
+            sstore(slot, 0xdeadbeef)
         }
     }
 }
@@ -38,12 +38,10 @@ contract RogueDelegate_WritesDisasterSlot {
 ///      of the guard's 7-slot check).
 contract RogueDelegate_WritesOwnershipSlot {
     fallback() external payable {
+        bytes32 slot = Storage._OWNERSHIP_KEY_HASH_SLOT;
         /// @solidity memory-safe-assembly
         assembly {
-            sstore(
-                0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf704,
-                0xcafef00d
-            )
+            sstore(slot, 0xcafef00d)
         }
     }
 }

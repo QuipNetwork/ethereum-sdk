@@ -5,6 +5,7 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
 /// @dev Behaviour tests for `_assertGuardedSlotsUnchanged(snapshot)`.
 ///      Compares a prior snapshot against the current SLOADs of the 7 guarded
@@ -12,6 +13,11 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 ///      otherwise. This file exercises one revert branch per slot (7 total),
 ///      verifies the slot index matches the documented mapping, and covers
 ///      the happy path plus a "no pre-read" edge case.
+///
+///      PQ slot constants are imported from `WOTSPlusStorage` so any drift
+///      between the wallet's private literals (used inside its
+///      `delegateExecuteGuard`'s pre/post snapshot Yul) and the storage
+///      library's surfaces here as a missing tamper detection.
 contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
@@ -19,16 +25,6 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
         0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
     bytes32 constant _ERC1967_IMPLEMENTATION_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-    bytes32 constant _PQ_FACTORY_SLOT =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
-    bytes32 constant _DISASTER_KEY_SEED_SLOT =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701;
-    bytes32 constant _DISASTER_KEY_HASH_SLOT =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf702;
-    bytes32 constant _OWNERSHIP_KEY_SEED_SLOT =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf703;
-    bytes32 constant _OWNERSHIP_KEY_HASH_SLOT =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf704;
 
     function setUp() public override {
         super.setUp();
@@ -108,7 +104,7 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
         bytes32[7] memory s = _snap();
         vm.store(
             address(harnessProxy),
-            _PQ_FACTORY_SLOT,
+            Storage._PQ_FACTORY_SLOT,
             bytes32(uint256(0xcccc))
         );
         vm.expectRevert(
@@ -126,7 +122,7 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
         bytes32[7] memory s = _snap();
         vm.store(
             address(harnessProxy),
-            _DISASTER_KEY_SEED_SLOT,
+            Storage._DISASTER_KEY_SEED_SLOT,
             bytes32(uint256(0xdddd))
         );
         vm.expectRevert(
@@ -144,7 +140,7 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
         bytes32[7] memory s = _snap();
         vm.store(
             address(harnessProxy),
-            _DISASTER_KEY_HASH_SLOT,
+            Storage._DISASTER_KEY_HASH_SLOT,
             bytes32(uint256(0xeeee))
         );
         vm.expectRevert(
@@ -162,7 +158,7 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
         bytes32[7] memory s = _snap();
         vm.store(
             address(harnessProxy),
-            _OWNERSHIP_KEY_SEED_SLOT,
+            Storage._OWNERSHIP_KEY_SEED_SLOT,
             bytes32(uint256(0xffff))
         );
         vm.expectRevert(
@@ -180,7 +176,7 @@ contract QuipWallet__assertGuardedSlotsUnchanged is QuipWalletTest {
         bytes32[7] memory s = _snap();
         vm.store(
             address(harnessProxy),
-            _OWNERSHIP_KEY_HASH_SLOT,
+            Storage._OWNERSHIP_KEY_HASH_SLOT,
             bytes32(uint256(0x1234))
         );
         vm.expectRevert(

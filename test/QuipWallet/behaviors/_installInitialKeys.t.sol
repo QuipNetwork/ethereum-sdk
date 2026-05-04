@@ -6,13 +6,15 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWalletHarness} from "../../harness/QuipWalletHarness.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
 /// @dev Behaviour tests for `_installInitialKeys(disaster, ownership, txn[5], rec[10])`.
 ///      Writes the two scalar keys, adds all 15 keyset members, then calls
 ///      `_verifyInitialState()` to assert the post-state invariants.
 contract QuipWallet__installInitialKeys is QuipWalletTest {
-    bytes32 constant STORAGE_BASE =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
+    /// @dev Imported from `WOTSPlusStorage` so the offsets below stay aligned
+    ///      with the canonical layout under any future namespace rename.
+    bytes32 constant STORAGE_BASE = Storage._WOTSPLUS_STORAGE_SLOT;
 
     /// @dev Factory pre-filled (slot 0) into a fresh harness so the trailing
     ///      `_verifyInitialState()` has a non-zero factory address to observe.

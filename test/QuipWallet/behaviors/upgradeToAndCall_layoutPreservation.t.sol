@@ -5,6 +5,7 @@ import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {QuipWallet} from "../../../contracts/QuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
 /// @dev Storage-layout preservation tests for `upgradeToAndCall`. Two flavours:
 ///
@@ -43,25 +44,31 @@ contract QuipWallet_upgradeToAndCall_layoutPreservation is QuipWalletTest {
     /// @dev `bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)`
     bytes32 internal constant ERC1967_IMPL_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-    /// @dev ERC-7201 namespace base: "quip.storage.wallet.wotsplus"
+    /// @dev ERC-7201 namespace base: "quip.storage.wallet.wotsplus".
+    ///      Imported from `WOTSPlusStorage` so the keccak-derivation test
+    ///      below locks the LIBRARY's literal to the namespace string. Any
+    ///      drift between the wallet's private slot literals and the
+    ///      library's surfaces here too — the per-field tests below pass
+    ///      `Storage.<NAME>_SLOT` to `vm.load`, so a wallet/library mismatch
+    ///      reports as a wrong-slot read of unrelated state.
     bytes32 internal constant WOTSPLUS_BASE =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
+        Storage._WOTSPLUS_STORAGE_SLOT;
 
-    bytes32 internal constant PQ_FACTORY_SLOT = WOTSPLUS_BASE; // base + 0
+    bytes32 internal constant PQ_FACTORY_SLOT = Storage._PQ_FACTORY_SLOT;
     bytes32 internal constant DISASTER_SEED_SLOT =
-        bytes32(uint256(WOTSPLUS_BASE) + 1);
+        Storage._DISASTER_KEY_SEED_SLOT;
     bytes32 internal constant DISASTER_HASH_SLOT =
-        bytes32(uint256(WOTSPLUS_BASE) + 2);
+        Storage._DISASTER_KEY_HASH_SLOT;
     bytes32 internal constant OWNERSHIP_SEED_SLOT =
-        bytes32(uint256(WOTSPLUS_BASE) + 3);
+        Storage._OWNERSHIP_KEY_SEED_SLOT;
     bytes32 internal constant OWNERSHIP_HASH_SLOT =
-        bytes32(uint256(WOTSPLUS_BASE) + 4);
+        Storage._OWNERSHIP_KEY_HASH_SLOT;
     bytes32 internal constant TXN_KEYSET_SPACER_SLOT =
-        bytes32(uint256(WOTSPLUS_BASE) + 5);
+        bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 5);
     bytes32 internal constant REC_KEYSET_SPACER_SLOT =
-        bytes32(uint256(WOTSPLUS_BASE) + 6);
+        bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 6);
     bytes32 internal constant VRF_KEYSET_SPACER_SLOT =
-        bytes32(uint256(WOTSPLUS_BASE) + 7);
+        bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 7);
     /// @dev Mirror of `EnumerableWinternitzAddressSet._SLOT_SEED`.
     uint32 internal constant SET_SLOT_SEED = 0x3e9f5d6a;
 

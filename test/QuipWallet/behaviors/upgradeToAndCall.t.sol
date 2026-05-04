@@ -8,21 +8,21 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
 /// @dev Minimal "rogue vetted impl" used to prove the verify-delegatecall guard
 ///      catches SSTOREs to any guarded slot. The fallback overwrites the
-///      `ownershipKey` publicSeed slot (ERC-7201 base + 3) — one of the seven
-///      slots snapshotted by the guard. If the guard did not fire, this SSTORE
-///      would silently succeed against the wallet's storage and brick the
-///      ownership-transfer path.
+///      `ownershipKey` publicSeed slot — one of the seven slots snapshotted by
+///      the guard. If the guard did not fire, this SSTORE would silently
+///      succeed against the wallet's storage and brick the ownership-transfer
+///      path. Slot is loaded from `WOTSPlusStorage` via a local variable
+///      because Yul rejects direct cross-library constant references.
 contract RogueUpgradeImpl_WritesGuardedSlot {
     fallback() external payable {
+        bytes32 slot = Storage._OWNERSHIP_KEY_SEED_SLOT;
         /// @solidity memory-safe-assembly
         assembly {
-            sstore(
-                0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf703,
-                0xdeadbeef
-            )
+            sstore(slot, 0xdeadbeef)
         }
     }
 }

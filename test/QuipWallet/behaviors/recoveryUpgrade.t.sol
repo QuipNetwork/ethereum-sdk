@@ -8,21 +8,22 @@ import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
 /// @dev Minimal "rogue vetted impl" used to prove the verify-delegatecall guard
 ///      catches SSTOREs to any guarded slot. The fallback overwrites the
-///      `disasterRecoveryKey` publicSeed slot (keccak256("quip.storage.wallet.wotsplus")
-///      ERC-7201 base + 1) — one of the seven slots snapshotted by the guard. If
-///      the guard did not fire, this SSTORE would silently succeed against the
-///      wallet's storage and brick the disaster recovery path.
+///      `disasterRecoveryKey` publicSeed slot — one of the seven slots
+///      snapshotted by the guard. If the guard did not fire, this SSTORE would
+///      silently succeed against the wallet's storage and brick the disaster
+///      recovery path. Slot is taken from `WOTSPlusStorage` (Yul can't
+///      reference cross-library constants directly, but loading into a local
+///      Solidity variable first works around that restriction).
 contract RogueImpl_WritesGuardedSlot {
     fallback() external payable {
+        bytes32 slot = Storage._DISASTER_KEY_SEED_SLOT;
         /// @solidity memory-safe-assembly
         assembly {
-            sstore(
-                0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf701,
-                0xdeadbeef
-            )
+            sstore(slot, 0xdeadbeef)
         }
     }
 }

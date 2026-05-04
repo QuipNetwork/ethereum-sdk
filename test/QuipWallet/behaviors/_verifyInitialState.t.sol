@@ -6,12 +6,14 @@ import {QuipWalletHarness, HarnessKeyset} from "../../harness/QuipWalletHarness.
 import {WOTSPlusCodec} from "../../../contracts/WOTSPlusCodec.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
+
 contract QuipWallet__verifyInitialState is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
-    /// @dev ERC-7201 base slot for WOTSPlusStorage.Layout
-    bytes32 constant STORAGE_BASE =
-        0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf700;
+    /// @dev ERC-7201 base slot for WOTSPlusStorage.Layout. Imported so any
+    ///      drift between this test and the storage library shows up here.
+    bytes32 constant STORAGE_BASE = Storage._WOTSPLUS_STORAGE_SLOT;
 
     function setUp() public override {
         super.setUp();
