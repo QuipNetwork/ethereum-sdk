@@ -1,4 +1,4 @@
-.PHONY: build test clean format snapshot gas install update release \
+.PHONY: build test clean format lint lint-fix snapshot gas install update release \
        deploy-deployer deploy-wotsplus deploy-factory deploy-all \
        deploy-impl vet-impl predict-addresses \
        fund-deployer drain-deployer balance \
@@ -24,6 +24,12 @@ clean:
 
 format:
 	prettier --write "**/*.{ts,js,json,sol}"
+
+lint:
+	npx solhint 'contracts/**/*.sol'
+
+lint-fix:
+	npx solhint --fix 'contracts/**/*.sol'
 
 snapshot:
 	forge snapshot

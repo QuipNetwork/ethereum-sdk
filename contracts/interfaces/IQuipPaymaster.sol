@@ -16,11 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-// prettier-ignore
-import {
-    IPaymaster,
-    PackedUserOperation
-} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {IPaymaster} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipPaymaster

@@ -33,6 +33,7 @@
     "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json && npm run copy-assets",
     "prepare": "npm run build",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
+    "lint:sol": "solhint 'contracts/**/*.sol'",
     "test": "forge test",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
     "release": "forge build && npx tsx scripts/release.ts"
@@ -59,6 +60,7 @@
     "prettier": "^2.8.8",
     "prettier-plugin-solidity": "^1.1.3",
     "rimraf": "^5.0.5",
+    "solhint": "^6.2.1",
     "ts-jest": "^29.3.2"
   },
   "dependencies": {
