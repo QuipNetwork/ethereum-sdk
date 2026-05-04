@@ -253,6 +253,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///      guarded to keep those rescue paths reachable and the ERC-4337 validation
     ///      path intact.
     modifier storageStoreGuard(bytes32 storageSlot) override {
+        bytes4 selector = GuardedSlotWriteDenied.selector;
         /// @solidity memory-safe-assembly
         assembly {
             if or(
@@ -274,7 +275,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                     eq(storageSlot, _OWNERSHIP_KEY_HASH_SLOT)
                 )
             ) {
-                revert(codesize(), 0x00)
+                mstore(0x00, selector)
+                revert(0x00, 0x04)
             }
         }
         _;

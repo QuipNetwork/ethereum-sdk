@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {QuipWalletTest} from "../QuipWallet.t.sol";
 import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
@@ -21,8 +22,7 @@ import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusSto
 ///      flip to passing (wallet permits writes the library considers
 ///      protected) — caught loudly when the suite runs.
 contract QuipWallet_storageStore is QuipWalletTest {
-    address constant ENTRY_POINT =
-        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     bytes32 constant _OWNER_SLOT =
         0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
@@ -39,7 +39,7 @@ contract QuipWallet_storageStore is QuipWalletTest {
 
     function _expectGuardedRevertOnStore(bytes32 slot) internal {
         vm.prank(ENTRY_POINT);
-        vm.expectRevert(); // plain revert via `revert(codesize(), 0x00)`
+        vm.expectRevert(IQuipWallet.GuardedSlotWriteDenied.selector);
         wallet.storageStore(slot, bytes32(uint256(0xdead)));
     }
 

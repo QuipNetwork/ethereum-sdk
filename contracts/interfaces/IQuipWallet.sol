@@ -123,6 +123,16 @@ interface IQuipWallet {
     ///                  5=ownershipKey seed, 6=ownershipKey hash.
     error GuardedSlotTampered(uint8 slotIndex);
 
+    /// @notice Thrown when `storageStore` is invoked with a `storageSlot` that
+    ///         falls within the set of PQ-protected slots (owner, ERC-1967 impl,
+    ///         quipFactory, both disaster-recovery-key slots, both ownership-key
+    ///         slots).
+    /// @dev No payload: the guarded slot is the caller-supplied `storageSlot`
+    ///      argument and is already visible in calldata, so duplicating it in
+    ///      revert data buys nothing. The selector alone distinguishes this
+    ///      branch from other reverts (e.g. `Unauthorized`) for trace tooling.
+    error GuardedSlotWriteDenied();
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
