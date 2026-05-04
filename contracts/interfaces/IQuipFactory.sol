@@ -71,12 +71,12 @@ interface IQuipFactory {
     ///         `ImplementationUndeprecated`, not by re-emitting this event.
     /// @param impl The implementation contract address.
     /// @param codehash The codehash of the implementation.
-    event ImplementationVetted(address indexed impl, bytes32 codehash);
+    event ImplementationVetted(address indexed impl, bytes32 indexed codehash);
 
     /// @notice Emitted when an implementation is deprecated.
     /// @param impl The implementation contract address.
     /// @param codehash The codehash of the implementation.
-    event ImplementationSunset(address indexed impl, bytes32 codehash);
+    event ImplementationSunset(address indexed impl, bytes32 indexed codehash);
 
     /// @notice Emitted when a previously deprecated implementation codehash is
     ///         reactivated via `undeprecateImplementation`.
@@ -84,7 +84,10 @@ interface IQuipFactory {
     ///        address originally vetted, since `vettedWalletImpls[codehash]` is
     ///        re-bound on undeprecate).
     /// @param codehash The codehash of the implementation.
-    event ImplementationUndeprecated(address indexed impl, bytes32 codehash);
+    event ImplementationUndeprecated(
+        address indexed impl,
+        bytes32 indexed codehash
+    );
 
     /// @notice Emitted when the creation fee is updated.
     /// @param oldFee The previous creation fee.
@@ -109,10 +112,10 @@ interface IQuipFactory {
     event QuipCreated(
         uint256 amount,
         uint256 when,
-        bytes32 vaultId,
-        address creator,
+        bytes32 indexed vaultId,
+        address indexed creator,
         WOTSPlus.WinternitzAddress disasterRecoveryKey,
-        address quip
+        address indexed quip
     );
 
     /// @notice Emitted when ETH is withdrawn from the factory.

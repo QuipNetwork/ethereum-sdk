@@ -155,7 +155,11 @@ interface IQuipWallet {
     /// @param target The recipient or contract address.
     /// @param value The ETH value sent to the target.
     /// @param dataHash The keccak256 hash of the calldata.
-    event ExecutionSucceeded(address target, uint256 value, bytes32 dataHash);
+    event ExecutionSucceeded(
+        address indexed target,
+        uint256 value,
+        bytes32 dataHash
+    );
 
     /// @notice Emitted in place of `ExecutionSucceeded` when `execute(bytes)` is
     ///         signed with `value == 0 && data.length == 0`.
@@ -221,7 +225,7 @@ interface IQuipWallet {
     event OwnershipReinitialized(
         WOTSPlus.WinternitzAddress oldOwnershipKey,
         WOTSPlus.WinternitzAddress newOwnershipKey,
-        address newOwner,
+        address indexed newOwner,
         WOTSPlus.WinternitzAddress newDisasterRecoveryKey,
         bytes32 newTransactionKeysHash,
         bytes32 newRecoveryKeysHash
@@ -251,7 +255,7 @@ interface IQuipWallet {
     ///        topics + data would balloon the upgrade calldata; a hash is the
     ///        cheapest useful commitment — off-chain indexers can recompute it from
     ///        the migrator payload, which is itself available via calldata.
-    event WalletMigrated(bytes32 transactionKeysHash);
+    event WalletMigrated(bytes32 indexed transactionKeysHash);
 
     /// @notice Emitted when a recovery key authorizes an emergency implementation upgrade.
     /// @param newImplementation The new implementation address.
@@ -269,7 +273,7 @@ interface IQuipWallet {
     /// @param nextKey The installed transaction key after the auth rotation.
     event KeyReplaced(
         WOTSPlusCodec.KeyType indexed kind,
-        uint256 index,
+        uint256 indexed index,
         WOTSPlus.WinternitzAddress oldKey,
         WOTSPlus.WinternitzAddress newKey,
         WOTSPlus.WinternitzAddress nextKey
@@ -282,7 +286,7 @@ interface IQuipWallet {
     /// @param dataHash The keccak256 hash of the calldata.
     /// @param result The revert data from the failed call.
     event ExecutionReverted(
-        address target,
+        address indexed target,
         uint256 value,
         bytes32 dataHash,
         bytes result

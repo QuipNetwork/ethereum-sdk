@@ -21,7 +21,7 @@ pragma solidity ^0.8.33;
 interface IDeployer {
     /// @notice Emitted when a contract is successfully deployed.
     /// @param addr The address of the newly deployed contract.
-    event Deploy(address addr);
+    event Deploy(address indexed addr);
 
     /// @notice Deploys a contract using CREATE3 with the provided bytecode and salt.
     /// @dev Reverts if the deployment fails (i.e., the deployed address has no code).

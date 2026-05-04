@@ -107,23 +107,17 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
                 logs[i].topics[0] == IQuipFactory.QuipCreated.selector
             ) {
                 found = true;
+                // vaultId / creator / quip are indexed → topics[1..3].
+                bytes32 vid = logs[i].topics[1];
+                address creator = address(uint160(uint256(logs[i].topics[2])));
+                address quip = address(uint160(uint256(logs[i].topics[3])));
                 (
                     uint256 amount,
                     ,
-                    bytes32 vid,
-                    address creator,
-                    WOTSPlus.WinternitzAddress memory pqPub,
-                    address quip
+                    WOTSPlus.WinternitzAddress memory pqPub
                 ) = abi.decode(
                         logs[i].data,
-                        (
-                            uint256,
-                            uint256,
-                            bytes32,
-                            address,
-                            WOTSPlus.WinternitzAddress,
-                            address
-                        )
+                        (uint256, uint256, WOTSPlus.WinternitzAddress)
                     );
                 assertEq(amount, 1 ether);
                 assertEq(vid, vaultId);

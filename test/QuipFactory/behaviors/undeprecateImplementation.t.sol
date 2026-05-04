@@ -131,8 +131,8 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
                     logs[i].topics[1],
                     bytes32(uint256(uint160(address(walletImplementation))))
                 );
-                bytes32 emittedCodehash = abi.decode(logs[i].data, (bytes32));
-                assertEq(emittedCodehash, codehash);
+                // codehash is now indexed → topics[2].
+                assertEq(logs[i].topics[2], codehash);
                 found = true;
                 break;
             }
