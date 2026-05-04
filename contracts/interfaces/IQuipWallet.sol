@@ -20,12 +20,13 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {WOTSPlusCodec} from "../WOTSPlusCodec.sol";
 
 /// @title IQuipWallet
-/// @notice A smart-contract wallet whose operations are authorized by Winternitz one-time signatures,
-///         providing post-quantum security for ETH transfers and arbitrary calls.
+/// @notice A smart-contract wallet whose operations are authorized by Winternitz
+///         one-time signatures, providing post-quantum security for ETH transfers
+///         and arbitrary calls.
 interface IQuipWallet {
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                           ERRORS                              */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         ERRORS                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Thrown when the factory address is zero.
     error ZeroAddressFactory();
@@ -63,7 +64,8 @@ interface IQuipWallet {
     ///         a "rotation to self" that would burn the WOTS+ signing capability without
     ///         producing a meaningful state change. Surfaced by `_enforceDifferentKeys`.
     error SameKey();
-    /// @notice Thrown when a provided key is not present in the keyset that was expected to contain it.
+    /// @notice Thrown when a provided key is not present in the keyset that
+    ///         was expected to contain it.
     error UnknownKey();
     /// @notice Thrown when the underlying keyset `add` returns false during a rotation primitive
     ///         (`_safeAddKey`). Indicates a library/storage invariant violation, since callers gate
@@ -72,7 +74,8 @@ interface IQuipWallet {
     ///         a no-op.
     error KeyAdditionFailed();
     /// @notice Thrown when the underlying keyset `remove` returns false during a rotation primitive
-    ///         (`_safeRemoveKey`). Indicates a library/storage invariant violation, since callers gate
+    ///         (`_safeRemoveKey`). Indicates a library/storage invariant violation,
+    ///         since callers gate
     ///         the remove behind a prior `_enforceContained` or `at(index)` proof of presence.
     ///         Catastrophic for a one-time-signature scheme — silent under-rotation would leave a
     ///         spent WOTS+ key live in the active set.
@@ -96,7 +99,8 @@ interface IQuipWallet {
     error ReinstallSpentKeyForbidden();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
-    /// @notice Thrown when the number of transaction keys provided to `initialize`/`migrate` is incorrect.
+    /// @notice Thrown when the number of transaction keys provided to
+    ///         `initialize`/`migrate` is incorrect.
     error IncorrectTransactionKeyAmount();
 
     /// @notice Thrown when the upgrade target's codehash is not in the factory's vetted set.
@@ -119,9 +123,9 @@ interface IQuipWallet {
     ///                  5=ownershipKey seed, 6=ownershipKey hash.
     error GuardedSlotTampered(uint8 slotIndex);
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                           EVENTS                              */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         EVENTS                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Emitted when a WOTS+ key is rotated in place (remove-then-add) within
     ///         one of the wallet's keysets.
@@ -261,7 +265,8 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress nextKey
     );
 
-    /// @notice Emitted when the inner call of an ERC-4337 execution reverts but key rotation commits.
+    /// @notice Emitted when the inner call of an ERC-4337 execution reverts but
+    ///         key rotation commits.
     /// @param target The target of the failed call.
     /// @param value The ETH value attempted.
     /// @param dataHash The keccak256 hash of the calldata.
@@ -294,9 +299,9 @@ interface IQuipWallet {
     /// @param reason The classification of the rejection.
     event UserOpValidationRejected(UserOpValidationFailure indexed reason);
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          FUNCTIONS                            */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       FUNCTIONS                        */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;
@@ -334,7 +339,8 @@ interface IQuipWallet {
     ///      Shares the same (currentKey, newKey, pqSig) auth shape as `upgradeToAndCall`
     ///      since the recovery path now rotates the consumed recovery key in place.
     /// @param newImplementation The address of the new implementation being upgraded to.
-    /// @param data Packed recoveryUpgrade payload; verifier at [2272:2336), verifySig at [2336:4480).
+    /// @param data Packed recoveryUpgrade payload; verifier at [2272:2336),
+    ///             verifySig at [2336:4480).
     function verifyRecoveryUpgrade(
         address newImplementation,
         bytes calldata data
@@ -419,7 +425,9 @@ interface IQuipWallet {
     /// @notice Returns the number of keys in the selected keyset.
     /// @param kind The keyset to query.
     /// @return The number of active keys in that keyset.
-    function keyCount(WOTSPlusCodec.KeyType kind) external view returns (uint256);
+    function keyCount(
+        WOTSPlusCodec.KeyType kind
+    ) external view returns (uint256);
 
     /// @notice Returns the key at a given index within the selected keyset.
     /// @param kind The keyset to query.
@@ -458,7 +466,8 @@ interface IQuipWallet {
 
     /// @notice Appends new keys to the target keyset, authorized by a WOTS+ signature.
     /// @dev Consumes `currentKey` / installs `nextKey` from the transaction keyset.
-    ///      For `WOTSPlusCodec.KeyType.Transaction`, the extras are appended to the active transaction set;
+    ///      For `WOTSPlusCodec.KeyType.Transaction`, the extras are appended to
+    ///      the active transaction set;
     ///      for `Recovery` / `Verification`, the target set is extended.
     ///      The transaction rotation is committed before the target-set write.
     ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
@@ -467,7 +476,8 @@ interface IQuipWallet {
     function addKeys(bytes calldata payload) external;
 
     /// @notice Clears the target keyset and installs a fresh batch.
-    /// @dev Reverts with `RefreshTransactionForbidden` when `kind == WOTSPlusCodec.KeyType.Transaction` —
+    /// @dev Reverts with `RefreshTransactionForbidden` when
+    ///      `kind == WOTSPlusCodec.KeyType.Transaction` —
     ///      only `recoverWallet` may drain the transaction keyset.
     ///      Consumes `currentKey` / installs `nextKey` from the transaction keyset.
     ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,

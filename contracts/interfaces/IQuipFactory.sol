@@ -19,12 +19,13 @@ pragma solidity ^0.8.33;
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipFactory
-/// @notice Factory for creating and managing QuipWallet proxies secured by Winternitz one-time signatures.
+/// @notice Factory for creating and managing QuipWallet proxies secured by
+///         Winternitz one-time signatures.
 ///         Supports multiple vetted implementation versions with index-based selection.
 interface IQuipFactory {
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          ERRORS                               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         ERRORS                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Thrown when the factory balance is insufficient for the requested withdrawal.
     /// @param requested The amount requested.
@@ -61,9 +62,9 @@ interface IQuipFactory {
     /// @notice Thrown when the wallet owner address is zero.
     error ZeroAddressOwner();
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          EVENTS                               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         EVENTS                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Emitted when a fresh implementation codehash is added to the vetted
     ///         set. Reactivation of a deprecated codehash is signaled by
@@ -119,9 +120,9 @@ interface IQuipFactory {
     /// @param amount The amount of ETH withdrawn.
     event Withdrawn(address indexed to, uint256 amount);
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                       FUNCTIONS                               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       FUNCTIONS                        */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Approves a fresh implementation's codehash for proxy deployment.
     /// @dev Only callable by the admin. Computes `extcodehash` of `impl` and adds it
@@ -157,7 +158,9 @@ interface IQuipFactory {
     ///      non-deprecated implementation. Uses CREATE3 for deterministic addressing.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param to The classical address that will own the new wallet.
-    /// @param payload Packed init data: [0:64) disasterRecoveryKey, [64:128) ownershipKey, [128:448) transactionKeys[5], [448:1088) recoveryKeys[10].
+    /// @param payload Packed init data: [0:64) disasterRecoveryKey,
+    ///                [64:128) ownershipKey, [128:448) transactionKeys[5],
+    ///                [448:1088) recoveryKeys[10].
     /// @return The address of the newly deployed QuipWallet proxy.
     function deployLatestWalletProxy(
         bytes32 vaultId,
@@ -172,7 +175,9 @@ interface IQuipFactory {
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param index The index into the vetted implementation set.
     /// @param to The classical address that will own the new wallet.
-    /// @param payload Packed init data: [0:64) disasterRecoveryKey, [64:128) ownershipKey, [128:448) transactionKeys[5], [448:1088) recoveryKeys[10].
+    /// @param payload Packed init data: [0:64) disasterRecoveryKey,
+    ///                [64:128) ownershipKey, [128:448) transactionKeys[5],
+    ///                [448:1088) recoveryKeys[10].
     /// @return The address of the newly deployed QuipWallet proxy.
     function deploySpecificWalletProxy(
         bytes32 vaultId,

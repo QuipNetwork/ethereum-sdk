@@ -30,7 +30,8 @@ library QuipPaymasterStorage {
         mapping(bytes32 keyHash => bool used) verifierKeyUsed;
     }
 
-    /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.paymaster")) - 1)) & ~bytes32(uint256(0xff))
+    /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.paymaster")) - 1))
+    ///      & ~bytes32(uint256(0xff))
     bytes32 private constant _PAYMASTER_STORAGE_SLOT =
         0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00;
 

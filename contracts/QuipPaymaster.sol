@@ -21,7 +21,12 @@ import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {IPaymaster, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+// prettier-ignore
+import {
+    IPaymaster,
+    IEntryPointStake,
+    PackedUserOperation
+} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {IQuipPaymaster} from "./interfaces/IQuipPaymaster.sol";
 import {QuipPaymasterStorage as Storage} from "./storage/QuipPaymasterStorage.sol";
 
@@ -36,9 +41,9 @@ contract QuipPaymaster is
     UUPSUpgradeable,
     Initializable
 {
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          CONSTANTS                            */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       CONSTANTS                        */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev ERC-4337 v0.7 EntryPoint singleton address.
     address public constant ENTRY_POINT =
@@ -57,17 +62,17 @@ contract QuipPaymaster is
     bytes32 private constant _PAYMASTER_APPROVE_TAG =
         keccak256("quip.digest.paymasterApprove");
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                         CONSTRUCTOR                           */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      CONSTRUCTOR                       */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     constructor() {
         _disableInitializers();
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                      INTERNAL OVERRIDES                       */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   INTERNAL OVERRIDES                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Guard owner initialization to prevent re-initialization.
     function _guardInitializeOwner() internal pure override returns (bool) {
@@ -77,9 +82,9 @@ contract QuipPaymaster is
     /// @dev Restrict upgrades to the contract owner.
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                      EXTERNAL FUNCTIONS                       */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   EXTERNAL FUNCTIONS                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipPaymaster
     function initialize(address owner_) external initializer {
@@ -222,7 +227,7 @@ contract QuipPaymaster is
     function removePqVerifier(address wallet) external onlyOwner {
         Storage.Layout storage $ = Storage.layout();
         WOTSPlus.WinternitzAddress storage existing = $.verifiers[wallet];
-   
+
         if (
             existing.publicSeed == bytes32(0) ||
             existing.publicKeyHash == bytes32(0)
@@ -266,9 +271,9 @@ contract QuipPaymaster is
         IEntryPointStake(ENTRY_POINT).withdrawStake(to);
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                     INTERNAL FUNCTIONS                        */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                  INTERNAL FUNCTIONS                    */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Verifies the WOTS+ signature and rotates the per-wallet verifier key.
     ///      Rotation is committed immediately so the key is rotated regardless of whether
@@ -310,7 +315,6 @@ contract QuipPaymaster is
         WOTSPlus.WinternitzAddress storage currentVerifier = Storage
             .layout()
             .verifiers[sender];
-
 
         if (
             currentVerifier.publicSeed == bytes32(0) ||
@@ -416,9 +420,9 @@ contract QuipPaymaster is
         return EfficientHashLib.hash(publicSeed, publicKeyHash);
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                       VIEW FUNCTIONS                          */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    VIEW FUNCTIONS                      */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipPaymaster
     function getPqVerifier(

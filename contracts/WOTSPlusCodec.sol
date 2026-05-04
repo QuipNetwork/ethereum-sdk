@@ -39,7 +39,8 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [4481:5569) bytes                 — migratorPayload (init layout, 1088 bytes)
 ///
 ///      recoveryUpgrade payload layout (4480 bytes):
-///      [0:64)      WinternitzAddress     — currentRecoveryKey (consumed, replaced by newRecoveryKey)
+///      [0:64)      WinternitzAddress     — currentRecoveryKey
+///                                          (consumed, replaced by newRecoveryKey)
 ///      [64:128)    WinternitzAddress     — newRecoveryKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///      [2272:2336) WinternitzAddress     — verifier
@@ -76,7 +77,8 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///
 ///      keyManagement payload layout (2304 + N*64 bytes, used by addKeys and refreshKeys):
-///      [0:32)      uint256               — kind (KeyType enum: 0=Txn, 1=Recovery, 2=Verification)
+///      [0:32)      uint256               — kind
+///                                          (KeyType: 0=Txn, 1=Recovery, 2=Verification)
 ///      [32:96)     WinternitzAddress     — currentKey
 ///      [96:160)    WinternitzAddress     — nextKey
 ///      [160:2304)  WinternitzElements    — pqSig (67 x 32)
@@ -104,9 +106,9 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///        TRANSACTION_KEY_INIT_AMOUNT = 5
 ///        RECOVERY_KEY_AMOUNT         = 10
 library WOTSPlusCodec {
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                           ERRORS                              */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         ERRORS                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Thrown when a decoder is invoked with a payload whose length does
     ///         not match the layout it expects. For variable-length decoders
@@ -117,9 +119,9 @@ library WOTSPlusCodec {
     /// @param actual The actual length of the payload provided.
     error MalformedPayload(uint256 expected, uint256 actual);
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                           TYPES                               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                         TYPES                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Discriminator for the three PQ keysets managed by a QuipWallet.
     /// @dev Travels at the head of the `keyManagement` payload and selects the
@@ -132,16 +134,16 @@ library WOTSPlusCodec {
         Verification
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                         CONSTANTS                             */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       CONSTANTS                        */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     uint256 internal constant TRANSACTION_KEY_INIT_AMOUNT = 5;
     uint256 internal constant RECOVERY_KEY_AMOUNT = 10;
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                       DOMAIN TAGS                             */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      DOMAIN TAGS                       */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     // Every digest committed to a WOTS+ signature is prefixed with a unique
     // domain tag. The tag is the first preimage element fed into
@@ -216,9 +218,9 @@ library WOTSPlusCodec {
     bytes32 internal constant RECOVER_WALLET_TAG =
         keccak256("quip.digest.recoverWallet");
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                         DECODERS                              */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        DECODERS                        */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Decodes the init payload into disaster recovery key, ownership key, transaction
     ///      keys, and recovery keys.
@@ -543,9 +545,8 @@ library WOTSPlusCodec {
         // the bounds + alignment check, `keys.length := div(sub(payload.length,
         // 2304), 64)` underflows in Yul on short input and produces a huge
         // length, turning any keys-iterating caller into a gas bomb.
-        if (
-            payload.length < 2304 || (payload.length - 2304) % 64 != 0
-        ) revert MalformedPayload(2304, payload.length);
+        if (payload.length < 2304 || (payload.length - 2304) % 64 != 0)
+            revert MalformedPayload(2304, payload.length);
         uint256 raw;
         assembly {
             raw := calldataload(payload.offset)
@@ -654,9 +655,9 @@ library WOTSPlusCodec {
         ecdsaSig = signature[2208:2273];
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          ENCODERS                             */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        ENCODERS                        */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Encodes the saveWallet payload.
     /// @return The packed payload (3232 bytes).
@@ -957,11 +958,11 @@ library WOTSPlusCodec {
             );
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                          HASHERS                              */
     /*  NOTE: WOTS+ signatures are incompatible with EIP-712. These  */
     /*  digests use domain tags instead of EIP-712 structured data.  */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev keccak256(abi.encode(RECOVER_WALLET_TAG, chainId, wallet,
     ///      recoverySeed, recoveryHash, newRecoverySeed, newRecoveryHash,
@@ -993,7 +994,8 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, target, value, opdataHash, fee))
+    /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2,
+    ///                            target, value, opdataHash, fee))
     function executeDigest(
         address wallet,
         uint256 chainId,
@@ -1022,7 +1024,8 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(WITHDRAW_DEPOSIT_TAG, chainId, wallet, s1, h1, s2, h2, to, amount))
+    /// @dev keccak256(abi.encode(WITHDRAW_DEPOSIT_TAG, chainId, wallet,
+    ///                            s1, h1, s2, h2, to, amount))
     function withdrawDepositDigest(
         address wallet,
         uint256 chainId,
@@ -1123,7 +1126,8 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(ERC4337_EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2, userOpHash, fee))
+    /// @dev keccak256(abi.encode(ERC4337_EXECUTE_TAG, chainId, wallet,
+    ///                            s1, h1, s2, h2, userOpHash, fee))
     function erc4337ExecuteDigest(
         address wallet,
         uint256 chainId,
@@ -1272,7 +1276,8 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(ERC1271_TAG, chainId, wallet, verifierSeed, verifierHash, messageHash))
+    /// @dev keccak256(abi.encode(ERC1271_TAG, chainId, wallet,
+    ///                            verifierSeed, verifierHash, messageHash))
     function erc1271Digest(
         address wallet,
         uint256 chainId,

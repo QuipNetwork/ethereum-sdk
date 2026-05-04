@@ -29,7 +29,10 @@ import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
 import {WOTSPlusCodec as Codec} from "./WOTSPlusCodec.sol";
 import {WOTSPlusStorage as Storage} from "./storage/WOTSPlusStorage.sol";
-import {EnumerableWinternitzAddressSet as Keyset} from "./libraries/EnumerableWinternitzAddressSet.sol";
+// prettier-ignore
+import {
+    EnumerableWinternitzAddressSet as Keyset
+} from "./libraries/EnumerableWinternitzAddressSet.sol";
 
 /// @title QuipWallet
 contract QuipWallet is IQuipWallet, ERC4337, Initializable {
@@ -76,9 +79,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _disableInitializers();
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                    INTERNAL OVERRIDES                          */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   INTERNAL OVERRIDES                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev EIP-712 domain name and version for ERC-1271 signature validation.
     function _domainNameAndVersion()
@@ -131,9 +134,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             nextKey.publicSeed == bytes32(0) ||
             nextKey.publicKeyHash == bytes32(0)
         ) {
-            emit UserOpValidationRejected(
-                UserOpValidationFailure.ZeroNextKey
-            );
+            emit UserOpValidationRejected(UserOpValidationFailure.ZeroNextKey);
             return 1;
         }
 
@@ -184,9 +185,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         return 0;
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                   ERC-4337 EXECUTION                          */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                ERC-4337 EXECUTION                      */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc ERC4337
     /// @dev Key rotation is committed during `_validateSignature`.
@@ -289,9 +290,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _assertGuardedSlotsUnchanged(snapshot);
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                          PUBLIC                               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                       PUBLIC                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipWallet
     function renounceOwnership()
@@ -304,13 +305,15 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @dev Blocks the classical `transferOwnership(address)`.
-    ///      All ownership transfers MUST go through the WOTS+-authenticated `transferOwnership(bytes)`.
+    ///      All ownership transfers MUST go through the WOTS+-authenticated
+    ///      `transferOwnership(bytes)`.
     function transferOwnership(address) public payable override {
         revert ClassicalTransferOwnershipDisabled();
     }
 
     /// @dev Blocks the classical `completeOwnershipHandover(address)`.
-    ///      All handovers MUST go through the WOTS+-authenticated `completeOwnershipHandover(bytes)`.
+    ///      All handovers MUST go through the WOTS+-authenticated
+    ///      `completeOwnershipHandover(bytes)`.
     function completeOwnershipHandover(address) public payable override {
         revert ClassicalCompleteOwnershipHandoverDisabled();
     }
@@ -391,13 +394,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         // upgrade payload reverts with `UnknownKey`. Every delegatecall and
         // `super.upgradeToAndCall` below is an Interaction. Reordering any of
         // them before this rotation re-opens the replay surface.
-        _verifyAndRotate(
-            $.transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
+        _verifyAndRotate($.transactionKeys, currentKey, nextKey, pqSig, digest);
 
         // `verifyUpgrade` is declared view on this implementation, but we are about to
         // execute the NEW implementation's bytecode in our storage context. Snapshot
@@ -476,13 +473,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         // rotation after an Interaction — breaks CEI and re-opens the replay
         // surface, allowing an attacker to drain the wallet by re-executing
         // the same signed payload through a malicious target.
-        _verifyAndRotate(
-            $.transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
+        _verifyAndRotate($.transactionKeys, currentKey, nextKey, pqSig, digest);
 
         // SECURITY (CEI): Interaction. MUST remain after `_verifyAndRotate`
         // above to preserve replay-attack protection.
@@ -769,13 +760,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             newKey.publicKeyHash
         );
 
-        _verifyAndRotate(
-            $.transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
+        _verifyAndRotate($.transactionKeys, currentKey, nextKey, pqSig, digest);
 
         // Indexed replacement on `target`. Goes through `_rotateKeys` (which
         // wraps the safe remove + safe add primitives) so a library-level
@@ -877,9 +862,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         emit WalletMigrated(EfficientHashLib.hash(abi.encode(transactionKeys)));
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                         VIEWS                                 */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      VIEWS                             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipWallet
     function verifyUpgrade(
@@ -958,8 +943,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) = Codec.decodeErc1271Signature(signature);
 
         address recovered = ECDSA.tryRecoverCalldata(hash, ecdsaSig);
-        if (recovered == address(0) || recovered != owner())
-            return 0xffffffff;
+        if (recovered == address(0) || recovered != owner()) return 0xffffffff;
 
         Storage.Layout storage $ = Storage.layout();
         if (!$.verificationKeys.contains(verifier)) return 0xffffffff;
@@ -996,9 +980,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         return IQuipFactory(Storage.layout().quipFactory).executeFee();
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                        INTERNALS                              */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                     INTERNALS                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Appends calldata-provided keys to `set`, capped at `MAX_KEYS`. Each add
     ///      goes through `_safeAddKey` so the global uniqueness pre-check catches
@@ -1436,9 +1420,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             revert IncorrectRecoveryKeyAmount();
     }
 
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                        PRIVATES                               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                     PRIVATES                           */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     function _upgradeGuard() internal view returns (uint256 v) {
         uint256 slot = _UPGRADE_GUARD_SLOT;
@@ -1502,34 +1486,22 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
                 revertWithIndex(selector, 2)
             }
             if iszero(
-                eq(
-                    mload(add(snapshot, 0x60)),
-                    sload(_DISASTER_KEY_SEED_SLOT)
-                )
+                eq(mload(add(snapshot, 0x60)), sload(_DISASTER_KEY_SEED_SLOT))
             ) {
                 revertWithIndex(selector, 3)
             }
             if iszero(
-                eq(
-                    mload(add(snapshot, 0x80)),
-                    sload(_DISASTER_KEY_HASH_SLOT)
-                )
+                eq(mload(add(snapshot, 0x80)), sload(_DISASTER_KEY_HASH_SLOT))
             ) {
                 revertWithIndex(selector, 4)
             }
             if iszero(
-                eq(
-                    mload(add(snapshot, 0xa0)),
-                    sload(_OWNERSHIP_KEY_SEED_SLOT)
-                )
+                eq(mload(add(snapshot, 0xa0)), sload(_OWNERSHIP_KEY_SEED_SLOT))
             ) {
                 revertWithIndex(selector, 5)
             }
             if iszero(
-                eq(
-                    mload(add(snapshot, 0xc0)),
-                    sload(_OWNERSHIP_KEY_HASH_SLOT)
-                )
+                eq(mload(add(snapshot, 0xc0)), sload(_OWNERSHIP_KEY_HASH_SLOT))
             ) {
                 revertWithIndex(selector, 6)
             }
