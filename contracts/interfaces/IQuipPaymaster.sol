@@ -60,11 +60,21 @@ interface IQuipPaymaster is IPaymaster {
     event PaymasterInitialized(address indexed owner);
 
     /// @notice Emitted when a per-wallet WOTS+ verifier is set.
+    /// @dev On first registration `oldVerifier` is the zero
+    ///      `WinternitzAddress` (`publicSeed == 0 && publicKeyHash == 0`); on
+    ///      admin hot-swap (re-binding an existing wallet to a new key)
+    ///      `oldVerifier` carries the prior key so off-chain consumers can
+    ///      distinguish first-set from override without keeping per-wallet
+    ///      state across event history.
     /// @param wallet The wallet address the verifier is set for.
-    /// @param verifier The WOTS+ verifier.
+    /// @param oldVerifier The verifier previously bound to `wallet`, or the
+    ///        zero address-pair if this is a first-time set / no-op re-bind
+    ///        of the same key.
+    /// @param newVerifier The newly-bound WOTS+ verifier.
     event PqVerifierSet(
         address indexed wallet,
-        WOTSPlus.WinternitzAddress verifier
+        WOTSPlus.WinternitzAddress oldVerifier,
+        WOTSPlus.WinternitzAddress newVerifier
     );
 
     /// @notice Emitted when a per-wallet WOTS+ verifier key is removed.

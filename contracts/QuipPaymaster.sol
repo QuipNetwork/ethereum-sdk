@@ -174,16 +174,27 @@ contract QuipPaymaster is
 
         Storage.Layout storage $ = Storage.layout();
 
+        // Snapshot the prior verifier BEFORE any storage mutation so the
+        // event carries the genuine prior state. On first-time registration
+        // both fields are zero — `PqVerifierSet`'s `oldVerifier` is then the
+        // zero address-pair, which is the off-chain discriminator between a
+        // fresh set and an admin hot-swap.
+        WOTSPlus.WinternitzAddress storage existing = $.verifiers[wallet];
+        WOTSPlus.WinternitzAddress memory oldVerifier = WOTSPlus
+            .WinternitzAddress({
+                publicSeed: existing.publicSeed,
+                publicKeyHash: existing.publicKeyHash
+            });
+
         // Re-binding the same key on the same wallet is a no-op (the key was
         // already registered for this wallet on a prior call). Allow it for
         // ergonomics — but skip the in-use check, which would otherwise fire
         // on this wallet's own existing entry in the monotonic index.
-        WOTSPlus.WinternitzAddress storage existing = $.verifiers[wallet];
         if (
             existing.publicSeed == verifier.publicSeed &&
             existing.publicKeyHash == verifier.publicKeyHash
         ) {
-            emit PqVerifierSet(wallet, verifier);
+            emit PqVerifierSet(wallet, oldVerifier, verifier);
             return;
         }
 
@@ -204,7 +215,7 @@ contract QuipPaymaster is
 
         $.verifiers[wallet] = verifier;
         $.verifierKeyUsed[newHash] = true;
-        emit PqVerifierSet(wallet, verifier);
+        emit PqVerifierSet(wallet, oldVerifier, verifier);
     }
 
     /// @inheritdoc IQuipPaymaster

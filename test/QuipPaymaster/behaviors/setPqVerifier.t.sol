@@ -41,10 +41,38 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
             "wallet2-verifier"
         );
 
+        // Fresh registration: oldVerifier is the zero address-pair so
+        // off-chain consumers can distinguish first-set from hot-swap.
+        WOTSPlus.WinternitzAddress memory zeroVerifier = WOTSPlus
+            .WinternitzAddress({
+                publicSeed: bytes32(0),
+                publicKeyHash: bytes32(0)
+            });
+
         vm.prank(ADMIN);
         vm.expectEmit(true, false, false, true);
-        emit IQuipPaymaster.PqVerifierSet(wallet2, key);
+        emit IQuipPaymaster.PqVerifierSet(wallet2, zeroVerifier, key);
         paymaster.setPqVerifier(wallet2, key);
+    }
+
+    /// @dev Hot-swap branch: when the wallet already has a verifier and
+    ///      `setPqVerifier` is called with a different key, `oldVerifier`
+    ///      carries the prior key (not zero) so off-chain consumers can
+    ///      identify admin overrides directly from the event.
+    function test_setPqVerifier_emitsPriorVerifierOnHotSwap() public {
+        // WALLET already holds `verifierPubkey` from base setUp.
+        (WOTSPlus.WinternitzAddress memory replacement, ) = _generateKeyPair(
+            "hot-swap-replacement"
+        );
+
+        vm.prank(ADMIN);
+        vm.expectEmit(true, false, false, true);
+        emit IQuipPaymaster.PqVerifierSet(
+            WALLET,
+            verifierPubkey,
+            replacement
+        );
+        paymaster.setPqVerifier(WALLET, replacement);
     }
 
     function test_setPqVerifier_revertsWhen_notOwner() public {
@@ -134,11 +162,18 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
     }
 
     /// @dev Re-setting the same key on the same wallet still emits
-    ///      `PqVerifierSet` for symmetry with the fresh-set path.
+    ///      `PqVerifierSet` for symmetry with the fresh-set path. Both
+    ///      `oldVerifier` and `newVerifier` carry the same key — the no-op
+    ///      semantics flow through to the event, so off-chain consumers can
+    ///      detect "old == new" and treat it as an idempotent re-bind.
     function test_setPqVerifier_reSettingSameKeyEmitsEvent() public {
         vm.prank(ADMIN);
         vm.expectEmit(true, false, false, true);
-        emit IQuipPaymaster.PqVerifierSet(WALLET, verifierPubkey);
+        emit IQuipPaymaster.PqVerifierSet(
+            WALLET,
+            verifierPubkey,
+            verifierPubkey
+        );
         paymaster.setPqVerifier(WALLET, verifierPubkey);
     }
 }
