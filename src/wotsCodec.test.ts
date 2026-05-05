@@ -23,7 +23,6 @@ import {
   encodeRecoverWallet,
   encodeKeyManagement,
   encodeUpgrade,
-  encodeRecoveryUpgradeData,
   decodeInit,
   decodeUpgradeAuth,
   decodeUpgradeVerification,
@@ -32,10 +31,9 @@ import {
   decodeExecute,
   decodeRecoverWallet,
   decodeKeyManagement,
-  decodeRecoveryUpgradeData,
   keyRotationDigest,
   executeDigest,
-  keyManagementDigest,
+  keysetDigest,
   upgradeDigest,
   verificationDigest,
   upgradeRecoveryDigest,
@@ -162,17 +160,11 @@ describe("encoder parity (live Solidity)", () => {
 
   test("encodeKeyManagement matches Solidity", async () => {
     const keys: WinternitzAddress[] = [makeKey(200n), makeKey(202n)];
-    const tsEncoded = encodeKeyManagement(pq, sig, keys);
-    const solEncoded = await callHarness("exposed_encodeKeyManagement", [pq, sig, keys]);
+    const tsEncoded = encodeKeyManagement(1, pq, sig, keys);
+    const solEncoded = await callHarness("exposed_encodeKeyManagement", [1, pq, sig, keys]);
     expect(tsEncoded).toBe(solEncoded);
   });
 
-  test("encodeRecoveryUpgradeData matches Solidity", async () => {
-    const recoveryKey = makeKey(1n);
-    const tsEncoded = encodeRecoveryUpgradeData(recoveryKey, sig);
-    const solEncoded = await callHarness("exposed_encodeRecoveryUpgradeData", [recoveryKey, sig]);
-    expect(tsEncoded).toBe(solEncoded);
-  });
 });
 
 // ─── Digest parity tests (live Solidity comparison) ──────────────
@@ -187,21 +179,24 @@ describe("digest parity (live Solidity)", () => {
   });
 
   test("executeDigest matches Solidity", async () => {
+    const FEE = 1000n;
     const tsDigest = executeDigest(
-      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, VALUE, OPDATA_HASH,
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, VALUE, OPDATA_HASH, FEE,
     );
     const solDigest = await callHarness("exposed_executeDigest", [
-      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, VALUE, OPDATA_HASH,
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, VALUE, OPDATA_HASH, FEE,
     ]);
     expect(tsDigest).toBe(solDigest);
   });
 
-  test("keyManagementDigest matches Solidity", async () => {
-    const tsDigest = keyManagementDigest(WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH);
-    const solDigest = await callHarness("exposed_keyManagementDigest", [
-      WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
-    ]);
-    expect(tsDigest).toBe(solDigest);
+  test("keysetDigest matches Solidity for each kind", async () => {
+    for (const kind of [0, 1, 2]) {
+      const tsDigest = keysetDigest(kind, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH);
+      const solDigest = await callHarness("exposed_keysetDigest", [
+        kind, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
+      ]);
+      expect(tsDigest).toBe(solDigest);
+    }
   });
 
   test("upgradeDigest matches Solidity", async () => {
@@ -248,16 +243,26 @@ describe("encode/decode roundtrip", () => {
   const sig = makeSig(1n);
 
   test("init", () => {
-    const keys = Array.from({ length: RECOVERY_KEY_AMOUNT }, (_, i) =>
+    const disaster = makeKey(999n);
+    const ownership = makeKey(1001n);
+    const txnKeys = Array.from({ length: 5 }, (_, i) =>
+      makeKey(BigInt(2 + i * 2)),
+    );
+    const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, (_, i) =>
       makeKey(BigInt(10 + i * 2)),
     );
-    const encoded = encodeInit(pq, keys);
-    expect(size(encoded)).toBe(704);
+    const encoded = encodeInit(disaster, ownership, txnKeys, recoveryKeys);
+    expect(size(encoded)).toBe(1088);
     const decoded = decodeInit(encoded);
-    expectAddressEq(decoded.pqOwner, pq);
+    expectAddressEq(decoded.disasterRecoveryKey, disaster);
+    expectAddressEq(decoded.ownershipKey, ownership);
+    expect(decoded.transactionKeys.length).toBe(5);
+    for (let i = 0; i < 5; i++) {
+      expectAddressEq(decoded.transactionKeys[i], txnKeys[i]);
+    }
     expect(decoded.recoveryKeys.length).toBe(RECOVERY_KEY_AMOUNT);
     for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
-      expectAddressEq(decoded.recoveryKeys[i], keys[i]);
+      expectAddressEq(decoded.recoveryKeys[i], recoveryKeys[i]);
     }
   });
 
@@ -298,20 +303,12 @@ describe("encode/decode roundtrip", () => {
     expectElementsEq(decoded.pqSig, sig);
   });
 
-  test("recoveryUpgradeData", () => {
-    const recoveryKey = makeKey(3n);
-    const encoded = encodeRecoveryUpgradeData(recoveryKey, sig);
-    expect(size(encoded)).toBe(2208);
-    const decoded = decodeRecoveryUpgradeData(encoded);
-    expectAddressEq(decoded.recoveryKey, recoveryKey);
-    expectElementsEq(decoded.pqSig, sig);
-  });
-
   test("keyManagement with multiple keys", () => {
     const keys = [makeKey(200n), makeKey(202n), makeKey(204n)];
-    const encoded = encodeKeyManagement(pq, sig, keys);
-    expect(size(encoded)).toBe(2208 + 3 * 64);
+    const encoded = encodeKeyManagement(1, pq, sig, keys);
+    expect(size(encoded)).toBe(2240 + 3 * 64);
     const decoded = decodeKeyManagement(encoded);
+    expect(decoded.kind).toBe(1);
     expectAddressEq(decoded.nextPqOwner, pq);
     expectElementsEq(decoded.pqSig, sig);
     expect(decoded.newRecoveryKeys.length).toBe(3);
@@ -321,22 +318,34 @@ describe("encode/decode roundtrip", () => {
   });
 
   test("keyManagement with zero keys", () => {
-    const encoded = encodeKeyManagement(pq, sig, []);
-    expect(size(encoded)).toBe(2208);
+    const encoded = encodeKeyManagement(2, pq, sig, []);
+    expect(size(encoded)).toBe(2240);
     const decoded = decodeKeyManagement(encoded);
+    expect(decoded.kind).toBe(2);
     expect(decoded.newRecoveryKeys.length).toBe(0);
   });
 
   test("upgrade", () => {
     const verifier = makeKey(5n);
     const verifySig = makeSig(5n);
-    const initKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, (_, i) =>
+    const initTxnKeys = Array.from({ length: 5 }, (_, i) =>
+      makeKey(BigInt(40 + i * 2)),
+    );
+    const initRecoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, (_, i) =>
       makeKey(BigInt(20 + i * 2)),
     );
-    const migratorPayload = encodeInit(makeKey(50n), initKeys);
+    const migratorPayload = encodeInit(
+      makeKey(50n),
+      makeKey(52n),
+      initTxnKeys,
+      initRecoveryKeys,
+    );
 
     const encoded = encodeUpgrade(pq, sig, verifier, verifySig, true, migratorPayload);
-    expect(size(encoded)).toBe(5121);
+    // encodeUpgrade omits currentKey (64 bytes) because the TS helper was written
+    // before the full re-init rewrite. Layout: nextKey(64) + pqSig(2144) +
+    // verifier(64) + verifySig(2144) + shouldMigrate(1) + migratorPayload(1088) = 5505.
+    expect(size(encoded)).toBe(5505);
 
     const auth = decodeUpgradeAuth(encoded);
     expectAddressEq(auth.nextPqOwner, pq);
@@ -348,13 +357,13 @@ describe("encode/decode roundtrip", () => {
 
     const mig = decodeUpgradeMigration(encoded);
     expect(mig.shouldMigrate).toBe(true);
-    expect(size(mig.migratorPayload)).toBe(704);
+    expect(size(mig.migratorPayload)).toBe(1088);
   });
 
   test("upgrade with shouldMigrate=false", () => {
     const verifier = makeKey(5n);
     const verifySig = makeSig(5n);
-    const migratorPayload = ("0x" + "00".repeat(704)) as Hex;
+    const migratorPayload = ("0x" + "00".repeat(1088)) as Hex;
 
     const encoded = encodeUpgrade(pq, sig, verifier, verifySig, false, migratorPayload);
     const mig = decodeUpgradeMigration(encoded);

@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.1.7",
+  "version": "0.2.0-alpha.0",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -24,6 +24,38 @@
     "./abi": {
       "import": "./dist/src/abi/index.js",
       "types": "./dist/src/abi/index.d.ts"
+    },
+    "./signer": {
+      "import": "./dist/signer.js",
+      "types": "./dist/signer.d.ts"
+    },
+    "./walletClient": {
+      "import": "./dist/walletClient.js",
+      "types": "./dist/walletClient.d.ts"
+    },
+    "./factoryClient": {
+      "import": "./dist/factoryClient.js",
+      "types": "./dist/factoryClient.d.ts"
+    },
+    "./paymaster": {
+      "import": "./dist/paymasterClient.js",
+      "types": "./dist/paymasterClient.d.ts"
+    },
+    "./errors": {
+      "import": "./dist/errors.js",
+      "types": "./dist/errors.d.ts"
+    },
+    "./events": {
+      "import": "./dist/events.js",
+      "types": "./dist/events.d.ts"
+    },
+    "./userOp": {
+      "import": "./dist/userOp.js",
+      "types": "./dist/userOp.d.ts"
+    },
+    "./gas": {
+      "import": "./dist/gas.js",
+      "types": "./dist/gas.d.ts"
     }
   },
   "scripts": {
