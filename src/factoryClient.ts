@@ -40,6 +40,14 @@ import {
 import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
 import { QuipWalletClient } from "./walletClient.js";
 import { pubkeyToHex } from "./internal/abi.js";
+import { withDecodedError } from "./internal/decodeError.js";
+import {
+  WalletNotInitializedError,
+  WalletAlreadyExistsError,
+  NoVaultFoundError,
+  InvalidSignerError,
+  NotConnectedError,
+} from "./errors.js";
 
 export class QuipClient {
   private publicClient: PublicClient;
@@ -99,9 +107,7 @@ export class QuipClient {
    */
   getChainId(): number {
     if (!this.chainId) {
-      throw new Error(
-        "Client not initialized. Call await client.initializationPromise first."
-      );
+      throw new WalletNotInitializedError();
     }
     return this.chainId;
   }
@@ -119,18 +125,20 @@ export class QuipClient {
   async getOwnerAddress(): Promise<Address> {
     await this.initializationPromise;
     if (!this.account) {
-      throw new Error("No account available. Connect a wallet first.");
+      throw new NotConnectedError();
     }
     return this.account;
   }
 
   async getCreationFee(): Promise<bigint> {
     await this.initializationPromise;
-    return await this.publicClient.readContract({
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "creationFee",
-    });
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "creationFee",
+      })
+    );
   }
 
   async createWallet(
@@ -144,29 +152,33 @@ export class QuipClient {
     const creationFee = await this.getCreationFee();
 
     // Check if wallet already exists
-    const existingWalletAddress = await this.publicClient.readContract({
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "quips",
-      args: [this.account!, vaultIdHex],
-    });
+    const existingWalletAddress = await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "quips",
+        args: [this.account!, vaultIdHex],
+      })
+    );
 
     if (existingWalletAddress !== zeroAddress) {
-      throw new Error(`Wallet already exists for vault ID ${vaultIdHex}`);
+      throw new WalletAlreadyExistsError(vaultIdHex);
     }
 
     const pqKeyPair = quipSigner.generateKeyPair(vaultId);
     const recoveryKeysHex = recoveryKeys.map((pk) => pubkeyToHex(pk));
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "depositToWinternitz",
-      args: [vaultIdHex, this.account!, pubkeyToHex(pqKeyPair.publicKey), recoveryKeysHex],
-      value: creationFee,
-      account: this.account!,
-    });
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "depositToWinternitz",
+        args: [vaultIdHex, this.account!, pubkeyToHex(pqKeyPair.publicKey), recoveryKeysHex],
+        value: creationFee,
+        account: this.account!,
+      })
+    );
 
     const receipt = await this.publicClient.waitForTransactionReceipt({
       hash,
@@ -197,15 +209,17 @@ export class QuipClient {
     await this.initializationPromise;
 
     const vaultIdHex = toHex(vaultId) as Hex;
-    const walletAddress = await this.publicClient.readContract({
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "quips",
-      args: [this.account!, vaultIdHex],
-    });
+    const walletAddress = await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "quips",
+        args: [this.account!, vaultIdHex],
+      })
+    );
 
     if (walletAddress === zeroAddress) {
-      throw new Error(`No wallet found for vault ID ${vaultIdHex}`);
+      throw new NoVaultFoundError(vaultIdHex);
     }
 
     const client = new QuipWalletClient(
@@ -224,7 +238,7 @@ export class QuipClient {
     const curPubKeyHash = hexToBytes(curPqOwner.publicKeyHash);
     const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
     if (!equalBytes(keypair.publicKey.publicKeyHash, curPubKeyHash)) {
-      throw new Error("Invalid signer for this wallet");
+      throw new InvalidSignerError();
     }
     return client;
   }
@@ -237,7 +251,7 @@ export class QuipClient {
   async getVaults(): Promise<Map<string, Address>> {
     await this.initializationPromise;
     if (!this.account) {
-      throw new Error("No account available. Connect a wallet first.");
+      throw new NotConnectedError();
     }
 
     const vaultMap = new Map<string, Address>();

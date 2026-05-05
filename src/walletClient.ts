@@ -31,6 +31,11 @@ import { keccak_256 } from "@noble/hashes/sha3";
 import { quipWalletAbi } from "./abi/QuipWallet.js";
 import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
 import { pubkeyToHex, sigToHex } from "./internal/abi.js";
+import {
+  decodeContractError,
+  withDecodedError,
+} from "./internal/decodeError.js";
+import { GasEstimationError } from "./errors.js";
 
 /// Mirrors the `IQuipWallet.KeyType` enum.
 export enum KeyType {
@@ -67,12 +72,13 @@ export class QuipWalletClient {
   }
 
   async getPqOwner() {
-    const [publicSeed, publicKeyHash] =
-      await this.publicClient.readContract({
+    const [publicSeed, publicKeyHash] = await withDecodedError(
+      this.publicClient.readContract({
         address: this.walletAddress,
         abi: quipWalletAbi,
         functionName: "pqOwner",
-      });
+      })
+    );
     return { publicSeed, publicKeyHash };
   }
 
@@ -81,19 +87,23 @@ export class QuipWalletClient {
   }
 
   async getTransferFee(): Promise<bigint> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "getTransferFee",
-    });
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "getTransferFee",
+      })
+    );
   }
 
   async getExecuteFee(): Promise<bigint> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "getExecuteFee",
-    });
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "getExecuteFee",
+      })
+    );
   }
 
   async transferWithWinternitz(
@@ -123,21 +133,23 @@ export class QuipWalletClient {
     const messageHash = keccak_256(hexToBytes(packedMessageData));
     const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "transferWithWinternitz",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        to,
-        value,
-      ],
-      value: transferFee,
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "transferWithWinternitz",
+        args: [
+          pubkeyToHex(nextPqOwner.publicKey),
+          { elements: sigToHex(pqSig) },
+          to,
+          value,
+        ],
+        value: transferFee,
+        account: this.account,
+        ...(options.gasLimit && { gas: options.gasLimit }),
+      })
+    );
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
   }
@@ -193,26 +205,34 @@ export class QuipWalletClient {
         });
         gas = (estimatedGas * 120n) / 100n; // 20% buffer
       } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Gas estimation failed for executeWithWinternitz on ${target}: ${message}`);
+        const decoded = decodeContractError(error);
+        if (decoded) throw decoded;
+        const message =
+          error instanceof Error ? error.message : String(error);
+        throw new GasEstimationError(
+          `Gas estimation failed for executeWithWinternitz on ${target}: ${message}`,
+          { cause: error }
+        );
       }
     }
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "executeWithWinternitz",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        target,
-        opdata,
-      ],
-      value: executeFee,
-      account: this.account,
-      gas,
-    });
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "executeWithWinternitz",
+        args: [
+          pubkeyToHex(nextPqOwner.publicKey),
+          { elements: sigToHex(pqSig) },
+          target,
+          opdata,
+        ],
+        value: executeFee,
+        account: this.account,
+        gas,
+      })
+    );
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
   }
@@ -239,18 +259,20 @@ export class QuipWalletClient {
     const messageHash = keccak_256(hexToBytes(packedMessageData));
     const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "changePqOwner",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "changePqOwner",
+        args: [
+          pubkeyToHex(nextPqOwner.publicKey),
+          { elements: sigToHex(pqSig) },
+        ],
+        account: this.account,
+        ...(options.gasLimit && { gas: options.gasLimit }),
+      })
+    );
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
   }
@@ -277,19 +299,21 @@ export class QuipWalletClient {
     const messageHash = keccak_256(hexToBytes(packedMessageData));
     const pqSig = this.quipSigner.sign(messageHash, this.vaultId, recoveryPublicSeed);
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "recoverWallet",
-      args: [
-        pubkeyToHex(recoveryKeyPair.publicKey),
-        pubkeyToHex(newPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "recoverWallet",
+        args: [
+          pubkeyToHex(recoveryKeyPair.publicKey),
+          pubkeyToHex(newPqOwner.publicKey),
+          { elements: sigToHex(pqSig) },
+        ],
+        account: this.account,
+        ...(options.gasLimit && { gas: options.gasLimit }),
+      })
+    );
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
   }
@@ -343,19 +367,21 @@ export class QuipWalletClient {
     const { nextPqOwner, pqSig, recoveryKeysHex } =
       await this.signRecoveryKeysMessage(newRecoveryKeys);
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "addRecoveryKeys",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        recoveryKeysHex,
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "addRecoveryKeys",
+        args: [
+          pubkeyToHex(nextPqOwner.publicKey),
+          { elements: sigToHex(pqSig) },
+          recoveryKeysHex,
+        ],
+        account: this.account,
+        ...(options.gasLimit && { gas: options.gasLimit }),
+      })
+    );
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
   }
@@ -367,53 +393,61 @@ export class QuipWalletClient {
     const { nextPqOwner, pqSig, recoveryKeysHex } =
       await this.signRecoveryKeysMessage(newRecoveryKeys);
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "replenishRecoveryKeys",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        recoveryKeysHex,
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "replenishRecoveryKeys",
+        args: [
+          pubkeyToHex(nextPqOwner.publicKey),
+          { elements: sigToHex(pqSig) },
+          recoveryKeysHex,
+        ],
+        account: this.account,
+        ...(options.gasLimit && { gas: options.gasLimit }),
+      })
+    );
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
   }
 
   async keyCount(kind: KeyType): Promise<bigint> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "keyCount",
-      args: [kind],
-    });
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "keyCount",
+        args: [kind],
+      })
+    );
   }
 
   async keyAt(
     kind: KeyType,
     index: bigint
   ): Promise<{ publicSeed: Hex; publicKeyHash: Hex }> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "keyAt",
-      args: [kind, index],
-    });
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "keyAt",
+        args: [kind, index],
+      })
+    );
   }
 
   async isKey(
     kind: KeyType,
     key: { publicSeed: Hex; publicKeyHash: Hex }
   ): Promise<boolean> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "isKey",
-      args: [kind, key],
-    });
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "isKey",
+        args: [kind, key],
+      })
+    );
   }
 }

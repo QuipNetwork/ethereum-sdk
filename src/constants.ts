@@ -19,10 +19,3 @@
 export const WOTSPLUS_GAS_ESTIMATE = 850_000;
 // TODO: Verify DEFAULT_CONFIRMATIONS is still used — may be consumed by frontend
 export const DEFAULT_CONFIRMATIONS = 1;
-
-// TODO: Verify ERRORS are still accurate against current contract — may be consumed by frontend
-export const ERRORS = {
-  INVALID_NETWORK: "Invalid network specified",
-  INSUFFICIENT_BALANCE: "Insufficient balance",
-  UNAUTHORIZED: "Unauthorized operation",
-} as const;
