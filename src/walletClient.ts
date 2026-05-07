@@ -35,7 +35,31 @@ import {
   decodeContractError,
   withDecodedError,
 } from "./internal/decodeError.js";
+import { tryMulticall } from "./internal/multicall.js";
 import { GasEstimationError } from "./errors.js";
+
+/// 32-byte WOTS+ key tuple as returned by the contract's `keyAt` and stored
+/// in the SDK's read-aggregator outputs. Same shape as the on-chain
+/// `WOTSPlus.WinternitzAddress` struct.
+export interface WinternitzAddress {
+  publicSeed: Hex;
+  publicKeyHash: Hex;
+}
+
+/// Aggregated wallet state, one round-trip's worth of view-method reads.
+/// Keysets are read in a follow-up batch sized by the counts in the first
+/// round.
+export interface WalletState {
+  owner: Address;
+  factory: Address;
+  entryPoint: Address;
+  executeFee: bigint;
+  deposit: bigint;
+  keyCounts: { transaction: bigint; recovery: bigint; verification: bigint };
+  transactionKeys: WinternitzAddress[];
+  recoveryKeys: WinternitzAddress[];
+  verificationKeys: WinternitzAddress[];
+}
 
 /// Mirrors the `IQuipWallet.KeyType` enum.
 export enum KeyType {
@@ -449,5 +473,140 @@ export class QuipWalletClient {
         args: [kind, key],
       })
     );
+  }
+
+  /// Return every key in `kind`'s set, ordered by index. Two RPC round-trips
+  /// at most: one for `keyCount`, one for the multicalled `keyAt` reads
+  /// (or sequential fallback on chains without Multicall3).
+  async getKeyset(
+    kind: KeyType,
+    opts?: { forceSequential?: boolean }
+  ): Promise<WinternitzAddress[]> {
+    const count = await this.keyCount(kind);
+    if (count === 0n) return [];
+
+    const calls = Array.from({ length: Number(count) }, (_, i) => ({
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "keyAt" as const,
+      args: [kind, BigInt(i)] as const,
+    }));
+
+    const results = await tryMulticall(this.publicClient, calls, {
+      chainId: this.chainId,
+      ...(opts?.forceSequential && { forceSequential: true }),
+    });
+
+    const keys: WinternitzAddress[] = [];
+    for (const r of results) {
+      if (r.status === "success") {
+        keys.push(r.result as WinternitzAddress);
+      }
+    }
+    return keys;
+  }
+
+  /// Aggregate every wallet view-method into a structured snapshot. Two
+  /// multicalls: the first for scalar fields + key counts, the second for
+  /// every key in every keyset. Single round-trip per phase on chains with
+  /// Multicall3; sequential fallback otherwise.
+  async getWalletState(
+    opts?: { forceSequential?: boolean }
+  ): Promise<WalletState> {
+    const scalarCalls = [
+      { address: this.walletAddress, abi: quipWalletAbi, functionName: "owner" as const },
+      { address: this.walletAddress, abi: quipWalletAbi, functionName: "quipFactory" as const },
+      { address: this.walletAddress, abi: quipWalletAbi, functionName: "entryPoint" as const },
+      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getExecuteFee" as const },
+      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getDeposit" as const },
+      {
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "keyCount" as const,
+        args: [KeyType.Transaction] as const,
+      },
+      {
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "keyCount" as const,
+        args: [KeyType.Recovery] as const,
+      },
+      {
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "keyCount" as const,
+        args: [KeyType.Verification] as const,
+      },
+    ];
+
+    const scalars = await tryMulticall(this.publicClient, scalarCalls, {
+      chainId: this.chainId,
+      ...(opts?.forceSequential && { forceSequential: true }),
+    });
+
+    const expect = <T,>(r: typeof scalars[number], label: string): T => {
+      if (r.status === "failure") {
+        throw r.error instanceof Error
+          ? r.error
+          : new Error(`${label} read failed`);
+      }
+      return r.result as T;
+    };
+
+    const owner = expect<Address>(scalars[0], "owner");
+    const factory = expect<Address>(scalars[1], "quipFactory");
+    const entryPoint = expect<Address>(scalars[2], "entryPoint");
+    const executeFee = expect<bigint>(scalars[3], "getExecuteFee");
+    const deposit = expect<bigint>(scalars[4], "getDeposit");
+    const txCount = expect<bigint>(scalars[5], "keyCount(Transaction)");
+    const rcCount = expect<bigint>(scalars[6], "keyCount(Recovery)");
+    const vfCount = expect<bigint>(scalars[7], "keyCount(Verification)");
+
+    const buildKeyAtCalls = (kind: KeyType, count: bigint) =>
+      Array.from({ length: Number(count) }, (_, i) => ({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "keyAt" as const,
+        args: [kind, BigInt(i)] as const,
+      }));
+
+    const allKeyCalls = [
+      ...buildKeyAtCalls(KeyType.Transaction, txCount),
+      ...buildKeyAtCalls(KeyType.Recovery, rcCount),
+      ...buildKeyAtCalls(KeyType.Verification, vfCount),
+    ];
+
+    const keyResults =
+      allKeyCalls.length === 0
+        ? []
+        : await tryMulticall(this.publicClient, allKeyCalls, {
+            chainId: this.chainId,
+            ...(opts?.forceSequential && { forceSequential: true }),
+          });
+
+    const successOnly = (results: typeof keyResults): WinternitzAddress[] =>
+      results
+        .filter((r) => r.status === "success")
+        .map((r) => r.result as WinternitzAddress);
+
+    const txEnd = Number(txCount);
+    const rcEnd = txEnd + Number(rcCount);
+    const vfEnd = rcEnd + Number(vfCount);
+
+    const transactionKeys = successOnly(keyResults.slice(0, txEnd));
+    const recoveryKeys = successOnly(keyResults.slice(txEnd, rcEnd));
+    const verificationKeys = successOnly(keyResults.slice(rcEnd, vfEnd));
+
+    return {
+      owner,
+      factory,
+      entryPoint,
+      executeFee,
+      deposit,
+      keyCounts: { transaction: txCount, recovery: rcCount, verification: vfCount },
+      transactionKeys,
+      recoveryKeys,
+      verificationKeys,
+    };
   }
 }

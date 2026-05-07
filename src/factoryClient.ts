@@ -41,6 +41,7 @@ import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
 import { QuipWalletClient } from "./walletClient.js";
 import { pubkeyToHex } from "./internal/abi.js";
 import { withDecodedError } from "./internal/decodeError.js";
+import { tryMulticall } from "./internal/multicall.js";
 import {
   WalletNotInitializedError,
   WalletAlreadyExistsError,
@@ -48,6 +49,18 @@ import {
   InvalidSignerError,
   NotConnectedError,
 } from "./errors.js";
+
+/// Aggregated factory state — one multicall round-trip's worth of view
+/// reads. Useful for an admin dashboard or pre-flight overview.
+export interface FactoryState {
+  owner: Address;
+  pendingOwner: Address;
+  creationFee: bigint;
+  executeFee: bigint;
+  maxFee: bigint;
+  latestWalletImpl: Address;
+  vettedCodeCount: bigint;
+}
 
 export class QuipClient {
   private publicClient: PublicClient;
@@ -248,7 +261,9 @@ export class QuipClient {
     return getVaultAddress(toHex(vaultId), this.chainId);
   }
 
-  async getVaults(): Promise<Map<string, Address>> {
+  async getVaults(
+    opts?: { forceSequential?: boolean }
+  ): Promise<Map<string, Address>> {
     await this.initializationPromise;
     if (!this.account) {
       throw new NotConnectedError();
@@ -259,7 +274,6 @@ export class QuipClient {
     let offset = 0;
 
     while (true) {
-      // Batch-read vaultIds
       const vaultIdCalls = Array.from({ length: batchSize }, (_, i) => ({
         address: this.factoryAddress!,
         abi: quipFactoryAbi,
@@ -267,21 +281,19 @@ export class QuipClient {
         args: [this.account!, BigInt(offset + i)] as const,
       }));
 
-      let vaultIdResults: { status: "success" | "failure"; result?: Hex }[];
-      try {
-        vaultIdResults = (await this.publicClient.multicall({
-          contracts: vaultIdCalls,
-          allowFailure: true,
-        })) as { status: "success" | "failure"; result?: Hex }[];
-      } catch {
-        // Multicall3 not available — fall back to sequential reads
-        return this.getVaultsSequential();
-      }
+      const vaultIdResults = await tryMulticall(
+        this.publicClient,
+        vaultIdCalls,
+        {
+          chainId: this.chainId,
+          ...(opts?.forceSequential && { forceSequential: true }),
+        }
+      );
 
       const validVaultIds: Hex[] = [];
       for (const r of vaultIdResults) {
-        if (r.status === "success" && r.result) {
-          validVaultIds.push(r.result);
+        if (r.status === "success") {
+          validVaultIds.push(r.result as Hex);
         } else {
           break; // past end of array
         }
@@ -289,7 +301,6 @@ export class QuipClient {
 
       if (validVaultIds.length === 0) break;
 
-      // Batch-read quips addresses for all valid vault IDs
       const quipsCalls = validVaultIds.map((vaultId) => ({
         address: this.factoryAddress!,
         abi: quipFactoryAbi,
@@ -297,15 +308,22 @@ export class QuipClient {
         args: [this.account!, vaultId] as const,
       }));
 
-      const quipsResults = (await this.publicClient.multicall({
-        contracts: quipsCalls,
-        allowFailure: true,
-      })) as { status: "success" | "failure"; result?: Address }[];
+      const quipsResults = await tryMulticall(
+        this.publicClient,
+        quipsCalls,
+        {
+          chainId: this.chainId,
+          ...(opts?.forceSequential && { forceSequential: true }),
+        }
+      );
 
       for (let i = 0; i < validVaultIds.length; i++) {
         const r = quipsResults[i];
-        if (r.status === "success" && r.result && r.result !== zeroAddress) {
-          vaultMap.set(validVaultIds[i], r.result);
+        if (
+          r.status === "success" &&
+          (r.result as Address) !== zeroAddress
+        ) {
+          vaultMap.set(validVaultIds[i], r.result as Address);
         }
       }
 
@@ -316,33 +334,45 @@ export class QuipClient {
     return vaultMap;
   }
 
-  /**
-   * Sequential fallback for chains without Multicall3 (e.g. MIDL testnet).
-   */
-  private async getVaultsSequential(): Promise<Map<string, Address>> {
-    const vaultMap = new Map<string, Address>();
-    let index = 0;
-    while (true) {
-      try {
-        const vaultId = await this.publicClient.readContract({
-          address: this.factoryAddress!,
-          abi: quipFactoryAbi,
-          functionName: "vaultIds",
-          args: [this.account!, BigInt(index)],
-        });
-        const walletAddress = await this.publicClient.readContract({
-          address: this.factoryAddress!,
-          abi: quipFactoryAbi,
-          functionName: "quips",
-          args: [this.account!, vaultId],
-        });
-        if (walletAddress === zeroAddress) break;
-        vaultMap.set(vaultId, walletAddress);
-        index++;
-      } catch {
-        break;
+  /// Snapshot of factory-level fees, ownership, and vetted impl pointer in
+  /// a single multicall round-trip.
+  async getFactoryState(
+    opts?: { forceSequential?: boolean }
+  ): Promise<FactoryState> {
+    await this.initializationPromise;
+    const calls = [
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "owner" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "pendingOwner" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "creationFee" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "executeFee" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "latestWalletImpl" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "getVettedCodeCount" as const },
+    ];
+
+    const results = await tryMulticall(this.publicClient, calls, {
+      chainId: this.chainId,
+      ...(opts?.forceSequential && { forceSequential: true }),
+    });
+
+    const expect = <T,>(idx: number, label: string): T => {
+      const r = results[idx];
+      if (r.status === "failure") {
+        throw r.error instanceof Error
+          ? r.error
+          : new Error(`${label} read failed`);
       }
-    }
-    return vaultMap;
+      return r.result as T;
+    };
+
+    return {
+      owner: expect<Address>(0, "owner"),
+      pendingOwner: expect<Address>(1, "pendingOwner"),
+      creationFee: expect<bigint>(2, "creationFee"),
+      executeFee: expect<bigint>(3, "executeFee"),
+      maxFee: expect<bigint>(4, "MAX_FEE"),
+      latestWalletImpl: expect<Address>(5, "latestWalletImpl"),
+      vettedCodeCount: expect<bigint>(6, "getVettedCodeCount"),
+    };
   }
 }
