@@ -898,6 +898,24 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    function getDisasterRecoveryKey()
+        public
+        view
+        returns (WOTSPlus.WinternitzAddress memory)
+    {
+        return Storage.layout().disasterRecoveryKey;
+    }
+
+    /// @inheritdoc IQuipWallet
+    function getOwnershipKey()
+        public
+        view
+        returns (WOTSPlus.WinternitzAddress memory)
+    {
+        return Storage.layout().ownershipKey;
+    }
+
+    /// @inheritdoc IQuipWallet
     function keyCount(Codec.KeyType kind) public view returns (uint256) {
         return _keyset(kind).length();
     }

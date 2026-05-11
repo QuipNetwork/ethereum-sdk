@@ -450,6 +450,25 @@ interface IQuipWallet {
     /// @return The factory address.
     function quipFactory() external view returns (address payable);
 
+    /// @notice Returns the current `disasterRecoveryKey` — the WOTS+ public
+    ///         key that authorizes `saveWallet`. Stored at a fixed slot and
+    ///         rotates on use.
+    /// @return The disaster recovery Winternitz public key.
+    function getDisasterRecoveryKey()
+        external
+        view
+        returns (WOTSPlus.WinternitzAddress memory);
+
+    /// @notice Returns the current `ownershipKey` — the WOTS+ public key
+    ///         that authorizes `transferOwnership` /
+    ///         `completeOwnershipHandover`. Stored at a fixed slot and
+    ///         rotates on use.
+    /// @return The ownership Winternitz public key.
+    function getOwnershipKey()
+        external
+        view
+        returns (WOTSPlus.WinternitzAddress memory);
+
     /// @notice Returns the number of keys in the selected keyset.
     /// @param kind The keyset to query.
     /// @return The number of active keys in that keyset.
