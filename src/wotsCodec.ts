@@ -18,6 +18,7 @@ import {
   type Address,
   type Hex,
   concat,
+  encodeAbiParameters,
   getAddress,
   hexToBigInt,
   keccak256,
@@ -26,10 +27,6 @@ import {
   slice,
   toHex,
 } from "viem";
-
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                           TYPES                               */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 export interface WinternitzAddress {
   publicSeed: Hex;
@@ -40,27 +37,68 @@ export interface WinternitzElements {
   elements: Hex[];
 }
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                         CONSTANTS                             */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+/// Mirrors `IQuipWallet.KeyType`. Same enum, also exported from
+/// `walletClient.ts`; this copy lets codec consumers avoid pulling in the
+/// full client module.
+export enum KeyType {
+  Transaction = 0,
+  Recovery = 1,
+  Verification = 2,
+}
 
 export const WOTS_ADDRESS_SIZE = 64;
 export const WOTS_ELEMENTS_SIZE = 2144;
 export const WOTS_ELEMENTS_COUNT = 67;
+export const TRANSACTION_KEY_INIT_AMOUNT = 5;
 export const RECOVERY_KEY_AMOUNT = 10;
 
-export const KEY_ROTATION_TAG: Hex = keccak256(toHex("quip.digest.keyRotation"));
+// Domain tags — keccak256 of stable string identifiers, must match
+// `WOTSPlusCodec.sol` exactly. Distinct tags per operation are load-bearing
+// security: removing or unifying any tag would let a signature authorizing
+// one flow be replayed against another.
 export const EXECUTE_TAG: Hex = keccak256(toHex("quip.digest.execute"));
 export const KEY_MGMT_TAG: Hex = keccak256(toHex("quip.digest.keyManagement"));
-export const ADD_TRANSACTION_KEYS_TAG: Hex = keccak256(toHex("quip.digest.addTransactionKeys"));
-export const VERIFICATION_KEYS_TAG: Hex = keccak256(toHex("quip.digest.verificationKeys"));
+export const ADD_TRANSACTION_KEYS_TAG: Hex = keccak256(
+  toHex("quip.digest.addTransactionKeys")
+);
+export const VERIFICATION_KEYS_TAG: Hex = keccak256(
+  toHex("quip.digest.verificationKeys")
+);
 export const UPGRADE_TAG: Hex = keccak256(toHex("quip.digest.upgrade"));
-export const VERIFICATION_TAG: Hex = keccak256(toHex("quip.digest.verification"));
-export const UPGRADE_RECOVERY_TAG: Hex = keccak256(toHex("quip.digest.upgradeRecovery"));
-
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          HELPERS                              */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+export const VERIFICATION_TAG: Hex = keccak256(
+  toHex("quip.digest.verification")
+);
+export const UPGRADE_RECOVERY_TAG: Hex = keccak256(
+  toHex("quip.digest.upgradeRecovery")
+);
+export const ERC4337_EXECUTE_TAG: Hex = keccak256(
+  toHex("quip.digest.erc4337Execute")
+);
+export const WITHDRAW_DEPOSIT_TAG: Hex = keccak256(
+  toHex("quip.digest.withdrawDeposit")
+);
+export const TRANSFER_OWNERSHIP_TAG: Hex = keccak256(
+  toHex("quip.digest.transferOwnership")
+);
+export const COMPLETE_OWNERSHIP_HANDOVER_TAG: Hex = keccak256(
+  toHex("quip.digest.completeOwnershipHandover")
+);
+export const REPLACE_TRANSACTION_KEY_AT_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceTransactionKeyAt")
+);
+export const REPLACE_RECOVERY_KEY_AT_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceRecoveryKeyAt")
+);
+export const REPLACE_VERIFICATION_KEY_AT_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceVerificationKeyAt")
+);
+export const ERC1271_TAG: Hex = keccak256(toHex("quip.digest.erc1271"));
+export const SAVE_WALLET_TAG: Hex = keccak256(
+  toHex("quip.digest.saveWallet")
+);
+export const RECOVER_WALLET_TAG: Hex = keccak256(
+  toHex("quip.digest.recoverWallet")
+);
 
 function packAddress(addr: WinternitzAddress): Hex {
   return concat([addr.publicSeed, addr.publicKeyHash]);
@@ -89,19 +127,55 @@ function addressToBytes32(addr: Address): Hex {
   return pad(addr as Hex, { size: 32, dir: "left" });
 }
 
-function bigintToBytes32(value: bigint): Hex {
-  return toHex(value, { size: 32 });
+function bigintToBytes32(value: bigint | number): Hex {
+  return toHex(BigInt(value), { size: 32 });
 }
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          ENCODERS                             */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+function tagForKeyset(kind: KeyType | number): Hex {
+  if (kind === KeyType.Transaction) return ADD_TRANSACTION_KEYS_TAG;
+  if (kind === KeyType.Verification) return VERIFICATION_KEYS_TAG;
+  return KEY_MGMT_TAG; // Recovery
+}
 
+function tagForReplaceKeyAt(kind: KeyType | number): Hex {
+  if (kind === KeyType.Transaction) return REPLACE_TRANSACTION_KEY_AT_TAG;
+  if (kind === KeyType.Recovery) return REPLACE_RECOVERY_KEY_AT_TAG;
+  return REPLACE_VERIFICATION_KEY_AT_TAG;
+}
+
+/// Mirrors the contract's `keccak256(abi.encode(keys))` over a
+/// `WinternitzAddress[]`. Used as the bound payload-hash inside
+/// `keysetDigest` so the signature commits to the exact set of keys
+/// being added/refreshed.
+export function keysHash(keys: WinternitzAddress[]): Hex {
+  const encoded = encodeAbiParameters(
+    [
+      {
+        type: "tuple[]",
+        components: [
+          { type: "bytes32", name: "publicSeed" },
+          { type: "bytes32", name: "publicKeyHash" },
+        ],
+      },
+    ],
+    [keys]
+  );
+  return keccak256(encoded);
+}
+
+/// keccak256 over arbitrary calldata. Mirrors the contract's
+/// `EfficientHashLib.hashCalldata(data)` used inside `executeDigest`.
+export function opdataHash(data: Hex): Hex {
+  return keccak256(data);
+}
+
+/// Init payload (1088 bytes): disasterRecoveryKey + ownershipKey +
+/// transactionKeys[5] + recoveryKeys[10].
 export function encodeInit(
   disasterRecoveryKey: WinternitzAddress,
   ownershipKey: WinternitzAddress,
   transactionKeys: WinternitzAddress[],
-  recoveryKeys: WinternitzAddress[],
+  recoveryKeys: WinternitzAddress[]
 ): Hex {
   return concat([
     packAddress(disasterRecoveryKey),
@@ -111,25 +185,19 @@ export function encodeInit(
   ]);
 }
 
-export function encodeChangePqOwner(
-  newPqOwner: WinternitzAddress,
-  pqSig: WinternitzElements,
-): Hex {
-  return concat([
-    packAddress(newPqOwner),
-    packElements(pqSig),
-  ]);
-}
-
+/// Execute payload (>= 2336 bytes): currentKey + nextKey + pqSig + target +
+/// value + data. The trailing `data` is variable length.
 export function encodeExecute(
-  nextPqOwner: WinternitzAddress,
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
   pqSig: WinternitzElements,
   target: Address,
   value: bigint,
-  data: Hex = "0x",
+  data: Hex = "0x"
 ): Hex {
   return concat([
-    packAddress(nextPqOwner),
+    packAddress(currentKey),
+    packAddress(nextKey),
     packElements(pqSig),
     addressToBytes32(target),
     bigintToBytes32(value),
@@ -137,53 +205,91 @@ export function encodeExecute(
   ]);
 }
 
+/// RecoverWallet payload (2336 bytes): recoveryKey + newRecoveryKey +
+/// newTransactionKey + pqSig.
 export function encodeRecoverWallet(
   recoveryKey: WinternitzAddress,
-  newPqOwner: WinternitzAddress,
-  pqSig: WinternitzElements,
+  newRecoveryKey: WinternitzAddress,
+  newTransactionKey: WinternitzAddress,
+  pqSig: WinternitzElements
 ): Hex {
   return concat([
     packAddress(recoveryKey),
-    packAddress(newPqOwner),
+    packAddress(newRecoveryKey),
+    packAddress(newTransactionKey),
     packElements(pqSig),
   ]);
 }
 
+/// KeyManagement payload (2304 + N*64 bytes): kind + currentKey + nextKey +
+/// pqSig + keys[]. Used for both `addKeys` and `refreshKeys`.
 export function encodeKeyManagement(
-  kind: number,
-  nextPqOwner: WinternitzAddress,
+  kind: KeyType | number,
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
   pqSig: WinternitzElements,
-  newRecoveryKeys: WinternitzAddress[],
+  keys: WinternitzAddress[]
 ): Hex {
   return concat([
-    toHex(BigInt(kind), { size: 32 }),
-    packAddress(nextPqOwner),
+    bigintToBytes32(BigInt(kind)),
+    packAddress(currentKey),
+    packAddress(nextKey),
     packElements(pqSig),
-    ...newRecoveryKeys.map(packAddress),
+    ...keys.map(packAddress),
   ]);
 }
 
-export function encodeUpgrade(
-  nextPqOwner: WinternitzAddress,
+/// WithdrawDeposit payload (2336 bytes): currentKey + nextKey + pqSig + to +
+/// amount.
+export function encodeWithdrawDeposit(
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
   pqSig: WinternitzElements,
-  verifier: WinternitzAddress,
-  verifySig: WinternitzElements,
-  shouldMigrate: boolean,
-  migratorPayload: Hex,
+  to: Address,
+  amount: bigint
 ): Hex {
   return concat([
-    packAddress(nextPqOwner),
+    packAddress(currentKey),
+    packAddress(nextKey),
     packElements(pqSig),
-    packAddress(verifier),
-    packElements(verifySig),
-    shouldMigrate ? "0x01" : "0x00",
-    migratorPayload,
+    addressToBytes32(to),
+    bigintToBytes32(amount),
   ]);
 }
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          DECODERS                             */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+/// ReplaceKeyAt payload (2400 bytes): kind + currentKey + nextKey + pqSig +
+/// index + newKey.
+export function encodeReplaceKeyAt(
+  kind: KeyType | number,
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+  index: bigint,
+  newKey: WinternitzAddress
+): Hex {
+  return concat([
+    bigintToBytes32(BigInt(kind)),
+    packAddress(currentKey),
+    packAddress(nextKey),
+    packElements(pqSig),
+    bigintToBytes32(index),
+    packAddress(newKey),
+  ]);
+}
+
+/// UserOpSignature payload (2272 bytes): currentKey + nextKey + pqSig.
+/// Used for the ERC-4337 `signature` field.
+export function encodeUserOpSignature(
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
+  pqSig: WinternitzElements
+): Hex {
+  return concat([
+    packAddress(currentKey),
+    packAddress(nextKey),
+    packElements(pqSig),
+  ]);
+}
 
 export function decodeInit(payload: Hex): {
   disasterRecoveryKey: WinternitzAddress;
@@ -194,7 +300,7 @@ export function decodeInit(payload: Hex): {
   const disasterRecoveryKey = sliceAddress(payload, 0);
   const ownershipKey = sliceAddress(payload, 64);
   const transactionKeys: WinternitzAddress[] = [];
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
     transactionKeys.push(sliceAddress(payload, 128 + i * 64));
   }
   const recoveryKeys: WinternitzAddress[] = [];
@@ -204,112 +310,104 @@ export function decodeInit(payload: Hex): {
   return { disasterRecoveryKey, ownershipKey, transactionKeys, recoveryKeys };
 }
 
-export function decodeUpgradeAuth(data: Hex): {
-  nextPqOwner: WinternitzAddress;
-  pqSig: WinternitzElements;
-} {
-  return {
-    nextPqOwner: sliceAddress(data, 0),
-    pqSig: sliceElements(data, 64),
-  };
-}
-
-export function decodeUpgradeVerification(data: Hex): {
-  verifier: WinternitzAddress;
-  verifySig: WinternitzElements;
-} {
-  return {
-    verifier: sliceAddress(data, 2208),
-    verifySig: sliceElements(data, 2272),
-  };
-}
-
-export function decodeUpgradeMigration(data: Hex): {
-  shouldMigrate: boolean;
-  migratorPayload: Hex;
-} {
-  return {
-    shouldMigrate: slice(data, 4416, 4417) !== "0x00",
-    migratorPayload: slice(data, 4417, 5505),
-  };
-}
-
-export function decodeChangePqOwner(payload: Hex): {
-  newPqOwner: WinternitzAddress;
-  pqSig: WinternitzElements;
-} {
-  return {
-    newPqOwner: sliceAddress(payload, 0),
-    pqSig: sliceElements(payload, 64),
-  };
-}
-
 export function decodeExecute(payload: Hex): {
-  nextPqOwner: WinternitzAddress;
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
   pqSig: WinternitzElements;
   target: Address;
   value: bigint;
   data: Hex;
 } {
   return {
-    nextPqOwner: sliceAddress(payload, 0),
-    pqSig: sliceElements(payload, 64),
-    target: getAddress(slice(payload, 2220, 2240)),
-    value: hexToBigInt(slice(payload, 2240, 2272)),
-    data: size(payload) > 2272 ? slice(payload, 2272) : "0x",
+    currentKey: sliceAddress(payload, 0),
+    nextKey: sliceAddress(payload, 64),
+    pqSig: sliceElements(payload, 128),
+    target: getAddress(slice(payload, 2284, 2304)),
+    value: hexToBigInt(slice(payload, 2304, 2336)),
+    data: size(payload) > 2336 ? slice(payload, 2336) : "0x",
   };
 }
 
 export function decodeRecoverWallet(payload: Hex): {
   recoveryKey: WinternitzAddress;
-  newPqOwner: WinternitzAddress;
+  newRecoveryKey: WinternitzAddress;
+  newTransactionKey: WinternitzAddress;
   pqSig: WinternitzElements;
 } {
   return {
     recoveryKey: sliceAddress(payload, 0),
-    newPqOwner: sliceAddress(payload, 64),
-    pqSig: sliceElements(payload, 128),
+    newRecoveryKey: sliceAddress(payload, 64),
+    newTransactionKey: sliceAddress(payload, 128),
+    pqSig: sliceElements(payload, 192),
   };
 }
 
 export function decodeKeyManagement(payload: Hex): {
   kind: number;
-  nextPqOwner: WinternitzAddress;
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
   pqSig: WinternitzElements;
-  newRecoveryKeys: WinternitzAddress[];
+  keys: WinternitzAddress[];
 } {
   const payloadSize = size(payload);
-  const keyCount = (payloadSize - 2240) / 64;
-  const newRecoveryKeys: WinternitzAddress[] = [];
+  const keyCount = (payloadSize - 2304) / 64;
+  const keys: WinternitzAddress[] = [];
   for (let i = 0; i < keyCount; i++) {
-    newRecoveryKeys.push(sliceAddress(payload, 2240 + i * 64));
+    keys.push(sliceAddress(payload, 2304 + i * 64));
   }
   return {
     kind: Number(hexToBigInt(slice(payload, 0, 32))),
-    nextPqOwner: sliceAddress(payload, 32),
-    pqSig: sliceElements(payload, 96),
-    newRecoveryKeys,
+    currentKey: sliceAddress(payload, 32),
+    nextKey: sliceAddress(payload, 96),
+    pqSig: sliceElements(payload, 160),
+    keys,
   };
 }
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          DIGESTS                              */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+export function decodeWithdrawDeposit(payload: Hex): {
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  to: Address;
+  amount: bigint;
+} {
+  return {
+    currentKey: sliceAddress(payload, 0),
+    nextKey: sliceAddress(payload, 64),
+    pqSig: sliceElements(payload, 128),
+    to: getAddress(slice(payload, 2284, 2304)),
+    amount: hexToBigInt(slice(payload, 2304, 2336)),
+  };
+}
 
-export function keyRotationDigest(
-  wallet: Address,
-  chainId: bigint,
-  s1: Hex,
-  h1: Hex,
-  s2: Hex,
-  h2: Hex,
-): Hex {
-  return keccak256(concat([
-    KEY_ROTATION_TAG,
-    bigintToBytes32(chainId),
-    addressToBytes32(wallet),
-    s1, h1, s2, h2,
-  ]));
+export function decodeReplaceKeyAt(payload: Hex): {
+  kind: number;
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  index: bigint;
+  newKey: WinternitzAddress;
+} {
+  return {
+    kind: Number(hexToBigInt(slice(payload, 0, 32))),
+    currentKey: sliceAddress(payload, 32),
+    nextKey: sliceAddress(payload, 96),
+    pqSig: sliceElements(payload, 160),
+    index: hexToBigInt(slice(payload, 2304, 2336)),
+    newKey: sliceAddress(payload, 2336),
+  };
+}
+
+export function decodeUserOpSignature(payload: Hex): {
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+} {
+  return {
+    currentKey: sliceAddress(payload, 0),
+    nextKey: sliceAddress(payload, 64),
+    pqSig: sliceElements(payload, 128),
+  };
 }
 
 export function executeDigest(
@@ -322,47 +420,129 @@ export function executeDigest(
   target: Address,
   value: bigint,
   opdataHash: Hex,
-  fee: bigint,
+  fee: bigint
 ): Hex {
-  return keccak256(concat([
-    EXECUTE_TAG,
-    bigintToBytes32(chainId),
-    addressToBytes32(wallet),
-    s1, h1, s2, h2,
-    addressToBytes32(target),
-    bigintToBytes32(value),
-    opdataHash,
-    bigintToBytes32(fee),
-  ]));
+  return keccak256(
+    concat([
+      EXECUTE_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      addressToBytes32(target),
+      bigintToBytes32(value),
+      opdataHash,
+      bigintToBytes32(fee),
+    ])
+  );
 }
 
-/**
- * Mirrors the Solidity `WOTSPlusCodec.keysetDigest`. `kind` selects the
- * domain tag: 0 (Transaction) → ADD_TRANSACTION_KEYS_TAG, 1 (Recovery) →
- * KEY_MGMT_TAG, 2 (Verification) → VERIFICATION_KEYS_TAG. Distinct tags
- * per kind prevent cross-type signature replay.
- */
+/// Mirrors `WOTSPlusCodec.keysetDigest`. `kind` selects the domain tag:
+///   Transaction → ADD_TRANSACTION_KEYS_TAG
+///   Recovery    → KEY_MGMT_TAG
+///   Verification → VERIFICATION_KEYS_TAG
 export function keysetDigest(
-  kind: number,
+  kind: KeyType | number,
   wallet: Address,
   chainId: bigint,
   s1: Hex,
   h1: Hex,
   s2: Hex,
   h2: Hex,
-  keysHash: Hex,
+  keysHash: Hex
 ): Hex {
-  const tag =
-    kind === 0 ? ADD_TRANSACTION_KEYS_TAG
-      : kind === 2 ? VERIFICATION_KEYS_TAG
-        : KEY_MGMT_TAG;
-  return keccak256(concat([
-    tag,
-    bigintToBytes32(chainId),
-    addressToBytes32(wallet),
-    s1, h1, s2, h2,
-    keysHash,
-  ]));
+  return keccak256(
+    concat([
+      tagForKeyset(kind),
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      keysHash,
+    ])
+  );
+}
+
+export function recoverWalletDigest(
+  wallet: Address,
+  chainId: bigint,
+  recoverySeed: Hex,
+  recoveryHash: Hex,
+  newRecoverySeed: Hex,
+  newRecoveryHash: Hex,
+  newTransactionSeed: Hex,
+  newTransactionHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      RECOVER_WALLET_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      recoverySeed,
+      recoveryHash,
+      newRecoverySeed,
+      newRecoveryHash,
+      newTransactionSeed,
+      newTransactionHash,
+    ])
+  );
+}
+
+export function withdrawDepositDigest(
+  wallet: Address,
+  chainId: bigint,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+  to: Address,
+  amount: bigint
+): Hex {
+  return keccak256(
+    concat([
+      WITHDRAW_DEPOSIT_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      addressToBytes32(to),
+      bigintToBytes32(amount),
+    ])
+  );
+}
+
+export function replaceKeyAtDigest(
+  kind: KeyType | number,
+  wallet: Address,
+  chainId: bigint,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+  index: bigint,
+  newSeed: Hex,
+  newHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      tagForReplaceKeyAt(kind),
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      bigintToBytes32(index),
+      newSeed,
+      newHash,
+    ])
+  );
 }
 
 export function upgradeDigest(
@@ -372,15 +552,20 @@ export function upgradeDigest(
   s1: Hex,
   h1: Hex,
   s2: Hex,
-  h2: Hex,
+  h2: Hex
 ): Hex {
-  return keccak256(concat([
-    UPGRADE_TAG,
-    bigintToBytes32(chainId),
-    addressToBytes32(wallet),
-    addressToBytes32(newImplementation),
-    s1, h1, s2, h2,
-  ]));
+  return keccak256(
+    concat([
+      UPGRADE_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      addressToBytes32(newImplementation),
+      s1,
+      h1,
+      s2,
+      h2,
+    ])
+  );
 }
 
 export function verificationDigest(
@@ -388,15 +573,18 @@ export function verificationDigest(
   chainId: bigint,
   newImplementation: Address,
   s1: Hex,
-  h1: Hex,
+  h1: Hex
 ): Hex {
-  return keccak256(concat([
-    VERIFICATION_TAG,
-    bigintToBytes32(chainId),
-    addressToBytes32(wallet),
-    addressToBytes32(newImplementation),
-    s1, h1,
-  ]));
+  return keccak256(
+    concat([
+      VERIFICATION_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      addressToBytes32(newImplementation),
+      s1,
+      h1,
+    ])
+  );
 }
 
 export function upgradeRecoveryDigest(
@@ -406,19 +594,43 @@ export function upgradeRecoveryDigest(
   s1: Hex,
   h1: Hex,
   s2: Hex,
-  h2: Hex,
+  h2: Hex
 ): Hex {
-  return keccak256(concat([
-    UPGRADE_RECOVERY_TAG,
-    bigintToBytes32(chainId),
-    addressToBytes32(wallet),
-    addressToBytes32(newImplementation),
-    s1, h1, s2, h2,
-  ]));
+  return keccak256(
+    concat([
+      UPGRADE_RECOVERY_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      addressToBytes32(newImplementation),
+      s1,
+      h1,
+      s2,
+      h2,
+    ])
+  );
 }
 
-export enum KeyType {
-  Transaction = 0,
-  Recovery = 1,
-  Verification = 2,
+export function erc4337ExecuteDigest(
+  wallet: Address,
+  chainId: bigint,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+  userOpHash: Hex,
+  fee: bigint
+): Hex {
+  return keccak256(
+    concat([
+      ERC4337_EXECUTE_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      userOpHash,
+      bigintToBytes32(fee),
+    ])
+  );
 }

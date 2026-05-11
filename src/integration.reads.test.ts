@@ -70,6 +70,8 @@ beforeAll(async () => {
     abi: quipFactoryAbi,
     bytecode: factoryBytecode,
     args: [account.address, MAX_FEE],
+    account,
+    chain: foundry,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   factoryAddress = receipt.contractAddress!;

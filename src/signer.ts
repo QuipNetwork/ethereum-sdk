@@ -29,6 +29,35 @@ export interface WinternitzPublicKey {
   publicKeyHash: Uint8Array;
 }
 
+/// In-memory WOTS+ signer keyed off a single `quantumSecret`.
+///
+/// Mental model: `quantumSecret` is the user's seed-phrase analog —
+/// analogous to a BIP39 mnemonic in classical wallets. From it, every
+/// WOTS+ keypair the user ever uses is deterministically derived:
+///
+///   privateSeed = quantumSecret || vaultId
+///   (privateKey, publicKey) = WOTSPlus.generateKeyPair(privateSeed, publicSeed)
+///
+/// Hierarchy:
+///   - `quantumSecret`   : per-user master secret. Single backup target.
+///   - `vaultId`         : per-wallet branch (multiple vaults per user).
+///   - `publicSeed`      : per-key salt; published on chain as part of
+///                         the key's identity. Random at generation time.
+///
+/// Given `(quantumSecret, vaultId, publicSeed)` the private key is
+/// reproducible. The publicSeed is always readable from the wallet
+/// (`keyAt`, `getDisasterRecoveryKey`, `getOwnershipKey`), so the user's
+/// only off-chain backup obligation is the `quantumSecret`.
+///
+/// Lifetime: the secret lives in memory for the lifetime of this
+/// `QuipSigner` instance — session-scoped, like MetaMask's seed in a
+/// decrypted vault. Encryption at rest, passphrase unlock, lock
+/// timeouts, and wiping on logout are the embedding application's
+/// responsibility; the SDK only consumes a raw `Uint8Array`.
+///
+/// Future direction: a `PqSigner` interface would let HSM /
+/// hardware-wallet backends supply the same shape without exposing
+/// the secret to JS at all. Out of scope for this phase.
 export class QuipSigner {
   // FIXME: in an ideal world these are kept in a secure wallet somewhere and this is
   // merely an interface. For now we are keeping them in memory.
@@ -40,14 +69,16 @@ export class QuipSigner {
     this.quantumSecret = keccak_256(quantumSecret);
   }
 
-  // generateKeyPair in the domain of a specific vault using the base quantum
-  // secret.
+  /// Generate a fresh keypair under this `(quantumSecret, vaultId)` branch
+  /// with a cryptographically random `publicSeed`.
   public generateKeyPair(vaultId: Uint8Array): WinternitzKeyPair {
     const publicSeed = randomBytes(32);
     return this.recoverKeyPair(vaultId, publicSeed);
   }
 
-  // recoverKeyPair given a pre-existing public seed, and vault id
+  /// Rederive a previously-generated keypair from its `publicSeed`. The
+  /// canonical lookup path: read a key's publicSeed from chain, pass it
+  /// here to recover the private key for signing.
   public recoverKeyPair(
     vaultId: Uint8Array,
     publicSeed: Uint8Array

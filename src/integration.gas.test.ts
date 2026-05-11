@@ -69,6 +69,8 @@ beforeAll(async () => {
     abi: quipFactoryAbi,
     bytecode: factoryBytecode,
     args: [account.address, MAX_FEE],
+    account,
+    chain: foundry,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   factoryAddress = receipt.contractAddress!;
@@ -103,7 +105,9 @@ describe("prepareTx — happy path", () => {
     // Hard to assert precisely without re-estimating, but at minimum we
     // can check the buffered value matches `applyGasBuffer(estimate)`.
     const rawEstimate = await publicClient.estimateContractGas(
-      setExecuteFeeCall(MAX_FEE / 2n)
+      setExecuteFeeCall(MAX_FEE / 2n) as Parameters<
+        typeof publicClient.estimateContractGas
+      >[0]
     );
     expect(prepared.gas).toBe(applyGasBuffer(rawEstimate));
   });
@@ -126,7 +130,9 @@ describe("prepareTx — happy path", () => {
       opts: { gasBufferPercent: 50 },
     });
     const rawEstimate = await publicClient.estimateContractGas(
-      setExecuteFeeCall(MAX_FEE / 2n)
+      setExecuteFeeCall(MAX_FEE / 2n) as Parameters<
+        typeof publicClient.estimateContractGas
+      >[0]
     );
     expect(prepared50.gas).toBe(applyGasBuffer(rawEstimate, { gasBufferPercent: 50 }));
   });

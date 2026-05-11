@@ -16,10 +16,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import type { Hex } from "viem";
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          BASE CLASS                           */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
 export interface QuipErrorOptions {
   cause?: unknown;
   /// 4-byte error selector when the error originated from a contract revert.
@@ -47,10 +43,6 @@ export class QuipError extends Error {
     if (opts?.data) this.data = opts.data;
   }
 }
-
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                    QUIPWALLET CONTRACT ERRORS                 */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 export class ZeroAddressFactoryError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
@@ -299,10 +291,6 @@ export class GuardedSlotWriteDeniedError extends QuipError {
   }
 }
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                   QUIPFACTORY CONTRACT ERRORS                 */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
 export class InsufficientBalanceError extends QuipError {
   readonly requested: bigint;
   readonly available: bigint;
@@ -394,10 +382,6 @@ export class ZeroMaxFeeError extends QuipError {
   }
 }
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                  QUIPPAYMASTER CONTRACT ERRORS                */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
 export class InvalidEntryPointError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
@@ -437,10 +421,6 @@ export class VerifierKeyInUseError extends QuipError {
     );
   }
 }
-
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*               ERC-4337 ENUM-FAILURE ERRORS                    */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 /// Mirrors `IQuipWallet.UserOpValidationFailure`.
 export enum UserOpValidationFailure {
@@ -497,10 +477,6 @@ export class Erc4337PaymasterValidationError extends QuipError {
     this.reason = reason;
   }
 }
-
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                  SDK-OPERATIONAL ERRORS                       */
-/*.•°:°.´+˚.*°.˚:*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 /// Thrown when a method is called on a `QuipClient` whose async
 /// initialization has not resolved.

@@ -1,3 +1,19 @@
+// Copyright (C) 2025 quip.network
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import {
   type Address,
   type Hex,
@@ -17,27 +33,32 @@ import { join } from "node:path";
 import {
   type WinternitzAddress,
   type WinternitzElements,
+  KeyType,
   encodeInit,
-  encodeChangePqOwner,
   encodeExecute,
   encodeRecoverWallet,
   encodeKeyManagement,
-  encodeUpgrade,
+  encodeWithdrawDeposit,
+  encodeReplaceKeyAt,
+  encodeUserOpSignature,
   decodeInit,
-  decodeUpgradeAuth,
-  decodeUpgradeVerification,
-  decodeUpgradeMigration,
-  decodeChangePqOwner,
   decodeExecute,
   decodeRecoverWallet,
   decodeKeyManagement,
-  keyRotationDigest,
+  decodeWithdrawDeposit,
+  decodeReplaceKeyAt,
+  decodeUserOpSignature,
   executeDigest,
   keysetDigest,
+  recoverWalletDigest,
+  withdrawDepositDigest,
+  replaceKeyAtDigest,
   upgradeDigest,
   verificationDigest,
   upgradeRecoveryDigest,
+  erc4337ExecuteDigest,
   RECOVERY_KEY_AMOUNT,
+  TRANSACTION_KEY_INIT_AMOUNT,
 } from "./wotsCodec.js";
 
 // ─── Harness artifact (from forge build output) ──────────────────
@@ -116,68 +137,79 @@ const S1: Hex = toHex(10n, { size: 32 });
 const H1: Hex = toHex(11n, { size: 32 });
 const S2: Hex = toHex(12n, { size: 32 });
 const H2: Hex = toHex(13n, { size: 32 });
+const S3: Hex = toHex(14n, { size: 32 });
+const H3: Hex = toHex(15n, { size: 32 });
 const TARGET: Address = "0x0000000000000000000000000000000000000002";
 const IMPL: Address = "0x0000000000000000000000000000000000000003";
 const VALUE = 1000n;
 const OPDATA_HASH: Hex = toHex(99n, { size: 32 });
 const KEYS_HASH: Hex = toHex(88n, { size: 32 });
+const USER_OP_HASH: Hex = toHex(77n, { size: 32 });
 
 // ─── Encoder parity tests (live Solidity comparison) ─────────────
 
 describe("encoder parity (live Solidity)", () => {
-  const pq = makeKey(1n);
+  const cur = makeKey(1n);
+  const next = makeKey(3n);
   const sig = makeSig(1n);
 
-  test("encodeChangePqOwner matches Solidity", async () => {
-    const tsEncoded = encodeChangePqOwner(pq, sig);
-    const solEncoded = await callHarness("exposed_encodeChangePqOwner", [pq, sig]);
-    expect(tsEncoded).toBe(solEncoded);
-  });
-
-  test("encodeRecoverWallet matches Solidity", async () => {
-    const recoveryKey = makeKey(1n);
-    const newPqOwner = makeKey(3n);
-    const tsEncoded = encodeRecoverWallet(recoveryKey, newPqOwner, sig);
-    const solEncoded = await callHarness("exposed_encodeRecoverWallet", [
-      recoveryKey,
-      newPqOwner,
-      sig,
+  test("encodeExecute matches Solidity", async () => {
+    const tsEncoded = encodeExecute(cur, next, sig, TARGET, VALUE, "0xdeadbeef");
+    const solEncoded = await callHarness("exposed_encodeExecute", [
+      cur, next, sig, TARGET, VALUE, "0xdeadbeef",
     ]);
     expect(tsEncoded).toBe(solEncoded);
   });
 
-  test("encodeExecute matches Solidity", async () => {
-    const tsEncoded = encodeExecute(pq, sig, TARGET, VALUE, "0xdeadbeef");
-    const solEncoded = await callHarness("exposed_encodeExecute", [
-      pq,
-      sig,
-      TARGET,
-      VALUE,
-      "0xdeadbeef",
+  test("encodeRecoverWallet matches Solidity", async () => {
+    const recovery = makeKey(5n);
+    const newRecovery = makeKey(7n);
+    const newTransaction = makeKey(9n);
+    const tsEncoded = encodeRecoverWallet(recovery, newRecovery, newTransaction, sig);
+    const solEncoded = await callHarness("exposed_encodeRecoverWallet", [
+      recovery, newRecovery, newTransaction, sig,
     ]);
     expect(tsEncoded).toBe(solEncoded);
   });
 
   test("encodeKeyManagement matches Solidity", async () => {
     const keys: WinternitzAddress[] = [makeKey(200n), makeKey(202n)];
-    const tsEncoded = encodeKeyManagement(1, pq, sig, keys);
-    const solEncoded = await callHarness("exposed_encodeKeyManagement", [1, pq, sig, keys]);
+    const tsEncoded = encodeKeyManagement(KeyType.Recovery, cur, next, sig, keys);
+    const solEncoded = await callHarness("exposed_encodeKeyManagement", [
+      KeyType.Recovery, cur, next, sig, keys,
+    ]);
     expect(tsEncoded).toBe(solEncoded);
   });
 
+  test("encodeWithdrawDeposit matches Solidity", async () => {
+    const tsEncoded = encodeWithdrawDeposit(cur, next, sig, TARGET, VALUE);
+    const solEncoded = await callHarness("exposed_encodeWithdrawDeposit", [
+      cur, next, sig, TARGET, VALUE,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
+
+  test("encodeReplaceKeyAt matches Solidity", async () => {
+    const newKey = makeKey(42n);
+    const tsEncoded = encodeReplaceKeyAt(KeyType.Recovery, cur, next, sig, 3n, newKey);
+    const solEncoded = await callHarness("exposed_encodeReplaceKeyAt", [
+      KeyType.Recovery, cur, next, sig, 3n, newKey,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
+
+  test("encodeUserOpSignature matches Solidity", async () => {
+    const tsEncoded = encodeUserOpSignature(cur, next, sig);
+    const solEncoded = await callHarness("exposed_encodeUserOpSignature", [
+      cur, next, sig,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
 });
 
 // ─── Digest parity tests (live Solidity comparison) ──────────────
 
 describe("digest parity (live Solidity)", () => {
-  test("keyRotationDigest matches Solidity", async () => {
-    const tsDigest = keyRotationDigest(WALLET, CHAIN_ID, S1, H1, S2, H2);
-    const solDigest = await callHarness("exposed_keyRotationDigest", [
-      WALLET, CHAIN_ID, S1, H1, S2, H2,
-    ]);
-    expect(tsDigest).toBe(solDigest);
-  });
-
   test("executeDigest matches Solidity", async () => {
     const FEE = 1000n;
     const tsDigest = executeDigest(
@@ -190,10 +222,45 @@ describe("digest parity (live Solidity)", () => {
   });
 
   test("keysetDigest matches Solidity for each kind", async () => {
-    for (const kind of [0, 1, 2]) {
+    for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
       const tsDigest = keysetDigest(kind, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH);
       const solDigest = await callHarness("exposed_keysetDigest", [
         kind, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
+      ]);
+      expect(tsDigest).toBe(solDigest);
+    }
+  });
+
+  test("recoverWalletDigest matches Solidity", async () => {
+    const tsDigest = recoverWalletDigest(
+      WALLET, CHAIN_ID, S1, H1, S2, H2, S3, H3,
+    );
+    const solDigest = await callHarness("exposed_recoverWalletDigest", [
+      WALLET, CHAIN_ID, S1, H1, S2, H2, S3, H3,
+    ]);
+    expect(tsDigest).toBe(solDigest);
+  });
+
+  test("withdrawDepositDigest matches Solidity", async () => {
+    const AMOUNT = 5n * 10n ** 18n;
+    const tsDigest = withdrawDepositDigest(
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, AMOUNT,
+    );
+    const solDigest = await callHarness("exposed_withdrawDepositDigest", [
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, AMOUNT,
+    ]);
+    expect(tsDigest).toBe(solDigest);
+  });
+
+  test("replaceKeyAtDigest matches Solidity for each kind", async () => {
+    const NEW_SEED = toHex(101n, { size: 32 });
+    const NEW_HASH = toHex(102n, { size: 32 });
+    for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
+      const tsDigest = replaceKeyAtDigest(
+        kind, WALLET, CHAIN_ID, S1, H1, S2, H2, 7n, NEW_SEED, NEW_HASH,
+      );
+      const solDigest = await callHarness("exposed_replaceKeyAtDigest", [
+        kind, WALLET, CHAIN_ID, S1, H1, S2, H2, 7n, NEW_SEED, NEW_HASH,
       ]);
       expect(tsDigest).toBe(solDigest);
     }
@@ -222,6 +289,17 @@ describe("digest parity (live Solidity)", () => {
     ]);
     expect(tsDigest).toBe(solDigest);
   });
+
+  test("erc4337ExecuteDigest matches Solidity", async () => {
+    const FEE = 1000n;
+    const tsDigest = erc4337ExecuteDigest(
+      WALLET, CHAIN_ID, S1, H1, S2, H2, USER_OP_HASH, FEE,
+    );
+    const solDigest = await callHarness("exposed_erc4337ExecuteDigest", [
+      WALLET, CHAIN_ID, S1, H1, S2, H2, USER_OP_HASH, FEE,
+    ]);
+    expect(tsDigest).toBe(solDigest);
+  });
 });
 
 // ─── Roundtrip tests (pure TS) ───────────────────────────────────
@@ -239,13 +317,14 @@ function expectElementsEq(a: WinternitzElements, b: WinternitzElements) {
 }
 
 describe("encode/decode roundtrip", () => {
-  const pq = makeKey(1n);
+  const cur = makeKey(1n);
+  const next = makeKey(3n);
   const sig = makeSig(1n);
 
   test("init", () => {
     const disaster = makeKey(999n);
     const ownership = makeKey(1001n);
-    const txnKeys = Array.from({ length: 5 }, (_, i) =>
+    const txnKeys = Array.from({ length: TRANSACTION_KEY_INIT_AMOUNT }, (_, i) =>
       makeKey(BigInt(2 + i * 2)),
     );
     const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, (_, i) =>
@@ -256,8 +335,8 @@ describe("encode/decode roundtrip", () => {
     const decoded = decodeInit(encoded);
     expectAddressEq(decoded.disasterRecoveryKey, disaster);
     expectAddressEq(decoded.ownershipKey, ownership);
-    expect(decoded.transactionKeys.length).toBe(5);
-    for (let i = 0; i < 5; i++) {
+    expect(decoded.transactionKeys.length).toBe(TRANSACTION_KEY_INIT_AMOUNT);
+    for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
       expectAddressEq(decoded.transactionKeys[i], txnKeys[i]);
     }
     expect(decoded.recoveryKeys.length).toBe(RECOVERY_KEY_AMOUNT);
@@ -266,18 +345,12 @@ describe("encode/decode roundtrip", () => {
     }
   });
 
-  test("changePqOwner", () => {
-    const encoded = encodeChangePqOwner(pq, sig);
-    const decoded = decodeChangePqOwner(encoded);
-    expectAddressEq(decoded.newPqOwner, pq);
-    expectElementsEq(decoded.pqSig, sig);
-  });
-
   test("execute with data", () => {
     const data: Hex = "0xdeadbeef";
-    const encoded = encodeExecute(pq, sig, TARGET, VALUE, data);
+    const encoded = encodeExecute(cur, next, sig, TARGET, VALUE, data);
     const decoded = decodeExecute(encoded);
-    expectAddressEq(decoded.nextPqOwner, pq);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
     expectElementsEq(decoded.pqSig, sig);
     expect(getAddress(decoded.target)).toBe(getAddress(TARGET));
     expect(decoded.value).toBe(VALUE);
@@ -285,88 +358,84 @@ describe("encode/decode roundtrip", () => {
   });
 
   test("execute without data (transfer)", () => {
-    const encoded = encodeExecute(pq, sig, TARGET, VALUE);
-    expect(size(encoded)).toBe(2272);
+    const encoded = encodeExecute(cur, next, sig, TARGET, VALUE);
+    expect(size(encoded)).toBe(2336);
     const decoded = decodeExecute(encoded);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
     expect(getAddress(decoded.target)).toBe(getAddress(TARGET));
     expect(decoded.value).toBe(VALUE);
     expect(decoded.data).toBe("0x");
   });
 
   test("recoverWallet", () => {
-    const recoveryKey = makeKey(3n);
-    const encoded = encodeRecoverWallet(recoveryKey, pq, sig);
-    expect(size(encoded)).toBe(2272);
+    const recovery = makeKey(5n);
+    const newRecovery = makeKey(7n);
+    const newTransaction = makeKey(9n);
+    const encoded = encodeRecoverWallet(recovery, newRecovery, newTransaction, sig);
+    expect(size(encoded)).toBe(2336);
     const decoded = decodeRecoverWallet(encoded);
-    expectAddressEq(decoded.recoveryKey, recoveryKey);
-    expectAddressEq(decoded.newPqOwner, pq);
+    expectAddressEq(decoded.recoveryKey, recovery);
+    expectAddressEq(decoded.newRecoveryKey, newRecovery);
+    expectAddressEq(decoded.newTransactionKey, newTransaction);
     expectElementsEq(decoded.pqSig, sig);
   });
 
   test("keyManagement with multiple keys", () => {
     const keys = [makeKey(200n), makeKey(202n), makeKey(204n)];
-    const encoded = encodeKeyManagement(1, pq, sig, keys);
-    expect(size(encoded)).toBe(2240 + 3 * 64);
+    const encoded = encodeKeyManagement(KeyType.Recovery, cur, next, sig, keys);
+    expect(size(encoded)).toBe(2304 + 3 * 64);
     const decoded = decodeKeyManagement(encoded);
-    expect(decoded.kind).toBe(1);
-    expectAddressEq(decoded.nextPqOwner, pq);
+    expect(decoded.kind).toBe(KeyType.Recovery);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
     expectElementsEq(decoded.pqSig, sig);
-    expect(decoded.newRecoveryKeys.length).toBe(3);
+    expect(decoded.keys.length).toBe(3);
     for (let i = 0; i < 3; i++) {
-      expectAddressEq(decoded.newRecoveryKeys[i], keys[i]);
+      expectAddressEq(decoded.keys[i], keys[i]);
     }
   });
 
   test("keyManagement with zero keys", () => {
-    const encoded = encodeKeyManagement(2, pq, sig, []);
-    expect(size(encoded)).toBe(2240);
+    const encoded = encodeKeyManagement(KeyType.Verification, cur, next, sig, []);
+    expect(size(encoded)).toBe(2304);
     const decoded = decodeKeyManagement(encoded);
-    expect(decoded.kind).toBe(2);
-    expect(decoded.newRecoveryKeys.length).toBe(0);
+    expect(decoded.kind).toBe(KeyType.Verification);
+    expect(decoded.keys.length).toBe(0);
   });
 
-  test("upgrade", () => {
-    const verifier = makeKey(5n);
-    const verifySig = makeSig(5n);
-    const initTxnKeys = Array.from({ length: 5 }, (_, i) =>
-      makeKey(BigInt(40 + i * 2)),
-    );
-    const initRecoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, (_, i) =>
-      makeKey(BigInt(20 + i * 2)),
-    );
-    const migratorPayload = encodeInit(
-      makeKey(50n),
-      makeKey(52n),
-      initTxnKeys,
-      initRecoveryKeys,
-    );
-
-    const encoded = encodeUpgrade(pq, sig, verifier, verifySig, true, migratorPayload);
-    // encodeUpgrade omits currentKey (64 bytes) because the TS helper was written
-    // before the full re-init rewrite. Layout: nextKey(64) + pqSig(2144) +
-    // verifier(64) + verifySig(2144) + shouldMigrate(1) + migratorPayload(1088) = 5505.
-    expect(size(encoded)).toBe(5505);
-
-    const auth = decodeUpgradeAuth(encoded);
-    expectAddressEq(auth.nextPqOwner, pq);
-    expectElementsEq(auth.pqSig, sig);
-
-    const ver = decodeUpgradeVerification(encoded);
-    expectAddressEq(ver.verifier, verifier);
-    expectElementsEq(ver.verifySig, verifySig);
-
-    const mig = decodeUpgradeMigration(encoded);
-    expect(mig.shouldMigrate).toBe(true);
-    expect(size(mig.migratorPayload)).toBe(1088);
+  test("withdrawDeposit", () => {
+    const TO: Address = "0x000000000000000000000000000000000000beef";
+    const AMOUNT = 42n * 10n ** 18n;
+    const encoded = encodeWithdrawDeposit(cur, next, sig, TO, AMOUNT);
+    expect(size(encoded)).toBe(2336);
+    const decoded = decodeWithdrawDeposit(encoded);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
+    expectElementsEq(decoded.pqSig, sig);
+    expect(getAddress(decoded.to)).toBe(getAddress(TO));
+    expect(decoded.amount).toBe(AMOUNT);
   });
 
-  test("upgrade with shouldMigrate=false", () => {
-    const verifier = makeKey(5n);
-    const verifySig = makeSig(5n);
-    const migratorPayload = ("0x" + "00".repeat(1088)) as Hex;
+  test("replaceKeyAt", () => {
+    const newKey = makeKey(42n);
+    const encoded = encodeReplaceKeyAt(KeyType.Recovery, cur, next, sig, 3n, newKey);
+    expect(size(encoded)).toBe(2400);
+    const decoded = decodeReplaceKeyAt(encoded);
+    expect(decoded.kind).toBe(KeyType.Recovery);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
+    expectElementsEq(decoded.pqSig, sig);
+    expect(decoded.index).toBe(3n);
+    expectAddressEq(decoded.newKey, newKey);
+  });
 
-    const encoded = encodeUpgrade(pq, sig, verifier, verifySig, false, migratorPayload);
-    const mig = decodeUpgradeMigration(encoded);
-    expect(mig.shouldMigrate).toBe(false);
+  test("userOpSignature", () => {
+    const encoded = encodeUserOpSignature(cur, next, sig);
+    expect(size(encoded)).toBe(2272);
+    const decoded = decodeUserOpSignature(encoded);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
+    expectElementsEq(decoded.pqSig, sig);
   });
 });

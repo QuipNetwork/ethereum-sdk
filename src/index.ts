@@ -32,23 +32,19 @@ export type { WinternitzKeyPair, WinternitzPublicKey } from "./signer.js";
 export { QuipWalletClient, KeyType } from "./walletClient.js";
 export { QuipClient } from "./factoryClient.js";
 
-// Phase-staged module surfaces (currently empty placeholders)
+// Typed errors, simulation/gas helpers, and the staged userOp/paymaster/event
+// surfaces (Phase 5+).
 export * from "./errors.js";
 export * from "./gas.js";
 export * from "./userOp.js";
 export * from "./paymasterClient.js";
 export * from "./events.js";
 
-// TODO: SUPPORTED_NETWORKS and NetworkType may be unused — CHAIN_IDS in addresses.ts is canonical. Verify against frontend before removing.
-export const SUPPORTED_NETWORKS = {
-  SEPOLIA: "sepolia",
-  SEPOLIA_OPTIMISM: "sepolia_optimism",
-  SEPOLIA_BASE: "sepolia_base",
-  MAINNET: "mainnet",
-  BASE: "base",
-  OPTIMISM: "optimism",
-  MIDL_TESTNET: "midl",
-} as const;
-
-export type NetworkType =
-  (typeof SUPPORTED_NETWORKS)[keyof typeof SUPPORTED_NETWORKS];
+// Re-export the aggregator types so callers can use them without reaching
+// into the module subpaths.
+export type {
+  WalletState,
+  WinternitzAddress,
+  TransactionKeyOptions,
+} from "./walletClient.js";
+export type { FactoryState } from "./factoryClient.js";

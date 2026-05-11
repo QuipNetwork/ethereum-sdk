@@ -28,10 +28,6 @@ import {
 } from "./errors.js";
 import { decodeContractError } from "./internal/decodeError.js";
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          CONSTANTS                            */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
 /// Default safety margin applied on top of `eth_estimateGas` results.
 /// 20% mirrors the existing `executeWithWinternitz` heuristic.
 export const DEFAULT_GAS_BUFFER_PERCENT = 20;
@@ -39,10 +35,6 @@ export const DEFAULT_GAS_BUFFER_PERCENT = 20;
 /// Hard cap on the buffer to keep callers from accidentally requesting
 /// outrageously high gas via misconfiguration.
 export const MAX_GAS_BUFFER_PERCENT = 100;
-
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          TYPES                                */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 /// Per-call transaction-shaping options accepted by every write method on
 /// the SDK. All fields are optional; unset values fall through to viem's
@@ -91,10 +83,6 @@ export interface PreparedTx {
   nonce?: number;
 }
 
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          HELPERS                              */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
 /// Apply the configured buffer to a gas estimate.
 /// `(estimate * (100 + pct)) / 100`, with `pct` clamped to `[0, MAX]`.
 export function applyGasBuffer(estimate: bigint, opts?: TxOptions): bigint {
@@ -129,10 +117,6 @@ export async function preflightBalanceCheck(
     throw new BalanceTooLowError(required, balance);
   }
 }
-
-/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-/*                          PREPARE TX                           */
-/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 /// Parameters accepted by every viem `simulateContract` / `estimateContractGas`
 /// call that this SDK makes. Matches the structural shape both viem

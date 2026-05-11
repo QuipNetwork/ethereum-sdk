@@ -75,6 +75,8 @@ beforeAll(async () => {
     abi: quipFactoryAbi,
     bytecode: factoryBytecode,
     args: [account.address, MAX_FEE],
+    account,
+    chain: foundry,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   factoryAddress = receipt.contractAddress!;
@@ -141,6 +143,8 @@ describe("Anvil — QuipFactory error decoding", () => {
           abi: quipFactoryAbi,
           bytecode: factoryBytecode,
           args: [account.address, 0n],
+          account,
+          chain: foundry,
         })
       );
     } catch (e) {
