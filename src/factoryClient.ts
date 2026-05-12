@@ -49,6 +49,7 @@ import {
   NotConnectedError,
   IncorrectTransactionKeyAmountError,
   IncorrectRecoveryKeyAmountError,
+  PartialMulticallResultError,
 } from "./errors.js";
 import {
   type WinternitzAddress as CodecAddress,
@@ -416,24 +417,35 @@ export class QuipClient {
       ...(opts?.forceSequential && { forceSequential: true }),
     });
 
-    const expect = <T,>(idx: number, label: string): T => {
-      const r = results[idx];
+    const labels = [
+      "owner",
+      "pendingOwner",
+      "creationFee",
+      "executeFee",
+      "MAX_FEE",
+      "latestWalletImpl",
+      "getVettedCodeCount",
+    ] as const;
+
+    const failures: { label: string; error: Error }[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
       if (r.status === "failure") {
-        throw r.error instanceof Error
-          ? r.error
-          : new Error(`${label} read failed`);
+        failures.push({ label: labels[i], error: r.error });
       }
-      return r.result as T;
-    };
+    }
+    if (failures.length > 0) {
+      throw new PartialMulticallResultError(failures);
+    }
 
     return {
-      owner: expect<Address>(0, "owner"),
-      pendingOwner: expect<Address>(1, "pendingOwner"),
-      creationFee: expect<bigint>(2, "creationFee"),
-      executeFee: expect<bigint>(3, "executeFee"),
-      maxFee: expect<bigint>(4, "MAX_FEE"),
-      latestWalletImpl: expect<Address>(5, "latestWalletImpl"),
-      vettedCodeCount: expect<bigint>(6, "getVettedCodeCount"),
+      owner: (results[0] as { status: "success"; result: Address }).result,
+      pendingOwner: (results[1] as { status: "success"; result: Address }).result,
+      creationFee: (results[2] as { status: "success"; result: bigint }).result,
+      executeFee: (results[3] as { status: "success"; result: bigint }).result,
+      maxFee: (results[4] as { status: "success"; result: bigint }).result,
+      latestWalletImpl: (results[5] as { status: "success"; result: Address }).result,
+      vettedCodeCount: (results[6] as { status: "success"; result: bigint }).result,
     };
   }
 }

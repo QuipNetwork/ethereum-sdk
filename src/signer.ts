@@ -18,6 +18,9 @@ import { WOTSPlus } from "@quip.network/hashsigs";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { equalBytes } from "@noble/ciphers/utils";
+import { type Hex, toHex } from "viem";
+
+import { KeyAlreadyBurnedError } from "./errors.js";
 
 export interface WinternitzKeyPair {
   privateKey: Uint8Array;
@@ -29,13 +32,16 @@ export interface WinternitzPublicKey {
   publicKeyHash: Uint8Array;
 }
 
-/// In-memory WOTS+ signer keyed off a single `quantumSecret`.
+/// In-memory WOTS+ signer keyed off a single `quantumSecret`. See
+/// `SDK_README.md` for the operational contract (the "every broadcast burns
+/// a key" invariant, concurrency model, and persistent-state
+/// recommendations).
 ///
 /// Mental model: `quantumSecret` is the user's seed-phrase analog —
 /// analogous to a BIP39 mnemonic in classical wallets. From it, every
 /// WOTS+ keypair the user ever uses is deterministically derived:
 ///
-///   privateSeed = quantumSecret || vaultId
+///   privateSeed = keccak256(quantumSecret) || vaultId
 ///   (privateKey, publicKey) = WOTSPlus.generateKeyPair(privateSeed, publicSeed)
 ///
 /// Hierarchy:
@@ -49,24 +55,24 @@ export interface WinternitzPublicKey {
 /// (`keyAt`, `getDisasterRecoveryKey`, `getOwnershipKey`), so the user's
 /// only off-chain backup obligation is the `quantumSecret`.
 ///
-/// Lifetime: the secret lives in memory for the lifetime of this
-/// `QuipSigner` instance — session-scoped, like MetaMask's seed in a
-/// decrypted vault. Encryption at rest, passphrase unlock, lock
-/// timeouts, and wiping on logout are the embedding application's
-/// responsibility; the SDK only consumes a raw `Uint8Array`.
-///
-/// Future direction: a `PqSigner` interface would let HSM /
-/// hardware-wallet backends supply the same shape without exposing
-/// the secret to JS at all. Out of scope for this phase.
+/// Burned-key tracking: WOTS+ is one-time-use. Once a signature has been
+/// broadcast, the key is publicly compromised — reuse leaks secret
+/// material and lets an observer forge sigs on different messages. This
+/// signer maintains an in-memory set of burned publicSeeds; `sign` refuses
+/// to operate on a burned key (`KeyAlreadyBurnedError`). The wallet client
+/// calls `markBurned` immediately after `writeContract` returns the tx
+/// hash, so the burn is recorded even if `waitForTransactionReceipt`
+/// fails. State is per-instance and not persisted; see `SDK_README.md` for
+/// the persistence recommendation.
 export class QuipSigner {
-  // FIXME: in an ideal world these are kept in a secure wallet somewhere and this is
-  // merely an interface. For now we are keeping them in memory.
   private quantumSecret: Uint8Array;
   private wots: WOTSPlus;
+  private burned: Set<Hex>;
 
   constructor(quantumSecret: Uint8Array) {
     this.wots = new WOTSPlus(keccak_256);
     this.quantumSecret = keccak_256(quantumSecret);
+    this.burned = new Set();
   }
 
   /// Generate a fresh keypair under this `(quantumSecret, vaultId)` branch
@@ -98,12 +104,43 @@ export class QuipSigner {
     };
   }
 
+  /// Sign `message` with the key derived from `(vaultId, publicSeed)`. Throws
+  /// `KeyAlreadyBurnedError` if this signer has already marked the key
+  /// burned via `markBurned`.
   public sign(
     message: Uint8Array,
     vaultId: Uint8Array,
     publicSeed: Uint8Array
   ): Uint8Array[] {
+    const seedHex = toHex(publicSeed);
+    if (this.burned.has(seedHex)) {
+      throw new KeyAlreadyBurnedError(seedHex);
+    }
     const key = this.recoverKeyPair(vaultId, publicSeed);
     return this.wots.sign(key.privateKey, key.publicKey.publicSeed, message);
+  }
+
+  /// Mark a key burned. Called by `QuipWalletClient` immediately after
+  /// `writeContract` returns a tx hash — at that point the WOTS+ signature
+  /// is in the public mempool and the key is compromised regardless of
+  /// whether the tx eventually mines. Idempotent.
+  public markBurned(publicSeed: Uint8Array | Hex): void {
+    const seedHex =
+      typeof publicSeed === "string" ? publicSeed : toHex(publicSeed);
+    this.burned.add(seedHex);
+  }
+
+  /// Query whether `publicSeed` has been marked burned in this signer.
+  public isBurned(publicSeed: Uint8Array | Hex): boolean {
+    const seedHex =
+      typeof publicSeed === "string" ? publicSeed : toHex(publicSeed);
+    return this.burned.has(seedHex);
+  }
+
+  /// Test-only: clear the burned set. Production code should never call
+  /// this — once a key is broadcast, it is gone. Exposed for unit tests
+  /// that need a clean slate between cases.
+  public clearBurnedForTesting(): void {
+    this.burned.clear();
   }
 }

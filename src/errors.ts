@@ -594,6 +594,68 @@ export class BalanceTooLowError extends QuipError {
   }
 }
 
+/// Thrown by `QuipSigner.sign` when a key has already been used to sign a
+/// previously-broadcast payload. WOTS+ is a one-time signature scheme — once
+/// a signature is publicly visible, the key is compromised and reuse leaks
+/// secret material. The signer maintains an in-memory burned-key set keyed
+/// by publicSeed; `markBurned` adds, `isBurned` queries.
+///
+/// Retry semantics: if a write reverts, retry MUST use a different
+/// transaction key. Use `signWithKey` or `keyAllocationStrategy: 'next-available'`.
+/// See SDK_README.md for the full operational contract.
+export class KeyAlreadyBurnedError extends QuipError {
+  readonly publicSeed: Hex;
+
+  constructor(publicSeed: Hex, opts?: QuipErrorOptions) {
+    super(
+      "KEY_ALREADY_BURNED",
+      `WOTS+ key with publicSeed ${publicSeed} has already been used to sign a broadcast payload`,
+      opts
+    );
+    this.publicSeed = publicSeed;
+  }
+}
+
+/// Thrown by `pickTransactionKeyPair` when `keyAllocationStrategy: 'next-available'`
+/// walks the entire transaction keyset and finds every key in the burned set.
+/// The wallet's keyset is exhausted; the caller must refresh it via `addKeys`
+/// (signed with a non-burned key, which by definition does not exist here —
+/// in practice this is reached only by misconfiguration).
+export class NoAvailableTransactionKeysError extends QuipError {
+  readonly keysetSize: number;
+
+  constructor(keysetSize: number, opts?: QuipErrorOptions) {
+    super(
+      "NO_AVAILABLE_TRANSACTION_KEYS",
+      `All ${keysetSize} transaction keys are burned; cannot sign a new payload`,
+      opts
+    );
+    this.keysetSize = keysetSize;
+  }
+}
+
+/// Thrown when `tryMulticall` returns one or more failed sub-calls in a
+/// context where the caller cannot reasonably proceed with partial results
+/// (e.g. `getWalletState`, `getKeyset`, `getFactoryState`). Carries the
+/// labels of the failed calls and the underlying errors so the caller can
+/// diagnose without re-running the multicall.
+export class PartialMulticallResultError extends QuipError {
+  readonly failures: ReadonlyArray<{ label: string; error: Error }>;
+
+  constructor(
+    failures: ReadonlyArray<{ label: string; error: Error }>,
+    opts?: QuipErrorOptions
+  ) {
+    const summary = failures.map((f) => f.label).join(", ");
+    super(
+      "PARTIAL_MULTICALL_RESULT",
+      `Multicall returned partial results; failed calls: ${summary}`,
+      opts
+    );
+    this.failures = failures;
+  }
+}
+
 /// Fallback for a contract revert whose selector did not match any known
 /// error in our combined ABI. Preserves whatever viem could decode.
 export class UnknownContractError extends QuipError {
