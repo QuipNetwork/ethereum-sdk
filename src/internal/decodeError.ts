@@ -290,6 +290,31 @@ export function decodeContractError(err: unknown): QuipError | null {
   return new UnknownContractError(extracted.errorName, extracted.args, opts);
 }
 
+/// Decode raw revert bytes (selector + abi-encoded args) into a typed
+/// `QuipError`. Returns `null` for empty/unrecognized payloads (e.g. the
+/// `0x` revert with no reason, or selectors outside the Quip surface).
+///
+/// Used by the `ExecutionReverted` event parser to turn the inner call's
+/// raw revert into a typed reason instead of an opaque hex blob.
+export function decodeRevertBytes(data: Hex): QuipError | null {
+  if (!data || data.length < 10) return null;
+  const extracted = decodeRaw(data);
+  if (!extracted) return null;
+
+  const opts: QuipErrorOptions = {
+    ...(extracted.selector && { selector: extracted.selector }),
+    ...(extracted.data && { data: extracted.data }),
+  };
+
+  const factory = extracted.errorName
+    ? ERROR_REGISTRY[extracted.errorName]
+    : undefined;
+  if (factory) {
+    return factory(extracted.args ?? [], opts);
+  }
+  return new UnknownContractError(extracted.errorName, extracted.args, opts);
+}
+
 /// Wrap a promise so that any contract-revert error it throws is decoded
 /// into a typed `QuipError`. Non-contract errors bubble unchanged so the
 /// caller can still handle network/timeout/etc.
