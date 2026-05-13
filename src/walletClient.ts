@@ -20,11 +20,15 @@ import {
   type PublicClient,
   type WalletClient,
   type TransactionReceipt,
+  decodeFunctionResult,
+  encodeFunctionData,
   hexToBytes,
   toHex,
+  zeroHash,
 } from "viem";
 
 import { quipWalletAbi } from "./abi/QuipWallet.js";
+import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { tryMulticall, type TryMulticallResult } from "./internal/multicall.js";
@@ -40,6 +44,7 @@ import {
   NoAvailableTransactionKeysError,
   PartialMulticallResultError,
   RefreshTransactionForbiddenError,
+  UserOpValidationFailure,
 } from "./errors.js";
 import {
   type WinternitzAddress as CodecAddress,
@@ -49,6 +54,7 @@ import {
   encodeReplaceKeyAt,
   encodeWithdrawDeposit,
   encodeRecoverWallet,
+  encodeUserOpSignature,
   executeDigest,
   keysetDigest,
   keysHash as codecKeysHash,
@@ -57,6 +63,17 @@ import {
   withdrawDepositDigest,
   recoverWalletDigest,
 } from "./wotsCodec.js";
+import {
+  type PackedUserOperation,
+  buildUserOp,
+  computeUserOpHash,
+  packAccountGasLimits,
+  packGasFees,
+  walletUserOpDigest,
+  DEFAULT_VERIFICATION_GAS_LIMIT,
+  DEFAULT_CALL_GAS_LIMIT,
+  DEFAULT_PRE_VERIFICATION_GAS,
+} from "./userOp.js";
 
 /// 32-byte WOTS+ key tuple as returned by the contract's `keyAt` and stored
 /// in the SDK's read-aggregator outputs.
@@ -126,6 +143,73 @@ function splitWriteOpts(
   if (keyAllocationStrategy !== undefined)
     keyOpts.keyAllocationStrategy = keyAllocationStrategy;
   return { keyOpts, txOpts };
+}
+
+/// Per-call options for `buildExecuteUserOp`. All gas/fee fields are
+/// optional — when omitted, the SDK falls back to state-override gas
+/// estimation against the configured EntryPoint (then to conservative
+/// defaults if estimation fails). Nonce defaults to `EntryPoint.getNonce(sender, nonceKey)`.
+export interface BuildExecuteUserOpOptions {
+  /// Explicit override for `verificationGasLimit`. Skips state-override
+  /// estimation when present.
+  verificationGasLimit?: bigint;
+  /// Explicit override for `callGasLimit`. Skips state-override estimation
+  /// when present.
+  callGasLimit?: bigint;
+  /// Explicit override for `preVerificationGas`. Defaults to
+  /// `DEFAULT_PRE_VERIFICATION_GAS` — preVerificationGas is mostly L1
+  /// calldata cost, so a static value is reasonable for L1; per-chain
+  /// override needed for L2s with non-trivial calldata pricing.
+  preVerificationGas?: bigint;
+  /// Explicit `maxFeePerGas` override. If omitted, derived from the public
+  /// client's fee estimator.
+  maxFeePerGas?: bigint;
+  /// Explicit `maxPriorityFeePerGas` override. If omitted, derived from
+  /// the public client's fee estimator.
+  maxPriorityFeePerGas?: bigint;
+  /// Explicit `nonce` override. If omitted, fetched from
+  /// `EntryPoint.getNonce(sender, nonceKey)`.
+  nonce?: bigint;
+  /// `nonceKey` (uint192) for parallel-nonce flows. Default 0.
+  nonceKey?: bigint;
+  /// Disable state-override gas estimation. Falls back to `DEFAULT_*`
+  /// constants. Useful on chains that don't support state overrides or
+  /// when the caller already has reliable estimates.
+  skipGasEstimation?: boolean;
+  /// Override the EntryPoint address used for `userOpHash` computation
+  /// and nonce lookup. Defaults to the wallet's on-chain `entryPoint()`.
+  entryPoint?: Address;
+}
+
+/// Result of `buildExecuteUserOp` — the fully signed UserOp ready for
+/// `EntryPoint.handleOps`, plus the digests for inspection / replay
+/// checks.
+export interface BuildExecuteUserOpResult {
+  userOp: PackedUserOperation;
+  walletDigest: Hex;
+  userOpHash: Hex;
+}
+
+/// Result of `simulateUserOp` — wallet-side validation prediction. Phase
+/// 5b extends this to cover paymaster validation.
+///
+/// `walletValidation`:
+///   - `'ok'`: the wallet will return 0 (sig verifies, no early-exit hit)
+///   - `UserOpValidationFailure` enum value: the specific reason the
+///     wallet will emit `UserOpValidationRejected` for
+///
+/// `keysBurnedIfRevert`: if the UserOp is broadcast and execution
+/// reverts, will the wallet-side transaction key be rotated on chain
+/// (i.e. is the key consumed regardless of execution outcome)? `true`
+/// when validation would pass — the EntryPoint commits the rotation
+/// before invoking execution, so a reverted inner call still burns the
+/// key on chain. `false` when validation would fail — the EntryPoint
+/// rejects the UserOp before any state mutation. (The SDK marks the key
+/// burned in `QuipSigner` regardless, since the WOTS+ signature was
+/// revealed publicly — see `SDK_README.md`.)
+export interface SimulateUserOpResult {
+  walletValidation: "ok" | UserOpValidationFailure;
+  keysBurnedIfRevert: boolean;
 }
 
 /// Descriptor passed to `prepareSignedWrite`. Captures the variation
@@ -484,11 +568,11 @@ export class QuipWalletClient {
       this.walletClient.writeContract(writeParams)
     );
 
-    // CRITICAL: mark the signing key burned the moment writeContract
-    // returns the tx hash. The signature is now in the mempool — the key
-    // is publicly compromised regardless of whether
-    // waitForTransactionReceipt eventually succeeds, the tx reverts, or
-    // the tx gets dropped. The burn must precede the await below.
+    // Idempotent safety-net. `QuipSigner.sign(...)` already burned this
+    // key when the signature was produced (above, in `signWith`). We
+    // re-mark here so the burn is recorded even if the signer is ever
+    // swapped for an implementation that doesn't auto-burn (e.g. a
+    // future HSM-backed `PqSigner`).
     this.quipSigner.markBurned(signingKeyPublicSeed);
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
@@ -875,5 +959,295 @@ export class QuipWalletClient {
       account: this.account,
     };
     return this.executeWrite(contractCall, 0n, opts, recoveryKey.publicSeed);
+  }
+
+  /// Build a fully wallet-signed `PackedUserOperation` for an `execute(target,
+  /// value, data)` call routed through the ERC-4337 EntryPoint. Returns the
+  /// UserOp with `signature` already populated and `paymasterAndData = "0x"`
+  /// (no sponsorship — Phase 5b layers paymaster signing on top of this).
+  ///
+  /// Gas estimation: when `verificationGasLimit` / `callGasLimit` are not
+  /// supplied, the SDK estimates `callGasLimit` via state-override `eth_call`
+  /// against `wallet.execute(target, value, data)` with `from = entryPoint`.
+  /// `verificationGasLimit` defaults to `DEFAULT_VERIFICATION_GAS_LIMIT`
+  /// (the WOTS+ verify cost is roughly fixed and well-bounded). Estimation
+  /// failures fall back to the `DEFAULT_*` constants — explicit overrides
+  /// always win.
+  ///
+  /// Nonce: defaults to `EntryPoint.getNonce(sender, nonceKey ?? 0)`.
+  ///
+  /// Burn semantics: the signing key is marked burned the moment
+  /// `QuipSigner.sign(...)` produces the WOTS+ signature inside this
+  /// method — well before any broadcast. A subsequent `buildExecuteUserOp`
+  /// (or any other sign call) targeting the same key throws
+  /// `KeyAlreadyBurnedError`. If the caller chooses not to submit the
+  /// returned UserOp, the key is still dead — that's the correct WOTS+
+  /// semantic, because the signature exists and can leak.
+  async buildExecuteUserOp(
+    target: Address,
+    value: bigint,
+    data: Hex,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<BuildExecuteUserOpResult> {
+    const { keyOpts } = splitWriteOpts(
+      opts as TxOptions & TransactionKeyOptions
+    );
+    const entryPoint =
+      opts.entryPoint ?? (await this.getEntryPoint());
+    const fee = await this.getExecuteFee();
+
+    // 1. Pick the current/next keypair (same policy as direct writes).
+    const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
+
+    // 2. Encode the inner call. The EntryPoint-side `execute(target, value, data)`
+    //    is the 3-arg overload at QuipWallet.sol:195 (onlyEntryPoint).
+    const callData = encodeFunctionData({
+      abi: quipWalletAbi,
+      functionName: "execute",
+      args: [target, value, data],
+    });
+
+    // 3. Resolve nonce.
+    const nonce =
+      opts.nonce ??
+      (await withDecodedError(
+        this.publicClient.readContract({
+          address: entryPoint,
+          abi: entryPointV07Abi,
+          functionName: "getNonce",
+          args: [this.walletAddress, opts.nonceKey ?? 0n],
+        })
+      ));
+
+    // 4. Resolve fees. Caller overrides win; otherwise pull from chain.
+    let maxFeePerGas = opts.maxFeePerGas;
+    let maxPriorityFeePerGas = opts.maxPriorityFeePerGas;
+    if (maxFeePerGas === undefined || maxPriorityFeePerGas === undefined) {
+      const fees = await this.publicClient.estimateFeesPerGas();
+      maxFeePerGas = maxFeePerGas ?? fees.maxFeePerGas;
+      maxPriorityFeePerGas = maxPriorityFeePerGas ?? fees.maxPriorityFeePerGas;
+    }
+
+    // 5. Resolve gas limits — explicit overrides, else estimate, else defaults.
+    let callGasLimit = opts.callGasLimit;
+    const verificationGasLimit =
+      opts.verificationGasLimit ?? DEFAULT_VERIFICATION_GAS_LIMIT;
+    const preVerificationGas =
+      opts.preVerificationGas ?? DEFAULT_PRE_VERIFICATION_GAS;
+
+    if (callGasLimit === undefined && !opts.skipGasEstimation) {
+      callGasLimit = await this.estimateExecuteCallGas(
+        entryPoint,
+        target,
+        value,
+        data
+      );
+    }
+    if (callGasLimit === undefined) {
+      callGasLimit = DEFAULT_CALL_GAS_LIMIT;
+    }
+
+    // 6. Build the unsigned UserOp.
+    const unsigned = buildUserOp({
+      sender: this.walletAddress,
+      nonce,
+      callData,
+      verificationGasLimit,
+      callGasLimit,
+      preVerificationGas,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    });
+
+    // 7. Compute userOpHash + walletDigest + sign.
+    const userOpHash = computeUserOpHash(
+      unsigned,
+      entryPoint,
+      BigInt(this.chainId)
+    );
+    const walletDigest = walletUserOpDigest({
+      wallet: this.walletAddress,
+      chainId: BigInt(this.chainId),
+      currentKey,
+      nextKey,
+      userOpHash,
+      executeFee: fee,
+    });
+    const pqSig = this.signWith(hexToBytes(currentKey.publicSeed), walletDigest);
+    const signature = encodeUserOpSignature(currentKey, nextKey, pqSig);
+
+    const userOp: PackedUserOperation = { ...unsigned, signature };
+    return { userOp, walletDigest, userOpHash };
+  }
+
+  /// Idempotent safety-net for callers that build a UserOp and submit
+  /// it elsewhere (bundler, custom handleOps path). `buildExecuteUserOp`
+  /// already burns the key via `QuipSigner.sign(...)` at sign time, so
+  /// this is a no-op in the normal flow. Kept for explicit intent and
+  /// for HSM-backed signers that produce sigs outside `QuipSigner`.
+  markUserOpKeyBurned(currentKey: WinternitzAddress | CodecAddress): void {
+    this.quipSigner.markBurned(currentKey.publicSeed);
+  }
+
+  /// Predict the wallet's `validateUserOp` outcome without broadcasting.
+  /// Phase 5a covers wallet-side only — paymaster simulation lands in 5b.
+  ///
+  /// Strategy: local pre-checks first (cheap reads), then a state-override
+  /// `eth_call` to `wallet.validateUserOp(...)` with `from = entryPoint` to
+  /// catch the remaining InvalidSignature case.
+  async simulateUserOp(
+    userOp: PackedUserOperation,
+    opts: { entryPoint?: Address } = {}
+  ): Promise<SimulateUserOpResult> {
+    const entryPoint = opts.entryPoint ?? (await this.getEntryPoint());
+
+    // Decode currentKey / nextKey out of userOp.signature. The codec lays
+    // them out as [currentKey(64) | nextKey(64) | pqSig(2144)].
+    if (userOp.signature.length < 2 + 2 * 64) {
+      return { walletValidation: UserOpValidationFailure.InvalidSignature, keysBurnedIfRevert: false };
+    }
+    const sigBytes = hexToBytes(userOp.signature);
+    if (sigBytes.length !== 64 + 64 + 67 * 32) {
+      return { walletValidation: UserOpValidationFailure.InvalidSignature, keysBurnedIfRevert: false };
+    }
+    const currentKey: WinternitzAddress = {
+      publicSeed: toHex(sigBytes.slice(0, 32)),
+      publicKeyHash: toHex(sigBytes.slice(32, 64)),
+    };
+    const nextKey: WinternitzAddress = {
+      publicSeed: toHex(sigBytes.slice(64, 96)),
+      publicKeyHash: toHex(sigBytes.slice(96, 128)),
+    };
+
+    // 1. ZeroNextKey
+    if (
+      nextKey.publicSeed === zeroHash ||
+      nextKey.publicKeyHash === zeroHash
+    ) {
+      return {
+        walletValidation: UserOpValidationFailure.ZeroNextKey,
+        keysBurnedIfRevert: false,
+      };
+    }
+
+    // 2. StaleCurrentKey — currentKey must be in the transaction keyset.
+    const currentIsActive = await this.isKey(KeyType.Transaction, currentKey);
+    if (!currentIsActive) {
+      return {
+        walletValidation: UserOpValidationFailure.StaleCurrentKey,
+        keysBurnedIfRevert: false,
+      };
+    }
+
+    // 3. NextKeyAlreadyInUse — nextKey must not be present in any keyset
+    //    (transaction / recovery / verification) or match a fixed key
+    //    (disasterRecoveryKey / ownershipKey).
+    const inUse = await this.isAnyKey(nextKey);
+    if (inUse) {
+      return {
+        walletValidation: UserOpValidationFailure.NextKeyAlreadyInUse,
+        keysBurnedIfRevert: false,
+      };
+    }
+
+    // 4. InvalidSignature — final gate. eth_call to validateUserOp from
+    //    entryPoint. The wallet's `_validateSignature` returns 0 on success,
+    //    1 on signature failure. Set value=0 missingAccountFunds=0 so
+    //    payPrefund doesn't try to forward ETH.
+    const userOpHash = computeUserOpHash(
+      userOp,
+      entryPoint,
+      BigInt(this.chainId)
+    );
+    const validateData = encodeFunctionData({
+      abi: quipWalletAbi,
+      functionName: "validateUserOp",
+      args: [userOp, userOpHash, 0n],
+    });
+    const callResult = await this.publicClient.call({
+      account: entryPoint,
+      to: this.walletAddress,
+      data: validateData,
+    });
+    if (!callResult.data) {
+      return {
+        walletValidation: UserOpValidationFailure.InvalidSignature,
+        keysBurnedIfRevert: false,
+      };
+    }
+    const validationData = decodeFunctionResult({
+      abi: quipWalletAbi,
+      functionName: "validateUserOp",
+      data: callResult.data,
+    });
+    if (validationData === 0n) {
+      // Validation would pass → key rotation committed during validation,
+      // so an execution-time revert still burns the wallet-side key.
+      return { walletValidation: "ok", keysBurnedIfRevert: true };
+    }
+    return {
+      walletValidation: UserOpValidationFailure.InvalidSignature,
+      keysBurnedIfRevert: false,
+    };
+  }
+
+  /// Read the EntryPoint address from the wallet's `entryPoint()` view.
+  async getEntryPoint(): Promise<Address> {
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "entryPoint",
+      })
+    );
+  }
+
+  /// State-override gas estimate for `wallet.execute(target, value, data)`
+  /// from the EntryPoint. Returns `DEFAULT_CALL_GAS_LIMIT` on any estimation
+  /// failure (chain doesn't support overrides, RPC rejected, target reverts).
+  private async estimateExecuteCallGas(
+    entryPoint: Address,
+    target: Address,
+    value: bigint,
+    data: Hex
+  ): Promise<bigint> {
+    try {
+      return await this.publicClient.estimateContractGas({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "execute",
+        args: [target, value, data],
+        account: entryPoint,
+        value,
+      } as unknown as Parameters<PublicClient["estimateContractGas"]>[0]);
+    } catch {
+      return DEFAULT_CALL_GAS_LIMIT;
+    }
+  }
+
+  /// Returns true if `key` is present in any active keyset (transaction,
+  /// recovery, verification) or matches the wallet's fixed disaster /
+  /// ownership keys. Used by `simulateUserOp` to detect the
+  /// `NextKeyAlreadyInUse` rejection path.
+  private async isAnyKey(key: WinternitzAddress): Promise<boolean> {
+    const [inTx, inRc, inVf, disaster, ownership] = await Promise.all([
+      this.isKey(KeyType.Transaction, key),
+      this.isKey(KeyType.Recovery, key),
+      this.isKey(KeyType.Verification, key),
+      this.getDisasterRecoveryKey(),
+      this.getOwnershipKey(),
+    ]);
+    if (inTx || inRc || inVf) return true;
+    if (
+      disaster.publicSeed === key.publicSeed &&
+      disaster.publicKeyHash === key.publicKeyHash
+    )
+      return true;
+    if (
+      ownership.publicSeed === key.publicSeed &&
+      ownership.publicKeyHash === key.publicKeyHash
+    )
+      return true;
+    return false;
   }
 }

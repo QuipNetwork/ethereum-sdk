@@ -30,7 +30,20 @@ export interface NetworkAddresses {
   Deployer: Address;
   WOTSPlus: Address;
   QuipFactory: Address;
+  /// ERC-4337 v0.7 EntryPoint. The canonical address
+  /// `0x0000000071727De22E5E9d8BAf0edAc6f37da032` is the same across every
+  /// chain where v0.7 is deployed — it's a CREATE2 deployment with a
+  /// fixed salt. Per-chain entry exists so alternative deployments (e.g.
+  /// MIDL, app-specific bundlers) can override.
+  EntryPoint: Address;
 }
+
+/// Canonical ERC-4337 v0.7 EntryPoint address. Same on every mainnet /
+/// L2 where v0.7 has been deployed (CREATE2 with fixed salt). Override
+/// per-chain in `NETWORK_ADDRESSES` for chains with non-canonical
+/// deployments.
+export const CANONICAL_ENTRYPOINT_V07: Address =
+  "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
 
 /**
  * Chain IDs for supported networks
@@ -55,6 +68,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     Deployer: addresses.Deployer as Address,
     WOTSPlus: addresses.WOTSPlus as Address,
     QuipFactory: addresses.QuipFactory as Address,
+    EntryPoint: CANONICAL_ENTRYPOINT_V07,
   },
   // MIDL Testnet (Chain ID 777) - different deployment mechanism
   // These addresses will be populated after MIDL deployment
@@ -62,6 +76,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     Deployer: "0x0000000000000000000000000000000000000000",
     WOTSPlus: "0x0000000000000000000000000000000000000000",
     QuipFactory: "0x0000000000000000000000000000000000000000",
+    EntryPoint: CANONICAL_ENTRYPOINT_V07,
   },
 };
 

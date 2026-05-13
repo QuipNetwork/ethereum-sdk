@@ -32,6 +32,18 @@ describe("QuipSigner burned-key tracking", () => {
     expect(sig.length).toBe(67);
   });
 
+  it("sign auto-burns the key (signing the same key twice throws)", () => {
+    const signer = new QuipSigner(QUANTUM_SECRET);
+    const kp = signer.generateKeyPair(VAULT_ID);
+    // First sign succeeds and marks the key burned.
+    signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
+    // Second sign with the same key — even on a different message — fails.
+    expect(() =>
+      signer.sign(new Uint8Array(32).fill(0xaa), VAULT_ID, kp.publicKey.publicSeed)
+    ).toThrow(KeyAlreadyBurnedError);
+  });
+
   it("isBurned returns false for a never-marked key", () => {
     const signer = new QuipSigner(QUANTUM_SECRET);
     const kp = signer.generateKeyPair(VAULT_ID);

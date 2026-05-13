@@ -20,6 +20,7 @@ export { deployerAbi } from "./abi/Deployer.js";
 export { quipFactoryAbi } from "./abi/QuipFactory.js";
 export { quipWalletAbi } from "./abi/QuipWallet.js";
 export { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
+export { entryPointV07Abi } from "./abi/EntryPointV07.js";
 
 // Addresses, network helpers, codec, constants
 export * from "./addresses.js";
@@ -46,5 +47,8 @@ export type {
   WalletState,
   WinternitzAddress,
   TransactionKeyOptions,
+  BuildExecuteUserOpOptions,
+  BuildExecuteUserOpResult,
+  SimulateUserOpResult,
 } from "./walletClient.js";
 export type { FactoryState } from "./factoryClient.js";
