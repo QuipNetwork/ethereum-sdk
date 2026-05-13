@@ -36,6 +36,11 @@ export interface NetworkAddresses {
   /// fixed salt. Per-chain entry exists so alternative deployments (e.g.
   /// MIDL, app-specific bundlers) can override.
   EntryPoint: Address;
+  /// Per-chain QuipPaymaster deployment. Zero address indicates no
+  /// paymaster is deployed on this chain — `QuipPaymasterClient` rejects
+  /// construction against a zero address. Populated once the paymaster
+  /// is deployed per-chain (Phase 7 release prep).
+  QuipPaymaster: Address;
 }
 
 /// Canonical ERC-4337 v0.7 EntryPoint address. Same on every mainnet /
@@ -69,6 +74,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     WOTSPlus: addresses.WOTSPlus as Address,
     QuipFactory: addresses.QuipFactory as Address,
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
+    QuipPaymaster: "0x0000000000000000000000000000000000000000",
   },
   // MIDL Testnet (Chain ID 777) - different deployment mechanism
   // These addresses will be populated after MIDL deployment
@@ -77,6 +83,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     WOTSPlus: "0x0000000000000000000000000000000000000000",
     QuipFactory: "0x0000000000000000000000000000000000000000",
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
+    QuipPaymaster: "0x0000000000000000000000000000000000000000",
   },
 };
 

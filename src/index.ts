@@ -32,6 +32,7 @@ export { QuipSigner } from "./signer.js";
 export type { WinternitzKeyPair, WinternitzPublicKey } from "./signer.js";
 export { QuipWalletClient, KeyType } from "./walletClient.js";
 export { QuipClient } from "./factoryClient.js";
+export { QuipPaymasterClient } from "./paymasterClient.js";
 
 // Typed errors, simulation/gas helpers, and the staged userOp/paymaster/event
 // surfaces (Phase 5+).
@@ -49,6 +50,7 @@ export type {
   TransactionKeyOptions,
   BuildExecuteUserOpOptions,
   BuildExecuteUserOpResult,
+  PreparedExecuteUserOp,
   SimulateUserOpResult,
 } from "./walletClient.js";
 export type { FactoryState } from "./factoryClient.js";

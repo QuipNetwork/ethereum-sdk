@@ -343,7 +343,8 @@ describe("buildExecuteUserOp + handleOps end-to-end", () => {
     // Simulate first — should be 'ok'.
     const sim = await client.simulateUserOp(built.userOp);
     expect(sim.walletValidation).toBe("ok");
-    expect(sim.keysBurnedIfRevert).toBe(true);
+    expect(sim.keysBurnedIfRevert.wallet).toBe(true);
+    expect(sim.paymasterValidation).toBe("no-paymaster");
 
     // Submit via handleOps.
     const handleHash = await walletClient.writeContract({
@@ -405,7 +406,7 @@ describe("simulateUserOp — rejection paths", () => {
     };
     const sim = await client.simulateUserOp(malformed);
     expect(sim.walletValidation).toBe(UserOpValidationFailure.ZeroNextKey);
-    expect(sim.keysBurnedIfRevert).toBe(false);
+    expect(sim.keysBurnedIfRevert.wallet).toBe(false);
     // Ensure the head we read at the start of the test still exists,
     // since no broadcast happened.
     expect(head.publicSeed).not.toBe(zeroHash);
@@ -432,7 +433,7 @@ describe("simulateUserOp — rejection paths", () => {
     expect(sim.walletValidation).toBe(
       UserOpValidationFailure.StaleCurrentKey
     );
-    expect(sim.keysBurnedIfRevert).toBe(false);
+    expect(sim.keysBurnedIfRevert.wallet).toBe(false);
   }, 30_000);
 
   test("NextKeyAlreadyInUse: nextKey matches an existing keyset member", async () => {
@@ -459,7 +460,7 @@ describe("simulateUserOp — rejection paths", () => {
     expect(sim.walletValidation).toBe(
       UserOpValidationFailure.NextKeyAlreadyInUse
     );
-    expect(sim.keysBurnedIfRevert).toBe(false);
+    expect(sim.keysBurnedIfRevert.wallet).toBe(false);
   }, 30_000);
 
   test("InvalidSignature: WOTS+ sig elements tampered", async () => {
@@ -482,6 +483,6 @@ describe("simulateUserOp — rejection paths", () => {
     expect(sim.walletValidation).toBe(
       UserOpValidationFailure.InvalidSignature
     );
-    expect(sim.keysBurnedIfRevert).toBe(false);
+    expect(sim.keysBurnedIfRevert.wallet).toBe(false);
   }, 30_000);
 });

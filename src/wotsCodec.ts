@@ -99,6 +99,9 @@ export const SAVE_WALLET_TAG: Hex = keccak256(
 export const RECOVER_WALLET_TAG: Hex = keccak256(
   toHex("quip.digest.recoverWallet")
 );
+export const PAYMASTER_APPROVE_TAG: Hex = keccak256(
+  toHex("quip.digest.paymasterApprove")
+);
 
 function packAddress(addr: WinternitzAddress): Hex {
   return concat([addr.publicSeed, addr.publicKeyHash]);
@@ -631,6 +634,65 @@ export function erc4337ExecuteDigest(
       h2,
       userOpHash,
       bigintToBytes32(fee),
+    ])
+  );
+}
+
+/// Commitment over the UserOp's constituent fields the paymaster signs.
+/// Mirrors `QuipPaymaster._verifyAndRotate`:
+///
+///     opCommitment = keccak256(sender, nonce, keccak256(callData))
+///
+/// Constituent fields rather than `userOpHash` because `userOpHash`
+/// includes `paymasterAndData` — which contains the paymaster signature
+/// — creating a circular dependency.
+export function paymasterOpCommitment(
+  sender: Address,
+  nonce: bigint,
+  callData: Hex
+): Hex {
+  return keccak256(
+    concat([
+      addressToBytes32(sender),
+      bigintToBytes32(nonce),
+      keccak256(callData),
+    ])
+  );
+}
+
+/// Paymaster approval digest the WOTS+ verifier signs. Mirrors
+/// `QuipPaymaster._verifyAndRotate`:
+///
+///     digest = keccak256(
+///       PAYMASTER_APPROVE_TAG,
+///       chainId,
+///       paymaster,
+///       currentVerifier.publicSeed, currentVerifier.publicKeyHash,
+///       nextVerifier.publicSeed, nextVerifier.publicKeyHash,
+///       paymasterOpCommitment(sender, nonce, callData)
+///     )
+export function paymasterUserOpDigest(
+  paymaster: Address,
+  chainId: bigint,
+  currentVerifierSeed: Hex,
+  currentVerifierHash: Hex,
+  nextVerifierSeed: Hex,
+  nextVerifierHash: Hex,
+  sender: Address,
+  nonce: bigint,
+  callData: Hex
+): Hex {
+  const opCommitment = paymasterOpCommitment(sender, nonce, callData);
+  return keccak256(
+    concat([
+      PAYMASTER_APPROVE_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(paymaster),
+      currentVerifierSeed,
+      currentVerifierHash,
+      nextVerifierSeed,
+      nextVerifierHash,
+      opCommitment,
     ])
   );
 }

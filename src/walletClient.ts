@@ -20,14 +20,17 @@ import {
   type PublicClient,
   type WalletClient,
   type TransactionReceipt,
+  concat,
   decodeFunctionResult,
   encodeFunctionData,
   hexToBytes,
+  keccak256,
   toHex,
   zeroHash,
 } from "viem";
 
 import { quipWalletAbi } from "./abi/QuipWallet.js";
+import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
@@ -43,6 +46,7 @@ import {
   EmptyKeysError,
   NoAvailableTransactionKeysError,
   PartialMulticallResultError,
+  PaymasterValidationFailure,
   RefreshTransactionForbiddenError,
   UserOpValidationFailure,
 } from "./errors.js";
@@ -190,26 +194,50 @@ export interface BuildExecuteUserOpResult {
   userOpHash: Hex;
 }
 
-/// Result of `simulateUserOp` — wallet-side validation prediction. Phase
-/// 5b extends this to cover paymaster validation.
+/// Output of `prepareExecuteUserOp` — the unsigned UserOp + the
+/// transaction keys the wallet will sign with. Pass through a paymaster
+/// (if sponsoring) and then to `signExecuteUserOp` to finalize.
+export interface PreparedExecuteUserOp {
+  userOp: PackedUserOperation; // signature="0x", paymasterAndData="0x"
+  currentKey: CodecAddress;
+  nextKey: CodecAddress;
+  entryPoint: Address;
+  executeFee: bigint;
+}
+
+/// Result of `simulateUserOp` — covers both wallet- and paymaster-side
+/// validation prediction.
 ///
 /// `walletValidation`:
 ///   - `'ok'`: the wallet will return 0 (sig verifies, no early-exit hit)
 ///   - `UserOpValidationFailure` enum value: the specific reason the
 ///     wallet will emit `UserOpValidationRejected` for
 ///
+/// `paymasterValidation`:
+///   - `'no-paymaster'`: `paymasterAndData` is empty — unsponsored UserOp
+///   - `'ok'`: paymaster will accept (sig verifies, no early-exit hit)
+///   - `PaymasterValidationFailure` enum value: the specific reason
+///     the paymaster will emit `PaymasterValidationRejected` for. Note:
+///     `NextVerifierKeyInUse` and `InvalidSignature` are both surfaced
+///     as `InvalidSignature` when the SDK can't statically distinguish
+///     them — the contract storage layout for `verifierKeyUsed` is
+///     consulted to catch the `NextVerifierKeyInUse` case when possible.
+///
 /// `keysBurnedIfRevert`: if the UserOp is broadcast and execution
-/// reverts, will the wallet-side transaction key be rotated on chain
-/// (i.e. is the key consumed regardless of execution outcome)? `true`
-/// when validation would pass — the EntryPoint commits the rotation
-/// before invoking execution, so a reverted inner call still burns the
-/// key on chain. `false` when validation would fail — the EntryPoint
-/// rejects the UserOp before any state mutation. (The SDK marks the key
-/// burned in `QuipSigner` regardless, since the WOTS+ signature was
-/// revealed publicly — see `SDK_README.md`.)
+/// reverts, will the corresponding key be rotated on chain (i.e. is the
+/// key consumed regardless of execution outcome)?
+///   - `wallet`: `true` when wallet validation would pass — the
+///     EntryPoint commits the rotation before invoking execution.
+///   - `paymaster`: `true` when paymaster validation would pass — same
+///     rotation-during-validation rule.
+/// `false` for either when its validation would fail (EntryPoint rejects
+/// before state mutation). The SDK marks both keys burned in their
+/// respective signers regardless, since the WOTS+ signatures were
+/// revealed publicly — see `SDK_README.md`.
 export interface SimulateUserOpResult {
   walletValidation: "ok" | UserOpValidationFailure;
-  keysBurnedIfRevert: boolean;
+  paymasterValidation: "ok" | "no-paymaster" | PaymasterValidationFailure;
+  keysBurnedIfRevert: { wallet: boolean; paymaster: boolean };
 }
 
 /// Descriptor passed to `prepareSignedWrite`. Captures the variation
@@ -989,14 +1017,34 @@ export class QuipWalletClient {
     data: Hex,
     opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
   ): Promise<BuildExecuteUserOpResult> {
+    const prepared = await this.prepareExecuteUserOp(target, value, data, opts);
+    return this.signExecuteUserOp(prepared);
+  }
+
+  /// Build the unsigned UserOp shell for an `execute(target, value, data)`
+  /// call. Resolves nonce, fees, and gas limits; encodes callData; picks
+  /// the wallet's current/next transaction keys. Does NOT sign — for the
+  /// sponsored flow, the caller hands the result to a paymaster which
+  /// fills `paymasterAndData`, then calls `signExecuteUserOp` to finalize.
+  ///
+  /// For the unsponsored flow, `buildExecuteUserOp` (which composes
+  /// prepare + sign) is simpler.
+  async prepareExecuteUserOp(
+    target: Address,
+    value: bigint,
+    data: Hex,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<PreparedExecuteUserOp> {
     const { keyOpts } = splitWriteOpts(
       opts as TxOptions & TransactionKeyOptions
     );
-    const entryPoint =
-      opts.entryPoint ?? (await this.getEntryPoint());
+    const entryPoint = opts.entryPoint ?? (await this.getEntryPoint());
     const fee = await this.getExecuteFee();
 
-    // 1. Pick the current/next keypair (same policy as direct writes).
+    // 1. Pick the current/next keypair. Note: this does NOT burn the key
+    //    yet — burning happens inside `signExecuteUserOp` when the WOTS+
+    //    signature is actually produced. A caller that prepares but never
+    //    signs hasn't consumed any key.
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
 
     // 2. Encode the inner call. The EntryPoint-side `execute(target, value, data)`
@@ -1047,7 +1095,6 @@ export class QuipWalletClient {
       callGasLimit = DEFAULT_CALL_GAS_LIMIT;
     }
 
-    // 6. Build the unsigned UserOp.
     const unsigned = buildUserOp({
       sender: this.walletAddress,
       nonce,
@@ -1059,9 +1106,31 @@ export class QuipWalletClient {
       maxPriorityFeePerGas,
     });
 
-    // 7. Compute userOpHash + walletDigest + sign.
+    return {
+      userOp: unsigned,
+      currentKey,
+      nextKey,
+      entryPoint,
+      executeFee: fee,
+    };
+  }
+
+  /// Finalize an unsigned UserOp by signing the wallet's portion. Takes
+  /// the result of `prepareExecuteUserOp` (possibly after a paymaster has
+  /// substituted `paymasterAndData` via `sponsorUserOp`). Computes the
+  /// final `userOpHash` (now reflecting the paymaster bytes), builds the
+  /// wallet digest, signs with WOTS+, and embeds the signature into
+  /// `userOp.signature`.
+  ///
+  /// The WOTS+ signature burns the wallet's current transaction key at
+  /// `QuipSigner.sign(...)` time — once this method returns, that key is
+  /// dead.
+  async signExecuteUserOp(
+    prepared: PreparedExecuteUserOp
+  ): Promise<BuildExecuteUserOpResult> {
+    const { userOp, currentKey, nextKey, entryPoint, executeFee } = prepared;
     const userOpHash = computeUserOpHash(
-      unsigned,
+      userOp,
       entryPoint,
       BigInt(this.chainId)
     );
@@ -1071,13 +1140,15 @@ export class QuipWalletClient {
       currentKey,
       nextKey,
       userOpHash,
-      executeFee: fee,
+      executeFee,
     });
     const pqSig = this.signWith(hexToBytes(currentKey.publicSeed), walletDigest);
     const signature = encodeUserOpSignature(currentKey, nextKey, pqSig);
-
-    const userOp: PackedUserOperation = { ...unsigned, signature };
-    return { userOp, walletDigest, userOpHash };
+    return {
+      userOp: { ...userOp, signature },
+      walletDigest,
+      userOpHash,
+    };
   }
 
   /// Idempotent safety-net for callers that build a UserOp and submit
@@ -1089,26 +1160,61 @@ export class QuipWalletClient {
     this.quipSigner.markBurned(currentKey.publicSeed);
   }
 
-  /// Predict the wallet's `validateUserOp` outcome without broadcasting.
-  /// Phase 5a covers wallet-side only — paymaster simulation lands in 5b.
+  /// Predict the wallet- and paymaster-side validation outcome of `userOp`
+  /// without broadcasting.
   ///
-  /// Strategy: local pre-checks first (cheap reads), then a state-override
-  /// `eth_call` to `wallet.validateUserOp(...)` with `from = entryPoint` to
-  /// catch the remaining InvalidSignature case.
+  /// Strategy: local pre-checks first (cheap reads), then state-override
+  /// `eth_call`s to `wallet.validateUserOp(...)` and (if a paymaster is
+  /// attached) `paymaster.validatePaymasterUserOp(...)`, both with
+  /// `from = entryPoint`. Pre-checks enumerate the deterministic
+  /// rejection paths; `eth_call` catches the remaining
+  /// `InvalidSignature` cases.
   async simulateUserOp(
     userOp: PackedUserOperation,
     opts: { entryPoint?: Address } = {}
   ): Promise<SimulateUserOpResult> {
     const entryPoint = opts.entryPoint ?? (await this.getEntryPoint());
 
-    // Decode currentKey / nextKey out of userOp.signature. The codec lays
-    // them out as [currentKey(64) | nextKey(64) | pqSig(2144)].
+    // --- Wallet side ---
+    const walletPart = await this.simulateWalletValidation(
+      userOp,
+      entryPoint
+    );
+
+    // --- Paymaster side ---
+    const paymasterPart = await this.simulatePaymasterValidation(
+      userOp,
+      entryPoint
+    );
+
+    return {
+      walletValidation: walletPart.result,
+      paymasterValidation: paymasterPart.result,
+      keysBurnedIfRevert: {
+        wallet: walletPart.wouldRotate,
+        paymaster: paymasterPart.wouldRotate,
+      },
+    };
+  }
+
+  private async simulateWalletValidation(
+    userOp: PackedUserOperation,
+    entryPoint: Address
+  ): Promise<{ result: "ok" | UserOpValidationFailure; wouldRotate: boolean }> {
+    // Decode currentKey / nextKey out of userOp.signature. The codec
+    // lays them out as [currentKey(64) | nextKey(64) | pqSig(2144)].
     if (userOp.signature.length < 2 + 2 * 64) {
-      return { walletValidation: UserOpValidationFailure.InvalidSignature, keysBurnedIfRevert: false };
+      return {
+        result: UserOpValidationFailure.InvalidSignature,
+        wouldRotate: false,
+      };
     }
     const sigBytes = hexToBytes(userOp.signature);
     if (sigBytes.length !== 64 + 64 + 67 * 32) {
-      return { walletValidation: UserOpValidationFailure.InvalidSignature, keysBurnedIfRevert: false };
+      return {
+        result: UserOpValidationFailure.InvalidSignature,
+        wouldRotate: false,
+      };
     }
     const currentKey: WinternitzAddress = {
       publicSeed: toHex(sigBytes.slice(0, 32)),
@@ -1125,8 +1231,8 @@ export class QuipWalletClient {
       nextKey.publicKeyHash === zeroHash
     ) {
       return {
-        walletValidation: UserOpValidationFailure.ZeroNextKey,
-        keysBurnedIfRevert: false,
+        result: UserOpValidationFailure.ZeroNextKey,
+        wouldRotate: false,
       };
     }
 
@@ -1134,8 +1240,8 @@ export class QuipWalletClient {
     const currentIsActive = await this.isKey(KeyType.Transaction, currentKey);
     if (!currentIsActive) {
       return {
-        walletValidation: UserOpValidationFailure.StaleCurrentKey,
-        keysBurnedIfRevert: false,
+        result: UserOpValidationFailure.StaleCurrentKey,
+        wouldRotate: false,
       };
     }
 
@@ -1145,15 +1251,12 @@ export class QuipWalletClient {
     const inUse = await this.isAnyKey(nextKey);
     if (inUse) {
       return {
-        walletValidation: UserOpValidationFailure.NextKeyAlreadyInUse,
-        keysBurnedIfRevert: false,
+        result: UserOpValidationFailure.NextKeyAlreadyInUse,
+        wouldRotate: false,
       };
     }
 
-    // 4. InvalidSignature — final gate. eth_call to validateUserOp from
-    //    entryPoint. The wallet's `_validateSignature` returns 0 on success,
-    //    1 on signature failure. Set value=0 missingAccountFunds=0 so
-    //    payPrefund doesn't try to forward ETH.
+    // 4. InvalidSignature — final gate via eth_call.
     const userOpHash = computeUserOpHash(
       userOp,
       entryPoint,
@@ -1171,8 +1274,8 @@ export class QuipWalletClient {
     });
     if (!callResult.data) {
       return {
-        walletValidation: UserOpValidationFailure.InvalidSignature,
-        keysBurnedIfRevert: false,
+        result: UserOpValidationFailure.InvalidSignature,
+        wouldRotate: false,
       };
     }
     const validationData = decodeFunctionResult({
@@ -1181,14 +1284,188 @@ export class QuipWalletClient {
       data: callResult.data,
     });
     if (validationData === 0n) {
-      // Validation would pass → key rotation committed during validation,
-      // so an execution-time revert still burns the wallet-side key.
-      return { walletValidation: "ok", keysBurnedIfRevert: true };
+      return { result: "ok", wouldRotate: true };
     }
     return {
-      walletValidation: UserOpValidationFailure.InvalidSignature,
-      keysBurnedIfRevert: false,
+      result: UserOpValidationFailure.InvalidSignature,
+      wouldRotate: false,
     };
+  }
+
+  private async simulatePaymasterValidation(
+    userOp: PackedUserOperation,
+    entryPoint: Address
+  ): Promise<{
+    result: "ok" | "no-paymaster" | PaymasterValidationFailure;
+    wouldRotate: boolean;
+  }> {
+    // No paymaster attached → not sponsored.
+    if (userOp.paymasterAndData === "0x" || userOp.paymasterAndData.length <= 2) {
+      return { result: "no-paymaster", wouldRotate: false };
+    }
+    const pmdBytes = hexToBytes(userOp.paymasterAndData);
+
+    // MalformedPayload: must be exactly 2272 bytes (52-byte header +
+    // 2220-byte custom data). The paymaster rejects any other length.
+    if (pmdBytes.length !== 2272) {
+      return {
+        result: PaymasterValidationFailure.MalformedPayload,
+        wouldRotate: false,
+      };
+    }
+
+    // Decode layout:
+    //   [0:20)     paymaster address
+    //   [20:36)    validationGasLimit
+    //   [36:52)    postOpGasLimit
+    //   [52:58)    validUntil (uint48)
+    //   [58:64)    validAfter (uint48)
+    //   [64:128)   nextVerifier (publicSeed + publicKeyHash)
+    //   [128:2272) WOTS+ sig (67 × 32 = 2144)
+    const paymaster = (toHex(pmdBytes.slice(0, 20)) as Address);
+    const nextVerifier: WinternitzAddress = {
+      publicSeed: toHex(pmdBytes.slice(64, 96)),
+      publicKeyHash: toHex(pmdBytes.slice(96, 128)),
+    };
+
+    // ZeroNextVerifier
+    if (
+      nextVerifier.publicSeed === zeroHash ||
+      nextVerifier.publicKeyHash === zeroHash
+    ) {
+      return {
+        result: PaymasterValidationFailure.ZeroNextVerifier,
+        wouldRotate: false,
+      };
+    }
+
+    // NoVerifierRegistered — check the paymaster's on-chain verifier for
+    // the sender.
+    let currentVerifier: WinternitzAddress;
+    try {
+      currentVerifier = await withDecodedError(
+        this.publicClient.readContract({
+          address: paymaster,
+          abi: quipPaymasterAbi,
+          functionName: "getPqVerifier",
+          args: [userOp.sender],
+        })
+      );
+    } catch {
+      // If the read fails (paymaster address has no code, RPC error),
+      // treat as no-verifier; the on-chain validation would also fail
+      // hard on this path.
+      return {
+        result: PaymasterValidationFailure.NoVerifierRegistered,
+        wouldRotate: false,
+      };
+    }
+    if (
+      currentVerifier.publicSeed === zeroHash ||
+      currentVerifier.publicKeyHash === zeroHash
+    ) {
+      return {
+        result: PaymasterValidationFailure.NoVerifierRegistered,
+        wouldRotate: false,
+      };
+    }
+
+    // NextEqualsCurrent
+    if (
+      currentVerifier.publicSeed === nextVerifier.publicSeed &&
+      currentVerifier.publicKeyHash === nextVerifier.publicKeyHash
+    ) {
+      return {
+        result: PaymasterValidationFailure.NextEqualsCurrent,
+        wouldRotate: false,
+      };
+    }
+
+    // NextVerifierKeyInUse — read the paymaster's monotonic
+    // `verifierKeyUsed[hash]` mapping directly. The storage layout is
+    // pinned by `QuipPaymasterStorage.sol`:
+    //   namespace slot = 0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00
+    //   verifierKeyUsed lives at namespace + 1
+    //   slot(hash) = keccak256(hash || namespace+1)
+    // Hash function matches the contract: keccak256(publicSeed || publicKeyHash).
+    const verifierHash = keccak256(
+      concat([nextVerifier.publicSeed, nextVerifier.publicKeyHash])
+    );
+    const PAYMASTER_NAMESPACE =
+      "0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00";
+    const verifierKeyUsedBase = toHex(BigInt(PAYMASTER_NAMESPACE) + 1n, {
+      size: 32,
+    });
+    const mappingSlot = keccak256(
+      concat([verifierHash, verifierKeyUsedBase])
+    );
+    try {
+      const storageValue = await this.publicClient.getStorageAt({
+        address: paymaster,
+        slot: mappingSlot,
+      });
+      if (storageValue !== undefined && BigInt(storageValue) !== 0n) {
+        return {
+          result: PaymasterValidationFailure.NextVerifierKeyInUse,
+          wouldRotate: false,
+        };
+      }
+    } catch {
+      // Best-effort; fall through to the signature check.
+    }
+
+    // Final gate: InvalidSignature via eth_call.
+    const userOpHash = computeUserOpHash(
+      userOp,
+      entryPoint,
+      BigInt(this.chainId)
+    );
+    const validateData = encodeFunctionData({
+      abi: quipPaymasterAbi,
+      functionName: "validatePaymasterUserOp",
+      args: [userOp, userOpHash, 0n],
+    });
+    let callResult: { data?: Hex };
+    try {
+      callResult = await this.publicClient.call({
+        account: entryPoint,
+        to: paymaster,
+        data: validateData,
+      });
+    } catch {
+      return {
+        result: PaymasterValidationFailure.InvalidSignature,
+        wouldRotate: false,
+      };
+    }
+    if (!callResult.data) {
+      return {
+        result: PaymasterValidationFailure.InvalidSignature,
+        wouldRotate: false,
+      };
+    }
+    const decoded = decodeFunctionResult({
+      abi: quipPaymasterAbi,
+      functionName: "validatePaymasterUserOp",
+      data: callResult.data,
+    }) as readonly [Hex, bigint];
+    const validationData = decoded[1];
+    // validationData == 1 → rejection. validationData with low 160 bits
+    // (authorizer) == 0 → valid sig.
+    if (validationData === 1n) {
+      return {
+        result: PaymasterValidationFailure.InvalidSignature,
+        wouldRotate: false,
+      };
+    }
+    const authorizer = validationData & ((1n << 160n) - 1n);
+    if (authorizer !== 0n) {
+      return {
+        result: PaymasterValidationFailure.InvalidSignature,
+        wouldRotate: false,
+      };
+    }
+    return { result: "ok", wouldRotate: true };
   }
 
   /// Read the EntryPoint address from the wallet's `entryPoint()` view.
