@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.2.0-alpha.0",
+  "version": "0.2.0-beta.1",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -18,44 +18,48 @@
       "types": "./dist/index.d.ts"
     },
     "./addresses": {
-      "import": "./dist/addresses.js",
-      "types": "./dist/addresses.d.ts"
+      "import": "./dist/src/addresses.js",
+      "types": "./dist/src/addresses.d.ts"
     },
     "./abi": {
       "import": "./dist/src/abi/index.js",
       "types": "./dist/src/abi/index.d.ts"
     },
     "./signer": {
-      "import": "./dist/signer.js",
-      "types": "./dist/signer.d.ts"
+      "import": "./dist/src/signer.js",
+      "types": "./dist/src/signer.d.ts"
     },
     "./walletClient": {
-      "import": "./dist/walletClient.js",
-      "types": "./dist/walletClient.d.ts"
+      "import": "./dist/src/walletClient.js",
+      "types": "./dist/src/walletClient.d.ts"
     },
     "./factoryClient": {
-      "import": "./dist/factoryClient.js",
-      "types": "./dist/factoryClient.d.ts"
+      "import": "./dist/src/factoryClient.js",
+      "types": "./dist/src/factoryClient.d.ts"
     },
     "./paymaster": {
-      "import": "./dist/paymasterClient.js",
-      "types": "./dist/paymasterClient.d.ts"
+      "import": "./dist/src/paymasterClient.js",
+      "types": "./dist/src/paymasterClient.d.ts"
     },
     "./errors": {
-      "import": "./dist/errors.js",
-      "types": "./dist/errors.d.ts"
+      "import": "./dist/src/errors.js",
+      "types": "./dist/src/errors.d.ts"
     },
     "./events": {
-      "import": "./dist/events.js",
-      "types": "./dist/events.d.ts"
+      "import": "./dist/src/events.js",
+      "types": "./dist/src/events.d.ts"
     },
     "./userOp": {
-      "import": "./dist/userOp.js",
-      "types": "./dist/userOp.d.ts"
+      "import": "./dist/src/userOp.js",
+      "types": "./dist/src/userOp.d.ts"
     },
     "./gas": {
-      "import": "./dist/gas.js",
-      "types": "./dist/gas.d.ts"
+      "import": "./dist/src/gas.js",
+      "types": "./dist/src/gas.d.ts"
+    },
+    "./wotsCodec": {
+      "import": "./dist/src/wotsCodec.js",
+      "types": "./dist/src/wotsCodec.d.ts"
     }
   },
   "scripts": {
@@ -68,6 +72,8 @@
     "lint:sol": "solhint 'contracts/**/*.sol'",
     "test": "forge test",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
+    "smoke:tarball": "bash scripts/smoke-tarball.sh",
+    "smoke:fork": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern smoke.fork",
     "release": "forge build && npx tsx scripts/release.ts"
   },
   "devDependencies": {
