@@ -20,11 +20,11 @@ import {
   type PublicClient,
   type WalletClient,
   type TransactionReceipt,
-  bytesToHex,
+  toHex,
 } from "viem";
 
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
-import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
+import { QuipSigner } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
   type TxOptions,
@@ -32,12 +32,11 @@ import {
   type ContractCallParams,
   prepareTx,
 } from "./gas.js";
-import { type WinternitzAddress } from "./walletClient.js";
+import { buildSignedPaymasterAndData } from "./userOp.js";
 import {
   type PackedUserOperation,
-  buildSignedPaymasterAndData,
-} from "./userOp.js";
-import { type WinternitzAddress as CodecAddress } from "./wotsCodec.js";
+  type WinternitzAddress,
+} from "./wotsCodec.js";
 
 /// Client for the per-wallet WOTS+ paymaster. Wraps the paymaster
 /// contract's view + admin functions and exposes a `sponsorUserOp`
@@ -139,14 +138,14 @@ export class QuipPaymasterClient {
   /// sponsored UserOps from `wallet` are validated against this key chain.
   async setPqVerifier(
     wallet: Address,
-    verifier: WinternitzPublicKey | WinternitzAddress | CodecAddress,
+    verifier: WinternitzAddress,
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
     const contractCall: ContractCallParams = {
       address: this.paymasterAddress,
       abi: quipPaymasterAbi,
       functionName: "setPqVerifier",
-      args: [wallet, toCodecAddress(verifier)],
+      args: [wallet, verifier],
       account: this.account,
     };
     return this.executeWrite(contractCall, 0n, opts);
@@ -248,7 +247,7 @@ export class QuipPaymasterClient {
     operatorSigner: QuipSigner;
     vaultId: Uint8Array;
     currentVerifier: WinternitzAddress;
-    nextVerifier?: WinternitzPublicKey;
+    nextVerifier?: WinternitzAddress;
     validUntil?: number;
     validAfter?: number;
     validationGasLimit?: bigint;
@@ -258,25 +257,24 @@ export class QuipPaymasterClient {
     digest: Hex;
     nextVerifier: WinternitzAddress;
   }> {
+    const vaultIdHex = toHex(params.vaultId);
     const next =
       params.nextVerifier ??
-      params.operatorSigner.generateKeyPair(params.vaultId).publicKey;
-    const nextCodec = toCodecAddress(next);
-    const currentCodec = toCodecAddress(params.currentVerifier);
+      params.operatorSigner.generateKeyPair(vaultIdHex).publicKey;
 
     const validUntil = params.validUntil ?? 0;
     const validAfter = params.validAfter ?? 0;
 
     const { paymasterAndData, digest } = buildSignedPaymasterAndData({
       signer: params.operatorSigner,
-      vaultId: params.vaultId,
+      vaultId: vaultIdHex,
       paymaster: this.paymasterAddress,
       chainId: BigInt(this.chainId),
       sender: params.userOp.sender,
       nonce: params.userOp.nonce,
       callData: params.userOp.callData,
-      currentVerifier: currentCodec,
-      nextVerifier: nextCodec,
+      currentVerifier: params.currentVerifier,
+      nextVerifier: next,
       validUntil,
       validAfter,
       ...(params.validationGasLimit !== undefined && {
@@ -290,7 +288,7 @@ export class QuipPaymasterClient {
     return {
       userOp: { ...params.userOp, paymasterAndData },
       digest,
-      nextVerifier: nextCodec,
+      nextVerifier: next,
     };
   }
 
@@ -349,22 +347,3 @@ export class QuipPaymasterClient {
   }
 }
 
-/// Normalize the various "WOTS+ public key" shapes the SDK uses
-/// (`WinternitzPublicKey` from the signer with `Uint8Array` fields, vs.
-/// `WinternitzAddress`/`CodecAddress` with hex fields) into the
-/// codec/contract shape (hex).
-function toCodecAddress(
-  k: WinternitzPublicKey | WinternitzAddress | CodecAddress
-): CodecAddress {
-  if (
-    typeof (k as WinternitzAddress).publicSeed === "string" &&
-    typeof (k as WinternitzAddress).publicKeyHash === "string"
-  ) {
-    return k as CodecAddress;
-  }
-  const pk = k as WinternitzPublicKey;
-  return {
-    publicSeed: bytesToHex(pk.publicSeed),
-    publicKeyHash: bytesToHex(pk.publicKeyHash),
-  };
-}

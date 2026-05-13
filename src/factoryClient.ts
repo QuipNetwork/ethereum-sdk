@@ -23,13 +23,10 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
-  hexToBytes,
   toHex,
   zeroAddress,
   parseEventLogs,
 } from "viem";
-
-import { equalBytes } from "@noble/ciphers/utils";
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import {
@@ -37,7 +34,7 @@ import {
   getNetworkAddresses,
   CHAIN_IDS,
 } from "./addresses.js";
-import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
+import { QuipSigner } from "./signer.js";
 import { QuipWalletClient } from "./walletClient.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { tryMulticall } from "./internal/multicall.js";
@@ -52,7 +49,7 @@ import {
   PartialMulticallResultError,
 } from "./errors.js";
 import {
-  type WinternitzAddress as CodecAddress,
+  type WinternitzAddress,
   encodeInit,
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
@@ -180,10 +177,10 @@ export class QuipClient {
     vaultId: Uint8Array,
     quipSigner: QuipSigner,
     keys: {
-      disasterRecoveryKey?: WinternitzPublicKey;
-      ownershipKey?: WinternitzPublicKey;
-      transactionKeys?: WinternitzPublicKey[];
-      recoveryKeys?: WinternitzPublicKey[];
+      disasterRecoveryKey?: WinternitzAddress;
+      ownershipKey?: WinternitzAddress;
+      transactionKeys?: WinternitzAddress[];
+      recoveryKeys?: WinternitzAddress[];
     } = {}
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
@@ -206,18 +203,18 @@ export class QuipClient {
 
     const disaster =
       keys.disasterRecoveryKey ??
-      quipSigner.generateKeyPair(vaultId).publicKey;
+      quipSigner.generateKeyPair(vaultIdHex).publicKey;
     const ownership =
-      keys.ownershipKey ?? quipSigner.generateKeyPair(vaultId).publicKey;
+      keys.ownershipKey ?? quipSigner.generateKeyPair(vaultIdHex).publicKey;
     const txnKeys =
       keys.transactionKeys ??
       Array.from({ length: TRANSACTION_KEY_INIT_AMOUNT }, () =>
-        quipSigner.generateKeyPair(vaultId).publicKey
+        quipSigner.generateKeyPair(vaultIdHex).publicKey
       );
     const recoveryKeys =
       keys.recoveryKeys ??
       Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
-        quipSigner.generateKeyPair(vaultId).publicKey
+        quipSigner.generateKeyPair(vaultIdHex).publicKey
       );
 
     if (txnKeys.length !== TRANSACTION_KEY_INIT_AMOUNT) {
@@ -227,17 +224,7 @@ export class QuipClient {
       throw new IncorrectRecoveryKeyAmountError();
     }
 
-    const toCodec = (k: WinternitzPublicKey): CodecAddress => ({
-      publicSeed: toHex(k.publicSeed),
-      publicKeyHash: toHex(k.publicKeyHash),
-    });
-
-    const initPayload = encodeInit(
-      toCodec(disaster),
-      toCodec(ownership),
-      txnKeys.map(toCodec),
-      recoveryKeys.map(toCodec)
-    );
+    const initPayload = encodeInit(disaster, ownership, txnKeys, recoveryKeys);
 
     const hash = await withDecodedError(
       this.walletClient.writeContract({
@@ -309,10 +296,8 @@ export class QuipClient {
     // wallet has been operated concurrently by multiple signers the head
     // may belong to one and not the other. For most flows that's fine.
     const headKey = await client.getHeadTransactionKey();
-    const curSeed = hexToBytes(headKey.publicSeed);
-    const curPubKeyHash = hexToBytes(headKey.publicKeyHash);
-    const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
-    if (!equalBytes(keypair.publicKey.publicKeyHash, curPubKeyHash)) {
+    const keypair = quipSigner.recoverKeyPair(vaultIdHex, headKey.publicSeed);
+    if (keypair.publicKey.publicKeyHash !== headKey.publicKeyHash) {
       throw new InvalidSignerError();
     }
     return client;

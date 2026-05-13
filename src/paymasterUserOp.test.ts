@@ -26,17 +26,42 @@ import {
 import {
   type WinternitzAddress,
   type WinternitzElements,
+  PAYMASTER_AND_DATA_LEN,
   PAYMASTER_APPROVE_TAG,
+  decodePaymasterAndData,
+  packPaymasterAndData,
   paymasterOpCommitment,
-  paymasterUserOpDigest as codecPaymasterUserOpDigest,
+  paymasterUserOpDigest,
 } from "./wotsCodec.js";
 import {
-  PAYMASTER_AND_DATA_LEN,
-  DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
   DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
-  packPaymasterAndData,
-  paymasterUserOpDigest,
-} from "./userOp.js";
+  DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+} from "./constants.js";
+
+/// Local thin wrapper so the existing object-form test cases keep reading
+/// cleanly. The codec function takes positional args (it mirrors the
+/// Solidity-side concat); the wrapper exists only for test ergonomics.
+function digest(params: {
+  paymaster: `0x${string}`;
+  chainId: bigint;
+  currentVerifier: WinternitzAddress;
+  nextVerifier: WinternitzAddress;
+  sender: `0x${string}`;
+  nonce: bigint;
+  callData: `0x${string}`;
+}) {
+  return paymasterUserOpDigest(
+    params.paymaster,
+    params.chainId,
+    params.currentVerifier.publicSeed,
+    params.currentVerifier.publicKeyHash,
+    params.nextVerifier.publicSeed,
+    params.nextVerifier.publicKeyHash,
+    params.sender,
+    params.nonce,
+    params.callData
+  );
+}
 
 const PAYMASTER = "0x2222222222222222222222222222222222222222" as const;
 const SENDER = "0x1111111111111111111111111111111111111111" as const;
@@ -112,7 +137,7 @@ describe("paymasterUserOpDigest", () => {
       ])
     );
 
-    const actual = paymasterUserOpDigest({
+    const actual = digest({
       paymaster: PAYMASTER,
       chainId,
       currentVerifier: currentKey,
@@ -127,7 +152,7 @@ describe("paymasterUserOpDigest", () => {
   it("differs when chainId / paymaster / verifiers / sender / nonce / callData change", () => {
     const ck = makeKey(1n);
     const nk = makeKey(2n);
-    const base = paymasterUserOpDigest({
+    const base = digest({
       paymaster: PAYMASTER,
       chainId: 1n,
       currentVerifier: ck,
@@ -137,8 +162,7 @@ describe("paymasterUserOpDigest", () => {
       callData: "0x",
     });
 
-    const diff = (params: Parameters<typeof paymasterUserOpDigest>[0]) =>
-      paymasterUserOpDigest(params);
+    const diff = (params: Parameters<typeof digest>[0]) => digest(params);
 
     expect(
       diff({
@@ -219,10 +243,10 @@ describe("paymasterUserOpDigest", () => {
     ).not.toBe(base);
   });
 
-  it("matches the codec-level helper", () => {
+  it("wrapper matches the codec function", () => {
     const ck = makeKey(0x11n);
     const nk = makeKey(0x22n);
-    const viaUserOp = paymasterUserOpDigest({
+    const viaWrapper = digest({
       paymaster: PAYMASTER,
       chainId: 31337n,
       currentVerifier: ck,
@@ -231,7 +255,7 @@ describe("paymasterUserOpDigest", () => {
       nonce: 5n,
       callData: "0xc0ffee",
     });
-    const viaCodec = codecPaymasterUserOpDigest(
+    const viaCodec = paymasterUserOpDigest(
       PAYMASTER,
       31337n,
       ck.publicSeed,
@@ -242,7 +266,7 @@ describe("paymasterUserOpDigest", () => {
       5n,
       "0xc0ffee"
     );
-    expect(viaUserOp).toBe(viaCodec);
+    expect(viaWrapper).toBe(viaCodec);
   });
 });
 
@@ -339,5 +363,35 @@ describe("packPaymasterAndData", () => {
     expect(() =>
       packPaymasterAndData({ ...base, validAfter: 2 ** 48 })
     ).toThrow();
+  });
+});
+
+describe("decodePaymasterAndData", () => {
+  it("round-trips through packPaymasterAndData", () => {
+    const input = {
+      paymaster: PAYMASTER,
+      validationGasLimit: 1_234_567n,
+      postOpGasLimit: 50_000n,
+      validUntil: 9_999,
+      validAfter: 42,
+      nextVerifier: makeKey(0xabn),
+      sig: makeSig(0xbeefn),
+    };
+    const packed = packPaymasterAndData(input);
+    const out = decodePaymasterAndData(packed);
+    expect(out.paymaster.toLowerCase()).toBe(PAYMASTER.toLowerCase());
+    expect(out.validationGasLimit).toBe(input.validationGasLimit);
+    expect(out.postOpGasLimit).toBe(input.postOpGasLimit);
+    expect(out.validUntil).toBe(input.validUntil);
+    expect(out.validAfter).toBe(input.validAfter);
+    expect(out.nextVerifier.publicSeed).toBe(input.nextVerifier.publicSeed);
+    expect(out.nextVerifier.publicKeyHash).toBe(
+      input.nextVerifier.publicKeyHash
+    );
+    expect(out.sig.elements).toEqual(input.sig.elements);
+  });
+
+  it("throws on wrong length", () => {
+    expect(() => decodePaymasterAndData("0xdead")).toThrow();
   });
 });

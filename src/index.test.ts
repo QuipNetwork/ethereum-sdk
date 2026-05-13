@@ -14,6 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { toHex } from "viem";
 import {
   QuipSigner as BarrelQuipSigner,
   QuipWalletClient as BarrelQuipWalletClient,
@@ -45,8 +46,8 @@ describe("Phase 0 module split", () => {
 
   test("QuipSigner instantiates and produces a deterministic key pair from a seed", () => {
     const secret = new Uint8Array(32).fill(1);
-    const vaultId = new Uint8Array(32).fill(2);
-    const publicSeed = new Uint8Array(32).fill(3);
+    const vaultId = toHex(new Uint8Array(32).fill(2));
+    const publicSeed = toHex(new Uint8Array(32).fill(3));
 
     const signer = new QuipSigner(secret);
     const a = signer.recoverKeyPair(vaultId, publicSeed);

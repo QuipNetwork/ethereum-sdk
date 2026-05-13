@@ -15,14 +15,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, it, expect } from "@jest/globals";
-import { toHex } from "viem";
+import { type Hex, toHex } from "viem";
 
 import { QuipSigner } from "./signer.js";
 import { KeyAlreadyBurnedError } from "./errors.js";
 
 const QUANTUM_SECRET = new Uint8Array(32).fill(0xab);
-const VAULT_ID = new Uint8Array(32).fill(0x01);
-const MESSAGE = new Uint8Array(32).fill(0x77);
+const VAULT_ID: Hex = toHex(new Uint8Array(32).fill(0x01));
+const MESSAGE: Hex = toHex(new Uint8Array(32).fill(0x77));
 
 describe("QuipSigner burned-key tracking", () => {
   it("sign succeeds when key is not burned", () => {
@@ -30,6 +30,10 @@ describe("QuipSigner burned-key tracking", () => {
     const kp = signer.generateKeyPair(VAULT_ID);
     const sig = signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(sig.length).toBe(67);
+    // Each element is a 32-byte hex string.
+    for (const el of sig) {
+      expect(el.length).toBe(2 + 64);
+    }
   });
 
   it("sign auto-burns the key (signing the same key twice throws)", () => {
@@ -39,8 +43,9 @@ describe("QuipSigner burned-key tracking", () => {
     signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
     // Second sign with the same key — even on a different message — fails.
+    const otherMessage: Hex = toHex(new Uint8Array(32).fill(0xaa));
     expect(() =>
-      signer.sign(new Uint8Array(32).fill(0xaa), VAULT_ID, kp.publicKey.publicSeed)
+      signer.sign(otherMessage, VAULT_ID, kp.publicKey.publicSeed)
     ).toThrow(KeyAlreadyBurnedError);
   });
 
@@ -50,19 +55,10 @@ describe("QuipSigner burned-key tracking", () => {
     expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(false);
   });
 
-  it("isBurned returns true after markBurned (Uint8Array input)", () => {
+  it("isBurned returns true after markBurned", () => {
     const signer = new QuipSigner(QUANTUM_SECRET);
     const kp = signer.generateKeyPair(VAULT_ID);
     signer.markBurned(kp.publicKey.publicSeed);
-    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
-  });
-
-  it("isBurned returns true after markBurned (Hex input)", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
-    const kp = signer.generateKeyPair(VAULT_ID);
-    const seedHex = toHex(kp.publicKey.publicSeed);
-    signer.markBurned(seedHex);
-    expect(signer.isBurned(seedHex)).toBe(true);
     expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
   });
 
@@ -78,7 +74,6 @@ describe("QuipSigner burned-key tracking", () => {
   it("KeyAlreadyBurnedError carries the publicSeed", () => {
     const signer = new QuipSigner(QUANTUM_SECRET);
     const kp = signer.generateKeyPair(VAULT_ID);
-    const seedHex = toHex(kp.publicKey.publicSeed);
     signer.markBurned(kp.publicKey.publicSeed);
     try {
       signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
@@ -86,7 +81,7 @@ describe("QuipSigner burned-key tracking", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(KeyAlreadyBurnedError);
       if (e instanceof KeyAlreadyBurnedError) {
-        expect(e.publicSeed).toBe(seedHex);
+        expect(e.publicSeed).toBe(kp.publicKey.publicSeed);
         expect(e.code).toBe("KEY_ALREADY_BURNED");
       }
     }

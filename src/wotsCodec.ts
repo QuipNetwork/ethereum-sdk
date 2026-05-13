@@ -28,6 +28,18 @@ import {
   toHex,
 } from "viem";
 
+/// The ABI expects bytes32[67] for a WOTS+ signature; this fixed-length tuple
+/// is what viem requires for typed argument passing.
+export type Bytes32Tuple67 = readonly [
+  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
+  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
+  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
+  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
+  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
+  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
+  Hex, Hex, Hex, Hex, Hex, Hex, Hex,
+];
+
 export interface WinternitzAddress {
   publicSeed: Hex;
   publicKeyHash: Hex;
@@ -695,4 +707,286 @@ export function paymasterUserOpDigest(
       opCommitment,
     ])
   );
+}
+
+/// ERC-4337 v0.7 PackedUserOperation. Matches Solady's `ERC4337.sol:34` and
+/// the canonical EntryPoint v0.7 layout. The two packed fields use the
+/// EntryPoint v0.7 convention:
+///   - `accountGasLimits` = `verificationGasLimit (uint128) || callGasLimit (uint128)`
+///   - `gasFees`          = `maxPriorityFeePerGas (uint128) || maxFeePerGas (uint128)`
+/// (high bytes first in each case)
+export interface PackedUserOperation {
+  sender: Address;
+  nonce: bigint;
+  initCode: Hex;
+  callData: Hex;
+  accountGasLimits: Hex; // bytes32
+  preVerificationGas: bigint;
+  gasFees: Hex; // bytes32
+  paymasterAndData: Hex;
+  signature: Hex;
+}
+
+/// Total `paymasterAndData` length the Quip paymaster expects:
+///   52 (header: paymaster + verificationGasLimit + postOpGasLimit)
+///   + 6 (validUntil) + 6 (validAfter)
+///   + 64 (nextVerifier: publicSeed + publicKeyHash)
+///   + 2144 (WOTS+ sig: 67 × 32)
+///   = 2272
+/// Mirrors `_PAYMASTER_AND_DATA_LEN` in `QuipPaymaster.sol:59`.
+export const PAYMASTER_AND_DATA_LEN: number = 2272;
+
+/// ERC-7201 namespace slot for `QuipPaymasterStorage.Layout`. Mirrors the
+/// `_QUIP_PAYMASTER_STORAGE_SLOT` constant in
+/// `contracts/storage/QuipPaymasterStorage.sol`:
+///
+///     keccak256(abi.encode(uint256(keccak256("quip.paymaster")) - 1))
+///       & ~bytes32(uint256(0xff))
+///
+/// The `verifierKeyUsed` mapping is the second field in the struct, so its
+/// base slot is `namespace + 1`.
+export const PAYMASTER_STORAGE_NAMESPACE: Hex =
+  "0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00";
+
+/// Pack two uint128 values into a bytes32 with the high 16 bytes being
+/// `hi` and the low 16 bytes being `lo`. EntryPoint v0.7 uses this for
+/// both `accountGasLimits` and `gasFees`.
+export function packUint128Pair(hi: bigint, lo: bigint): Hex {
+  if (hi < 0n || hi >= 1n << 128n) {
+    throw new Error(`packUint128Pair: high value out of range: ${hi}`);
+  }
+  if (lo < 0n || lo >= 1n << 128n) {
+    throw new Error(`packUint128Pair: low value out of range: ${lo}`);
+  }
+  const packed = (hi << 128n) | lo;
+  return pad(toHex(packed), { size: 32 });
+}
+
+/// Convenience: pack (verificationGasLimit, callGasLimit) for `accountGasLimits`.
+export function packAccountGasLimits(
+  verificationGasLimit: bigint,
+  callGasLimit: bigint
+): Hex {
+  return packUint128Pair(verificationGasLimit, callGasLimit);
+}
+
+/// Convenience: pack (maxPriorityFeePerGas, maxFeePerGas) for `gasFees`.
+export function packGasFees(
+  maxPriorityFeePerGas: bigint,
+  maxFeePerGas: bigint
+): Hex {
+  return packUint128Pair(maxPriorityFeePerGas, maxFeePerGas);
+}
+
+/// Reverse of `packAccountGasLimits` for inspection. Returns
+/// `{ verificationGasLimit, callGasLimit }`.
+export function unpackAccountGasLimits(packed: Hex): {
+  verificationGasLimit: bigint;
+  callGasLimit: bigint;
+} {
+  if (size(packed) !== 32) {
+    throw new Error(
+      `unpackAccountGasLimits: expected 32 bytes, got ${size(packed)}`
+    );
+  }
+  return {
+    verificationGasLimit: hexToBigInt(slice(packed, 0, 16)),
+    callGasLimit: hexToBigInt(slice(packed, 16, 32)),
+  };
+}
+
+/// Reverse of `packGasFees` for inspection. Returns
+/// `{ maxPriorityFeePerGas, maxFeePerGas }`.
+export function unpackGasFees(packed: Hex): {
+  maxPriorityFeePerGas: bigint;
+  maxFeePerGas: bigint;
+} {
+  if (size(packed) !== 32) {
+    throw new Error(`unpackGasFees: expected 32 bytes, got ${size(packed)}`);
+  }
+  return {
+    maxPriorityFeePerGas: hexToBigInt(slice(packed, 0, 16)),
+    maxFeePerGas: hexToBigInt(slice(packed, 16, 32)),
+  };
+}
+
+/// Compute the EntryPoint v0.7 `userOpHash` locally — no RPC roundtrip.
+/// Matches the reference implementation at
+/// https://github.com/eth-infinitism/account-abstraction/blob/v0.7/contracts/core/UserOperationLib.sol
+///
+///     keccak256(abi.encode(hashUserOp(userOp), entryPoint, chainId))
+///
+/// where
+///
+///     hashUserOp(userOp) =
+///       keccak256(abi.encode(
+///         sender, nonce,
+///         keccak256(initCode),
+///         keccak256(callData),
+///         accountGasLimits,
+///         preVerificationGas,
+///         gasFees,
+///         keccak256(paymasterAndData)
+///       ))
+///
+/// `signature` is excluded by design — it's what we're about to produce.
+export function computeUserOpHash(
+  userOp: PackedUserOperation,
+  entryPoint: Address,
+  chainId: bigint
+): Hex {
+  const inner = keccak256(
+    encodeAbiParameters(
+      [
+        { type: "address" },
+        { type: "uint256" },
+        { type: "bytes32" },
+        { type: "bytes32" },
+        { type: "bytes32" },
+        { type: "uint256" },
+        { type: "bytes32" },
+        { type: "bytes32" },
+      ],
+      [
+        userOp.sender,
+        userOp.nonce,
+        keccak256(userOp.initCode),
+        keccak256(userOp.callData),
+        userOp.accountGasLimits,
+        userOp.preVerificationGas,
+        userOp.gasFees,
+        keccak256(userOp.paymasterAndData),
+      ]
+    )
+  );
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "address" }, { type: "uint256" }],
+      [inner, entryPoint, chainId]
+    )
+  );
+}
+
+/// Construct the `paymasterAndData` field of a sponsored UserOp per the
+/// Quip paymaster's layout (`QuipPaymaster.sol:52-59` + `INVARIANTS.md:229`):
+///
+///   [0:20)     paymaster address
+///   [20:36)    validationGasLimit (uint128)
+///   [36:52)    postOpGasLimit     (uint128)
+///   [52:58)    validUntil         (uint48 / 6 bytes)
+///   [58:64)    validAfter         (uint48 / 6 bytes)
+///   [64:128)   nextVerifier       (publicSeed + publicKeyHash, 64 bytes)
+///   [128:2272) WOTS+ signature    (67 × 32 = 2144 bytes)
+///
+/// `sig` defaults to all-zeros when omitted (used during digest
+/// computation; substitute the real signature once it's produced).
+export function packPaymasterAndData(params: {
+  paymaster: Address;
+  validationGasLimit: bigint;
+  postOpGasLimit: bigint;
+  validUntil: number; // uint48
+  validAfter: number; // uint48
+  nextVerifier: WinternitzAddress;
+  sig?: WinternitzElements;
+}): Hex {
+  if (
+    params.validationGasLimit < 0n ||
+    params.validationGasLimit >= 1n << 128n
+  ) {
+    throw new Error(
+      `packPaymasterAndData: validationGasLimit out of uint128 range: ${params.validationGasLimit}`
+    );
+  }
+  if (params.postOpGasLimit < 0n || params.postOpGasLimit >= 1n << 128n) {
+    throw new Error(
+      `packPaymasterAndData: postOpGasLimit out of uint128 range: ${params.postOpGasLimit}`
+    );
+  }
+  if (params.validUntil < 0 || params.validUntil >= 2 ** 48) {
+    throw new Error(
+      `packPaymasterAndData: validUntil out of uint48 range: ${params.validUntil}`
+    );
+  }
+  if (params.validAfter < 0 || params.validAfter >= 2 ** 48) {
+    throw new Error(
+      `packPaymasterAndData: validAfter out of uint48 range: ${params.validAfter}`
+    );
+  }
+
+  const sigHex =
+    params.sig !== undefined
+      ? concat(params.sig.elements)
+      : (("0x" + "00".repeat(67 * 32)) as Hex);
+
+  const validationGasLimitHex = pad(toHex(params.validationGasLimit), {
+    size: 16,
+  });
+  const postOpGasLimitHex = pad(toHex(params.postOpGasLimit), { size: 16 });
+  const validUntilHex = pad(toHex(BigInt(params.validUntil)), { size: 6 });
+  const validAfterHex = pad(toHex(BigInt(params.validAfter)), { size: 6 });
+
+  return concat([
+    params.paymaster,
+    validationGasLimitHex,
+    postOpGasLimitHex,
+    validUntilHex,
+    validAfterHex,
+    params.nextVerifier.publicSeed,
+    params.nextVerifier.publicKeyHash,
+    sigHex,
+  ]);
+}
+
+/// Decode a `paymasterAndData` field back into its constituent parts.
+/// Inverse of `packPaymasterAndData`. Throws on length mismatch (the
+/// paymaster rejects any other length on chain).
+export function decodePaymasterAndData(pmd: Hex): {
+  paymaster: Address;
+  validationGasLimit: bigint;
+  postOpGasLimit: bigint;
+  validUntil: number;
+  validAfter: number;
+  nextVerifier: WinternitzAddress;
+  sig: WinternitzElements;
+} {
+  if (size(pmd) !== PAYMASTER_AND_DATA_LEN) {
+    throw new Error(
+      `decodePaymasterAndData: expected ${PAYMASTER_AND_DATA_LEN} bytes, got ${size(pmd)}`
+    );
+  }
+  return {
+    paymaster: getAddress(slice(pmd, 0, 20)),
+    validationGasLimit: hexToBigInt(slice(pmd, 20, 36)),
+    postOpGasLimit: hexToBigInt(slice(pmd, 36, 52)),
+    validUntil: Number(hexToBigInt(slice(pmd, 52, 58))),
+    validAfter: Number(hexToBigInt(slice(pmd, 58, 64))),
+    nextVerifier: sliceAddress(pmd, 64),
+    sig: sliceElements(pmd, 128),
+  };
+}
+
+/// Hash a verifier key the way the paymaster does: `keccak256(publicSeed || publicKeyHash)`.
+/// Mirrors `QuipPaymaster._verifierHash` (which calls `EfficientHashLib.hash`,
+/// equivalent to a plain keccak over the concatenation).
+export function paymasterVerifierHash(verifier: WinternitzAddress): Hex {
+  return keccak256(concat([verifier.publicSeed, verifier.publicKeyHash]));
+}
+
+/// Storage slot of `verifierKeyUsed[verifierHash]` in the paymaster's
+/// ERC-7201 namespaced storage. Used by simulators / observers that want
+/// to detect whether a verifier key has been spent without an extra RPC
+/// roundtrip into a paymaster view.
+///
+/// `verifierKeyUsed` is the second field of `QuipPaymasterStorage.Layout`,
+/// so its mapping base lives at `PAYMASTER_STORAGE_NAMESPACE + 1`. The
+/// per-key slot is `keccak256(key || baseSlot)`, per Solidity's standard
+/// mapping layout.
+export function paymasterVerifierKeyUsedSlot(
+  verifier: WinternitzAddress
+): Hex {
+  const verifierHash = paymasterVerifierHash(verifier);
+  const baseSlot = toHex(BigInt(PAYMASTER_STORAGE_NAMESPACE) + 1n, {
+    size: 32,
+  });
+  return keccak256(concat([verifierHash, baseSlot]));
 }

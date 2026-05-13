@@ -39,22 +39,20 @@ import { join } from "node:path";
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
-import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
+import { QuipSigner } from "./signer.js";
 import {
   QuipWalletClient,
   KeyType,
 } from "./walletClient.js";
 import { UserOpValidationFailure } from "./errors.js";
 import {
-  encodeInit,
-  type WinternitzAddress as CodecAddress,
-  TRANSACTION_KEY_INIT_AMOUNT,
-  RECOVERY_KEY_AMOUNT,
-} from "./wotsCodec.js";
-import {
   type PackedUserOperation,
+  type WinternitzAddress,
+  RECOVERY_KEY_AMOUNT,
+  TRANSACTION_KEY_INIT_AMOUNT,
   computeUserOpHash,
-} from "./userOp.js";
+  encodeInit,
+} from "./wotsCodec.js";
 
 // ─── Forge artifacts ────────────────────────────────────────────────
 const factoryArtifact = JSON.parse(
@@ -124,17 +122,12 @@ let factoryAddress: Address;
 
 const MAX_FEE = 10n ** 16n;
 
-const toCodec = (k: WinternitzPublicKey): CodecAddress => ({
-  publicSeed: toHex(k.publicSeed),
-  publicKeyHash: toHex(k.publicKeyHash),
-});
-
 function buildInitPayload(
   signer: QuipSigner,
-  vaultId: Uint8Array
+  vaultId: Hex
 ): {
   payload: Hex;
-  transactionKeys: WinternitzPublicKey[];
+  transactionKeys: WinternitzAddress[];
 } {
   const disaster = signer.generateKeyPair(vaultId).publicKey;
   const ownership = signer.generateKeyPair(vaultId).publicKey;
@@ -145,12 +138,7 @@ function buildInitPayload(
   const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
     signer.generateKeyPair(vaultId).publicKey
   );
-  const payload = encodeInit(
-    toCodec(disaster),
-    toCodec(ownership),
-    transactionKeys.map(toCodec),
-    recoveryKeys.map(toCodec)
-  );
+  const payload = encodeInit(disaster, ownership, transactionKeys, recoveryKeys);
   return { payload, transactionKeys };
 }
 
@@ -159,12 +147,12 @@ async function createFreshWallet(seedByte: number): Promise<{
   vaultId: Uint8Array;
   client: QuipWalletClient;
   walletAddress: Address;
-  transactionKeys: WinternitzPublicKey[];
+  transactionKeys: WinternitzAddress[];
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
   const signer = new QuipSigner(quantumSecret);
   const vaultId = new Uint8Array(32).fill(seedByte);
-  const init = buildInitPayload(signer, vaultId);
+  const init = buildInitPayload(signer, toHex(vaultId));
 
   const hash = await walletClient.writeContract({
     chain: foundry,
@@ -416,9 +404,9 @@ describe("simulateUserOp — rejection paths", () => {
     const { client, signer, vaultId } = await createFreshWallet(0x43);
     const built = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
     // Replace currentKey with a freshly generated keypair that's never been added.
-    const stranger = signer.generateKeyPair(vaultId).publicKey;
-    const strangerSeed = toHex(stranger.publicSeed).slice(2);
-    const strangerHash = toHex(stranger.publicKeyHash).slice(2);
+    const stranger = signer.generateKeyPair(toHex(vaultId)).publicKey;
+    const strangerSeed = stranger.publicSeed.slice(2);
+    const strangerHash = stranger.publicKeyHash.slice(2);
     const sigHex = built.userOp.signature.slice(2);
     const tampered =
       "0x" +

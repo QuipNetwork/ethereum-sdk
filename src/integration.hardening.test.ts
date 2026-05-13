@@ -33,12 +33,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
-import {
-  QuipWalletClient,
-  KeyType,
-  type WinternitzAddress,
-} from "./walletClient.js";
+import { QuipSigner } from "./signer.js";
+import { QuipWalletClient, KeyType } from "./walletClient.js";
 import {
   DuplicateKeyError,
   EmptyKeysError,
@@ -48,7 +44,7 @@ import {
 } from "./errors.js";
 import {
   encodeInit,
-  type WinternitzAddress as CodecAddress,
+  type WinternitzAddress,
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
 } from "./wotsCodec.js";
@@ -119,22 +115,17 @@ let walletImplAddress: Address;
 
 const MAX_FEE = 10n ** 16n;
 
-const toCodec = (k: WinternitzPublicKey): CodecAddress => ({
-  publicSeed: toHex(k.publicSeed),
-  publicKeyHash: toHex(k.publicKeyHash),
-});
-
 /// Build the 1088-byte init payload (1 disaster + 1 ownership + 5 tx + 10 recovery)
 /// from a signer. Returns the payload and the keys (so tests can inspect them).
 function buildInitPayload(
   signer: QuipSigner,
-  vaultId: Uint8Array
+  vaultId: Hex
 ): {
   payload: Hex;
-  disaster: WinternitzPublicKey;
-  ownership: WinternitzPublicKey;
-  transactionKeys: WinternitzPublicKey[];
-  recoveryKeys: WinternitzPublicKey[];
+  disaster: WinternitzAddress;
+  ownership: WinternitzAddress;
+  transactionKeys: WinternitzAddress[];
+  recoveryKeys: WinternitzAddress[];
 } {
   const disaster = signer.generateKeyPair(vaultId).publicKey;
   const ownership = signer.generateKeyPair(vaultId).publicKey;
@@ -145,12 +136,7 @@ function buildInitPayload(
   const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
     signer.generateKeyPair(vaultId).publicKey
   );
-  const payload = encodeInit(
-    toCodec(disaster),
-    toCodec(ownership),
-    transactionKeys.map(toCodec),
-    recoveryKeys.map(toCodec)
-  );
+  const payload = encodeInit(disaster, ownership, transactionKeys, recoveryKeys);
   return { payload, disaster, ownership, transactionKeys, recoveryKeys };
 }
 
@@ -162,12 +148,12 @@ async function createFreshWallet(seedByte: number): Promise<{
   vaultId: Uint8Array;
   client: QuipWalletClient;
   walletAddress: Address;
-  transactionKeys: WinternitzPublicKey[];
+  transactionKeys: WinternitzAddress[];
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
   const signer = new QuipSigner(quantumSecret);
   const vaultId = new Uint8Array(32).fill(seedByte);
-  const init = buildInitPayload(signer, vaultId);
+  const init = buildInitPayload(signer, toHex(vaultId));
 
   const hash = await walletClient.writeContract({
     chain: foundry,
@@ -277,7 +263,7 @@ describe("Phase 4.5 — pre-flight key-batch validation", () => {
 
   test("addKeys with within-batch duplicate throws DuplicateKeyError synchronously", async () => {
     const { client, signer, vaultId } = await createFreshWallet(0x11);
-    const k = signer.generateKeyPair(vaultId).publicKey;
+    const k = signer.generateKeyPair(toHex(vaultId)).publicKey;
     await expect(
       client.addKeys(KeyType.Recovery, [k, k])
     ).rejects.toBeInstanceOf(DuplicateKeyError);
@@ -285,7 +271,7 @@ describe("Phase 4.5 — pre-flight key-batch validation", () => {
 
   test("refreshKeys on Transaction kind throws RefreshTransactionForbiddenError synchronously", async () => {
     const { client, signer, vaultId } = await createFreshWallet(0x12);
-    const k = signer.generateKeyPair(vaultId).publicKey;
+    const k = signer.generateKeyPair(toHex(vaultId)).publicKey;
     // Pre-flight invariant from Phase 4: refreshing the Transaction keyset
     // is forbidden at the contract level — the SDK throws before sign().
     await expect(
@@ -309,9 +295,10 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
     await client.executeWithPayload(zeroAddress, 0n, "0x");
 
     expect(signer.isBurned(head.publicSeed)).toBe(true);
-    // Sanity: signer.sign with the burned key must now throw.
+    // Sanity: signer.sign with a fresh (never-burned) key works.
+    const dummySeed = toHex(new Uint8Array(32).fill(0xfe));
     expect(() =>
-      signer.sign(new Uint8Array(32), vaultId, new Uint8Array(32).fill(0)) // dummy seed not burned — sanity
+      signer.sign(toHex(new Uint8Array(32)), toHex(vaultId), dummySeed)
     ).not.toThrow();
   }, 30_000);
 

@@ -29,7 +29,7 @@ export * from "./constants.js";
 
 // Core SDK classes
 export { QuipSigner } from "./signer.js";
-export type { WinternitzKeyPair, WinternitzPublicKey } from "./signer.js";
+export type { WinternitzKeyPair } from "./signer.js";
 export { QuipWalletClient, KeyType } from "./walletClient.js";
 export { QuipClient } from "./factoryClient.js";
 export { QuipPaymasterClient } from "./paymasterClient.js";
@@ -54,3 +54,4 @@ export type {
   SimulateUserOpResult,
 } from "./walletClient.js";
 export type { FactoryState } from "./factoryClient.js";
+export type { PackedUserOperation } from "./wotsCodec.js";

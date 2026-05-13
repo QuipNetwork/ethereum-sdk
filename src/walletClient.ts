@@ -20,11 +20,8 @@ import {
   type PublicClient,
   type WalletClient,
   type TransactionReceipt,
-  concat,
   decodeFunctionResult,
   encodeFunctionData,
-  hexToBytes,
-  keccak256,
   toHex,
   zeroHash,
 } from "viem";
@@ -32,7 +29,7 @@ import {
 import { quipWalletAbi } from "./abi/QuipWallet.js";
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
-import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
+import { QuipSigner } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { tryMulticall, type TryMulticallResult } from "./internal/multicall.js";
 import {
@@ -51,40 +48,41 @@ import {
   UserOpValidationFailure,
 } from "./errors.js";
 import {
-  type WinternitzAddress as CodecAddress,
+  type PackedUserOperation,
+  type WinternitzAddress,
   type WinternitzElements,
+  computeUserOpHash,
+  decodePaymasterAndData,
+  decodeUserOpSignature,
   encodeExecute,
   encodeKeyManagement,
   encodeReplaceKeyAt,
+  encodeUserOpSignature,
   encodeWithdrawDeposit,
   encodeRecoverWallet,
-  encodeUserOpSignature,
+  erc4337ExecuteDigest,
   executeDigest,
   keysetDigest,
   keysHash as codecKeysHash,
   opdataHash as codecOpdataHash,
+  packAccountGasLimits,
+  packGasFees,
+  paymasterVerifierKeyUsedSlot,
   replaceKeyAtDigest,
   withdrawDepositDigest,
   recoverWalletDigest,
 } from "./wotsCodec.js";
+import { buildUserOp } from "./userOp.js";
 import {
-  type PackedUserOperation,
-  buildUserOp,
-  computeUserOpHash,
-  packAccountGasLimits,
-  packGasFees,
-  walletUserOpDigest,
   DEFAULT_VERIFICATION_GAS_LIMIT,
   DEFAULT_CALL_GAS_LIMIT,
   DEFAULT_PRE_VERIFICATION_GAS,
-} from "./userOp.js";
+} from "./constants.js";
 
-/// 32-byte WOTS+ key tuple as returned by the contract's `keyAt` and stored
-/// in the SDK's read-aggregator outputs.
-export interface WinternitzAddress {
-  publicSeed: Hex;
-  publicKeyHash: Hex;
-}
+/// Re-export the codec's canonical `WinternitzAddress` shape so consumers
+/// reaching into `walletClient` for `WalletState`-shaped types keep working.
+/// The codec is the single source of truth for this contract-shape type.
+export type { WinternitzAddress } from "./wotsCodec.js";
 
 /// Per-call overrides for how the SDK picks which transaction-keyset entry
 /// to sign with. See `SDK_README.md` for the full operational contract
@@ -199,8 +197,8 @@ export interface BuildExecuteUserOpResult {
 /// (if sponsoring) and then to `signExecuteUserOp` to finalize.
 export interface PreparedExecuteUserOp {
   userOp: PackedUserOperation; // signature="0x", paymasterAndData="0x"
-  currentKey: CodecAddress;
-  nextKey: CodecAddress;
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
   entryPoint: Address;
   executeFee: bigint;
 }
@@ -245,10 +243,10 @@ export interface SimulateUserOpResult {
 /// addKeys/refreshKeys, replaceKeyAt) so the orchestration code lives in
 /// one place.
 interface SignedWriteSpec {
-  buildDigest: (currentKey: CodecAddress, nextKey: CodecAddress) => Hex;
+  buildDigest: (currentKey: WinternitzAddress, nextKey: WinternitzAddress) => Hex;
   buildPayload: (
-    currentKey: CodecAddress,
-    nextKey: CodecAddress,
+    currentKey: WinternitzAddress,
+    nextKey: WinternitzAddress,
     pqSig: WinternitzElements
   ) => Hex;
   functionName: "execute" | "withdrawDepositTo" | "addKeys" | "refreshKeys" | "replaceKeyAt";
@@ -261,7 +259,7 @@ export class QuipWalletClient {
   private walletAddress: Address;
   private account: Address;
   private quipSigner: QuipSigner;
-  private vaultId: Uint8Array;
+  private vaultId: Hex;
   private chainId: number;
 
   constructor(
@@ -274,7 +272,7 @@ export class QuipWalletClient {
     chainId: number
   ) {
     this.walletAddress = walletAddress;
-    this.vaultId = vaultId;
+    this.vaultId = toHex(vaultId);
     this.quipSigner = quipSigner;
     this.publicClient = publicClient;
     this.walletClient = walletClient;
@@ -609,17 +607,9 @@ export class QuipWalletClient {
   /// Sign a digest with the recovered private key for `currentKey`. The
   /// SDK's `QuipSigner` regenerates the keypair from `(quantumSecret, vaultId,
   /// publicSeed)` deterministically.
-  private signWith(
-    currentSeedBytes: Uint8Array,
-    digest: Hex
-  ): WinternitzElements {
-    const sig = this.quipSigner.sign(
-      hexToBytes(digest),
-      this.vaultId,
-      currentSeedBytes
-    );
+  private signWith(currentSeed: Hex, digest: Hex): WinternitzElements {
     return {
-      elements: sig.map((el) => toHex(el, { size: 32 })),
+      elements: this.quipSigner.sign(digest, this.vaultId, currentSeed),
     };
   }
 
@@ -632,11 +622,7 @@ export class QuipWalletClient {
   /// Generates a fresh next key in all cases.
   private async pickTransactionKeyPair(
     keyOpts?: TransactionKeyOptions
-  ): Promise<{
-    currentKey: CodecAddress;
-    nextKey: CodecAddress;
-    currentSeedBytes: Uint8Array;
-  }> {
+  ): Promise<{ currentKey: WinternitzAddress; nextKey: WinternitzAddress }> {
     let current: WinternitzAddress;
     if (keyOpts?.signWithKey) {
       current = keyOpts.signWithKey;
@@ -653,14 +639,7 @@ export class QuipWalletClient {
       current = await this.getHeadTransactionKey();
     }
     const next = this.quipSigner.generateKeyPair(this.vaultId);
-    return {
-      currentKey: current,
-      nextKey: {
-        publicSeed: toHex(next.publicKey.publicSeed),
-        publicKeyHash: toHex(next.publicKey.publicKeyHash),
-      },
-      currentSeedBytes: hexToBytes(current.publicSeed),
-    };
+    return { currentKey: current, nextKey: next.publicKey };
   }
 
   /// Run the standard pick → digest → sign → encode → submit pipeline for
@@ -672,10 +651,9 @@ export class QuipWalletClient {
     keyOpts: TransactionKeyOptions,
     txOpts: TxOptions
   ): Promise<TransactionReceipt> {
-    const { currentKey, nextKey, currentSeedBytes } =
-      await this.pickTransactionKeyPair(keyOpts);
+    const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
     const digest = spec.buildDigest(currentKey, nextKey);
-    const pqSig = this.signWith(currentSeedBytes, digest);
+    const pqSig = this.signWith(currentKey.publicSeed, digest);
     const payload = spec.buildPayload(currentKey, nextKey, pqSig);
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
@@ -698,11 +676,11 @@ export class QuipWalletClient {
   /// burn a transaction key on a guaranteed-revert call. The contract is
   /// authoritative for cross-keyset uniqueness (`KeyInUseError`) and
   /// existing-set duplicates (`DuplicateKeyError`).
-  private validateKeyBatch(keys: WinternitzPublicKey[]): void {
+  private validateKeyBatch(keys: WinternitzAddress[]): void {
     if (keys.length === 0) throw new EmptyKeysError();
     const seen = new Set<string>();
     for (const k of keys) {
-      const id = `${toHex(k.publicSeed)}:${toHex(k.publicKeyHash)}`;
+      const id = `${k.publicSeed}:${k.publicKeyHash}`;
       if (seen.has(id)) throw new DuplicateKeyError();
       seen.add(id);
     }
@@ -757,8 +735,7 @@ export class QuipWalletClient {
   ): Promise<PreparedTx> {
     const fee = await this.getExecuteFee();
     const totalValue = fee + value;
-    const { currentKey, nextKey, currentSeedBytes } =
-      await this.pickTransactionKeyPair(opts);
+    const { currentKey, nextKey } = await this.pickTransactionKeyPair(opts);
     const digest = executeDigest(
       this.walletAddress,
       BigInt(this.chainId),
@@ -771,7 +748,7 @@ export class QuipWalletClient {
       codecOpdataHash(data),
       fee
     );
-    const pqSig = this.signWith(currentSeedBytes, digest);
+    const pqSig = this.signWith(currentKey.publicSeed, digest);
     const payload = encodeExecute(currentKey, nextKey, pqSig, target, value, data);
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
@@ -825,7 +802,7 @@ export class QuipWalletClient {
   /// duplicates without consuming a transaction key.
   async addKeys(
     kind: KeyType,
-    keys: WinternitzPublicKey[],
+    keys: WinternitzAddress[],
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<TransactionReceipt> {
     this.validateKeyBatch(keys);
@@ -839,7 +816,7 @@ export class QuipWalletClient {
   /// Transaction so callers don't burn a key on a guaranteed-revert call.
   async refreshKeys(
     kind: KeyType,
-    keys: WinternitzPublicKey[],
+    keys: WinternitzAddress[],
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<TransactionReceipt> {
     if (kind === KeyType.Transaction) {
@@ -851,15 +828,11 @@ export class QuipWalletClient {
 
   private async keyManagementWrite(
     kind: KeyType,
-    keys: WinternitzPublicKey[],
+    keys: WinternitzAddress[],
     functionName: "addKeys" | "refreshKeys",
     opts: TxOptions & TransactionKeyOptions
   ): Promise<TransactionReceipt> {
-    const codecKeys: CodecAddress[] = keys.map((k) => ({
-      publicSeed: toHex(k.publicSeed),
-      publicKeyHash: toHex(k.publicKeyHash),
-    }));
-    const keysetHashHex = codecKeysHash(codecKeys);
+    const keysetHashHex = codecKeysHash(keys);
     const { keyOpts, txOpts } = splitWriteOpts(opts);
     return this.prepareSignedWrite(
       {
@@ -875,7 +848,7 @@ export class QuipWalletClient {
             keysetHashHex
           ),
         buildPayload: (currentKey, nextKey, pqSig) =>
-          encodeKeyManagement(kind, currentKey, nextKey, pqSig, codecKeys),
+          encodeKeyManagement(kind, currentKey, nextKey, pqSig, keys),
         functionName,
         totalValue: 0n,
       },
@@ -890,14 +863,10 @@ export class QuipWalletClient {
   async replaceKeyAt(
     kind: KeyType,
     index: bigint,
-    newKey: WinternitzPublicKey,
+    newKey: WinternitzAddress,
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<TransactionReceipt> {
     this.validateKeyBatch([newKey]);
-    const codecNewKey: CodecAddress = {
-      publicSeed: toHex(newKey.publicSeed),
-      publicKeyHash: toHex(newKey.publicKeyHash),
-    };
     const { keyOpts, txOpts } = splitWriteOpts(opts);
     return this.prepareSignedWrite(
       {
@@ -911,8 +880,8 @@ export class QuipWalletClient {
             nextKey.publicSeed,
             nextKey.publicKeyHash,
             index,
-            codecNewKey.publicSeed,
-            codecNewKey.publicKeyHash
+            newKey.publicSeed,
+            newKey.publicKeyHash
           ),
         buildPayload: (currentKey, nextKey, pqSig) =>
           encodeReplaceKeyAt(
@@ -921,7 +890,7 @@ export class QuipWalletClient {
             nextKey,
             pqSig,
             index,
-            codecNewKey
+            newKey
           ),
         functionName: "replaceKeyAt",
         totalValue: 0n,
@@ -941,25 +910,13 @@ export class QuipWalletClient {
     recoveryPublicSeed: Uint8Array,
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
-    const recoveryKeyPair = this.quipSigner.recoverKeyPair(
+    const recoveryPublicSeedHex = toHex(recoveryPublicSeed);
+    const recoveryKey = this.quipSigner.recoverKeyPair(
       this.vaultId,
-      recoveryPublicSeed
-    );
-    const newRecoveryKeyPair = this.quipSigner.generateKeyPair(this.vaultId);
-    const newTransactionKeyPair = this.quipSigner.generateKeyPair(this.vaultId);
-
-    const recoveryKey: CodecAddress = {
-      publicSeed: toHex(recoveryKeyPair.publicKey.publicSeed),
-      publicKeyHash: toHex(recoveryKeyPair.publicKey.publicKeyHash),
-    };
-    const newRecoveryKey: CodecAddress = {
-      publicSeed: toHex(newRecoveryKeyPair.publicKey.publicSeed),
-      publicKeyHash: toHex(newRecoveryKeyPair.publicKey.publicKeyHash),
-    };
-    const newTransactionKey: CodecAddress = {
-      publicSeed: toHex(newTransactionKeyPair.publicKey.publicSeed),
-      publicKeyHash: toHex(newTransactionKeyPair.publicKey.publicKeyHash),
-    };
+      recoveryPublicSeedHex
+    ).publicKey;
+    const newRecoveryKey = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
+    const newTransactionKey = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
 
     const digest = recoverWalletDigest(
       this.walletAddress,
@@ -971,7 +928,7 @@ export class QuipWalletClient {
       newTransactionKey.publicSeed,
       newTransactionKey.publicKeyHash
     );
-    const pqSig = this.signWith(recoveryPublicSeed, digest);
+    const pqSig = this.signWith(recoveryPublicSeedHex, digest);
     const payload = encodeRecoverWallet(
       recoveryKey,
       newRecoveryKey,
@@ -1134,15 +1091,17 @@ export class QuipWalletClient {
       entryPoint,
       BigInt(this.chainId)
     );
-    const walletDigest = walletUserOpDigest({
-      wallet: this.walletAddress,
-      chainId: BigInt(this.chainId),
-      currentKey,
-      nextKey,
+    const walletDigest = erc4337ExecuteDigest(
+      this.walletAddress,
+      BigInt(this.chainId),
+      currentKey.publicSeed,
+      currentKey.publicKeyHash,
+      nextKey.publicSeed,
+      nextKey.publicKeyHash,
       userOpHash,
-      executeFee,
-    });
-    const pqSig = this.signWith(hexToBytes(currentKey.publicSeed), walletDigest);
+      executeFee
+    );
+    const pqSig = this.signWith(currentKey.publicSeed, walletDigest);
     const signature = encodeUserOpSignature(currentKey, nextKey, pqSig);
     return {
       userOp: { ...userOp, signature },
@@ -1156,7 +1115,7 @@ export class QuipWalletClient {
   /// already burns the key via `QuipSigner.sign(...)` at sign time, so
   /// this is a no-op in the normal flow. Kept for explicit intent and
   /// for HSM-backed signers that produce sigs outside `QuipSigner`.
-  markUserOpKeyBurned(currentKey: WinternitzAddress | CodecAddress): void {
+  markUserOpKeyBurned(currentKey: WinternitzAddress | WinternitzAddress): void {
     this.quipSigner.markBurned(currentKey.publicSeed);
   }
 
@@ -1209,21 +1168,18 @@ export class QuipWalletClient {
         wouldRotate: false,
       };
     }
-    const sigBytes = hexToBytes(userOp.signature);
-    if (sigBytes.length !== 64 + 64 + 67 * 32) {
+    let currentKey: WinternitzAddress;
+    let nextKey: WinternitzAddress;
+    try {
+      const decoded = decodeUserOpSignature(userOp.signature);
+      currentKey = decoded.currentKey;
+      nextKey = decoded.nextKey;
+    } catch {
       return {
         result: UserOpValidationFailure.InvalidSignature,
         wouldRotate: false,
       };
     }
-    const currentKey: WinternitzAddress = {
-      publicSeed: toHex(sigBytes.slice(0, 32)),
-      publicKeyHash: toHex(sigBytes.slice(32, 64)),
-    };
-    const nextKey: WinternitzAddress = {
-      publicSeed: toHex(sigBytes.slice(64, 96)),
-      publicKeyHash: toHex(sigBytes.slice(96, 128)),
-    };
 
     // 1. ZeroNextKey
     if (
@@ -1303,30 +1259,21 @@ export class QuipWalletClient {
     if (userOp.paymasterAndData === "0x" || userOp.paymasterAndData.length <= 2) {
       return { result: "no-paymaster", wouldRotate: false };
     }
-    const pmdBytes = hexToBytes(userOp.paymasterAndData);
 
-    // MalformedPayload: must be exactly 2272 bytes (52-byte header +
-    // 2220-byte custom data). The paymaster rejects any other length.
-    if (pmdBytes.length !== 2272) {
+    // MalformedPayload: must be exactly 2272 bytes. The decoder throws on
+    // length mismatch (the paymaster also rejects any other length on chain).
+    let paymaster: Address;
+    let nextVerifier: WinternitzAddress;
+    try {
+      const decoded = decodePaymasterAndData(userOp.paymasterAndData);
+      paymaster = decoded.paymaster;
+      nextVerifier = decoded.nextVerifier;
+    } catch {
       return {
         result: PaymasterValidationFailure.MalformedPayload,
         wouldRotate: false,
       };
     }
-
-    // Decode layout:
-    //   [0:20)     paymaster address
-    //   [20:36)    validationGasLimit
-    //   [36:52)    postOpGasLimit
-    //   [52:58)    validUntil (uint48)
-    //   [58:64)    validAfter (uint48)
-    //   [64:128)   nextVerifier (publicSeed + publicKeyHash)
-    //   [128:2272) WOTS+ sig (67 × 32 = 2144)
-    const paymaster = (toHex(pmdBytes.slice(0, 20)) as Address);
-    const nextVerifier: WinternitzAddress = {
-      publicSeed: toHex(pmdBytes.slice(64, 96)),
-      publicKeyHash: toHex(pmdBytes.slice(96, 128)),
-    };
 
     // ZeroNextVerifier
     if (
@@ -1382,23 +1329,9 @@ export class QuipWalletClient {
     }
 
     // NextVerifierKeyInUse — read the paymaster's monotonic
-    // `verifierKeyUsed[hash]` mapping directly. The storage layout is
-    // pinned by `QuipPaymasterStorage.sol`:
-    //   namespace slot = 0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00
-    //   verifierKeyUsed lives at namespace + 1
-    //   slot(hash) = keccak256(hash || namespace+1)
-    // Hash function matches the contract: keccak256(publicSeed || publicKeyHash).
-    const verifierHash = keccak256(
-      concat([nextVerifier.publicSeed, nextVerifier.publicKeyHash])
-    );
-    const PAYMASTER_NAMESPACE =
-      "0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00";
-    const verifierKeyUsedBase = toHex(BigInt(PAYMASTER_NAMESPACE) + 1n, {
-      size: 32,
-    });
-    const mappingSlot = keccak256(
-      concat([verifierHash, verifierKeyUsedBase])
-    );
+    // `verifierKeyUsed[hash]` mapping directly. The codec derives the
+    // storage slot per the ERC-7201 layout in `QuipPaymasterStorage.sol`.
+    const mappingSlot = paymasterVerifierKeyUsedSlot(nextVerifier);
     try {
       const storageValue = await this.publicClient.getStorageAt({
         address: paymaster,

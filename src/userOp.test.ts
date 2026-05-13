@@ -17,25 +17,25 @@
 import { describe, it, expect } from "@jest/globals";
 import { keccak256, encodeAbiParameters } from "viem";
 
+import { buildUserOp } from "./userOp.js";
+import {
+  DEFAULT_CALL_GAS_LIMIT,
+  DEFAULT_PRE_VERIFICATION_GAS,
+  DEFAULT_VERIFICATION_GAS_LIMIT,
+} from "./constants.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
 import {
   type PackedUserOperation,
-  buildUserOp,
+  type WinternitzAddress,
+  type WinternitzElements,
   computeUserOpHash,
+  encodeUserOpSignature,
+  erc4337ExecuteDigest,
   packAccountGasLimits,
   packGasFees,
   packUint128Pair,
-  packWalletSignature,
   unpackAccountGasLimits,
   unpackGasFees,
-  walletUserOpDigest,
-  DEFAULT_VERIFICATION_GAS_LIMIT,
-  DEFAULT_CALL_GAS_LIMIT,
-  DEFAULT_PRE_VERIFICATION_GAS,
-} from "./userOp.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
-import {
-  type WinternitzAddress,
-  type WinternitzElements,
 } from "./wotsCodec.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111" as const;
@@ -275,7 +275,7 @@ describe("computeUserOpHash (v0.7 reference parity)", () => {
   });
 });
 
-describe("walletUserOpDigest", () => {
+describe("erc4337ExecuteDigest (wallet UserOp digest)", () => {
   it("produces a different digest per (currentKey, nextKey, fee)", () => {
     const userOp: PackedUserOperation = {
       sender: WALLET,
@@ -292,40 +292,47 @@ describe("walletUserOpDigest", () => {
 
     const ck = makeKey(1n);
     const nk = makeKey(2n);
-    const base = walletUserOpDigest({
-      wallet: WALLET,
-      chainId: 1n,
-      currentKey: ck,
-      nextKey: nk,
+    const base = erc4337ExecuteDigest(
+      WALLET,
+      1n,
+      ck.publicSeed,
+      ck.publicKeyHash,
+      nk.publicSeed,
+      nk.publicKeyHash,
       userOpHash,
-      executeFee: 0n,
-    });
+      0n
+    );
 
-    const feeChange = walletUserOpDigest({
-      wallet: WALLET,
-      chainId: 1n,
-      currentKey: ck,
-      nextKey: nk,
+    const feeChange = erc4337ExecuteDigest(
+      WALLET,
+      1n,
+      ck.publicSeed,
+      ck.publicKeyHash,
+      nk.publicSeed,
+      nk.publicKeyHash,
       userOpHash,
-      executeFee: 1n,
-    });
+      1n
+    );
     expect(feeChange).not.toBe(base);
 
-    const keyChange = walletUserOpDigest({
-      wallet: WALLET,
-      chainId: 1n,
-      currentKey: ck,
-      nextKey: makeKey(3n),
+    const otherNext = makeKey(3n);
+    const keyChange = erc4337ExecuteDigest(
+      WALLET,
+      1n,
+      ck.publicSeed,
+      ck.publicKeyHash,
+      otherNext.publicSeed,
+      otherNext.publicKeyHash,
       userOpHash,
-      executeFee: 0n,
-    });
+      0n
+    );
     expect(keyChange).not.toBe(base);
   });
 });
 
-describe("packWalletSignature", () => {
+describe("encodeUserOpSignature (wallet signature payload)", () => {
   it("produces 2272 bytes (64 + 64 + 67*32)", () => {
-    const sig = packWalletSignature(makeKey(1n), makeKey(2n), makeSig(3n));
+    const sig = encodeUserOpSignature(makeKey(1n), makeKey(2n), makeSig(3n));
     // 0x prefix + 2272 * 2 hex chars
     expect(sig.length).toBe(2 + 2272 * 2);
   });
@@ -333,7 +340,7 @@ describe("packWalletSignature", () => {
   it("places currentKey/nextKey in the first 128 bytes", () => {
     const ck = makeKey(0x10n);
     const nk = makeKey(0x20n);
-    const sig = packWalletSignature(ck, nk, makeSig(0xffn));
+    const sig = encodeUserOpSignature(ck, nk, makeSig(0xffn));
     expect(sig.slice(2, 2 + 64)).toBe(ck.publicSeed.slice(2));
     expect(sig.slice(2 + 64, 2 + 128)).toBe(ck.publicKeyHash.slice(2));
     expect(sig.slice(2 + 128, 2 + 192)).toBe(nk.publicSeed.slice(2));

@@ -18,18 +18,19 @@ import { WOTSPlus } from "@quip.network/hashsigs";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 import { equalBytes } from "@noble/ciphers/utils";
-import { type Hex, toHex } from "viem";
+import { type Hex, hexToBytes, toHex } from "viem";
 
 import { KeyAlreadyBurnedError } from "./errors.js";
+import { type WinternitzAddress } from "./wotsCodec.js";
 
 export interface WinternitzKeyPair {
+  /// Secret material — kept as `Uint8Array` for wipe-ability. Never crosses
+  /// into the viem/codec surface; consumers must not log or serialize this.
   privateKey: Uint8Array;
-  publicKey: WinternitzPublicKey;
-}
-
-export interface WinternitzPublicKey {
-  publicSeed: Uint8Array;
-  publicKeyHash: Uint8Array;
+  /// Public component — Hex everywhere. Matches the codec/contract shape
+  /// (`WinternitzAddress`) directly so the signer's outputs flow into
+  /// `encodeInit` / `encodeExecute` / write APIs with no conversion.
+  publicKey: WinternitzAddress;
 }
 
 /// In-memory WOTS+ signer keyed off a single `quantumSecret`. See
@@ -46,9 +47,12 @@ export interface WinternitzPublicKey {
 ///
 /// Hierarchy:
 ///   - `quantumSecret`   : per-user master secret. Single backup target.
+///     Stored as `Uint8Array` (wipe-able) and never leaked through the API.
 ///   - `vaultId`         : per-wallet branch (multiple vaults per user).
+///     Passed as `Hex` on the public surface.
 ///   - `publicSeed`      : per-key salt; published on chain as part of
 ///                         the key's identity. Random at generation time.
+///                         Returned as `Hex` for direct codec/viem use.
 ///
 /// Given `(quantumSecret, vaultId, publicSeed)` the private key is
 /// reproducible. The publicSeed is always readable from the wallet
@@ -84,29 +88,30 @@ export class QuipSigner {
 
   /// Generate a fresh keypair under this `(quantumSecret, vaultId)` branch
   /// with a cryptographically random `publicSeed`.
-  public generateKeyPair(vaultId: Uint8Array): WinternitzKeyPair {
-    const publicSeed = randomBytes(32);
+  public generateKeyPair(vaultId: Hex): WinternitzKeyPair {
+    const publicSeed = toHex(randomBytes(32));
     return this.recoverKeyPair(vaultId, publicSeed);
   }
 
   /// Rederive a previously-generated keypair from its `publicSeed`. The
   /// canonical lookup path: read a key's publicSeed from chain, pass it
   /// here to recover the private key for signing.
-  public recoverKeyPair(
-    vaultId: Uint8Array,
-    publicSeed: Uint8Array
-  ): WinternitzKeyPair {
-    const privateSeed = Uint8Array.from([...this.quantumSecret, ...vaultId]);
-    const keypair = this.wots.generateKeyPair(privateSeed, publicSeed);
+  public recoverKeyPair(vaultId: Hex, publicSeed: Hex): WinternitzKeyPair {
+    const publicSeedBytes = hexToBytes(publicSeed);
+    const privateSeed = Uint8Array.from([
+      ...this.quantumSecret,
+      ...hexToBytes(vaultId),
+    ]);
+    const keypair = this.wots.generateKeyPair(privateSeed, publicSeedBytes);
     const returnedSeed = keypair.publicKey.slice(0, 32);
-    if (!equalBytes(publicSeed, returnedSeed)) {
-      throw new Error("Invalid public seed returned: " + returnedSeed);
+    if (!equalBytes(publicSeedBytes, returnedSeed)) {
+      throw new Error("Invalid public seed returned: " + toHex(returnedSeed));
     }
     return {
       privateKey: keypair.privateKey,
       publicKey: {
-        publicSeed: keypair.publicKey.slice(0, 32),
-        publicKeyHash: keypair.publicKey.slice(32, 64),
+        publicSeed: toHex(keypair.publicKey.slice(0, 32)),
+        publicKeyHash: toHex(keypair.publicKey.slice(32, 64)),
       },
     };
   }
@@ -115,27 +120,28 @@ export class QuipSigner {
   /// Throws `KeyAlreadyBurnedError` if the key was already used. On
   /// success, marks the key burned **before returning** — once this
   /// method hands back a signature, the key is dead in this signer.
-  public sign(
-    message: Uint8Array,
-    vaultId: Uint8Array,
-    publicSeed: Uint8Array
-  ): Uint8Array[] {
-    const seedHex = toHex(publicSeed);
-    if (this.burned.has(seedHex)) {
-      throw new KeyAlreadyBurnedError(seedHex);
+  ///
+  /// The signature is returned as 67 `Hex` bytes32 elements, ready to
+  /// drop straight into the codec's `WinternitzElements` shape:
+  ///
+  ///   const sig = signer.sign(digest, vaultId, currentKey.publicSeed);
+  ///   const pqSig: WinternitzElements = { elements: sig };
+  public sign(message: Hex, vaultId: Hex, publicSeed: Hex): Hex[] {
+    if (this.burned.has(publicSeed)) {
+      throw new KeyAlreadyBurnedError(publicSeed);
     }
     const key = this.recoverKeyPair(vaultId, publicSeed);
     const sig = this.wots.sign(
       key.privateKey,
-      key.publicKey.publicSeed,
-      message
+      hexToBytes(key.publicKey.publicSeed),
+      hexToBytes(message)
     );
     // Burn immediately after producing the signature. Any subsequent
     // sign() with this seed throws KeyAlreadyBurnedError. The wallet
     // client's post-broadcast `markBurned` is now an idempotent
     // safety-net (no-op when sign() already burned).
-    this.burned.add(seedHex);
-    return sig;
+    this.burned.add(publicSeed);
+    return sig.map((el) => toHex(el, { size: 32 }));
   }
 
   /// Mark a key burned. Idempotent; safe to call multiple times. The
@@ -143,17 +149,13 @@ export class QuipSigner {
   /// directly — it remains exposed for callers that produce a signature
   /// outside this signer (e.g. via a future HSM-backed `PqSigner`) and
   /// need to record the burn in the in-memory set.
-  public markBurned(publicSeed: Uint8Array | Hex): void {
-    const seedHex =
-      typeof publicSeed === "string" ? publicSeed : toHex(publicSeed);
-    this.burned.add(seedHex);
+  public markBurned(publicSeed: Hex): void {
+    this.burned.add(publicSeed);
   }
 
   /// Query whether `publicSeed` has been marked burned in this signer.
-  public isBurned(publicSeed: Uint8Array | Hex): boolean {
-    const seedHex =
-      typeof publicSeed === "string" ? publicSeed : toHex(publicSeed);
-    return this.burned.has(seedHex);
+  public isBurned(publicSeed: Hex): boolean {
+    return this.burned.has(publicSeed);
   }
 
   /// Test-only: clear the burned set. Production code should never call

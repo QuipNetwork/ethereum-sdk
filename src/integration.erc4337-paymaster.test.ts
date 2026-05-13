@@ -41,13 +41,13 @@ import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
-import { QuipSigner, type WinternitzPublicKey } from "./signer.js";
+import { QuipSigner } from "./signer.js";
 import { QuipWalletClient } from "./walletClient.js";
 import { QuipPaymasterClient } from "./paymasterClient.js";
 import { PaymasterValidationFailure } from "./errors.js";
 import {
   encodeInit,
-  type WinternitzAddress as CodecAddress,
+  type WinternitzAddress,
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
 } from "./wotsCodec.js";
@@ -127,12 +127,7 @@ let paymasterAddress: Address;
 
 const MAX_FEE = 10n ** 16n;
 
-const toCodec = (k: WinternitzPublicKey): CodecAddress => ({
-  publicSeed: toHex(k.publicSeed),
-  publicKeyHash: toHex(k.publicKeyHash),
-});
-
-function buildInitPayload(signer: QuipSigner, vaultId: Uint8Array): Hex {
+function buildInitPayload(signer: QuipSigner, vaultId: Hex): Hex {
   const disaster = signer.generateKeyPair(vaultId).publicKey;
   const ownership = signer.generateKeyPair(vaultId).publicKey;
   const transactionKeys = Array.from(
@@ -142,12 +137,7 @@ function buildInitPayload(signer: QuipSigner, vaultId: Uint8Array): Hex {
   const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
     signer.generateKeyPair(vaultId).publicKey
   );
-  return encodeInit(
-    toCodec(disaster),
-    toCodec(ownership),
-    transactionKeys.map(toCodec),
-    recoveryKeys.map(toCodec)
-  );
+  return encodeInit(disaster, ownership, transactionKeys, recoveryKeys);
 }
 
 async function createFreshWallet(seedByte: number): Promise<{
@@ -159,7 +149,7 @@ async function createFreshWallet(seedByte: number): Promise<{
   const quantumSecret = new Uint8Array(32).fill(seedByte);
   const signer = new QuipSigner(quantumSecret);
   const vaultId = new Uint8Array(32).fill(seedByte);
-  const initPayload = buildInitPayload(signer, vaultId);
+  const initPayload = buildInitPayload(signer, toHex(vaultId));
   const hash = await walletClient.writeContract({
     chain: foundry,
     address: factoryAddress,
@@ -352,12 +342,12 @@ describe("QuipPaymasterClient reads + admin writes", () => {
     });
     const operator = new QuipSigner(new Uint8Array(32).fill(0x10));
     const vaultId = new Uint8Array(32).fill(0x10);
-    const verifierKey = operator.generateKeyPair(vaultId).publicKey;
+    const verifierKey = operator.generateKeyPair(toHex(vaultId)).publicKey;
     const fakeWallet = "0x0000000000000000000000000000000000005a01" as Address;
     await pmClient.setPqVerifier(fakeWallet, verifierKey);
     const read = await pmClient.getPqVerifier(fakeWallet);
-    expect(read.publicSeed).toBe(toHex(verifierKey.publicSeed));
-    expect(read.publicKeyHash).toBe(toHex(verifierKey.publicKeyHash));
+    expect(read.publicSeed).toBe(verifierKey.publicSeed);
+    expect(read.publicKeyHash).toBe(verifierKey.publicKeyHash);
   }, 30_000);
 });
 
@@ -375,7 +365,7 @@ describe("Sponsored UserOp end-to-end", () => {
     // Operator signer for the paymaster's per-wallet verifier chain.
     const operator = new QuipSigner(new Uint8Array(32).fill(0x51));
     const operatorVault = new Uint8Array(32).fill(0x51);
-    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
 
     // Register the verifier as the head of `walletAddress`'s chain.
     await pmClient.setPqVerifier(walletAddress, currentVerifier);
@@ -395,8 +385,8 @@ describe("Sponsored UserOp end-to-end", () => {
       operatorSigner: operator,
       vaultId: operatorVault,
       currentVerifier: {
-        publicSeed: toHex(currentVerifier.publicSeed),
-        publicKeyHash: toHex(currentVerifier.publicKeyHash),
+        publicSeed: currentVerifier.publicSeed,
+        publicKeyHash: currentVerifier.publicKeyHash,
       },
     });
     expect(sponsored.userOp.paymasterAndData).not.toBe("0x");
@@ -457,7 +447,7 @@ describe("Sponsored UserOp end-to-end", () => {
     const verifierAfter = await pmClient.getPqVerifier(walletAddress);
     expect(verifierAfter.publicSeed).toBe(sponsored.nextVerifier.publicSeed);
     expect(verifierAfter.publicSeed).not.toBe(
-      toHex(currentVerifier.publicSeed)
+      currentVerifier.publicSeed
     );
   }, 90_000);
 });
@@ -467,7 +457,7 @@ describe("simulateUserOp — paymaster rejection paths", () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x60);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x61));
     const operatorVault = new Uint8Array(32).fill(0x61);
-    const verifier = operator.generateKeyPair(operatorVault).publicKey;
+    const verifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
 
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
@@ -488,8 +478,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
     // sees zero on-chain and rejects with NoVerifierRegistered. Pretend
     // the operator believes it has a verifier registered.
     const fabricated = {
-      publicSeed: toHex(verifier.publicSeed),
-      publicKeyHash: toHex(verifier.publicKeyHash),
+      publicSeed: verifier.publicSeed,
+      publicKeyHash: verifier.publicKeyHash,
     };
     const sponsored = await pmClient.sponsorUserOp({
       userOp: prepared.userOp,
@@ -510,7 +500,7 @@ describe("simulateUserOp — paymaster rejection paths", () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x62);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x63));
     const operatorVault = new Uint8Array(32).fill(0x63);
-    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
       publicClient,
@@ -530,8 +520,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
       operatorSigner: operator,
       vaultId: operatorVault,
       currentVerifier: {
-        publicSeed: toHex(currentVerifier.publicSeed),
-        publicKeyHash: toHex(currentVerifier.publicKeyHash),
+        publicSeed: currentVerifier.publicSeed,
+        publicKeyHash: currentVerifier.publicKeyHash,
       },
     });
 
@@ -557,7 +547,7 @@ describe("simulateUserOp — paymaster rejection paths", () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x64);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x65));
     const operatorVault = new Uint8Array(32).fill(0x65);
-    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
       publicClient,
@@ -578,8 +568,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
       operatorSigner: operator,
       vaultId: operatorVault,
       currentVerifier: {
-        publicSeed: toHex(currentVerifier.publicSeed),
-        publicKeyHash: toHex(currentVerifier.publicKeyHash),
+        publicSeed: currentVerifier.publicSeed,
+        publicKeyHash: currentVerifier.publicKeyHash,
       },
       nextVerifier: currentVerifier,
     });
@@ -598,9 +588,9 @@ describe("simulateUserOp — paymaster rejection paths", () => {
 
     const operator = new QuipSigner(new Uint8Array(32).fill(0x68));
     const operatorVault = new Uint8Array(32).fill(0x68);
-    const verifierA = operator.generateKeyPair(operatorVault).publicKey;
+    const verifierA = operator.generateKeyPair(toHex(operatorVault)).publicKey;
     const verifierB_current =
-      operator.generateKeyPair(operatorVault).publicKey;
+      operator.generateKeyPair(toHex(operatorVault)).publicKey;
 
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
@@ -626,8 +616,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
       operatorSigner: operator,
       vaultId: operatorVault,
       currentVerifier: {
-        publicSeed: toHex(verifierB_current.publicSeed),
-        publicKeyHash: toHex(verifierB_current.publicKeyHash),
+        publicSeed: verifierB_current.publicSeed,
+        publicKeyHash: verifierB_current.publicKeyHash,
       },
       nextVerifier: verifierA,
     });
@@ -643,7 +633,7 @@ describe("simulateUserOp — paymaster rejection paths", () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x69);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x6a));
     const operatorVault = new Uint8Array(32).fill(0x6a);
-    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
       publicClient,
@@ -663,8 +653,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
       operatorSigner: operator,
       vaultId: operatorVault,
       currentVerifier: {
-        publicSeed: toHex(currentVerifier.publicSeed),
-        publicKeyHash: toHex(currentVerifier.publicKeyHash),
+        publicSeed: currentVerifier.publicSeed,
+        publicKeyHash: currentVerifier.publicKeyHash,
       },
     });
 
