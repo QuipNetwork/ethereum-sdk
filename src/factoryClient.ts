@@ -23,7 +23,6 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
-  toHex,
   zeroAddress,
   parseEventLogs,
 } from "viem";
@@ -174,7 +173,7 @@ export class QuipClient {
   /// obligation is the `quantumSecret` itself — analogous to a BIP39
   /// seed phrase.
   async createWallet(
-    vaultId: Uint8Array,
+    vaultId: Hex,
     quipSigner: QuipSigner,
     keys: {
       disasterRecoveryKey?: WinternitzAddress;
@@ -185,7 +184,6 @@ export class QuipClient {
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
 
-    const vaultIdHex = toHex(vaultId) as Hex;
     const creationFee = await this.getCreationFee();
 
     const existingWalletAddress = await withDecodedError(
@@ -193,28 +191,28 @@ export class QuipClient {
         address: this.factoryAddress!,
         abi: quipFactoryAbi,
         functionName: "quips",
-        args: [this.account!, vaultIdHex],
+        args: [this.account!, vaultId],
       })
     );
 
     if (existingWalletAddress !== zeroAddress) {
-      throw new WalletAlreadyExistsError(vaultIdHex);
+      throw new WalletAlreadyExistsError(vaultId);
     }
 
     const disaster =
       keys.disasterRecoveryKey ??
-      quipSigner.generateKeyPair(vaultIdHex).publicKey;
+      quipSigner.generateKeyPair(vaultId).publicKey;
     const ownership =
-      keys.ownershipKey ?? quipSigner.generateKeyPair(vaultIdHex).publicKey;
+      keys.ownershipKey ?? quipSigner.generateKeyPair(vaultId).publicKey;
     const txnKeys =
       keys.transactionKeys ??
       Array.from({ length: TRANSACTION_KEY_INIT_AMOUNT }, () =>
-        quipSigner.generateKeyPair(vaultIdHex).publicKey
+        quipSigner.generateKeyPair(vaultId).publicKey
       );
     const recoveryKeys =
       keys.recoveryKeys ??
       Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
-        quipSigner.generateKeyPair(vaultIdHex).publicKey
+        quipSigner.generateKeyPair(vaultId).publicKey
       );
 
     if (txnKeys.length !== TRANSACTION_KEY_INIT_AMOUNT) {
@@ -232,7 +230,7 @@ export class QuipClient {
         address: this.factoryAddress!,
         abi: quipFactoryAbi,
         functionName: "deployLatestWalletProxy",
-        args: [vaultIdHex, this.account!, initPayload],
+        args: [vaultId, this.account!, initPayload],
         value: creationFee,
         account: this.account!,
       })
@@ -261,23 +259,22 @@ export class QuipClient {
   }
 
   async getVault(
-    vaultId: Uint8Array,
+    vaultId: Hex,
     quipSigner: QuipSigner
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
 
-    const vaultIdHex = toHex(vaultId) as Hex;
     const walletAddress = await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
         abi: quipFactoryAbi,
         functionName: "quips",
-        args: [this.account!, vaultIdHex],
+        args: [this.account!, vaultId],
       })
     );
 
     if (walletAddress === zeroAddress) {
-      throw new NoVaultFoundError(vaultIdHex);
+      throw new NoVaultFoundError(vaultId);
     }
 
     const client = new QuipWalletClient(
@@ -296,16 +293,16 @@ export class QuipClient {
     // wallet has been operated concurrently by multiple signers the head
     // may belong to one and not the other. For most flows that's fine.
     const headKey = await client.getHeadTransactionKey();
-    const keypair = quipSigner.recoverKeyPair(vaultIdHex, headKey.publicSeed);
+    const keypair = quipSigner.recoverKeyPair(vaultId, headKey.publicSeed);
     if (keypair.publicKey.publicKeyHash !== headKey.publicKeyHash) {
       throw new InvalidSignerError();
     }
     return client;
   }
 
-  async getVaultAddress(vaultId: Uint8Array): Promise<Address> {
+  async getVaultAddress(vaultId: Hex): Promise<Address> {
     await this.initializationPromise;
-    return getVaultAddress(toHex(vaultId), this.chainId);
+    return getVaultAddress(vaultId, this.chainId);
   }
 
   async getVaults(

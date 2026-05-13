@@ -142,20 +142,20 @@ function buildInitPayload(signer: QuipSigner, vaultId: Hex): Hex {
 
 async function createFreshWallet(seedByte: number): Promise<{
   signer: QuipSigner;
-  vaultId: Uint8Array;
+  vaultId: Hex;
   client: QuipWalletClient;
   walletAddress: Address;
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
   const signer = new QuipSigner(quantumSecret);
-  const vaultId = new Uint8Array(32).fill(seedByte);
-  const initPayload = buildInitPayload(signer, toHex(vaultId));
+  const vaultId = toHex(new Uint8Array(32).fill(seedByte));
+  const initPayload = buildInitPayload(signer, vaultId);
   const hash = await walletClient.writeContract({
     chain: foundry,
     address: factoryAddress,
     abi: quipFactoryAbi,
     functionName: "deployLatestWalletProxy",
-    args: [toHex(vaultId), account.address, initPayload],
+    args: [vaultId, account.address, initPayload],
     account,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -341,8 +341,8 @@ describe("QuipPaymasterClient reads + admin writes", () => {
       chainId: foundry.id,
     });
     const operator = new QuipSigner(new Uint8Array(32).fill(0x10));
-    const vaultId = new Uint8Array(32).fill(0x10);
-    const verifierKey = operator.generateKeyPair(toHex(vaultId)).publicKey;
+    const vaultId = toHex(new Uint8Array(32).fill(0x10));
+    const verifierKey = operator.generateKeyPair(vaultId).publicKey;
     const fakeWallet = "0x0000000000000000000000000000000000005a01" as Address;
     await pmClient.setPqVerifier(fakeWallet, verifierKey);
     const read = await pmClient.getPqVerifier(fakeWallet);
@@ -364,8 +364,8 @@ describe("Sponsored UserOp end-to-end", () => {
 
     // Operator signer for the paymaster's per-wallet verifier chain.
     const operator = new QuipSigner(new Uint8Array(32).fill(0x51));
-    const operatorVault = new Uint8Array(32).fill(0x51);
-    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
+    const operatorVault = toHex(new Uint8Array(32).fill(0x51));
+    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
 
     // Register the verifier as the head of `walletAddress`'s chain.
     await pmClient.setPqVerifier(walletAddress, currentVerifier);
@@ -456,8 +456,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   test("NoVerifierRegistered: paymaster has no verifier for sender", async () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x60);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x61));
-    const operatorVault = new Uint8Array(32).fill(0x61);
-    const verifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
+    const operatorVault = toHex(new Uint8Array(32).fill(0x61));
+    const verifier = operator.generateKeyPair(operatorVault).publicKey;
 
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
@@ -499,8 +499,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   test("ZeroNextVerifier: paymasterAndData has zero nextVerifier", async () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x62);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x63));
-    const operatorVault = new Uint8Array(32).fill(0x63);
-    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
+    const operatorVault = toHex(new Uint8Array(32).fill(0x63));
+    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
       publicClient,
@@ -546,8 +546,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   test("NextEqualsCurrent: nextVerifier matches the registered currentVerifier", async () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x64);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x65));
-    const operatorVault = new Uint8Array(32).fill(0x65);
-    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
+    const operatorVault = toHex(new Uint8Array(32).fill(0x65));
+    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
       publicClient,
@@ -587,10 +587,10 @@ describe("simulateUserOp — paymaster rejection paths", () => {
       await createFreshWallet(0x67);
 
     const operator = new QuipSigner(new Uint8Array(32).fill(0x68));
-    const operatorVault = new Uint8Array(32).fill(0x68);
-    const verifierA = operator.generateKeyPair(toHex(operatorVault)).publicKey;
+    const operatorVault = toHex(new Uint8Array(32).fill(0x68));
+    const verifierA = operator.generateKeyPair(operatorVault).publicKey;
     const verifierB_current =
-      operator.generateKeyPair(toHex(operatorVault)).publicKey;
+      operator.generateKeyPair(operatorVault).publicKey;
 
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
@@ -632,8 +632,8 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   test("InvalidSignature: WOTS+ sig elements tampered", async () => {
     const { client: walletSdk, walletAddress } = await createFreshWallet(0x69);
     const operator = new QuipSigner(new Uint8Array(32).fill(0x6a));
-    const operatorVault = new Uint8Array(32).fill(0x6a);
-    const currentVerifier = operator.generateKeyPair(toHex(operatorVault)).publicKey;
+    const operatorVault = toHex(new Uint8Array(32).fill(0x6a));
+    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
       publicClient,

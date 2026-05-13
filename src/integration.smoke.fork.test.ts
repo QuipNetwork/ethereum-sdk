@@ -345,15 +345,15 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
       // ─── 1. Create wallet via the SDK ─────────────────────────────────
       const quantumSecret = new Uint8Array(32).fill(0xa1);
       const signer = new QuipSigner(quantumSecret);
-      const vaultId = new Uint8Array(32).fill(0xa1);
-      const init = buildInitPayload(signer, toHex(vaultId));
+      const vaultId = toHex(new Uint8Array(32).fill(0xa1));
+      const init = buildInitPayload(signer, vaultId);
 
       const createHash = await walletClient.writeContract({
         chain: mainnet,
         address: factoryAddress,
         abi: quipFactoryAbi,
         functionName: "deployLatestWalletProxy",
-        args: [toHex(vaultId), account.address, init.payload],
+        args: [vaultId, account.address, init.payload],
         account,
       });
       const createReceipt = await publicClient.waitForTransactionReceipt({
@@ -406,7 +406,7 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
       expect(recipientAfter - recipientBefore).toBe(parseEther("0.1"));
 
       // ─── 3. Add verification keys (key management surface) ────────────
-      const newKey = signer.generateKeyPair(toHex(vaultId)).publicKey;
+      const newKey = signer.generateKeyPair(vaultId).publicKey;
       const addKeysReceipt = await client.addKeys(KeyType.Verification, [
         newKey,
       ]);
@@ -425,9 +425,9 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
       });
       const operatorSecret = new Uint8Array(32).fill(0xb2);
       const operator = new QuipSigner(operatorSecret);
-      const operatorVault = new Uint8Array(32).fill(0xb2);
+      const operatorVault = toHex(new Uint8Array(32).fill(0xb2));
       const currentVerifier = operator
-        .generateKeyPair(toHex(operatorVault))
+        .generateKeyPair(operatorVault)
         .publicKey;
       await pmClient.setPqVerifier(walletAddress, currentVerifier);
 

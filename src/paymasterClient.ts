@@ -20,7 +20,6 @@ import {
   type PublicClient,
   type WalletClient,
   type TransactionReceipt,
-  toHex,
 } from "viem";
 
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
@@ -245,7 +244,7 @@ export class QuipPaymasterClient {
   async sponsorUserOp(params: {
     userOp: PackedUserOperation;
     operatorSigner: QuipSigner;
-    vaultId: Uint8Array;
+    vaultId: Hex;
     currentVerifier: WinternitzAddress;
     nextVerifier?: WinternitzAddress;
     validUntil?: number;
@@ -257,17 +256,16 @@ export class QuipPaymasterClient {
     digest: Hex;
     nextVerifier: WinternitzAddress;
   }> {
-    const vaultIdHex = toHex(params.vaultId);
     const next =
       params.nextVerifier ??
-      params.operatorSigner.generateKeyPair(vaultIdHex).publicKey;
+      params.operatorSigner.generateKeyPair(params.vaultId).publicKey;
 
     const validUntil = params.validUntil ?? 0;
     const validAfter = params.validAfter ?? 0;
 
     const { paymasterAndData, digest } = buildSignedPaymasterAndData({
       signer: params.operatorSigner,
-      vaultId: vaultIdHex,
+      vaultId: params.vaultId,
       paymaster: this.paymasterAddress,
       chainId: BigInt(this.chainId),
       sender: params.userOp.sender,

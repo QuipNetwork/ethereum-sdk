@@ -158,21 +158,21 @@ function buildInitPayload(signer: QuipSigner, vaultId: Hex) {
 
 async function createFreshWallet(seedByte: number): Promise<{
   signer: QuipSigner;
-  vaultId: Uint8Array;
+  vaultId: Hex;
   client: QuipWalletClient;
   walletAddress: Address;
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
   const signer = new QuipSigner(quantumSecret);
-  const vaultId = new Uint8Array(32).fill(seedByte);
-  const initPayload = buildInitPayload(signer, toHex(vaultId));
+  const vaultId = toHex(new Uint8Array(32).fill(seedByte));
+  const initPayload = buildInitPayload(signer, vaultId);
 
   const hash = await ownerWallet.writeContract({
     chain: foundry,
     address: factoryAddress,
     abi: quipFactoryAbi,
     functionName: "deployLatestWalletProxy",
-    args: [toHex(vaultId), owner.address, initPayload],
+    args: [vaultId, owner.address, initPayload],
     account: owner,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });

@@ -145,22 +145,22 @@ function buildInitPayload(
 /// state cannot bleed across cases.
 async function createFreshWallet(seedByte: number): Promise<{
   signer: QuipSigner;
-  vaultId: Uint8Array;
+  vaultId: Hex;
   client: QuipWalletClient;
   walletAddress: Address;
   transactionKeys: WinternitzAddress[];
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
   const signer = new QuipSigner(quantumSecret);
-  const vaultId = new Uint8Array(32).fill(seedByte);
-  const init = buildInitPayload(signer, toHex(vaultId));
+  const vaultId = toHex(new Uint8Array(32).fill(seedByte));
+  const init = buildInitPayload(signer, vaultId);
 
   const hash = await walletClient.writeContract({
     chain: foundry,
     address: factoryAddress,
     abi: quipFactoryAbi,
     functionName: "deployLatestWalletProxy",
-    args: [toHex(vaultId), account.address, init.payload],
+    args: [vaultId, account.address, init.payload],
     account,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -298,7 +298,7 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
     // Sanity: signer.sign with a fresh (never-burned) key works.
     const dummySeed = toHex(new Uint8Array(32).fill(0xfe));
     expect(() =>
-      signer.sign(toHex(new Uint8Array(32)), toHex(vaultId), dummySeed)
+      signer.sign(toHex(new Uint8Array(32)), vaultId, dummySeed)
     ).not.toThrow();
   }, 30_000);
 
@@ -377,7 +377,7 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
     const noCodeAddr = "0xdeAdbEefdEAdbeefdEadbEEFdeadbeEFdEaDbeef" as Address;
     const client = new QuipWalletClient(
       signer,
-      new Uint8Array(32).fill(0x30),
+      toHex(new Uint8Array(32).fill(0x30)),
       noCodeAddr,
       publicClient,
       walletClient,
@@ -410,7 +410,7 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
     const signer = new QuipSigner(new Uint8Array(32).fill(0x31));
     const client = new QuipWalletClient(
       signer,
-      new Uint8Array(32).fill(0x31),
+      toHex(new Uint8Array(32).fill(0x31)),
       factoryAddress,
       publicClient,
       walletClient,

@@ -22,7 +22,6 @@ import {
   type TransactionReceipt,
   decodeFunctionResult,
   encodeFunctionData,
-  toHex,
   zeroHash,
 } from "viem";
 
@@ -279,7 +278,7 @@ export class QuipWalletClient {
 
   constructor(
     quipSigner: QuipSigner,
-    vaultId: Uint8Array,
+    vaultId: Hex,
     walletAddress: Address,
     publicClient: PublicClient,
     walletClient: WalletClient,
@@ -287,7 +286,7 @@ export class QuipWalletClient {
     chainId: number
   ) {
     this.walletAddress = walletAddress;
-    this.vaultId = toHex(vaultId);
+    this.vaultId = vaultId;
     this.quipSigner = quipSigner;
     this.publicClient = publicClient;
     this.walletClient = walletClient;
@@ -922,13 +921,12 @@ export class QuipWalletClient {
   /// The recovery key used to sign is marked burned in `QuipSigner` after
   /// broadcast — recovery keys are also one-time-use.
   async recoverWallet(
-    recoveryPublicSeed: Uint8Array,
+    recoveryPublicSeed: Hex,
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
-    const recoveryPublicSeedHex = toHex(recoveryPublicSeed);
     const recoveryKey = this.quipSigner.recoverKeyPair(
       this.vaultId,
-      recoveryPublicSeedHex
+      recoveryPublicSeed
     ).publicKey;
     const newRecoveryKey = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
     const newTransactionKey = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
@@ -943,7 +941,7 @@ export class QuipWalletClient {
       newTransactionKey.publicSeed,
       newTransactionKey.publicKeyHash
     );
-    const pqSig = this.signWith(recoveryPublicSeedHex, digest);
+    const pqSig = this.signWith(recoveryPublicSeed, digest);
     const payload = encodeRecoverWallet(
       recoveryKey,
       newRecoveryKey,
@@ -1435,7 +1433,7 @@ export class QuipWalletClient {
   /// already burns the key via `QuipSigner.sign(...)` at sign time, so
   /// this is a no-op in the normal flow. Kept for explicit intent and
   /// for HSM-backed signers that produce sigs outside `QuipSigner`.
-  markUserOpKeyBurned(currentKey: WinternitzAddress | WinternitzAddress): void {
+  markUserOpKeyBurned(currentKey: WinternitzAddress): void {
     this.quipSigner.markBurned(currentKey.publicSeed);
   }
 

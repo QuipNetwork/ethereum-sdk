@@ -19,7 +19,6 @@ import {
   type Hex,
   getCreate2Address,
   getCreateAddress,
-  toHex,
 } from "viem";
 import addresses from "./addresses.json" with { type: "json" };
 
@@ -125,10 +124,7 @@ const PROXY_INITCODE_HASH: Hex =
  * @param chainId - Optional chain ID for network-specific factory resolution
  * @returns The address where the vault contract would be deployed
  */
-export function getVaultAddress(
-  vaultId: Hex | Uint8Array,
-  chainId?: number
-): Address {
+export function getVaultAddress(vaultId: Hex, chainId?: number): Address {
   const factory = getNetworkAddresses(chainId).QuipFactory;
   return computeVaultAddress(factory, vaultId);
 }
@@ -142,19 +138,12 @@ export function getVaultAddress(
  */
 export function computeVaultAddress(
   factoryAddress: Address,
-  vaultId: Hex | Uint8Array
+  vaultId: Hex
 ): Address {
-  const salt: Hex =
-    vaultId instanceof Uint8Array
-      ? toHex(vaultId)
-      : vaultId.startsWith("0x")
-        ? (vaultId as Hex)
-        : (`0x${vaultId}` as Hex);
-
   // CREATE3 Step 1: Proxy address via CREATE2 (fixed proxy bytecode)
   const proxyAddress = getCreate2Address({
     from: factoryAddress,
-    salt,
+    salt: vaultId,
     bytecodeHash: PROXY_INITCODE_HASH,
   });
 
