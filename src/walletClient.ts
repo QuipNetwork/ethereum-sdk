@@ -42,10 +42,12 @@ import {
   EmptyKeysError,
   IncorrectRecoveryKeyAmountError,
   IncorrectTransactionKeyAmountError,
+  KeyAlreadyBurnedError,
   NoAvailableTransactionKeysError,
   PartialMulticallResultError,
   PaymasterValidationFailure,
   RefreshTransactionForbiddenError,
+  UnknownKeyError,
   UserOpValidationFailure,
 } from "./errors.js";
 import {
@@ -628,17 +630,35 @@ export class QuipWalletClient {
   }
 
   /// Pick a transaction key to sign with according to `keyOpts`:
-  ///   - `signWithKey` (explicit override) wins
+  ///   - `signWithKey` (explicit override) wins. Pre-flight checks run in
+  ///     order: (1) `KeyAlreadyBurnedError` if this signer has already
+  ///     consumed the key in-session — more informative than the
+  ///     on-chain miss; (2) `isKey(Transaction, signWithKey)` to verify
+  ///     the key still lives in the keyset on chain, throwing
+  ///     `UnknownKeyError` if not. Both run *before* `quipSigner.sign(...)`
+  ///     so a stale `signWithKey` does NOT burn the key in-memory on a
+  ///     guaranteed-revert call.
   ///   - `keyAllocationStrategy: 'next-available'` walks the keyset and
   ///     returns the first unburned key (throws `NoAvailableTransactionKeysError`
-  ///     when exhausted)
-  ///   - default ('head'): `keyAt(Transaction, 0)`
+  ///     when exhausted). Keyset is read from chain so membership is
+  ///     implicit.
+  ///   - default ('head'): `keyAt(Transaction, 0)`. Always a live key by
+  ///     construction.
   /// Generates a fresh next key in all cases.
   private async pickTransactionKeyPair(
     keyOpts?: TransactionKeyOptions
   ): Promise<{ currentKey: WinternitzAddress; nextKey: WinternitzAddress }> {
     let current: WinternitzAddress;
     if (keyOpts?.signWithKey) {
+      // KeyAlreadyBurnedError takes priority over UnknownKeyError when
+      // both would fire — same key the caller signed with earlier in
+      // this session is more informative than "not in keyset". The
+      // signer's `sign(...)` re-checks burned status as a final guard.
+      if (this.quipSigner.isBurned(keyOpts.signWithKey.publicSeed)) {
+        throw new KeyAlreadyBurnedError(keyOpts.signWithKey.publicSeed);
+      }
+      const live = await this.isKey(KeyType.Transaction, keyOpts.signWithKey);
+      if (!live) throw new UnknownKeyError();
       current = keyOpts.signWithKey;
     } else if (keyOpts?.keyAllocationStrategy === "next-available") {
       const keyset = await this.getKeyset(KeyType.Transaction);

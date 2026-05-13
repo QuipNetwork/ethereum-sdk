@@ -41,6 +41,7 @@ import {
   KeyAlreadyBurnedError,
   NoAvailableTransactionKeysError,
   PartialMulticallResultError,
+  UnknownKeyError,
 } from "./errors.js";
 import {
   encodeInit,
@@ -366,6 +367,32 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
         keyAllocationStrategy: "next-available",
       })
     ).rejects.toBeInstanceOf(NoAvailableTransactionKeysError);
+  });
+
+  test("signWithKey not in the live keyset throws UnknownKeyError synchronously and does NOT burn the key", async () => {
+    const { client, signer } = await createFreshWallet(0x24);
+
+    // A fabricated key not present in the wallet's transaction keyset.
+    // Pre-flight `isKey` in `pickTransactionKeyPair` must reject this
+    // before `quipSigner.sign(...)` runs, so the publicSeed stays
+    // unburned in the signer. Without the pre-check the on-chain call
+    // would revert `UnknownKey` AFTER the SDK had already produced
+    // (and burned) a WOTS+ signature against a guaranteed-revert payload.
+    const stale: WinternitzAddress = {
+      publicSeed: toHex(new Uint8Array(32).fill(0xee)),
+      publicKeyHash: toHex(new Uint8Array(32).fill(0xff)),
+    };
+    expect(signer.isBurned(stale.publicSeed)).toBe(false);
+
+    await expect(
+      client.executeWithPayload(zeroAddress, 0n, "0x", {
+        signWithKey: stale,
+      })
+    ).rejects.toBeInstanceOf(UnknownKeyError);
+
+    // Critical: the WOTS+ key MUST NOT be marked burned. A real-life
+    // misconfiguration (passing a stale key) shouldn't waste a key.
+    expect(signer.isBurned(stale.publicSeed)).toBe(false);
   });
 });
 
