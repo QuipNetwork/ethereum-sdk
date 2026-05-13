@@ -41,6 +41,8 @@ import {
 import {
   DuplicateKeyError,
   EmptyKeysError,
+  IncorrectRecoveryKeyAmountError,
+  IncorrectTransactionKeyAmountError,
   NoAvailableTransactionKeysError,
   PartialMulticallResultError,
   PaymasterValidationFailure,
@@ -51,12 +53,19 @@ import {
   type PackedUserOperation,
   type WinternitzAddress,
   type WinternitzElements,
+  TRANSACTION_KEY_INIT_AMOUNT,
+  RECOVERY_KEY_AMOUNT,
+  completeOwnershipHandoverDigest,
   computeUserOpHash,
   decodePaymasterAndData,
   decodeUserOpSignature,
   encodeExecute,
   encodeKeyManagement,
+  encodeOwnershipTransfer,
+  encodeRecoveryUpgrade,
   encodeReplaceKeyAt,
+  encodeSaveWallet,
+  encodeUpgradeToAndCall,
   encodeUserOpSignature,
   encodeWithdrawDeposit,
   encodeRecoverWallet,
@@ -65,10 +74,16 @@ import {
   keysetDigest,
   keysHash as codecKeysHash,
   opdataHash as codecOpdataHash,
+  ownershipTransferKeysHash,
   packAccountGasLimits,
   packGasFees,
   paymasterVerifierKeyUsedSlot,
   replaceKeyAtDigest,
+  saveWalletDigest,
+  saveWalletKeysHash,
+  transferOwnershipDigest,
+  upgradeDigest,
+  upgradeRecoveryDigest,
   withdrawDepositDigest,
   recoverWalletDigest,
 } from "./wotsCodec.js";
@@ -944,6 +959,311 @@ export class QuipWalletClient {
       account: this.account,
     };
     return this.executeWrite(contractCall, 0n, opts, recoveryKey.publicSeed);
+  }
+
+  /// PQ-authenticated `saveWallet(bytes)` — last-resort rescue authorized by
+  /// the wallet's `disasterRecoveryKey`. Clears the transaction + recovery
+  /// keysets and reinstalls the supplied batches, while rotating the
+  /// disaster-recovery key itself. The verification keyset and classical
+  /// `owner()` are left intact.
+  ///
+  /// Inputs default to fresh keypairs generated under this signer/vault:
+  /// `newDisasterRecoveryKey` plus exactly 5 new transaction keys and 10 new
+  /// recovery keys. Callers may supply their own for pre-generated /
+  /// offline-stored key material. The signing disaster-recovery key is marked
+  /// burned in `QuipSigner` after the signature is produced.
+  async saveWallet(
+    disasterRecoveryPublicSeed: Hex,
+    keys: {
+      newDisasterRecoveryKey?: WinternitzAddress;
+      newTransactionKeys?: WinternitzAddress[];
+      newRecoveryKeys?: WinternitzAddress[];
+    } = {},
+    opts: TxOptions = {}
+  ): Promise<TransactionReceipt> {
+    const currentDisaster = this.quipSigner.recoverKeyPair(
+      this.vaultId,
+      disasterRecoveryPublicSeed
+    ).publicKey;
+    const newDisaster =
+      keys.newDisasterRecoveryKey ??
+      this.quipSigner.generateKeyPair(this.vaultId).publicKey;
+    const newTransactionKeys =
+      keys.newTransactionKeys ??
+      Array.from({ length: TRANSACTION_KEY_INIT_AMOUNT }, () =>
+        this.quipSigner.generateKeyPair(this.vaultId).publicKey
+      );
+    const newRecoveryKeys =
+      keys.newRecoveryKeys ??
+      Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
+        this.quipSigner.generateKeyPair(this.vaultId).publicKey
+      );
+
+    const keysHashHex = saveWalletKeysHash(
+      newTransactionKeys,
+      newRecoveryKeys
+    );
+    const digest = saveWalletDigest(
+      this.walletAddress,
+      BigInt(this.chainId),
+      currentDisaster.publicSeed,
+      currentDisaster.publicKeyHash,
+      newDisaster.publicSeed,
+      newDisaster.publicKeyHash,
+      keysHashHex
+    );
+    const pqSig = this.signWith(disasterRecoveryPublicSeed, digest);
+    const payload = encodeSaveWallet(
+      currentDisaster,
+      newDisaster,
+      pqSig,
+      newTransactionKeys,
+      newRecoveryKeys
+    );
+
+    const contractCall: ContractCallParams = {
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "saveWallet",
+      args: [payload],
+      account: this.account,
+    };
+    return this.executeWrite(contractCall, 0n, opts, currentDisaster.publicSeed);
+  }
+
+  /// PQ-authenticated `transferOwnership(bytes)` — rotates the classical
+  /// `owner()` to `newOwner` AND fully re-initializes the wallet's PQ state
+  /// (ownership key, disaster-recovery key, transaction keyset, recovery
+  /// keyset). The new owner controls all the supplied key material; the
+  /// caller must source those keys from the recipient (they live in the
+  /// recipient's vault, not the current signer's).
+  ///
+  /// Signing key: the wallet's current `ownershipKey`, derived from
+  /// `ownershipPublicSeed`. Marked burned after the signature is produced.
+  async transferOwnership(
+    ownershipPublicSeed: Hex,
+    params: {
+      newOwner: Address;
+      newOwnershipKey: WinternitzAddress;
+      newDisasterRecoveryKey: WinternitzAddress;
+      newTransactionKeys: WinternitzAddress[]; // exactly 5
+      newRecoveryKeys: WinternitzAddress[]; // exactly 10
+    },
+    opts: TxOptions = {}
+  ): Promise<TransactionReceipt> {
+    return this.ownershipReinitialize(
+      ownershipPublicSeed,
+      params,
+      "transferOwnership",
+      opts
+    );
+  }
+
+  /// PQ-authenticated `completeOwnershipHandover(bytes)` — finalizes a
+  /// pending two-step ownership handover and re-initializes the wallet's PQ
+  /// state for the new owner. Shape matches `transferOwnership`; only the
+  /// signed digest's domain tag differs so a signature cannot be replayed
+  /// between the two paths.
+  async completeOwnershipHandover(
+    ownershipPublicSeed: Hex,
+    params: {
+      newOwner: Address;
+      newOwnershipKey: WinternitzAddress;
+      newDisasterRecoveryKey: WinternitzAddress;
+      newTransactionKeys: WinternitzAddress[];
+      newRecoveryKeys: WinternitzAddress[];
+    },
+    opts: TxOptions = {}
+  ): Promise<TransactionReceipt> {
+    return this.ownershipReinitialize(
+      ownershipPublicSeed,
+      params,
+      "completeOwnershipHandover",
+      opts
+    );
+  }
+
+  private async ownershipReinitialize(
+    ownershipPublicSeed: Hex,
+    params: {
+      newOwner: Address;
+      newOwnershipKey: WinternitzAddress;
+      newDisasterRecoveryKey: WinternitzAddress;
+      newTransactionKeys: WinternitzAddress[];
+      newRecoveryKeys: WinternitzAddress[];
+    },
+    functionName: "transferOwnership" | "completeOwnershipHandover",
+    opts: TxOptions
+  ): Promise<TransactionReceipt> {
+    if (params.newTransactionKeys.length !== TRANSACTION_KEY_INIT_AMOUNT) {
+      throw new IncorrectTransactionKeyAmountError();
+    }
+    if (params.newRecoveryKeys.length !== RECOVERY_KEY_AMOUNT) {
+      throw new IncorrectRecoveryKeyAmountError();
+    }
+
+    const currentOwnership = this.quipSigner.recoverKeyPair(
+      this.vaultId,
+      ownershipPublicSeed
+    ).publicKey;
+    const keysHashHex = ownershipTransferKeysHash(
+      params.newDisasterRecoveryKey,
+      params.newTransactionKeys,
+      params.newRecoveryKeys
+    );
+    const digestFn =
+      functionName === "transferOwnership"
+        ? transferOwnershipDigest
+        : completeOwnershipHandoverDigest;
+    const digest = digestFn(
+      this.walletAddress,
+      BigInt(this.chainId),
+      currentOwnership.publicSeed,
+      currentOwnership.publicKeyHash,
+      params.newOwnershipKey.publicSeed,
+      params.newOwnershipKey.publicKeyHash,
+      params.newOwner,
+      keysHashHex
+    );
+    const pqSig = this.signWith(ownershipPublicSeed, digest);
+    const payload = encodeOwnershipTransfer(
+      currentOwnership,
+      params.newOwnershipKey,
+      pqSig,
+      params.newOwner,
+      params.newDisasterRecoveryKey,
+      params.newTransactionKeys,
+      params.newRecoveryKeys
+    );
+
+    const contractCall: ContractCallParams = {
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName,
+      args: [payload],
+      account: this.account,
+    };
+    return this.executeWrite(
+      contractCall,
+      0n,
+      opts,
+      currentOwnership.publicSeed
+    );
+  }
+
+  /// PQ-authenticated `upgradeToAndCall(address, bytes)`. Two signatures
+  /// required:
+  ///   1. `pqSig` from the wallet's current transaction key (the SDK signs
+  ///      this internally — same key-allocation rules as `executeWithPayload`).
+  ///   2. `verifySig` from a verifier key embedded in the new
+  ///      implementation's attestation. The caller supplies `verifier` +
+  ///      `verifySig` — these come from the impl deployer, not the wallet
+  ///      owner.
+  ///
+  /// Set `migratorPayload` to a 1088-byte init payload to trigger
+  /// `migrate(...)` against the new implementation. Leave undefined (or pass
+  /// `"0x"`) for a no-migration upgrade; the SDK zero-fills the trailing 1088
+  /// bytes the contract requires for layout symmetry.
+  async upgradeWallet(
+    newImplementation: Address,
+    verifier: WinternitzAddress,
+    verifySig: WinternitzElements,
+    options: {
+      migratorPayload?: Hex;
+    } = {},
+    opts: TxOptions & TransactionKeyOptions = {}
+  ): Promise<TransactionReceipt> {
+    const { keyOpts, txOpts } = splitWriteOpts(opts);
+    const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
+    const digest = upgradeDigest(
+      this.walletAddress,
+      BigInt(this.chainId),
+      newImplementation,
+      currentKey.publicSeed,
+      currentKey.publicKeyHash,
+      nextKey.publicSeed,
+      nextKey.publicKeyHash
+    );
+    const pqSig = this.signWith(currentKey.publicSeed, digest);
+    const shouldMigrate =
+      options.migratorPayload !== undefined && options.migratorPayload !== "0x";
+    const payload = encodeUpgradeToAndCall(
+      currentKey,
+      nextKey,
+      pqSig,
+      verifier,
+      verifySig,
+      shouldMigrate,
+      options.migratorPayload ?? "0x"
+    );
+
+    const contractCall: ContractCallParams = {
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "upgradeToAndCall",
+      args: [newImplementation, payload],
+      account: this.account,
+    };
+    return this.executeWrite(contractCall, 0n, txOpts, currentKey.publicSeed);
+  }
+
+  /// PQ-authenticated `recoveryUpgrade(address, bytes)` — emergency upgrade
+  /// authorized by a recovery key + the new implementation's verifier
+  /// attestation. No state migration is performed (recovery upgrades are for
+  /// breaking-glass cases; consumers who need to migrate state can call
+  /// `upgradeWallet` after recovery if needed).
+  ///
+  /// The recovery key used to sign rotates in-place: `newRecoveryKey`
+  /// replaces `currentRecoveryKey` so the recovery-keyset size stays stable.
+  /// `newRecoveryKey` defaults to a fresh keypair generated under this
+  /// signer/vault.
+  async recoveryUpgradeWallet(
+    recoveryPublicSeed: Hex,
+    newImplementation: Address,
+    verifier: WinternitzAddress,
+    verifySig: WinternitzElements,
+    options: { newRecoveryKey?: WinternitzAddress } = {},
+    opts: TxOptions = {}
+  ): Promise<TransactionReceipt> {
+    const currentRecoveryKey = this.quipSigner.recoverKeyPair(
+      this.vaultId,
+      recoveryPublicSeed
+    ).publicKey;
+    const newRecoveryKey =
+      options.newRecoveryKey ??
+      this.quipSigner.generateKeyPair(this.vaultId).publicKey;
+
+    const digest = upgradeRecoveryDigest(
+      this.walletAddress,
+      BigInt(this.chainId),
+      newImplementation,
+      currentRecoveryKey.publicSeed,
+      currentRecoveryKey.publicKeyHash,
+      newRecoveryKey.publicSeed,
+      newRecoveryKey.publicKeyHash
+    );
+    const pqSig = this.signWith(recoveryPublicSeed, digest);
+    const payload = encodeRecoveryUpgrade(
+      currentRecoveryKey,
+      newRecoveryKey,
+      pqSig,
+      verifier,
+      verifySig
+    );
+
+    const contractCall: ContractCallParams = {
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "recoveryUpgrade",
+      args: [newImplementation, payload],
+      account: this.account,
+    };
+    return this.executeWrite(
+      contractCall,
+      0n,
+      opts,
+      currentRecoveryKey.publicSeed
+    );
   }
 
   /// Build a fully wallet-signed `PackedUserOperation` for an `execute(target,

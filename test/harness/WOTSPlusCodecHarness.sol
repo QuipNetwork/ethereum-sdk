@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
 
 contract WOTSPlusCodecHarness {
@@ -894,6 +895,27 @@ contract WOTSPlusCodecHarness {
                 newSeed,
                 newHash,
                 keysHash
+            );
+    }
+
+    function exposed_saveWalletKeysHash(
+        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+    ) external pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                abi.encode(newTransactionKeys, newRecoveryKeys)
+            );
+    }
+
+    function exposed_ownershipTransferKeysHash(
+        WOTSPlus.WinternitzAddress memory newDisasterKey,
+        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+    ) external pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                abi.encode(newDisasterKey, newTransactionKeys, newRecoveryKeys)
             );
     }
 }

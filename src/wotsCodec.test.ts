@@ -41,6 +41,12 @@ import {
   encodeWithdrawDeposit,
   encodeReplaceKeyAt,
   encodeUserOpSignature,
+  encodeSaveWallet,
+  encodeOwnershipTransfer,
+  encodeUpgradeToAndCall,
+  encodeRecoveryUpgrade,
+  saveWalletKeysHash,
+  ownershipTransferKeysHash,
   decodeInit,
   decodeExecute,
   decodeRecoverWallet,
@@ -48,6 +54,10 @@ import {
   decodeWithdrawDeposit,
   decodeReplaceKeyAt,
   decodeUserOpSignature,
+  decodeSaveWallet,
+  decodeOwnershipTransfer,
+  decodeUpgradeToAndCall,
+  decodeRecoveryUpgrade,
   executeDigest,
   keysetDigest,
   recoverWalletDigest,
@@ -57,8 +67,15 @@ import {
   verificationDigest,
   upgradeRecoveryDigest,
   erc4337ExecuteDigest,
+  saveWalletDigest,
+  transferOwnershipDigest,
+  completeOwnershipHandoverDigest,
   RECOVERY_KEY_AMOUNT,
   TRANSACTION_KEY_INIT_AMOUNT,
+  SAVE_WALLET_PAYLOAD_SIZE,
+  OWNERSHIP_TRANSFER_PAYLOAD_SIZE,
+  UPGRADE_PAYLOAD_SIZE,
+  RECOVERY_UPGRADE_PAYLOAD_SIZE,
 } from "./wotsCodec.js";
 
 // ─── Harness artifact (from forge build output) ──────────────────
@@ -205,6 +222,134 @@ describe("encoder parity (live Solidity)", () => {
     ]);
     expect(tsEncoded).toBe(solEncoded);
   });
+
+  test("encodeSaveWallet matches Solidity", async () => {
+    const currentDisaster = makeKey(900n);
+    const newDisaster = makeKey(902n);
+    const newTransactionKeys = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(1000 + i * 2))
+    );
+    const newRecoveryKeys = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(2000 + i * 2))
+    );
+    const tsEncoded = encodeSaveWallet(
+      currentDisaster,
+      newDisaster,
+      sig,
+      newTransactionKeys,
+      newRecoveryKeys
+    );
+    const solEncoded = await callHarness("exposed_encodeSaveWallet", [
+      currentDisaster,
+      newDisaster,
+      sig,
+      newTransactionKeys,
+      newRecoveryKeys,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
+
+  test("encodeOwnershipTransfer matches Solidity", async () => {
+    const currentOwnership = makeKey(800n);
+    const newOwnership = makeKey(802n);
+    const newDisaster = makeKey(804n);
+    const newTransactionKeys = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(3000 + i * 2))
+    );
+    const newRecoveryKeys = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(4000 + i * 2))
+    );
+    const tsEncoded = encodeOwnershipTransfer(
+      currentOwnership,
+      newOwnership,
+      sig,
+      TARGET,
+      newDisaster,
+      newTransactionKeys,
+      newRecoveryKeys
+    );
+    const solEncoded = await callHarness("exposed_encodeOwnershipTransfer", [
+      currentOwnership,
+      newOwnership,
+      sig,
+      TARGET,
+      newDisaster,
+      newTransactionKeys,
+      newRecoveryKeys,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
+
+  test("encodeRecoveryUpgrade matches Solidity", async () => {
+    const verifier = makeKey(500n);
+    const verifySig = makeSig(500n);
+    const tsEncoded = encodeRecoveryUpgrade(cur, next, sig, verifier, verifySig);
+    const solEncoded = await callHarness("exposed_encodeRecoveryUpgrade", [
+      cur, next, sig, verifier, verifySig,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
+
+  test("encodeUpgradeToAndCall (no migrate) matches Solidity", async () => {
+    const verifier = makeKey(600n);
+    const verifySig = makeSig(600n);
+    const zeroMigrator: Hex = `0x${"00".repeat(1088)}`;
+    const tsEncoded = encodeUpgradeToAndCall(
+      cur,
+      next,
+      sig,
+      verifier,
+      verifySig,
+      false,
+      "0x"
+    );
+    const solEncoded = await callHarness("exposed_encodeUpgradeToAndCall", [
+      cur,
+      next,
+      sig,
+      verifier,
+      verifySig,
+      false,
+      zeroMigrator,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
+
+  test("encodeUpgradeToAndCall (with migrate) matches Solidity", async () => {
+    const verifier = makeKey(700n);
+    const verifySig = makeSig(700n);
+    // Build a valid 1088-byte init layout (disaster + ownership + 5 txn + 10 recovery).
+    const initDisaster = makeKey(7000n);
+    const initOwnership = makeKey(7002n);
+    const initTxn = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(7100 + i * 2))
+    );
+    const initRecovery = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(7200 + i * 2))
+    );
+    const migrator = encodeInit(initDisaster, initOwnership, initTxn, initRecovery);
+    expect(size(migrator)).toBe(1088);
+
+    const tsEncoded = encodeUpgradeToAndCall(
+      cur,
+      next,
+      sig,
+      verifier,
+      verifySig,
+      true,
+      migrator
+    );
+    const solEncoded = await callHarness("exposed_encodeUpgradeToAndCall", [
+      cur, next, sig, verifier, verifySig, true, migrator,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
 });
 
 // ─── Digest parity tests (live Solidity comparison) ──────────────
@@ -299,6 +444,73 @@ describe("digest parity (live Solidity)", () => {
       WALLET, CHAIN_ID, S1, H1, S2, H2, USER_OP_HASH, FEE,
     ]);
     expect(tsDigest).toBe(solDigest);
+  });
+
+  test("saveWalletDigest matches Solidity", async () => {
+    const tsDigest = saveWalletDigest(
+      WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
+    );
+    const solDigest = await callHarness("exposed_saveWalletDigest", [
+      WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
+    ]);
+    expect(tsDigest).toBe(solDigest);
+  });
+
+  test("transferOwnershipDigest matches Solidity", async () => {
+    const tsDigest = transferOwnershipDigest(
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
+    );
+    const solDigest = await callHarness("exposed_transferOwnershipDigest", [
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
+    ]);
+    expect(tsDigest).toBe(solDigest);
+  });
+
+  test("completeOwnershipHandoverDigest matches Solidity", async () => {
+    const tsDigest = completeOwnershipHandoverDigest(
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
+    );
+    const solDigest = await callHarness("exposed_completeOwnershipHandoverDigest", [
+      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
+    ]);
+    expect(tsDigest).toBe(solDigest);
+  });
+
+  test("saveWalletKeysHash matches Solidity", async () => {
+    const newTransactionKeys = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(5000 + i * 2))
+    );
+    const newRecoveryKeys = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(6000 + i * 2))
+    );
+    const tsHash = saveWalletKeysHash(newTransactionKeys, newRecoveryKeys);
+    const solHash = await callHarness("exposed_saveWalletKeysHash", [
+      newTransactionKeys, newRecoveryKeys,
+    ]);
+    expect(tsHash).toBe(solHash);
+  });
+
+  test("ownershipTransferKeysHash matches Solidity", async () => {
+    const newDisaster = makeKey(7777n);
+    const newTransactionKeys = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(8000 + i * 2))
+    );
+    const newRecoveryKeys = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(9000 + i * 2))
+    );
+    const tsHash = ownershipTransferKeysHash(
+      newDisaster,
+      newTransactionKeys,
+      newRecoveryKeys
+    );
+    const solHash = await callHarness("exposed_ownershipTransferKeysHash", [
+      newDisaster, newTransactionKeys, newRecoveryKeys,
+    ]);
+    expect(tsHash).toBe(solHash);
   });
 });
 
@@ -437,5 +649,139 @@ describe("encode/decode roundtrip", () => {
     expectAddressEq(decoded.currentKey, cur);
     expectAddressEq(decoded.nextKey, next);
     expectElementsEq(decoded.pqSig, sig);
+  });
+
+  test("saveWallet", () => {
+    const currentDisaster = makeKey(900n);
+    const newDisaster = makeKey(902n);
+    const newTransactionKeys = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(1000 + i * 2))
+    );
+    const newRecoveryKeys = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(2000 + i * 2))
+    );
+    const encoded = encodeSaveWallet(
+      currentDisaster,
+      newDisaster,
+      sig,
+      newTransactionKeys,
+      newRecoveryKeys
+    );
+    expect(size(encoded)).toBe(SAVE_WALLET_PAYLOAD_SIZE);
+    const decoded = decodeSaveWallet(encoded);
+    expectAddressEq(decoded.currentDisasterKey, currentDisaster);
+    expectAddressEq(decoded.newDisasterKey, newDisaster);
+    expectElementsEq(decoded.pqSig, sig);
+    expect(decoded.newTransactionKeys.length).toBe(TRANSACTION_KEY_INIT_AMOUNT);
+    for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+      expectAddressEq(decoded.newTransactionKeys[i], newTransactionKeys[i]);
+    }
+    expect(decoded.newRecoveryKeys.length).toBe(RECOVERY_KEY_AMOUNT);
+    for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+      expectAddressEq(decoded.newRecoveryKeys[i], newRecoveryKeys[i]);
+    }
+  });
+
+  test("ownershipTransfer", () => {
+    const currentOwnership = makeKey(800n);
+    const newOwnership = makeKey(802n);
+    const newDisaster = makeKey(804n);
+    const newTransactionKeys = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(3000 + i * 2))
+    );
+    const newRecoveryKeys = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(4000 + i * 2))
+    );
+    const encoded = encodeOwnershipTransfer(
+      currentOwnership,
+      newOwnership,
+      sig,
+      TARGET,
+      newDisaster,
+      newTransactionKeys,
+      newRecoveryKeys
+    );
+    expect(size(encoded)).toBe(OWNERSHIP_TRANSFER_PAYLOAD_SIZE);
+    const decoded = decodeOwnershipTransfer(encoded);
+    expectAddressEq(decoded.currentOwnershipKey, currentOwnership);
+    expectAddressEq(decoded.newOwnershipKey, newOwnership);
+    expectElementsEq(decoded.pqSig, sig);
+    expect(getAddress(decoded.newOwner)).toBe(getAddress(TARGET));
+    expectAddressEq(decoded.newDisasterKey, newDisaster);
+    for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+      expectAddressEq(decoded.newTransactionKeys[i], newTransactionKeys[i]);
+    }
+    for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+      expectAddressEq(decoded.newRecoveryKeys[i], newRecoveryKeys[i]);
+    }
+  });
+
+  test("upgradeToAndCall without migrate", () => {
+    const verifier = makeKey(600n);
+    const verifySig = makeSig(600n);
+    const encoded = encodeUpgradeToAndCall(
+      cur,
+      next,
+      sig,
+      verifier,
+      verifySig,
+      false,
+      "0x"
+    );
+    expect(size(encoded)).toBe(UPGRADE_PAYLOAD_SIZE);
+    const decoded = decodeUpgradeToAndCall(encoded);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
+    expectElementsEq(decoded.pqSig, sig);
+    expectAddressEq(decoded.verifier, verifier);
+    expectElementsEq(decoded.verifySig, verifySig);
+    expect(decoded.shouldMigrate).toBe(false);
+    expect(size(decoded.migratorPayload)).toBe(1088);
+  });
+
+  test("upgradeToAndCall with migrate", () => {
+    const verifier = makeKey(700n);
+    const verifySig = makeSig(700n);
+    const initDisaster = makeKey(8000n);
+    const initOwnership = makeKey(8002n);
+    const initTxn = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      (_, i) => makeKey(BigInt(8100 + i * 2))
+    );
+    const initRecovery = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      (_, i) => makeKey(BigInt(8200 + i * 2))
+    );
+    const migrator = encodeInit(initDisaster, initOwnership, initTxn, initRecovery);
+    const encoded = encodeUpgradeToAndCall(
+      cur,
+      next,
+      sig,
+      verifier,
+      verifySig,
+      true,
+      migrator
+    );
+    expect(size(encoded)).toBe(UPGRADE_PAYLOAD_SIZE);
+    const decoded = decodeUpgradeToAndCall(encoded);
+    expect(decoded.shouldMigrate).toBe(true);
+    expect(decoded.migratorPayload).toBe(migrator);
+  });
+
+  test("recoveryUpgrade", () => {
+    const verifier = makeKey(500n);
+    const verifySig = makeSig(500n);
+    const encoded = encodeRecoveryUpgrade(cur, next, sig, verifier, verifySig);
+    expect(size(encoded)).toBe(RECOVERY_UPGRADE_PAYLOAD_SIZE);
+    const decoded = decodeRecoveryUpgrade(encoded);
+    expectAddressEq(decoded.currentRecoveryKey, cur);
+    expectAddressEq(decoded.newRecoveryKey, next);
+    expectElementsEq(decoded.pqSig, sig);
+    expectAddressEq(decoded.verifier, verifier);
+    expectElementsEq(decoded.verifySig, verifySig);
   });
 });

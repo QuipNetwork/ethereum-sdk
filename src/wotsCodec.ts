@@ -64,6 +64,23 @@ export const WOTS_ELEMENTS_COUNT = 67;
 export const TRANSACTION_KEY_INIT_AMOUNT = 5;
 export const RECOVERY_KEY_AMOUNT = 10;
 
+/// Payload size for `initialize` / `migrate`: 64 (disasterRecoveryKey)
+/// + 64 (ownershipKey) + 5 × 64 (transactionKeys) + 10 × 64 (recoveryKeys).
+export const INIT_PAYLOAD_SIZE = 1088;
+/// Payload size for `saveWallet`: 64 + 64 + 2144 + 5 × 64 + 10 × 64.
+export const SAVE_WALLET_PAYLOAD_SIZE = 3232;
+/// Payload size for `transferOwnership` / `completeOwnershipHandover`:
+/// 64 + 64 + 2144 + 32 (newOwner) + 64 (newDisasterKey) + 5 × 64 + 10 × 64.
+export const OWNERSHIP_TRANSFER_PAYLOAD_SIZE = 3328;
+/// Payload size for `upgradeToAndCall`: 64 + 64 + 2144 + 64 (verifier)
+/// + 2144 (verifySig) + 1 (shouldMigrate byte) + 1088 (migratorPayload).
+/// The migrator slot is always 1088 bytes; when not migrating it must be
+/// zero-padded so the contract's length check passes.
+export const UPGRADE_PAYLOAD_SIZE = 5569;
+/// Payload size for `recoveryUpgrade`: 64 + 64 + 2144 + 64 (verifier)
+/// + 2144 (verifySig).
+export const RECOVERY_UPGRADE_PAYLOAD_SIZE = 4480;
+
 // Domain tags — keccak256 of stable string identifiers, must match
 // `WOTSPlusCodec.sol` exactly. Distinct tags per operation are load-bearing
 // security: removing or unifying any tag would let a signature authorizing
@@ -306,6 +323,130 @@ export function encodeUserOpSignature(
   ]);
 }
 
+function packAddressArray(
+  keys: WinternitzAddress[],
+  expectedLength: number,
+  context: string
+): Hex {
+  if (keys.length !== expectedLength) {
+    throw new Error(
+      `${context}: expected ${expectedLength} keys, got ${keys.length}`
+    );
+  }
+  return concat(keys.map(packAddress));
+}
+
+/// SaveWallet payload (3232 bytes): currentDisasterKey + newDisasterKey +
+/// pqSig + newTransactionKeys[5] + newRecoveryKeys[10].
+export function encodeSaveWallet(
+  currentDisasterKey: WinternitzAddress,
+  newDisasterKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+  newTransactionKeys: WinternitzAddress[],
+  newRecoveryKeys: WinternitzAddress[]
+): Hex {
+  return concat([
+    packAddress(currentDisasterKey),
+    packAddress(newDisasterKey),
+    packElements(pqSig),
+    packAddressArray(
+      newTransactionKeys,
+      TRANSACTION_KEY_INIT_AMOUNT,
+      "encodeSaveWallet.newTransactionKeys"
+    ),
+    packAddressArray(
+      newRecoveryKeys,
+      RECOVERY_KEY_AMOUNT,
+      "encodeSaveWallet.newRecoveryKeys"
+    ),
+  ]);
+}
+
+/// OwnershipTransfer payload (3328 bytes): currentOwnershipKey + newOwnershipKey +
+/// pqSig + newOwner + newDisasterKey + newTransactionKeys[5] + newRecoveryKeys[10].
+/// Used by both `transferOwnership(bytes)` and `completeOwnershipHandover(bytes)`.
+export function encodeOwnershipTransfer(
+  currentOwnershipKey: WinternitzAddress,
+  newOwnershipKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+  newOwner: Address,
+  newDisasterKey: WinternitzAddress,
+  newTransactionKeys: WinternitzAddress[],
+  newRecoveryKeys: WinternitzAddress[]
+): Hex {
+  return concat([
+    packAddress(currentOwnershipKey),
+    packAddress(newOwnershipKey),
+    packElements(pqSig),
+    addressToBytes32(newOwner),
+    packAddress(newDisasterKey),
+    packAddressArray(
+      newTransactionKeys,
+      TRANSACTION_KEY_INIT_AMOUNT,
+      "encodeOwnershipTransfer.newTransactionKeys"
+    ),
+    packAddressArray(
+      newRecoveryKeys,
+      RECOVERY_KEY_AMOUNT,
+      "encodeOwnershipTransfer.newRecoveryKeys"
+    ),
+  ]);
+}
+
+/// UpgradeToAndCall payload (5569 bytes): currentKey + nextKey + pqSig + verifier
+/// + verifySig + shouldMigrate (1 byte) + migratorPayload (1088 bytes).
+///
+/// When `shouldMigrate` is `false`, the contract still requires the full 5569-byte
+/// payload — the migratorPayload slot must exist but is ignored. Pass `migratorPayload:
+/// "0x"` (or omit) to have the encoder zero-fill the trailing 1088 bytes.
+export function encodeUpgradeToAndCall(
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+  verifier: WinternitzAddress,
+  verifySig: WinternitzElements,
+  shouldMigrate: boolean,
+  migratorPayload: Hex = "0x"
+): Hex {
+  const migratorBytes =
+    migratorPayload === "0x" || size(migratorPayload) === 0
+      ? (`0x${"00".repeat(INIT_PAYLOAD_SIZE)}` as Hex)
+      : migratorPayload;
+  if (size(migratorBytes) !== INIT_PAYLOAD_SIZE) {
+    throw new Error(
+      `encodeUpgradeToAndCall: migratorPayload must be ${INIT_PAYLOAD_SIZE} bytes, got ${size(migratorBytes)}`
+    );
+  }
+  const flagByte: Hex = shouldMigrate ? "0x01" : "0x00";
+  return concat([
+    packAddress(currentKey),
+    packAddress(nextKey),
+    packElements(pqSig),
+    packAddress(verifier),
+    packElements(verifySig),
+    flagByte,
+    migratorBytes,
+  ]);
+}
+
+/// RecoveryUpgrade payload (4480 bytes): currentRecoveryKey + newRecoveryKey +
+/// pqSig + verifier + verifySig.
+export function encodeRecoveryUpgrade(
+  currentRecoveryKey: WinternitzAddress,
+  newRecoveryKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+  verifier: WinternitzAddress,
+  verifySig: WinternitzElements
+): Hex {
+  return concat([
+    packAddress(currentRecoveryKey),
+    packAddress(newRecoveryKey),
+    packElements(pqSig),
+    packAddress(verifier),
+    packElements(verifySig),
+  ]);
+}
+
 export function decodeInit(payload: Hex): {
   disasterRecoveryKey: WinternitzAddress;
   ownershipKey: WinternitzAddress;
@@ -423,6 +564,286 @@ export function decodeUserOpSignature(payload: Hex): {
     nextKey: sliceAddress(payload, 64),
     pqSig: sliceElements(payload, 128),
   };
+}
+
+export function decodeSaveWallet(payload: Hex): {
+  currentDisasterKey: WinternitzAddress;
+  newDisasterKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  newTransactionKeys: WinternitzAddress[];
+  newRecoveryKeys: WinternitzAddress[];
+} {
+  if (size(payload) !== SAVE_WALLET_PAYLOAD_SIZE) {
+    throw new Error(
+      `decodeSaveWallet: expected ${SAVE_WALLET_PAYLOAD_SIZE} bytes, got ${size(payload)}`
+    );
+  }
+  const newTransactionKeys: WinternitzAddress[] = [];
+  for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+    newTransactionKeys.push(sliceAddress(payload, 2272 + i * 64));
+  }
+  const newRecoveryKeys: WinternitzAddress[] = [];
+  for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+    newRecoveryKeys.push(sliceAddress(payload, 2592 + i * 64));
+  }
+  return {
+    currentDisasterKey: sliceAddress(payload, 0),
+    newDisasterKey: sliceAddress(payload, 64),
+    pqSig: sliceElements(payload, 128),
+    newTransactionKeys,
+    newRecoveryKeys,
+  };
+}
+
+export function decodeOwnershipTransfer(payload: Hex): {
+  currentOwnershipKey: WinternitzAddress;
+  newOwnershipKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  newOwner: Address;
+  newDisasterKey: WinternitzAddress;
+  newTransactionKeys: WinternitzAddress[];
+  newRecoveryKeys: WinternitzAddress[];
+} {
+  if (size(payload) !== OWNERSHIP_TRANSFER_PAYLOAD_SIZE) {
+    throw new Error(
+      `decodeOwnershipTransfer: expected ${OWNERSHIP_TRANSFER_PAYLOAD_SIZE} bytes, got ${size(payload)}`
+    );
+  }
+  const newTransactionKeys: WinternitzAddress[] = [];
+  for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+    newTransactionKeys.push(sliceAddress(payload, 2368 + i * 64));
+  }
+  const newRecoveryKeys: WinternitzAddress[] = [];
+  for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+    newRecoveryKeys.push(sliceAddress(payload, 2688 + i * 64));
+  }
+  return {
+    currentOwnershipKey: sliceAddress(payload, 0),
+    newOwnershipKey: sliceAddress(payload, 64),
+    pqSig: sliceElements(payload, 128),
+    newOwner: getAddress(slice(payload, 2284, 2304)),
+    newDisasterKey: sliceAddress(payload, 2304),
+    newTransactionKeys,
+    newRecoveryKeys,
+  };
+}
+
+export function decodeUpgradeToAndCall(payload: Hex): {
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  verifier: WinternitzAddress;
+  verifySig: WinternitzElements;
+  shouldMigrate: boolean;
+  migratorPayload: Hex;
+} {
+  if (size(payload) !== UPGRADE_PAYLOAD_SIZE) {
+    throw new Error(
+      `decodeUpgradeToAndCall: expected ${UPGRADE_PAYLOAD_SIZE} bytes, got ${size(payload)}`
+    );
+  }
+  const flagByte = slice(payload, 4480, 4481);
+  if (flagByte !== "0x00" && flagByte !== "0x01") {
+    throw new Error(
+      `decodeUpgradeToAndCall: shouldMigrate byte must be 0x00 or 0x01, got ${flagByte}`
+    );
+  }
+  return {
+    currentKey: sliceAddress(payload, 0),
+    nextKey: sliceAddress(payload, 64),
+    pqSig: sliceElements(payload, 128),
+    verifier: sliceAddress(payload, 2272),
+    verifySig: sliceElements(payload, 2336),
+    shouldMigrate: flagByte === "0x01",
+    migratorPayload: slice(payload, 4481, 5569),
+  };
+}
+
+export function decodeRecoveryUpgrade(payload: Hex): {
+  currentRecoveryKey: WinternitzAddress;
+  newRecoveryKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  verifier: WinternitzAddress;
+  verifySig: WinternitzElements;
+} {
+  if (size(payload) !== RECOVERY_UPGRADE_PAYLOAD_SIZE) {
+    throw new Error(
+      `decodeRecoveryUpgrade: expected ${RECOVERY_UPGRADE_PAYLOAD_SIZE} bytes, got ${size(payload)}`
+    );
+  }
+  return {
+    currentRecoveryKey: sliceAddress(payload, 0),
+    newRecoveryKey: sliceAddress(payload, 64),
+    pqSig: sliceElements(payload, 128),
+    verifier: sliceAddress(payload, 2272),
+    verifySig: sliceElements(payload, 2336),
+  };
+}
+
+/// Mirrors the contract's `keccak256(abi.encode(newTransactionKeys, newRecoveryKeys))`
+/// over fixed-size arrays (`WinternitzAddress[5]`, `WinternitzAddress[10]`). Used as
+/// the bound payload hash inside `saveWalletDigest`.
+export function saveWalletKeysHash(
+  newTransactionKeys: WinternitzAddress[],
+  newRecoveryKeys: WinternitzAddress[]
+): Hex {
+  if (newTransactionKeys.length !== TRANSACTION_KEY_INIT_AMOUNT) {
+    throw new Error(
+      `saveWalletKeysHash: expected ${TRANSACTION_KEY_INIT_AMOUNT} transaction keys, got ${newTransactionKeys.length}`
+    );
+  }
+  if (newRecoveryKeys.length !== RECOVERY_KEY_AMOUNT) {
+    throw new Error(
+      `saveWalletKeysHash: expected ${RECOVERY_KEY_AMOUNT} recovery keys, got ${newRecoveryKeys.length}`
+    );
+  }
+  const encoded = encodeAbiParameters(
+    [
+      {
+        type: "tuple[5]",
+        components: [
+          { type: "bytes32", name: "publicSeed" },
+          { type: "bytes32", name: "publicKeyHash" },
+        ],
+      },
+      {
+        type: "tuple[10]",
+        components: [
+          { type: "bytes32", name: "publicSeed" },
+          { type: "bytes32", name: "publicKeyHash" },
+        ],
+      },
+    ],
+    // viem infers a [tuple[5], tuple[10]] tuple type from the schema above
+    // and rejects `WinternitzAddress[]` because its length isn't statically
+    // known. Lengths are already runtime-validated, so cast through `any`.
+    [newTransactionKeys, newRecoveryKeys] as unknown as [unknown, unknown] as never
+  );
+  return keccak256(encoded);
+}
+
+/// Mirrors the contract's `keccak256(abi.encode(newDisasterKey, newTransactionKeys,
+/// newRecoveryKeys))`. Used by both `transferOwnershipDigest` and
+/// `completeOwnershipHandoverDigest`.
+export function ownershipTransferKeysHash(
+  newDisasterKey: WinternitzAddress,
+  newTransactionKeys: WinternitzAddress[],
+  newRecoveryKeys: WinternitzAddress[]
+): Hex {
+  if (newTransactionKeys.length !== TRANSACTION_KEY_INIT_AMOUNT) {
+    throw new Error(
+      `ownershipTransferKeysHash: expected ${TRANSACTION_KEY_INIT_AMOUNT} transaction keys, got ${newTransactionKeys.length}`
+    );
+  }
+  if (newRecoveryKeys.length !== RECOVERY_KEY_AMOUNT) {
+    throw new Error(
+      `ownershipTransferKeysHash: expected ${RECOVERY_KEY_AMOUNT} recovery keys, got ${newRecoveryKeys.length}`
+    );
+  }
+  const encoded = encodeAbiParameters(
+    [
+      {
+        type: "tuple",
+        components: [
+          { type: "bytes32", name: "publicSeed" },
+          { type: "bytes32", name: "publicKeyHash" },
+        ],
+      },
+      {
+        type: "tuple[5]",
+        components: [
+          { type: "bytes32", name: "publicSeed" },
+          { type: "bytes32", name: "publicKeyHash" },
+        ],
+      },
+      {
+        type: "tuple[10]",
+        components: [
+          { type: "bytes32", name: "publicSeed" },
+          { type: "bytes32", name: "publicKeyHash" },
+        ],
+      },
+    ],
+    [
+      newDisasterKey,
+      newTransactionKeys,
+      newRecoveryKeys,
+    ] as unknown as [unknown, unknown, unknown] as never
+  );
+  return keccak256(encoded);
+}
+
+export function saveWalletDigest(
+  wallet: Address,
+  chainId: bigint,
+  currentSeed: Hex,
+  currentHash: Hex,
+  newSeed: Hex,
+  newHash: Hex,
+  keysHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      SAVE_WALLET_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      currentSeed,
+      currentHash,
+      newSeed,
+      newHash,
+      keysHash,
+    ])
+  );
+}
+
+export function transferOwnershipDigest(
+  wallet: Address,
+  chainId: bigint,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+  newOwner: Address,
+  keysHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      TRANSFER_OWNERSHIP_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      addressToBytes32(newOwner),
+      keysHash,
+    ])
+  );
+}
+
+export function completeOwnershipHandoverDigest(
+  wallet: Address,
+  chainId: bigint,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+  pendingOwner: Address,
+  keysHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      COMPLETE_OWNERSHIP_HANDOVER_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      addressToBytes32(pendingOwner),
+      keysHash,
+    ])
+  );
 }
 
 export function executeDigest(
