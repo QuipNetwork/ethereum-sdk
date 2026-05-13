@@ -157,11 +157,4 @@ export class QuipSigner {
   public isBurned(publicSeed: Hex): boolean {
     return this.burned.has(publicSeed);
   }
-
-  /// Test-only: clear the burned set. Production code should never call
-  /// this — once a key is broadcast, it is gone. Exposed for unit tests
-  /// that need a clean slate between cases.
-  public clearBurnedForTesting(): void {
-    this.burned.clear();
-  }
 }

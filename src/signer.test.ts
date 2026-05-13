@@ -108,18 +108,6 @@ describe("QuipSigner burned-key tracking", () => {
     expect(sig.length).toBe(67);
   });
 
-  it("clearBurnedForTesting resets the set", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
-    const kp = signer.generateKeyPair(VAULT_ID);
-    signer.markBurned(kp.publicKey.publicSeed);
-    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
-    signer.clearBurnedForTesting();
-    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(false);
-    // and sign works again
-    const sig = signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
-    expect(sig.length).toBe(67);
-  });
-
   it("burned set is per-instance (separate signers track separately)", () => {
     const signerA = new QuipSigner(QUANTUM_SECRET);
     const signerB = new QuipSigner(QUANTUM_SECRET);

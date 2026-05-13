@@ -38,6 +38,11 @@ import { QuipWalletClient } from "./walletClient.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { tryMulticall } from "./internal/multicall.js";
 import {
+  type TxOptions,
+  type ContractCallParams,
+  prepareTx,
+} from "./gas.js";
+import {
   WalletNotInitializedError,
   WalletAlreadyExistsError,
   NoVaultFoundError,
@@ -180,7 +185,8 @@ export class QuipClient {
       ownershipKey?: WinternitzAddress;
       transactionKeys?: WinternitzAddress[];
       recoveryKeys?: WinternitzAddress[];
-    } = {}
+    } = {},
+    opts: TxOptions = {}
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
 
@@ -224,16 +230,33 @@ export class QuipClient {
 
     const initPayload = encodeInit(disaster, ownership, txnKeys, recoveryKeys);
 
+    // Route through the shared write pipeline so balance preflight,
+    // simulation (catches `InsufficientCreationFee` / deprecated impl /
+    // unvetted impl), gas estimation, and typed-error decoding all behave
+    // the same way as wallet writes.
+    const contractCall: ContractCallParams = {
+      address: this.factoryAddress!,
+      abi: quipFactoryAbi,
+      functionName: "deployLatestWalletProxy",
+      args: [vaultId, this.account!, initPayload],
+      value: creationFee,
+      account: this.account!,
+    };
+    const prepared = await prepareTx({
+      publicClient: this.publicClient,
+      contractParams: contractCall,
+      totalValue: creationFee,
+      opts,
+    });
+
     const hash = await withDecodedError(
       this.walletClient.writeContract({
         chain: null,
-        address: this.factoryAddress!,
-        abi: quipFactoryAbi,
-        functionName: "deployLatestWalletProxy",
-        args: [vaultId, this.account!, initPayload],
-        value: creationFee,
-        account: this.account!,
-      })
+        ...contractCall,
+        gas: prepared.gas,
+        ...prepared.fees,
+        ...(prepared.nonce !== undefined && { nonce: prepared.nonce }),
+      } as Parameters<WalletClient["writeContract"]>[0])
     );
 
     const receipt = await this.publicClient.waitForTransactionReceipt({
