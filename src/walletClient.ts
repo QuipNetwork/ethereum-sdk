@@ -1776,15 +1776,65 @@ export class QuipWalletClient {
   /// Returns true if `key` is present in any active keyset (transaction,
   /// recovery, verification) or matches the wallet's fixed disaster /
   /// ownership keys. Used by `simulateUserOp` to detect the
-  /// `NextKeyAlreadyInUse` rejection path.
+  /// `NextKeyAlreadyInUse` rejection path. Bundles all 5 reads into one
+  /// Multicall3 round-trip (falls back to sequential on chains without
+  /// Multicall3 via `tryMulticall`).
   private async isAnyKey(key: WinternitzAddress): Promise<boolean> {
-    const [inTx, inRc, inVf, disaster, ownership] = await Promise.all([
-      this.isKey(KeyType.Transaction, key),
-      this.isKey(KeyType.Recovery, key),
-      this.isKey(KeyType.Verification, key),
-      this.getDisasterRecoveryKey(),
-      this.getOwnershipKey(),
-    ]);
+    const results = await tryMulticall(
+      this.publicClient,
+      [
+        {
+          address: this.walletAddress,
+          abi: quipWalletAbi,
+          functionName: "isKey" as const,
+          args: [KeyType.Transaction, key] as const,
+        },
+        {
+          address: this.walletAddress,
+          abi: quipWalletAbi,
+          functionName: "isKey" as const,
+          args: [KeyType.Recovery, key] as const,
+        },
+        {
+          address: this.walletAddress,
+          abi: quipWalletAbi,
+          functionName: "isKey" as const,
+          args: [KeyType.Verification, key] as const,
+        },
+        {
+          address: this.walletAddress,
+          abi: quipWalletAbi,
+          functionName: "getDisasterRecoveryKey" as const,
+        },
+        {
+          address: this.walletAddress,
+          abi: quipWalletAbi,
+          functionName: "getOwnershipKey" as const,
+        },
+      ],
+      { chainId: this.chainId }
+    );
+    // Treat any failed sub-read as a hard error — the caller's
+    // `simulateUserOp` expects the keyset checks to be authoritative.
+    const failures: { label: string; error: Error }[] = [];
+    const labels = [
+      "isKey(Transaction)",
+      "isKey(Recovery)",
+      "isKey(Verification)",
+      "getDisasterRecoveryKey",
+      "getOwnershipKey",
+    ] as const;
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === "failure") failures.push({ label: labels[i], error: r.error });
+    }
+    if (failures.length > 0) throw new PartialMulticallResultError(failures);
+
+    const inTx = (results[0] as { status: "success"; result: boolean }).result;
+    const inRc = (results[1] as { status: "success"; result: boolean }).result;
+    const inVf = (results[2] as { status: "success"; result: boolean }).result;
+    const disaster = (results[3] as { status: "success"; result: WinternitzAddress }).result;
+    const ownership = (results[4] as { status: "success"; result: WinternitzAddress }).result;
     if (inTx || inRc || inVf) return true;
     if (
       disaster.publicSeed === key.publicSeed &&

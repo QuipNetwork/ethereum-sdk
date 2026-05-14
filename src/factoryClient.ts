@@ -281,6 +281,30 @@ export class QuipClient {
     );
   }
 
+  /// Resolve an existing wallet by `vaultId` and return a `QuipWalletClient`
+  /// bound to it.
+  ///
+  /// **Signer check is head-key-only.** Before returning, this method
+  /// regenerates the keypair for `keyAt(Transaction, 0)` under `quipSigner`
+  /// and asserts the `publicKeyHash` matches — throwing `InvalidSignerError`
+  /// on mismatch. This proves the signer can produce *one specific* key
+  /// (whichever entry currently sits at index 0 of the transaction keyset),
+  /// not that it owns every key in the wallet.
+  ///
+  /// Why this is loose:
+  ///   - `EnumerableSet` swap-pop rotation means the head slot can hold any
+  ///     surviving keyset entry, not a stable "primary".
+  ///   - A wallet operated concurrently by multiple signers (rare, but legal)
+  ///     can have a head whose private key only one of them controls — the
+  ///     other still gets `InvalidSignerError` here, even though both are
+  ///     valid co-signers.
+  ///   - A signer that recovered from `quantumSecret` alone — without
+  ///     having seen prior rotations — passes this check as long as it can
+  ///     reproduce whatever public seed is at index 0 today.
+  ///
+  /// Callers needing stronger guarantees should call `getKeyset(Transaction)`
+  /// after construction and verify every entry against `quipSigner` directly.
+  /// See `SDK_README.md` → "What the SDK does NOT guarantee".
   async getVault(
     vaultId: Hex,
     quipSigner: QuipSigner
@@ -310,11 +334,6 @@ export class QuipClient {
       this.chainId!
     );
 
-    // Check if we have the right signer: regenerate the keypair from the
-    // head transaction key's publicSeed and confirm the publicKeyHash
-    // matches. This only proves the signer can produce key 0; if the
-    // wallet has been operated concurrently by multiple signers the head
-    // may belong to one and not the other. For most flows that's fine.
     const headKey = await client.getHeadTransactionKey();
     const keypair = quipSigner.recoverKeyPair(vaultId, headKey.publicSeed);
     if (keypair.publicKey.publicKeyHash !== headKey.publicKeyHash) {
