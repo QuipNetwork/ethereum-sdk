@@ -15,47 +15,74 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import {
-  applyGasBuffer,
+  applyGasMultiplier,
   resolveFeeOptions,
+  resolveGasMultiplier,
   preflightBalanceCheck,
-  DEFAULT_GAS_BUFFER_PERCENT,
-  MAX_GAS_BUFFER_PERCENT,
+  DEFAULT_GAS_MULTIPLIER,
+  MIN_GAS_MULTIPLIER,
+  MAX_GAS_MULTIPLIER,
   type TxOptions,
 } from "./gas.js";
 import { BalanceTooLowError } from "./errors.js";
 
-describe("applyGasBuffer", () => {
-  test("default 20% buffer when no opts", () => {
-    expect(applyGasBuffer(100n)).toBe(120n);
-    expect(DEFAULT_GAS_BUFFER_PERCENT).toBe(20);
+describe("applyGasMultiplier", () => {
+  test("default 1.2 multiplier when no opts", () => {
+    expect(applyGasMultiplier(100n)).toBe(120n);
+    expect(DEFAULT_GAS_MULTIPLIER).toBe(1.2);
   });
 
-  test("explicit gasBufferPercent overrides default", () => {
-    expect(applyGasBuffer(100n, { gasBufferPercent: 50 })).toBe(150n);
-    expect(applyGasBuffer(1000n, { gasBufferPercent: 0 })).toBe(1000n);
-    expect(applyGasBuffer(100n, { gasBufferPercent: 100 })).toBe(200n);
+  test("explicit gasMultiplier overrides default", () => {
+    expect(applyGasMultiplier(100n, { gasMultiplier: 1.5 })).toBe(150n);
+    expect(applyGasMultiplier(1000n, { gasMultiplier: 1.0 })).toBe(1000n);
+    expect(applyGasMultiplier(100n, { gasMultiplier: 2.0 })).toBe(200n);
   });
 
-  test("clamps above MAX_GAS_BUFFER_PERCENT", () => {
-    // 200 > 100 → cap at 100, so 100 * 2 = 200.
-    expect(applyGasBuffer(100n, { gasBufferPercent: 200 })).toBe(200n);
-    expect(MAX_GAS_BUFFER_PERCENT).toBe(100);
+  test("honors fractional multipliers to 3 decimal places", () => {
+    // 1.137 × 1000 = 1137 → (1000 * 1137) / 1000 = 1137
+    expect(applyGasMultiplier(1000n, { gasMultiplier: 1.137 })).toBe(1137n);
+    // 1.05 (5% buffer) — useful granularity below 10%
+    expect(applyGasMultiplier(1000n, { gasMultiplier: 1.05 })).toBe(1050n);
   });
 
-  test("clamps negative + non-finite values to 0", () => {
-    expect(applyGasBuffer(100n, { gasBufferPercent: -50 })).toBe(100n);
-    expect(applyGasBuffer(100n, { gasBufferPercent: NaN })).toBe(100n);
-    expect(applyGasBuffer(100n, { gasBufferPercent: Infinity })).toBe(100n);
+  test("clamps above MAX_GAS_MULTIPLIER", () => {
+    // 5.0 > 2.0 → cap at 2.0, so 100 × 2 = 200.
+    expect(applyGasMultiplier(100n, { gasMultiplier: 5.0 })).toBe(200n);
+    expect(MAX_GAS_MULTIPLIER).toBe(2.0);
   });
 
-  test("floors fractional percent", () => {
-    // floor(33.7) = 33 → 100 * 1.33 = 133
-    expect(applyGasBuffer(100n, { gasBufferPercent: 33.7 })).toBe(133n);
+  test("clamps sub-1.0 + non-finite values to MIN (1.0)", () => {
+    // Sub-1.0 values would under-budget gas; floor them up to 1.0 (no buffer)
+    // rather than letting callers shoot themselves in the foot.
+    expect(applyGasMultiplier(100n, { gasMultiplier: 0.5 })).toBe(100n);
+    expect(applyGasMultiplier(100n, { gasMultiplier: -1 })).toBe(100n);
+    // Non-finite values (NaN, Infinity) hit the `!Number.isFinite` branch
+    // first and clamp to MIN, not MAX — safer default than auto-budgeting
+    // 2× gas on a typo.
+    expect(applyGasMultiplier(100n, { gasMultiplier: NaN })).toBe(100n);
+    expect(applyGasMultiplier(100n, { gasMultiplier: Infinity })).toBe(100n);
+    expect(MIN_GAS_MULTIPLIER).toBe(1.0);
   });
 
   test("preserves bigint precision on large estimates", () => {
     const big = 10n ** 18n;
-    expect(applyGasBuffer(big)).toBe((big * 120n) / 100n);
+    expect(applyGasMultiplier(big)).toBe((big * 1200n) / 1000n);
+  });
+});
+
+describe("resolveGasMultiplier", () => {
+  test("default when no opts set", () => {
+    expect(resolveGasMultiplier()).toBe(1.2);
+    expect(resolveGasMultiplier({})).toBe(1.2);
+  });
+
+  test("explicit gasMultiplier returned unchanged when in-range", () => {
+    expect(resolveGasMultiplier({ gasMultiplier: 1.5 })).toBe(1.5);
+  });
+
+  test("clamp boundaries observable directly", () => {
+    expect(resolveGasMultiplier({ gasMultiplier: 5.0 })).toBe(2.0);
+    expect(resolveGasMultiplier({ gasMultiplier: 0.5 })).toBe(1.0);
   });
 });
 
@@ -68,13 +95,13 @@ describe("resolveFeeOptions", () => {
   test("only forwards explicitly-set fields", () => {
     const opts: TxOptions = {
       gas: 100_000n,
-      gasBufferPercent: 50,
+      gasMultiplier: 1.5,
       maxFeePerGas: 5n * 10n ** 9n,
     };
     const fees = resolveFeeOptions(opts);
     expect(fees).toEqual({ maxFeePerGas: 5n * 10n ** 9n });
     expect("gas" in fees).toBe(false);
-    expect("gasBufferPercent" in fees).toBe(false);
+    expect("gasMultiplier" in fees).toBe(false);
   });
 
   test("forwards full EIP-1559 pair", () => {

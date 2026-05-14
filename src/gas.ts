@@ -27,25 +27,32 @@ import {
 } from "./errors.js";
 import { decodeContractError } from "./internal/decodeError.js";
 
-/// Default safety margin applied on top of `eth_estimateGas` results.
-/// 20% mirrors the existing `executeWithWinternitz` heuristic.
-export const DEFAULT_GAS_BUFFER_PERCENT = 20;
+/// Default multiplier applied to `eth_estimateGas` results. `1.2` =
+/// estimate × 1.20 (20% safety margin), mirroring the existing
+/// `executeWithWinternitz` heuristic.
+export const DEFAULT_GAS_MULTIPLIER = 1.2;
 
-/// Hard cap on the buffer to keep callers from accidentally requesting
-/// outrageously high gas via misconfiguration.
-export const MAX_GAS_BUFFER_PERCENT = 100;
+/// Floor for `gasMultiplier`. Values below 1.0 would under-budget gas and
+/// risk out-of-gas reverts mid-execution; clamped up to this value.
+export const MIN_GAS_MULTIPLIER = 1.0;
+
+/// Ceiling for `gasMultiplier`. Aligns with viem's `prepareUserOperation`
+/// convention and keeps callers from accidentally requesting outrageously
+/// high gas via misconfiguration.
+export const MAX_GAS_MULTIPLIER = 2.0;
 
 /// Per-call transaction-shaping options accepted by every write method on
 /// the SDK. All fields are optional; unset values fall through to viem's
 /// defaults (eth_gasPrice / eth_feeHistory / chain nonce manager).
 export interface TxOptions {
   /// Explicit gas limit. When set, skips the `estimateContractGas` call and
-  /// the buffer step entirely.
+  /// the multiplier step entirely.
   gas?: bigint;
-  /// Multiplier applied to the gas estimate: `gas = estimate * (1 + buf/100)`.
-  /// Default `DEFAULT_GAS_BUFFER_PERCENT` (20). Capped at
-  /// `MAX_GAS_BUFFER_PERCENT` (100). Negative or non-finite values clamp to 0.
-  gasBufferPercent?: number;
+  /// Multiplier applied to the gas estimate: `gas = floor(estimate * gasMultiplier)`.
+  /// Default `DEFAULT_GAS_MULTIPLIER` (1.2 = 20% buffer). Clamped to
+  /// `[MIN_GAS_MULTIPLIER, MAX_GAS_MULTIPLIER]` = `[1.0, 2.0]`. Non-finite
+  /// values fall back to `MIN_GAS_MULTIPLIER` (no buffer).
+  gasMultiplier?: number;
   /// EIP-1559 ceiling. Mutually exclusive with `gasPrice`.
   maxFeePerGas?: bigint;
   /// EIP-1559 tip. Mutually exclusive with `gasPrice`.
@@ -77,14 +84,30 @@ export interface PreparedTx {
   nonce?: number;
 }
 
-/// Apply the configured buffer to a gas estimate.
-/// `(estimate * (100 + pct)) / 100`, with `pct` clamped to `[0, MAX]`.
-export function applyGasBuffer(estimate: bigint, opts?: TxOptions): bigint {
-  let pct = opts?.gasBufferPercent ?? DEFAULT_GAS_BUFFER_PERCENT;
-  if (!Number.isFinite(pct) || pct < 0) pct = 0;
-  if (pct > MAX_GAS_BUFFER_PERCENT) pct = MAX_GAS_BUFFER_PERCENT;
-  // Floor-truncates the input to integer percent before BigInt math.
-  return (estimate * (100n + BigInt(Math.floor(pct)))) / 100n;
+/// Apply the configured multiplier to a gas estimate.
+/// `floor(estimate * mul)`, with `mul` clamped to `[MIN, MAX]`.
+///
+/// Internally scales by 1000 to preserve three decimal places of the
+/// float multiplier under BigInt math without losing precision to
+/// floating-point round-trips.
+export function applyGasMultiplier(estimate: bigint, opts?: TxOptions): bigint {
+  const mul = resolveGasMultiplier(opts);
+  // Round to 3 decimal places to keep the BigInt arithmetic deterministic
+  // (multipliers like 1.137 are honored to the third decimal).
+  const scaled = Math.round(mul * 1000);
+  return (estimate * BigInt(scaled)) / 1000n;
+}
+
+/// Resolve the effective gas multiplier from `TxOptions`, applying the
+/// default + clamp. Exported for callers that want to inspect the
+/// resolved value (e.g. logging, dashboards).
+export function resolveGasMultiplier(opts?: TxOptions): number {
+  let mul = opts?.gasMultiplier ?? DEFAULT_GAS_MULTIPLIER;
+  if (!Number.isFinite(mul) || mul < MIN_GAS_MULTIPLIER) {
+    mul = MIN_GAS_MULTIPLIER;
+  }
+  if (mul > MAX_GAS_MULTIPLIER) mul = MAX_GAS_MULTIPLIER;
+  return mul;
 }
 
 /// Forward only the fee fields the caller explicitly set, so viem's
@@ -179,7 +202,7 @@ export async function prepareTx(
   }
 
   const gas =
-    opts?.gas !== undefined ? opts.gas : applyGasBuffer(estimate, opts);
+    opts?.gas !== undefined ? opts.gas : applyGasMultiplier(estimate, opts);
 
   const prepared: PreparedTx = {
     gas,

@@ -30,7 +30,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { prepareTx, applyGasBuffer, type ContractCallParams } from "./gas.js";
+import { prepareTx, applyGasMultiplier, type ContractCallParams } from "./gas.js";
 import {
   GasEstimationError,
   BalanceTooLowError,
@@ -102,13 +102,13 @@ describe("prepareTx — happy path", () => {
     expect(prepared.gas).toBeGreaterThan(0n);
     // 20% buffer means gas / 1.2 must be a sensible "raw estimate" range.
     // Hard to assert precisely without re-estimating, but at minimum we
-    // can check the buffered value matches `applyGasBuffer(estimate)`.
+    // can check the buffered value matches `applyGasMultiplier(estimate)`.
     const rawEstimate = await publicClient.estimateContractGas(
       setExecuteFeeCall(MAX_FEE / 2n) as Parameters<
         typeof publicClient.estimateContractGas
       >[0]
     );
-    expect(prepared.gas).toBe(applyGasBuffer(rawEstimate));
+    expect(prepared.gas).toBe(applyGasMultiplier(rawEstimate));
   });
 
   test("explicit opts.gas bypasses estimation entirely", async () => {
@@ -121,19 +121,19 @@ describe("prepareTx — happy path", () => {
     expect(prepared.gas).toBe(999_999n);
   });
 
-  test("custom gasBufferPercent propagates", async () => {
+  test("custom gasMultiplier propagates", async () => {
     const prepared50 = await prepareTx({
       publicClient,
       contractParams: setExecuteFeeCall(MAX_FEE / 2n),
       totalValue: 0n,
-      opts: { gasBufferPercent: 50 },
+      opts: { gasMultiplier: 1.5 },
     });
     const rawEstimate = await publicClient.estimateContractGas(
       setExecuteFeeCall(MAX_FEE / 2n) as Parameters<
         typeof publicClient.estimateContractGas
       >[0]
     );
-    expect(prepared50.gas).toBe(applyGasBuffer(rawEstimate, { gasBufferPercent: 50 }));
+    expect(prepared50.gas).toBe(applyGasMultiplier(rawEstimate, { gasMultiplier: 1.5 }));
   });
 
   test("forwards explicit fee + nonce overrides into PreparedTx", async () => {
