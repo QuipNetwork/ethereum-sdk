@@ -328,6 +328,28 @@ interface IQuipWallet {
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                        STRUCTS                         */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Snapshot of every WOTS+ key the wallet currently holds.
+    /// @dev Returned by `getAllKeys()` to let off-chain callers fetch the
+    ///      full PQ state in a single read. Mirrors the storage layout in
+    ///      `WOTSPlusStorage.Layout`: two single-slot keys plus three
+    ///      enumerable keysets.
+    /// @param disasterRecoveryKey The current `disasterRecoveryKey`.
+    /// @param ownershipKey The current `ownershipKey`.
+    /// @param transactionKeys Every active transaction key, in storage order.
+    /// @param recoveryKeys Every active recovery key, in storage order.
+    /// @param verificationKeys Every active verification key, in storage order.
+    struct AllKeys {
+        WOTSPlus.WinternitzAddress disasterRecoveryKey;
+        WOTSPlus.WinternitzAddress ownershipKey;
+        WOTSPlus.WinternitzAddress[] transactionKeys;
+        WOTSPlus.WinternitzAddress[] recoveryKeys;
+        WOTSPlus.WinternitzAddress[] verificationKeys;
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
@@ -492,6 +514,26 @@ interface IQuipWallet {
         WOTSPlusCodec.KeyType kind,
         WOTSPlus.WinternitzAddress calldata key
     ) external view returns (bool);
+
+    /// @notice Returns every key in the selected keyset in a single read.
+    /// @dev Storage-order array; identical semantics to iterating `keyAt`
+    ///      from `0` to `keyCount(kind) - 1`. Off-chain callers should
+    ///      prefer this over `keyCount`+`keyAt` loops to avoid the
+    ///      `1 + N` round-trip pattern.
+    /// @param kind The keyset to query.
+    /// @return Every active key in the selected keyset.
+    function getKeyset(
+        WOTSPlusCodec.KeyType kind
+    ) external view returns (WOTSPlus.WinternitzAddress[] memory);
+
+    /// @notice Returns every WOTS+ key the wallet currently holds.
+    /// @dev Aggregates the two single-slot keys (`disasterRecoveryKey`,
+    ///      `ownershipKey`) and the three keysets (`transactionKeys`,
+    ///      `recoveryKeys`, `verificationKeys`) into one read. Intended
+    ///      for off-chain consumers (SDKs, indexers, recovery UIs) that
+    ///      need a full snapshot.
+    /// @return The full key state.
+    function getAllKeys() external view returns (AllKeys memory);
 
     /// @notice Recovers the wallet using a pre-registered recovery key.
     /// @dev Drains the current transaction-key set and seeds exactly one new key.

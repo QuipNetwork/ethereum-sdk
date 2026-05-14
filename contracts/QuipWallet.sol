@@ -936,6 +936,26 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         return _keyset(kind).contains(key);
     }
 
+    /// @inheritdoc IQuipWallet
+    function getKeyset(
+        Codec.KeyType kind
+    ) public view returns (WOTSPlus.WinternitzAddress[] memory) {
+        return _keyset(kind).values();
+    }
+
+    /// @inheritdoc IQuipWallet
+    function getAllKeys() public view returns (AllKeys memory) {
+        Storage.Layout storage $ = Storage.layout();
+        return
+            AllKeys({
+                disasterRecoveryKey: $.disasterRecoveryKey,
+                ownershipKey: $.ownershipKey,
+                transactionKeys: $.transactionKeys.values(),
+                recoveryKeys: $.recoveryKeys.values(),
+                verificationKeys: $.verificationKeys.values()
+            });
+    }
+
     /// @notice ERC-1271 validation. Requires BOTH a valid WOTS+ signature from a
     ///         verification-keyset member AND a valid ECDSA signature from the
     ///         classical `owner()` over the raw `hash`.

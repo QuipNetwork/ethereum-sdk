@@ -30,7 +30,7 @@ import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { QuipSigner } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
-import { tryMulticall, type TryMulticallResult } from "./internal/multicall.js";
+import { tryMulticall } from "./internal/multicall.js";
 import {
   type TxOptions,
   type PreparedTx,
@@ -398,77 +398,40 @@ export class QuipWalletClient {
     return this.keyAt(KeyType.Transaction, 0n);
   }
 
-  /// Read every key in `kind`'s set, ordered by index. Two RPC round-trips
-  /// at most: one for `keyCount`, one for the multicalled `keyAt` reads
-  /// (or sequential fallback on chains without Multicall3). Throws
-  /// `PartialMulticallResultError` if any individual `keyAt` fails.
+  /// Read every key in `kind`'s set, ordered by storage index. Single
+  /// `eth_call` against the contract's `getKeyset(kind)` view.
+  ///
+  /// `forceSequential` is accepted for backward compatibility but has no
+  /// effect — there is no longer a multicall to opt out of. It will be
+  /// dropped in a future release.
   async getKeyset(
     kind: KeyType,
-    opts?: { forceSequential?: boolean }
+    _opts?: { forceSequential?: boolean }
   ): Promise<WinternitzAddress[]> {
-    const count = await this.keyCount(kind);
-    if (count === 0n) return [];
-
-    const calls = Array.from({ length: Number(count) }, (_, i) => ({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "keyAt" as const,
-      args: [kind, BigInt(i)] as const,
-    }));
-
-    const results = await tryMulticall(this.publicClient, calls, {
-      chainId: this.chainId,
-      ...(opts?.forceSequential && { forceSequential: true }),
-    });
-
-    const failures: { label: string; error: Error }[] = [];
-    const keys: WinternitzAddress[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (r.status === "success") {
-        keys.push(r.result as WinternitzAddress);
-      } else {
-        failures.push({ label: `keyAt(${KeyType[kind]}, ${i})`, error: r.error });
-      }
-    }
-    if (failures.length > 0) {
-      throw new PartialMulticallResultError(failures);
-    }
-    return keys;
+    const keys = await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "getKeyset",
+        args: [kind],
+      })
+    );
+    return [...(keys as readonly WinternitzAddress[])];
   }
 
   async getWalletState(
     opts?: { forceSequential?: boolean }
   ): Promise<WalletState> {
-    const scalarCalls = [
+    const calls = [
       { address: this.walletAddress, abi: quipWalletAbi, functionName: "owner" as const },
       { address: this.walletAddress, abi: quipWalletAbi, functionName: "quipFactory" as const },
       { address: this.walletAddress, abi: quipWalletAbi, functionName: "entryPoint" as const },
       { address: this.walletAddress, abi: quipWalletAbi, functionName: "getExecuteFee" as const },
       { address: this.walletAddress, abi: quipWalletAbi, functionName: "getDeposit" as const },
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getDisasterRecoveryKey" as const },
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getOwnershipKey" as const },
-      {
-        address: this.walletAddress,
-        abi: quipWalletAbi,
-        functionName: "keyCount" as const,
-        args: [KeyType.Transaction] as const,
-      },
-      {
-        address: this.walletAddress,
-        abi: quipWalletAbi,
-        functionName: "keyCount" as const,
-        args: [KeyType.Recovery] as const,
-      },
-      {
-        address: this.walletAddress,
-        abi: quipWalletAbi,
-        functionName: "keyCount" as const,
-        args: [KeyType.Verification] as const,
-      },
+      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getAllKeys" as const },
     ];
 
-    const scalars = await tryMulticall(this.publicClient, scalarCalls, {
+    const results = await tryMulticall(this.publicClient, calls, {
       chainId: this.chainId,
       ...(opts?.forceSequential && { forceSequential: true }),
     });
@@ -479,85 +442,41 @@ export class QuipWalletClient {
       "entryPoint",
       "getExecuteFee",
       "getDeposit",
-      "getDisasterRecoveryKey",
-      "getOwnershipKey",
-      "keyCount(Transaction)",
-      "keyCount(Recovery)",
-      "keyCount(Verification)",
+      "getAllKeys",
     ] as const;
 
-    const scalarFailures: { label: string; error: Error }[] = [];
-    for (let i = 0; i < scalars.length; i++) {
-      const r = scalars[i];
+    const failures: { label: string; error: Error }[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
       if (r.status === "failure") {
-        scalarFailures.push({ label: labels[i], error: r.error });
+        failures.push({ label: labels[i], error: r.error });
       }
     }
-    if (scalarFailures.length > 0) {
-      throw new PartialMulticallResultError(scalarFailures);
+    if (failures.length > 0) {
+      throw new PartialMulticallResultError(failures);
     }
 
-    const owner = (scalars[0] as { status: "success"; result: Address }).result;
-    const factory = (scalars[1] as { status: "success"; result: Address }).result;
-    const entryPoint = (scalars[2] as { status: "success"; result: Address }).result;
-    const executeFee = (scalars[3] as { status: "success"; result: bigint }).result;
-    const deposit = (scalars[4] as { status: "success"; result: bigint }).result;
-    const disasterRecoveryKey = (scalars[5] as { status: "success"; result: WinternitzAddress }).result;
-    const ownershipKey = (scalars[6] as { status: "success"; result: WinternitzAddress }).result;
-    const txCount = (scalars[7] as { status: "success"; result: bigint }).result;
-    const rcCount = (scalars[8] as { status: "success"; result: bigint }).result;
-    const vfCount = (scalars[9] as { status: "success"; result: bigint }).result;
-
-    const buildKeyAtCalls = (kind: KeyType, count: bigint) =>
-      Array.from({ length: Number(count) }, (_, i) => ({
-        address: this.walletAddress,
-        abi: quipWalletAbi,
-        functionName: "keyAt" as const,
-        args: [kind, BigInt(i)] as const,
-      }));
-
-    const allKeyCalls = [
-      ...buildKeyAtCalls(KeyType.Transaction, txCount),
-      ...buildKeyAtCalls(KeyType.Recovery, rcCount),
-      ...buildKeyAtCalls(KeyType.Verification, vfCount),
-    ];
-
-    const keyResults =
-      allKeyCalls.length === 0
-        ? ([] as TryMulticallResult<unknown>[])
-        : (await tryMulticall(this.publicClient, allKeyCalls, {
-            chainId: this.chainId,
-            ...(opts?.forceSequential && { forceSequential: true }),
-          }) as TryMulticallResult<unknown>[]);
-
-    const txEnd = Number(txCount);
-    const rcEnd = txEnd + Number(rcCount);
-    const vfEnd = rcEnd + Number(vfCount);
-
-    const labelOfIndex = (i: number): string => {
-      if (i < txEnd) return `keyAt(Transaction, ${i})`;
-      if (i < rcEnd) return `keyAt(Recovery, ${i - txEnd})`;
-      return `keyAt(Verification, ${i - rcEnd})`;
-    };
-
-    const keyFailures: { label: string; error: Error }[] = [];
-    for (let i = 0; i < keyResults.length; i++) {
-      const r = keyResults[i];
-      if (r.status === "failure") {
-        keyFailures.push({ label: labelOfIndex(i), error: r.error });
+    const owner = (results[0] as { status: "success"; result: Address }).result;
+    const factory = (results[1] as { status: "success"; result: Address }).result;
+    const entryPoint = (results[2] as { status: "success"; result: Address }).result;
+    const executeFee = (results[3] as { status: "success"; result: bigint }).result;
+    const deposit = (results[4] as { status: "success"; result: bigint }).result;
+    const allKeys = (
+      results[5] as {
+        status: "success";
+        result: {
+          disasterRecoveryKey: WinternitzAddress;
+          ownershipKey: WinternitzAddress;
+          transactionKeys: readonly WinternitzAddress[];
+          recoveryKeys: readonly WinternitzAddress[];
+          verificationKeys: readonly WinternitzAddress[];
+        };
       }
-    }
-    if (keyFailures.length > 0) {
-      throw new PartialMulticallResultError(keyFailures);
-    }
+    ).result;
 
-    const okKeys = keyResults.map(
-      (r) => (r as { status: "success"; result: WinternitzAddress }).result
-    );
-
-    const transactionKeys = okKeys.slice(0, txEnd);
-    const recoveryKeys = okKeys.slice(txEnd, rcEnd);
-    const verificationKeys = okKeys.slice(rcEnd, vfEnd);
+    const transactionKeys = [...allKeys.transactionKeys];
+    const recoveryKeys = [...allKeys.recoveryKeys];
+    const verificationKeys = [...allKeys.verificationKeys];
 
     return {
       owner,
@@ -565,9 +484,13 @@ export class QuipWalletClient {
       entryPoint,
       executeFee,
       deposit,
-      disasterRecoveryKey,
-      ownershipKey,
-      keyCounts: { transaction: txCount, recovery: rcCount, verification: vfCount },
+      disasterRecoveryKey: allKeys.disasterRecoveryKey,
+      ownershipKey: allKeys.ownershipKey,
+      keyCounts: {
+        transaction: BigInt(transactionKeys.length),
+        recovery: BigInt(recoveryKeys.length),
+        verification: BigInt(verificationKeys.length),
+      },
       transactionKeys,
       recoveryKeys,
       verificationKeys,
