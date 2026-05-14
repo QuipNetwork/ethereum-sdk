@@ -23,6 +23,7 @@ import {
   createPublicClient,
   createWalletClient,
   createTestClient,
+  encodeFunctionData,
   http,
   toHex,
   zeroAddress,
@@ -44,7 +45,10 @@ import {
   QuipWalletClient,
   KeyType,
 } from "./walletClient.js";
-import { UserOpValidationFailure } from "./errors.js";
+import {
+  UnknownContractError,
+  UserOpValidationFailure,
+} from "./errors.js";
 import {
   type PackedUserOperation,
   type WinternitzAddress,
@@ -472,5 +476,85 @@ describe("simulateUserOp — rejection paths", () => {
       UserOpValidationFailure.InvalidSignature
     );
     expect(sim.keysBurnedIfRevert.wallet).toBe(false);
+  }, 30_000);
+});
+
+describe("buildExecuteUserOp — inner-call revert pre-flight (D3)", () => {
+  // The inner call we'll force to revert: wallet.execute(factory,
+  // setExecuteFee(0)). Factory.setExecuteFee is OZ-onlyOwner; the wallet
+  // is not the factory owner, so the call reverts with
+  // `OwnableUnauthorizedAccount(address)`. That selector isn't in the
+  // Quip error registry, so it surfaces as `UnknownContractError`.
+  function revertingInnerCallData(): Hex {
+    return encodeFunctionData({
+      abi: quipFactoryAbi,
+      functionName: "setExecuteFee",
+      args: [0n],
+    });
+  }
+
+  test("buildExecuteUserOp throws on guaranteed-revert inner call; key not burned", async () => {
+    const { client, signer } = await createFreshWallet(0x46);
+    const head = await client.getHeadTransactionKey();
+    expect(signer.isBurned(head.publicSeed)).toBe(false);
+
+    let caught: unknown = null;
+    try {
+      await client.buildExecuteUserOp(
+        factoryAddress,
+        0n,
+        revertingInnerCallData()
+      );
+    } catch (e) {
+      caught = e;
+    }
+
+    // The OZ Ownable error is not in the Quip registry; the SDK decodes
+    // it to `UnknownContractError` carrying the OZ selector + raw data.
+    expect(caught).toBeInstanceOf(UnknownContractError);
+    expect((caught as UnknownContractError).errorName).toBe(
+      "OwnableUnauthorizedAccount"
+    );
+
+    // Critical: the head key MUST NOT be burned. The bug this fix
+    // addresses was: `estimateExecuteCallGas` swallowed the revert,
+    // `prepareExecuteUserOp` returned a userOp with DEFAULT_CALL_GAS_LIMIT,
+    // `signExecuteUserOp` burned the key, and the doomed userOp was
+    // shipped to the bundler. After the fix, prepare throws and sign is
+    // never reached.
+    expect(signer.isBurned(head.publicSeed)).toBe(false);
+  }, 30_000);
+
+  test("prepareExecuteUserOp surfaces the decoded contract revert", async () => {
+    const { client, signer } = await createFreshWallet(0x47);
+    const head = await client.getHeadTransactionKey();
+
+    await expect(
+      client.prepareExecuteUserOp(
+        factoryAddress,
+        0n,
+        revertingInnerCallData()
+      )
+    ).rejects.toBeInstanceOf(UnknownContractError);
+
+    // prepareExecuteUserOp NEVER burns keys (burning happens in
+    // signExecuteUserOp); re-check explicitly so the contract is
+    // documented in tests.
+    expect(signer.isBurned(head.publicSeed)).toBe(false);
+  }, 30_000);
+
+  test("happy path: non-reverting inner call produces a complete signed userOp", async () => {
+    const { client } = await createFreshWallet(0x48);
+    const built = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
+    expect(built.userOp.signature).not.toBe("0x");
+    // accountGasLimits = [verificationGasLimit(16) | callGasLimit(16)]
+    // (left-padded, packed by `packAccountGasLimits`). callGasLimit lives
+    // in the low 16 bytes — extract and verify it's a real estimate
+    // (i.e. not the DEFAULT_CALL_GAS_LIMIT fallback the old code
+    // returned on every estimate failure).
+    const packed = built.userOp.accountGasLimits.slice(2);
+    expect(packed.length).toBe(64);
+    const callGasLimit = BigInt("0x" + packed.slice(32));
+    expect(callGasLimit).toBeGreaterThan(0n);
   }, 30_000);
 });

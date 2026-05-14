@@ -40,6 +40,7 @@ import {
 import {
   DuplicateKeyError,
   EmptyKeysError,
+  GasEstimationError,
   IncorrectRecoveryKeyAmountError,
   IncorrectTransactionKeyAmountError,
   KeyAlreadyBurnedError,
@@ -50,6 +51,7 @@ import {
   UnknownKeyError,
   UserOpValidationFailure,
 } from "./errors.js";
+import { decodeContractError } from "./internal/decodeError.js";
 import {
   type PackedUserOperation,
   type WinternitzAddress,
@@ -1673,9 +1675,17 @@ export class QuipWalletClient {
     );
   }
 
-  /// State-override gas estimate for `wallet.execute(target, value, data)`
-  /// from the EntryPoint. Returns `DEFAULT_CALL_GAS_LIMIT` on any estimation
-  /// failure (chain doesn't support overrides, RPC rejected, target reverts).
+  /// Gas estimate for `wallet.execute(target, value, data)` from the
+  /// EntryPoint. Pre-flights the inner call: a revert here throws *before*
+  /// `signExecuteUserOp` is called, so no transaction key is burned on a
+  /// guaranteed-revert userOp.
+  ///
+  /// Failure modes:
+  ///   - Contract revert with a recognized selector → decoded `QuipError`
+  ///     subclass (e.g. `InvalidSignatureError`) or `UnknownContractError`
+  ///     carrying the raw selector + bytes for non-Quip ABIs.
+  ///   - Bare `revert()` / OOG / network failure → `GasEstimationError`
+  ///     with the viem error attached as `cause`.
   private async estimateExecuteCallGas(
     entryPoint: Address,
     target: Address,
@@ -1691,8 +1701,11 @@ export class QuipWalletClient {
         account: entryPoint,
         value,
       } as unknown as Parameters<PublicClient["estimateContractGas"]>[0]);
-    } catch {
-      return DEFAULT_CALL_GAS_LIMIT;
+    } catch (err) {
+      const decoded = decodeContractError(err);
+      if (decoded) throw decoded;
+      const message = err instanceof Error ? err.message : String(err);
+      throw new GasEstimationError(message, { cause: err });
     }
   }
 
