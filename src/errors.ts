@@ -568,17 +568,6 @@ export class GasEstimationError extends QuipError {
   }
 }
 
-/// Thrown when `simulateContract` rejects pre-flight. If the underlying revert
-/// decoded to a typed `QuipError`, it is preserved on `decodedError`.
-export class SimulationError extends QuipError {
-  readonly decodedError?: QuipError;
-
-  constructor(message: string, decodedError?: QuipError, opts?: QuipErrorOptions) {
-    super("SIMULATION_FAILED", message, opts);
-    if (decodedError) this.decodedError = decodedError;
-  }
-}
-
 export class BalanceTooLowError extends QuipError {
   readonly required: bigint;
   readonly available: bigint;

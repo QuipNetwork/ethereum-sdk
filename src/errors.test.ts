@@ -81,7 +81,6 @@ import {
   UnsupportedNetworkError,
   MulticallUnavailableError,
   GasEstimationError,
-  SimulationError,
   BalanceTooLowError,
   Erc4337WalletValidationError,
   Erc4337PaymasterValidationError,
@@ -148,10 +147,6 @@ describe("error class properties", () => {
     expect(new MulticallUnavailableError(31337).chainId).toBe(31337);
     expect(new GasEstimationError("nope").code).toBe("GAS_ESTIMATION_FAILED");
     expect(new BalanceTooLowError(10n, 5n).required).toBe(10n);
-
-    const inner = new InvalidSignatureError();
-    const sim = new SimulationError("revert", inner);
-    expect(sim.decodedError).toBe(inner);
   });
 
   test("ERC-4337 enum-failure errors carry the typed reason", () => {

@@ -24,7 +24,6 @@ import {
   BalanceTooLowError,
   GasEstimationError,
   QuipError,
-  SimulationError,
 } from "./errors.js";
 import { decodeContractError } from "./internal/decodeError.js";
 
@@ -56,11 +55,6 @@ export interface TxOptions {
   gasPrice?: bigint;
   /// Pin the nonce. Default: viem fetches `eth_getTransactionCount`.
   nonce?: number;
-  /// Run `simulateContract` before the write to surface contract reverts as
-  /// `SimulationError` (with the decoded inner error if applicable).
-  /// Defaults to `true`. Set to `false` to skip the simulation round-trip
-  /// when the caller already validated the call (rare).
-  simulate?: boolean;
   /// Skip balance preflight (`BalanceTooLowError`). Use when the call's
   /// `value` is funded by a paymaster or when balance has already been
   /// verified externally.
@@ -118,9 +112,8 @@ export async function preflightBalanceCheck(
   }
 }
 
-/// Parameters accepted by every viem `simulateContract` / `estimateContractGas`
-/// call that this SDK makes. Matches the structural shape both viem
-/// functions expect.
+/// Parameters accepted by every viem `estimateContractGas` call that this SDK
+/// makes. Matches the structural shape viem expects.
 export interface ContractCallParams {
   address: Address;
   abi: readonly unknown[];
@@ -139,16 +132,15 @@ export interface PrepareTxParams {
   opts?: TxOptions;
 }
 
-/// Run pre-flight balance + simulation + gas estimation in the order each
-/// failure mode wants to surface, with distinct typed errors per stage:
+/// Run pre-flight balance + gas estimation in the order each failure mode
+/// wants to surface, with distinct typed errors per stage:
 ///
 ///   1. `BalanceTooLowError` — account can't cover `totalValue`.
-///   2. `SimulationError` (carrying any decoded `QuipError` as
-///      `decodedError`) — `simulateContract` rejected. Skipped iff
-///      `opts.simulate === false`.
-///   3. Decoded `QuipError` — `estimateContractGas` rejected with a
-///      recognized contract revert.
-///   4. `GasEstimationError` — `estimateContractGas` rejected for a
+///   2. Decoded `QuipError` — `estimateContractGas` rejected with a
+///      recognized contract revert. `estimateContractGas` runs the call
+///      via `eth_call` semantics on the node, so reverts surface here with
+///      the same fidelity the old `simulateContract` stage provided.
+///   3. `GasEstimationError` — `estimateContractGas` rejected for a
 ///      non-contract reason (network, invalid params, …).
 ///
 /// On success returns the gas + fee + nonce overrides ready to spread into
@@ -167,22 +159,8 @@ export async function prepareTx(
     await preflightBalanceCheck(publicClient, acctAddr, totalValue);
   }
 
-  // Stage 2: simulation.
-  if (opts?.simulate !== false) {
-    try {
-      await publicClient.simulateContract(
-        contractParams as Parameters<PublicClient["simulateContract"]>[0]
-      );
-    } catch (err) {
-      const decoded = decodeContractError(err);
-      const message =
-        decoded?.message ??
-        (err instanceof Error ? err.message : String(err));
-      throw new SimulationError(message, decoded ?? undefined, { cause: err });
-    }
-  }
-
-  // Stage 3 + 4: gas estimation.
+  // Stage 2 + 3: gas estimation. Reverts surface as decoded `QuipError`
+  // subclasses; non-revert failures surface as `GasEstimationError`.
   let estimate: bigint;
   if (opts?.gas !== undefined) {
     estimate = opts.gas;

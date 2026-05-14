@@ -32,7 +32,6 @@ import { join } from "node:path";
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { prepareTx, applyGasBuffer, type ContractCallParams } from "./gas.js";
 import {
-  SimulationError,
   GasEstimationError,
   BalanceTooLowError,
   FeeExceedsMaxError,
@@ -155,8 +154,8 @@ describe("prepareTx — happy path", () => {
   });
 });
 
-describe("prepareTx — simulation failure path", () => {
-  test("contract revert surfaces as SimulationError with decoded inner error", async () => {
+describe("prepareTx — contract-revert failure path", () => {
+  test("contract revert surfaces as the decoded typed QuipError directly", async () => {
     let caught: unknown = null;
     try {
       await prepareTx({
@@ -167,48 +166,27 @@ describe("prepareTx — simulation failure path", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(SimulationError);
-    const sim = caught as SimulationError;
-    expect(sim.decodedError).toBeInstanceOf(FeeExceedsMaxError);
-    const inner = sim.decodedError as FeeExceedsMaxError;
-    expect(inner.fee).toBe(MAX_FEE + 1n);
-    expect(inner.maxFee).toBe(MAX_FEE);
-  });
-
-  test("simulate: false skips simulation (estimateGas may still revert and surface decoded error)", async () => {
-    let caught: unknown = null;
-    try {
-      await prepareTx({
-        publicClient,
-        contractParams: setExecuteFeeCall(MAX_FEE + 1n),
-        totalValue: 0n,
-        opts: { simulate: false },
-      });
-    } catch (e) {
-      caught = e;
-    }
-    // estimateContractGas still runs and reverts with the same custom error,
-    // but it's surfaced as the decoded contract error (not SimulationError),
-    // since simulation was bypassed and the failure now belongs to the
-    // estimate stage.
     expect(caught).toBeInstanceOf(FeeExceedsMaxError);
+    const decoded = caught as FeeExceedsMaxError;
+    expect(decoded.fee).toBe(MAX_FEE + 1n);
+    expect(decoded.maxFee).toBe(MAX_FEE);
   });
 
-  test("simulate: false + opts.gas skips both stages — no contract reads happen", async () => {
-    // With simulate disabled AND gas pinned, prepareTx never touches the
-    // contract for this revert-prone call. No throw expected.
+  test("opts.gas skips estimation — no contract reads happen", async () => {
+    // With gas pinned, prepareTx never touches the contract for this
+    // revert-prone call. No throw expected.
     const prepared = await prepareTx({
       publicClient,
       contractParams: setExecuteFeeCall(MAX_FEE + 1n),
       totalValue: 0n,
-      opts: { simulate: false, gas: 200_000n, skipPreflightChecks: true },
+      opts: { gas: 200_000n, skipPreflightChecks: true },
     });
     expect(prepared.gas).toBe(200_000n);
   });
 });
 
 describe("prepareTx — preflight balance check", () => {
-  test("BalanceTooLowError fires before simulate / estimate", async () => {
+  test("BalanceTooLowError fires before gas estimation", async () => {
     // Use a fresh, unfunded account as the caller. Anvil EOA balance for
     // an untouched key is 0 wei.
     const broke = privateKeyToAccount(
@@ -235,11 +213,13 @@ describe("prepareTx — preflight balance check", () => {
     expect((caught as BalanceTooLowError).available).toBe(0n);
   });
 
-  test("skipPreflightChecks lets the caller reach the simulation stage", async () => {
-    // With the balance gate bypassed, prepareTx proceeds to simulation.
-    // The broke account is NOT the factory owner, so simulation reverts
-    // with OpenZeppelin's `OwnableUnauthorizedAccount`. That's fine —
-    // we're verifying the failure mode is *simulation*, not balance.
+  test("skipPreflightChecks lets the caller reach the gas estimation stage", async () => {
+    // With the balance gate bypassed, prepareTx proceeds to estimation.
+    // The broke account is NOT the factory owner, so estimateContractGas
+    // reverts with OpenZeppelin's `OwnableUnauthorizedAccount`. We only
+    // care that the failure originated past the balance gate — the exact
+    // downstream class depends on whether viem can decode the Ownable
+    // error against the factory ABI, which isn't this test's concern.
     const broke = privateKeyToAccount(
       "0x0000000000000000000000000000000000000000000000000000000000000043"
     );
@@ -260,15 +240,15 @@ describe("prepareTx — preflight balance check", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(SimulationError);
+    expect(caught).not.toBeNull();
     expect(caught).not.toBeInstanceOf(BalanceTooLowError);
   });
 });
 
 describe("prepareTx — gas-estimation failure path", () => {
   test("non-contract estimation failures surface as GasEstimationError", async () => {
-    // Point at an address with no code and `simulate: false`; viem's
-    // estimateContractGas can't ABI-decode the empty return and throws.
+    // Point at an address with no code; viem's estimateContractGas can't
+    // ABI-decode the empty return and throws.
     const noCodeAddr = "0xdeAdbEefdEAdbeefdEadbEEFdeadbeEFdEaDbeef" as Address;
     let caught: unknown = null;
     try {
@@ -281,7 +261,6 @@ describe("prepareTx — gas-estimation failure path", () => {
           account: account.address,
         },
         totalValue: 0n,
-        opts: { simulate: false },
       });
     } catch (e) {
       caught = e;

@@ -63,7 +63,6 @@ import { QuipSigner } from "./signer.js";
 import { QuipWalletClient } from "./walletClient.js";
 import {
   InvalidSignatureError,
-  SimulationError,
   UnknownContractError,
 } from "./errors.js";
 import { withDecodedError } from "./internal/decodeError.js";
@@ -291,7 +290,7 @@ describe("Dual-signature contract on execute(bytes)", () => {
       foundry.id
     );
 
-    // Simulate-before-send catches the revert. The wallet uses Solady's
+    // Gas estimation catches the revert. The wallet uses Solady's
     // `Ownable` which reverts with `Unauthorized()` — not in our typed
     // error registry, so it surfaces as `UnknownContractError` with the
     // error name preserved.
@@ -301,13 +300,8 @@ describe("Dual-signature contract on execute(bytes)", () => {
     } catch (e) {
       caught = e;
     }
-    expect(caught).toBeInstanceOf(SimulationError);
-    const sim = caught as SimulationError;
-    // The decoded inner should reflect the contract-level revert.
-    // Solady `Unauthorized()` has no args and isn't in our typed registry
-    // → UnknownContractError carrying the name "Unauthorized".
-    expect(sim.decodedError).toBeInstanceOf(UnknownContractError);
-    const unknown = sim.decodedError as UnknownContractError;
+    expect(caught).toBeInstanceOf(UnknownContractError);
+    const unknown = caught as UnknownContractError;
     expect(unknown.errorName).toBe("Unauthorized");
   }, 30_000);
 
