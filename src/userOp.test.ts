@@ -17,7 +17,7 @@
 import { describe, it, expect } from "@jest/globals";
 import { keccak256, encodeAbiParameters } from "viem";
 
-import { buildUserOp } from "./userOp.js";
+import { buildUserOp, estimateSponsorshipCost } from "./userOp.js";
 import {
   DEFAULT_CALL_GAS_LIMIT,
   DEFAULT_PRE_VERIFICATION_GAS,
@@ -156,6 +156,157 @@ describe("buildUserOp", () => {
     expect(userOp.preVerificationGas).toBe(300n);
     expect(gf.maxPriorityFeePerGas).toBe(400n);
     expect(gf.maxFeePerGas).toBe(500n);
+  });
+});
+
+describe("estimateSponsorshipCost", () => {
+  // Build a userOp with known gas-limit and fee fields, optionally with a
+  // paymaster-andData prefix.
+  function userOpWith(params: {
+    verificationGasLimit: bigint;
+    callGasLimit: bigint;
+    preVerificationGas: bigint;
+    maxPriorityFeePerGas: bigint;
+    maxFeePerGas: bigint;
+    paymasterAndData?: `0x${string}`;
+  }): PackedUserOperation {
+    const userOp = buildUserOp({
+      sender: WALLET,
+      nonce: 0n,
+      callData: "0x",
+      verificationGasLimit: params.verificationGasLimit,
+      callGasLimit: params.callGasLimit,
+      preVerificationGas: params.preVerificationGas,
+      maxPriorityFeePerGas: params.maxPriorityFeePerGas,
+      maxFeePerGas: params.maxFeePerGas,
+    });
+    return {
+      ...userOp,
+      paymasterAndData: params.paymasterAndData ?? "0x",
+    };
+  }
+
+  // EP v0.7 paymasterAndData header: address(20) + verifGasLimit(16) + postOpGasLimit(16) = 52 bytes
+  function pmdHeader(
+    paymaster: `0x${string}`,
+    verifGasLimit: bigint,
+    postOpGasLimit: bigint
+  ): `0x${string}` {
+    const v = verifGasLimit.toString(16).padStart(32, "0");
+    const p = postOpGasLimit.toString(16).padStart(32, "0");
+    return `${paymaster}${v}${p}` as `0x${string}`;
+  }
+
+  it("self-sponsored userOp: paymaster gas limits are zero", () => {
+    const userOp = userOpWith({
+      verificationGasLimit: 100_000n,
+      callGasLimit: 200_000n,
+      preVerificationGas: 50_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      maxFeePerGas: 5_000_000_000n,
+    });
+    const out = estimateSponsorshipCost(userOp);
+    expect(out.verificationGasLimit).toBe(100_000n);
+    expect(out.callGasLimit).toBe(200_000n);
+    expect(out.preVerificationGas).toBe(50_000n);
+    expect(out.paymasterVerificationGasLimit).toBe(0n);
+    expect(out.paymasterPostOpGasLimit).toBe(0n);
+    expect(out.maxPriorityFeePerGas).toBe(1_000_000_000n);
+    expect(out.maxFeePerGas).toBe(5_000_000_000n);
+    expect(out.totalGasLimit).toBe(350_000n);
+    expect(out.maxCost).toBe(350_000n * 5_000_000_000n);
+  });
+
+  it("sponsored userOp: includes paymaster verification + postOp gas", () => {
+    const userOp = userOpWith({
+      verificationGasLimit: 100_000n,
+      callGasLimit: 200_000n,
+      preVerificationGas: 50_000n,
+      maxPriorityFeePerGas: 1_000_000_000n,
+      maxFeePerGas: 5_000_000_000n,
+      paymasterAndData: pmdHeader(
+        "0x2222222222222222222222222222222222222222",
+        80_000n,
+        30_000n
+      ),
+    });
+    const out = estimateSponsorshipCost(userOp);
+    expect(out.paymasterVerificationGasLimit).toBe(80_000n);
+    expect(out.paymasterPostOpGasLimit).toBe(30_000n);
+    expect(out.totalGasLimit).toBe(100_000n + 200_000n + 50_000n + 80_000n + 30_000n);
+    expect(out.maxCost).toBe(out.totalGasLimit * 5_000_000_000n);
+  });
+
+  it("matches the EP v0.7 requiredPrefund formula exactly", () => {
+    // Explicit values picked to make the arithmetic checkable by hand:
+    //   gas = 7 + 11 + 13 + 17 + 19 = 67
+    //   maxFeePerGas = 1e9
+    //   maxCost = 67e9
+    const userOp = userOpWith({
+      verificationGasLimit: 7n,
+      callGasLimit: 11n,
+      preVerificationGas: 13n,
+      maxPriorityFeePerGas: 1n,
+      maxFeePerGas: 1_000_000_000n,
+      paymasterAndData: pmdHeader(
+        "0x3333333333333333333333333333333333333333",
+        17n,
+        19n
+      ),
+    });
+    const out = estimateSponsorshipCost(userOp);
+    expect(out.totalGasLimit).toBe(67n);
+    expect(out.maxCost).toBe(67n * 1_000_000_000n);
+  });
+
+  it("ignores trailing paymaster-specific data after the 52-byte header", () => {
+    // Real paymasterAndData includes validUntil/validAfter/verifier/sig
+    // after the standardized header. estimateSponsorshipCost must only
+    // consume the first 52 bytes.
+    const userOp = userOpWith({
+      verificationGasLimit: 100n,
+      callGasLimit: 200n,
+      preVerificationGas: 300n,
+      maxPriorityFeePerGas: 1n,
+      maxFeePerGas: 10n,
+      paymasterAndData: (pmdHeader(
+        "0x4444444444444444444444444444444444444444",
+        400n,
+        500n
+      ) + "deadbeef".repeat(32)) as `0x${string}`, // junk trailing data
+    });
+    const out = estimateSponsorshipCost(userOp);
+    expect(out.paymasterVerificationGasLimit).toBe(400n);
+    expect(out.paymasterPostOpGasLimit).toBe(500n);
+    expect(out.maxCost).toBe(1500n * 10n);
+  });
+
+  it("throws on malformed paymasterAndData (1..51 bytes)", () => {
+    const userOp = userOpWith({
+      verificationGasLimit: 1n,
+      callGasLimit: 1n,
+      preVerificationGas: 1n,
+      maxPriorityFeePerGas: 1n,
+      maxFeePerGas: 1n,
+      // 20-byte address only — missing the gas-limit fields.
+      paymasterAndData: "0x5555555555555555555555555555555555555555",
+    });
+    expect(() => estimateSponsorshipCost(userOp)).toThrow(
+      /paymasterAndData length 20/
+    );
+  });
+
+  it("zero fees produce zero maxCost", () => {
+    const userOp = userOpWith({
+      verificationGasLimit: 100n,
+      callGasLimit: 200n,
+      preVerificationGas: 50n,
+      maxPriorityFeePerGas: 0n,
+      maxFeePerGas: 0n,
+    });
+    const out = estimateSponsorshipCost(userOp);
+    expect(out.totalGasLimit).toBe(350n);
+    expect(out.maxCost).toBe(0n);
   });
 });
 

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { type Address, type Hex } from "viem";
+import { type Address, type Hex, hexToBigInt, size, slice } from "viem";
 
 import {
   DEFAULT_CALL_GAS_LIMIT,
@@ -35,6 +35,8 @@ import {
   packGasFees,
   packPaymasterAndData,
   paymasterUserOpDigest,
+  unpackAccountGasLimits,
+  unpackGasFees,
 } from "./wotsCodec.js";
 
 export interface BuildUserOpParams {
@@ -168,6 +170,95 @@ export function signPaymasterUserOp(params: {
       ),
     },
     digest,
+  };
+}
+
+/// Breakdown of the EntryPoint v0.7 `requiredPrefund` formula for a
+/// `PackedUserOperation`. Operators size their EntryPoint deposit against
+/// `maxCost` and enforce per-op sponsorship policy from the unpacked
+/// gas-limit fields. The numbers are a **ceiling** — the EntryPoint
+/// charges `actualGasUsed × effectiveGasPrice` on-chain, almost always
+/// less than `maxCost`.
+export interface SponsorshipCostBreakdown {
+  /// `(sumOfGasLimits) × maxFeePerGas` — the wei the EntryPoint will
+  /// reserve against the paymaster's (or the wallet's) deposit before
+  /// running validation. Use this for deposit sizing and policy gates.
+  maxCost: bigint;
+  /// Sum of every gas-limit field that contributes to the prefund.
+  totalGasLimit: bigint;
+  verificationGasLimit: bigint;
+  callGasLimit: bigint;
+  preVerificationGas: bigint;
+  /// Zero when `userOp.paymasterAndData` is empty (self-sponsored).
+  paymasterVerificationGasLimit: bigint;
+  /// Zero when `userOp.paymasterAndData` is empty (self-sponsored).
+  paymasterPostOpGasLimit: bigint;
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}
+
+/// Compute the EntryPoint v0.7 `requiredPrefund` for a `PackedUserOperation`
+/// without any RPC roundtrips. Unpacks `accountGasLimits`, `gasFees`, and
+/// the first 52 bytes of `paymasterAndData` (the standardized header:
+/// `[address(20) | paymasterVerificationGasLimit(16) | paymasterPostOpGasLimit(16)]`).
+///
+/// Formula (EP v0.7):
+///   maxCost = (verificationGasLimit + callGasLimit + preVerificationGas
+///              + paymasterVerificationGasLimit + paymasterPostOpGasLimit)
+///             × maxFeePerGas
+///
+/// `paymasterAndData` cases handled:
+///   - `"0x"` → paymaster gas limits = 0 (self-sponsored userOp).
+///   - 52+ bytes → read the standard EP v0.7 header; ignore trailing data.
+///   - 1..51 bytes → throw (malformed; EntryPoint would reject).
+///
+/// **This is a ceiling, not a forecast.** Real on-chain charge is
+/// `actualGasUsed × effectiveGasPrice`; the SDK can't predict either
+/// without a bundler simulation.
+export function estimateSponsorshipCost(
+  userOp: PackedUserOperation
+): SponsorshipCostBreakdown {
+  const { verificationGasLimit, callGasLimit } = unpackAccountGasLimits(
+    userOp.accountGasLimits
+  );
+  const { maxPriorityFeePerGas, maxFeePerGas } = unpackGasFees(userOp.gasFees);
+  const preVerificationGas = userOp.preVerificationGas;
+
+  let paymasterVerificationGasLimit = 0n;
+  let paymasterPostOpGasLimit = 0n;
+  const pmdLen = size(userOp.paymasterAndData);
+  if (pmdLen !== 0) {
+    if (pmdLen < 52) {
+      throw new Error(
+        `estimateSponsorshipCost: paymasterAndData length ${pmdLen} is < 52 (EP v0.7 header is 20+16+16 bytes); the EntryPoint would reject this userOp`
+      );
+    }
+    paymasterVerificationGasLimit = hexToBigInt(
+      slice(userOp.paymasterAndData, 20, 36)
+    );
+    paymasterPostOpGasLimit = hexToBigInt(
+      slice(userOp.paymasterAndData, 36, 52)
+    );
+  }
+
+  const totalGasLimit =
+    verificationGasLimit +
+    callGasLimit +
+    preVerificationGas +
+    paymasterVerificationGasLimit +
+    paymasterPostOpGasLimit;
+  const maxCost = totalGasLimit * maxFeePerGas;
+
+  return {
+    maxCost,
+    totalGasLimit,
+    verificationGasLimit,
+    callGasLimit,
+    preVerificationGas,
+    paymasterVerificationGasLimit,
+    paymasterPostOpGasLimit,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
   };
 }
 

@@ -31,7 +31,11 @@ import {
   type ContractCallParams,
   prepareTx,
 } from "./gas.js";
-import { buildSignedPaymasterAndData } from "./userOp.js";
+import {
+  type SponsorshipCostBreakdown,
+  buildSignedPaymasterAndData,
+  estimateSponsorshipCost,
+} from "./userOp.js";
 import {
   type PackedUserOperation,
   type WinternitzAddress,
@@ -82,6 +86,17 @@ export class QuipPaymasterClient {
 
   getAddress(): Address {
     return this.paymasterAddress;
+  }
+
+  /// Pure-local maxCost breakdown for sponsoring `userOp`. Convenience
+  /// wrapper around the top-level `estimateSponsorshipCost` export — same
+  /// formula, no RPC, no paymaster state. Operators size their EntryPoint
+  /// deposit + enforce per-op spending policy against the returned
+  /// `maxCost`.
+  estimateSponsorshipCost(
+    userOp: PackedUserOperation
+  ): SponsorshipCostBreakdown {
+    return estimateSponsorshipCost(userOp);
   }
 
   /// Paymaster's ETH balance held at the EntryPoint. Sponsored UserOps
