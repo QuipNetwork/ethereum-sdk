@@ -56,14 +56,14 @@ import {
 import { createAnvil } from "@viem/anvil";
 import { mainnet } from "viem/chains";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
-import { entryPointV07Abi } from "./abi/EntryPointV07.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
-import { QuipWalletClient, KeyType } from "./walletClient.js";
-import { QuipPaymasterClient } from "./paymasterClient.js";
+import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { quipPaymasterAbi } from "../abi/QuipPaymaster.js";
+import { entryPointV07Abi } from "../abi/EntryPointV07.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { QuipSigner } from "../signer.js";
+import { createInMemoryBurnSet } from "../burnSet.js";
+import { QuipWalletClient, KeyType } from "../walletClient.js";
+import { QuipPaymasterClient } from "../paymasterClient.js";
 import {
   parseExecutionSucceeded,
   parseKeyRotated,
@@ -71,19 +71,19 @@ import {
   parseQuipCreated,
   parseUserOpSponsored,
   parseWalletReceipt,
-} from "./events.js";
+} from "../events.js";
 import {
   encodeInit,
   type WinternitzAddress,
   RECOVERY_KEY_AMOUNT,
   TRANSACTION_KEY_INIT_AMOUNT,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 import {
   DEFAULT_ACCOUNT,
   deployErc1967Proxy,
   linkBytecode,
   loadForgeArtifacts,
-} from "./test-utils/anvilFixture.js";
+} from "./utils/anvilFixture.js";
 
 const {
   factoryBytecode,

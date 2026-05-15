@@ -16,27 +16,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { type Address, type Hex, toHex, zeroAddress } from "viem";
 
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
-import { QuipWalletClient, KeyType } from "./walletClient.js";
+import { QuipSigner } from "../signer.js";
+import { createInMemoryBurnSet } from "../burnSet.js";
+import { QuipWalletClient, KeyType } from "../walletClient.js";
 import {
   DuplicateKeyError,
   EmptyKeysError,
   KeyAlreadyBurnedError,
   PartialMulticallResultError,
   UnknownKeyError,
-} from "./errors.js";
+} from "../errors.js";
 import {
   type WinternitzAddress,
   TRANSACTION_KEY_INIT_AMOUNT,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
   createFreshWallet,
   setupAnvilStack,
   stopAnvilStack,
-} from "./test-utils/anvilFixture.js";
+} from "./utils/anvilFixture.js";
 import { foundry } from "viem/chains";
 
 let stack: AnvilStack;

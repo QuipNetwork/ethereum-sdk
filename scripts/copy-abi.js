@@ -17,7 +17,7 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const OUT_DIR = join(ROOT, "out");
-const ABI_DIR = join(ROOT, "src", "abi");
+const ABI_DIR = join(ROOT, "src", "v1", "abi");
 
 // camelCase helper: "QuipFactory" -> "quipFactoryAbi"
 function toExportName(name) {
@@ -57,7 +57,7 @@ console.log(`Wrote ${barrelPath}`);
 
 // --- Bytecode extraction ---
 const addresses = JSON.parse(
-  readFileSync(join(ROOT, "src", "addresses.json"), "utf-8")
+  readFileSync(join(ROOT, "src", "v1", "addresses.json"), "utf-8")
 );
 const wotsAddress = addresses.WOTSPlus.toLowerCase().replace("0x", "");
 
@@ -69,7 +69,7 @@ let bytecode = walletArtifact.bytecode.object;
 // Replace library placeholder (__$<hash>$__) with actual WOTSPlus address
 bytecode = bytecode.replace(/__\$[0-9a-fA-F]{34}\$__/g, wotsAddress);
 
-const bytecodeOut = join(ROOT, "src", "bytecode.json");
+const bytecodeOut = join(ROOT, "src", "v1", "bytecode.json");
 writeFileSync(
   bytecodeOut,
   JSON.stringify({ quipWalletCreationCode: bytecode }, null, 2) + "\n"

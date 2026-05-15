@@ -29,17 +29,17 @@ import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
+import { quipFactoryAbi } from "../abi/QuipFactory.js";
 import {
   decodeContractError,
   withDecodedError,
-} from "./internal/decodeError.js";
+} from "../internal/decodeError.js";
 import {
   FeeExceedsMaxError,
   InsufficientBalanceError,
   ZeroMaxFeeError,
   QuipError,
-} from "./errors.js";
+} from "../errors.js";
 
 // ─── Forge artifact ─────────────────────────────────────────────────
 const factoryArtifact = JSON.parse(

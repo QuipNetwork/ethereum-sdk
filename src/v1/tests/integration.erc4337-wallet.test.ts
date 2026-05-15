@@ -27,20 +27,20 @@ import {
 } from "viem";
 import { foundry } from "viem/chains";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { entryPointV07Abi } from "./abi/EntryPointV07.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
-import { KeyType } from "./walletClient.js";
+import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { entryPointV07Abi } from "../abi/EntryPointV07.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { QuipSigner } from "../signer.js";
+import { createInMemoryBurnSet } from "../burnSet.js";
+import { KeyType } from "../walletClient.js";
 import {
   UnknownContractError,
   UserOpValidationFailure,
-} from "./errors.js";
+} from "../errors.js";
 import {
   type PackedUserOperation,
   computeUserOpHash,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
@@ -48,7 +48,7 @@ import {
   loadForgeArtifacts,
   setupAnvilStack,
   stopAnvilStack,
-} from "./test-utils/anvilFixture.js";
+} from "./utils/anvilFixture.js";
 
 // The wallet ABI is loaded here (not from the central abi/ dir) because some
 // tests need it to compute selectors against the actual deployed bytecode.
@@ -438,7 +438,7 @@ describe("QuipClient.createWalletWithImplementation", () => {
   test("deploys against deploySpecificWalletProxy at index 0", async () => {
     // Hand-construct a QuipClient pointed at the test factory to bypass
     // the foundry-chainId-not-in-NETWORK_ADDRESSES limitation.
-    const { QuipClient } = await import("./factoryClient.js");
+    const { QuipClient } = await import("../factoryClient.js");
     const client = Object.create(QuipClient.prototype) as InstanceType<
       typeof QuipClient
     >;

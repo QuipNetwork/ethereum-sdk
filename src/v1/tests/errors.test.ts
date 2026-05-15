@@ -25,11 +25,11 @@ import {
 import {
   decodeContractError,
   withDecodedError,
-} from "./internal/decodeError.js";
+} from "../internal/decodeError.js";
 
-import { quipWalletAbi } from "./abi/QuipWallet.js";
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
+import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { quipPaymasterAbi } from "../abi/QuipPaymaster.js";
 
 import {
   QuipError,
@@ -88,7 +88,7 @@ import {
   Erc4337PaymasterValidationError,
   UserOpValidationFailure,
   PaymasterValidationFailure,
-} from "./errors.js";
+} from "../errors.js";
 
 /// Build a viem ContractFunctionRevertedError that mimics what we'd see
 /// from a real `writeContract`/`readContract` revert.

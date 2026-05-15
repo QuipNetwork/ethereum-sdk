@@ -17,13 +17,13 @@
 import { describe, it, expect } from "@jest/globals";
 import { keccak256, encodeAbiParameters } from "viem";
 
-import { buildUserOp, estimateSponsorshipCost } from "./userOp.js";
+import { buildUserOp, estimateSponsorshipCost } from "../userOp.js";
 import {
   DEFAULT_CALL_GAS_LIMIT,
   DEFAULT_PRE_VERIFICATION_GAS,
   DEFAULT_VERIFICATION_GAS_LIMIT,
-} from "./constants.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
+} from "../constants.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
 import {
   type PackedUserOperation,
   type WinternitzAddress,
@@ -36,7 +36,7 @@ import {
   packUint128Pair,
   unpackAccountGasLimits,
   unpackGasFees,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111" as const;
 const ENTRYPOINT = CANONICAL_ENTRYPOINT_V07;

@@ -23,8 +23,8 @@ import {
   MIN_GAS_MULTIPLIER,
   MAX_GAS_MULTIPLIER,
   type TxOptions,
-} from "./gas.js";
-import { BalanceTooLowError } from "./errors.js";
+} from "../gas.js";
+import { BalanceTooLowError } from "../errors.js";
 
 describe("applyGasMultiplier", () => {
   test("default 1.2 multiplier when no opts", () => {

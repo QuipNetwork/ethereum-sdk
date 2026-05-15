@@ -29,15 +29,15 @@ import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
+import { quipFactoryAbi } from "../abi/QuipFactory.js";
 import {
   tryMulticall,
   resetMulticallCacheForTesting,
   getMulticall3Address,
   MULTICALL3_ADDRESS,
-} from "./internal/multicall.js";
-import { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "./addresses.js";
-import { QuipClient } from "./factoryClient.js";
+} from "../internal/multicall.js";
+import { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "../addresses.js";
+import { QuipClient } from "../factoryClient.js";
 
 // `QuipClient.create(provider)` resolves NETWORK_ADDRESSES via getChainId(),
 // but the foundry chainId (31337) isn't in the registry. For tests we

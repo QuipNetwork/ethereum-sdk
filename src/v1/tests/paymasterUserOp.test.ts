@@ -32,11 +32,11 @@ import {
   packPaymasterAndData,
   paymasterOpCommitment,
   paymasterUserOpDigest,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 import {
   DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
   DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-} from "./constants.js";
+} from "../constants.js";
 
 /// Local thin wrapper so the existing object-form test cases keep reading
 /// cleanly. The codec function takes positional args (it mirrors the

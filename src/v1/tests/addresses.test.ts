@@ -5,8 +5,8 @@ import {
   getVaultAddress,
   computeVaultAddress,
   QUIP_FACTORY_ADDRESS,
-} from "./addresses.js";
-import { UnsupportedNetworkError } from "./errors.js";
+} from "../addresses.js";
+import { UnsupportedNetworkError } from "../errors.js";
 
 describe("Vault Address Functions", () => {
   const testVaultId: Hex =

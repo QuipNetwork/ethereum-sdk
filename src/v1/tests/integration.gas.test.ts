@@ -29,13 +29,13 @@ import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { prepareTx, applyGasMultiplier, type ContractCallParams } from "./gas.js";
+import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { prepareTx, applyGasMultiplier, type ContractCallParams } from "../gas.js";
 import {
   GasEstimationError,
   BalanceTooLowError,
   FeeExceedsMaxError,
-} from "./errors.js";
+} from "../errors.js";
 
 // ─── Forge artifact ─────────────────────────────────────────────────
 const factoryArtifact = JSON.parse(

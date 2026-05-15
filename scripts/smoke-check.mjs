@@ -4,15 +4,18 @@
 //
 // What this catches that the in-repo tests don't:
 //   - Missing `dist/` files (the `files` glob in package.json drifts)
-//   - Broken subpath exports (`./errors`, `./events`, etc.)
+//   - Broken subpath exports (`./v1/errors`, `./v1/events`, etc.)
 //   - ESM/CJS interop regressions
 //   - Type-import-only paths that vanish after tree-shaking
 //   - Re-exports referencing symbols that didn't make it into dist
+//   - Re-introduction of a root `.` export (the symmetric layout
+//     intentionally forbids one; a future change adding one back
+//     should fail this script)
 import assert from "node:assert/strict";
 
-console.log("  - root barrel...");
-const barrel = await import("@quip.network/ethereum-sdk");
-assert(typeof barrel.QuipSigner === "function", "QuipSigner missing from barrel");
+console.log("  - v1 barrel...");
+const barrel = await import("@quip.network/ethereum-sdk/v1");
+assert(typeof barrel.QuipSigner === "function", "QuipSigner missing from v1 barrel");
 assert(typeof barrel.QuipWalletClient === "function", "QuipWalletClient missing");
 assert(typeof barrel.QuipClient === "function", "QuipClient missing");
 assert(typeof barrel.QuipPaymasterClient === "function", "QuipPaymasterClient missing");
@@ -24,16 +27,22 @@ assert(typeof barrel.parseWalletReceipt === "function", "parseWalletReceipt miss
 assert(typeof barrel.parseQuipCreated === "function", "parseQuipCreated missing");
 assert(typeof barrel.buildUserOp === "function", "buildUserOp missing");
 
-console.log("  - subpath exports...");
-const errors = await import("@quip.network/ethereum-sdk/errors");
+console.log("  - v1 subpath exports...");
+const errors = await import("@quip.network/ethereum-sdk/v1/errors");
 assert(typeof errors.InvalidSignatureError === "function", "InvalidSignatureError via subpath");
-const events = await import("@quip.network/ethereum-sdk/events");
+const events = await import("@quip.network/ethereum-sdk/v1/events");
 assert(typeof events.parseQuipCreated === "function", "parseQuipCreated via subpath");
-const codecModule = await import("@quip.network/ethereum-sdk");
 // `WotsCodec` is namespace-re-exported from the barrel; check it's the same
 // object referenced from a direct subpath import.
-const directCodec = await import("@quip.network/ethereum-sdk").then((m) => m.WotsCodec);
+const directCodec = await import("@quip.network/ethereum-sdk/v1").then((m) => m.WotsCodec);
 assert(directCodec.WOTS_ELEMENTS_COUNT === 67, "codec constant wrong");
+
+console.log("  - root barrel rejected...");
+await assert.rejects(
+  () => import("@quip.network/ethereum-sdk"),
+  /ERR_PACKAGE_PATH_NOT_EXPORTED/,
+  "root import should fail loudly after symmetric split"
+);
 
 console.log("  - signer + codec round-trip (no network)...");
 const { QuipSigner, WotsCodec, createInMemoryBurnSet } = barrel;

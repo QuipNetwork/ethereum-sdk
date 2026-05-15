@@ -25,19 +25,19 @@ import {
 } from "viem";
 import { foundry } from "viem/chains";
 
-import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
-import { entryPointV07Abi } from "./abi/EntryPointV07.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
-import { QuipPaymasterClient } from "./paymasterClient.js";
+import { quipPaymasterAbi } from "../abi/QuipPaymaster.js";
+import { entryPointV07Abi } from "../abi/EntryPointV07.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { QuipSigner } from "../signer.js";
+import { createInMemoryBurnSet } from "../burnSet.js";
+import { QuipPaymasterClient } from "../paymasterClient.js";
 import {
   PaymasterValidationFailure,
   PqVerifierNotRegisteredError,
   VerifierMismatchError,
-} from "./errors.js";
-import { buildSignedPaymasterAndData } from "./userOp.js";
-import { paymasterVerifierKeyUsedSlot } from "./wotsCodec.js";
+} from "../errors.js";
+import { buildSignedPaymasterAndData } from "../userOp.js";
+import { paymasterVerifierKeyUsedSlot } from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
@@ -47,7 +47,7 @@ import {
   loadForgeArtifacts,
   setupAnvilStack,
   stopAnvilStack,
-} from "./test-utils/anvilFixture.js";
+} from "./utils/anvilFixture.js";
 
 let stack: AnvilStack;
 let paymasterAddress: Address;

@@ -34,28 +34,28 @@ import {
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { quipWalletAbi } from "./abi/QuipWallet.js";
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
+import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { QuipSigner } from "../signer.js";
+import { createInMemoryBurnSet } from "../burnSet.js";
 import {
   IncorrectRecoveryKeyAmountError,
   IncorrectTransactionKeyAmountError,
   KeyAlreadyBurnedError,
-} from "./errors.js";
+} from "../errors.js";
 import {
   verificationDigest,
   type WinternitzAddress,
   type WinternitzElements,
   RECOVERY_KEY_AMOUNT,
   TRANSACTION_KEY_INIT_AMOUNT,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
   createFreshWallet,
   setupAnvilStack,
   stopAnvilStack,
-} from "./test-utils/anvilFixture.js";
+} from "./utils/anvilFixture.js";
 
 const NEW_OWNER_PRIV_KEY =
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";

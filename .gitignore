@@ -15,8 +15,8 @@ bun.lock
 dist/
 
 # Generated SDK files
-src/abi/
-src/bytecode.json
+src/v1/abi/
+src/v1/bytecode.json
 .DS_Store
 
 pwCrack.ts

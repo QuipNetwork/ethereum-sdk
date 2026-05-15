@@ -17,7 +17,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import { toHex, zeroAddress } from "viem";
 
-import { KeyType } from "./walletClient.js";
+import { KeyType } from "../walletClient.js";
 import {
   parseExecutionSucceeded,
   parseKeyReplaced,
@@ -28,18 +28,18 @@ import {
   parseQuipCreated,
   parseWalletInitialized,
   parseWalletReceipt,
-} from "./events.js";
+} from "../events.js";
 import {
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
   createFreshWallet,
   setupAnvilStack,
   stopAnvilStack,
-} from "./test-utils/anvilFixture.js";
+} from "./utils/anvilFixture.js";
 
 let stack: AnvilStack;
 
