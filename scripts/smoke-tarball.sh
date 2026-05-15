@@ -55,7 +55,10 @@ cat > package.json <<EOF
 EOF
 
 echo "==> Installing tarball..."
-npm install --no-audit --no-fund --silent "$TARBALL_PATH" viem > /tmp/smoke-install.log 2>&1 || {
+# Install the SDK plus its peer/runtime deps that exporting consumers
+# need: viem (v1) and ethers (v0, optional peer — required when
+# importing from /v0).
+npm install --no-audit --no-fund --silent "$TARBALL_PATH" viem ethers > /tmp/smoke-install.log 2>&1 || {
   echo "FAIL: install failed; see /tmp/smoke-install.log" >&2
   exit 1
 }

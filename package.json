@@ -56,6 +56,18 @@
     "./v1/wotsCodec": {
       "import": "./dist/src/v1/wotsCodec.js",
       "types": "./dist/src/v1/wotsCodec.d.ts"
+    },
+    "./v0": {
+      "import": "./dist/src/v0/index.js",
+      "types": "./dist/src/v0/index.d.ts"
+    }
+  },
+  "peerDependencies": {
+    "ethers": "^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ethers": {
+      "optional": true
     }
   },
   "scripts": {
@@ -87,6 +99,7 @@
     "copyfiles": "^2.4.1",
     "dotenv": "^16.4.7",
     "ecpair": "^3.0.0",
+    "ethers": "^6.0.0",
     "hardhat": "^2.22.19",
     "hardhat-deploy": "^0.14.0",
     "jest": "^29.7.0",
