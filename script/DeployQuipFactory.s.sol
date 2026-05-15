@@ -2,70 +2,69 @@
 pragma solidity ^0.8.33;
 
 import {Script, console} from "forge-std-1.14.0/Script.sol";
+import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {Deployer} from "../contracts/Deployer.sol";
+import {QuipFactory} from "../contracts/QuipFactory.sol";
 
 /**
  * @title DeployQuipFactory
- * @dev Deploys QuipFactory via the Deployer contract using CREATE3
- *      (solady's `CREATE3.deployDeterministic`). The factory's address
- *      depends only on (Deployer, salt) — same on every chain regardless of
- *      the factory's creation bytecode.
- *      Uses stored release bytecode from deployments/bytecode/ for the salt
- *      and expected address.
+ * @dev Deploys the QuipFactory via the Deployer contract using CREATE3
+ *      (solady's `CREATE3.deployDeterministic`). Factory address depends only
+ *      on (Deployer address, salt) — same on every chain, independent of
+ *      constructor args. Owner / maxFee differ per chain but the address
+ *      doesn't.
+ *
+ *      IMPORTANT: this script must be run with `FOUNDRY_PROFILE=deploy` so
+ *      the QuipFactory bytecode has the WOTSPlus library linked at compile
+ *      time. Without that, the bytecode contains an unlinked library
+ *      reference and the deploy reverts.
  *
  * Usage:
- *   forge script script/DeployQuipFactory.s.sol --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast
+ *   FOUNDRY_PROFILE=deploy forge script script/DeployQuipFactory.s.sol \
+ *       --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --verify
  *
  * Environment:
- *   PRIVATE_KEY - Operations wallet private key
- *   DEPLOYER_ADDRESS - Deployer contract address
+ *   PRIVATE_KEY      - Operations wallet private key
+ *   DEPLOYER_ADDRESS - Deployer contract address (bootstrapped via DeployDeployer)
+ *   FACTORY_OWNER    - Initial owner of the factory (controls vetImplementation)
+ *   MAX_FEE          - Maximum wallet-creation fee in wei (e.g. 1000000000000000 = 0.001 ETH)
  */
 contract DeployQuipFactory is Script {
+    bytes32 internal constant SALT = keccak256("QUIP:QuipFactory:V1");
+
     function run() external {
         address deployerAddr = vm.envAddress("DEPLOYER_ADDRESS");
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        address factoryOwner = vm.envAddress("FACTORY_OWNER");
+        uint256 maxFee = vm.envUint("MAX_FEE");
 
-        console.log("Deployer contract:", deployerAddr);
+        require(deployerAddr.code.length > 0, "Deployer not deployed. Run DeployDeployer first.");
+        require(factoryOwner != address(0), "FACTORY_OWNER must be non-zero");
+        require(maxFee != 0, "MAX_FEE must be non-zero");
 
-        // Load release bytecode
-        string memory json = vm.readFile("deployments/bytecode/QuipFactory.sol/latest.json");
-        string memory releaseFile = vm.parseJsonString(json, ".file");
-        string memory releaseJson = vm.readFile(
-            string.concat("deployments/bytecode/QuipFactory.sol/", releaseFile)
-        );
+        address expectedAddr = CREATE3.predictDeterministicAddress(SALT, deployerAddr);
+        console.log("Deployer:             ", deployerAddr);
+        console.log("Factory owner:        ", factoryOwner);
+        console.log("Max fee:              ", maxFee);
+        console.log("Expected QuipFactory: ", expectedAddr);
 
-        bytes memory creationBytecode = vm.parseJsonBytes(releaseJson, ".creationBytecode");
-        bytes32 salt = vm.parseJsonBytes32(releaseJson, ".salt");
-        address expectedAddress = vm.parseJsonAddress(releaseJson, ".address");
-
-        console.log("Expected QuipFactory address:", expectedAddress);
-        console.log("Bytecode size:", creationBytecode.length, "bytes");
-
-        // Check if already deployed
-        if (expectedAddress.code.length > 0) {
-            console.log("QuipFactory already deployed. Skipping.");
+        if (expectedAddr.code.length > 0) {
+            console.log("\nQuipFactory already deployed. Skipping.");
             return;
         }
 
-        // Verify WOTSPlus is deployed
-        string memory wotsJson = vm.readFile("deployments/bytecode/WOTSPlus.sol/latest.json");
-        string memory wotsFile = vm.parseJsonString(wotsJson, ".file");
-        string memory wotsReleaseJson = vm.readFile(
-            string.concat("deployments/bytecode/WOTSPlus.sol/", wotsFile)
+        bytes memory bytecode = abi.encodePacked(
+            type(QuipFactory).creationCode,
+            abi.encode(factoryOwner, maxFee)
         );
-        address wotsAddress = vm.parseJsonAddress(wotsReleaseJson, ".address");
-        require(wotsAddress.code.length > 0, "WOTSPlus not deployed. Deploy it first.");
-
-        Deployer deployer = Deployer(deployerAddr);
+        console.log("Bytecode size:", bytecode.length, "bytes");
 
         vm.startBroadcast(privateKey);
-        address factoryAddr = deployer.deploy(creationBytecode, salt);
+        address deployed = Deployer(deployerAddr).deploy(bytecode, SALT);
         vm.stopBroadcast();
 
-        console.log("QuipFactory deployed at:", factoryAddr);
-
-        if (factoryAddr != expectedAddress) {
-            console.log("WARNING: Address mismatch! Expected:", expectedAddress);
-        }
+        require(deployed == expectedAddr, "QuipFactory address mismatch");
+        require(QuipFactory(payable(deployed)).owner() == factoryOwner, "Factory owner mismatch");
+        console.log("QuipFactory deployed at:", deployed);
     }
 }
