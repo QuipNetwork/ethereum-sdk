@@ -60,6 +60,7 @@ import { join } from "node:path";
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipWalletAbi } from "./abi/QuipWallet.js";
 import { QuipSigner } from "./signer.js";
+import { createInMemoryBurnSet } from "./burnSet.js";
 import { QuipWalletClient } from "./walletClient.js";
 import {
   InvalidSignatureError,
@@ -162,7 +163,7 @@ async function createFreshWallet(seedByte: number): Promise<{
   walletAddress: Address;
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
-  const signer = new QuipSigner(quantumSecret);
+  const signer = new QuipSigner(quantumSecret, createInMemoryBurnSet().consume);
   const vaultId = toHex(new Uint8Array(32).fill(seedByte));
   const initPayload = buildInitPayload(signer, vaultId);
 

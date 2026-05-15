@@ -38,6 +38,7 @@ import { join } from "node:path";
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { QuipSigner } from "./signer.js";
+import { createInMemoryBurnSet } from "./burnSet.js";
 import { QuipWalletClient, KeyType } from "./walletClient.js";
 import {
   parseExecutionSucceeded,
@@ -151,7 +152,7 @@ async function createFreshWallet(seedByte: number): Promise<{
   init: ReturnType<typeof buildInitPayload>;
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
-  const signer = new QuipSigner(quantumSecret);
+  const signer = new QuipSigner(quantumSecret, createInMemoryBurnSet().consume);
   const vaultId = toHex(new Uint8Array(32).fill(seedByte));
   const init = buildInitPayload(signer, vaultId);
 

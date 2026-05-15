@@ -43,8 +43,6 @@ import {
   GasEstimationError,
   IncorrectRecoveryKeyAmountError,
   IncorrectTransactionKeyAmountError,
-  KeyAlreadyBurnedError,
-  NoAvailableTransactionKeysError,
   PartialMulticallResultError,
   PaymasterValidationFailure,
   RefreshTransactionForbiddenError,
@@ -106,27 +104,22 @@ export type { WinternitzAddress } from "./wotsCodec.js";
 /// to sign with. See `SDK_README.md` for the full operational contract
 /// (every broadcast burns a key; concurrent ops require distinct keys).
 ///
-/// Precedence: `signWithKey` (explicit) wins. Otherwise `keyAllocationStrategy`
-/// chooses between the head and a walked-keyset search.
+/// Two paths:
+///   - `signWithKey` (explicit) — sign with this exact key.
+///   - Default — sign with `keyAt(Transaction, 0)` (the on-chain head).
+///
+/// Concurrent writes MUST pass distinct `signWithKey` values; the SDK has
+/// no in-process key-selection logic beyond "head or what you told me".
+/// If the head has been burned (in-session reuse, or a previously-broadcast
+/// sig recorded against the injected burn set), the signer's `consume`
+/// throws `KeyAlreadyBurnedError` and the caller must retry with an
+/// explicit `signWithKey`.
 export interface TransactionKeyOptions {
   /// Explicit override — sign with this exact key. Must be a member of
-  /// the transaction keyset; the contract reverts `UnknownKey` otherwise.
-  /// Useful for HSM/split-custody flows where the caller owns key
-  /// selection.
+  /// the transaction keyset on chain; the SDK pre-checks via
+  /// `isKey(Transaction, ...)` and throws `UnknownKeyError` synchronously
+  /// before any WOTS+ work if the key has rotated out.
   signWithKey?: WinternitzAddress;
-
-  /// 'head'           — default; signs with `keyAt(Transaction, 0)`. Safe
-  ///                    for single-threaded write flows. Unsafe under
-  ///                    concurrent submission (multiple in-flight ops
-  ///                    would all pick the same head and double-use the
-  ///                    key).
-  /// 'next-available' — walks the keyset and signs with the first key not
-  ///                    in `QuipSigner`'s burned set. Use this whenever
-  ///                    multiple writes may be in flight simultaneously
-  ///                    or when retrying after a revert. Throws
-  ///                    `NoAvailableTransactionKeysError` if the keyset
-  ///                    is exhausted.
-  keyAllocationStrategy?: "head" | "next-available";
 }
 
 export interface WalletState {
@@ -157,11 +150,9 @@ export enum KeyType {
 function splitWriteOpts(
   opts: TxOptions & TransactionKeyOptions
 ): { keyOpts: TransactionKeyOptions; txOpts: TxOptions } {
-  const { signWithKey, keyAllocationStrategy, ...txOpts } = opts;
+  const { signWithKey, ...txOpts } = opts;
   const keyOpts: TransactionKeyOptions = {};
   if (signWithKey !== undefined) keyOpts.signWithKey = signWithKey;
-  if (keyAllocationStrategy !== undefined)
-    keyOpts.keyAllocationStrategy = keyAllocationStrategy;
   return { keyOpts, txOpts };
 }
 
@@ -394,8 +385,7 @@ export class QuipWalletClient {
   /// rotation can shuffle which key sits there. Callers that need a
   /// specific key — e.g. running multiple ops concurrently and avoiding
   /// double-signing — should call `getKeyset(Transaction)` and pass the
-  /// chosen key as `signWithKey` on the relevant write method, or use
-  /// `keyAllocationStrategy: 'next-available'`.
+  /// chosen key as `signWithKey` on the relevant write method.
   async getHeadTransactionKey(): Promise<WinternitzAddress> {
     return this.keyAt(KeyType.Transaction, 0n);
   }
@@ -501,13 +491,13 @@ export class QuipWalletClient {
 
   /// Funnel for every payload-based write. Each write method builds its
   /// codec payload + contract call params, then delegates to this helper for
-  /// simulation, gas estimation, sending, receipt waiting, and the
-  /// post-broadcast burn of the signing key.
+  /// simulation, gas estimation, sending, and receipt waiting. The signing
+  /// key was already burned via the injected `ConsumeKeyFn` at the moment
+  /// `QuipSigner.sign(...)` produced the signature.
   private async executeWrite(
     contractCall: ContractCallParams,
     totalValue: bigint,
-    opts: TxOptions,
-    signingKeyPublicSeed: Hex
+    opts: TxOptions
   ): Promise<TransactionReceipt> {
     const prepared = await prepareTx({
       publicClient: this.publicClient,
@@ -515,13 +505,12 @@ export class QuipWalletClient {
       totalValue,
       opts,
     });
-    return this.submit(contractCall, prepared, signingKeyPublicSeed);
+    return this.submit(contractCall, prepared);
   }
 
   private async submit(
     contractCall: ContractCallParams,
-    prepared: PreparedTx,
-    signingKeyPublicSeed: Hex
+    prepared: PreparedTx
   ): Promise<TransactionReceipt> {
     const writeParams = {
       chain: null,
@@ -534,13 +523,6 @@ export class QuipWalletClient {
     const hash = await withDecodedError(
       this.walletClient.writeContract(writeParams)
     );
-
-    // Idempotent safety-net. `QuipSigner.sign(...)` already burned this
-    // key when the signature was produced (above, in `signWith`). We
-    // re-mark here so the burn is recorded even if the signer is ever
-    // swapped for an implementation that doesn't auto-burn (e.g. a
-    // future HSM-backed `PqSigner`).
-    this.quipSigner.markBurned(signingKeyPublicSeed);
 
     return await this.publicClient.waitForTransactionReceipt({ hash });
   }
@@ -555,45 +537,29 @@ export class QuipWalletClient {
   }
 
   /// Pick a transaction key to sign with according to `keyOpts`:
-  ///   - `signWithKey` (explicit override) wins. Pre-flight checks run in
-  ///     order: (1) `KeyAlreadyBurnedError` if this signer has already
-  ///     consumed the key in-session — more informative than the
-  ///     on-chain miss; (2) `isKey(Transaction, signWithKey)` to verify
-  ///     the key still lives in the keyset on chain, throwing
-  ///     `UnknownKeyError` if not. Both run *before* `quipSigner.sign(...)`
-  ///     so a stale `signWithKey` does NOT burn the key in-memory on a
-  ///     guaranteed-revert call.
-  ///   - `keyAllocationStrategy: 'next-available'` walks the keyset and
-  ///     returns the first unburned key (throws `NoAvailableTransactionKeysError`
-  ///     when exhausted). Keyset is read from chain so membership is
-  ///     implicit.
-  ///   - default ('head'): `keyAt(Transaction, 0)`. Always a live key by
-  ///     construction.
+  ///   - `signWithKey` (explicit override) wins. Pre-flight `isKey(Transaction,
+  ///     signWithKey)` verifies the key still lives in the keyset on chain,
+  ///     throwing `UnknownKeyError` synchronously if it has rotated out.
+  ///     This runs *before* `quipSigner.sign(...)` so a stale `signWithKey`
+  ///     does NOT burn the key on a guaranteed-revert call.
+  ///   - default: `keyAt(Transaction, 0)` (the on-chain head). Always a
+  ///     live key by construction.
+  ///
+  /// In both paths, `quipSigner.sign(...)` invokes the injected
+  /// `ConsumeKeyFn` first thing. If the chosen key has already been burned
+  /// (in-session reuse, or a previously-broadcast sig recorded by the
+  /// caller in their burn store), `consume` throws `KeyAlreadyBurnedError`
+  /// before any WOTS+ work runs.
+  ///
   /// Generates a fresh next key in all cases.
   private async pickTransactionKeyPair(
     keyOpts?: TransactionKeyOptions
   ): Promise<{ currentKey: WinternitzAddress; nextKey: WinternitzAddress }> {
     let current: WinternitzAddress;
     if (keyOpts?.signWithKey) {
-      // KeyAlreadyBurnedError takes priority over UnknownKeyError when
-      // both would fire — same key the caller signed with earlier in
-      // this session is more informative than "not in keyset". The
-      // signer's `sign(...)` re-checks burned status as a final guard.
-      if (this.quipSigner.isBurned(keyOpts.signWithKey.publicSeed)) {
-        throw new KeyAlreadyBurnedError(keyOpts.signWithKey.publicSeed);
-      }
       const live = await this.isKey(KeyType.Transaction, keyOpts.signWithKey);
       if (!live) throw new UnknownKeyError();
       current = keyOpts.signWithKey;
-    } else if (keyOpts?.keyAllocationStrategy === "next-available") {
-      const keyset = await this.getKeyset(KeyType.Transaction);
-      const unburned = keyset.find(
-        (k) => !this.quipSigner.isBurned(k.publicSeed)
-      );
-      if (!unburned) {
-        throw new NoAvailableTransactionKeysError(keyset.length);
-      }
-      current = unburned;
     } else {
       current = await this.getHeadTransactionKey();
     }
@@ -622,12 +588,7 @@ export class QuipWalletClient {
       account: this.account,
       ...(spec.totalValue > 0n && { value: spec.totalValue }),
     };
-    return this.executeWrite(
-      contractCall,
-      spec.totalValue,
-      txOpts,
-      currentKey.publicSeed
-    );
+    return this.executeWrite(contractCall, spec.totalValue, txOpts);
   }
 
   /// Pre-flight validation for batch key-management writes. Synchronous
@@ -901,7 +862,7 @@ export class QuipWalletClient {
       args: [payload],
       account: this.account,
     };
-    return this.executeWrite(contractCall, 0n, opts, recoveryKey.publicSeed);
+    return this.executeWrite(contractCall, 0n, opts);
   }
 
   /// PQ-authenticated `saveWallet(bytes)` — last-resort rescue authorized by
@@ -971,7 +932,7 @@ export class QuipWalletClient {
       args: [payload],
       account: this.account,
     };
-    return this.executeWrite(contractCall, 0n, opts, currentDisaster.publicSeed);
+    return this.executeWrite(contractCall, 0n, opts);
   }
 
   /// PQ-authenticated `transferOwnership(bytes)` — rotates the classical
@@ -1086,12 +1047,7 @@ export class QuipWalletClient {
       args: [payload],
       account: this.account,
     };
-    return this.executeWrite(
-      contractCall,
-      0n,
-      opts,
-      currentOwnership.publicSeed
-    );
+    return this.executeWrite(contractCall, 0n, opts);
   }
 
   /// PQ-authenticated `upgradeToAndCall(address, bytes)`. Two signatures
@@ -1147,7 +1103,7 @@ export class QuipWalletClient {
       args: [newImplementation, payload],
       account: this.account,
     };
-    return this.executeWrite(contractCall, 0n, txOpts, currentKey.publicSeed);
+    return this.executeWrite(contractCall, 0n, txOpts);
   }
 
   /// PQ-authenticated `recoveryUpgrade(address, bytes)` — emergency upgrade
@@ -1201,12 +1157,7 @@ export class QuipWalletClient {
       args: [newImplementation, payload],
       account: this.account,
     };
-    return this.executeWrite(
-      contractCall,
-      0n,
-      opts,
-      currentRecoveryKey.publicSeed
-    );
+    return this.executeWrite(contractCall, 0n, opts);
   }
 
   /// Build a fully wallet-signed `PackedUserOperation` for an `execute(target,
@@ -1371,15 +1322,6 @@ export class QuipWalletClient {
       walletDigest,
       userOpHash,
     };
-  }
-
-  /// Idempotent safety-net for callers that build a UserOp and submit
-  /// it elsewhere (bundler, custom handleOps path). `buildExecuteUserOp`
-  /// already burns the key via `QuipSigner.sign(...)` at sign time, so
-  /// this is a no-op in the normal flow. Kept for explicit intent and
-  /// for HSM-backed signers that produce sigs outside `QuipSigner`.
-  markUserOpKeyBurned(currentKey: WinternitzAddress): void {
-    this.quipSigner.markBurned(currentKey.publicSeed);
   }
 
   /// Predict the wallet- and paymaster-side validation outcome of `userOp`

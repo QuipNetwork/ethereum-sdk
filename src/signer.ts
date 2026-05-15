@@ -20,7 +20,8 @@ import { randomBytes } from "@noble/ciphers/webcrypto";
 import { equalBytes } from "@noble/ciphers/utils";
 import { type Hex, hexToBytes, toHex } from "viem";
 
-import { KeyAlreadyBurnedError } from "./errors.js";
+import { type ConsumeKeyFn } from "./burnSet.js";
+import { KeyDerivationSelfTestError } from "./errors.js";
 import { type WinternitzAddress } from "./wotsCodec.js";
 
 export interface WinternitzKeyPair {
@@ -32,6 +33,21 @@ export interface WinternitzKeyPair {
   /// `encodeInit` / `encodeExecute` / write APIs with no conversion.
   publicKey: WinternitzAddress;
 }
+
+/// Fixed sentinel digest signed locally as a post-derivation self-test on
+/// every fresh WOTS+ keypair. Catches WOTS+ library bugs, memory corruption,
+/// and silent derivation drift before the keypair is used for a real
+/// signature.
+///
+/// Critical: the sentinel digest is constant and never used as a real signing
+/// input. The sentinel signature is produced via the raw `WOTSPlus.sign`
+/// path (bypassing `QuipSigner.sign` / `ConsumeKeyFn`), held only in a stack
+/// local, and discarded immediately. It never crosses the SDK boundary, so
+/// WOTS+ one-time-use is preserved — the key remains usable for one real
+/// signature afterwards.
+const KEY_SELFTEST_DIGEST: Uint8Array = keccak_256(
+  new TextEncoder().encode("QUIP_WOTS_KEY_SELFTEST_v1")
+);
 
 /// In-memory WOTS+ signer keyed off a single `quantumSecret`. See
 /// `SDK_README.md` for the operational contract (the "every broadcast burns
@@ -62,32 +78,39 @@ export interface WinternitzKeyPair {
 /// Burned-key tracking: WOTS+ is one-time-use. Producing a signature on
 /// any message commits the key: once a sig exists, signing a different
 /// message with the same key leaks secret material and lets an observer
-/// forge. So this signer marks a key burned **inside `sign`**, right
-/// after the WOTS+ signature is produced — not at broadcast time. The
-/// guarantee: a successful `sign(...)` is the burn point, regardless of
-/// what the caller does with the returned signature.
+/// forge. So `sign(...)` invokes the injected `ConsumeKeyFn` **before**
+/// the WOTS+ signature is produced — the burn is committed first, and the
+/// signature follows. If `consume` raises `KeyAlreadyBurnedError`, no
+/// signature is produced. If the WOTS+ sign call itself throws (library
+/// bug), the seed is already burned — conservative over-burn, the safe
+/// failure mode.
 ///
-/// Why not "burn at broadcast" (the previous design): callers that
-/// produce a sig and then abort (simulation reject, network error,
-/// caller never submits) would leave the in-memory set unchanged. A
-/// later call could pick the same key and sign a different message —
-/// exactly the WOTS+ violation we need to prevent.
+/// The burn set is **not** owned by `QuipSigner`. Every signer is
+/// constructed with a `ConsumeKeyFn` supplied by the caller. The SDK
+/// ships `createInMemoryBurnSet()` as a process-local default; production
+/// callers should back the function with durable storage so a restart
+/// cannot resurrect a burned key. See `SDK_README.md`.
 ///
-/// State is per-instance and not persisted across signer restarts; see
-/// `SDK_README.md` for the persistence recommendation.
+/// Post-derivation self-test: every `generateKeyPair` / `recoverKeyPair`
+/// signs a fixed sentinel digest with the freshly derived material and
+/// verifies the result against the public key. Catches derivation bugs
+/// before the key is used for a real payload. The sentinel signature is
+/// local, never returned, and never recorded against the burn set —
+/// WOTS+ one-time-use is preserved.
 export class QuipSigner {
   private quantumSecret: Uint8Array;
   private wots: WOTSPlus;
-  private burned: Set<Hex>;
+  private consume: ConsumeKeyFn;
 
-  constructor(quantumSecret: Uint8Array) {
+  constructor(quantumSecret: Uint8Array, consume: ConsumeKeyFn) {
     this.wots = new WOTSPlus(keccak_256);
     this.quantumSecret = keccak_256(quantumSecret);
-    this.burned = new Set();
+    this.consume = consume;
   }
 
   /// Generate a fresh keypair under this `(quantumSecret, vaultId)` branch
-  /// with a cryptographically random `publicSeed`.
+  /// with a cryptographically random `publicSeed`. Runs the self-test before
+  /// returning.
   public generateKeyPair(vaultId: Hex): WinternitzKeyPair {
     const publicSeed = toHex(randomBytes(32));
     return this.recoverKeyPair(vaultId, publicSeed);
@@ -95,7 +118,8 @@ export class QuipSigner {
 
   /// Rederive a previously-generated keypair from its `publicSeed`. The
   /// canonical lookup path: read a key's publicSeed from chain, pass it
-  /// here to recover the private key for signing.
+  /// here to recover the private key for signing. Runs the self-test before
+  /// returning.
   public recoverKeyPair(vaultId: Hex, publicSeed: Hex): WinternitzKeyPair {
     const publicSeedBytes = hexToBytes(publicSeed);
     const privateSeed = Uint8Array.from([
@@ -107,6 +131,7 @@ export class QuipSigner {
     if (!equalBytes(publicSeedBytes, returnedSeed)) {
       throw new Error("Invalid public seed returned: " + toHex(returnedSeed));
     }
+    this._runSelfTest(keypair.privateKey, keypair.publicKey, publicSeedBytes, publicSeed);
     return {
       privateKey: keypair.privateKey,
       publicKey: {
@@ -117,9 +142,12 @@ export class QuipSigner {
   }
 
   /// Sign `message` with the key derived from `(vaultId, publicSeed)`.
-  /// Throws `KeyAlreadyBurnedError` if the key was already used. On
-  /// success, marks the key burned **before returning** — once this
-  /// method hands back a signature, the key is dead in this signer.
+  ///
+  /// Burn semantics: `consume(publicSeed)` runs **before** the WOTS+
+  /// signature is produced. If it throws (`KeyAlreadyBurnedError` from the
+  /// injected burn set), no signature is generated. On a successful
+  /// `consume`, the WOTS+ sign call runs; if it raises, the seed is
+  /// already burned — the safe failure mode.
   ///
   /// The signature is returned as 67 `Hex` bytes32 elements, ready to
   /// drop straight into the codec's `WinternitzElements` shape:
@@ -127,34 +155,36 @@ export class QuipSigner {
   ///   const sig = signer.sign(digest, vaultId, currentKey.publicSeed);
   ///   const pqSig: WinternitzElements = { elements: sig };
   public sign(message: Hex, vaultId: Hex, publicSeed: Hex): Hex[] {
-    if (this.burned.has(publicSeed)) {
-      throw new KeyAlreadyBurnedError(publicSeed);
-    }
+    this.consume(publicSeed);
     const key = this.recoverKeyPair(vaultId, publicSeed);
     const sig = this.wots.sign(
       key.privateKey,
       hexToBytes(key.publicKey.publicSeed),
       hexToBytes(message)
     );
-    // Burn immediately after producing the signature. Any subsequent
-    // sign() with this seed throws KeyAlreadyBurnedError. The wallet
-    // client's post-broadcast `markBurned` is now an idempotent
-    // safety-net (no-op when sign() already burned).
-    this.burned.add(publicSeed);
     return sig.map((el) => toHex(el, { size: 32 }));
   }
 
-  /// Mark a key burned. Idempotent; safe to call multiple times. The
-  /// signer auto-burns inside `sign(...)`, so this is rarely needed
-  /// directly — it remains exposed for callers that produce a signature
-  /// outside this signer (e.g. via a future HSM-backed `PqSigner`) and
-  /// need to record the burn in the in-memory set.
-  public markBurned(publicSeed: Hex): void {
-    this.burned.add(publicSeed);
-  }
-
-  /// Query whether `publicSeed` has been marked burned in this signer.
-  public isBurned(publicSeed: Hex): boolean {
-    return this.burned.has(publicSeed);
+  /// Sign the sentinel digest with the freshly derived keypair, then verify
+  /// against the public key. Throws `KeyDerivationSelfTestError` if the
+  /// round-trip fails — derivation produced material that does not satisfy
+  /// the WOTS+ contract.
+  ///
+  /// Bypasses `this.consume`: the sentinel signature is local-only,
+  /// short-lived, and intentionally not recorded against the burn set. The
+  /// key remains usable for exactly one real signature afterwards (WOTS+
+  /// one-time-use preserved — the sentinel sig is never observable outside
+  /// this stack frame).
+  private _runSelfTest(
+    privateKey: Uint8Array,
+    publicKey: Uint8Array,
+    publicSeedBytes: Uint8Array,
+    publicSeed: Hex
+  ): void {
+    const sig = this.wots.sign(privateKey, publicSeedBytes, KEY_SELFTEST_DIGEST);
+    const ok = this.wots.verify(publicKey, KEY_SELFTEST_DIGEST, sig);
+    if (!ok) {
+      throw new KeyDerivationSelfTestError(publicSeed);
+    }
   }
 }

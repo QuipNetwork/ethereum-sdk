@@ -34,12 +34,15 @@ import { join } from "node:path";
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { QuipSigner } from "./signer.js";
+import {
+  createInMemoryBurnSet,
+  type InMemoryBurnSet,
+} from "./burnSet.js";
 import { QuipWalletClient, KeyType } from "./walletClient.js";
 import {
   DuplicateKeyError,
   EmptyKeysError,
   KeyAlreadyBurnedError,
-  NoAvailableTransactionKeysError,
   PartialMulticallResultError,
   UnknownKeyError,
 } from "./errors.js";
@@ -144,15 +147,29 @@ function buildInitPayload(
 /// Deploy a fresh wallet under a unique vaultId and return a client plus
 /// the head transaction key. Each test gets its own wallet so burned-key
 /// state cannot bleed across cases.
+///
+/// The fixture wraps `createInMemoryBurnSet().consume` with a tracker Set so
+/// tests can ask `isBurned(seed)` without consuming the seed as a side
+/// effect. `markBurned(seed)` runs the same `consume` (so subsequent signs
+/// throw `KeyAlreadyBurnedError` the way they did before the SDK refactor).
 async function createFreshWallet(seedByte: number): Promise<{
   signer: QuipSigner;
   vaultId: Hex;
   client: QuipWalletClient;
   walletAddress: Address;
   transactionKeys: WinternitzAddress[];
+  burnSet: InMemoryBurnSet;
+  isBurned: (seed: Hex) => boolean;
+  markBurned: (seed: Hex) => void;
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
-  const signer = new QuipSigner(quantumSecret);
+  const burnSet = createInMemoryBurnSet();
+  const burned = new Set<Hex>();
+  const consume = (seed: Hex): void => {
+    burnSet.consume(seed);
+    burned.add(seed);
+  };
+  const signer = new QuipSigner(quantumSecret, consume);
   const vaultId = toHex(new Uint8Array(32).fill(seedByte));
   const init = buildInitPayload(signer, vaultId);
 
@@ -187,6 +204,9 @@ async function createFreshWallet(seedByte: number): Promise<{
     client,
     walletAddress,
     transactionKeys: init.transactionKeys,
+    burnSet,
+    isBurned: (seed: Hex) => burned.has(seed),
+    markBurned: (seed: Hex) => consume(seed),
   };
 }
 
@@ -271,7 +291,7 @@ describe("Phase 4.5 — pre-flight key-batch validation", () => {
   });
 
   test("refreshKeys on Transaction kind throws RefreshTransactionForbiddenError synchronously", async () => {
-    const { client, signer, vaultId } = await createFreshWallet(0x12);
+    const { client, signer, vaultId, isBurned } = await createFreshWallet(0x12);
     const k = signer.generateKeyPair(toHex(vaultId)).publicKey;
     // Pre-flight invariant from Phase 4: refreshing the Transaction keyset
     // is forbidden at the contract level — the SDK throws before sign().
@@ -280,22 +300,23 @@ describe("Phase 4.5 — pre-flight key-batch validation", () => {
     ).rejects.toThrow();
     // The signing key must not be burned, since no broadcast happened.
     const head = await client.getHeadTransactionKey();
-    expect(signer.isBurned(head.publicSeed)).toBe(false);
+    expect(isBurned(head.publicSeed)).toBe(false);
   });
 });
 
 describe("Phase 4.5 — burned-key tracking on broadcast", () => {
   test("successful executeWithPayload marks the signing key burned", async () => {
-    const { client, signer, vaultId } = await createFreshWallet(0x20);
+    const { client, signer, vaultId, isBurned } =
+      await createFreshWallet(0x20);
 
     const head = await client.getHeadTransactionKey();
-    expect(signer.isBurned(head.publicSeed)).toBe(false);
+    expect(isBurned(head.publicSeed)).toBe(false);
 
     // Pure rotation: target=zero, value=0, data="0x". The fee still
     // applies but is zero on the unconfigured factory.
     await client.executeWithPayload(zeroAddress, 0n, "0x");
 
-    expect(signer.isBurned(head.publicSeed)).toBe(true);
+    expect(isBurned(head.publicSeed)).toBe(true);
     // Sanity: signer.sign with a fresh (never-burned) key works.
     const dummySeed = toHex(new Uint8Array(32).fill(0xfe));
     expect(() =>
@@ -304,7 +325,7 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
   }, 30_000);
 
   test("retry with the same key throws KeyAlreadyBurnedError; retry with a different key succeeds", async () => {
-    const { client, signer } = await createFreshWallet(0x21);
+    const { client, isBurned } = await createFreshWallet(0x21);
 
     const keyset = await client.getKeyset(KeyType.Transaction);
     expect(keyset.length).toBe(TRANSACTION_KEY_INIT_AMOUNT);
@@ -315,74 +336,74 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
     await client.executeWithPayload(zeroAddress, 0n, "0x", {
       signWithKey: firstKey,
     });
-    expect(signer.isBurned(firstKey.publicSeed)).toBe(true);
+    expect(isBurned(firstKey.publicSeed)).toBe(true);
 
-    // Retry with the same (now-burned) key → signer refuses.
-    await expect(
-      client.executeWithPayload(zeroAddress, 0n, "0x", {
+    // Retry with the same (now-burned) key → consume refuses. The first
+    // key has been rotated out of the keyset on chain too, so this could
+    // also surface as `UnknownKeyError` from the pre-flight `isKey`
+    // check that happens BEFORE the consume call. Accept either —
+    // both correctly refuse the retry.
+    let caught: unknown = null;
+    try {
+      await client.executeWithPayload(zeroAddress, 0n, "0x", {
         signWithKey: firstKey,
-      })
-    ).rejects.toBeInstanceOf(KeyAlreadyBurnedError);
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(
+      caught instanceof KeyAlreadyBurnedError ||
+        caught instanceof UnknownKeyError
+    ).toBe(true);
 
     // Retry with a different key from the keyset succeeds.
     await client.executeWithPayload(zeroAddress, 0n, "0x", {
       signWithKey: secondKey,
     });
-    expect(signer.isBurned(secondKey.publicSeed)).toBe(true);
+    expect(isBurned(secondKey.publicSeed)).toBe(true);
   }, 60_000);
 
-  test("keyAllocationStrategy 'next-available' walks past burned head and signs with the next key", async () => {
-    const { client, signer } = await createFreshWallet(0x22);
+  test("head burned in-session — default-key executeWithPayload throws KeyAlreadyBurnedError; retry with signWithKey succeeds", async () => {
+    const { client, isBurned, markBurned } = await createFreshWallet(0x22);
     const keyset = await client.getKeyset(KeyType.Transaction);
-    const firstKey = keyset[0];
+    const headBefore = await client.getHeadTransactionKey();
 
-    // Pre-burn the head locally (no broadcast).
-    signer.markBurned(firstKey.publicSeed);
-    expect(signer.isBurned(firstKey.publicSeed)).toBe(true);
-
-    // 'head' strategy would pick firstKey → sign() would throw. With
-    // 'next-available' we walk past the burned head to whichever key the
-    // contract returns next.
-    await client.executeWithPayload(zeroAddress, 0n, "0x", {
-      keyAllocationStrategy: "next-available",
-    });
-
-    // After broadcast, the second-picked key is burned. We can't predict
-    // which keyset entry it picks (depends on EnumerableSet ordering), but
-    // we can confirm: at least one *additional* key beyond firstKey is now
-    // burned.
-    const burnedAfter = keyset.filter((k) => signer.isBurned(k.publicSeed));
-    expect(burnedAfter.length).toBeGreaterThanOrEqual(2);
-  }, 30_000);
-
-  test("'next-available' exhaustion throws NoAvailableTransactionKeysError", async () => {
-    const { client, signer } = await createFreshWallet(0x23);
-    const keyset = await client.getKeyset(KeyType.Transaction);
-
-    // Burn every key locally (no broadcasts).
-    for (const k of keyset) signer.markBurned(k.publicSeed);
+    // Pre-burn the head locally (no broadcast). On the next default-keyed
+    // write, pickTransactionKeyPair will pick the (still-live) head; the
+    // signer's consume then refuses.
+    markBurned(headBefore.publicSeed);
+    expect(isBurned(headBefore.publicSeed)).toBe(true);
 
     await expect(
-      client.executeWithPayload(zeroAddress, 0n, "0x", {
-        keyAllocationStrategy: "next-available",
-      })
-    ).rejects.toBeInstanceOf(NoAvailableTransactionKeysError);
-  });
+      client.executeWithPayload(zeroAddress, 0n, "0x")
+    ).rejects.toBeInstanceOf(KeyAlreadyBurnedError);
+
+    // Retry with an explicit unburned key from the keyset succeeds. Pick
+    // any keyset entry that isn't the burned head.
+    const alternative = keyset.find(
+      (k) => k.publicSeed !== headBefore.publicSeed
+    );
+    if (!alternative) throw new Error("expected at least 2 transaction keys");
+    await client.executeWithPayload(zeroAddress, 0n, "0x", {
+      signWithKey: alternative,
+    });
+    expect(isBurned(alternative.publicSeed)).toBe(true);
+  }, 30_000);
 
   test("signWithKey not in the live keyset throws UnknownKeyError synchronously and does NOT burn the key", async () => {
-    const { client, signer } = await createFreshWallet(0x24);
+    const { client, isBurned } = await createFreshWallet(0x24);
 
     // A fabricated key not present in the wallet's transaction keyset.
     // Pre-flight `isKey` in `pickTransactionKeyPair` must reject this
     // before `quipSigner.sign(...)` runs, so the publicSeed stays
-    // unburned in the signer. Without the pre-check the on-chain call
-    // would revert `UnknownKey` AFTER the SDK had already produced
-    // (and burned) a WOTS+ signature against a guaranteed-revert payload.
+    // unburned. Without the pre-check the on-chain call would revert
+    // `UnknownKey` AFTER the SDK had already produced (and burned) a
+    // WOTS+ signature against a guaranteed-revert payload.
     const stale: WinternitzAddress = {
       publicSeed: toHex(new Uint8Array(32).fill(0xee)),
       publicKeyHash: toHex(new Uint8Array(32).fill(0xff)),
     };
-    expect(signer.isBurned(stale.publicSeed)).toBe(false);
+    expect(isBurned(stale.publicSeed)).toBe(false);
 
     await expect(
       client.executeWithPayload(zeroAddress, 0n, "0x", {
@@ -392,7 +413,7 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
 
     // Critical: the WOTS+ key MUST NOT be marked burned. A real-life
     // misconfiguration (passing a stale key) shouldn't waste a key.
-    expect(signer.isBurned(stale.publicSeed)).toBe(false);
+    expect(isBurned(stale.publicSeed)).toBe(false);
   });
 });
 
@@ -400,7 +421,10 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
   test("getWalletState against a no-code address throws PartialMulticallResultError", async () => {
     // Point a QuipWalletClient at an address with no code. The factory +
     // impl are deployed, but this random EOA address has no QuipWallet.
-    const signer = new QuipSigner(new Uint8Array(32).fill(0x30));
+    const signer = new QuipSigner(
+      new Uint8Array(32).fill(0x30),
+      createInMemoryBurnSet().consume
+    );
     const noCodeAddr = "0xdeAdbEefdEAdbeefdEadbEEFdeadbeEFdEaDbeef" as Address;
     const client = new QuipWalletClient(
       signer,
@@ -434,7 +458,10 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
     // Same trick — but getKeyset reads keyCount first (which will also
     // fail). We need an address that has code but lacks `keyAt`. Easiest:
     // point at the factory address, which doesn't implement keyAt.
-    const signer = new QuipSigner(new Uint8Array(32).fill(0x31));
+    const signer = new QuipSigner(
+      new Uint8Array(32).fill(0x31),
+      createInMemoryBurnSet().consume
+    );
     const client = new QuipWalletClient(
       signer,
       toHex(new Uint8Array(32).fill(0x31)),

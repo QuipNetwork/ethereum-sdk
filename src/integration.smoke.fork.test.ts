@@ -65,6 +65,7 @@ import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
 import { QuipSigner } from "./signer.js";
+import { createInMemoryBurnSet } from "./burnSet.js";
 import { QuipWalletClient, KeyType } from "./walletClient.js";
 import { QuipPaymasterClient } from "./paymasterClient.js";
 import {
@@ -344,7 +345,7 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
     async () => {
       // ─── 1. Create wallet via the SDK ─────────────────────────────────
       const quantumSecret = new Uint8Array(32).fill(0xa1);
-      const signer = new QuipSigner(quantumSecret);
+      const signer = new QuipSigner(quantumSecret, createInMemoryBurnSet().consume);
       const vaultId = toHex(new Uint8Array(32).fill(0xa1));
       const init = buildInitPayload(signer, vaultId);
 
@@ -424,7 +425,7 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
         chainId: await publicClient.getChainId(),
       });
       const operatorSecret = new Uint8Array(32).fill(0xb2);
-      const operator = new QuipSigner(operatorSecret);
+      const operator = new QuipSigner(operatorSecret, createInMemoryBurnSet().consume);
       const operatorVault = toHex(new Uint8Array(32).fill(0xb2));
       const currentVerifier = operator
         .generateKeyPair(operatorVault)

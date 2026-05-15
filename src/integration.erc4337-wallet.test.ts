@@ -41,6 +41,7 @@ import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
 import { QuipSigner } from "./signer.js";
+import { createInMemoryBurnSet, type InMemoryBurnSet } from "./burnSet.js";
 import {
   QuipWalletClient,
   KeyType,
@@ -152,9 +153,18 @@ async function createFreshWallet(seedByte: number): Promise<{
   client: QuipWalletClient;
   walletAddress: Address;
   transactionKeys: WinternitzAddress[];
+  burnSet: InMemoryBurnSet;
+  isBurned: (seed: Hex) => boolean;
+  markBurned: (seed: Hex) => void;
 }> {
   const quantumSecret = new Uint8Array(32).fill(seedByte);
-  const signer = new QuipSigner(quantumSecret);
+  const burnSet = createInMemoryBurnSet();
+  const burned = new Set<Hex>();
+  const consume = (seed: Hex): void => {
+    burnSet.consume(seed);
+    burned.add(seed);
+  };
+  const signer = new QuipSigner(quantumSecret, consume);
   const vaultId = toHex(new Uint8Array(32).fill(seedByte));
   const init = buildInitPayload(signer, vaultId);
 
@@ -207,6 +217,9 @@ async function createFreshWallet(seedByte: number): Promise<{
     client,
     walletAddress,
     transactionKeys: init.transactionKeys,
+    burnSet,
+    isBurned: (seed: Hex) => burned.has(seed),
+    markBurned: (seed: Hex) => consume(seed),
   };
 }
 
@@ -324,7 +337,7 @@ describe("EntryPoint v0.7 fixture sanity", () => {
 
 describe("buildExecuteUserOp + handleOps end-to-end", () => {
   test("happy path: signed UserOp lands via handleOps, inner call runs, key rotates", async () => {
-    const { client, signer, walletAddress } = await createFreshWallet(0x41);
+    const { client, isBurned, walletAddress } = await createFreshWallet(0x41);
     const headBefore = await client.getHeadTransactionKey();
 
     // Inner call: pure rotation (target=zero, value=0, data=0x).
@@ -348,13 +361,9 @@ describe("buildExecuteUserOp + handleOps end-to-end", () => {
       account,
       gas: 2_000_000n,
     });
-    // Mark burned on broadcast — for direct handleOps via the SDK's
-    // wallet client we still need to call this manually since the
-    // wallet client didn't submit.
-    client.markUserOpKeyBurned({
-      publicSeed: built.userOp.signature.slice(0, 66) as Hex,
-      publicKeyHash: ("0x" + built.userOp.signature.slice(66, 130)) as Hex,
-    });
+    // `buildExecuteUserOp` already invoked the signer's `consume` at sign
+    // time, so the burn is recorded in the burn set well before this
+    // manual `handleOps` submission.
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: handleHash,
     });
@@ -373,8 +382,8 @@ describe("buildExecuteUserOp + handleOps end-to-end", () => {
     const headAfter = await client.getHeadTransactionKey();
     expect(headAfter.publicSeed).not.toBe(headBefore.publicSeed);
 
-    // SDK-side: signer marked the old head burned.
-    expect(signer.isBurned(headBefore.publicSeed)).toBe(true);
+    // SDK-side: signer recorded the burn via the injected consume.
+    expect(isBurned(headBefore.publicSeed)).toBe(true);
   }, 60_000);
 });
 
@@ -494,9 +503,9 @@ describe("buildExecuteUserOp — inner-call revert pre-flight (D3)", () => {
   }
 
   test("buildExecuteUserOp throws on guaranteed-revert inner call; key not burned", async () => {
-    const { client, signer } = await createFreshWallet(0x46);
+    const { client, isBurned } = await createFreshWallet(0x46);
     const head = await client.getHeadTransactionKey();
-    expect(signer.isBurned(head.publicSeed)).toBe(false);
+    expect(isBurned(head.publicSeed)).toBe(false);
 
     let caught: unknown = null;
     try {
@@ -522,11 +531,11 @@ describe("buildExecuteUserOp — inner-call revert pre-flight (D3)", () => {
     // `signExecuteUserOp` burned the key, and the doomed userOp was
     // shipped to the bundler. After the fix, prepare throws and sign is
     // never reached.
-    expect(signer.isBurned(head.publicSeed)).toBe(false);
+    expect(isBurned(head.publicSeed)).toBe(false);
   }, 30_000);
 
   test("prepareExecuteUserOp surfaces the decoded contract revert", async () => {
-    const { client, signer } = await createFreshWallet(0x47);
+    const { client, isBurned } = await createFreshWallet(0x47);
     const head = await client.getHeadTransactionKey();
 
     await expect(
@@ -540,7 +549,7 @@ describe("buildExecuteUserOp — inner-call revert pre-flight (D3)", () => {
     // prepareExecuteUserOp NEVER burns keys (burning happens in
     // signExecuteUserOp); re-check explicitly so the contract is
     // documented in tests.
-    expect(signer.isBurned(head.publicSeed)).toBe(false);
+    expect(isBurned(head.publicSeed)).toBe(false);
   }, 30_000);
 
   test("happy path: non-reverting inner call produces a complete signed userOp", async () => {

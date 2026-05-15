@@ -583,15 +583,20 @@ export class BalanceTooLowError extends QuipError {
   }
 }
 
-/// Thrown by `QuipSigner.sign` when a key has already been used to sign a
-/// previously-broadcast payload. WOTS+ is a one-time signature scheme — once
-/// a signature is publicly visible, the key is compromised and reuse leaks
-/// secret material. The signer maintains an in-memory burned-key set keyed
-/// by publicSeed; `markBurned` adds, `isBurned` queries.
+/// Thrown by a `ConsumeKeyFn` (and surfaced through `QuipSigner.sign`) when
+/// a key has already been used to sign a previously-broadcast payload. WOTS+
+/// is a one-time signature scheme — once a signature is publicly visible, the
+/// key is compromised and reuse leaks secret material.
+///
+/// Lives in `errors.ts` rather than `burnSet.ts` because callers writing
+/// their own `ConsumeKeyFn` (e.g. against a sqlite/redis backend) are
+/// expected to import and throw this class for consistency with the
+/// in-memory default. The SDK does not throw it directly — the injected
+/// `consume` function does, inside `QuipSigner.sign(...)`.
 ///
 /// Retry semantics: if a write reverts, retry MUST use a different
-/// transaction key. Use `signWithKey` or `keyAllocationStrategy: 'next-available'`.
-/// See SDK_README.md for the full operational contract.
+/// transaction key via `signWithKey`. See `SDK_README.md` for the full
+/// operational contract.
 export class KeyAlreadyBurnedError extends QuipError {
   readonly publicSeed: Hex;
 
@@ -605,21 +610,22 @@ export class KeyAlreadyBurnedError extends QuipError {
   }
 }
 
-/// Thrown by `pickTransactionKeyPair` when `keyAllocationStrategy: 'next-available'`
-/// walks the entire transaction keyset and finds every key in the burned set.
-/// The wallet's keyset is exhausted; the caller must refresh it via `addKeys`
-/// (signed with a non-burned key, which by definition does not exist here —
-/// in practice this is reached only by misconfiguration).
-export class NoAvailableTransactionKeysError extends QuipError {
-  readonly keysetSize: number;
+/// Thrown by `QuipSigner.generateKeyPair` / `recoverKeyPair` when the
+/// post-derivation self-test (sign + verify against a fixed sentinel digest)
+/// fails. Catches WOTS+ library bugs, memory corruption, and derivation
+/// drift before the keypair is ever used to sign a real payload. The
+/// sentinel signature is produced locally, never returned, and never
+/// recorded against the burn set.
+export class KeyDerivationSelfTestError extends QuipError {
+  readonly publicSeed: Hex;
 
-  constructor(keysetSize: number, opts?: QuipErrorOptions) {
+  constructor(publicSeed: Hex, opts?: QuipErrorOptions) {
     super(
-      "NO_AVAILABLE_TRANSACTION_KEYS",
-      `All ${keysetSize} transaction keys are burned; cannot sign a new payload`,
+      "KEY_DERIVATION_SELFTEST_FAILED",
+      `WOTS+ key with publicSeed ${publicSeed} failed the post-derivation self-test (sign + verify against the sentinel digest did not round-trip)`,
       opts
     );
-    this.keysetSize = keysetSize;
+    this.publicSeed = publicSeed;
   }
 }
 

@@ -27,6 +27,7 @@ import {
 } from "./index.js";
 
 import { QuipSigner } from "./signer.js";
+import { createInMemoryBurnSet } from "./burnSet.js";
 import { QuipWalletClient, KeyType } from "./walletClient.js";
 import { QuipClient } from "./factoryClient.js";
 
@@ -49,7 +50,7 @@ describe("Phase 0 module split", () => {
     const vaultId = toHex(new Uint8Array(32).fill(2));
     const publicSeed = toHex(new Uint8Array(32).fill(3));
 
-    const signer = new QuipSigner(secret);
+    const signer = new QuipSigner(secret, createInMemoryBurnSet().consume);
     const a = signer.recoverKeyPair(vaultId, publicSeed);
     const b = signer.recoverKeyPair(vaultId, publicSeed);
 

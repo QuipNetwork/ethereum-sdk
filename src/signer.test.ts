@@ -18,63 +18,45 @@ import { describe, it, expect } from "@jest/globals";
 import { type Hex, toHex } from "viem";
 
 import { QuipSigner } from "./signer.js";
-import { KeyAlreadyBurnedError } from "./errors.js";
+import { createInMemoryBurnSet } from "./burnSet.js";
+import {
+  KeyAlreadyBurnedError,
+  KeyDerivationSelfTestError,
+} from "./errors.js";
 
 const QUANTUM_SECRET = new Uint8Array(32).fill(0xab);
 const VAULT_ID: Hex = toHex(new Uint8Array(32).fill(0x01));
 const MESSAGE: Hex = toHex(new Uint8Array(32).fill(0x77));
 
-describe("QuipSigner burned-key tracking", () => {
+describe("QuipSigner burned-key tracking via injected consume", () => {
   it("sign succeeds when key is not burned", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signer.generateKeyPair(VAULT_ID);
     const sig = signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(sig.length).toBe(67);
-    // Each element is a 32-byte hex string.
     for (const el of sig) {
       expect(el.length).toBe(2 + 64);
     }
   });
 
-  it("sign auto-burns the key (signing the same key twice throws)", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
+  it("sign records the burn via the injected consume (second sign throws)", () => {
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signer.generateKeyPair(VAULT_ID);
-    // First sign succeeds and marks the key burned.
     signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
-    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
-    // Second sign with the same key — even on a different message — fails.
     const otherMessage: Hex = toHex(new Uint8Array(32).fill(0xaa));
     expect(() =>
       signer.sign(otherMessage, VAULT_ID, kp.publicKey.publicSeed)
     ).toThrow(KeyAlreadyBurnedError);
   });
 
-  it("isBurned returns false for a never-marked key", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
-    const kp = signer.generateKeyPair(VAULT_ID);
-    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(false);
-  });
-
-  it("isBurned returns true after markBurned", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
-    const kp = signer.generateKeyPair(VAULT_ID);
-    signer.markBurned(kp.publicKey.publicSeed);
-    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
-  });
-
-  it("sign throws KeyAlreadyBurnedError on a burned key", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
-    const kp = signer.generateKeyPair(VAULT_ID);
-    signer.markBurned(kp.publicKey.publicSeed);
-    expect(() =>
-      signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed)
-    ).toThrow(KeyAlreadyBurnedError);
-  });
-
   it("KeyAlreadyBurnedError carries the publicSeed", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signer.generateKeyPair(VAULT_ID);
-    signer.markBurned(kp.publicKey.publicSeed);
+    // Pre-burn via the burn set directly.
+    burnSet.consume(kp.publicKey.publicSeed);
     try {
       signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
       throw new Error("expected sign to throw");
@@ -87,33 +69,146 @@ describe("QuipSigner burned-key tracking", () => {
     }
   });
 
-  it("markBurned is idempotent", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
-    const kp = signer.generateKeyPair(VAULT_ID);
-    signer.markBurned(kp.publicKey.publicSeed);
-    signer.markBurned(kp.publicKey.publicSeed);
-    signer.markBurned(kp.publicKey.publicSeed);
-    expect(signer.isBurned(kp.publicKey.publicSeed)).toBe(true);
-  });
-
   it("burning one key does not affect another", () => {
-    const signer = new QuipSigner(QUANTUM_SECRET);
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const a = signer.generateKeyPair(VAULT_ID);
     const b = signer.generateKeyPair(VAULT_ID);
-    signer.markBurned(a.publicKey.publicSeed);
-    expect(signer.isBurned(a.publicKey.publicSeed)).toBe(true);
-    expect(signer.isBurned(b.publicKey.publicSeed)).toBe(false);
-    // signing with b still works
+    burnSet.consume(a.publicKey.publicSeed);
+    // Signing with b still works.
     const sig = signer.sign(MESSAGE, VAULT_ID, b.publicKey.publicSeed);
+    expect(sig.length).toBe(67);
+    // Signing with a throws.
+    expect(() =>
+      signer.sign(MESSAGE, VAULT_ID, a.publicKey.publicSeed)
+    ).toThrow(KeyAlreadyBurnedError);
+  });
+
+  it("each signer can be wired to its own burn set (independent state)", () => {
+    const burnSetA = createInMemoryBurnSet();
+    const burnSetB = createInMemoryBurnSet();
+    const signerA = new QuipSigner(QUANTUM_SECRET, burnSetA.consume);
+    const signerB = new QuipSigner(QUANTUM_SECRET, burnSetB.consume);
+    const kp = signerA.generateKeyPair(VAULT_ID);
+    signerA.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    // signerA's burn was recorded in burnSetA; burnSetB is untouched, so
+    // signerB can still sign with the same seed.
+    const sig = signerB.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(sig.length).toBe(67);
   });
 
-  it("burned set is per-instance (separate signers track separately)", () => {
-    const signerA = new QuipSigner(QUANTUM_SECRET);
-    const signerB = new QuipSigner(QUANTUM_SECRET);
+  it("two signers sharing a burn set share burn state", () => {
+    const burnSet = createInMemoryBurnSet();
+    const signerA = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
+    const signerB = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signerA.generateKeyPair(VAULT_ID);
-    signerA.markBurned(kp.publicKey.publicSeed);
-    expect(signerA.isBurned(kp.publicKey.publicSeed)).toBe(true);
-    expect(signerB.isBurned(kp.publicKey.publicSeed)).toBe(false);
+    signerA.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    // The burn surfaces through signerB because both signers share the
+    // same consume function.
+    expect(() =>
+      signerB.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed)
+    ).toThrow(KeyAlreadyBurnedError);
+  });
+});
+
+describe("QuipSigner consume runs BEFORE the WOTS+ signature", () => {
+  it("a failing consume short-circuits before any signature exists", () => {
+    const failing = (_publicSeed: Hex): void => {
+      throw new KeyAlreadyBurnedError(_publicSeed);
+    };
+    const signer = new QuipSigner(QUANTUM_SECRET, failing);
+    const kp = signer.generateKeyPair(VAULT_ID);
+    expect(() =>
+      signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed)
+    ).toThrow(KeyAlreadyBurnedError);
+  });
+
+  it("consume is invoked exactly once per sign() call", () => {
+    let calls = 0;
+    const tracker = (_publicSeed: Hex): void => {
+      calls += 1;
+    };
+    const signer = new QuipSigner(QUANTUM_SECRET, tracker);
+    const kp = signer.generateKeyPair(VAULT_ID);
+    signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    expect(calls).toBe(1);
+    signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    expect(calls).toBe(2);
+  });
+});
+
+describe("QuipSigner key-derivation self-test", () => {
+  it("generateKeyPair returns a keypair whose self-test passed (real path)", () => {
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
+    // Self-test runs inside generateKeyPair; no throw means it passed.
+    const kp = signer.generateKeyPair(VAULT_ID);
+    expect(kp.publicKey.publicSeed.length).toBe(2 + 64);
+  });
+
+  it("recoverKeyPair runs the self-test on every recovery", () => {
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
+    const kp = signer.generateKeyPair(VAULT_ID);
+    // Recovery should succeed (self-test passes on a previously-validated
+    // derivation).
+    const recovered = signer.recoverKeyPair(VAULT_ID, kp.publicKey.publicSeed);
+    expect(recovered.publicKey.publicSeed).toBe(kp.publicKey.publicSeed);
+    expect(recovered.publicKey.publicKeyHash).toBe(kp.publicKey.publicKeyHash);
+  });
+
+  it("self-test does NOT call the burn-set consume (sentinel sig is local-only)", () => {
+    let calls = 0;
+    const tracker = (_publicSeed: Hex): void => {
+      calls += 1;
+    };
+    const signer = new QuipSigner(QUANTUM_SECRET, tracker);
+    // generateKeyPair runs the self-test internally. If the self-test
+    // signed via the QuipSigner.sign() path, consume would fire here.
+    // It must not — the sentinel sig uses the raw WOTSPlus path.
+    const _kp = signer.generateKeyPair(VAULT_ID);
+    expect(calls).toBe(0);
+    // And a real sign() afterwards still works (the key is not burned).
+    const sig = signer.sign(MESSAGE, VAULT_ID, _kp.publicKey.publicSeed);
+    expect(sig.length).toBe(67);
+    expect(calls).toBe(1);
+  });
+
+  it("self-test throws KeyDerivationSelfTestError when WOTSPlus.verify fails", () => {
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
+    // Reach into the private WOTS+ instance and force verify to return
+    // false. Mirrors a library bug or memory corruption — the public
+    // surface should refuse to hand back the keypair.
+    const wots = (signer as unknown as { wots: { verify: () => boolean } }).wots;
+    const originalVerify = wots.verify;
+    wots.verify = (): boolean => false;
+    try {
+      expect(() => signer.generateKeyPair(VAULT_ID)).toThrow(
+        KeyDerivationSelfTestError
+      );
+    } finally {
+      wots.verify = originalVerify;
+    }
+  });
+
+  it("KeyDerivationSelfTestError carries the publicSeed and code", () => {
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
+    const wots = (signer as unknown as { wots: { verify: () => boolean } }).wots;
+    const originalVerify = wots.verify;
+    wots.verify = (): boolean => false;
+    try {
+      signer.generateKeyPair(VAULT_ID);
+      throw new Error("expected generateKeyPair to throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(KeyDerivationSelfTestError);
+      if (e instanceof KeyDerivationSelfTestError) {
+        expect(e.code).toBe("KEY_DERIVATION_SELFTEST_FAILED");
+        expect(e.publicSeed.length).toBe(2 + 64);
+      }
+    } finally {
+      wots.verify = originalVerify;
+    }
   });
 });

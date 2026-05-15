@@ -247,11 +247,14 @@ export class QuipPaymasterClient {
   /// digest with the operator's WOTS+ verifier-key signer. Returns a
   /// copy of `userOp` with `paymasterAndData` populated.
   ///
-  /// `operatorSigner.sign(...)` auto-burns the current verifier — once
-  /// this method returns, that verifier is dead. The next sponsored
-  /// UserOp from the same sender must use the rotated `nextVerifier`.
-  /// The paymaster's on-chain rotation happens during
-  /// `_verifyAndRotate` (when the UserOp is processed by the EntryPoint).
+  /// `operatorSigner.sign(...)` invokes the signer's injected
+  /// `ConsumeKeyFn` before producing the WOTS+ sig — so once this method
+  /// returns, the current verifier is recorded as burned in the operator's
+  /// burn store and any further `sign(...)` against the same seed throws
+  /// `KeyAlreadyBurnedError`. The next sponsored UserOp from the same
+  /// sender must use the rotated `nextVerifier`. The paymaster's on-chain
+  /// rotation happens during `_verifyAndRotate` (when the UserOp is
+  /// processed by the EntryPoint).
   ///
   /// `nextVerifier` defaults to a freshly generated keypair under
   /// `(vaultId, randomSeed)`. Callers can supply their own for testing

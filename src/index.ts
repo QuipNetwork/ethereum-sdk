@@ -34,6 +34,15 @@ export { QuipWalletClient, KeyType } from "./walletClient.js";
 export { QuipClient } from "./factoryClient.js";
 export { QuipPaymasterClient } from "./paymasterClient.js";
 
+// Burn-set injection: every QuipSigner needs a `ConsumeKeyFn` to enforce
+// WOTS+ one-time-use. `createInMemoryBurnSet()` is the process-local default;
+// production callers should wrap or replace it with a durable backing store.
+// (`KeyAlreadyBurnedError` is exported via the wildcard re-export of
+// `./errors.js` above — callers writing their own `consume` import it from
+// the package barrel and throw it on a reused seed.)
+export { createInMemoryBurnSet } from "./burnSet.js";
+export type { ConsumeKeyFn, InMemoryBurnSet } from "./burnSet.js";
+
 // Typed errors, simulation/gas helpers, and the staged userOp/paymaster/event
 // surfaces (Phase 5+).
 export * from "./errors.js";
