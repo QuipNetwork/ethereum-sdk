@@ -66,7 +66,7 @@ export class InvalidSignatureError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
       "INVALID_SIGNATURE",
-      "WOTS+ signature did not verify against the current pqOwner",
+      "WOTS+ signature did not verify against the expected transaction / recovery / ownership / disaster-recovery key",
       opts
     );
   }
@@ -128,7 +128,7 @@ export class SameKeyError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
       "SAME_KEY",
-      "Next pqOwner is identical to current pqOwner; rotation requires a different key",
+      "Next key is identical to the current key; WOTS+ rotation requires a distinct replacement",
       opts
     );
   }
@@ -250,7 +250,7 @@ export class UnknownDisasterRecoveryKeyError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
       "UNKNOWN_DISASTER_RECOVERY_KEY",
-      "Disaster recovery key is not in the recovery set",
+      "Provided disaster recovery key does not match the wallet's stored disasterRecoveryKey slot",
       opts
     );
   }
@@ -260,7 +260,7 @@ export class UnknownOwnershipKeyError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
       "UNKNOWN_OWNERSHIP_KEY",
-      "Ownership key is not registered against the wallet",
+      "Provided ownership key does not match the wallet's stored ownershipKey slot",
       opts
     );
   }
@@ -520,7 +520,7 @@ export class InvalidSignerError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
       "INVALID_SIGNER",
-      "Provided QuipSigner does not own the current pqOwner of this wallet",
+      "Provided QuipSigner could not regenerate the wallet's current head transaction key",
       opts
     );
   }
@@ -603,7 +603,7 @@ export class KeyAlreadyBurnedError extends QuipError {
   constructor(publicSeed: Hex, opts?: QuipErrorOptions) {
     super(
       "KEY_ALREADY_BURNED",
-      `WOTS+ key with publicSeed ${publicSeed} has already been used to sign a broadcast payload`,
+      "WOTS+ key has already been used to sign a broadcast payload; retry with a different key via signWithKey",
       opts
     );
     this.publicSeed = publicSeed;
