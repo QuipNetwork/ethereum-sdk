@@ -1,9 +1,12 @@
 import { type Address, type Hex } from "viem";
 import {
+  CHAIN_IDS,
+  getNetworkAddresses,
   getVaultAddress,
   computeVaultAddress,
   QUIP_FACTORY_ADDRESS,
 } from "./addresses.js";
+import { UnsupportedNetworkError } from "./errors.js";
 
 describe("Vault Address Functions", () => {
   const testVaultId: Hex =
@@ -22,5 +25,48 @@ describe("Vault Address Functions", () => {
     const fromGet = getVaultAddress(testVaultId);
     const fromCompute = computeVaultAddress(QUIP_FACTORY_ADDRESS, testVaultId);
     expect(fromGet).toEqual(fromCompute);
+  });
+});
+
+describe("getNetworkAddresses", () => {
+  it("returns default addresses when chainId is omitted", () => {
+    const addrs = getNetworkAddresses();
+    expect(addrs.QuipFactory).toEqual(QUIP_FACTORY_ADDRESS);
+  });
+
+  it("returns the registered entry for chains explicitly listed in NETWORK_ADDRESSES (MIDL)", () => {
+    const addrs = getNetworkAddresses(CHAIN_IDS.MIDL_TESTNET);
+    // MIDL is registered but currently zero-addressed until deployment.
+    expect(addrs.QuipFactory).toEqual(
+      "0x0000000000000000000000000000000000000000"
+    );
+  });
+
+  it("returns default addresses for shared CREATE2 chains (mainnet / sepolia / base / op)", () => {
+    for (const chainId of [
+      CHAIN_IDS.ETHEREUM_MAINNET,
+      CHAIN_IDS.SEPOLIA,
+      CHAIN_IDS.BASE,
+      CHAIN_IDS.BASE_SEPOLIA,
+      CHAIN_IDS.OPTIMISM,
+      CHAIN_IDS.OPTIMISM_SEPOLIA,
+    ]) {
+      const addrs = getNetworkAddresses(chainId);
+      expect(addrs.QuipFactory).toEqual(QUIP_FACTORY_ADDRESS);
+    }
+  });
+
+  it("throws UnsupportedNetworkError for chains outside the supported set", () => {
+    expect(() => getNetworkAddresses(424242)).toThrow(UnsupportedNetworkError);
+  });
+
+  it("UnsupportedNetworkError carries the offending chainId", () => {
+    try {
+      getNetworkAddresses(424242);
+      fail("expected throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(UnsupportedNetworkError);
+      expect((e as UnsupportedNetworkError).chainId).toEqual(424242);
+    }
   });
 });

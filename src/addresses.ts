@@ -21,6 +21,7 @@ import {
   getCreateAddress,
 } from "viem";
 import addresses from "./addresses.json" with { type: "json" };
+import { UnsupportedNetworkError } from "./errors.js";
 
 /**
  * Network-specific contract address configuration
@@ -62,6 +63,19 @@ export const CHAIN_IDS = {
   OPTIMISM_SEPOLIA: 11155420,
 } as const;
 
+/// Chains that share the deterministic CREATE2 deployment addresses captured
+/// under the `default` entry of `NETWORK_ADDRESSES`. Any chainId not in this
+/// list AND not explicitly registered in `NETWORK_ADDRESSES` is rejected by
+/// `getNetworkAddresses` with `UnsupportedNetworkError`.
+const SHARED_DEPLOYMENT_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
+  CHAIN_IDS.ETHEREUM_MAINNET,
+  CHAIN_IDS.SEPOLIA,
+  CHAIN_IDS.BASE,
+  CHAIN_IDS.BASE_SEPOLIA,
+  CHAIN_IDS.OPTIMISM,
+  CHAIN_IDS.OPTIMISM_SEPOLIA,
+]);
+
 /**
  * Network-specific address registry
  * Maps chain IDs to their deployed contract addresses
@@ -87,17 +101,35 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
 };
 
 /**
- * Get contract addresses for a specific network by chain ID
- * Falls back to default addresses for standard EVM chains
+ * Get contract addresses for a specific network by chain ID.
+ *
+ * Resolution order:
+ *   1. `chainId === undefined` → returns the `default` entry (back-compat
+ *      for callers that operate before the chain is detected, e.g.
+ *      `getVaultAddress(vaultId)` with no chainId).
+ *   2. `chainId` registered in `NETWORK_ADDRESSES` (e.g. MIDL) → that entry.
+ *   3. `chainId` in `SHARED_DEPLOYMENT_CHAIN_IDS` → the `default` entry
+ *      (mainnet / sepolia / base / op / their L2 testnets all share
+ *      CREATE2-deterministic deployment addresses).
+ *   4. Otherwise → throws `UnsupportedNetworkError`. This is the difference
+ *      from the prior silent fall-through, which would have returned the
+ *      mainnet addresses for any chainId outside the supported set.
  *
  * @param chainId - The chain ID of the network (e.g., 777 for MIDL testnet)
  * @returns NetworkAddresses for the specified chain
+ * @throws UnsupportedNetworkError when `chainId` is provided and unsupported.
  */
 export function getNetworkAddresses(chainId?: number): NetworkAddresses {
-  if (chainId && chainId in NETWORK_ADDRESSES) {
+  if (chainId === undefined) {
+    return NETWORK_ADDRESSES.default;
+  }
+  if (chainId in NETWORK_ADDRESSES) {
     return NETWORK_ADDRESSES[chainId];
   }
-  return NETWORK_ADDRESSES.default;
+  if (SHARED_DEPLOYMENT_CHAIN_IDS.has(chainId)) {
+    return NETWORK_ADDRESSES.default;
+  }
+  throw new UnsupportedNetworkError(chainId);
 }
 
 /**
