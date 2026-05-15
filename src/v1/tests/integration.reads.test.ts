@@ -36,7 +36,11 @@ import {
   getMulticall3Address,
   MULTICALL3_ADDRESS,
 } from "../internal/multicall.js";
-import { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "../addresses.js";
+import {
+  CANONICAL_ENTRYPOINT_V07,
+  CHAIN_IDS,
+  NETWORK_ADDRESSES,
+} from "../addresses.js";
 import { QuipClient } from "../factoryClient.js";
 
 // `QuipClient.create(provider)` resolves NETWORK_ADDRESSES via getChainId(),
@@ -380,19 +384,26 @@ describe("QuipClient.getPaymasterAddress", () => {
     expect(() => client.getPaymasterAddress()).toThrow();
   });
 
-  test("returns zero address for chains where paymaster is unset (MIDL_TESTNET today)", () => {
-    const client = makeTestQuipClient({
-      publicClient,
-      walletClient,
-      account: account.address,
-      factoryAddress,
-      chainId: CHAIN_IDS.MIDL_TESTNET,
-    });
-    // The default-shared chains (mainnet/base/op/sepolia/…) now register
-    // the canonical CREATE3 paymaster proxy. MIDL_TESTNET still has the
-    // placeholder zero address until that chain's paymaster lands.
-    expect(client.getPaymasterAddress()).toBe(
-      "0x0000000000000000000000000000000000000000"
-    );
+  test("returns zero address for chains where paymaster is unset", () => {
+    // Every registered chain currently has a non-zero paymaster, so to
+    // exercise the "unset" branch we temporarily zero out MIDL_TESTNET's
+    // entry. The SDK contract is: a registered-but-zero paymaster
+    // surfaces as `address(0)` from `getPaymasterAddress`, and callers
+    // treat that as "no paymaster on this chain".
+    const ZERO = "0x0000000000000000000000000000000000000000" as const;
+    const original = NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster;
+    NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster = ZERO;
+    try {
+      const client = makeTestQuipClient({
+        publicClient,
+        walletClient,
+        account: account.address,
+        factoryAddress,
+        chainId: CHAIN_IDS.MIDL_TESTNET,
+      });
+      expect(client.getPaymasterAddress()).toBe(ZERO);
+    } finally {
+      NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster = original;
+    }
   });
 });

@@ -27,20 +27,25 @@ const fakeWalletClient = {} as unknown as WalletClient;
 
 describe("QuipPaymasterClient.fromChain", () => {
   it("throws when the registered paymaster address is zero (chain has no deployment yet)", () => {
-    // Default-shared chains (mainnet/sepolia/base/op…) now register the
-    // canonical CREATE3 paymaster proxy address. MIDL_TESTNET still has
-    // its placeholder zero address until that chain's paymaster lands.
-    expect(NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster).toBe(
-      "0x0000000000000000000000000000000000000000"
-    );
-    expect(() =>
-      QuipPaymasterClient.fromChain({
-        chainId: CHAIN_IDS.MIDL_TESTNET,
-        publicClient: fakePublicClient,
-        walletClient: fakeWalletClient,
-        account,
-      })
-    ).toThrow(/no QuipPaymaster registered/i);
+    // Every registered chain currently has a non-zero paymaster, so to
+    // exercise the rejection path we temporarily zero out MIDL_TESTNET's
+    // entry, then restore it. Mirrors the override pattern used by the
+    // happy-path test below.
+    const ZERO = "0x0000000000000000000000000000000000000000" as const;
+    const original = NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster;
+    NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster = ZERO;
+    try {
+      expect(() =>
+        QuipPaymasterClient.fromChain({
+          chainId: CHAIN_IDS.MIDL_TESTNET,
+          publicClient: fakePublicClient,
+          walletClient: fakeWalletClient,
+          account,
+        })
+      ).toThrow(/no QuipPaymaster registered/i);
+    } finally {
+      NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster = original;
+    }
   });
 
   it("throws UnsupportedNetworkError for chains outside the supported set (delegates to getNetworkAddresses)", () => {
