@@ -13,9 +13,12 @@ describe("Vault Address Functions", () => {
     "0x783e1393edc4a6dac846b6da7723acb50de92b51b66ccdbc69bcadfb3fd9da69";
 
   // Known-good CREATE3 address for (QUIP_FACTORY_ADDRESS, testVaultId),
-  // verified against Solady CREATE3.deployDeterministic.
+  // verified against Solady CREATE3.deployDeterministic. Updated when the
+  // factory's canonical address rotated to the CreateX-bootstrapped Deployer
+  // (QuipFactory now at 0xE567d318…). Re-derive via `computeVaultAddress`
+  // if either the factory address or testVaultId change again.
   const expectedAddress: Address =
-    "0xB0AA5b33a205C8FE16409743e9b3d4428E1359E4";
+    "0xb9Ea7Dbb6a84b26dD0f48347F65d9510421837B6";
 
   it("should return the expected CREATE3 address", () => {
     expect(getVaultAddress(testVaultId)).toEqual(expectedAddress);

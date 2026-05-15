@@ -380,15 +380,17 @@ describe("QuipClient.getPaymasterAddress", () => {
     expect(() => client.getPaymasterAddress()).toThrow();
   });
 
-  test("returns zero address for chains where paymaster is unset (mainnet today)", () => {
+  test("returns zero address for chains where paymaster is unset (MIDL_TESTNET today)", () => {
     const client = makeTestQuipClient({
       publicClient,
       walletClient,
       account: account.address,
       factoryAddress,
-      chainId: CHAIN_IDS.ETHEREUM_MAINNET,
+      chainId: CHAIN_IDS.MIDL_TESTNET,
     });
-    // Currently zero until production paymaster lands per the registry.
+    // The default-shared chains (mainnet/base/op/sepolia/…) now register
+    // the canonical CREATE3 paymaster proxy. MIDL_TESTNET still has the
+    // placeholder zero address until that chain's paymaster lands.
     expect(client.getPaymasterAddress()).toBe(
       "0x0000000000000000000000000000000000000000"
     );

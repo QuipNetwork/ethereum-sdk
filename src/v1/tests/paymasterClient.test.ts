@@ -27,15 +27,15 @@ const fakeWalletClient = {} as unknown as WalletClient;
 
 describe("QuipPaymasterClient.fromChain", () => {
   it("throws when the registered paymaster address is zero (chain has no deployment yet)", () => {
-    // The current SHARED_DEPLOYMENT chains (mainnet, sepolia, base, op…)
-    // all map to the `default` entry whose QuipPaymaster is still
-    // address(0) until production deployment lands.
-    expect(NETWORK_ADDRESSES.default.QuipPaymaster).toBe(
+    // Default-shared chains (mainnet/sepolia/base/op…) now register the
+    // canonical CREATE3 paymaster proxy address. MIDL_TESTNET still has
+    // its placeholder zero address until that chain's paymaster lands.
+    expect(NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipPaymaster).toBe(
       "0x0000000000000000000000000000000000000000"
     );
     expect(() =>
       QuipPaymasterClient.fromChain({
-        chainId: CHAIN_IDS.ETHEREUM_MAINNET,
+        chainId: CHAIN_IDS.MIDL_TESTNET,
         publicClient: fakePublicClient,
         walletClient: fakeWalletClient,
         account,

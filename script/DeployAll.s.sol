@@ -4,54 +4,72 @@ pragma solidity ^0.8.33;
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Deployer} from "../contracts/Deployer.sol";
+import {QuipFactory} from "../contracts/QuipFactory.sol";
 import {QuipPaymaster} from "../contracts/QuipPaymaster.sol";
 
 /**
  * @title DeployAll
  * @dev Orchestrates deployment of WOTSPlus, QuipFactory, and QuipPaymaster
  *      via the existing Deployer contract. The Deployer must already exist
- *      (deployed separately via DeployDeployer.s.sol).
+ *      (deployed separately via DeployDeployer.s.sol, which now bootstraps
+ *      via CreateX — no fresh-EOA / nonce-1 ritual required).
  *
- *      QuipWallet implementation deploy + vetting is intentionally NOT part
- *      of this script — see DeployImplementation.s.sol + VetImplementation.s.sol.
- *      Wallet impls evolve per release; bundling them into DeployAll would
- *      conflate one-time infra deploy with per-release vetting.
+ *      All four downstream deploys (WOTSPlus library, QuipFactory,
+ *      QuipPaymaster impl, ERC1967 proxy for the paymaster) go through
+ *      `Deployer.deploy(bytecode, salt)` → solady CREATE3. Their addresses
+ *      depend only on (Deployer, salt); they're identical on every chain.
  *
- *      WOTSPlus + QuipFactory deploy from frozen release bytecode (committed
- *      under deployments/bytecode/) for cross-chain address determinism.
- *      QuipPaymaster (impl + ERC1967 proxy) deploys from in-tree
- *      `type().creationCode` — the paymaster is upgradeable via UUPS so impl
- *      bytecode pinning is a softer requirement than for WOTSPlus and the
- *      factory.
+ *      QuipWallet implementation + factory-side vetting is intentionally
+ *      separate — see DeployImplementation.s.sol + VetImplementation.s.sol.
+ *      Wallet impls evolve per release; bundling them here would conflate
+ *      one-time infra deploy with per-release vetting.
+ *
+ *      IMPORTANT: this script must be run with `FOUNDRY_PROFILE=deploy` so
+ *      QuipFactory's bytecode has the WOTSPlus library linked at compile
+ *      time. The `[profile.deploy].libraries` line in foundry.toml pins
+ *      WOTSPlus at its CREATE3 address.
  *
  * Usage:
- *   forge script script/DeployAll.s.sol --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --verify
+ *   FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
+ *       --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --verify
  *
  * Environment:
  *   PRIVATE_KEY      - Operations wallet private key
- *   DEPLOYER_ADDRESS - Deployer contract address
+ *   DEPLOYER_ADDRESS - Deployer contract address (per-chain, bootstrapped via DeployDeployer)
+ *   FACTORY_OWNER    - Initial owner of QuipFactory
+ *   MAX_FEE          - Maximum wallet-creation fee (wei)
  *   PAYMASTER_OWNER  - Initial owner of the paymaster proxy
  */
 contract DeployAll is Script {
+    bytes32 internal constant WOTSPLUS_SALT = keccak256("QUIP:WOTSPlus:V1");
+    bytes32 internal constant FACTORY_SALT = keccak256("QUIP:QuipFactory:V1");
     bytes32 internal constant PAYMASTER_IMPL_SALT = keccak256("QUIP:QuipPaymaster:Impl:V1");
     bytes32 internal constant PAYMASTER_PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1");
 
     function run() external {
         address deployerAddr = vm.envAddress("DEPLOYER_ADDRESS");
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        address factoryOwner = vm.envAddress("FACTORY_OWNER");
+        uint256 maxFee = vm.envUint("MAX_FEE");
         address paymasterOwner = vm.envAddress("PAYMASTER_OWNER");
+
+        require(deployerAddr.code.length > 0, "Deployer contract not found. Run DeployDeployer first.");
+        require(factoryOwner != address(0), "FACTORY_OWNER must be non-zero");
+        require(maxFee != 0, "MAX_FEE must be non-zero");
         require(paymasterOwner != address(0), "PAYMASTER_OWNER must be non-zero");
-        require(deployerAddr.code.length > 0, "Deployer contract not found. Run DeployDeployer.s.sol first.");
 
         Deployer deployer = Deployer(deployerAddr);
 
         console.log("=== Quip Network Full Deployment ===");
         console.log("Deployer contract:", deployerAddr);
+        console.log("Factory owner:    ", factoryOwner);
+        console.log("Max fee:          ", maxFee);
         console.log("Paymaster owner:  ", paymasterOwner);
 
-        address wotsAddr = _deployRelease(deployer, privateKey, "WOTSPlus.sol");
-        address factoryAddr = _deployRelease(deployer, privateKey, "QuipFactory.sol");
+        address wotsAddr = _deployWotsPlus(deployer, privateKey);
+        address factoryAddr = _deployFactory(deployer, privateKey, factoryOwner, maxFee);
         address paymasterImpl = _deployPaymasterImpl(deployer, privateKey);
         address paymasterProxy = _deployPaymasterProxy(deployer, privateKey, paymasterImpl, paymasterOwner);
 
@@ -64,57 +82,67 @@ contract DeployAll is Script {
         console.log(")");
     }
 
-    /// @dev Deploys a release contract (WOTSPlus or QuipFactory) from
-    ///      committed bytecode artifacts. Skips deploy if the predicted
-    ///      address already has code.
-    function _deployRelease(
-        Deployer deployer,
-        uint256 privateKey,
-        string memory contractDir
-    ) internal returns (address deployed) {
-        console.log(string.concat("\n--- ", contractDir, " ---"));
-        (bytes memory bytecode, bytes32 salt, address expectedAddr) = _loadRelease(contractDir);
+    function _deployWotsPlus(Deployer deployer, uint256 privateKey) internal returns (address deployed) {
+        console.log("\n--- WOTSPlus ---");
+        address expected = CREATE3.predictDeterministicAddress(WOTSPLUS_SALT, address(deployer));
+        console.log("Expected:", expected);
 
-        if (expectedAddr.code.length > 0) {
-            console.log("Already deployed at:", expectedAddr);
-            return expectedAddr;
+        if (expected.code.length > 0) {
+            console.log("Already deployed.");
+            return expected;
         }
 
         vm.startBroadcast(privateKey);
-        deployed = deployer.deploy(bytecode, salt);
+        deployed = deployer.deploy(type(WOTSPlus).creationCode, WOTSPLUS_SALT);
         vm.stopBroadcast();
-        require(deployed == expectedAddr, "Address mismatch");
+        require(deployed == expected, "WOTSPlus address mismatch");
         console.log("Deployed at:", deployed);
     }
 
-    /// @dev Deploys the QuipPaymaster implementation under
-    ///      `keccak256("QUIP:QuipPaymaster:Impl:V1")`. The impl's constructor
-    ///      runs `_disableInitializers()`, so the impl is intentionally inert.
-    function _deployPaymasterImpl(
+    function _deployFactory(
         Deployer deployer,
-        uint256 privateKey
-    ) internal returns (address impl) {
-        console.log("\n--- QuipPaymaster impl ---");
-        address expectedImpl = CREATE3.predictDeterministicAddress(
-            PAYMASTER_IMPL_SALT,
-            address(deployer)
-        );
-        console.log("Expected impl:", expectedImpl);
+        uint256 privateKey,
+        address owner,
+        uint256 maxFee
+    ) internal returns (address deployed) {
+        console.log("\n--- QuipFactory ---");
+        address expected = CREATE3.predictDeterministicAddress(FACTORY_SALT, address(deployer));
+        console.log("Expected:", expected);
 
-        if (expectedImpl.code.length > 0) {
-            console.log("Paymaster implementation already deployed.");
-            return expectedImpl;
+        if (expected.code.length > 0) {
+            console.log("Already deployed.");
+            return expected;
+        }
+
+        bytes memory bytecode = abi.encodePacked(
+            type(QuipFactory).creationCode,
+            abi.encode(owner, maxFee)
+        );
+        vm.startBroadcast(privateKey);
+        deployed = deployer.deploy(bytecode, FACTORY_SALT);
+        vm.stopBroadcast();
+        require(deployed == expected, "QuipFactory address mismatch");
+        require(QuipFactory(payable(deployed)).owner() == owner, "Factory owner mismatch");
+        console.log("Deployed at:", deployed);
+    }
+
+    function _deployPaymasterImpl(Deployer deployer, uint256 privateKey) internal returns (address impl) {
+        console.log("\n--- QuipPaymaster impl ---");
+        address expected = CREATE3.predictDeterministicAddress(PAYMASTER_IMPL_SALT, address(deployer));
+        console.log("Expected:", expected);
+
+        if (expected.code.length > 0) {
+            console.log("Already deployed.");
+            return expected;
         }
 
         vm.startBroadcast(privateKey);
         impl = deployer.deploy(type(QuipPaymaster).creationCode, PAYMASTER_IMPL_SALT);
         vm.stopBroadcast();
-        require(impl == expectedImpl, "Paymaster impl address mismatch");
-        console.log("Paymaster impl deployed at:", impl);
+        require(impl == expected, "Paymaster impl address mismatch");
+        console.log("Deployed at:", impl);
     }
 
-    /// @dev Deploys an ERC1967 proxy in front of `impl` and atomically calls
-    ///      `initialize(owner)` via the proxy's constructor delegatecall.
     function _deployPaymasterProxy(
         Deployer deployer,
         uint256 privateKey,
@@ -122,19 +150,16 @@ contract DeployAll is Script {
         address owner
     ) internal returns (address proxy) {
         console.log("\n--- QuipPaymaster proxy ---");
-        address expectedProxy = CREATE3.predictDeterministicAddress(
-            PAYMASTER_PROXY_SALT,
-            address(deployer)
-        );
-        console.log("Expected proxy:", expectedProxy);
+        address expected = CREATE3.predictDeterministicAddress(PAYMASTER_PROXY_SALT, address(deployer));
+        console.log("Expected:", expected);
 
-        if (expectedProxy.code.length > 0) {
-            console.log("Paymaster proxy already deployed.");
+        if (expected.code.length > 0) {
+            console.log("Already deployed.");
             require(
-                QuipPaymaster(payable(expectedProxy)).owner() == owner,
+                QuipPaymaster(payable(expected)).owner() == owner,
                 "Paymaster owner mismatch on existing proxy"
             );
-            return expectedProxy;
+            return expected;
         }
 
         bytes memory initData = abi.encodeCall(QuipPaymaster.initialize, (owner));
@@ -145,32 +170,11 @@ contract DeployAll is Script {
         vm.startBroadcast(privateKey);
         proxy = deployer.deploy(proxyBytecode, PAYMASTER_PROXY_SALT);
         vm.stopBroadcast();
-        require(proxy == expectedProxy, "Paymaster proxy address mismatch");
+        require(proxy == expected, "Paymaster proxy address mismatch");
         require(
             QuipPaymaster(payable(proxy)).owner() == owner,
             "Paymaster owner not set during initialize"
         );
-        console.log("Paymaster proxy deployed at:", proxy);
-    }
-
-    /// @dev Reads the release bundle for `contractDir` (e.g. "WOTSPlus.sol").
-    ///      Indirects through `latest.json` so the active release pointer
-    ///      lives in version control alongside the bytecode.
-    function _loadRelease(string memory contractDir)
-        internal
-        view
-        returns (bytes memory bytecode, bytes32 salt, address expectedAddr)
-    {
-        string memory latestJson = vm.readFile(
-            string.concat("deployments/bytecode/", contractDir, "/latest.json")
-        );
-        string memory releaseFile = vm.parseJsonString(latestJson, ".file");
-        string memory releaseJson = vm.readFile(
-            string.concat("deployments/bytecode/", contractDir, "/", releaseFile)
-        );
-
-        bytecode = vm.parseJsonBytes(releaseJson, ".creationBytecode");
-        salt = vm.parseJsonBytes32(releaseJson, ".salt");
-        expectedAddr = vm.parseJsonAddress(releaseJson, ".address");
+        console.log("Deployed at:", proxy);
     }
 }
