@@ -54,6 +54,7 @@ import {
   type PackedUserOperation,
   type WinternitzAddress,
   type WinternitzElements,
+  KeyType,
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
   completeOwnershipHandoverDigest,
@@ -136,12 +137,12 @@ export interface WalletState {
   verificationKeys: WinternitzAddress[];
 }
 
-/// Mirrors the `IQuipWallet.KeyType` enum.
-export enum KeyType {
-  Transaction = 0,
-  Recovery = 1,
-  Verification = 2,
-}
+/// `KeyType` lives in `wotsCodec.ts` as the single source of truth (it
+/// mirrors `WOTSPlusCodec.KeyType` directly). Re-exported here so callers
+/// reaching into `walletClient` for `KeyType` keep working — the value is
+/// the same enum object as `WotsCodec.KeyType`, so identity comparisons
+/// across modules succeed.
+export { KeyType } from "./wotsCodec.js";
 
 /// Split a merged `TxOptions & TransactionKeyOptions` into the two distinct
 /// option bags consumed by the write pipeline: `keyOpts` drives key

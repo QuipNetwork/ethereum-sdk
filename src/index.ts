@@ -30,9 +30,14 @@ export * from "./constants.js";
 // Core SDK classes
 export { QuipSigner } from "./signer.js";
 export type { WinternitzKeyPair } from "./signer.js";
-export { QuipWalletClient, KeyType } from "./walletClient.js";
+export { QuipWalletClient } from "./walletClient.js";
 export { QuipClient } from "./factoryClient.js";
 export { QuipPaymasterClient } from "./paymasterClient.js";
+
+// `KeyType` is canonically defined in `wotsCodec.ts` (it mirrors
+// `WOTSPlusCodec.KeyType`). Re-exported here at the package barrel so
+// callers don't have to reach into the codec subpath.
+export { KeyType } from "./wotsCodec.js";
 
 // Burn-set injection: every QuipSigner needs a `ConsumeKeyFn` to enforce
 // WOTS+ one-time-use. `createInMemoryBurnSet()` is the process-local default;
