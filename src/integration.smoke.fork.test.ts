@@ -43,7 +43,6 @@ import {
   type PublicClient,
   type TestClient,
   type WalletClient,
-  concat,
   createPublicClient,
   createTestClient,
   createWalletClient,
@@ -56,9 +55,6 @@ import {
 } from "viem";
 import { createAnvil } from "@viem/anvil";
 import { mainnet } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
@@ -82,93 +78,28 @@ import {
   RECOVERY_KEY_AMOUNT,
   TRANSACTION_KEY_INIT_AMOUNT,
 } from "./wotsCodec.js";
+import {
+  DEFAULT_ACCOUNT,
+  deployErc1967Proxy,
+  linkBytecode,
+  loadForgeArtifacts,
+} from "./test-utils/anvilFixture.js";
 
-// ─── Forge artifacts ────────────────────────────────────────────────
-const factoryArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipFactory.sol/QuipFactory.json"),
-    "utf8"
-  )
-);
-const factoryBytecode = factoryArtifact.bytecode.object as Hex;
-
-const walletArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipWallet.sol/QuipWallet.json"),
-    "utf8"
-  )
-);
-const walletUnlinkedBytecode = walletArtifact.bytecode.object as string;
-const quipWalletDeployAbi = walletArtifact.abi;
-
-const paymasterArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipPaymaster.sol/QuipPaymaster.json"),
-    "utf8"
-  )
-);
-const paymasterUnlinkedBytecode = paymasterArtifact.bytecode.object as string;
-const quipPaymasterDeployAbi = paymasterArtifact.abi;
-
-const wotsPlusArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/WOTSPlus.sol/WOTSPlus.json"),
-    "utf8"
-  )
-);
-const wotsPlusBytecode = wotsPlusArtifact.bytecode.object as Hex;
-const wotsPlusAbi = wotsPlusArtifact.abi;
-
-function linkBytecode(
-  unlinked: string,
-  linkRefs: Record<
-    string,
-    Record<string, Array<{ start: number; length: number }>>
-  >,
-  libAddress: Address
-): Hex {
-  let hex = unlinked.replace(/^0x/, "");
-  const addrPlain = libAddress.replace(/^0x/, "").toLowerCase();
-  for (const file of Object.values(linkRefs)) {
-    for (const libRefs of Object.values(file)) {
-      for (const ref of libRefs) {
-        const hexStart = ref.start * 2;
-        const hexLen = ref.length * 2;
-        hex = hex.slice(0, hexStart) + addrPlain + hex.slice(hexStart + hexLen);
-      }
-    }
-  }
-  return ("0x" + hex) as Hex;
-}
-
-async function deployErc1967Proxy(
-  walletClient: WalletClient,
-  publicClient: PublicClient,
-  account: ReturnType<typeof privateKeyToAccount>,
-  impl: Address
-): Promise<Address> {
-  // Solady minimal ERC-1967 proxy initcode. Mirrors `QuipFactory._deployProxy`.
-  const initcode = concat([
-    "0x603d3d8160223d3973",
-    impl,
-    "0x6009",
-    "0x5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076",
-    "0xcc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3",
-  ]);
-  const hash = await walletClient.sendTransaction({
-    chain: mainnet,
-    data: initcode,
-    account,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  return receipt.contractAddress!;
-}
+const {
+  factoryBytecode,
+  walletArtifact,
+  walletUnlinkedBytecode,
+  walletAbi: quipWalletDeployAbi,
+  paymasterArtifact,
+  paymasterUnlinkedBytecode,
+  paymasterAbi: quipPaymasterDeployAbi,
+  wotsPlusBytecode,
+  wotsPlusAbi,
+} = loadForgeArtifacts();
 
 // Anvil's first prefunded dev account. `--fork-url` keeps this funded
 // regardless of mainnet state.
-const ANVIL_PRIV_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-const account = privateKeyToAccount(ANVIL_PRIV_KEY);
+const account = DEFAULT_ACCOUNT;
 
 const FORK_RPC_URL = process.env.FORK_RPC_URL;
 const SHOULD_RUN = !!FORK_RPC_URL;
@@ -251,7 +182,8 @@ beforeAll(async () => {
 
   // Deploy WOTSPlus library.
   const wotsHash = await walletClient.deployContract({
-    abi: wotsPlusAbi,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    abi: wotsPlusAbi as any,
     bytecode: wotsPlusBytecode,
     account,
     chain: mainnet,
@@ -268,7 +200,8 @@ beforeAll(async () => {
     wotsAddr
   );
   const implHash = await walletClient.deployContract({
-    abi: quipWalletDeployAbi,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    abi: quipWalletDeployAbi as any,
     bytecode: walletBytecode,
     args: [factoryAddress],
     account,
@@ -295,7 +228,8 @@ beforeAll(async () => {
     wotsAddr
   );
   const pmImplHash = await walletClient.deployContract({
-    abi: quipPaymasterDeployAbi,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    abi: quipPaymasterDeployAbi as any,
     bytecode: pmBytecode,
     account,
     chain: mainnet,
@@ -307,7 +241,8 @@ beforeAll(async () => {
     walletClient,
     publicClient,
     account,
-    pmImplReceipt.contractAddress!
+    pmImplReceipt.contractAddress!,
+    mainnet
   );
   const initHash = await walletClient.writeContract({
     chain: mainnet,

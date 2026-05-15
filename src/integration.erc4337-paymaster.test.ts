@@ -17,33 +17,19 @@
 import {
   type Address,
   type Hex,
-  type PublicClient,
-  type WalletClient,
-  type TestClient,
-  concat,
-  createPublicClient,
-  createWalletClient,
-  createTestClient,
   encodeFunctionData,
-  http,
   toHex,
   zeroAddress,
   parseEventLogs,
   parseEther,
 } from "viem";
-import { createAnvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
-import { privateKeyToAccount } from "viem/accounts";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "./addresses.js";
 import { QuipSigner } from "./signer.js";
 import { createInMemoryBurnSet } from "./burnSet.js";
-import { QuipWalletClient } from "./walletClient.js";
 import { QuipPaymasterClient } from "./paymasterClient.js";
 import {
   PaymasterValidationFailure,
@@ -51,285 +37,100 @@ import {
   VerifierMismatchError,
 } from "./errors.js";
 import { buildSignedPaymasterAndData } from "./userOp.js";
+import { paymasterVerifierKeyUsedSlot } from "./wotsCodec.js";
 import {
-  encodeInit,
-  paymasterVerifierKeyUsedSlot,
-  type WinternitzAddress,
-  TRANSACTION_KEY_INIT_AMOUNT,
-  RECOVERY_KEY_AMOUNT,
-} from "./wotsCodec.js";
+  ANVIL_PORTS,
+  type AnvilStack,
+  createFreshWallet,
+  deployErc1967Proxy,
+  linkBytecode,
+  loadForgeArtifacts,
+  setupAnvilStack,
+  stopAnvilStack,
+} from "./test-utils/anvilFixture.js";
 
-// ─── Artifacts ──────────────────────────────────────────────────────
-const factoryArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipFactory.sol/QuipFactory.json"),
-    "utf8"
-  )
-);
-const factoryBytecode = factoryArtifact.bytecode.object as Hex;
-
-const walletArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipWallet.sol/QuipWallet.json"),
-    "utf8"
-  )
-);
-const walletUnlinkedBytecode = walletArtifact.bytecode.object as string;
-const quipWalletDeployAbi = walletArtifact.abi;
-
-const paymasterArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipPaymaster.sol/QuipPaymaster.json"),
-    "utf8"
-  )
-);
-const paymasterUnlinkedBytecode = paymasterArtifact.bytecode.object as string;
-const quipPaymasterDeployAbi = paymasterArtifact.abi;
-
-const wotsPlusArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/WOTSPlus.sol/WOTSPlus.json"),
-    "utf8"
-  )
-);
-const wotsPlusBytecode = wotsPlusArtifact.bytecode.object as Hex;
-const wotsPlusAbi = wotsPlusArtifact.abi;
-
-const entryPointFixture = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "src/fixtures/entrypoint-v0.7.json"),
-    "utf8"
-  )
-);
-const entryPointDeployedBytecode = entryPointFixture.deployedBytecode as Hex;
-
-function linkBytecode(unlinked: string, linkRefs: Record<
-  string,
-  Record<string, Array<{ start: number; length: number }>>
->, libAddress: Address): Hex {
-  let hex = unlinked.replace(/^0x/, "");
-  const addrPlain = libAddress.replace(/^0x/, "").toLowerCase();
-  for (const file of Object.values(linkRefs)) {
-    for (const libRefs of Object.values(file)) {
-      for (const ref of libRefs) {
-        const hexStart = ref.start * 2;
-        const hexLen = ref.length * 2;
-        hex = hex.slice(0, hexStart) + addrPlain + hex.slice(hexStart + hexLen);
-      }
-    }
-  }
-  return ("0x" + hex) as Hex;
-}
-
-const ANVIL_PRIV_KEY =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-const account = privateKeyToAccount(ANVIL_PRIV_KEY);
-
-const anvil = createAnvil({ port: 8553 });
-let publicClient: PublicClient;
-let walletClient: WalletClient;
-let testClient: TestClient;
-let factoryAddress: Address;
+let stack: AnvilStack;
 let paymasterAddress: Address;
 
-const MAX_FEE = 10n ** 16n;
-
-function buildInitPayload(signer: QuipSigner, vaultId: Hex): Hex {
-  const disaster = signer.generateKeyPair(vaultId).publicKey;
-  const ownership = signer.generateKeyPair(vaultId).publicKey;
-  const transactionKeys = Array.from(
-    { length: TRANSACTION_KEY_INIT_AMOUNT },
-    () => signer.generateKeyPair(vaultId).publicKey
-  );
-  const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
-    signer.generateKeyPair(vaultId).publicKey
-  );
-  return encodeInit(disaster, ownership, transactionKeys, recoveryKeys);
-}
-
-async function createFreshWallet(seedByte: number): Promise<{
-  signer: QuipSigner;
-  vaultId: Hex;
-  client: QuipWalletClient;
-  walletAddress: Address;
-}> {
-  const quantumSecret = new Uint8Array(32).fill(seedByte);
-  const signer = new QuipSigner(quantumSecret, createInMemoryBurnSet().consume);
-  const vaultId = toHex(new Uint8Array(32).fill(seedByte));
-  const initPayload = buildInitPayload(signer, vaultId);
-  const hash = await walletClient.writeContract({
-    chain: foundry,
-    address: factoryAddress,
-    abi: quipFactoryAbi,
-    functionName: "deployLatestWalletProxy",
-    args: [vaultId, account.address, initPayload],
-    account,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  const logs = parseEventLogs({
-    abi: quipFactoryAbi,
-    logs: receipt.logs,
-    eventName: "QuipCreated",
-  });
-  const walletAddress = logs[0].args.quip;
-  await testClient.setBalance({
-    address: walletAddress,
-    value: parseEther("1"),
-  });
-  const client = new QuipWalletClient(
-    signer,
-    vaultId,
-    walletAddress,
-    publicClient,
-    walletClient,
-    account.address,
-    foundry.id
-  );
-  return { signer, vaultId, client, walletAddress };
-}
-
-/// Deploy a Solady minimal ERC-1967 proxy pointing at `impl`. Mirrors the
-/// initcode used by `QuipFactory._deployProxy`.
-async function deployErc1967Proxy(impl: Address): Promise<Address> {
-  const initcode = concat([
-    "0x603d3d8160223d3973",
-    impl,
-    "0x6009",
-    "0x5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076",
-    "0xcc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3",
-  ]);
-  const hash = await walletClient.sendTransaction({
-    chain: foundry,
-    data: initcode,
-    account,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  return receipt.contractAddress!;
-}
-
 beforeAll(async () => {
-  await anvil.start();
-  const transport = http(`http://127.0.0.1:${anvil.port}`);
-  publicClient = createPublicClient({ chain: foundry, transport });
-  walletClient = createWalletClient({ chain: foundry, transport, account });
-  testClient = createTestClient({
-    chain: foundry,
-    mode: "anvil",
-    transport,
-  });
+  stack = await setupAnvilStack({ port: ANVIL_PORTS.erc4337Paymaster });
 
-  // 1. EntryPoint v0.7 at canonical address.
-  await testClient.setCode({
-    address: CANONICAL_ENTRYPOINT_V07,
-    bytecode: entryPointDeployedBytecode,
-  });
-
-  // 2. QuipFactory.
-  const factoryHash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
-    bytecode: factoryBytecode,
-    args: [account.address, MAX_FEE],
-    account,
-    chain: foundry,
-  });
-  const factoryReceipt = await publicClient.waitForTransactionReceipt({
-    hash: factoryHash,
-  });
-  factoryAddress = factoryReceipt.contractAddress!;
-
-  // 3. WOTSPlus library.
-  const wotsHash = await walletClient.deployContract({
-    abi: wotsPlusAbi,
-    bytecode: wotsPlusBytecode,
-    account,
-    chain: foundry,
-  });
-  const wotsReceipt = await publicClient.waitForTransactionReceipt({
-    hash: wotsHash,
-  });
-  const wotsAddr = wotsReceipt.contractAddress!;
-
-  // 4. QuipWallet impl + vet.
-  const walletBytecode = linkBytecode(
-    walletUnlinkedBytecode,
-    walletArtifact.bytecode.linkReferences,
-    wotsAddr
-  );
-  const walletImplHash = await walletClient.deployContract({
-    abi: quipWalletDeployAbi,
-    bytecode: walletBytecode,
-    args: [factoryAddress],
-    account,
-    chain: foundry,
-  });
-  const walletImplReceipt = await publicClient.waitForTransactionReceipt({
-    hash: walletImplHash,
-  });
-  const vetHash = await walletClient.writeContract({
-    chain: foundry,
-    address: factoryAddress,
-    abi: quipFactoryAbi,
-    functionName: "vetImplementation",
-    args: [walletImplReceipt.contractAddress!],
-    account,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: vetHash });
-
-  // 5. QuipPaymaster: impl + ERC-1967 proxy + initialize + deposit.
+  // Deploy the QuipPaymaster: impl + ERC-1967 proxy + initialize + 1 ETH
+  // deposit. The base stack already deployed WOTSPlus (the lib is shared
+  // with the wallet impl), so we just link + deploy the paymaster impl.
+  const artifacts = loadForgeArtifacts();
   const paymasterBytecode = linkBytecode(
-    paymasterUnlinkedBytecode,
-    paymasterArtifact.bytecode.linkReferences,
-    wotsAddr
+    artifacts.paymasterUnlinkedBytecode,
+    artifacts.paymasterArtifact.bytecode.linkReferences,
+    stack.wotsPlusAddress
   );
-  const pmImplHash = await walletClient.deployContract({
-    abi: quipPaymasterDeployAbi,
+  const pmImplHash = await stack.walletClient.deployContract({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    abi: artifacts.paymasterAbi as any,
     bytecode: paymasterBytecode,
-    account,
+    account: stack.account,
     chain: foundry,
   });
-  const pmImplReceipt = await publicClient.waitForTransactionReceipt({
+  const pmImplReceipt = await stack.publicClient.waitForTransactionReceipt({
     hash: pmImplHash,
   });
-  paymasterAddress = await deployErc1967Proxy(pmImplReceipt.contractAddress!);
-  const initHash = await walletClient.writeContract({
+  paymasterAddress = await deployErc1967Proxy(
+    stack.walletClient,
+    stack.publicClient,
+    stack.account,
+    pmImplReceipt.contractAddress!
+  );
+  const initHash = await stack.walletClient.writeContract({
     chain: foundry,
     address: paymasterAddress,
     abi: quipPaymasterAbi,
     functionName: "initialize",
-    args: [account.address],
-    account,
+    args: [stack.account.address],
+    account: stack.account,
   });
-  await publicClient.waitForTransactionReceipt({ hash: initHash });
+  await stack.publicClient.waitForTransactionReceipt({ hash: initHash });
 
   // Pre-deposit 1 ETH so the paymaster can sponsor.
-  const depHash = await walletClient.writeContract({
+  const depHash = await stack.walletClient.writeContract({
     chain: foundry,
     address: paymasterAddress,
     abi: quipPaymasterAbi,
     functionName: "deposit",
     args: [],
     value: parseEther("1"),
-    account,
+    account: stack.account,
   });
-  await publicClient.waitForTransactionReceipt({ hash: depHash });
+  await stack.publicClient.waitForTransactionReceipt({ hash: depHash });
 }, 120_000);
 
 afterAll(async () => {
-  await anvil.stop().catch(() => {});
+  await stopAnvilStack(stack);
 }, 10_000);
+
+// Sugar: the paymaster file's wallets only need a funded balance; the
+// paymaster covers prefund, so no EntryPoint deposit is needed.
+async function freshWallet(seedByte: number) {
+  return createFreshWallet(stack, seedByte, {
+    walletBalance: parseEther("1"),
+  });
+}
+
+function makePaymasterClient(): QuipPaymasterClient {
+  return new QuipPaymasterClient({
+    paymasterAddress,
+    publicClient: stack.publicClient,
+    walletClient: stack.walletClient,
+    account: stack.account.address,
+    chainId: foundry.id,
+  });
+}
 
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe("QuipPaymasterClient reads + admin writes", () => {
   test("getDeposit / owner / getPqVerifier(zero) on a freshly initialized paymaster", async () => {
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
-    expect(await pmClient.owner()).toBe(account.address);
+    const pmClient = makePaymasterClient();
+    expect(await pmClient.owner()).toBe(stack.account.address);
     expect(await pmClient.getDeposit()).toBeGreaterThanOrEqual(parseEther("1"));
     const verifier = await pmClient.getPqVerifier(
       "0x0000000000000000000000000000000000000123"
@@ -340,14 +141,11 @@ describe("QuipPaymasterClient reads + admin writes", () => {
   });
 
   test("setPqVerifier registers a verifier for a wallet", async () => {
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
-    const operator = new QuipSigner(new Uint8Array(32).fill(0x10), createInMemoryBurnSet().consume);
+    const pmClient = makePaymasterClient();
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x10),
+      createInMemoryBurnSet().consume
+    );
     const vaultId = toHex(new Uint8Array(32).fill(0x10));
     const verifierKey = operator.generateKeyPair(vaultId).publicKey;
     const fakeWallet = "0x0000000000000000000000000000000000005a01" as Address;
@@ -360,17 +158,14 @@ describe("QuipPaymasterClient reads + admin writes", () => {
 
 describe("Sponsored UserOp end-to-end", () => {
   test("happy path: build wallet UserOp → sponsor → handleOps → UserOpSponsored emitted", async () => {
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x50);
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const { client: walletSdk, walletAddress } = await freshWallet(0x50);
+    const pmClient = makePaymasterClient();
 
     // Operator signer for the paymaster's per-wallet verifier chain.
-    const operator = new QuipSigner(new Uint8Array(32).fill(0x51), createInMemoryBurnSet().consume);
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x51),
+      createInMemoryBurnSet().consume
+    );
     const operatorVault = toHex(new Uint8Array(32).fill(0x51));
     const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
 
@@ -415,16 +210,16 @@ describe("Sponsored UserOp end-to-end", () => {
     // 5. Submit via handleOps. Both keys (wallet + verifier) were burned
     //    at sign time; the on-chain rotation will commit during
     //    validation.
-    const handleHash = await walletClient.writeContract({
+    const handleHash = await stack.walletClient.writeContract({
       chain: foundry,
       address: CANONICAL_ENTRYPOINT_V07,
       abi: entryPointV07Abi,
       functionName: "handleOps",
-      args: [[final.userOp], account.address],
-      account,
+      args: [[final.userOp], stack.account.address],
+      account: stack.account,
       gas: 3_000_000n,
     });
-    const receipt = await publicClient.waitForTransactionReceipt({
+    const receipt = await stack.publicClient.waitForTransactionReceipt({
       hash: handleHash,
     });
 
@@ -453,9 +248,7 @@ describe("Sponsored UserOp end-to-end", () => {
     //    `nextVerifier` (not the original `currentVerifier`).
     const verifierAfter = await pmClient.getPqVerifier(walletAddress);
     expect(verifierAfter.publicSeed).toBe(sponsored.nextVerifier.publicSeed);
-    expect(verifierAfter.publicSeed).not.toBe(
-      currentVerifier.publicSeed
-    );
+    expect(verifierAfter.publicSeed).not.toBe(currentVerifier.publicSeed);
   }, 90_000);
 
   test("verifierKeyUsed slot derivation pins the paymaster's ERC-7201 layout", async () => {
@@ -472,14 +265,8 @@ describe("Sponsored UserOp end-to-end", () => {
     // verifier reads zero; a registered (or rotated-through) verifier
     // reads non-zero. The SDK's `simulateUserOp` only needs to detect the
     // non-zero state.
-    const { walletAddress } = await createFreshWallet(0x7a);
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const { walletAddress } = await freshWallet(0x7a);
+    const pmClient = makePaymasterClient();
 
     const operator = new QuipSigner(
       new Uint8Array(32).fill(0x7b),
@@ -491,7 +278,7 @@ describe("Sponsored UserOp end-to-end", () => {
 
     // Before registration: slot must be zero — the verifier has never
     // touched paymaster state.
-    const preSlot = await publicClient.getStorageAt({
+    const preSlot = await stack.publicClient.getStorageAt({
       address: paymasterAddress,
       slot: slotForCurrent,
     });
@@ -500,7 +287,7 @@ describe("Sponsored UserOp end-to-end", () => {
     // Register the verifier. This commits to `verifierKeyUsed` so the
     // SDK's slot derivation must surface a non-zero value here.
     await pmClient.setPqVerifier(walletAddress, currentVerifier);
-    const postSlot = await publicClient.getStorageAt({
+    const postSlot = await stack.publicClient.getStorageAt({
       address: paymasterAddress,
       slot: slotForCurrent,
     });
@@ -520,7 +307,7 @@ describe("Sponsored UserOp end-to-end", () => {
       .publicKey;
     const slotForUnseen = paymasterVerifierKeyUsedSlot(unseenVerifier);
     expect(slotForUnseen).not.toBe(slotForCurrent);
-    const unseenSlot = await publicClient.getStorageAt({
+    const unseenSlot = await stack.publicClient.getStorageAt({
       address: paymasterAddress,
       slot: slotForUnseen,
     });
@@ -530,18 +317,13 @@ describe("Sponsored UserOp end-to-end", () => {
 
 describe("simulateUserOp — paymaster rejection paths", () => {
   test("NoVerifierRegistered: paymaster has no verifier for sender", async () => {
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x60);
-    const operator = new QuipSigner(new Uint8Array(32).fill(0x61), createInMemoryBurnSet().consume);
+    const { client: walletSdk, walletAddress } = await freshWallet(0x60);
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x61),
+      createInMemoryBurnSet().consume
+    );
     const operatorVault = toHex(new Uint8Array(32).fill(0x61));
     const verifier = operator.generateKeyPair(operatorVault).publicKey;
-
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
 
     // DO NOT register a verifier for this wallet.
     const prepared = await walletSdk.prepareExecuteUserOp(
@@ -579,17 +361,14 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   }, 60_000);
 
   test("ZeroNextVerifier: paymasterAndData has zero nextVerifier", async () => {
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x62);
-    const operator = new QuipSigner(new Uint8Array(32).fill(0x63), createInMemoryBurnSet().consume);
+    const { client: walletSdk, walletAddress } = await freshWallet(0x62);
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x63),
+      createInMemoryBurnSet().consume
+    );
     const operatorVault = toHex(new Uint8Array(32).fill(0x63));
     const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const pmClient = makePaymasterClient();
     await pmClient.setPqVerifier(walletAddress, currentVerifier);
 
     const prepared = await walletSdk.prepareExecuteUserOp(
@@ -626,17 +405,14 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   }, 60_000);
 
   test("NextEqualsCurrent: nextVerifier matches the registered currentVerifier", async () => {
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x64);
-    const operator = new QuipSigner(new Uint8Array(32).fill(0x65), createInMemoryBurnSet().consume);
+    const { client: walletSdk, walletAddress } = await freshWallet(0x64);
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x65),
+      createInMemoryBurnSet().consume
+    );
     const operatorVault = toHex(new Uint8Array(32).fill(0x65));
     const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const pmClient = makePaymasterClient();
     await pmClient.setPqVerifier(walletAddress, currentVerifier);
 
     const prepared = await walletSdk.prepareExecuteUserOp(
@@ -663,24 +439,22 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   }, 60_000);
 
   test("NextVerifierKeyInUse: nextVerifier is already registered for another wallet", async () => {
-    const { client: walletSdkA, walletAddress: walletA } =
-      await createFreshWallet(0x66);
-    const { client: walletSdkB, walletAddress: walletB } =
-      await createFreshWallet(0x67);
+    const { client: walletSdkA, walletAddress: walletA } = await freshWallet(
+      0x66
+    );
+    const { client: walletSdkB, walletAddress: walletB } = await freshWallet(
+      0x67
+    );
 
-    const operator = new QuipSigner(new Uint8Array(32).fill(0x68), createInMemoryBurnSet().consume);
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x68),
+      createInMemoryBurnSet().consume
+    );
     const operatorVault = toHex(new Uint8Array(32).fill(0x68));
     const verifierA = operator.generateKeyPair(operatorVault).publicKey;
-    const verifierB_current =
-      operator.generateKeyPair(operatorVault).publicKey;
+    const verifierB_current = operator.generateKeyPair(operatorVault).publicKey;
 
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const pmClient = makePaymasterClient();
     // Register verifierA on walletA → this marks it used in the monotonic
     // index.
     await pmClient.setPqVerifier(walletA, verifierA);
@@ -712,17 +486,14 @@ describe("simulateUserOp — paymaster rejection paths", () => {
   }, 60_000);
 
   test("InvalidSignature: WOTS+ sig elements tampered", async () => {
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x69);
-    const operator = new QuipSigner(new Uint8Array(32).fill(0x6a), createInMemoryBurnSet().consume);
+    const { client: walletSdk, walletAddress } = await freshWallet(0x69);
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x6a),
+      createInMemoryBurnSet().consume
+    );
     const operatorVault = toHex(new Uint8Array(32).fill(0x6a));
     const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const pmClient = makePaymasterClient();
     await pmClient.setPqVerifier(walletAddress, currentVerifier);
 
     const prepared = await walletSdk.prepareExecuteUserOp(
@@ -782,14 +553,8 @@ describe("encodeFunctionData smoke for paymaster types", () => {
 
 describe("sponsorUserOp client-side pre-flight", () => {
   test("throws PqVerifierNotRegisteredError when no verifier is set for the sender", async () => {
-    const { client: walletSdk } = await createFreshWallet(0x80);
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const { client: walletSdk } = await freshWallet(0x80);
+    const pmClient = makePaymasterClient();
     const operator = new QuipSigner(
       new Uint8Array(32).fill(0x81),
       createInMemoryBurnSet().consume
@@ -814,14 +579,8 @@ describe("sponsorUserOp client-side pre-flight", () => {
   }, 60_000);
 
   test("throws VerifierMismatchError when currentVerifier doesn't match on-chain", async () => {
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x82);
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const { client: walletSdk, walletAddress } = await freshWallet(0x82);
+    const pmClient = makePaymasterClient();
     const operator = new QuipSigner(
       new Uint8Array(32).fill(0x83),
       createInMemoryBurnSet().consume
@@ -859,14 +618,8 @@ describe("sponsorUserOp client-side pre-flight", () => {
   }, 60_000);
 
   test("sponsorUserOp return value includes currentVerifier alongside nextVerifier", async () => {
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x84);
-    const pmClient = new QuipPaymasterClient({
-      paymasterAddress,
-      publicClient,
-      walletClient,
-      account: account.address,
-      chainId: foundry.id,
-    });
+    const { client: walletSdk, walletAddress } = await freshWallet(0x84);
+    const pmClient = makePaymasterClient();
     const operator = new QuipSigner(
       new Uint8Array(32).fill(0x85),
       createInMemoryBurnSet().consume

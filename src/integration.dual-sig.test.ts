@@ -40,27 +40,17 @@
 // and is covered by `integration.erc4337-*.test.ts`.
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import {
-  type Address,
   type Hex,
-  type PublicClient,
   type WalletClient,
-  createPublicClient,
   createWalletClient,
   http,
-  parseEventLogs,
   toHex,
   zeroAddress,
 } from "viem";
-import { createAnvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipWalletAbi } from "./abi/QuipWallet.js";
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
 import { QuipWalletClient } from "./walletClient.js";
 import {
   InvalidSignatureError,
@@ -71,197 +61,45 @@ import {
   encodeExecute,
   executeDigest,
   opdataHash,
-  type WinternitzAddress,
   type WinternitzElements,
-  TRANSACTION_KEY_INIT_AMOUNT,
-  RECOVERY_KEY_AMOUNT,
-  encodeInit,
 } from "./wotsCodec.js";
+import {
+  ANVIL_PORTS,
+  type AnvilStack,
+  createFreshWallet,
+  setupAnvilStack,
+  stopAnvilStack,
+} from "./test-utils/anvilFixture.js";
 
-// ─── Forge artifacts ────────────────────────────────────────────────
-const factoryArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipFactory.sol/QuipFactory.json"),
-    "utf8"
-  )
-);
-const factoryBytecode = factoryArtifact.bytecode.object as Hex;
-
-const walletArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipWallet.sol/QuipWallet.json"),
-    "utf8"
-  )
-);
-const walletUnlinkedBytecode = walletArtifact.bytecode.object as string;
-const quipWalletDeployAbi = walletArtifact.abi;
-
-const wotsPlusArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/WOTSPlus.sol/WOTSPlus.json"),
-    "utf8"
-  )
-);
-const wotsPlusBytecode = wotsPlusArtifact.bytecode.object as Hex;
-const wotsPlusAbi = wotsPlusArtifact.abi;
-
-function linkWalletBytecode(libAddress: Address): Hex {
-  const refs =
-    walletArtifact.bytecode.linkReferences as Record<
-      string,
-      Record<string, Array<{ start: number; length: number }>>
-    >;
-  let hex = walletUnlinkedBytecode.replace(/^0x/, "");
-  const addrPlain = libAddress.replace(/^0x/, "").toLowerCase();
-  for (const file of Object.values(refs)) {
-    for (const libRefs of Object.values(file)) {
-      for (const ref of libRefs) {
-        const hexStart = ref.start * 2;
-        const hexLen = ref.length * 2;
-        hex =
-          hex.slice(0, hexStart) + addrPlain + hex.slice(hexStart + hexLen);
-      }
-    }
-  }
-  return ("0x" + hex) as Hex;
-}
-
-// Anvil's prefunded dev accounts. We use #0 as the wallet owner and #1
-// as the "stranger" (non-owner) to test the ECDSA gate.
-const OWNER_PRIV =
-  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+// Anvil's prefunded dev account #1, used as the "stranger" (non-owner) to
+// test the ECDSA gate. The owner comes from the default fixture
+// (anvil's #0).
 const STRANGER_PRIV =
   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
-const owner = privateKeyToAccount(OWNER_PRIV);
 const stranger = privateKeyToAccount(STRANGER_PRIV);
 
-const anvil = createAnvil({ port: 8557 });
-let publicClient: PublicClient;
-let ownerWallet: WalletClient;
+let stack: AnvilStack;
 let strangerWallet: WalletClient;
-let factoryAddress: Address;
-
-const MAX_FEE = 10n ** 16n;
-
-function buildInitPayload(signer: QuipSigner, vaultId: Hex) {
-  const disaster = signer.generateKeyPair(vaultId).publicKey;
-  const ownership = signer.generateKeyPair(vaultId).publicKey;
-  const transactionKeys = Array.from(
-    { length: TRANSACTION_KEY_INIT_AMOUNT },
-    () => signer.generateKeyPair(vaultId).publicKey
-  );
-  const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
-    signer.generateKeyPair(vaultId).publicKey
-  );
-  return encodeInit(disaster, ownership, transactionKeys, recoveryKeys);
-}
-
-async function createFreshWallet(seedByte: number): Promise<{
-  signer: QuipSigner;
-  vaultId: Hex;
-  client: QuipWalletClient;
-  walletAddress: Address;
-}> {
-  const quantumSecret = new Uint8Array(32).fill(seedByte);
-  const signer = new QuipSigner(quantumSecret, createInMemoryBurnSet().consume);
-  const vaultId = toHex(new Uint8Array(32).fill(seedByte));
-  const initPayload = buildInitPayload(signer, vaultId);
-
-  const hash = await ownerWallet.writeContract({
-    chain: foundry,
-    address: factoryAddress,
-    abi: quipFactoryAbi,
-    functionName: "deployLatestWalletProxy",
-    args: [vaultId, owner.address, initPayload],
-    account: owner,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  const logs = parseEventLogs({
-    abi: quipFactoryAbi,
-    logs: receipt.logs,
-    eventName: "QuipCreated",
-  });
-  const walletAddress = logs[0].args.quip;
-
-  const client = new QuipWalletClient(
-    signer,
-    vaultId,
-    walletAddress,
-    publicClient,
-    ownerWallet,
-    owner.address,
-    foundry.id
-  );
-  return { signer, vaultId, client, walletAddress };
-}
 
 beforeAll(async () => {
-  await anvil.start();
-  const transport = http(`http://127.0.0.1:${anvil.port}`);
-  publicClient = createPublicClient({ chain: foundry, transport });
-  ownerWallet = createWalletClient({ chain: foundry, transport, account: owner });
+  stack = await setupAnvilStack({
+    port: ANVIL_PORTS.dualSig,
+    deployEntryPoint: false,
+  });
   strangerWallet = createWalletClient({
     chain: foundry,
-    transport,
+    transport: http(`http://127.0.0.1:${stack.anvil.port}`),
     account: stranger,
   });
-
-  // Deploy QuipFactory.
-  const factoryHash = await ownerWallet.deployContract({
-    abi: quipFactoryAbi,
-    bytecode: factoryBytecode,
-    args: [owner.address, MAX_FEE],
-    account: owner,
-    chain: foundry,
-  });
-  const factoryReceipt = await publicClient.waitForTransactionReceipt({
-    hash: factoryHash,
-  });
-  factoryAddress = factoryReceipt.contractAddress!;
-
-  // Deploy WOTSPlus lib + linked wallet impl.
-  const wotsHash = await ownerWallet.deployContract({
-    abi: wotsPlusAbi,
-    bytecode: wotsPlusBytecode,
-    account: owner,
-    chain: foundry,
-  });
-  const wotsReceipt = await publicClient.waitForTransactionReceipt({
-    hash: wotsHash,
-  });
-  const wotsAddress = wotsReceipt.contractAddress!;
-
-  const walletBytecode = linkWalletBytecode(wotsAddress);
-  const implHash = await ownerWallet.deployContract({
-    abi: quipWalletDeployAbi,
-    bytecode: walletBytecode,
-    args: [factoryAddress],
-    account: owner,
-    chain: foundry,
-  });
-  const implReceipt = await publicClient.waitForTransactionReceipt({
-    hash: implHash,
-  });
-  const walletImplAddress = implReceipt.contractAddress!;
-
-  const vetHash = await ownerWallet.writeContract({
-    chain: foundry,
-    address: factoryAddress,
-    abi: quipFactoryAbi,
-    functionName: "vetImplementation",
-    args: [walletImplAddress],
-    account: owner,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: vetHash });
 }, 60_000);
 
 afterAll(async () => {
-  await anvil.stop().catch(() => {});
+  await stopAnvilStack(stack);
 }, 10_000);
 
 describe("Dual-signature contract on execute(bytes)", () => {
   test("happy path: owner ECDSA + valid WOTS+ succeeds", async () => {
-    const { client, walletAddress } = await createFreshWallet(0xd0);
+    const { client, walletAddress } = await createFreshWallet(stack, 0xd0);
 
     // The SDK's `executeWithPayload` does both halves transparently:
     //   - viem's `walletClient.writeContract` signs the outer tx with the
@@ -275,7 +113,10 @@ describe("Dual-signature contract on execute(bytes)", () => {
   }, 30_000);
 
   test("wrong ECDSA: non-owner EOA + valid WOTS+ reverts via onlyOwner", async () => {
-    const { signer, vaultId, walletAddress } = await createFreshWallet(0xd1);
+    const { signer, vaultId, walletAddress } = await createFreshWallet(
+      stack,
+      0xd1
+    );
 
     // Construct a QuipWalletClient bound to `stranger` (non-owner EOA)
     // but using the real signer/vaultId so the WOTS+ half is valid. The
@@ -285,7 +126,7 @@ describe("Dual-signature contract on execute(bytes)", () => {
       signer,
       vaultId,
       walletAddress,
-      publicClient,
+      stack.publicClient,
       strangerWallet,
       stranger.address,
       foundry.id
@@ -308,6 +149,7 @@ describe("Dual-signature contract on execute(bytes)", () => {
 
   test("wrong WOTS+: owner ECDSA + tampered WOTS+ sig reverts via _verifyAndRotate", async () => {
     const { signer, vaultId, client, walletAddress } = await createFreshWallet(
+      stack,
       0xd2
     );
 
@@ -365,12 +207,12 @@ describe("Dual-signature contract on execute(bytes)", () => {
     let caught: unknown = null;
     try {
       await withDecodedError(
-        publicClient.simulateContract({
+        stack.publicClient.simulateContract({
           address: walletAddress,
           abi: quipWalletAbi,
           functionName: "execute",
           args: [tamperedPayload],
-          account: owner.address,
+          account: stack.account.address,
         })
       );
     } catch (e) {
