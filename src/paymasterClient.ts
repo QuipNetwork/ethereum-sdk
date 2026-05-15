@@ -20,9 +20,15 @@ import {
   type PublicClient,
   type WalletClient,
   type TransactionReceipt,
+  zeroHash,
 } from "viem";
 
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
+import { getNetworkAddresses } from "./addresses.js";
+import {
+  PqVerifierNotRegisteredError,
+  VerifierMismatchError,
+} from "./errors.js";
 import { QuipSigner } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
@@ -82,6 +88,34 @@ export class QuipPaymasterClient {
     this.walletClient = params.walletClient;
     this.account = params.account;
     this.chainId = params.chainId;
+  }
+
+  /// Construct a `QuipPaymasterClient` against the per-chain
+  /// `QuipPaymaster` registered in `NETWORK_ADDRESSES`. Throws if the
+  /// chain has no paymaster deployment yet (paymaster address is
+  /// `address(0)` in the registry).
+  static fromChain(params: {
+    chainId: number;
+    publicClient: PublicClient;
+    walletClient: WalletClient;
+    account: Address;
+  }): QuipPaymasterClient {
+    const addrs = getNetworkAddresses(params.chainId);
+    const paymasterAddress = addrs.QuipPaymaster;
+    if (
+      paymasterAddress === "0x0000000000000000000000000000000000000000"
+    ) {
+      throw new Error(
+        `QuipPaymasterClient.fromChain: no QuipPaymaster registered for chainId ${params.chainId}`
+      );
+    }
+    return new QuipPaymasterClient({
+      paymasterAddress,
+      publicClient: params.publicClient,
+      walletClient: params.walletClient,
+      account: params.account,
+      chainId: params.chainId,
+    });
   }
 
   getAddress(): Address {
@@ -245,7 +279,18 @@ export class QuipPaymasterClient {
 
   /// Produce a sponsored UserOp by signing the paymaster's approval
   /// digest with the operator's WOTS+ verifier-key signer. Returns a
-  /// copy of `userOp` with `paymasterAndData` populated.
+  /// copy of `userOp` with `paymasterAndData` populated, plus the
+  /// current + next verifier pair so the caller has a complete record
+  /// of the rotation.
+  ///
+  /// Pre-flight: reads `getPqVerifier(userOp.sender)` and rejects with
+  /// a typed error before invoking the signer. This avoids burning a
+  /// verifier-key on a sponsored UserOp that would be rejected at
+  /// on-chain validation.
+  ///   - `PqVerifierNotRegisteredError`: the sender has no on-chain
+  ///     verifier set.
+  ///   - `VerifierMismatchError`: the supplied `currentVerifier` does
+  ///     not match the paymaster's record.
   ///
   /// `operatorSigner.sign(...)` invokes the signer's injected
   /// `ConsumeKeyFn` before producing the WOTS+ sig — so once this method
@@ -272,8 +317,33 @@ export class QuipPaymasterClient {
   }): Promise<{
     userOp: PackedUserOperation;
     digest: Hex;
+    currentVerifier: WinternitzAddress;
     nextVerifier: WinternitzAddress;
   }> {
+    // Pre-flight: ensure the paymaster recognizes the supplied currentVerifier
+    // BEFORE the operator's signer burns it. Two failure modes:
+    //   - sender has no verifier registered  → PqVerifierNotRegisteredError
+    //   - supplied currentVerifier ≠ on-chain → VerifierMismatchError
+    const onChainVerifier = await this.getPqVerifier(params.userOp.sender);
+    if (
+      onChainVerifier.publicSeed === zeroHash ||
+      onChainVerifier.publicKeyHash === zeroHash
+    ) {
+      throw new PqVerifierNotRegisteredError();
+    }
+    if (
+      onChainVerifier.publicSeed.toLowerCase() !==
+        params.currentVerifier.publicSeed.toLowerCase() ||
+      onChainVerifier.publicKeyHash.toLowerCase() !==
+        params.currentVerifier.publicKeyHash.toLowerCase()
+    ) {
+      throw new VerifierMismatchError(
+        params.userOp.sender,
+        params.currentVerifier,
+        onChainVerifier
+      );
+    }
+
     const next =
       params.nextVerifier ??
       params.operatorSigner.generateKeyPair(params.vaultId).publicKey;
@@ -304,6 +374,7 @@ export class QuipPaymasterClient {
     return {
       userOp: { ...params.userOp, paymasterAndData },
       digest,
+      currentVerifier: params.currentVerifier,
       nextVerifier: next,
     };
   }

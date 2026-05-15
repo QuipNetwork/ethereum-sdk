@@ -48,6 +48,7 @@ import { QuipPaymasterClient } from "./paymasterClient.js";
 import { PaymasterValidationFailure } from "./errors.js";
 import {
   encodeInit,
+  paymasterVerifierKeyUsedSlot,
   type WinternitzAddress,
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
@@ -450,6 +451,98 @@ describe("Sponsored UserOp end-to-end", () => {
     expect(verifierAfter.publicSeed).not.toBe(
       currentVerifier.publicSeed
     );
+  }, 90_000);
+
+  test("verifierKeyUsed slot derivation pins the paymaster's ERC-7201 layout", async () => {
+    // Pins the SDK's `paymasterVerifierKeyUsedSlot` codec helper against
+    // the deployed paymaster's storage layout. If the contract-side
+    // namespace (`QuipPaymasterStorage`) shifts or its `verifierKeyUsed`
+    // mapping moves, `simulateUserOp`'s `NextVerifierKeyInUse` detection
+    // silently breaks — this test catches that.
+    const { client: walletSdk, walletAddress } = await createFreshWallet(0x7a);
+    const pmClient = new QuipPaymasterClient({
+      paymasterAddress,
+      publicClient,
+      walletClient,
+      account: account.address,
+      chainId: foundry.id,
+    });
+
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x7b),
+      createInMemoryBurnSet().consume
+    );
+    const operatorVault = toHex(new Uint8Array(32).fill(0x7b));
+    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    await pmClient.setPqVerifier(walletAddress, currentVerifier);
+
+    // Before sponsoring anything: the slot for `currentVerifier` must be
+    // zero (no rotation has consumed it yet).
+    const slotForCurrent = paymasterVerifierKeyUsedSlot(currentVerifier);
+    const preSlot = await publicClient.getStorageAt({
+      address: paymasterAddress,
+      slot: slotForCurrent,
+    });
+    expect(preSlot === undefined ? 0n : BigInt(preSlot)).toBe(0n);
+
+    // Run a successful sponsored UserOp through handleOps so the
+    // paymaster rotates `currentVerifier` → `nextVerifier`.
+    const prepared = await walletSdk.prepareExecuteUserOp(
+      zeroAddress,
+      0n,
+      "0x"
+    );
+    const sponsored = await pmClient.sponsorUserOp({
+      userOp: prepared.userOp,
+      operatorSigner: operator,
+      vaultId: operatorVault,
+      currentVerifier: {
+        publicSeed: currentVerifier.publicSeed,
+        publicKeyHash: currentVerifier.publicKeyHash,
+      },
+    });
+    const final = await walletSdk.signExecuteUserOp({
+      ...prepared,
+      userOp: sponsored.userOp,
+    });
+    const handleHash = await walletClient.writeContract({
+      chain: foundry,
+      address: CANONICAL_ENTRYPOINT_V07,
+      abi: entryPointV07Abi,
+      functionName: "handleOps",
+      args: [[final.userOp], account.address],
+      account,
+      gas: 3_000_000n,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: handleHash });
+
+    // After rotation: the slot for the now-burned `currentVerifier` must
+    // be non-zero (the contract sets it to 1 inside `_verifyAndRotate`).
+    const postSlot = await publicClient.getStorageAt({
+      address: paymasterAddress,
+      slot: slotForCurrent,
+    });
+    expect(postSlot).toBeDefined();
+    expect(BigInt(postSlot!)).not.toBe(0n);
+
+    // A verifier the paymaster has never seen still hashes to a slot
+    // whose value is zero — confirms the slot derivation isn't aliasing
+    // unrelated storage.
+    const unseenOperator = new QuipSigner(
+      new Uint8Array(32).fill(0x7c),
+      createInMemoryBurnSet().consume
+    );
+    const unseenVault = toHex(new Uint8Array(32).fill(0x7c));
+    const unseenVerifier = unseenOperator
+      .generateKeyPair(unseenVault)
+      .publicKey;
+    const slotForUnseen = paymasterVerifierKeyUsedSlot(unseenVerifier);
+    expect(slotForUnseen).not.toBe(slotForCurrent);
+    const unseenSlot = await publicClient.getStorageAt({
+      address: paymasterAddress,
+      slot: slotForUnseen,
+    });
+    expect(unseenSlot === undefined ? 0n : BigInt(unseenSlot)).toBe(0n);
   }, 90_000);
 });
 

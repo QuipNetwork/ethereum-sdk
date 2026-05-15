@@ -422,6 +422,32 @@ export class VerifierKeyInUseError extends QuipError {
   }
 }
 
+/// Client-side pre-flight error thrown by `QuipPaymasterClient.sponsorUserOp`
+/// when the supplied `currentVerifier` does not match the paymaster's
+/// on-chain `getPqVerifier(sender)`. Throwing client-side avoids burning a
+/// verifier key on a sponsored UserOp that would be rejected at validation.
+export class VerifierMismatchError extends QuipError {
+  readonly sender: Hex;
+  readonly suppliedVerifier: { publicSeed: Hex; publicKeyHash: Hex };
+  readonly onChainVerifier: { publicSeed: Hex; publicKeyHash: Hex };
+
+  constructor(
+    sender: Hex,
+    suppliedVerifier: { publicSeed: Hex; publicKeyHash: Hex },
+    onChainVerifier: { publicSeed: Hex; publicKeyHash: Hex },
+    opts?: QuipErrorOptions
+  ) {
+    super(
+      "VERIFIER_MISMATCH",
+      `Supplied currentVerifier does not match the paymaster's on-chain verifier for sender ${sender}`,
+      opts
+    );
+    this.sender = sender;
+    this.suppliedVerifier = suppliedVerifier;
+    this.onChainVerifier = onChainVerifier;
+  }
+}
+
 /// Mirrors `IQuipWallet.UserOpValidationFailure`.
 export enum UserOpValidationFailure {
   ZeroNextKey = 0,
