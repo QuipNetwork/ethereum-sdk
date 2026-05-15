@@ -37,6 +37,17 @@ assert(typeof events.parseQuipCreated === "function", "parseQuipCreated via subp
 const directCodec = await import("@quip.network/ethereum-sdk/v1").then((m) => m.WotsCodec);
 assert(directCodec.WOTS_ELEMENTS_COUNT === 67, "codec constant wrong");
 
+console.log("  - v0 barrel...");
+const v0 = await import("@quip.network/ethereum-sdk/v0");
+assert(typeof v0.QuipSigner === "function", "QuipSigner missing from v0 barrel");
+assert(typeof v0.QuipWalletClient === "function", "QuipWalletClient missing from v0 barrel");
+assert(typeof v0.QuipClient === "function", "QuipClient missing from v0 barrel");
+assert(typeof v0.QuipWallet__factory === "function", "QuipWallet__factory missing");
+assert(typeof v0.QuipFactory__factory === "function", "QuipFactory__factory missing");
+assert(typeof v0.QuipWallet__factory.connect === "function", "QuipWallet__factory.connect missing");
+assert(v0.SUPPORTED_NETWORKS?.MAINNET === "mainnet", "v0 SUPPORTED_NETWORKS.MAINNET");
+assert(v0.CHAIN_IDS?.ETHEREUM_MAINNET === 1, "v0 CHAIN_IDS.ETHEREUM_MAINNET");
+
 console.log("  - root barrel rejected...");
 await assert.rejects(
   () => import("@quip.network/ethereum-sdk"),
