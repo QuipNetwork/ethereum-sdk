@@ -17,12 +17,12 @@
 import { describe, it, expect } from "@jest/globals";
 import { type Hex, toHex } from "viem";
 
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
+import { QuipSigner } from "../signer.js";
+import { createInMemoryBurnSet } from "../burnSet.js";
 import {
   KeyAlreadyBurnedError,
   KeyDerivationSelfTestError,
-} from "./errors.js";
+} from "../errors.js";
 
 const QUANTUM_SECRET = new Uint8Array(32).fill(0xab);
 const VAULT_ID: Hex = toHex(new Uint8Array(32).fill(0x01));

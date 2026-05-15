@@ -24,12 +24,12 @@ import {
   quipFactoryAbi,
   quipPaymasterAbi,
   deployerAbi,
-} from "./index.js";
+} from "../index.js";
 
-import { QuipSigner } from "./signer.js";
-import { createInMemoryBurnSet } from "./burnSet.js";
-import { QuipWalletClient, KeyType } from "./walletClient.js";
-import { QuipClient } from "./factoryClient.js";
+import { QuipSigner } from "../signer.js";
+import { createInMemoryBurnSet } from "../burnSet.js";
+import { QuipWalletClient, KeyType } from "../walletClient.js";
+import { QuipClient } from "../factoryClient.js";
 
 describe("Phase 0 module split", () => {
   test("barrel exports are identical to module exports", () => {

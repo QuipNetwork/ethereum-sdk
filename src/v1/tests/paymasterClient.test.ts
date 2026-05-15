@@ -17,9 +17,9 @@
 import { describe, it, expect } from "@jest/globals";
 import { type PublicClient, type WalletClient } from "viem";
 
-import { CHAIN_IDS, NETWORK_ADDRESSES } from "./addresses.js";
-import { QuipPaymasterClient } from "./paymasterClient.js";
-import { UnsupportedNetworkError } from "./errors.js";
+import { CHAIN_IDS, NETWORK_ADDRESSES } from "../addresses.js";
+import { QuipPaymasterClient } from "../paymasterClient.js";
+import { UnsupportedNetworkError } from "../errors.js";
 
 const account = "0x1111111111111111111111111111111111111111" as const;
 const fakePublicClient = {} as unknown as PublicClient;

@@ -76,7 +76,7 @@ import {
   OWNERSHIP_TRANSFER_PAYLOAD_SIZE,
   UPGRADE_PAYLOAD_SIZE,
   RECOVERY_UPGRADE_PAYLOAD_SIZE,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 
 // ─── Harness artifact (from forge build output) ──────────────────
 const artifact = JSON.parse(

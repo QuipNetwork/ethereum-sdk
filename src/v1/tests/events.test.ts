@@ -25,18 +25,18 @@ import {
   zeroHash,
 } from "viem";
 
-import { quipWalletAbi } from "./abi/QuipWallet.js";
+import { quipWalletAbi } from "../abi/QuipWallet.js";
 import {
   InvalidSignatureError,
   KeyInUseError,
   UnknownContractError,
-} from "./errors.js";
+} from "../errors.js";
 import {
   parseExecutionReverted,
   parseExecutionSucceeded,
   parseKeyRotated,
   parseWalletReceipt,
-} from "./events.js";
+} from "../events.js";
 
 const WALLET = "0x1111111111111111111111111111111111111111" as const;
 const TARGET = "0x2222222222222222222222222222222222222222" as const;

@@ -42,18 +42,18 @@ import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
-import { entryPointV07Abi } from "../abi/EntryPointV07.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
-import { QuipSigner } from "../signer.js";
-import { createInMemoryBurnSet, type InMemoryBurnSet } from "../burnSet.js";
-import { QuipWalletClient } from "../walletClient.js";
+import { quipFactoryAbi } from "../../abi/QuipFactory.js";
+import { entryPointV07Abi } from "../../abi/EntryPointV07.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
+import { QuipSigner } from "../../signer.js";
+import { createInMemoryBurnSet, type InMemoryBurnSet } from "../../burnSet.js";
+import { QuipWalletClient } from "../../walletClient.js";
 import {
   encodeInit,
   type WinternitzAddress,
   RECOVERY_KEY_AMOUNT,
   TRANSACTION_KEY_INIT_AMOUNT,
-} from "../wotsCodec.js";
+} from "../../wotsCodec.js";
 
 // ─── Constants ──────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ export function loadForgeArtifacts(): ForgeArtifacts {
   );
   const entryPointFixture = JSON.parse(
     readFileSync(
-      join(process.cwd(), "src/fixtures/entrypoint-v0.7.json"),
+      join(process.cwd(), "src/v1/tests/fixtures/entrypoint-v0.7.json"),
       "utf8"
     )
   ) as { deployedBytecode: Hex };

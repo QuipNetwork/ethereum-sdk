@@ -2,10 +2,6 @@
   "name": "@quip.network/ethereum-sdk",
   "version": "0.2.0-beta.1",
   "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "typings": "dist/index.d.ts",
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
@@ -13,60 +9,59 @@
     "dist/**/*.json"
   ],
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+    "./v1": {
+      "import": "./dist/src/v1/index.js",
+      "types": "./dist/src/v1/index.d.ts"
     },
-    "./addresses": {
-      "import": "./dist/src/addresses.js",
-      "types": "./dist/src/addresses.d.ts"
+    "./v1/addresses": {
+      "import": "./dist/src/v1/addresses.js",
+      "types": "./dist/src/v1/addresses.d.ts"
     },
-    "./abi": {
-      "import": "./dist/src/abi/index.js",
-      "types": "./dist/src/abi/index.d.ts"
+    "./v1/abi": {
+      "import": "./dist/src/v1/abi/index.js",
+      "types": "./dist/src/v1/abi/index.d.ts"
     },
-    "./signer": {
-      "import": "./dist/src/signer.js",
-      "types": "./dist/src/signer.d.ts"
+    "./v1/signer": {
+      "import": "./dist/src/v1/signer.js",
+      "types": "./dist/src/v1/signer.d.ts"
     },
-    "./walletClient": {
-      "import": "./dist/src/walletClient.js",
-      "types": "./dist/src/walletClient.d.ts"
+    "./v1/walletClient": {
+      "import": "./dist/src/v1/walletClient.js",
+      "types": "./dist/src/v1/walletClient.d.ts"
     },
-    "./factoryClient": {
-      "import": "./dist/src/factoryClient.js",
-      "types": "./dist/src/factoryClient.d.ts"
+    "./v1/factoryClient": {
+      "import": "./dist/src/v1/factoryClient.js",
+      "types": "./dist/src/v1/factoryClient.d.ts"
     },
-    "./paymaster": {
-      "import": "./dist/src/paymasterClient.js",
-      "types": "./dist/src/paymasterClient.d.ts"
+    "./v1/paymaster": {
+      "import": "./dist/src/v1/paymasterClient.js",
+      "types": "./dist/src/v1/paymasterClient.d.ts"
     },
-    "./errors": {
-      "import": "./dist/src/errors.js",
-      "types": "./dist/src/errors.d.ts"
+    "./v1/errors": {
+      "import": "./dist/src/v1/errors.js",
+      "types": "./dist/src/v1/errors.d.ts"
     },
-    "./events": {
-      "import": "./dist/src/events.js",
-      "types": "./dist/src/events.d.ts"
+    "./v1/events": {
+      "import": "./dist/src/v1/events.js",
+      "types": "./dist/src/v1/events.d.ts"
     },
-    "./userOp": {
-      "import": "./dist/src/userOp.js",
-      "types": "./dist/src/userOp.d.ts"
+    "./v1/userOp": {
+      "import": "./dist/src/v1/userOp.js",
+      "types": "./dist/src/v1/userOp.d.ts"
     },
-    "./gas": {
-      "import": "./dist/src/gas.js",
-      "types": "./dist/src/gas.d.ts"
+    "./v1/gas": {
+      "import": "./dist/src/v1/gas.js",
+      "types": "./dist/src/v1/gas.d.ts"
     },
-    "./wotsCodec": {
-      "import": "./dist/src/wotsCodec.js",
-      "types": "./dist/src/wotsCodec.d.ts"
+    "./v1/wotsCodec": {
+      "import": "./dist/src/v1/wotsCodec.js",
+      "types": "./dist/src/v1/wotsCodec.d.ts"
     }
   },
   "scripts": {
     "clean": "rimraf dist out cache_forge",
     "copy-abi": "node scripts/copy-abi.js",
-    "copy-assets": "copyfiles -u 1 \"src/**/*.json\" dist",
-    "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json && npm run copy-assets",
+    "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json",
     "prepare": "npm run build",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
     "lint:sol": "solhint 'contracts/**/*.sol'",

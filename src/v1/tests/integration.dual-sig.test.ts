@@ -50,26 +50,26 @@ import {
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { quipWalletAbi } from "./abi/QuipWallet.js";
-import { QuipWalletClient } from "./walletClient.js";
+import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { QuipWalletClient } from "../walletClient.js";
 import {
   InvalidSignatureError,
   UnknownContractError,
-} from "./errors.js";
-import { withDecodedError } from "./internal/decodeError.js";
+} from "../errors.js";
+import { withDecodedError } from "../internal/decodeError.js";
 import {
   encodeExecute,
   executeDigest,
   opdataHash,
   type WinternitzElements,
-} from "./wotsCodec.js";
+} from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
   createFreshWallet,
   setupAnvilStack,
   stopAnvilStack,
-} from "./test-utils/anvilFixture.js";
+} from "./utils/anvilFixture.js";
 
 // Anvil's prefunded dev account #1, used as the "stranger" (non-owner) to
 // test the ECDSA gate. The owner comes from the default fixture
