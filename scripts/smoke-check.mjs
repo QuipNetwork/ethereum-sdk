@@ -36,10 +36,12 @@ const directCodec = await import("@quip.network/ethereum-sdk").then((m) => m.Wot
 assert(directCodec.WOTS_ELEMENTS_COUNT === 67, "codec constant wrong");
 
 console.log("  - signer + codec round-trip (no network)...");
-const { QuipSigner, WotsCodec } = barrel;
+const { QuipSigner, WotsCodec, createInMemoryBurnSet } = barrel;
+assert(typeof createInMemoryBurnSet === "function", "createInMemoryBurnSet missing from barrel");
 const quantumSecret = new Uint8Array(32).fill(0x01);
 const vaultId = "0x" + "02".repeat(32);
-const signer = new QuipSigner(quantumSecret);
+const burnSet = createInMemoryBurnSet();
+const signer = new QuipSigner(quantumSecret, burnSet.consume);
 const disaster = signer.generateKeyPair(vaultId).publicKey;
 const ownership = signer.generateKeyPair(vaultId).publicKey;
 const txKeys = Array.from({ length: 5 }, () => signer.generateKeyPair(vaultId).publicKey);
@@ -56,7 +58,6 @@ console.log("  - sign + burn (no network)...");
 const message = "0x" + "77".repeat(32);
 const sig = signer.sign(message, vaultId, txKeys[0].publicSeed);
 assert.equal(sig.length, 67, `sig length wrong: ${sig.length}`);
-assert(signer.isBurned(txKeys[0].publicSeed), "key should be burned after sign");
 try {
   signer.sign(message, vaultId, txKeys[0].publicSeed);
   throw new Error("second sign should have thrown");
