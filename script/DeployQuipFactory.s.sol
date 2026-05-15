@@ -6,8 +6,12 @@ import {Deployer} from "../contracts/Deployer.sol";
 
 /**
  * @title DeployQuipFactory
- * @dev Deploys QuipFactory via Deployer contract using CREATE2.
- *      Uses stored release bytecode from deployments/bytecode/ for deterministic addresses.
+ * @dev Deploys QuipFactory via the Deployer contract using CREATE3
+ *      (solady's `CREATE3.deployDeterministic`). The factory's address
+ *      depends only on (Deployer, salt) — same on every chain regardless of
+ *      the factory's creation bytecode.
+ *      Uses stored release bytecode from deployments/bytecode/ for the salt
+ *      and expected address.
  *
  * Usage:
  *   forge script script/DeployQuipFactory.s.sol --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast

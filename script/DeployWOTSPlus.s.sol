@@ -6,8 +6,14 @@ import {Deployer} from "../contracts/Deployer.sol";
 
 /**
  * @title DeployWOTSPlus
- * @dev Deploys WOTSPlus library via Deployer contract using CREATE2.
- *      Uses stored release bytecode from deployments/bytecode/ for deterministic addresses.
+ * @dev Deploys the WOTSPlus library via the Deployer contract using CREATE3
+ *      (solady's `CREATE3.deployDeterministic`). The Deployer is the only
+ *      contract on chain that uses plain CREATE (bootstrapped at nonce=1 from
+ *      a fresh EOA); everything it deploys, including this library, lives at
+ *      a CREATE3 address that depends only on (Deployer, salt) — invariant
+ *      across chains, independent of the library's creation bytecode.
+ *      Uses stored release bytecode from deployments/bytecode/ for the salt
+ *      and expected address.
  *
  * Usage:
  *   forge script script/DeployWOTSPlus.s.sol --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast

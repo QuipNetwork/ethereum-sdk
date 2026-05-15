@@ -63,9 +63,13 @@ export const CHAIN_IDS = {
   OPTIMISM_SEPOLIA: 11155420,
 } as const;
 
-/// Chains that share the deterministic CREATE2 deployment addresses captured
-/// under the `default` entry of `NETWORK_ADDRESSES`. Any chainId not in this
-/// list AND not explicitly registered in `NETWORK_ADDRESSES` is rejected by
+/// Chains that share the deterministic CREATE3 deployment addresses captured
+/// under the `default` entry of `NETWORK_ADDRESSES`. Quip contracts deploy
+/// through the `Deployer` (see `contracts/Deployer.sol`), which calls
+/// solady's `CREATE3.deployDeterministic` — addresses depend only on
+/// (Deployer, salt), so any chain reached by the same operator with the same
+/// salts inherits the same addresses. Any chainId not in this list AND not
+/// explicitly registered in `NETWORK_ADDRESSES` is rejected by
 /// `getNetworkAddresses` with `UnsupportedNetworkError`.
 const SHARED_DEPLOYMENT_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
   CHAIN_IDS.ETHEREUM_MAINNET,
@@ -81,13 +85,13 @@ const SHARED_DEPLOYMENT_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
  * Maps chain IDs to their deployed contract addresses
  */
 export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
-  // Default: Existing EVM chains (shared deterministic addresses via CREATE2)
+  // Default: Existing EVM chains (shared deterministic addresses via CREATE3)
   default: {
     Deployer: addresses.Deployer as Address,
     WOTSPlus: addresses.WOTSPlus as Address,
     QuipFactory: addresses.QuipFactory as Address,
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
-    QuipPaymaster: "0x0000000000000000000000000000000000000000",
+    QuipPaymaster: addresses.QuipPaymaster as Address,
   },
   // MIDL Testnet (Chain ID 777) - different deployment mechanism
   // These addresses will be populated after MIDL deployment
@@ -110,7 +114,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
  *   2. `chainId` registered in `NETWORK_ADDRESSES` (e.g. MIDL) → that entry.
  *   3. `chainId` in `SHARED_DEPLOYMENT_CHAIN_IDS` → the `default` entry
  *      (mainnet / sepolia / base / op / their L2 testnets all share
- *      CREATE2-deterministic deployment addresses).
+ *      CREATE3-deterministic deployment addresses).
  *   4. Otherwise → throws `UnsupportedNetworkError`. This is the difference
  *      from the prior silent fall-through, which would have returned the
  *      mainnet addresses for any chainId outside the supported set.
