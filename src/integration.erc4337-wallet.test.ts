@@ -488,7 +488,7 @@ describe("simulateUserOp — rejection paths", () => {
   }, 30_000);
 });
 
-describe("buildExecuteUserOp — inner-call revert pre-flight (D3)", () => {
+describe("buildExecuteUserOp — inner-call revert pre-flight", () => {
   // The inner call we'll force to revert: wallet.execute(factory,
   // setExecuteFee(0)). Factory.setExecuteFee is OZ-onlyOwner; the wallet
   // is not the factory owner, so the call reverts with
@@ -565,5 +565,197 @@ describe("buildExecuteUserOp — inner-call revert pre-flight (D3)", () => {
     expect(packed.length).toBe(64);
     const callGasLimit = BigInt("0x" + packed.slice(32));
     expect(callGasLimit).toBeGreaterThan(0n);
+  }, 30_000);
+});
+
+describe("BuildExecuteUserOpResult exposes keys + fee", () => {
+  test("currentKey, nextKey, executeFee are populated", async () => {
+    const { client } = await createFreshWallet(0x49);
+    const headBefore = await client.getHeadTransactionKey();
+    const built = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
+
+    expect(built.currentKey.publicSeed).toBe(headBefore.publicSeed);
+    expect(built.currentKey.publicKeyHash).toBe(headBefore.publicKeyHash);
+    expect(built.nextKey.publicSeed).not.toBe(headBefore.publicSeed);
+    expect(built.nextKey.publicSeed.length).toBe(2 + 64);
+    expect(built.nextKey.publicKeyHash.length).toBe(2 + 64);
+    expect(typeof built.executeFee).toBe("bigint");
+    expect(built.executeFee).toBeGreaterThanOrEqual(0n);
+  }, 30_000);
+});
+
+describe("SimulateUserOpResult exposes packed validation data", () => {
+  test("walletValidationData populated on ok path", async () => {
+    const { client } = await createFreshWallet(0x4a);
+    const built = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
+    const sim = await client.simulateUserOp(built.userOp);
+    expect(sim.walletValidation).toBe("ok");
+    expect(sim.walletValidationData).not.toBeNull();
+    expect(sim.walletValidationData!.authorizer).toBe(0n);
+    // No validity-window packing on the wallet side; both should be 0.
+    expect(sim.walletValidationData!.validUntil).toBe(0);
+    expect(sim.walletValidationData!.validAfter).toBe(0);
+  }, 30_000);
+
+  test("walletValidationData is null when SDK short-circuits via pre-check", async () => {
+    const { client } = await createFreshWallet(0x4b);
+    // Force a ZeroNextKey rejection by rewriting the signature's nextKey
+    // region to all zeros; the SDK short-circuits before hitting eth_call.
+    const built = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
+    const sigHex = built.userOp.signature.slice(2);
+    const tampered =
+      "0x" +
+      sigHex.slice(0, 128) +
+      "00".repeat(64) +
+      sigHex.slice(256);
+    const tamperedUserOp: PackedUserOperation = {
+      ...built.userOp,
+      signature: tampered as Hex,
+    };
+    const sim = await client.simulateUserOp(tamperedUserOp);
+    expect(sim.walletValidation).toBe(UserOpValidationFailure.ZeroNextKey);
+    expect(sim.walletValidationData).toBeNull();
+  }, 30_000);
+
+  test("paymasterValidationData is null when no paymaster attached", async () => {
+    const { client } = await createFreshWallet(0x4c);
+    const built = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
+    const sim = await client.simulateUserOp(built.userOp);
+    expect(sim.paymasterValidation).toBe("no-paymaster");
+    expect(sim.paymasterValidationData).toBeNull();
+  }, 30_000);
+});
+
+describe("Wallet view methods", () => {
+  test("version() returns the vetted-impl index", async () => {
+    const { client } = await createFreshWallet(0x4d);
+    // The fresh wallet was deployed against the factory's freshly-vetted
+    // impl at index 0 — version reads ERC-1967 impl codehash → factory's
+    // getVettedCodeIndex.
+    const v = await client.version();
+    expect(typeof v).toBe("bigint");
+    expect(v).toBe(0n);
+  }, 30_000);
+
+  test("debugIsValidSignature returns BadSignatureLength on a too-short signature", async () => {
+    const { client } = await createFreshWallet(0x4e);
+    const result = await client.debugIsValidSignature(
+      zeroHash,
+      "0x1234" as Hex
+    );
+    // 1 = BadSignatureLength per the Erc1271ValidationResult enum.
+    expect(result).toBe(1);
+  }, 30_000);
+
+  test("ownershipHandoverExpiresAt returns 0 when no handover is active", async () => {
+    const { client } = await createFreshWallet(0x4f);
+    const expiry = await client.ownershipHandoverExpiresAt(account.address);
+    expect(expiry).toBe(0n);
+  }, 30_000);
+});
+
+describe("QuipClient.createWalletWithImplementation", () => {
+  test("deploys against deploySpecificWalletProxy at index 0", async () => {
+    // Hand-construct a QuipClient pointed at the test factory to bypass
+    // the foundry-chainId-not-in-NETWORK_ADDRESSES limitation.
+    const { QuipClient } = await import("./factoryClient.js");
+    const client = Object.create(QuipClient.prototype) as InstanceType<
+      typeof QuipClient
+    >;
+    (client as unknown as {
+      publicClient: PublicClient;
+      walletClient: WalletClient;
+      account: Address;
+      factoryAddress: Address;
+      chainId: number;
+      initializationPromise: Promise<void>;
+    }).publicClient = publicClient;
+    (client as unknown as { walletClient: WalletClient }).walletClient =
+      walletClient;
+    (client as unknown as { account: Address }).account = account.address;
+    (client as unknown as { factoryAddress: Address }).factoryAddress =
+      factoryAddress;
+    (client as unknown as { chainId: number }).chainId = foundry.id;
+    (client as unknown as { initializationPromise: Promise<void> }).initializationPromise =
+      Promise.resolve();
+
+    const burnSet = createInMemoryBurnSet();
+    const signer = new QuipSigner(
+      new Uint8Array(32).fill(0xa1),
+      burnSet.consume
+    );
+    const vaultId = toHex(new Uint8Array(32).fill(0xa1));
+
+    const walletClientResult = await client.createWalletWithImplementation(
+      vaultId,
+      signer,
+      0n
+    );
+    expect(walletClientResult).toBeDefined();
+    const addr = await walletClientResult.getAddress();
+    expect(addr).not.toBe(zeroAddress);
+
+    // Verify the wallet is fully functional — read its head transaction key.
+    const head = await walletClientResult.getHeadTransactionKey();
+    expect(head.publicSeed.length).toBe(2 + 64);
+  }, 60_000);
+});
+
+describe("Wallet UserOp builders for alternate inner-call paths", () => {
+  test("buildExecuteBatchUserOp produces a userOp whose callData routes to executeBatch", async () => {
+    const { client } = await createFreshWallet(0x50);
+    const built = await client.buildExecuteBatchUserOp(
+      [
+        { target: zeroAddress, value: 0n, data: "0x" as Hex },
+        { target: zeroAddress, value: 0n, data: "0x" as Hex },
+      ],
+      { skipGasEstimation: true, callGasLimit: 500_000n }
+    );
+    expect(built.userOp.signature).not.toBe("0x");
+    // callData selector should be executeBatch's, not execute's.
+    const selector = built.userOp.callData.slice(0, 10);
+    const executeBatchSelector = encodeFunctionData({
+      abi: quipWalletDeployAbi,
+      functionName: "executeBatch",
+      args: [[{ target: zeroAddress, value: 0n, data: "0x" }]],
+    }).slice(0, 10);
+    expect(selector).toBe(executeBatchSelector);
+  }, 30_000);
+
+  test("buildDelegateExecuteUserOp encodes delegateExecute callData", async () => {
+    const { client } = await createFreshWallet(0x51);
+    const built = await client.buildDelegateExecuteUserOp(
+      zeroAddress,
+      "0x" as Hex,
+      { skipGasEstimation: true, callGasLimit: 500_000n }
+    );
+    expect(built.userOp.signature).not.toBe("0x");
+    const selector = built.userOp.callData.slice(0, 10);
+    const delegateSelector = encodeFunctionData({
+      abi: quipWalletDeployAbi,
+      functionName: "delegateExecute",
+      args: [zeroAddress, "0x"],
+    }).slice(0, 10);
+    expect(selector).toBe(delegateSelector);
+  }, 30_000);
+
+  test("buildStorageStoreUserOp encodes storageStore callData", async () => {
+    const { client } = await createFreshWallet(0x52);
+    const slot =
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Hex;
+    const value =
+      "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as Hex;
+    const built = await client.buildStorageStoreUserOp(slot, value, {
+      skipGasEstimation: true,
+      callGasLimit: 200_000n,
+    });
+    expect(built.userOp.signature).not.toBe("0x");
+    const selector = built.userOp.callData.slice(0, 10);
+    const ssSelector = encodeFunctionData({
+      abi: quipWalletDeployAbi,
+      functionName: "storageStore",
+      args: [slot, value],
+    }).slice(0, 10);
+    expect(selector).toBe(ssSelector);
   }, 30_000);
 });

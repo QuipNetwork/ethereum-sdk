@@ -45,7 +45,12 @@ import { QuipSigner } from "./signer.js";
 import { createInMemoryBurnSet } from "./burnSet.js";
 import { QuipWalletClient } from "./walletClient.js";
 import { QuipPaymasterClient } from "./paymasterClient.js";
-import { PaymasterValidationFailure } from "./errors.js";
+import {
+  PaymasterValidationFailure,
+  PqVerifierNotRegisteredError,
+  VerifierMismatchError,
+} from "./errors.js";
+import { buildSignedPaymasterAndData } from "./userOp.js";
 import {
   encodeInit,
   paymasterVerifierKeyUsedSlot,
@@ -459,7 +464,15 @@ describe("Sponsored UserOp end-to-end", () => {
     // namespace (`QuipPaymasterStorage`) shifts or its `verifierKeyUsed`
     // mapping moves, `simulateUserOp`'s `NextVerifierKeyInUse` detection
     // silently breaks — this test catches that.
-    const { client: walletSdk, walletAddress } = await createFreshWallet(0x7a);
+    //
+    // Slot semantics under the deployed paymaster: `verifierKeyUsed[hash]`
+    // is set when a verifier is registered via `setPqVerifier` (the
+    // contract uses it to enforce one-wallet-per-verifier via
+    // `VerifierKeyInUse`). It stays set after rotation. So an unregistered
+    // verifier reads zero; a registered (or rotated-through) verifier
+    // reads non-zero. The SDK's `simulateUserOp` only needs to detect the
+    // non-zero state.
+    const { walletAddress } = await createFreshWallet(0x7a);
     const pmClient = new QuipPaymasterClient({
       paymasterAddress,
       publicClient,
@@ -474,50 +487,19 @@ describe("Sponsored UserOp end-to-end", () => {
     );
     const operatorVault = toHex(new Uint8Array(32).fill(0x7b));
     const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
-    await pmClient.setPqVerifier(walletAddress, currentVerifier);
-
-    // Before sponsoring anything: the slot for `currentVerifier` must be
-    // zero (no rotation has consumed it yet).
     const slotForCurrent = paymasterVerifierKeyUsedSlot(currentVerifier);
+
+    // Before registration: slot must be zero — the verifier has never
+    // touched paymaster state.
     const preSlot = await publicClient.getStorageAt({
       address: paymasterAddress,
       slot: slotForCurrent,
     });
     expect(preSlot === undefined ? 0n : BigInt(preSlot)).toBe(0n);
 
-    // Run a successful sponsored UserOp through handleOps so the
-    // paymaster rotates `currentVerifier` → `nextVerifier`.
-    const prepared = await walletSdk.prepareExecuteUserOp(
-      zeroAddress,
-      0n,
-      "0x"
-    );
-    const sponsored = await pmClient.sponsorUserOp({
-      userOp: prepared.userOp,
-      operatorSigner: operator,
-      vaultId: operatorVault,
-      currentVerifier: {
-        publicSeed: currentVerifier.publicSeed,
-        publicKeyHash: currentVerifier.publicKeyHash,
-      },
-    });
-    const final = await walletSdk.signExecuteUserOp({
-      ...prepared,
-      userOp: sponsored.userOp,
-    });
-    const handleHash = await walletClient.writeContract({
-      chain: foundry,
-      address: CANONICAL_ENTRYPOINT_V07,
-      abi: entryPointV07Abi,
-      functionName: "handleOps",
-      args: [[final.userOp], account.address],
-      account,
-      gas: 3_000_000n,
-    });
-    await publicClient.waitForTransactionReceipt({ hash: handleHash });
-
-    // After rotation: the slot for the now-burned `currentVerifier` must
-    // be non-zero (the contract sets it to 1 inside `_verifyAndRotate`).
+    // Register the verifier. This commits to `verifierKeyUsed` so the
+    // SDK's slot derivation must surface a non-zero value here.
+    await pmClient.setPqVerifier(walletAddress, currentVerifier);
     const postSlot = await publicClient.getStorageAt({
       address: paymasterAddress,
       slot: slotForCurrent,
@@ -525,9 +507,9 @@ describe("Sponsored UserOp end-to-end", () => {
     expect(postSlot).toBeDefined();
     expect(BigInt(postSlot!)).not.toBe(0n);
 
-    // A verifier the paymaster has never seen still hashes to a slot
-    // whose value is zero — confirms the slot derivation isn't aliasing
-    // unrelated storage.
+    // A verifier the paymaster has never seen hashes to a slot whose
+    // value is zero — confirms the slot derivation isn't aliasing
+    // unrelated storage and the per-verifier mapping is keyed correctly.
     const unseenOperator = new QuipSigner(
       new Uint8Array(32).fill(0x7c),
       createInMemoryBurnSet().consume
@@ -567,23 +549,29 @@ describe("simulateUserOp — paymaster rejection paths", () => {
       0n,
       "0x"
     );
-    // sponsorUserOp would normally pull current verifier from chain. We
-    // pass a fabricated currentVerifier — the paymaster's pre-flight read
-    // sees zero on-chain and rejects with NoVerifierRegistered. Pretend
-    // the operator believes it has a verifier registered.
-    const fabricated = {
-      publicSeed: verifier.publicSeed,
-      publicKeyHash: verifier.publicKeyHash,
-    };
-    const sponsored = await pmClient.sponsorUserOp({
-      userOp: prepared.userOp,
-      operatorSigner: operator,
+    // We can't reach this code path via `sponsorUserOp` anymore — N8's
+    // client-side pre-flight throws PqVerifierNotRegisteredError before
+    // signing. Use the lower-level codec helper to hand-roll the
+    // paymasterAndData so we can still exercise `simulateUserOp`'s
+    // `NoVerifierRegistered` branch.
+    const nextVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    const { paymasterAndData } = buildSignedPaymasterAndData({
+      signer: operator,
       vaultId: operatorVault,
-      currentVerifier: fabricated,
+      paymaster: paymasterAddress,
+      chainId: BigInt(foundry.id),
+      sender: prepared.userOp.sender,
+      nonce: prepared.userOp.nonce,
+      callData: prepared.userOp.callData,
+      currentVerifier: verifier,
+      nextVerifier,
+      validUntil: 0,
+      validAfter: 0,
     });
+    const sponsoredUserOp = { ...prepared.userOp, paymasterAndData };
     void walletAddress;
 
-    const sim = await walletSdk.simulateUserOp(sponsored.userOp);
+    const sim = await walletSdk.simulateUserOp(sponsoredUserOp);
     expect(sim.paymasterValidation).toBe(
       PaymasterValidationFailure.NoVerifierRegistered
     );
@@ -790,4 +778,120 @@ describe("encodeFunctionData smoke for paymaster types", () => {
     expect(data.startsWith("0x")).toBe(true);
     expect(data.length).toBeGreaterThan(10);
   });
+});
+
+describe("sponsorUserOp client-side pre-flight", () => {
+  test("throws PqVerifierNotRegisteredError when no verifier is set for the sender", async () => {
+    const { client: walletSdk } = await createFreshWallet(0x80);
+    const pmClient = new QuipPaymasterClient({
+      paymasterAddress,
+      publicClient,
+      walletClient,
+      account: account.address,
+      chainId: foundry.id,
+    });
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x81),
+      createInMemoryBurnSet().consume
+    );
+    const operatorVault = toHex(new Uint8Array(32).fill(0x81));
+    const verifier = operator.generateKeyPair(operatorVault).publicKey;
+
+    // DO NOT setPqVerifier — pre-flight should throw.
+    const prepared = await walletSdk.prepareExecuteUserOp(
+      zeroAddress,
+      0n,
+      "0x"
+    );
+    await expect(
+      pmClient.sponsorUserOp({
+        userOp: prepared.userOp,
+        operatorSigner: operator,
+        vaultId: operatorVault,
+        currentVerifier: verifier,
+      })
+    ).rejects.toBeInstanceOf(PqVerifierNotRegisteredError);
+  }, 60_000);
+
+  test("throws VerifierMismatchError when currentVerifier doesn't match on-chain", async () => {
+    const { client: walletSdk, walletAddress } = await createFreshWallet(0x82);
+    const pmClient = new QuipPaymasterClient({
+      paymasterAddress,
+      publicClient,
+      walletClient,
+      account: account.address,
+      chainId: foundry.id,
+    });
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x83),
+      createInMemoryBurnSet().consume
+    );
+    const operatorVault = toHex(new Uint8Array(32).fill(0x83));
+
+    // Register one verifier on-chain…
+    const onChainVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    await pmClient.setPqVerifier(walletAddress, onChainVerifier);
+
+    // …but pass a DIFFERENT one as currentVerifier.
+    const wrongVerifier = operator.generateKeyPair(operatorVault).publicKey;
+
+    const prepared = await walletSdk.prepareExecuteUserOp(
+      zeroAddress,
+      0n,
+      "0x"
+    );
+    let caught: unknown = null;
+    try {
+      await pmClient.sponsorUserOp({
+        userOp: prepared.userOp,
+        operatorSigner: operator,
+        vaultId: operatorVault,
+        currentVerifier: wrongVerifier,
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(VerifierMismatchError);
+    const err = caught as VerifierMismatchError;
+    expect(err.sender).toBe(walletAddress);
+    expect(err.suppliedVerifier.publicSeed).toBe(wrongVerifier.publicSeed);
+    expect(err.onChainVerifier.publicSeed).toBe(onChainVerifier.publicSeed);
+  }, 60_000);
+
+  test("sponsorUserOp return value includes currentVerifier alongside nextVerifier", async () => {
+    const { client: walletSdk, walletAddress } = await createFreshWallet(0x84);
+    const pmClient = new QuipPaymasterClient({
+      paymasterAddress,
+      publicClient,
+      walletClient,
+      account: account.address,
+      chainId: foundry.id,
+    });
+    const operator = new QuipSigner(
+      new Uint8Array(32).fill(0x85),
+      createInMemoryBurnSet().consume
+    );
+    const operatorVault = toHex(new Uint8Array(32).fill(0x85));
+    const currentVerifier = operator.generateKeyPair(operatorVault).publicKey;
+    await pmClient.setPqVerifier(walletAddress, currentVerifier);
+
+    const prepared = await walletSdk.prepareExecuteUserOp(
+      zeroAddress,
+      0n,
+      "0x"
+    );
+    const sponsored = await pmClient.sponsorUserOp({
+      userOp: prepared.userOp,
+      operatorSigner: operator,
+      vaultId: operatorVault,
+      currentVerifier,
+    });
+    expect(sponsored.currentVerifier.publicSeed).toBe(currentVerifier.publicSeed);
+    expect(sponsored.currentVerifier.publicKeyHash).toBe(
+      currentVerifier.publicKeyHash
+    );
+    expect(sponsored.nextVerifier.publicSeed).not.toBe(
+      currentVerifier.publicSeed
+    );
+  }, 60_000);
 });

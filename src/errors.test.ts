@@ -72,6 +72,8 @@ import {
   ZeroValuePqVerifierKeyError,
   PqVerifierNotRegisteredError,
   VerifierKeyInUseError,
+  VerifierMismatchError,
+  KeyAlreadyBurnedError,
   UnknownContractError,
   WalletNotInitializedError,
   WalletAlreadyExistsError,
@@ -147,6 +149,42 @@ describe("error class properties", () => {
     expect(new MulticallUnavailableError(31337).chainId).toBe(31337);
     expect(new GasEstimationError("nope").code).toBe("GAS_ESTIMATION_FAILED");
     expect(new BalanceTooLowError(10n, 5n).required).toBe(10n);
+  });
+
+  test("VerifierMismatchError carries sender + both verifier values", () => {
+    const sender =
+      "0x1111111111111111111111111111111111111111" as Hex;
+    const supplied = {
+      publicSeed:
+        "0x2222222222222222222222222222222222222222222222222222222222222222" as Hex,
+      publicKeyHash:
+        "0x3333333333333333333333333333333333333333333333333333333333333333" as Hex,
+    };
+    const onChain = {
+      publicSeed:
+        "0x4444444444444444444444444444444444444444444444444444444444444444" as Hex,
+      publicKeyHash:
+        "0x5555555555555555555555555555555555555555555555555555555555555555" as Hex,
+    };
+    const e = new VerifierMismatchError(sender, supplied, onChain);
+    expect(e).toBeInstanceOf(QuipError);
+    expect(e.code).toBe("VERIFIER_MISMATCH");
+    expect(e.name).toBe("VerifierMismatchError");
+    expect(e.sender).toBe(sender);
+    expect(e.suppliedVerifier).toEqual(supplied);
+    expect(e.onChainVerifier).toEqual(onChain);
+    expect(e.message).toContain(sender);
+  });
+
+  test("KeyAlreadyBurnedError keeps publicSeed on the typed field but omits it from message", () => {
+    const seed =
+      "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" as Hex;
+    const e = new KeyAlreadyBurnedError(seed);
+    expect(e.publicSeed).toBe(seed);
+    expect(e.code).toBe("KEY_ALREADY_BURNED");
+    // Message no longer leaks the seed value.
+    expect(e.message).not.toContain(seed);
+    expect(e.message).toContain("signWithKey");
   });
 
   test("ERC-4337 enum-failure errors carry the typed reason", () => {

@@ -212,3 +212,56 @@ describe("QuipSigner key-derivation self-test", () => {
     }
   });
 });
+
+describe("createInMemoryBurnSet case normalization", () => {
+  it("treats 0xABCD… and 0xabcd… as the same burn record", () => {
+    const burnSet = createInMemoryBurnSet();
+    const seedLower =
+      "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd" as Hex;
+    const seedUpper = seedLower.toUpperCase() as Hex;
+
+    burnSet.consume(seedLower);
+    expect(() => burnSet.consume(seedUpper)).toThrow(KeyAlreadyBurnedError);
+  });
+
+  it("treats mixed-case as the same burn record", () => {
+    const burnSet = createInMemoryBurnSet();
+    const seedA =
+      "0xAbCdEf01234567890abcdef01234567890ABCDEF01234567890abcdef01234567" as Hex;
+    const seedB =
+      "0xaBcDeF01234567890ABCDEF01234567890abcdef01234567890ABCDEF01234567" as Hex;
+
+    burnSet.consume(seedA);
+    expect(() => burnSet.consume(seedB)).toThrow(KeyAlreadyBurnedError);
+  });
+
+  it("KeyAlreadyBurnedError carries the original-case publicSeed the caller passed (not the lowercased internal form)", () => {
+    const burnSet = createInMemoryBurnSet();
+    const seedLower =
+      "0x1111111111111111111111111111111111111111111111111111111111111111" as Hex;
+    const seedUpper = seedLower.toUpperCase() as Hex;
+
+    burnSet.consume(seedLower);
+    try {
+      burnSet.consume(seedUpper);
+      throw new Error("expected throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(KeyAlreadyBurnedError);
+      if (e instanceof KeyAlreadyBurnedError) {
+        // The error reports back whichever case the offending caller supplied.
+        expect(e.publicSeed).toBe(seedUpper);
+      }
+    }
+  });
+
+  it("clear() drops every recorded burn (test-only escape hatch)", () => {
+    const burnSet = createInMemoryBurnSet();
+    const seed =
+      "0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
+    burnSet.consume(seed);
+    expect(() => burnSet.consume(seed)).toThrow(KeyAlreadyBurnedError);
+    burnSet.clear();
+    // After clear the same seed is re-consumable.
+    expect(() => burnSet.consume(seed)).not.toThrow();
+  });
+});

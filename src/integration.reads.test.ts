@@ -36,8 +36,41 @@ import {
   getMulticall3Address,
   MULTICALL3_ADDRESS,
 } from "./internal/multicall.js";
-import { CHAIN_IDS } from "./addresses.js";
+import { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "./addresses.js";
 import { QuipClient } from "./factoryClient.js";
+
+// `QuipClient.create(provider)` resolves NETWORK_ADDRESSES via getChainId(),
+// but the foundry chainId (31337) isn't in the registry. For tests we
+// hand-construct a QuipClient with the deployed factory wired up directly,
+// bypassing the EIP-1193 init path so we can exercise SDK methods against
+// the live deployment.
+function makeTestQuipClient(opts: {
+  publicClient: PublicClient;
+  walletClient: WalletClient;
+  account: Address;
+  factoryAddress: Address;
+  chainId: number;
+}): QuipClient {
+  const client = Object.create(QuipClient.prototype) as QuipClient;
+  // Reach past the constructor to inject the test wiring.
+  (client as unknown as {
+    publicClient: PublicClient;
+    walletClient: WalletClient;
+    account: Address;
+    factoryAddress: Address;
+    chainId: number;
+    initializationPromise: Promise<void>;
+  }).publicClient = opts.publicClient;
+  (client as unknown as { walletClient: WalletClient }).walletClient =
+    opts.walletClient;
+  (client as unknown as { account: Address }).account = opts.account;
+  (client as unknown as { factoryAddress: Address }).factoryAddress =
+    opts.factoryAddress;
+  (client as unknown as { chainId: number }).chainId = opts.chainId;
+  (client as unknown as { initializationPromise: Promise<void> }).initializationPromise =
+    Promise.resolve();
+  return client;
+}
 
 // ─── Forge artifact ─────────────────────────────────────────────────
 const factoryArtifact = JSON.parse(
@@ -247,5 +280,117 @@ describe("QuipClient.getFactoryState end-to-end", () => {
     // wired up. Exercising QuipClient.getFactoryState end-to-end will land
     // when Phase 7 populates address tables for test chains.
     expect(typeof QuipClient).toBe("function");
+  });
+});
+
+describe("QuipClient vetted-code views — empty factory", () => {
+  // The factory deployed in beforeAll has no vetted impls registered yet.
+  test("getVettedCodeCount returns 0 on a fresh factory", async () => {
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: foundry.id,
+    });
+    expect(await client.getVettedCodeCount()).toBe(0n);
+  });
+
+  test("latestWalletImpl returns address(0) on a fresh factory", async () => {
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: foundry.id,
+    });
+    expect(await client.latestWalletImpl()).toBe(
+      "0x0000000000000000000000000000000000000000"
+    );
+  });
+
+  test("getVettedCodeIndex returns max(uint256) for unknown codehash", async () => {
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: foundry.id,
+    });
+    const unknownCodehash =
+      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as Hex;
+    expect(await client.getVettedCodeIndex(unknownCodehash)).toBe(
+      2n ** 256n - 1n
+    );
+  });
+
+  test("getImplementationByCodehash returns address(0) for unknown codehash", async () => {
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: foundry.id,
+    });
+    const unknownCodehash =
+      "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" as Hex;
+    expect(await client.getImplementationByCodehash(unknownCodehash)).toBe(
+      "0x0000000000000000000000000000000000000000"
+    );
+  });
+
+  test("isCodeDeprecated returns false for unknown codehash", async () => {
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: foundry.id,
+    });
+    const unknownCodehash =
+      "0xabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd" as Hex;
+    expect(await client.isCodeDeprecated(unknownCodehash)).toBe(false);
+  });
+
+  test("getVettedCodeAt out-of-range index reverts", async () => {
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: foundry.id,
+    });
+    await expect(client.getVettedCodeAt(0n)).rejects.toThrow();
+  });
+});
+
+describe("QuipClient.getPaymasterAddress", () => {
+  test("returns zero address for foundry (no paymaster registered)", () => {
+    // foundry (31337) isn't in NETWORK_ADDRESSES, so getPaymasterAddress
+    // throws via getNetworkAddresses → UnsupportedNetworkError. The
+    // makeTestQuipClient helper still sets chainId, so we get the strict
+    // resolution path.
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: foundry.id,
+    });
+    expect(() => client.getPaymasterAddress()).toThrow();
+  });
+
+  test("returns zero address for chains where paymaster is unset (mainnet today)", () => {
+    const client = makeTestQuipClient({
+      publicClient,
+      walletClient,
+      account: account.address,
+      factoryAddress,
+      chainId: CHAIN_IDS.ETHEREUM_MAINNET,
+    });
+    // Currently zero until production paymaster lands per the registry.
+    expect(client.getPaymasterAddress()).toBe(
+      "0x0000000000000000000000000000000000000000"
+    );
   });
 });
