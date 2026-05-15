@@ -96,11 +96,11 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
   // MIDL Testnet (Chain ID 777) - different deployment mechanism
   // These addresses will be populated after MIDL deployment
   [CHAIN_IDS.MIDL_TESTNET]: {
-    Deployer: "0x0000000000000000000000000000000000000000",
-    WOTSPlus: "0x0000000000000000000000000000000000000000",
-    QuipFactory: "0x0000000000000000000000000000000000000000",
+    Deployer: "0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1",
+    WOTSPlus: "0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e",
+    QuipFactory: "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC",
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
-    QuipPaymaster: "0x0000000000000000000000000000000000000000",
+    QuipPaymaster: "0x4A952d592fAe490762f492dC65487eE2B53Ef554",
   },
 };
 
