@@ -1,6 +1,7 @@
 import { type Address, type Hex } from "viem";
 import {
   CHAIN_IDS,
+  NETWORK_ADDRESSES,
   getNetworkAddresses,
   getVaultAddress,
   computeVaultAddress,
@@ -39,9 +40,9 @@ describe("getNetworkAddresses", () => {
 
   it("returns the registered entry for chains explicitly listed in NETWORK_ADDRESSES (MIDL)", () => {
     const addrs = getNetworkAddresses(CHAIN_IDS.MIDL_TESTNET);
-    // MIDL is registered but currently zero-addressed until deployment.
+    expect(addrs).toBe(NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET]);
     expect(addrs.QuipFactory).toEqual(
-      "0x0000000000000000000000000000000000000000"
+      NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipFactory
     );
   });
 
