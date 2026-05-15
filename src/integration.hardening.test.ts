@@ -438,8 +438,9 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
 
     let caught: unknown = null;
     try {
-      // forceSequential so every individual readContract failure surfaces.
-      await client.getWalletState({ forceSequential: true });
+      // Multicall against a no-code address surfaces a per-sub-call failure
+      // set; PartialMulticallResultError aggregates them.
+      await client.getWalletState();
     } catch (e) {
       caught = e;
     }
@@ -454,10 +455,9 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
     }
   });
 
-  test("getKeyset against a no-code address throws PartialMulticallResultError", async () => {
-    // Same trick — but getKeyset reads keyCount first (which will also
-    // fail). We need an address that has code but lacks `keyAt`. Easiest:
-    // point at the factory address, which doesn't implement keyAt.
+  test("getKeyset against a no-code address throws", async () => {
+    // Point at an address that has code but does NOT implement `getKeyset`
+    // (the factory). Single `eth_call` against the missing function reverts.
     const signer = new QuipSigner(
       new Uint8Array(32).fill(0x31),
       createInMemoryBurnSet().consume
@@ -472,10 +472,6 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
       foundry.id
     );
 
-    // keyCount on the factory would fail (factory has no keyCount fn).
-    // The first failure point is keyCount, which getKeyset awaits.
-    await expect(
-      client.getKeyset(KeyType.Transaction, { forceSequential: true })
-    ).rejects.toThrow();
+    await expect(client.getKeyset(KeyType.Transaction)).rejects.toThrow();
   });
 });

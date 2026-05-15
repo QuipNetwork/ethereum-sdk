@@ -40,6 +40,7 @@ import {
 import {
   DuplicateKeyError,
   EmptyKeysError,
+  Erc1271ValidationResult,
   GasEstimationError,
   IncorrectRecoveryKeyAmountError,
   IncorrectTransactionKeyAmountError,
@@ -194,12 +195,17 @@ export interface BuildExecuteUserOpOptions {
 }
 
 /// Result of `buildExecuteUserOp` — the fully signed UserOp ready for
-/// `EntryPoint.handleOps`, plus the digests for inspection / replay
-/// checks.
+/// `EntryPoint.handleOps`, plus the digests and key pair used for
+/// inspection / replay checks / burn-store reconciliation. `currentKey`
+/// is the now-burned signing key; `nextKey` is the freshly generated
+/// successor that the wallet will rotate into on a successful run.
 export interface BuildExecuteUserOpResult {
   userOp: PackedUserOperation;
   walletDigest: Hex;
   userOpHash: Hex;
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
+  executeFee: bigint;
 }
 
 /// Output of `prepareExecuteUserOp` — the unsigned UserOp + the
@@ -211,6 +217,30 @@ export interface PreparedExecuteUserOp {
   nextKey: WinternitzAddress;
   entryPoint: Address;
   executeFee: bigint;
+}
+
+/// Unpacked view of the ERC-4337 `validationData` value
+/// (`[validAfter(48) | validUntil(48) | authorizer(160)]`).
+/// `authorizer == 0` means the signature is valid, `authorizer == 1` is
+/// the canonical SIG_VALIDATION_FAILED sentinel, anything else is a
+/// future-style aggregator/authorizer address.
+export interface ValidationData {
+  /// Raw packed value as returned by `validateUserOp` /
+  /// `validatePaymasterUserOp`.
+  raw: bigint;
+  /// Low 160 bits — 0 = accept, 1 = sig invalid, else authorizer address.
+  authorizer: bigint;
+  /// 48-bit `validUntil` window (0 = no upper bound).
+  validUntil: number;
+  /// 48-bit `validAfter` window (0 = no lower bound).
+  validAfter: number;
+}
+
+function unpackValidationData(raw: bigint): ValidationData {
+  const authorizer = raw & ((1n << 160n) - 1n);
+  const validUntil = Number((raw >> 160n) & ((1n << 48n) - 1n));
+  const validAfter = Number((raw >> 208n) & ((1n << 48n) - 1n));
+  return { raw, authorizer, validUntil, validAfter };
 }
 
 /// Result of `simulateUserOp` — covers both wallet- and paymaster-side
@@ -231,6 +261,15 @@ export interface PreparedExecuteUserOp {
 ///     them — the contract storage layout for `verifierKeyUsed` is
 ///     consulted to catch the `NextVerifierKeyInUse` case when possible.
 ///
+/// `walletValidationData` / `paymasterValidationData`: the unpacked
+/// validation-data word the contract returned, when the SDK actually
+/// invoked `eth_call` against `validateUserOp` / `validatePaymasterUserOp`
+/// to reach the verdict. `null` when the SDK short-circuited via a
+/// pre-check (e.g. `StaleCurrentKey` was detected client-side without
+/// reaching the contract). For sponsored UserOps the paymaster value
+/// carries `validUntil` / `validAfter` and lets callers see the validity
+/// window even when the verdict is `'ok'`.
+///
 /// `keysBurnedIfRevert`: if the UserOp is broadcast and execution
 /// reverts, will the corresponding key be rotated on chain (i.e. is the
 /// key consumed regardless of execution outcome)?
@@ -244,7 +283,9 @@ export interface PreparedExecuteUserOp {
 /// revealed publicly — see `SDK_README.md`.
 export interface SimulateUserOpResult {
   walletValidation: "ok" | UserOpValidationFailure;
+  walletValidationData: ValidationData | null;
   paymasterValidation: "ok" | "no-paymaster" | PaymasterValidationFailure;
+  paymasterValidationData: ValidationData | null;
   keysBurnedIfRevert: { wallet: boolean; paymaster: boolean };
 }
 
@@ -393,14 +434,7 @@ export class QuipWalletClient {
 
   /// Read every key in `kind`'s set, ordered by storage index. Single
   /// `eth_call` against the contract's `getKeyset(kind)` view.
-  ///
-  /// `forceSequential` is accepted for backward compatibility but has no
-  /// effect — there is no longer a multicall to opt out of. It will be
-  /// dropped in a future release.
-  async getKeyset(
-    kind: KeyType,
-    _opts?: { forceSequential?: boolean }
-  ): Promise<WinternitzAddress[]> {
+  async getKeyset(kind: KeyType): Promise<WinternitzAddress[]> {
     const keys = await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
@@ -412,9 +446,7 @@ export class QuipWalletClient {
     return [...(keys as readonly WinternitzAddress[])];
   }
 
-  async getWalletState(
-    opts?: { forceSequential?: boolean }
-  ): Promise<WalletState> {
+  async getWalletState(): Promise<WalletState> {
     const calls = [
       { address: this.walletAddress, abi: quipWalletAbi, functionName: "owner" as const },
       { address: this.walletAddress, abi: quipWalletAbi, functionName: "quipFactory" as const },
@@ -426,7 +458,6 @@ export class QuipWalletClient {
 
     const results = await tryMulticall(this.publicClient, calls, {
       chainId: this.chainId,
-      ...(opts?.forceSequential && { forceSequential: true }),
     });
 
     const labels = [
@@ -1060,7 +1091,7 @@ export class QuipWalletClient {
   ///      `verifySig` — these come from the impl deployer, not the wallet
   ///      owner.
   ///
-  /// Set `migratorPayload` to a 1088-byte init payload to trigger
+  /// Set `migrationPayload` to a 1088-byte init payload to trigger
   /// `migrate(...)` against the new implementation. Leave undefined (or pass
   /// `"0x"`) for a no-migration upgrade; the SDK zero-fills the trailing 1088
   /// bytes the contract requires for layout symmetry.
@@ -1069,7 +1100,7 @@ export class QuipWalletClient {
     verifier: WinternitzAddress,
     verifySig: WinternitzElements,
     options: {
-      migratorPayload?: Hex;
+      migrationPayload?: Hex;
     } = {},
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<TransactionReceipt> {
@@ -1086,7 +1117,7 @@ export class QuipWalletClient {
     );
     const pqSig = this.signWith(currentKey.publicSeed, digest);
     const shouldMigrate =
-      options.migratorPayload !== undefined && options.migratorPayload !== "0x";
+      options.migrationPayload !== undefined && options.migrationPayload !== "0x";
     const payload = encodeUpgradeToAndCall(
       currentKey,
       nextKey,
@@ -1094,7 +1125,7 @@ export class QuipWalletClient {
       verifier,
       verifySig,
       shouldMigrate,
-      options.migratorPayload ?? "0x"
+      options.migrationPayload ?? "0x"
     );
 
     const contractCall: ContractCallParams = {
@@ -1117,7 +1148,7 @@ export class QuipWalletClient {
   /// replaces `currentRecoveryKey` so the recovery-keyset size stays stable.
   /// `newRecoveryKey` defaults to a fresh keypair generated under this
   /// signer/vault.
-  async recoveryUpgradeWallet(
+  async recoveryUpgrade(
     recoveryPublicSeed: Hex,
     newImplementation: Address,
     verifier: WinternitzAddress,
@@ -1207,27 +1238,115 @@ export class QuipWalletClient {
     data: Hex,
     opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
   ): Promise<PreparedExecuteUserOp> {
+    const callData = encodeFunctionData({
+      abi: quipWalletAbi,
+      functionName: "execute",
+      args: [target, value, data],
+    });
+    return this._prepareUserOpFromCallData(callData, opts, async (entryPoint) =>
+      this.estimateExecuteCallGas(entryPoint, target, value, data)
+    );
+  }
+
+  /// Build an unsigned `executeBatch(Call[])` UserOp. The wallet runs each
+  /// inner call sequentially via Solady's ERC-4337 base; the WOTS+ rotation
+  /// commits during validation so the whole batch shares a single key burn.
+  async prepareExecuteBatchUserOp(
+    calls: ReadonlyArray<{ target: Address; value: bigint; data: Hex }>,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<PreparedExecuteUserOp> {
+    const callData = encodeFunctionData({
+      abi: quipWalletAbi,
+      functionName: "executeBatch",
+      args: [calls.map((c) => ({ target: c.target, value: c.value, data: c.data }))],
+    });
+    return this._prepareUserOpFromCallData(callData, opts);
+  }
+
+  /// Build an unsigned `delegateExecute(delegate, data)` UserOp. The wallet
+  /// delegatecalls into `delegate`; guarded slots (owner, impl, factory,
+  /// disaster/ownership keys) are snapshotted before and asserted unchanged
+  /// after — tampering reverts with `GuardedSlotTampered`.
+  async prepareDelegateExecuteUserOp(
+    delegate: Address,
+    data: Hex,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<PreparedExecuteUserOp> {
+    const callData = encodeFunctionData({
+      abi: quipWalletAbi,
+      functionName: "delegateExecute",
+      args: [delegate, data],
+    });
+    return this._prepareUserOpFromCallData(callData, opts);
+  }
+
+  /// Build an unsigned `storageStore(slot, value)` UserOp. Writes `value`
+  /// at `slot` via `SSTORE`; the wallet's `storageStoreGuard` rejects
+  /// guarded slots (owner / ERC-1967 impl / factory / disaster + ownership
+  /// key slots) with `GuardedSlotWriteDenied`.
+  async prepareStorageStoreUserOp(
+    slot: Hex,
+    value: Hex,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<PreparedExecuteUserOp> {
+    const callData = encodeFunctionData({
+      abi: quipWalletAbi,
+      functionName: "storageStore",
+      args: [slot, value],
+    });
+    return this._prepareUserOpFromCallData(callData, opts);
+  }
+
+  /// Sugar: prepare + sign `executeBatch`.
+  async buildExecuteBatchUserOp(
+    calls: ReadonlyArray<{ target: Address; value: bigint; data: Hex }>,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<BuildExecuteUserOpResult> {
+    const prepared = await this.prepareExecuteBatchUserOp(calls, opts);
+    return this.signExecuteUserOp(prepared);
+  }
+
+  /// Sugar: prepare + sign `delegateExecute`.
+  async buildDelegateExecuteUserOp(
+    delegate: Address,
+    data: Hex,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<BuildExecuteUserOpResult> {
+    const prepared = await this.prepareDelegateExecuteUserOp(delegate, data, opts);
+    return this.signExecuteUserOp(prepared);
+  }
+
+  /// Sugar: prepare + sign `storageStore`.
+  async buildStorageStoreUserOp(
+    slot: Hex,
+    value: Hex,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
+  ): Promise<BuildExecuteUserOpResult> {
+    const prepared = await this.prepareStorageStoreUserOp(slot, value, opts);
+    return this.signExecuteUserOp(prepared);
+  }
+
+  /// Shared pipeline behind every `prepare*UserOp` method: picks the
+  /// transaction keypair, resolves nonce / fees / gas limits, packs the
+  /// unsigned UserOp. `gasEstimator`, when supplied, is invoked once with
+  /// the resolved entryPoint and is responsible for both pre-flighting
+  /// the inner call AND returning a callGasLimit estimate.
+  private async _prepareUserOpFromCallData(
+    callData: Hex,
+    opts: BuildExecuteUserOpOptions & TransactionKeyOptions,
+    gasEstimator?: (entryPoint: Address) => Promise<bigint>
+  ): Promise<PreparedExecuteUserOp> {
     const { keyOpts } = splitWriteOpts(
       opts as TxOptions & TransactionKeyOptions
     );
     const entryPoint = opts.entryPoint ?? (await this.getEntryPoint());
     const fee = await this.getExecuteFee();
 
-    // 1. Pick the current/next keypair. Note: this does NOT burn the key
-    //    yet — burning happens inside `signExecuteUserOp` when the WOTS+
-    //    signature is actually produced. A caller that prepares but never
-    //    signs hasn't consumed any key.
+    // Pick the current/next keypair. Does NOT burn — signing does that
+    // later inside `signExecuteUserOp`.
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
 
-    // 2. Encode the inner call. The EntryPoint-side `execute(target, value, data)`
-    //    is the 3-arg overload at QuipWallet.sol:195 (onlyEntryPoint).
-    const callData = encodeFunctionData({
-      abi: quipWalletAbi,
-      functionName: "execute",
-      args: [target, value, data],
-    });
-
-    // 3. Resolve nonce.
+    // Resolve nonce.
     const nonce =
       opts.nonce ??
       (await withDecodedError(
@@ -1239,7 +1358,7 @@ export class QuipWalletClient {
         })
       ));
 
-    // 4. Resolve fees. Caller overrides win; otherwise pull from chain.
+    // Resolve fees. Caller overrides win; otherwise pull from chain.
     let maxFeePerGas = opts.maxFeePerGas;
     let maxPriorityFeePerGas = opts.maxPriorityFeePerGas;
     if (maxFeePerGas === undefined || maxPriorityFeePerGas === undefined) {
@@ -1248,7 +1367,7 @@ export class QuipWalletClient {
       maxPriorityFeePerGas = maxPriorityFeePerGas ?? fees.maxPriorityFeePerGas;
     }
 
-    // 5. Resolve gas limits — explicit overrides, else estimate, else defaults.
+    // Resolve gas limits — explicit overrides, else estimate, else defaults.
     let callGasLimit = opts.callGasLimit;
     const verificationGasLimit =
       opts.verificationGasLimit ?? DEFAULT_VERIFICATION_GAS_LIMIT;
@@ -1256,12 +1375,14 @@ export class QuipWalletClient {
       opts.preVerificationGas ?? DEFAULT_PRE_VERIFICATION_GAS;
 
     if (callGasLimit === undefined && !opts.skipGasEstimation) {
-      callGasLimit = await this.estimateExecuteCallGas(
-        entryPoint,
-        target,
-        value,
-        data
-      );
+      if (gasEstimator) {
+        callGasLimit = await gasEstimator(entryPoint);
+      } else {
+        callGasLimit = await this.estimateInnerCallGasFromCallData(
+          entryPoint,
+          callData
+        );
+      }
     }
     if (callGasLimit === undefined) {
       callGasLimit = DEFAULT_CALL_GAS_LIMIT;
@@ -1285,6 +1406,28 @@ export class QuipWalletClient {
       entryPoint,
       executeFee: fee,
     };
+  }
+
+  /// Generic `eth_estimateGas` from the EntryPoint against pre-encoded
+  /// `callData`. Same revert-decoding pattern as `estimateExecuteCallGas`
+  /// so reverts surface as typed `QuipError`s; non-revert failures
+  /// become `GasEstimationError`.
+  private async estimateInnerCallGasFromCallData(
+    entryPoint: Address,
+    callData: Hex
+  ): Promise<bigint> {
+    try {
+      return await this.publicClient.estimateGas({
+        account: entryPoint,
+        to: this.walletAddress,
+        data: callData,
+      });
+    } catch (err) {
+      const decoded = decodeContractError(err);
+      if (decoded) throw decoded;
+      const message = err instanceof Error ? err.message : String(err);
+      throw new GasEstimationError(message, { cause: err });
+    }
   }
 
   /// Finalize an unsigned UserOp by signing the wallet's portion. Takes
@@ -1322,6 +1465,9 @@ export class QuipWalletClient {
       userOp: { ...userOp, signature },
       walletDigest,
       userOpHash,
+      currentKey,
+      nextKey,
+      executeFee,
     };
   }
 
@@ -1354,7 +1500,9 @@ export class QuipWalletClient {
 
     return {
       walletValidation: walletPart.result,
+      walletValidationData: walletPart.validationData,
       paymasterValidation: paymasterPart.result,
+      paymasterValidationData: paymasterPart.validationData,
       keysBurnedIfRevert: {
         wallet: walletPart.wouldRotate,
         paymaster: paymasterPart.wouldRotate,
@@ -1365,15 +1513,14 @@ export class QuipWalletClient {
   private async simulateWalletValidation(
     userOp: PackedUserOperation,
     entryPoint: Address
-  ): Promise<{ result: "ok" | UserOpValidationFailure; wouldRotate: boolean }> {
-    // Decode currentKey / nextKey out of userOp.signature. The codec
-    // lays them out as [currentKey(64) | nextKey(64) | pqSig(2144)].
-    if (userOp.signature.length < 2 + 2 * 64) {
-      return {
-        result: UserOpValidationFailure.InvalidSignature,
-        wouldRotate: false,
-      };
-    }
+  ): Promise<{
+    result: "ok" | UserOpValidationFailure;
+    wouldRotate: boolean;
+    validationData: ValidationData | null;
+  }> {
+    // Decode currentKey / nextKey out of userOp.signature. The codec lays
+    // them out as [currentKey(64) | nextKey(64) | pqSig(2144)]. The decoder
+    // throws on any short / malformed signature; treat that as InvalidSignature.
     let currentKey: WinternitzAddress;
     let nextKey: WinternitzAddress;
     try {
@@ -1384,6 +1531,7 @@ export class QuipWalletClient {
       return {
         result: UserOpValidationFailure.InvalidSignature,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1395,6 +1543,7 @@ export class QuipWalletClient {
       return {
         result: UserOpValidationFailure.ZeroNextKey,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1404,6 +1553,7 @@ export class QuipWalletClient {
       return {
         result: UserOpValidationFailure.StaleCurrentKey,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1415,6 +1565,7 @@ export class QuipWalletClient {
       return {
         result: UserOpValidationFailure.NextKeyAlreadyInUse,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1438,19 +1589,22 @@ export class QuipWalletClient {
       return {
         result: UserOpValidationFailure.InvalidSignature,
         wouldRotate: false,
+        validationData: null,
       };
     }
-    const validationData = decodeFunctionResult({
+    const validationRaw = decodeFunctionResult({
       abi: quipWalletAbi,
       functionName: "validateUserOp",
       data: callResult.data,
-    });
-    if (validationData === 0n) {
-      return { result: "ok", wouldRotate: true };
+    }) as bigint;
+    const validationData = unpackValidationData(validationRaw);
+    if (validationData.authorizer === 0n) {
+      return { result: "ok", wouldRotate: true, validationData };
     }
     return {
       result: UserOpValidationFailure.InvalidSignature,
       wouldRotate: false,
+      validationData,
     };
   }
 
@@ -1460,10 +1614,11 @@ export class QuipWalletClient {
   ): Promise<{
     result: "ok" | "no-paymaster" | PaymasterValidationFailure;
     wouldRotate: boolean;
+    validationData: ValidationData | null;
   }> {
     // No paymaster attached → not sponsored.
     if (userOp.paymasterAndData === "0x" || userOp.paymasterAndData.length <= 2) {
-      return { result: "no-paymaster", wouldRotate: false };
+      return { result: "no-paymaster", wouldRotate: false, validationData: null };
     }
 
     // MalformedPayload: must be exactly 2272 bytes. The decoder throws on
@@ -1478,6 +1633,7 @@ export class QuipWalletClient {
       return {
         result: PaymasterValidationFailure.MalformedPayload,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1489,6 +1645,7 @@ export class QuipWalletClient {
       return {
         result: PaymasterValidationFailure.ZeroNextVerifier,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1511,6 +1668,7 @@ export class QuipWalletClient {
       return {
         result: PaymasterValidationFailure.NoVerifierRegistered,
         wouldRotate: false,
+        validationData: null,
       };
     }
     if (
@@ -1520,6 +1678,7 @@ export class QuipWalletClient {
       return {
         result: PaymasterValidationFailure.NoVerifierRegistered,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1531,6 +1690,7 @@ export class QuipWalletClient {
       return {
         result: PaymasterValidationFailure.NextEqualsCurrent,
         wouldRotate: false,
+        validationData: null,
       };
     }
 
@@ -1547,6 +1707,7 @@ export class QuipWalletClient {
         return {
           result: PaymasterValidationFailure.NextVerifierKeyInUse,
           wouldRotate: false,
+          validationData: null,
         };
       }
     } catch {
@@ -1575,12 +1736,14 @@ export class QuipWalletClient {
       return {
         result: PaymasterValidationFailure.InvalidSignature,
         wouldRotate: false,
+        validationData: null,
       };
     }
     if (!callResult.data) {
       return {
         result: PaymasterValidationFailure.InvalidSignature,
         wouldRotate: false,
+        validationData: null,
       };
     }
     const decoded = decodeFunctionResult({
@@ -1588,23 +1751,15 @@ export class QuipWalletClient {
       functionName: "validatePaymasterUserOp",
       data: callResult.data,
     }) as readonly [Hex, bigint];
-    const validationData = decoded[1];
-    // validationData == 1 → rejection. validationData with low 160 bits
-    // (authorizer) == 0 → valid sig.
-    if (validationData === 1n) {
+    const validationData = unpackValidationData(decoded[1]);
+    if (validationData.authorizer !== 0n) {
       return {
         result: PaymasterValidationFailure.InvalidSignature,
         wouldRotate: false,
+        validationData,
       };
     }
-    const authorizer = validationData & ((1n << 160n) - 1n);
-    if (authorizer !== 0n) {
-      return {
-        result: PaymasterValidationFailure.InvalidSignature,
-        wouldRotate: false,
-      };
-    }
-    return { result: "ok", wouldRotate: true };
+    return { result: "ok", wouldRotate: true, validationData };
   }
 
   /// Read the EntryPoint address from the wallet's `entryPoint()` view.
@@ -1614,6 +1769,56 @@ export class QuipWalletClient {
         address: this.walletAddress,
         abi: quipWalletAbi,
         functionName: "entryPoint",
+      })
+    );
+  }
+
+  /// Read the wallet's current implementation version — the index of the
+  /// ERC-1967 impl's codehash in the factory's vetted set, or
+  /// `type(uint256).max` if the deployed code is no longer recognized.
+  async version(): Promise<bigint> {
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "version",
+      })
+    );
+  }
+
+  /// Off-chain diagnostic for ERC-1271 `isValidSignature` failures.
+  /// Returns the specific failure branch (`BadSignatureLength`,
+  /// `InvalidEcdsaSignature`, `UnknownVerifier`, `InvalidPqSignature`)
+  /// or `Ok` on success — the production `isValidSignature` collapses
+  /// all four failures into the single ERC-1271 sentinel.
+  async debugIsValidSignature(
+    hash: Hex,
+    signature: Hex
+  ): Promise<Erc1271ValidationResult> {
+    const raw = await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "debugIsValidSignature",
+        args: [hash, signature],
+      })
+    );
+    return Number(raw) as Erc1271ValidationResult;
+  }
+
+  /// Read the expiry timestamp for an in-flight ownership handover
+  /// initiated for `pendingOwner`. Zero when no handover is active for
+  /// that address. Solady's `Ownable` model is time-bound per
+  /// requesting address — there is no single "the pending owner" slot
+  /// on the wallet; each candidate's pending state is keyed by their
+  /// own address.
+  async ownershipHandoverExpiresAt(pendingOwner: Address): Promise<bigint> {
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "ownershipHandoverExpiresAt",
+        args: [pendingOwner],
       })
     );
   }
