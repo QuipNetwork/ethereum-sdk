@@ -91,41 +91,36 @@ npm publish
 
 ## Contract Verification
 
-Assuming the following is in your addresses.json folder: 
+The deploy scripts pass `--verify` to forge by default — Etherscan
+verification runs as part of the same `make deploy-all-<chain>` /
+`make deploy-impl-<chain>` invocation. Set `ETHERSCAN_API_KEY` (Etherscan
+v2 — one key covers mainnet, base, optimism, all their L2 testnets, etc.)
+in `.env` and forge handles it via the `[etherscan]` map in `foundry.toml`.
 
-```
-Deployer: 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-WOTSPlus: 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
-QuipFactory: 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99
-```
+To verify an already-deployed contract independently:
 
-Deployer:
+```bash
+# WOTSPlus library (no constructor args):
+forge verify-contract \
+  --rpc-url base_sepolia \
+  --chain base_sepolia \
+  0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e \
+  @quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus
 
-```
-npx hardhat verify --network mainnet 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-npx hardhat verify --network optimism 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-npx hardhat verify --network base 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-npx hardhat verify --network degen 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-...
-```
+# QuipFactory (constructor: address initialOwner, uint256 maxFee):
+forge verify-contract \
+  --rpc-url base_sepolia \
+  --chain base_sepolia \
+  --constructor-args $(cast abi-encode "constructor(address,uint256)" "$FACTORY_OWNER" "$MAX_FEE") \
+  0xE567d318819c067c26fC1E44D04beD2b4FE93BCC \
+  contracts/QuipFactory.sol:QuipFactory
 
-WOTSPlus:
-
-```
-npx hardhat verify --network mainnet 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
-npx hardhat verify --network degen 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
-...
-```
-
-QuipFactory:
-
-```
-npx hardhat verify --network base 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99 "0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9" "0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991"
-npx hardhat verify --network degen 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99 "0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9" "0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991"
-...
+# QuipPaymaster impl + proxy: similar pattern; see DEPLOYMENTS.md for the
+# canonical addresses and salts.
 ```
 
-Where `0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9` is the initial owner address.
+See `DEPLOYMENTS.md` for the full canonical address table and per-contract
+salt scheme.
 
 ## Available Networks
 
