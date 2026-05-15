@@ -29,6 +29,11 @@ import { KeyAlreadyBurnedError } from "./errors.js";
 /// The function must be deterministic per `publicSeed`: once `consume(seed)`
 /// returns successfully, every subsequent `consume(seed)` MUST throw.
 ///
+/// **Case-insensitive identity.** The `Hex` type is a hex-encoded byte string;
+/// `0xABCD…` and `0xabcd…` represent the same seed. Custom `ConsumeKeyFn`
+/// implementations MUST lowercase the seed before comparison (or otherwise
+/// normalize), or a re-cased input will silently miss the burn record.
+///
 /// User-provided. The SDK ships `createInMemoryBurnSet()` as a process-local
 /// default; production callers should back this with durable storage so a
 /// process restart cannot resurrect a burned key. See `SDK_README.md` for the
@@ -47,21 +52,26 @@ export interface InMemoryBurnSet {
   clear(): void;
 }
 
-/// Process-local burn set. Backed by a `Set<Hex>` over public seeds. Lives
-/// only for the lifetime of the JS object — a process restart loses every
-/// recorded burn.
+/// Process-local burn set. Backed by a `Set<Hex>` of lowercased public seeds.
+/// Lives only for the lifetime of the JS object — a process restart loses
+/// every recorded burn.
+///
+/// Inputs are normalized to lowercase before insertion / lookup so callers
+/// passing `0xABCD…` and `0xabcd…` collide on the same record, matching the
+/// case-insensitive identity of the underlying byte string.
 ///
 /// Wire `consume` into `new QuipSigner(secret, burnSet.consume)`. For
 /// production use, wrap the returned function (or write your own) to also
 /// persist to durable storage before returning.
 export function createInMemoryBurnSet(): InMemoryBurnSet {
-  const burned = new Set<Hex>();
+  const burned = new Set<string>();
   return {
     consume(publicSeed: Hex): void {
-      if (burned.has(publicSeed)) {
+      const normalized = publicSeed.toLowerCase();
+      if (burned.has(normalized)) {
         throw new KeyAlreadyBurnedError(publicSeed);
       }
-      burned.add(publicSeed);
+      burned.add(normalized);
     },
     clear(): void {
       burned.clear();
