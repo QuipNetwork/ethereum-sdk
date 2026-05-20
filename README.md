@@ -10,7 +10,7 @@ Active Dev Branch : deploy/testnet
 
 ---
 
-## Path Directory
+## Directory Map 
 
 | Path                   | Purpose                                                                                                     |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -22,7 +22,7 @@ Active Dev Branch : deploy/testnet
 | `test/`                | Foundry tests (Solidity).                                                                                   |
 | `src/v1/tests/`        | Jest tests (TypeScript).                                                                                    |
 | `deploy/midl_regtest/` | Hardhat deploy scripts for MIDL Bitcoin L2 only.                                                            |
-| `Makefile`             | **The canonical interface for build / test / deploy.** Every other tool is invoked through it.              |
+| `Makefile`             | The canonical interface for build / test / deploy.             |
 
 ## Documentation map
 
@@ -161,7 +161,7 @@ npm publish
 EVM deployments go through Foundry scripts in `script/`, driven by the Makefile. Each step writes a broadcast log to `broadcast/<Script>.s.sol/<chainId>/` for replay/inspection.
 
 > ⚠️ **Steps 2 and 4 are governance-sensitive.** `deploy-all-<chain>` sets the initial owners of the on-chain QuipFactory and QuipPaymaster on the target chain; `vet-impl-<chain>` requires the caller to already be the factory owner. 
-> **Contact Rick before running either on a new chain**, and double-check `FACTORY_OWNER` / `PAYMASTER_OWNER` are addresses you actually want as the long-term operators. Step 1 (bootstrap) and step 3 (impl deploy) don't require coordination — anyone with funds and `PRIVATE_KEY` can run them.
+> Double-check `FACTORY_OWNER` / `PAYMASTER_OWNER` are addresses you actually want as the long-term operators. Step 1 (bootstrap) and step 3 (impl deploy) don't require coordination — anyone with funds and `PRIVATE_KEY` can run them.
 
 ### Pipeline (per chain)
 
