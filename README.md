@@ -15,7 +15,9 @@ Active Dev Branch : deploy/testnet
 | Path                   | Purpose                                                                                                     |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `contracts/`           | Solidity contracts: `QuipFactory`, `QuipWallet`, `QuipPaymaster`, `WOTSPlusCodec`, `Deployer`.              |
+| `contracts/dummy_contracts/` | Test-only QA contracts (`DummyQuipERC20`, receivers, `DummyQuipCreate3Factory`). Not production.        |
 | `script/`              | Foundry deployment scripts (`*.s.sol`).                                                                     |
+| `script/dummy_contracts/` | Foundry scripts to deploy DummyQuip contracts on testnets.                                              |
 | `scripts/`             | TypeScript operational scripts: `release.cts`, `fundDeployer.cts`, `drainDeployer.cts`, `balance.cts`, etc. |
 | `src/v1/`              | Current TypeScript SDK. Public entry: `src/v1/index.ts`.                                                    |
 | `src/v0/`              | Legacy SDK kept for migration.                                                                              |
@@ -32,6 +34,7 @@ Active Dev Branch : deploy/testnet
 | **[SDK_README.md](SDK_README.md)**                         | You're consuming the published `@quip.network/ethereum-sdk` npm package.                                                |
 | **[INVARIANTS.md](INVARIANTS.md)**                         | You're auditing, extending, or porting the contracts/SDK. All cryptographic, on-chain, and SDK invariants in one place. |
 | **[DEPLOYMENTS.md](DEPLOYMENTS.md)**                       | Canonical contract addresses, per-chain deployment status, salt schemes.                                                |
+| **[DUMMY_DEPLOYMENTS.md](DUMMY_DEPLOYMENTS.md)**           | DummyQuip QA contract addresses on testnets (ERC-20, receivers, CREATE3 factory).                                       |
 | **[MIDL-DEPLOYMENT.md](MIDL-DEPLOYMENT.md)**               | Deploying onto MIDL (chain 777). Separate from the EVM workflow.                                                        |
 | **[MIDL-REOWN-INTEGRATION.md](MIDL-REOWN-INTEGRATION.md)** | Integrating Quip with Reown AppKit on MIDL.                                                                             |
 | **[TODO.md](TODO.md)**                                     | Roadmap and known gaps.                                                                                                 |
@@ -259,6 +262,109 @@ forge verify-contract \
 ```
 
 The above addresses are the deterministic CREATE3 addresses currently registered in `src/v1/addresses.json` (the SDK's "default" entry, shared across the chains in `SHARED_DEPLOYMENT_CHAIN_IDS`). Pre-V2 CREATE2 mainnet addresses are listed separately in [DEPLOYMENTS.md](DEPLOYMENTS.md).
+
+---
+
+## Dummy contract testnet deployment
+
+Test-only contracts in [`contracts/dummy_contracts/`](contracts/dummy_contracts/) support SDK/UI QA (ERC-20 decimals, approvals, native payments). They are deployed via [`DummyQuipCreate3Factory`](contracts/dummy_contracts/DummyQuipCreate3Factory.sol) — **not** via `QuipFactory` or `DeployAll`.
+
+### Prerequisites
+
+- Funded wallet on the target testnet (e.g. **OP Sepolia ETH** for `op_sepolia`, not just Ethereum Sepolia)
+- `PRIVATE_KEY`, `ETHERSCAN_API_KEY`, and the chain's `API_URL_*` in `.env`
+
+### Pipeline (per chain)
+
+**0. Build and test**
+
+```bash
+make build
+forge test --match-path "test/dummy_contracts/**"
+```
+
+**1. Deploy the CREATE3 factory** (once per chain)
+
+```bash
+make deploy-dummy-create3-op-sepolia
+```
+
+Copy the printed address into `.env`:
+
+```shell
+DUMMY_QUIP_CREATE3_FACTORY=0x...
+```
+
+Optional: `DUMMY_QUIP_OWNER=0x...` (defaults to `vm.addr(PRIVATE_KEY)` for `DummyQuipERC20` and `DummyQuipPaymentReceiver`).
+
+**2. Predict dummy addresses** (optional dry run)
+
+```bash
+make predict-dummy-op-sepolia
+```
+
+**3. Deploy all dummy contracts**
+
+```bash
+make deploy-dummies-op-sepolia
+```
+
+Idempotent: skips contracts that already have code at the predicted address.
+
+**4. Record addresses** in [DUMMY_DEPLOYMENTS.md](DUMMY_DEPLOYMENTS.md).
+
+### Makefile targets
+
+| Target | Chain |
+| --- | --- |
+| `deploy-dummy-create3-op-sepolia` | Optimism Sepolia |
+| `predict-dummy-op-sepolia` | Optimism Sepolia |
+| `deploy-dummies-op-sepolia` | Optimism Sepolia |
+| `deploy-dummy-create3-base-sepolia` | Base Sepolia |
+| `predict-dummy-base-sepolia` | Base Sepolia |
+| `deploy-dummies-base-sepolia` | Base Sepolia |
+| `deploy-dummy-create3-sepolia` | Ethereum Sepolia |
+| `predict-dummy-sepolia` | Ethereum Sepolia |
+| `deploy-dummies-sepolia` | Ethereum Sepolia |
+
+Generic targets (set `RPC_URL` yourself):
+
+```bash
+RPC_URL=$API_URL_OP_SEPOLIA make deploy-dummy-create3
+RPC_URL=$API_URL_OP_SEPOLIA make predict-dummies
+RPC_URL=$API_URL_OP_SEPOLIA make deploy-dummies
+```
+
+Skip Etherscan verification:
+
+```bash
+VERIFY= make deploy-dummy-create3-op-sepolia
+VERIFY= make deploy-dummies-op-sepolia
+```
+
+### Deployed contracts
+
+| Contract | Purpose |
+| --- | --- |
+| `DummyQuipERC20` (×2) | `tQ6` (6 decimals) and `tQ18` (18 decimals); public capped faucet + ungated `mint` |
+| `DummyQuipERC20Spender` | `transferFrom` / allowance tests |
+| `DummyQuipPaymentReceiver` | Native ETH receive + reference payments |
+| `DummyQuipNonPayableReceiver` | Native sends should fail |
+| `DummyQuipRevertingReceiver` | Always reverts on receive |
+
+### Example: mint 100 tQ6 via faucet (6 decimals)
+
+```bash
+# 100 tQ6 = 100 * 10^6 = 100000000 raw units
+cast send $DUMMY_QUIP_ERC20_6 \
+  "faucet(address,uint256)" \
+  $YOUR_ADDRESS \
+  100000000 \
+  --rpc-url $API_URL_OP_SEPOLIA \
+  --private-key $PRIVATE_KEY
+```
+
+Salts and cross-chain address notes are in [DUMMY_DEPLOYMENTS.md](DUMMY_DEPLOYMENTS.md).
 
 ---
 

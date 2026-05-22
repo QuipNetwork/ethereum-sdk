@@ -3,6 +3,10 @@
        deploy-impl vet-impl predict-addresses \
        predict-base-sepolia deploy-deployer-base-sepolia deploy-all-base-sepolia \
        deploy-impl-base-sepolia vet-impl-base-sepolia \
+       deploy-dummy-create3 deploy-dummies predict-dummies \
+       deploy-dummy-create3-op-sepolia predict-dummy-op-sepolia deploy-dummies-op-sepolia \
+       deploy-dummy-create3-base-sepolia predict-dummy-base-sepolia deploy-dummies-base-sepolia \
+       deploy-dummy-create3-sepolia predict-dummy-sepolia deploy-dummies-sepolia \
        fund-deployer drain-deployer balance \
        storage-layout-snapshot storage-layout-check
 
@@ -169,6 +173,55 @@ vet-impl-base-sepolia:
 	  --rpc-url base_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast
+
+# ── DummyQuip testnet deploy (QA contracts only) ────────────────
+# Separate from QuipFactory / DeployAll. Requires PRIVATE_KEY and RPC_URL.
+# After deploy-dummy-create3-*, set DUMMY_QUIP_CREATE3_FACTORY in .env.
+# Optional: DUMMY_QUIP_OWNER (defaults to vm.addr(PRIVATE_KEY)).
+# Use VERIFY= to skip Etherscan verification.
+
+VERIFY ?= --verify
+
+DUMMY_FORGE_FLAGS := --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast $(VERIFY) -vvvv
+ifneq ($(strip $(ETHERSCAN_API_KEY)),)
+DUMMY_FORGE_FLAGS += --etherscan-api-key $(ETHERSCAN_API_KEY)
+endif
+
+deploy-dummy-create3:
+	forge script script/dummy_contracts/DeployDummyQuipCreate3Factory.s.sol $(DUMMY_FORGE_FLAGS)
+
+predict-dummies:
+	forge script script/dummy_contracts/PredictDummyQuipDummies.s.sol --rpc-url $(RPC_URL) -vvvv
+
+deploy-dummies:
+	forge script script/dummy_contracts/DeployDummyQuipDummies.s.sol $(DUMMY_FORGE_FLAGS)
+
+deploy-dummy-create3-op-sepolia:
+	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummy-create3
+
+predict-dummy-op-sepolia:
+	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) predict-dummies
+
+deploy-dummies-op-sepolia:
+	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummies
+
+deploy-dummy-create3-base-sepolia:
+	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummy-create3
+
+predict-dummy-base-sepolia:
+	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) predict-dummies
+
+deploy-dummies-base-sepolia:
+	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummies
+
+deploy-dummy-create3-sepolia:
+	RPC_URL=$(API_URL_SEPOLIA) $(MAKE) deploy-dummy-create3
+
+predict-dummy-sepolia:
+	RPC_URL=$(API_URL_SEPOLIA) $(MAKE) predict-dummies
+
+deploy-dummies-sepolia:
+	RPC_URL=$(API_URL_SEPOLIA) $(MAKE) deploy-dummies
 
 # ── Utility Scripts ───────────────────────────────────────────────
 
