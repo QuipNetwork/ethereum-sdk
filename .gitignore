@@ -20,3 +20,4 @@ src/v1/bytecode.json
 .DS_Store
 
 pwCrack.ts
+.vscode/
