@@ -15,7 +15,7 @@ extra_output_files = ["abi"]
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
-"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", branch = "main" }
+"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/quip.network/hashsigs-solidity.git", branch = "main" }
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
 
 # Deploy profile: links WOTSPlus at its CREATE3 address for QuipWallet compilation.

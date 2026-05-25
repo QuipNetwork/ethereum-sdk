@@ -8,7 +8,7 @@ integrity = "964d6bbaf7ea075943d73945a3263e4d098ca7597978a296be48cbe1a792eb85"
 [[dependencies]]
 name = "@quip.network/hashsigs-solidity"
 version = "0.1.0"
-git = "https://gitlab.com/piqued/hashsigs-solidity.git"
+git = "https://gitlab.com/quip.network/hashsigs-solidity.git"
 rev = "e54234702253fcafdeff110b78d4b5b6981aad58"
 
 [[dependencies]]
