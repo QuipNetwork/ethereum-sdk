@@ -288,7 +288,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         );
         readd[0] = alicePubkey; // the SPENT key
 
-        bytes32 addMsgHash = _buildVerificationKeysMessageHash(
+        bytes32 addMsgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             rotatedPubkey,
             addNext,
@@ -316,6 +316,170 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         assertFalse(wallet.isKey(Codec.KeyType.Verification, alicePubkey));
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
         assertFalse(wallet.isKey(Codec.KeyType.Recovery, alicePubkey));
+    }
+
+    /// @dev Audit-driven regression: an `addKeys` signature for the Verification
+    ///      keyset MUST NOT validate when lifted onto `refreshKeys`. Before the
+    ///      fix the two endpoints shared a single per-kind tag, so a malicious
+    ///      frontend could swap the function selector and convert "append these
+    ///      keys" into "wipe and replace with these keys" — silently destroying
+    ///      the owner's existing verification keyset. Now the digest commits to
+    ///      `replace ∈ {false, true}` via distinct domain tags.
+    function test_signatureReplay_addVerificationCannotBeLiftedToRefresh()
+        public
+    {
+        // Seed the verification set so the destructive nature of a successful
+        // lift would be visible (cleared keys).
+        _seedVerificationKeys(3);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
+
+        // Owner builds a payload INTENDED for addKeys(Verification, ...).
+        WOTSPlus.WinternitzAddress[]
+            memory newKeys = new WOTSPlus.WinternitzAddress[](2);
+        (newKeys[0], ) = _generateKeyPair("xmode-ver-add-1");
+        (newKeys[1], ) = _generateKeyPair("xmode-ver-add-2");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "xmode-ver-add-next"
+        );
+
+        bytes32 addMsgHash = _buildAddVerificationKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            addMsgHash
+        );
+        bytes memory payload = Codec.encodeKeyManagement(
+            Codec.KeyType.Verification,
+            alicePubkey,
+            nextPq,
+            sig,
+            newKeys
+        );
+
+        // Attacker submits the same signed payload to refreshKeys. The digest
+        // the wallet rebuilds uses REFRESH_VERIFICATION_KEYS_TAG, which does
+        // not match the addKeys-domain signature.
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.refreshKeys(payload);
+
+        // Seeded keys still present; nothing was cleared.
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
+    }
+
+    function test_signatureReplay_refreshVerificationCannotBeLiftedToAdd()
+        public
+    {
+        // The mirror direction: a refreshKeys-signed payload submitted to
+        // addKeys must also revert. Less destructive than the other direction
+        // (no clear happens), but the cross-mode invariant must hold both ways.
+        _seedVerificationKeys(3);
+
+        WOTSPlus.WinternitzAddress[]
+            memory newKeys = new WOTSPlus.WinternitzAddress[](2);
+        (newKeys[0], ) = _generateKeyPair("xmode-ver-ref-1");
+        (newKeys[1], ) = _generateKeyPair("xmode-ver-ref-2");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "xmode-ver-ref-next"
+        );
+
+        bytes32 refreshMsgHash = _buildReplenishVerificationKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            refreshMsgHash
+        );
+        bytes memory payload = Codec.encodeKeyManagement(
+            Codec.KeyType.Verification,
+            alicePubkey,
+            nextPq,
+            sig,
+            newKeys
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.addKeys(payload);
+    }
+
+    function test_signatureReplay_addRecoveryCannotBeLiftedToRefresh() public {
+        // Same cross-mode property for the Recovery keyset. This is the most
+        // dangerous direction in the entire audit finding: a successful lift
+        // would wipe the owner's recovery keys and replace them with the
+        // attacker-supplied batch, handing future-recoverWallet authority to
+        // the attacker.
+        WOTSPlus.WinternitzAddress[]
+            memory newKeys = new WOTSPlus.WinternitzAddress[](1);
+        (newKeys[0], ) = _generateKeyPair("xmode-rec-add-1");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "xmode-rec-add-next"
+        );
+
+        bytes32 addMsgHash = _buildAddRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            addMsgHash
+        );
+        bytes memory payload = Codec.encodeKeyManagement(
+            Codec.KeyType.Recovery,
+            alicePubkey,
+            nextPq,
+            sig,
+            newKeys
+        );
+
+        uint256 recBefore = wallet.keyCount(Codec.KeyType.Recovery);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.refreshKeys(payload);
+
+        // Recovery keyset untouched.
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), recBefore);
+    }
+
+    function test_signatureReplay_refreshRecoveryCannotBeLiftedToAdd() public {
+        WOTSPlus.WinternitzAddress[]
+            memory newKeys = new WOTSPlus.WinternitzAddress[](1);
+        (newKeys[0], ) = _generateKeyPair("xmode-rec-ref-1");
+        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
+            "xmode-rec-ref-next"
+        );
+
+        bytes32 refreshMsgHash = _buildReplenishRecoveryKeysMessageHash(
+            address(wallet),
+            alicePubkey,
+            nextPq,
+            newKeys
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(
+            alicePrivateKey,
+            refreshMsgHash
+        );
+        bytes memory payload = Codec.encodeKeyManagement(
+            Codec.KeyType.Recovery,
+            alicePubkey,
+            nextPq,
+            sig,
+            newKeys
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        wallet.addKeys(payload);
     }
 
     /// @dev A signature for a pure transfer (empty data) cannot be used for a

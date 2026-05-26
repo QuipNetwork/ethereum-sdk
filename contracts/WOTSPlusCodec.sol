@@ -155,30 +155,49 @@ library WOTSPlusCodec {
     // Cross-type keyset replay is the subtle case. `addKeys` and `refreshKeys`
     // both take the same `(currentKey, nextKey, pqSig, newKeys[])` payload,
     // and all three keysets (Transaction, Recovery, Verification) share the
-    // `_addKeys` / `_rotateKeys` primitives. Without per-kind domain
-    // separation, a signature authorizing `addKeys(Recovery, payload)` would
-    // hash to the same digest as `addKeys(Verification, payload)` — an
-    // attacker who observed one could replay the signature against the other
-    // keyset and silently install attacker-controlled keys into a set the
-    // owner never intended to modify.
+    // `_addKeys` / `_rotateKeys` primitives. Two replay surfaces exist and
+    // must each be domain-separated:
     //
-    // The three `*_TAG` constants below (ADD_TRANSACTION_KEYS_TAG,
-    // KEY_MGMT_TAG for Recovery, VERIFICATION_KEYS_TAG for Verification) are
-    // what prevent that. `keysetDigest(KeyType, ...)` selects the tag from the
-    // `kind` argument so the signature preimage includes a kind-specific tag.
-    // A signature over one tag does not verify against any of the other two.
-    // Do not unify these tags — the distinct tags are load-bearing security,
-    // not cosmetic.
+    //   (a) Cross-KIND replay — an `addKeys(Recovery, payload)` signature
+    //       cannot verify against `addKeys(Verification, payload)`.
+    //   (b) Cross-MODE replay — an `addKeys(Recovery, payload)` signature
+    //       cannot verify against `refreshKeys(Recovery, payload)`. This is
+    //       critical: refresh CLEARS the target keyset before installing,
+    //       so an append-intent signature lifted onto refresh wipes the
+    //       owner's existing keys and installs only the attacker batch.
+    //
+    // The five `*_TAG` constants below cover the cross-product of
+    // (kind ∈ {Transaction, Recovery, Verification}, mode ∈ {add, refresh}).
+    // refresh-Transaction is contract-forbidden (`RefreshTransactionForbidden`
+    // in `_manageKeys`), so only ADD_TRANSACTION_KEYS_TAG exists for that
+    // kind. `keysetDigest(KeyType, bool replace, ...)` selects the tag from
+    // (`kind`, `replace`) so the signature preimage includes both axes.
+    // Do not unify these tags — each distinct tag is load-bearing security.
     bytes32 internal constant EXECUTE_TAG = keccak256("quip.digest.execute");
-    /// @dev Recovery-keyset domain tag. Selected by `keysetDigest` when
-    ///      `kind == KeyType.Recovery`.
-    bytes32 internal constant KEY_MGMT_TAG =
-        keccak256("quip.digest.keyManagement");
-    /// @dev Transaction-keyset domain tag. Selected by `keysetDigest` when
-    ///      `kind == KeyType.Transaction`.
-    ///      `refreshKeys(Transaction, …)` is forbidden at the contract level.
+    /// @dev Transaction-keyset add tag. `refreshKeys(Transaction, …)` is
+    ///      forbidden at the contract level, so there is no corresponding
+    ///      REFRESH_TRANSACTION tag.
     bytes32 internal constant ADD_TRANSACTION_KEYS_TAG =
         keccak256("quip.digest.addTransactionKeys");
+    /// @dev Recovery-keyset add tag. Selected by `keysetDigest` when
+    ///      `kind == KeyType.Recovery && replace == false`.
+    bytes32 internal constant ADD_RECOVERY_KEYS_TAG =
+        keccak256("quip.digest.addRecoveryKeys");
+    /// @dev Recovery-keyset refresh tag. Selected by `keysetDigest` when
+    ///      `kind == KeyType.Recovery && replace == true`. Distinct from
+    ///      `ADD_RECOVERY_KEYS_TAG` so an append-intent signature cannot be
+    ///      lifted onto `refreshKeys`, which would wipe the recovery keyset.
+    bytes32 internal constant REFRESH_RECOVERY_KEYS_TAG =
+        keccak256("quip.digest.refreshRecoveryKeys");
+    /// @dev Verification-keyset add tag. Selected by `keysetDigest` when
+    ///      `kind == KeyType.Verification && replace == false`.
+    bytes32 internal constant ADD_VERIFICATION_KEYS_TAG =
+        keccak256("quip.digest.addVerificationKeys");
+    /// @dev Verification-keyset refresh tag. Selected by `keysetDigest` when
+    ///      `kind == KeyType.Verification && replace == true`. See
+    ///      `REFRESH_RECOVERY_KEYS_TAG` for the cross-mode replay rationale.
+    bytes32 internal constant REFRESH_VERIFICATION_KEYS_TAG =
+        keccak256("quip.digest.refreshVerificationKeys");
     bytes32 internal constant UPGRADE_TAG = keccak256("quip.digest.upgrade");
     bytes32 internal constant VERIFICATION_TAG =
         keccak256("quip.digest.verification");
@@ -192,10 +211,6 @@ library WOTSPlusCodec {
         keccak256("quip.digest.transferOwnership");
     bytes32 internal constant COMPLETE_OWNERSHIP_HANDOVER_TAG =
         keccak256("quip.digest.completeOwnershipHandover");
-    /// @dev Verification-keyset domain tag. Selected by `keysetDigest` when
-    ///      `kind == KeyType.Verification`.
-    bytes32 internal constant VERIFICATION_KEYS_TAG =
-        keccak256("quip.digest.verificationKeys");
     /// @dev Per-kind domain tags for `replaceKeyAtDigest`. Distinct tags prevent a
     ///      signature authorizing `replaceKeyAt(Transaction, i, newKey)` from being
     ///      lifted and replayed against `replaceKeyAt(Recovery, ...)` or
@@ -1050,14 +1065,21 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev Returns the digest that `addKeys` / `refreshKeys` sign over. The domain
-    ///      tag is selected per `kind` so a signature authorizing one keyset cannot
-    ///      be replayed against another. Equivalent to:
-    ///        keccak256(abi.encode(tag(kind), chainId, wallet, s1, h1, s2, h2, keysHash))
-    ///      where `tag` maps Transaction → `ADD_TRANSACTION_KEYS_TAG`,
-    ///      Verification → `VERIFICATION_KEYS_TAG`, Recovery → `KEY_MGMT_TAG`.
+    /// @dev Returns the digest that `addKeys` / `refreshKeys` sign over. The
+    ///      domain tag is selected per `(kind, replace)` so a signature
+    ///      authorizing one keyset/mode cannot be replayed against another.
+    ///      For `kind == KeyType.Transaction`, `replace` is ignored since
+    ///      `refreshKeys(Transaction, …)` is forbidden at the contract level
+    ///      and only `ADD_TRANSACTION_KEYS_TAG` is defined.
+    ///      Tag selection:
+    ///        Transaction, *       → ADD_TRANSACTION_KEYS_TAG
+    ///        Recovery, replace=0  → ADD_RECOVERY_KEYS_TAG
+    ///        Recovery, replace=1  → REFRESH_RECOVERY_KEYS_TAG
+    ///        Verification, replace=0 → ADD_VERIFICATION_KEYS_TAG
+    ///        Verification, replace=1 → REFRESH_VERIFICATION_KEYS_TAG
     function keysetDigest(
         KeyType kind,
+        bool replace,
         address wallet,
         uint256 chainId,
         bytes32 s1,
@@ -1066,11 +1088,18 @@ library WOTSPlusCodec {
         bytes32 h2,
         bytes32 keysHash
     ) internal pure returns (bytes32) {
-        bytes32 tag = kind == KeyType.Transaction
-            ? ADD_TRANSACTION_KEYS_TAG
-            : kind == KeyType.Verification
-                ? VERIFICATION_KEYS_TAG
-                : KEY_MGMT_TAG;
+        bytes32 tag;
+        if (kind == KeyType.Transaction) {
+            tag = ADD_TRANSACTION_KEYS_TAG;
+        } else if (kind == KeyType.Verification) {
+            tag = replace
+                ? REFRESH_VERIFICATION_KEYS_TAG
+                : ADD_VERIFICATION_KEYS_TAG;
+        } else {
+            tag = replace
+                ? REFRESH_RECOVERY_KEYS_TAG
+                : ADD_RECOVERY_KEYS_TAG;
+        }
         return
             EfficientHashLib.hash(
                 tag,

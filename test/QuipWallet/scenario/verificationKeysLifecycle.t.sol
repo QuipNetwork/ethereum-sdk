@@ -119,7 +119,7 @@ contract QuipWallet_scenario_verificationKeysLifecycle is QuipWalletTest {
             WOTSPlus.WinternitzAddress memory nextPq,
             bytes32 nextKey
         ) = _generateKeyPair("lifecycle-next-3");
-        bytes32 digest = _buildVerificationKeysMessageHash(
+        bytes32 digest = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,

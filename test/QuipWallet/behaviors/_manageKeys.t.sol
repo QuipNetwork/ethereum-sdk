@@ -61,6 +61,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
 
     function _encodePayload(
         Codec.KeyType kind,
+        bool replace,
         WOTSPlus.WinternitzAddress memory cur,
         bytes32 curPriv,
         WOTSPlus.WinternitzAddress memory next,
@@ -69,6 +70,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
         bytes32 digest = Codec.keysetDigest(
             kind,
+            replace,
             address(harnessProxy),
             block.chainid,
             cur.publicSeed,
@@ -91,6 +93,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory keys = _mkKeys(0x1000, 2);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Verification,
+            false,
             currentKey,
             currentPriv,
             next,
@@ -115,6 +118,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory keys = _mkKeys(0x2000, 2);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Transaction,
+            false,
             currentKey,
             currentPriv,
             next,
@@ -139,6 +143,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory keys = _mkKeys(0x3000, 3);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Verification,
+            false,
             currentKey,
             currentPriv,
             next,
@@ -174,6 +179,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
             WOTSPlus.WinternitzAddress[] memory seed = _mkKeys(0x4000, 1);
             bytes memory seedPayload = _encodePayload(
                 Codec.KeyType.Verification,
+                false,
                 currentKey,
                 currentPriv,
                 nextSeed,
@@ -192,6 +198,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory fresh = _mkKeys(0x5000, 2);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Verification,
+            true,
             currentKey,
             currentPriv,
             next,
@@ -213,6 +220,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory fresh = _mkKeys(0x6000, 1);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Verification,
+            true,
             currentKey,
             currentPriv,
             next,
@@ -244,6 +252,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory keys = _mkKeys(0x7000, 1);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Transaction,
+            true,
             currentKey,
             currentPriv,
             next,
@@ -264,6 +273,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory empty;
         bytes memory payload = _encodePayload(
             Codec.KeyType.Verification,
+            false,
             currentKey,
             currentPriv,
             next,
@@ -284,6 +294,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory empty;
         bytes memory payload = _encodePayload(
             Codec.KeyType.Recovery,
+            true,
             currentKey,
             currentPriv,
             next,
@@ -306,6 +317,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory keys = _mkKeys(0x8000, 1);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Verification,
+            false,
             stray,
             strayPriv,
             next,
@@ -351,6 +363,7 @@ contract QuipWallet__manageKeys is QuipWalletTest {
         dup[1] = _mkKey(0xa000);
         bytes memory payload = _encodePayload(
             Codec.KeyType.Verification,
+            false,
             currentKey,
             currentPriv,
             next,

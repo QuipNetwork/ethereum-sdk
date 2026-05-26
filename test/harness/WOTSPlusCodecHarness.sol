@@ -270,6 +270,7 @@ contract WOTSPlusCodecHarness {
 
     function exposed_keysetDigest(
         Codec.KeyType kind,
+        bool replace,
         address wallet,
         uint256 chainId,
         bytes32 s1,
@@ -281,6 +282,7 @@ contract WOTSPlusCodecHarness {
         return
             Codec.keysetDigest(
                 kind,
+                replace,
                 wallet,
                 chainId,
                 s1,

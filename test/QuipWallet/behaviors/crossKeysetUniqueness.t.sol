@@ -51,7 +51,7 @@ contract QuipWallet_crossKeysetUniqueness is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = WOTSPlus.generateKeyPair(
             nextSeed
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -134,7 +134,7 @@ contract QuipWallet_crossKeysetUniqueness is QuipWalletTest {
             WOTSPlus.WinternitzAddress memory nextPq,
             bytes32 nextPriv
         ) = WOTSPlus.generateKeyPair(keccak256("vk-seed-next"));
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,

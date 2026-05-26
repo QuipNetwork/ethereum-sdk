@@ -127,6 +127,7 @@ contract QuipWalletTest is QuipFactoryTest {
         return
             Codec.keysetDigest(
                 Codec.KeyType.Recovery,
+                false, // replace = false (append mode for addKeys)
                 wallet_,
                 block.chainid,
                 currentPq.publicSeed,
@@ -146,6 +147,7 @@ contract QuipWalletTest is QuipFactoryTest {
         return
             Codec.keysetDigest(
                 Codec.KeyType.Recovery,
+                true, // replace = true (clear-then-replace mode for refreshKeys)
                 wallet_,
                 block.chainid,
                 currentPq.publicSeed,
@@ -196,7 +198,7 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
-    function _buildVerificationKeysMessageHash(
+    function _buildAddVerificationKeysMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
         WOTSPlus.WinternitzAddress memory nextPq,
@@ -205,6 +207,27 @@ contract QuipWalletTest is QuipFactoryTest {
         return
             Codec.keysetDigest(
                 Codec.KeyType.Verification,
+                false, // replace = false (append mode for addKeys)
+                wallet_,
+                block.chainid,
+                currentPq.publicSeed,
+                currentPq.publicKeyHash,
+                nextPq.publicSeed,
+                nextPq.publicKeyHash,
+                keccak256(abi.encode(newKeys))
+            );
+    }
+
+    function _buildReplenishVerificationKeysMessageHash(
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory nextPq,
+        WOTSPlus.WinternitzAddress[] memory newKeys
+    ) internal view returns (bytes32) {
+        return
+            Codec.keysetDigest(
+                Codec.KeyType.Verification,
+                true, // replace = true (clear-then-replace mode for refreshKeys)
                 wallet_,
                 block.chainid,
                 currentPq.publicSeed,
@@ -283,7 +306,7 @@ contract QuipWalletTest is QuipFactoryTest {
                 )
             );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
