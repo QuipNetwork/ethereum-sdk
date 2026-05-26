@@ -384,7 +384,7 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
     }
 
     /// @dev `newOwnershipKey` collides with an active transaction key
-    ///      (still in storage at the `_enforceUnusedKey(newOwnershipKey)`
+    ///      (still in storage at the `_enforceUnspentKey(newOwnershipKey)`
     ///      check, before the txn keyset is cleared) → `KeyInUse`.
     function test_transferOwnership_revertsWhen_newOwnershipKeyInTxnSet()
         public
@@ -403,7 +403,7 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
     }
 
     /// @dev `newDisasterKey` collides with the recovery keyset (still in
-    ///      storage when `_enforceUnusedKey(newDisasterKey)` runs).
+    ///      storage when `_enforceUnspentKey(newDisasterKey)` runs).
     function test_transferOwnership_revertsWhen_newDisasterKeyInRecoverySet()
         public
     {

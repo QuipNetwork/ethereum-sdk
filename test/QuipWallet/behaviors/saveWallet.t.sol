@@ -270,7 +270,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
     // ── Cross-set key reuse (KeyInUse) ───────────────────────────────
 
     /// @dev `newDisasterKey == ownershipKey`. Caught by
-    ///      `_enforceUnusedKey(newDisasterKey)` BEFORE WOTS+ verify, since the
+    ///      `_enforceUnspentKey(newDisasterKey)` BEFORE WOTS+ verify, since the
     ///      ownership slot is still populated at that point.
     function test_saveWallet_revertsWhen_newDisasterKeyEqualsOwnershipKey()
         public
@@ -292,7 +292,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
 
     /// @dev A new transaction key collides with the just-installed
     ///      `newDisasterKey`. Caught by the txn loop's `_safeAddKey` →
-    ///      `_enforceUnusedKey` → `KeyInUse`.
+    ///      `_enforceUnspentKey` → `KeyInUse`.
     function test_saveWallet_revertsWhen_newTxnKeyEqualsNewDisasterKey()
         public
     {

@@ -226,14 +226,33 @@ contract QuipWallet__addKeys is QuipWalletTest {
         }
     }
 
-    // After a clear the underlying root/position slots should remain usable;
-    // re-adding a prior element must succeed without reverting.
-    function test_exposed_clearKeys_canReaddAfter() public {
+    // After a clear, re-adding the SAME (previously-installed) keys must
+    // revert `KeyInUse` — the monotonic `isKeySpent` index keeps every
+    // historically-seen WOTS+ public key permanently retired regardless of
+    // whether it currently lives in any keyset. This is the wallet-side
+    // burn-on-exposure invariant.
+    function test_exposed_clearKeys_revertsWhenReadding() public {
         WOTSPlus.WinternitzAddress[] memory keys = _makeKeys(0xd00d, 2);
         bare.exposed_addKeys(HarnessKeyset.Verification, keys);
         bare.exposed_clearKeys(HarnessKeyset.Verification);
         assertEq(bare.keyCount(Codec.KeyType.Verification), 0);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
         bare.exposed_addKeys(HarnessKeyset.Verification, keys);
+    }
+
+    // After a clear, the underlying root/position slots must remain usable
+    // for FRESH keys (the storage substrate isn't poisoned by the clear).
+    // Distinct from the "no re-add" property above: this is purely a
+    // structural-state check on the keyset library.
+    function test_exposed_clearKeys_canAddFreshAfter() public {
+        WOTSPlus.WinternitzAddress[] memory keys = _makeKeys(0xd00d, 2);
+        bare.exposed_addKeys(HarnessKeyset.Verification, keys);
+        bare.exposed_clearKeys(HarnessKeyset.Verification);
+        assertEq(bare.keyCount(Codec.KeyType.Verification), 0);
+
+        WOTSPlus.WinternitzAddress[] memory fresh = _makeKeys(0xd0d0, 2);
+        bare.exposed_addKeys(HarnessKeyset.Verification, fresh);
         assertEq(bare.keyCount(Codec.KeyType.Verification), 2);
     }
 

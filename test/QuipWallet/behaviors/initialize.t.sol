@@ -370,7 +370,7 @@ contract QuipWallet_initialize is QuipWalletTest {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     // A recovery key collides with a transaction key. The txn loop installs
-    // first; the recovery loop's `_safeAddKey` → `_enforceUnusedKey` sees the
+    // first; the recovery loop's `_safeAddKey` → `_enforceUnspentKey` sees the
     // key already in `transactionKeys` and reverts `KeyInUse`.
     function test_initialize_revertsWhen_recoveryKeyAlsoInTxnSet() public {
         QuipWallet freshWallet = _deployFreshProxy("xkey-rec-in-txn");
@@ -392,7 +392,7 @@ contract QuipWallet_initialize is QuipWalletTest {
     }
 
     // A txn key matches the disaster recovery key. Disaster is stored before
-    // either keyset loop runs, so the txn loop's `_enforceUnusedKey` sees
+    // either keyset loop runs, so the txn loop's `_enforceUnspentKey` sees
     // the disaster slot match and reverts.
     function test_initialize_revertsWhen_txnKeyEqualsDisasterKey() public {
         QuipWallet freshWallet = _deployFreshProxy("xkey-txn-eq-disaster");
@@ -490,7 +490,7 @@ contract QuipWallet_initialize is QuipWalletTest {
     }
 
     // ownershipKey == disasterRecoveryKey. Disaster is enforced + stored
-    // first; the next call to `_enforceUnusedKey(ownershipKey)` sees the
+    // first; the next call to `_enforceUnspentKey(ownershipKey)` sees the
     // disaster slot match and reverts before any keyset loop runs.
     function test_initialize_revertsWhen_ownershipKeyEqualsDisasterKey()
         public

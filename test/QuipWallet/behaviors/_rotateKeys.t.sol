@@ -189,7 +189,7 @@ contract QuipWallet__rotateKeys is QuipWalletTest {
     }
 
     // After the safe-remove of `current`, `_safeAddKey(next)` runs the global
-    // `_enforceUnusedKey(next)` pre-check. With `next` still in the recovery
+    // `_enforceUnspentKey(next)` pre-check. With `next` still in the recovery
     // set (it was a different existing entry), the pre-check reverts `KeyInUse`
     // before `set.add` runs.
     function test_exposed_rotateKeys_revertsWhen_nextAlreadyPresent() public {

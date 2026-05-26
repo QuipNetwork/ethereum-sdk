@@ -54,6 +54,13 @@ library WOTSPlusStorage {
         /// @dev Enumerable set of Winternitz public keys authorized to sign ERC-1271 messages.
         ///      Managed post-init via transaction-key-authenticated calls. Capacity: `MAX_KEYS`.
         Keyset.WinternitzAddressSet verificationKeys;
+        /// @dev Monotonic burn index for every WOTS+ key this wallet has ever installed in
+        ///      any slot (keysets or singles). Keyed by `hash(publicSeed, publicKeyHash)`.
+        ///      Set on install, NEVER cleared on removal — WOTS+ is a one-time signature
+        ///      scheme, so any key that has appeared in a live slot must be assumed to have
+        ///      its chain material revealed and can never be re-installed. Mirrors the
+        ///      paymaster's `verifierKeyUsed` index for parity across the system.
+        mapping(bytes32 keyHash => bool spent) isKeySpent;
     }
 
     /// @dev `keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.wotsplus")) - 1))

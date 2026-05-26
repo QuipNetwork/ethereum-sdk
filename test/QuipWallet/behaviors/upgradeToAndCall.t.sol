@@ -332,7 +332,7 @@ contract QuipWallet_upgradeToAndCall is QuipWalletTest {
     // ── Cross-set: nextKey collides with another keyset / single ──────
     //
     // The auth rotation goes through `_verifyAndRotate(transactionKeys, ...)`,
-    // which runs `_enforceUnusedKey(nextKey)` against ALL keysets and both
+    // which runs `_enforceUnspentKey(nextKey)` against ALL keysets and both
     // single keys. Each of these tests stages a cross-set collision and
     // asserts `KeyInUse` before WOTS+ verify.
 

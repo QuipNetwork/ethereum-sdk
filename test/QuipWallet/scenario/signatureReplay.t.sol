@@ -181,7 +181,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
 
     /// @dev Two distinct auth keys X and Y signing payloads that share the
     ///      SAME nextKey N: the first lands and installs N; the second reverts
-    ///      with `KeyInUse` because `_safeAddKey(N)` runs `_enforceUnusedKey`
+    ///      with `KeyInUse` because `_safeAddKey(N)` runs `_enforceUnspentKey`
     ///      against the fully-updated keyset. Locks down the cross-tx
     ///      uniqueness check so a future refactor relaxing the "no key already
     ///      present" rule (e.g. a recently-rotated grace period) cannot
@@ -215,7 +215,7 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextN));
 
-        // Second payload reverts at `_safeAddKey(N)` → `_enforceUnusedKey` →
+        // Second payload reverts at `_safeAddKey(N)` → `_enforceUnspentKey` →
         // `KeyInUse`. The earlier `_safeRemoveKey(Y)` is rolled back.
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
@@ -245,6 +245,77 @@ contract QuipWallet_signatureReplay is QuipWalletTest {
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, msgHash);
         return Codec.encodeExecute(currentKey, nextKey, sig, BOB, value, "");
+    }
+
+    /// @dev Audit-driven regression: the monotonic burn index forbids
+    ///      re-installing a key that has ever lived in any keyset, even after
+    ///      it was legitimately rotated out. The auditor's attack scenario is:
+    ///      (1) the owner spends transactionKey A via `execute`, rotating to B,
+    ///      revealing A's WOTS+ chain material on-chain; (2) later the owner
+    ///      (mistakenly or under social-engineering pressure) tries to install
+    ///      A back into the transaction keyset via `addKeys`; (3) an attacker
+    ///      who saw A's revealed material then replays the original payload.
+    ///      The fix burns A permanently in `isKeySpent`, so step (2) reverts and
+    ///      step (3) never has a foothold.
+    function test_signatureReplay_revertsWhen_addingSpentKeyBack() public {
+        // Step 1: spend alicePubkey by rotating it out.
+        (
+            WOTSPlus.WinternitzAddress memory rotatedPubkey,
+            bytes32 rotatedPriv
+        ) = _generateKeyPair("audit-burn-rotated");
+        bytes memory rotatePayload = _signedTransferPayload(
+            alicePubkey,
+            alicePrivateKey,
+            rotatedPubkey,
+            0
+        );
+        vm.prank(ALICE);
+        wallet.execute(rotatePayload);
+
+        // The spent key is no longer in the transaction set...
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
+
+        // Step 2: owner attempts to re-install the spent key via addKeys to
+        // the Verification keyset (cross-keyset reuse — the most dangerous
+        // form of the attack). The transaction-key rotation that authenticates
+        // addKeys uses the now-active rotated key.
+        (
+            WOTSPlus.WinternitzAddress memory addNext,
+
+        ) = _generateKeyPair("audit-burn-add-next");
+        WOTSPlus.WinternitzAddress[] memory readd = new WOTSPlus.WinternitzAddress[](
+            1
+        );
+        readd[0] = alicePubkey; // the SPENT key
+
+        bytes32 addMsgHash = _buildVerificationKeysMessageHash(
+            address(wallet),
+            rotatedPubkey,
+            addNext,
+            readd
+        );
+        WOTSPlus.WinternitzElements memory addSig = _sign(
+            rotatedPriv,
+            addMsgHash
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.addKeys(
+            Codec.encodeKeyManagement(
+                Codec.KeyType.Verification,
+                rotatedPubkey,
+                addNext,
+                addSig,
+                readd
+            )
+        );
+
+        // And just to nail it down: the spent key is still NOT in any live
+        // slot, so the failed install didn't accidentally land partway.
+        assertFalse(wallet.isKey(Codec.KeyType.Verification, alicePubkey));
+        assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
+        assertFalse(wallet.isKey(Codec.KeyType.Recovery, alicePubkey));
     }
 
     /// @dev A signature for a pure transfer (empty data) cannot be used for a
