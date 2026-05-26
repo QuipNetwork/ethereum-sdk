@@ -18,6 +18,14 @@ contract Integration_sponsoredTransaction is IntegrationBase {
     bytes32 private constant _PAYMASTER_APPROVE_TAG =
         keccak256("quip.digest.paymasterApprove");
 
+    /// @dev Offset into paymasterAndData where the WOTS+ signature begins.
+    ///      Must match QuipPaymaster._PAYMASTER_SIG_OFFSET.
+    uint256 private constant _PAYMASTER_SIG_OFFSET = 128;
+
+    /// @dev Default paymaster gas limits used for sponsorship in this test.
+    uint128 private constant _PM_VERIFICATION_GAS = 5_000_000;
+    uint128 private constant _PM_POSTOP_GAS = 50_000;
+
     /// @dev Paymaster's WOTS+ verifier key for the wallet.
     WOTSPlus.WinternitzAddress public verifierPubkey;
     bytes32 public verifierPrivateKey;
@@ -48,80 +56,102 @@ contract Integration_sponsoredTransaction is IntegrationBase {
 
     // ── Paymaster data helpers ──────────────────────────────────────
 
-    /// @dev Build the `paymasterAndData` field for a sponsored UserOp.
-    ///      Layout: [0:20) paymaster address
+    /// @dev Build the 128-byte bindable prefix of paymasterAndData.
+    ///      Layout: [0:20)  paymaster address
     ///              [20:36) paymasterVerificationGasLimit (uint128)
     ///              [36:52) paymasterPostOpGasLimit (uint128)
-    ///              --- paymaster custom data starts at offset 52 ---
-    ///              [52:58)   validUntil (uint48)
-    ///              [58:64)   validAfter (uint48)
-    ///              [64:128)  nextVerifier (publicSeed + publicKeyHash)
-    ///              [128:2272) WOTS+ signature (67 × 32 bytes)
-    function _buildPaymasterAndData(
-        address sender,
-        uint256 nonce,
-        bytes memory callData_,
-        WOTSPlus.WinternitzAddress memory currentVerifier,
-        bytes32 currentVerifierPriv,
+    ///              [52:58) validUntil (uint48)
+    ///              [58:64) validAfter (uint48)
+    ///              [64:128) nextVerifier (publicSeed + publicKeyHash)
+    function _paymasterAndDataPrefix(
         WOTSPlus.WinternitzAddress memory nextVerifier,
         uint48 validUntil,
         uint48 validAfter
     ) internal view returns (bytes memory) {
-        // Build the domain-tagged digest from UserOp fields (not userOpHash).
-        bytes32 opCommitment = EfficientHashLib.hash(
-            bytes32(uint256(uint160(sender))),
-            bytes32(nonce),
-            EfficientHashLib.hash(callData_)
-        );
+        return
+            abi.encodePacked(
+                address(paymaster),
+                _PM_VERIFICATION_GAS,
+                _PM_POSTOP_GAS,
+                validUntil,
+                validAfter,
+                nextVerifier.publicSeed,
+                nextVerifier.publicKeyHash
+            );
+    }
 
+    /// @dev Compute the contract's userOpBindingHash. Must stay in lockstep
+    ///      with `QuipPaymaster._userOpBindingHash`.
+    function _userOpBindingHash(
+        PackedUserOperation memory userOp
+    ) internal pure returns (bytes32) {
+        bytes memory pmdPrefix = new bytes(_PAYMASTER_SIG_OFFSET);
+        for (uint256 i = 0; i < _PAYMASTER_SIG_OFFSET; i++) {
+            pmdPrefix[i] = userOp.paymasterAndData[i];
+        }
+        return
+            EfficientHashLib.hash(
+                bytes32(uint256(uint160(userOp.sender))),
+                bytes32(userOp.nonce),
+                EfficientHashLib.hash(userOp.initCode),
+                EfficientHashLib.hash(userOp.callData),
+                userOp.accountGasLimits,
+                bytes32(userOp.preVerificationGas),
+                userOp.gasFees,
+                EfficientHashLib.hash(pmdPrefix)
+            );
+    }
+
+    /// @dev Sign a paymaster approval for `userOp` and return the full
+    ///      paymasterAndData (prefix + WOTS+ sig). `userOp` must already have
+    ///      its envelope finalized (sender, nonce, callData, initCode, gas
+    ///      fields, and `paymasterAndData` set to the desired prefix + zero
+    ///      placeholder for the sig region).
+    function _signPaymasterApproval(
+        PackedUserOperation memory userOp,
+        WOTSPlus.WinternitzAddress memory currentVerifier,
+        bytes32 currentVerifierPriv
+    ) internal view returns (bytes memory) {
         bytes32 digest = EfficientHashLib.hash(
             _PAYMASTER_APPROVE_TAG,
             bytes32(block.chainid),
             bytes32(uint256(uint160(address(paymaster)))),
             currentVerifier.publicSeed,
             currentVerifier.publicKeyHash,
-            nextVerifier.publicSeed,
-            nextVerifier.publicKeyHash,
-            opCommitment
+            _userOpBindingHash(userOp)
         );
-
         WOTSPlus.WinternitzElements memory sig = _sign(
             currentVerifierPriv,
             digest
         );
-
-        return
-            abi.encodePacked(
-                address(paymaster),
-                uint128(5_000_000), // paymasterVerificationGasLimit
-                uint128(50_000), // paymasterPostOpGasLimit
-                validUntil,
-                validAfter,
-                nextVerifier.publicSeed,
-                nextVerifier.publicKeyHash,
-                sig.elements
-            );
+        bytes memory prefix = new bytes(_PAYMASTER_SIG_OFFSET);
+        for (uint256 i = 0; i < _PAYMASTER_SIG_OFFSET; i++) {
+            prefix[i] = userOp.paymasterAndData[i];
+        }
+        return abi.encodePacked(prefix, sig.elements);
     }
 
-    /// @dev Default-window wrapper: signs with the active verifier, validUntil
-    ///      = now + 1h, validAfter = 0.
-    function _buildPaymasterAndData(
-        address sender,
-        uint256 nonce,
-        bytes memory callData_,
-        WOTSPlus.WinternitzAddress memory nextVerifier
-    ) internal view returns (bytes memory) {
-        return
-            _buildPaymasterAndData(
-                sender,
-                nonce,
-                callData_,
-                verifierPubkey,
-                verifierPrivateKey,
-                nextVerifier,
-                uint48(block.timestamp + 1 hours),
-                uint48(0)
-            );
+    /// @dev Stage paymasterAndData with the bindable prefix + zero sig
+    ///      placeholder, compute the binding hash, sign with the active
+    ///      verifier key, and patch the real sig in. Convenience wrapper
+    ///      around `_signPaymasterApproval` for call sites that build the
+    ///      userOp inline.
+    function _attachPaymasterApproval(
+        PackedUserOperation memory userOp,
+        WOTSPlus.WinternitzAddress memory nextVerifier,
+        uint48 validUntil,
+        uint48 validAfter
+    ) internal view returns (PackedUserOperation memory) {
+        userOp.paymasterAndData = abi.encodePacked(
+            _paymasterAndDataPrefix(nextVerifier, validUntil, validAfter),
+            new bytes(2144)
+        );
+        userOp.paymasterAndData = _signPaymasterApproval(
+            userOp,
+            verifierPubkey,
+            verifierPrivateKey
+        );
+        return userOp;
     }
 
     /// @dev Build a sponsored UserOp: wallet signature + paymaster data.
@@ -158,12 +188,20 @@ contract Integration_sponsoredTransaction is IntegrationBase {
             signature: ""
         });
 
-        // Paymaster signature is independent of paymasterAndData — no circular dependency.
-        userOp.paymasterAndData = _buildPaymasterAndData(
-            address(wallet),
-            0,
-            callData_,
-            nextVerifier
+        // Stage the bindable prefix in paymasterAndData (with a zero placeholder
+        // for the sig region) so the binding hash sees the final byte layout.
+        userOp.paymasterAndData = abi.encodePacked(
+            _paymasterAndDataPrefix(
+                nextVerifier,
+                uint48(block.timestamp + 1 hours),
+                uint48(0)
+            ),
+            new bytes(2144)
+        );
+        userOp.paymasterAndData = _signPaymasterApproval(
+            userOp,
+            verifierPubkey,
+            verifierPrivateKey
         );
 
         // Compute userOpHash (now stable) and sign the wallet's portion.
@@ -369,18 +407,15 @@ contract Integration_sponsoredTransaction is IntegrationBase {
             ),
             preVerificationGas: 100_000,
             gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
-            paymasterAndData: _buildPaymasterAndData(
-                address(wallet),
-                0,
-                callData_,
-                verifierPubkey,
-                verifierPrivateKey,
-                nextVerifier,
-                uint48(block.timestamp + 1 days), // validUntil > validAfter
-                uint48(block.timestamp + 1 hours) // validAfter in future
-            ),
+            paymasterAndData: "",
             signature: ""
         });
+        userOp = _attachPaymasterApproval(
+            userOp,
+            nextVerifier,
+            uint48(block.timestamp + 1 days), // validUntil > validAfter
+            uint48(block.timestamp + 1 hours) // validAfter in future
+        );
 
         bytes32 userOpHash = IEntryPointExt(ENTRY_POINT).getUserOpHash(userOp);
         bytes32 walletDigest = Codec.erc4337ExecuteDigest(
@@ -441,18 +476,15 @@ contract Integration_sponsoredTransaction is IntegrationBase {
             ),
             preVerificationGas: 100_000,
             gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
-            paymasterAndData: _buildPaymasterAndData(
-                address(wallet),
-                0,
-                callData_,
-                verifierPubkey,
-                verifierPrivateKey,
-                nextVerifier,
-                uint48(block.timestamp - 1), // validUntil in the past
-                uint48(0)
-            ),
+            paymasterAndData: "",
             signature: ""
         });
+        userOp = _attachPaymasterApproval(
+            userOp,
+            nextVerifier,
+            uint48(block.timestamp - 1), // validUntil in the past
+            uint48(0)
+        );
 
         bytes32 userOpHash = IEntryPointExt(ENTRY_POINT).getUserOpHash(userOp);
         bytes32 walletDigest = Codec.erc4337ExecuteDigest(
@@ -525,17 +557,6 @@ contract Integration_sponsoredTransaction is IntegrationBase {
         // fails upstream of signature verification because BOB's wallet has
         // no registered verifier. (The sig here is well-formed so we are
         // specifically testing the whitelist guard.)
-        bytes memory pmd = _buildPaymasterAndData(
-            bobWalletAddr,
-            0,
-            callData_,
-            verifierPubkey,
-            verifierPrivateKey,
-            nextVerifier,
-            uint48(block.timestamp + 1 hours),
-            uint48(0)
-        );
-
         PackedUserOperation memory userOp = PackedUserOperation({
             sender: bobWalletAddr,
             nonce: 0,
@@ -546,9 +567,15 @@ contract Integration_sponsoredTransaction is IntegrationBase {
             ),
             preVerificationGas: 100_000,
             gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
-            paymasterAndData: pmd,
+            paymasterAndData: "",
             signature: ""
         });
+        userOp = _attachPaymasterApproval(
+            userOp,
+            nextVerifier,
+            uint48(block.timestamp + 1 hours),
+            uint48(0)
+        );
 
         bytes32 userOpHash = IEntryPointExt(ENTRY_POINT).getUserOpHash(userOp);
         bytes32 walletDigest = Codec.erc4337ExecuteDigest(
