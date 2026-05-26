@@ -6,6 +6,9 @@ import {DummyQuipERC20Spender} from "../../contracts/dummy_contracts/DummyQuipER
 import {DummyQuipPaymentReceiver} from "../../contracts/dummy_contracts/DummyQuipPaymentReceiver.sol";
 import {DummyQuipNonPayableReceiver} from "../../contracts/dummy_contracts/DummyQuipNonPayableReceiver.sol";
 import {DummyQuipRevertingReceiver} from "../../contracts/dummy_contracts/DummyQuipRevertingReceiver.sol";
+import {DummyQuipERC721} from "../../contracts/dummy_contracts/DummyQuipERC721.sol";
+import {DummyQuipERC1155} from "../../contracts/dummy_contracts/DummyQuipERC1155.sol";
+import {DummyQuipArbitraryCall} from "../../contracts/dummy_contracts/DummyQuipArbitraryCall.sol";
 
 library DummyQuipDeploymentConfig {
     function saltERC20SixDecimals() internal pure returns (bytes32) {
@@ -30,6 +33,18 @@ library DummyQuipDeploymentConfig {
 
     function saltRevertingReceiver() internal pure returns (bytes32) {
         return keccak256(bytes("quip.dummy.DummyQuipRevertingReceiver.v1"));
+    }
+
+    function saltERC721() internal pure returns (bytes32) {
+        return keccak256(bytes("quip.dummy.DummyQuipERC721.v1"));
+    }
+
+    function saltERC1155() internal pure returns (bytes32) {
+        return keccak256(bytes("quip.dummy.DummyQuipERC1155.v1"));
+    }
+
+    function saltArbitraryCall() internal pure returns (bytes32) {
+        return keccak256(bytes("quip.dummy.DummyQuipArbitraryCall.v1"));
     }
 
     function codeERC20SixDecimals(address owner) internal pure returns (bytes memory) {
@@ -74,5 +89,34 @@ library DummyQuipDeploymentConfig {
 
     function codeRevertingReceiver() internal pure returns (bytes memory) {
         return type(DummyQuipRevertingReceiver).creationCode;
+    }
+
+    function codeERC721(address owner) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            type(DummyQuipERC721).creationCode,
+            abi.encode(
+                "DummyQuip NFT",
+                "tQNFT",
+                owner,
+                true,
+                uint256(10)
+            )
+        );
+    }
+
+    function codeERC1155(address owner) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            type(DummyQuipERC1155).creationCode,
+            abi.encode(
+                "ipfs://dummy-quip-erc1155/{id}.json",
+                owner,
+                true,
+                uint256(100)
+            )
+        );
+    }
+
+    function codeArbitraryCall() internal pure returns (bytes memory) {
+        return type(DummyQuipArbitraryCall).creationCode;
     }
 }

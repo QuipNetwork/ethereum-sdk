@@ -17,6 +17,9 @@ Same dummy address on multiple chains requires the same `DUMMY_QUIP_CREATE3_FACT
 | `DummyQuipPaymentReceiver` | `TBD` | Payable native-token receiver. |
 | `DummyQuipNonPayableReceiver` | `TBD` | Native sends should fail. |
 | `DummyQuipRevertingReceiver` | `TBD` | Receive/fallback/explicit call reverts. |
+| `DummyQuipERC721` | `TBD` | Minimal NFT; name `DummyQuip NFT`; symbol `tQNFT`; faucet cap `10`. |
+| `DummyQuipERC1155` | `TBD` | Minimal multi-token; faucet cap `100` per id. |
+| `DummyQuipArbitraryCall` | `TBD` | Records inbound calls and can forward arbitrary calls via `execute`. |
 
 ---
 
@@ -31,6 +34,9 @@ Same dummy address on multiple chains requires the same `DUMMY_QUIP_CREATE3_FACT
 | `DummyQuipPaymentReceiver` | `TBD` | |
 | `DummyQuipNonPayableReceiver` | `TBD` | |
 | `DummyQuipRevertingReceiver` | `TBD` | |
+| `DummyQuipERC721` | `TBD` | |
+| `DummyQuipERC1155` | `TBD` | |
+| `DummyQuipArbitraryCall` | `TBD` | |
 
 ---
 
@@ -45,6 +51,9 @@ Same dummy address on multiple chains requires the same `DUMMY_QUIP_CREATE3_FACT
 | `DummyQuipPaymentReceiver` | `TBD` | |
 | `DummyQuipNonPayableReceiver` | `TBD` | |
 | `DummyQuipRevertingReceiver` | `TBD` | |
+| `DummyQuipERC721` | `TBD` | |
+| `DummyQuipERC1155` | `TBD` | |
+| `DummyQuipArbitraryCall` | `TBD` | |
 
 ---
 
@@ -58,5 +67,8 @@ Same dummy address on multiple chains requires the same `DUMMY_QUIP_CREATE3_FACT
 | `DummyQuipPaymentReceiver` | `quip.dummy.DummyQuipPaymentReceiver.v1` |
 | `DummyQuipNonPayableReceiver` | `quip.dummy.DummyQuipNonPayableReceiver.v1` |
 | `DummyQuipRevertingReceiver` | `quip.dummy.DummyQuipRevertingReceiver.v1` |
+| `DummyQuipERC721` | `quip.dummy.DummyQuipERC721.v1` |
+| `DummyQuipERC1155` | `quip.dummy.DummyQuipERC1155.v1` |
+| `DummyQuipArbitraryCall` | `quip.dummy.DummyQuipArbitraryCall.v1` |
 
 If behavior changes in a way that should produce a new deployment, bump the salt suffix to `.v2` rather than reusing the same salt/address.

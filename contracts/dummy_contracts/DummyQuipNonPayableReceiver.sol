@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.33;
 
 /// @notice Contract with no receive/fallback. Native transfers to it should fail.
 contract DummyQuipNonPayableReceiver {

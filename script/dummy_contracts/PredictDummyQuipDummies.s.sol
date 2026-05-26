@@ -19,6 +19,9 @@ contract PredictDummyQuipDummies is Script {
         _print(factory, "DummyQuipPaymentReceiver", Config.saltPaymentReceiver());
         _print(factory, "DummyQuipNonPayableReceiver", Config.saltNonPayableReceiver());
         _print(factory, "DummyQuipRevertingReceiver", Config.saltRevertingReceiver());
+        _print(factory, "DummyQuipERC721", Config.saltERC721());
+        _print(factory, "DummyQuipERC1155", Config.saltERC1155());
+        _print(factory, "DummyQuipArbitraryCall", Config.saltArbitraryCall());
     }
 
     function _print(DummyQuipCreate3Factory factory, string memory label, bytes32 salt) internal view {

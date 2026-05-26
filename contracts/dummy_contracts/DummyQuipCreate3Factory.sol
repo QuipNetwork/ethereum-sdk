@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.33;
 
 /// @notice Minimal CREATE3 factory for deterministic test deployments.
 /// @dev Same final address across chains requires the factory itself to live at the same address.
@@ -11,18 +11,15 @@ contract DummyQuipCreate3Factory {
         bytes32 creationCodeHash
     );
 
-    error DummyQuipIncorrectValue(uint256 sent, uint256 expected);
     error DummyQuipProxyDeployFailed(bytes32 salt);
     error DummyQuipTargetDeployFailed(bytes32 salt);
     error DummyQuipAlreadyDeployed(address predicted);
 
-    function deploy(bytes32 salt, bytes memory creationCode, uint256 value)
+    function deploy(bytes32 salt, bytes memory creationCode)
         external
         payable
         returns (address deployed)
     {
-        if (msg.value != value) revert DummyQuipIncorrectValue(msg.value, value);
-
         deployed = getDeployed(salt);
         if (deployed.code.length != 0) revert DummyQuipAlreadyDeployed(deployed);
 
@@ -33,7 +30,7 @@ contract DummyQuipCreate3Factory {
         }
         if (proxy == address(0)) revert DummyQuipProxyDeployFailed(salt);
 
-        deployed = DummyQuipCreate3Proxy(payable(proxy)).deploy{value: value}(creationCode);
+        deployed = DummyQuipCreate3Proxy(payable(proxy)).deploy{value: msg.value}(creationCode);
         if (deployed == address(0)) revert DummyQuipTargetDeployFailed(salt);
 
         emit DummyQuipCreate3Deployed(salt, deployed, proxy, keccak256(creationCode));

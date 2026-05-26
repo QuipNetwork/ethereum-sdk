@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.33;
 
 /// @notice Tiny owner helper for test-only contracts. Not intended as production access control.
 abstract contract DummyQuipOwned {

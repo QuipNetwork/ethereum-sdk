@@ -351,6 +351,9 @@ VERIFY= make deploy-dummies-op-sepolia
 | `DummyQuipPaymentReceiver` | Native ETH receive + reference payments |
 | `DummyQuipNonPayableReceiver` | Native sends should fail |
 | `DummyQuipRevertingReceiver` | Always reverts on receive |
+| `DummyQuipERC721` | Minimal NFT (`tQNFT`); public capped faucet + ungated `mint` |
+| `DummyQuipERC1155` | Minimal multi-token; public capped faucet per id |
+| `DummyQuipArbitraryCall` | Records inbound calls + forwards calls via `execute(target, data)` |
 
 ### Example: mint 100 tQ6 via faucet (6 decimals)
 

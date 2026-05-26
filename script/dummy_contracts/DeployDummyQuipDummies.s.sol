@@ -13,6 +13,9 @@ contract DeployDummyQuipDummies is Script {
         address dummyQuipPaymentReceiver;
         address dummyQuipNonPayableReceiver;
         address dummyQuipRevertingReceiver;
+        address dummyQuipERC721;
+        address dummyQuipERC1155;
+        address dummyQuipArbitraryCall;
     }
 
     function run() external returns (DummyQuipDummyAddresses memory deployed) {
@@ -71,6 +74,27 @@ contract DeployDummyQuipDummies is Script {
             Config.codeRevertingReceiver()
         );
 
+        deployed.dummyQuipERC721 = _deployIfNeeded(
+            factory,
+            "DummyQuipERC721",
+            Config.saltERC721(),
+            Config.codeERC721(owner)
+        );
+
+        deployed.dummyQuipERC1155 = _deployIfNeeded(
+            factory,
+            "DummyQuipERC1155",
+            Config.saltERC1155(),
+            Config.codeERC1155(owner)
+        );
+
+        deployed.dummyQuipArbitraryCall = _deployIfNeeded(
+            factory,
+            "DummyQuipArbitraryCall",
+            Config.saltArbitraryCall(),
+            Config.codeArbitraryCall()
+        );
+
         vm.stopBroadcast();
 
         console.log("--- DummyQuip dummy deployment complete ---");
@@ -80,6 +104,9 @@ contract DeployDummyQuipDummies is Script {
         console.log("DummyQuipPaymentReceiver:", deployed.dummyQuipPaymentReceiver);
         console.log("DummyQuipNonPayableReceiver:", deployed.dummyQuipNonPayableReceiver);
         console.log("DummyQuipRevertingReceiver:", deployed.dummyQuipRevertingReceiver);
+        console.log("DummyQuipERC721:", deployed.dummyQuipERC721);
+        console.log("DummyQuipERC1155:", deployed.dummyQuipERC1155);
+        console.log("DummyQuipArbitraryCall:", deployed.dummyQuipArbitraryCall);
     }
 
     function _deployIfNeeded(
@@ -90,7 +117,7 @@ contract DeployDummyQuipDummies is Script {
     ) internal returns (address predicted) {
         predicted = factory.getDeployed(salt);
         if (predicted.code.length == 0) {
-            address addr = factory.deploy(salt, creationCode, 0);
+            address addr = factory.deploy(salt, creationCode);
             require(addr == predicted, "CREATE3 deployed address mismatch");
             console.log(label, addr);
         } else {

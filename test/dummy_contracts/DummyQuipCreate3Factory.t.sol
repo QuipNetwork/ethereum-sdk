@@ -19,7 +19,7 @@ contract DummyQuipCreate3FactoryTest is Test {
         );
 
         address predicted = factory.getDeployed(salt);
-        address deployed = factory.deploy(salt, creationCode, 0);
+        address deployed = factory.deploy(salt, creationCode);
 
         assertEq(deployed, predicted);
         assertGt(deployed.code.length, 0);
@@ -31,11 +31,11 @@ contract DummyQuipCreate3FactoryTest is Test {
             type(DummyQuipPaymentReceiver).creationCode, abi.encode(address(this))
         );
 
-        factory.deploy(salt, creationCode, 0);
+        factory.deploy(salt, creationCode);
 
         address predicted = factory.getDeployed(salt);
         vm.expectRevert(abi.encodeWithSelector(DummyQuipCreate3Factory.DummyQuipAlreadyDeployed.selector, predicted));
-        factory.deploy(salt, creationCode, 0);
+        factory.deploy(salt, creationCode);
     }
 
     function testGetProxyMatchesPrediction() public view {
@@ -43,15 +43,5 @@ contract DummyQuipCreate3FactoryTest is Test {
         address proxy = factory.getProxy(salt);
         assertTrue(proxy != address(0));
         assertEq(factory.getDeployed(salt), address(uint160(uint256(keccak256(abi.encodePacked(hex"d694", proxy, hex"01"))))));
-    }
-
-    function testIncorrectValueReverts() public {
-        bytes32 salt = keccak256("value-salt");
-        bytes memory creationCode = abi.encodePacked(
-            type(DummyQuipPaymentReceiver).creationCode, abi.encode(address(this))
-        );
-
-        vm.expectRevert(abi.encodeWithSelector(DummyQuipCreate3Factory.DummyQuipIncorrectValue.selector, 1, 0));
-        factory.deploy{value: 1}(salt, creationCode, 0);
     }
 }
