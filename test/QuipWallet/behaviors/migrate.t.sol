@@ -221,7 +221,7 @@ contract QuipWallet_migrate is QuipWalletTest {
     }
 
     // A recovery key collides with a transaction key. The txn loop installs
-    // first; the recovery loop's `_safeAddKey` → `_enforceUnusedKey` sees
+    // first; the recovery loop's `_safeAddKey` → `_enforceUnspentKey` sees
     // the key in `transactionKeys` and reverts `KeyInUse`.
     function test_migrate_revertsWhen_recoveryKeyAlsoInTxnSet() public {
         (
@@ -320,7 +320,7 @@ contract QuipWallet_migrate is QuipWalletTest {
     }
 
     // ownershipKey == disasterRecoveryKey. Disaster is enforced + stored
-    // first; the next call to `_enforceUnusedKey(ownershipKey)` sees the
+    // first; the next call to `_enforceUnspentKey(ownershipKey)` sees the
     // disaster slot match and reverts before any keyset loop runs.
     function test_migrate_revertsWhen_ownershipKeyEqualsDisasterKey() public {
         (

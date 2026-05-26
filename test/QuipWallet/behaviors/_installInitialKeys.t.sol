@@ -176,7 +176,7 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
 
     // A key intended for the recovery set ALSO appearing in the transaction
     // set: the txn loop installs it first; the recovery loop's `_safeAddKey`
-    // → `_enforceUnusedKey` sees it in `transactionKeys` and reverts
+    // → `_enforceUnspentKey` sees it in `transactionKeys` and reverts
     // `KeyInUse`. WOTS+ one-time-use forbids the same public key sitting in
     // two role slots.
     function test_exposed_installInitialKeys_revertsWhen_recoveryKeyAlsoInTxnSet()
@@ -198,7 +198,7 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
 
     // A txn key collides with the disaster recovery key. Order in
     // `_installInitialKeys`: disaster is stored first, so the txn loop's
-    // `_enforceUnusedKey` sees the disaster slot match and reverts.
+    // `_enforceUnspentKey` sees the disaster slot match and reverts.
     function test_exposed_installInitialKeys_revertsWhen_txnKeyEqualsDisasterKey()
         public
     {
@@ -237,7 +237,7 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
     }
 
     // ownership == disaster: ownership is enforced AFTER disaster is stored,
-    // so `_enforceUnusedKey(ownershipKey)` sees the disaster slot match and
+    // so `_enforceUnspentKey(ownershipKey)` sees the disaster slot match and
     // reverts before any keyset add runs.
     function test_exposed_installInitialKeys_revertsWhen_ownershipEqualsDisaster()
         public

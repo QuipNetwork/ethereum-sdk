@@ -14,15 +14,27 @@
       "label": "address payable",
       "numberOfBytes": "20"
     },
+    "t_bool": {
+      "encoding": "inplace",
+      "label": "bool",
+      "numberOfBytes": "1"
+    },
     "t_bytes32": {
       "encoding": "inplace",
       "label": "bytes32",
       "numberOfBytes": "32"
     },
+    "t_mapping(t_bytes32,t_bool)": {
+      "encoding": "mapping",
+      "key": "t_bytes32",
+      "label": "mapping(bytes32 => bool)",
+      "numberOfBytes": "32",
+      "value": "t_bool"
+    },
     "t_struct(Layout)_storage": {
       "encoding": "inplace",
       "label": "struct WOTSPlusStorage.Layout",
-      "numberOfBytes": "256",
+      "numberOfBytes": "288",
       "members": [
         {
           "contract": "test/fixtures/QuipWalletLayoutProbe.sol:QuipWalletLayoutProbe",
@@ -65,6 +77,13 @@
           "offset": 0,
           "slot": "7",
           "type": "t_struct(WinternitzAddressSet)_storage"
+        },
+        {
+          "contract": "test/fixtures/QuipWalletLayoutProbe.sol:QuipWalletLayoutProbe",
+          "label": "isKeySpent",
+          "offset": 0,
+          "slot": "8",
+          "type": "t_mapping(t_bytes32,t_bool)"
         }
       ]
     },

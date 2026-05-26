@@ -402,7 +402,7 @@ contract QuipWallet_replaceKeyAt is QuipWalletTest {
 
         vm.prank(ALICE);
         // The replacement goes through `_rotateKeys(target, oldKey, newKey)` →
-        // `_safeAddKey(target, newKey)` → `_enforceUnusedKey(newKey)`. A
+        // `_safeAddKey(target, newKey)` → `_enforceUnspentKey(newKey)`. A
         // collision with an existing target-set key fires the global pre-check
         // and reverts `KeyInUse`.
         vm.expectRevert(IQuipWallet.KeyInUse.selector);

@@ -9,7 +9,7 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/libraries/EnumerableWinternitzAddressSet.sol";
 
 /// @dev Behaviour tests for `_safeAddKey(set, key)`. The function calls
-///      `_enforceUnusedKey(key)` (revert `KeyInUse` on global collision)
+///      `_enforceUnspentKey(key)` (revert `KeyInUse` on global collision)
 ///      and then `set.add(key, MAX_KEYS)` (revert `KeyAdditionFailed` on
 ///      bool=false — now exclusively cap excess since the global pre-check
 ///      caught any duplicate). Library-level reverts (`ZeroValueWinternitzAddress`,
