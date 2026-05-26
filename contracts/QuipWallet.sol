@@ -1151,6 +1151,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
         bytes32 digest = Codec.keysetDigest(
             kind,
+            replace,
             address(this),
             block.chainid,
             currentKey.publicSeed,

@@ -34,7 +34,7 @@ contract QuipWallet_keyCount is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "count-refresh-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,

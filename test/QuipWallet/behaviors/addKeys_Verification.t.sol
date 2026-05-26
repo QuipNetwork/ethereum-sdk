@@ -31,7 +31,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-next-1"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -58,7 +58,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-next-2"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -82,7 +82,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-next-ev"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -118,7 +118,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-append-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -144,7 +144,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-auth-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -240,7 +240,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-empty-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -267,7 +267,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-cap-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -295,7 +295,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-zseed-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -323,7 +323,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-zhash-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -349,7 +349,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-dup-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -380,7 +380,7 @@ contract QuipWallet_addKeys_Verification is QuipWalletTest {
             "addvk-dup-existing-next"
         );
 
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,

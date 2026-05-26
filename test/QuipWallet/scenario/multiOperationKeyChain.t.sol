@@ -198,7 +198,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
                 WOTSPlus.WinternitzAddress memory nextPq,
                 bytes32 nextPriv
             ) = _advance("chain-6-addverif");
-            bytes32 msgHash = _buildVerificationKeysMessageHash(
+            bytes32 msgHash = _buildAddVerificationKeysMessageHash(
                 address(wallet),
                 currentPq,
                 nextPq,
@@ -417,6 +417,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
             // in QuipWalletTest, only Recovery/Verification/replaceKeyAt).
             bytes32 msgHash = Codec.keysetDigest(
                 Codec.KeyType.Transaction,
+                false, // addKeys (Transaction kind has no refresh path)
                 address(wallet),
                 block.chainid,
                 currentPq.publicSeed,
@@ -534,7 +535,7 @@ contract QuipWallet_multiOperationKeyChain is QuipWalletTest {
                 WOTSPlus.WinternitzAddress memory nextPq,
                 bytes32 nextPriv
             ) = _advance("max-cap-op-c-add-verif");
-            bytes32 msgHash = _buildVerificationKeysMessageHash(
+            bytes32 msgHash = _buildAddVerificationKeysMessageHash(
                 address(wallet),
                 currentPq,
                 nextPq,

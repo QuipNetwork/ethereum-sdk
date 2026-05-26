@@ -28,7 +28,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         string memory nextTag
     ) internal returns (WOTSPlus.WinternitzAddress memory nextPq) {
         (nextPq, ) = _generateKeyPair(keccak256(abi.encodePacked(nextTag)));
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -100,7 +100,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "refresh-ev-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -134,7 +134,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "refresh-auth-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -227,7 +227,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "refresh-empty-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -251,7 +251,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "refresh-over-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -278,7 +278,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "refresh-dup-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -305,7 +305,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "refresh-zseed-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
@@ -332,7 +332,7 @@ contract QuipWallet_refreshKeys_Verification is QuipWalletTest {
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "refresh-zhash-next"
         );
-        bytes32 msgHash = _buildVerificationKeysMessageHash(
+        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
             address(wallet),
             alicePubkey,
             nextPq,
