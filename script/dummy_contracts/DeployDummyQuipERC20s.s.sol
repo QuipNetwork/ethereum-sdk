@@ -5,17 +5,15 @@ import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {DummyQuipCreate3Factory} from "../../contracts/dummy_contracts/DummyQuipCreate3Factory.sol";
 import {DummyQuipDeploymentConfig as Config} from "./DummyQuipDeploymentConfig.sol";
 
-/// @notice Deploys the active DummyQuip token suite (ERC20 ×2, ERC721, ERC1155) via the
-///         pre-deployed DummyQuipCreate3Factory.
-contract DeployDummyQuipDummies is Script {
-    struct DummyQuipDummyAddresses {
+/// @notice Deploys ONLY the two DummyQuipERC20 variants (tQ6, tQ18) via the pre-deployed
+///         DummyQuipCreate3Factory. Use `DeployDummyQuipDummies.s.sol` for the full suite.
+contract DeployDummyQuipERC20s is Script {
+    struct DummyQuipERC20Addresses {
         address dummyQuipERC20SixDecimals;
         address dummyQuipERC20EighteenDecimals;
-        address dummyQuipERC721;
-        address dummyQuipERC1155;
     }
 
-    function run() external returns (DummyQuipDummyAddresses memory deployed) {
+    function run() external returns (DummyQuipERC20Addresses memory deployed) {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         address factoryAddress = vm.envAddress("DUMMY_QUIP_CREATE3_FACTORY");
         DummyQuipCreate3Factory factory = DummyQuipCreate3Factory(factoryAddress);
@@ -43,27 +41,11 @@ contract DeployDummyQuipDummies is Script {
             Config.codeERC20EighteenDecimals()
         );
 
-        deployed.dummyQuipERC721 = _deployIfNeeded(
-            factory,
-            "DummyQuipERC721",
-            Config.saltERC721(),
-            Config.codeERC721()
-        );
-
-        deployed.dummyQuipERC1155 = _deployIfNeeded(
-            factory,
-            "DummyQuipERC1155",
-            Config.saltERC1155(),
-            Config.codeERC1155()
-        );
-
         vm.stopBroadcast();
 
-        console.log("--- DummyQuip dummy deployment complete ---");
+        console.log("--- DummyQuipERC20 deployment complete ---");
         console.log("DummyQuipERC20SixDecimals:", deployed.dummyQuipERC20SixDecimals);
         console.log("DummyQuipERC20EighteenDecimals:", deployed.dummyQuipERC20EighteenDecimals);
-        console.log("DummyQuipERC721:", deployed.dummyQuipERC721);
-        console.log("DummyQuipERC1155:", deployed.dummyQuipERC1155);
     }
 
     function _deployIfNeeded(

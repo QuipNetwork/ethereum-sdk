@@ -31,6 +31,24 @@ const CONTRACTS = [
   { name: "QuipPaymaster", path: "QuipPaymaster.sol/QuipPaymaster.json" },
 ];
 
+// Hand-maintained ABIs that should appear in the barrel re-export but are
+// NOT generated from a Foundry artifact. The corresponding `.ts` files
+// already exist in `src/v1/abi/` and are committed to the repo; this script
+// must NOT overwrite them — it only weaves their `export { ... }` lines
+// into the generated `index.ts` barrel so consumers can import them via
+// the same path as the generated ABIs.
+//
+// Current entries:
+//   - EntryPointV07: re-exports `entryPoint07Abi` from `viem/account-abstraction`
+//     under the name `entryPointV07Abi`. The ERC-4337 v0.7 EntryPoint is a
+//     standardized singleton (canonical address
+//     0x0000000071727De22E5E9d8BAf0edAc6f37da032 on every chain), not a
+//     contract this repo ships, so there's no forge artifact to derive
+//     from. See `src/v1/abi/EntryPointV07.ts` for the full rationale.
+const EXTRA_BARREL_LINES = [
+  `export { entryPointV07Abi } from "./EntryPointV07.js";`,
+];
+
 mkdirSync(ABI_DIR, { recursive: true });
 
 const barrelLines = [];
@@ -50,9 +68,11 @@ for (const contract of CONTRACTS) {
   barrelLines.push(`export { ${exportName} } from "./${contract.name}.js";`);
 }
 
-// Write barrel re-export
+// Write barrel re-export — generated contract ABIs first, then any
+// hand-maintained extras (see `EXTRA_BARREL_LINES` above).
 const barrelPath = join(ABI_DIR, "index.ts");
-writeFileSync(barrelPath, barrelLines.join("\n") + "\n");
+const allBarrelLines = [...barrelLines, ...EXTRA_BARREL_LINES];
+writeFileSync(barrelPath, allBarrelLines.join("\n") + "\n");
 console.log(`Wrote ${barrelPath}`);
 
 // --- Bytecode extraction ---

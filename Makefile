@@ -3,10 +3,15 @@
        deploy-impl vet-impl predict-addresses \
        predict-base-sepolia deploy-deployer-base-sepolia deploy-all-base-sepolia \
        deploy-impl-base-sepolia vet-impl-base-sepolia \
-       deploy-dummy-create3 deploy-dummies predict-dummies \
+       predict-op-sepolia deploy-deployer-op-sepolia deploy-all-op-sepolia \
+       deploy-impl-op-sepolia vet-impl-op-sepolia \
+       deploy-dummy-create3 deploy-dummies predict-dummies deploy-dummy-erc20s \
        deploy-dummy-create3-op-sepolia predict-dummy-op-sepolia deploy-dummies-op-sepolia \
+       deploy-dummy-erc20s-op-sepolia \
        deploy-dummy-create3-base-sepolia predict-dummy-base-sepolia deploy-dummies-base-sepolia \
+       deploy-dummy-erc20s-base-sepolia \
        deploy-dummy-create3-sepolia predict-dummy-sepolia deploy-dummies-sepolia \
+       deploy-dummy-erc20s-sepolia \
        fund-deployer drain-deployer balance \
        storage-layout-snapshot storage-layout-check
 
@@ -174,6 +179,39 @@ vet-impl-base-sepolia:
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast
 
+# ── Production deploy: Optimism Sepolia ──────────────────────────
+# Same env vars as the Base Sepolia variants; uses `op_sepolia` RPC alias
+# from foundry.toml ([rpc_endpoints] op_sepolia = "$(API_URL_OP_SEPOLIA)").
+# Etherscan v2 chain `op_sepolia` (chain 11155420) is already wired up in
+# foundry.toml [etherscan]; --verify will use $(ETHERSCAN_API_KEY).
+
+predict-op-sepolia:
+	forge script script/PredictAddresses.s.sol --rpc-url op_sepolia
+
+deploy-deployer-op-sepolia:
+	forge script script/DeployDeployer.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-all-op-sepolia:
+	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-impl-op-sepolia:
+	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+vet-impl-op-sepolia:
+	forge script script/VetImplementation.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast
+
 # ── DummyQuip testnet deploy (QA contracts only) ────────────────
 # Separate from QuipFactory / DeployAll. Requires PRIVATE_KEY and RPC_URL.
 # After deploy-dummy-create3-*, set DUMMY_QUIP_CREATE3_FACTORY in .env.
@@ -196,6 +234,9 @@ predict-dummies:
 deploy-dummies:
 	forge script script/dummy_contracts/DeployDummyQuipDummies.s.sol $(DUMMY_FORGE_FLAGS)
 
+deploy-dummy-erc20s:
+	forge script script/dummy_contracts/DeployDummyQuipERC20s.s.sol $(DUMMY_FORGE_FLAGS)
+
 deploy-dummy-create3-op-sepolia:
 	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummy-create3
 
@@ -204,6 +245,9 @@ predict-dummy-op-sepolia:
 
 deploy-dummies-op-sepolia:
 	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummies
+
+deploy-dummy-erc20s-op-sepolia:
+	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummy-erc20s
 
 deploy-dummy-create3-base-sepolia:
 	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummy-create3
@@ -214,6 +258,9 @@ predict-dummy-base-sepolia:
 deploy-dummies-base-sepolia:
 	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummies
 
+deploy-dummy-erc20s-base-sepolia:
+	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummy-erc20s
+
 deploy-dummy-create3-sepolia:
 	RPC_URL=$(API_URL_SEPOLIA) $(MAKE) deploy-dummy-create3
 
@@ -222,6 +269,9 @@ predict-dummy-sepolia:
 
 deploy-dummies-sepolia:
 	RPC_URL=$(API_URL_SEPOLIA) $(MAKE) deploy-dummies
+
+deploy-dummy-erc20s-sepolia:
+	RPC_URL=$(API_URL_SEPOLIA) $(MAKE) deploy-dummy-erc20s
 
 # ── Utility Scripts ───────────────────────────────────────────────
 

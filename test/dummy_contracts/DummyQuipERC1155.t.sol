@@ -2,18 +2,21 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {DummyQuipOwned} from "../../contracts/dummy_contracts/DummyQuipOwned.sol";
-import {
-    DummyQuipERC1155, IDummyQuipERC1155Receiver
-} from "../../contracts/dummy_contracts/DummyQuipERC1155.sol";
+import {DummyQuipERC1155} from "../../contracts/dummy_contracts/DummyQuipERC1155.sol";
+import {IERC1155Errors} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC6093.sol";
+import {IERC1155Receiver} from
+    "@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155Receiver.sol";
+import {IERC1155} from "@openzeppelin-contracts-5.6.0-rc.1/token/ERC1155/IERC1155.sol";
+import {IERC165} from
+    "@openzeppelin-contracts-5.6.0-rc.1/utils/introspection/IERC165.sol";
 
-contract GoodERC1155Holder is IDummyQuipERC1155Receiver {
+contract GoodReceiver1155 is IERC1155Receiver {
     function onERC1155Received(address, address, uint256, uint256, bytes calldata)
         external
         pure
         returns (bytes4)
     {
-        return IDummyQuipERC1155Receiver.onERC1155Received.selector;
+        return IERC1155Receiver.onERC1155Received.selector;
     }
 
     function onERC1155BatchReceived(
@@ -23,172 +26,149 @@ contract GoodERC1155Holder is IDummyQuipERC1155Receiver {
         uint256[] calldata,
         bytes calldata
     ) external pure returns (bytes4) {
-        return IDummyQuipERC1155Receiver.onERC1155BatchReceived.selector;
+        return IERC1155Receiver.onERC1155BatchReceived.selector;
     }
-}
 
-contract BadERC1155Holder {
-// no callbacks → safe variants should revert
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC1155Receiver).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
+    }
 }
 
 contract DummyQuipERC1155Test is Test {
     DummyQuipERC1155 internal token;
+    address internal alice = address(0xBEEF);
+    address internal bob = address(0xCAFE);
 
-    address internal alice = address(0xA11CE);
-    address internal bob = address(0xB0B);
+    string internal constant URI = "ipfs://dummy/{id}.json";
 
     function setUp() public {
-        token = new DummyQuipERC1155("ipfs://x/{id}.json", address(this), true, 100);
+        token = new DummyQuipERC1155(URI);
     }
 
-    function testUriAndInterface() public view {
-        assertEq(token.uri(), "ipfs://x/{id}.json");
-        assertTrue(token.supportsInterface(0xd9b67a26)); // ERC-1155
-        assertTrue(token.supportsInterface(0x0e89341c)); // ERC-1155 MetadataURI
-        assertTrue(token.supportsInterface(0x01ffc9a7)); // ERC-165
-        assertFalse(token.supportsInterface(0xdeadbeef));
+    function testMetadata() public view {
+        assertEq(token.uri(0), URI);
+        assertEq(token.totalSupply(), 0);
     }
 
-    function testFaucetCapsPerId() public {
-        token.faucet(alice, 1, 50);
-        token.faucet(alice, 2, 100);
-        assertEq(token.balanceOf(1, alice), 50);
-        assertEq(token.balanceOf(2, alice), 100);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(DummyQuipERC1155.DummyQuipFaucetCapExceeded.selector, 101, 100)
-        );
-        token.faucet(alice, 3, 101);
+    function testSupportsERC1155AndERC165() public view {
+        assertTrue(token.supportsInterface(type(IERC1155).interfaceId));
+        assertTrue(token.supportsInterface(type(IERC165).interfaceId));
     }
 
-    function testUngatedMintAnyAmount() public {
+    function testMintArbitraryAmounts() public {
         vm.prank(alice);
-        token.mint(bob, 7, 10_000);
-        assertEq(token.balanceOf(7, bob), 10_000);
+        token.mint(bob, 42, 250);
+        assertEq(token.balanceOf(bob, 42), 250);
+        assertEq(token.totalSupply(42), 250);
+        assertEq(token.totalSupply(), 250);
     }
 
-    function testSafeTransferToCompliantReceiver() public {
-        token.mint(alice, 1, 10);
-        GoodERC1155Holder holder = new GoodERC1155Holder();
-
+    function testMintIsUngated() public {
         vm.prank(alice);
-        token.safeTransferFrom(alice, address(holder), 1, 4, "");
-
-        assertEq(token.balanceOf(1, alice), 6);
-        assertEq(token.balanceOf(1, address(holder)), 4);
+        token.mint(alice, 1, 5);
+        vm.prank(bob);
+        token.mint(bob, 1, 7);
+        assertEq(token.balanceOf(alice, 1), 5);
+        assertEq(token.balanceOf(bob, 1), 7);
+        assertEq(token.totalSupply(1), 12);
     }
 
-    function testSafeTransferToNonCompliantReverts() public {
-        token.mint(alice, 1, 10);
-        BadERC1155Holder bad = new BadERC1155Holder();
-
+    function testSafeTransferAndApprove() public {
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(DummyQuipERC1155.DummyQuipUnsafeRecipient.selector, address(bad))
-        );
-        token.safeTransferFrom(alice, address(bad), 1, 1, "");
-    }
-
-    function testSafeBatchTransfer() public {
-        token.mint(alice, 1, 10);
-        token.mint(alice, 2, 20);
-        GoodERC1155Holder holder = new GoodERC1155Holder();
-
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = 1;
-        ids[1] = 2;
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = 3;
-        amounts[1] = 5;
-
-        vm.prank(alice);
-        token.safeBatchTransferFrom(alice, address(holder), ids, amounts, "");
-
-        assertEq(token.balanceOf(1, address(holder)), 3);
-        assertEq(token.balanceOf(2, address(holder)), 5);
-        assertEq(token.balanceOf(1, alice), 7);
-        assertEq(token.balanceOf(2, alice), 15);
-    }
-
-    function testBatchLengthMismatchReverts() public {
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = 1;
-        ids[1] = 2;
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = 1;
-
-        vm.expectRevert(
-            abi.encodeWithSelector(DummyQuipERC1155.DummyQuipLengthMismatch.selector, 2, 1)
-        );
-        token.safeBatchTransferFrom(alice, bob, ids, amounts, "");
-    }
-
-    function testApprovalAndOperatorTransfer() public {
-        token.mint(alice, 1, 10);
+        token.mint(alice, 1, 50);
 
         vm.prank(alice);
         token.setApprovalForAll(bob, true);
         assertTrue(token.isApprovedForAll(alice, bob));
 
         vm.prank(bob);
-        token.safeTransferFrom(alice, bob, 1, 4, "");
-        assertEq(token.balanceOf(1, bob), 4);
+        token.safeTransferFrom(alice, bob, 1, 30, "");
+
+        assertEq(token.balanceOf(alice, 1), 20);
+        assertEq(token.balanceOf(bob, 1), 30);
     }
 
-    function testTransferWithoutApprovalReverts() public {
-        token.mint(alice, 1, 5);
-        vm.prank(bob);
-        vm.expectRevert(
-            abi.encodeWithSelector(DummyQuipERC1155.DummyQuipNotOwnerOrApproved.selector, bob, alice)
-        );
-        token.safeTransferFrom(alice, bob, 1, 1, "");
-    }
-
-    function testBalanceOfBatch() public {
-        token.mint(alice, 1, 10);
-        token.mint(bob, 2, 20);
-
-        address[] memory accounts = new address[](2);
-        accounts[0] = alice;
-        accounts[1] = bob;
-        uint256[] memory ids = new uint256[](2);
-        ids[0] = 1;
-        ids[1] = 2;
-
-        uint256[] memory bals = token.balanceOfBatch(accounts, ids);
-        assertEq(bals[0], 10);
-        assertEq(bals[1], 20);
-    }
-
-    function testBurnAndInsufficientBalance() public {
-        token.mint(alice, 1, 5);
-
+    function testTransferToContractRequiresReceiver() public {
         vm.prank(alice);
-        token.burn(alice, 1, 2);
-        assertEq(token.balanceOf(1, alice), 3);
+        token.mint(alice, 1, 5);
 
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(
-                DummyQuipERC1155.DummyQuipInsufficientBalance.selector, alice, uint256(1), uint256(3), uint256(10)
+                IERC1155Errors.ERC1155InvalidReceiver.selector, address(this)
             )
         );
-        token.burn(alice, 1, 10);
+        token.safeTransferFrom(alice, address(this), 1, 1, "");
     }
 
-    function testOwnerOnlySettersAndPrivateMint() public {
+    function testSafeTransferToCompliantReceiver() public {
+        GoodReceiver1155 receiver = new GoodReceiver1155();
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(DummyQuipOwned.DummyQuipNotOwner.selector, alice));
-        token.setURI("new");
+        token.mint(alice, 1, 5);
 
-        token.setURI("new");
-        assertEq(token.uri(), "new");
+        vm.prank(alice);
+        token.safeTransferFrom(alice, address(receiver), 1, 5, "");
 
-        token.setFaucetConfig(false, 0);
-        vm.expectRevert(DummyQuipERC1155.DummyQuipFaucetDisabled.selector);
-        token.faucet(alice, 1, 1);
+        assertEq(token.balanceOf(address(receiver), 1), 5);
+    }
 
-        token.ownerMint(alice, 1, 99);
-        assertEq(token.balanceOf(1, alice), 99);
+    function testBatchTransfer() public {
+        vm.prank(alice);
+        token.mint(alice, 1, 10);
+        vm.prank(alice);
+        token.mint(alice, 2, 20);
+
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 1;
+        ids[1] = 2;
+        uint256[] memory values = new uint256[](2);
+        values[0] = 4;
+        values[1] = 8;
+
+        GoodReceiver1155 receiver = new GoodReceiver1155();
+
+        vm.prank(alice);
+        token.safeBatchTransferFrom(alice, address(receiver), ids, values, "");
+
+        assertEq(token.balanceOf(address(receiver), 1), 4);
+        assertEq(token.balanceOf(address(receiver), 2), 8);
+    }
+
+    function testInsufficientBalanceUsesOZError() public {
+        vm.prank(alice);
+        token.mint(alice, 1, 3);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC1155Errors.ERC1155InsufficientBalance.selector, alice, 3, 10, 1
+            )
+        );
+        token.safeTransferFrom(alice, bob, 1, 10, "");
+    }
+
+    function testMissingApprovalForAllUsesOZError() public {
+        vm.prank(alice);
+        token.mint(alice, 1, 5);
+
+        vm.prank(bob);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC1155Errors.ERC1155MissingApprovalForAll.selector, bob, alice
+            )
+        );
+        token.safeTransferFrom(alice, bob, 1, 1, "");
+    }
+
+    function testBurn() public {
+        vm.prank(alice);
+        token.mint(alice, 1, 10);
+
+        vm.prank(alice);
+        token.burn(alice, 1, 4);
+
+        assertEq(token.balanceOf(alice, 1), 6);
+        assertEq(token.totalSupply(1), 6);
     }
 }

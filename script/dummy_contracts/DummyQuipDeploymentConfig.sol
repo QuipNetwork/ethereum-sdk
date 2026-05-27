@@ -2,14 +2,11 @@
 pragma solidity ^0.8.33;
 
 import {DummyQuipERC20} from "../../contracts/dummy_contracts/DummyQuipERC20.sol";
-import {DummyQuipERC20Spender} from "../../contracts/dummy_contracts/DummyQuipERC20Spender.sol";
-import {DummyQuipPaymentReceiver} from "../../contracts/dummy_contracts/DummyQuipPaymentReceiver.sol";
-import {DummyQuipNonPayableReceiver} from "../../contracts/dummy_contracts/DummyQuipNonPayableReceiver.sol";
-import {DummyQuipRevertingReceiver} from "../../contracts/dummy_contracts/DummyQuipRevertingReceiver.sol";
 import {DummyQuipERC721} from "../../contracts/dummy_contracts/DummyQuipERC721.sol";
 import {DummyQuipERC1155} from "../../contracts/dummy_contracts/DummyQuipERC1155.sol";
-import {DummyQuipArbitraryCall} from "../../contracts/dummy_contracts/DummyQuipArbitraryCall.sol";
 
+/// @notice Centralized salts and CREATE3 creation code for the active DummyQuip token suite.
+/// @dev Other dummy contracts have been moved to `_archive/` and are no longer deployed.
 library DummyQuipDeploymentConfig {
     function saltERC20SixDecimals() internal pure returns (bytes32) {
         return keccak256(bytes("quip.dummy.DummyQuipERC20SixDecimals.v1"));
@@ -17,22 +14,6 @@ library DummyQuipDeploymentConfig {
 
     function saltERC20EighteenDecimals() internal pure returns (bytes32) {
         return keccak256(bytes("quip.dummy.DummyQuipERC20EighteenDecimals.v1"));
-    }
-
-    function saltERC20Spender() internal pure returns (bytes32) {
-        return keccak256(bytes("quip.dummy.DummyQuipERC20Spender.v1"));
-    }
-
-    function saltPaymentReceiver() internal pure returns (bytes32) {
-        return keccak256(bytes("quip.dummy.DummyQuipPaymentReceiver.v1"));
-    }
-
-    function saltNonPayableReceiver() internal pure returns (bytes32) {
-        return keccak256(bytes("quip.dummy.DummyQuipNonPayableReceiver.v1"));
-    }
-
-    function saltRevertingReceiver() internal pure returns (bytes32) {
-        return keccak256(bytes("quip.dummy.DummyQuipRevertingReceiver.v1"));
     }
 
     function saltERC721() internal pure returns (bytes32) {
@@ -43,80 +24,31 @@ library DummyQuipDeploymentConfig {
         return keccak256(bytes("quip.dummy.DummyQuipERC1155.v1"));
     }
 
-    function saltArbitraryCall() internal pure returns (bytes32) {
-        return keccak256(bytes("quip.dummy.DummyQuipArbitraryCall.v1"));
-    }
-
-    function codeERC20SixDecimals(address owner) internal pure returns (bytes memory) {
+    function codeERC20SixDecimals() internal pure returns (bytes memory) {
         return abi.encodePacked(
             type(DummyQuipERC20).creationCode,
-            abi.encode(
-                "DummyQuip ERC20 Six Decimals",
-                "tQ6",
-                uint8(6),
-                owner,
-                true,
-                uint256(10_000 * 10 ** 6)
-            )
+            abi.encode("DummyQuip ERC20 Six Decimals", "tQ6", uint8(6))
         );
     }
 
-    function codeERC20EighteenDecimals(address owner) internal pure returns (bytes memory) {
+    function codeERC20EighteenDecimals() internal pure returns (bytes memory) {
         return abi.encodePacked(
             type(DummyQuipERC20).creationCode,
-            abi.encode(
-                "DummyQuip ERC20 Eighteen Decimals",
-                "tQ18",
-                uint8(18),
-                owner,
-                true,
-                uint256(10_000 ether)
-            )
+            abi.encode("DummyQuip ERC20 Eighteen Decimals", "tQ18", uint8(18))
         );
     }
 
-    function codeERC20Spender() internal pure returns (bytes memory) {
-        return type(DummyQuipERC20Spender).creationCode;
-    }
-
-    function codePaymentReceiver(address owner) internal pure returns (bytes memory) {
-        return abi.encodePacked(type(DummyQuipPaymentReceiver).creationCode, abi.encode(owner));
-    }
-
-    function codeNonPayableReceiver() internal pure returns (bytes memory) {
-        return type(DummyQuipNonPayableReceiver).creationCode;
-    }
-
-    function codeRevertingReceiver() internal pure returns (bytes memory) {
-        return type(DummyQuipRevertingReceiver).creationCode;
-    }
-
-    function codeERC721(address owner) internal pure returns (bytes memory) {
+    function codeERC721() internal pure returns (bytes memory) {
         return abi.encodePacked(
             type(DummyQuipERC721).creationCode,
-            abi.encode(
-                "DummyQuip NFT",
-                "tQNFT",
-                owner,
-                true,
-                uint256(10)
-            )
+            abi.encode("DummyQuip NFT", "tQNFT")
         );
     }
 
-    function codeERC1155(address owner) internal pure returns (bytes memory) {
+    function codeERC1155() internal pure returns (bytes memory) {
         return abi.encodePacked(
             type(DummyQuipERC1155).creationCode,
-            abi.encode(
-                "ipfs://dummy-quip-erc1155/{id}.json",
-                owner,
-                true,
-                uint256(100)
-            )
+            abi.encode("ipfs://dummy-quip-erc1155/{id}.json")
         );
-    }
-
-    function codeArbitraryCall() internal pure returns (bytes memory) {
-        return type(DummyQuipArbitraryCall).creationCode;
     }
 }

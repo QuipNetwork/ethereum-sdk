@@ -15,7 +15,7 @@ Active Dev Branch : deploy/testnet
 | Path                   | Purpose                                                                                                     |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `contracts/`           | Solidity contracts: `QuipFactory`, `QuipWallet`, `QuipPaymaster`, `WOTSPlusCodec`, `Deployer`.              |
-| `contracts/dummy_contracts/` | Test-only QA contracts (`DummyQuipERC20`, receivers, `DummyQuipCreate3Factory`). Not production.        |
+| `contracts/dummy_contracts/` | Test-only QA tokens (`DummyQuipERC20`, `DummyQuipERC721`, `DummyQuipERC1155`) + `DummyQuipCreate3Factory`. Not production. |
 | `script/`              | Foundry deployment scripts (`*.s.sol`).                                                                     |
 | `script/dummy_contracts/` | Foundry scripts to deploy DummyQuip contracts on testnets.                                              |
 | `scripts/`             | TypeScript operational scripts: `release.cts`, `fundDeployer.cts`, `drainDeployer.cts`, `balance.cts`, etc. |
@@ -34,7 +34,7 @@ Active Dev Branch : deploy/testnet
 | **[SDK_README.md](SDK_README.md)**                         | You're consuming the published `@quip.network/ethereum-sdk` npm package.                                                |
 | **[INVARIANTS.md](INVARIANTS.md)**                         | You're auditing, extending, or porting the contracts/SDK. All cryptographic, on-chain, and SDK invariants in one place. |
 | **[DEPLOYMENTS.md](DEPLOYMENTS.md)**                       | Canonical contract addresses, per-chain deployment status, salt schemes.                                                |
-| **[DUMMY_DEPLOYMENTS.md](DUMMY_DEPLOYMENTS.md)**           | DummyQuip QA contract addresses on testnets (ERC-20, receivers, CREATE3 factory).                                       |
+| **[DUMMY_DEPLOYMENTS.md](DUMMY_DEPLOYMENTS.md)**           | DummyQuip QA contract addresses on testnets (ERC-20 / ERC-721 / ERC-1155, CREATE3 factory).                              |
 | **[MIDL-DEPLOYMENT.md](MIDL-DEPLOYMENT.md)**               | Deploying onto MIDL (chain 777). Separate from the EVM workflow.                                                        |
 | **[MIDL-REOWN-INTEGRATION.md](MIDL-REOWN-INTEGRATION.md)** | Integrating Quip with Reown AppKit on MIDL.                                                                             |
 | **[TODO.md](TODO.md)**                                     | Roadmap and known gaps.                                                                                                 |
@@ -267,7 +267,7 @@ The above addresses are the deterministic CREATE3 addresses currently registered
 
 ## Dummy contract testnet deployment
 
-Test-only contracts in [`contracts/dummy_contracts/`](contracts/dummy_contracts/) support SDK/UI QA (ERC-20 decimals, approvals, native payments). They are deployed via [`DummyQuipCreate3Factory`](contracts/dummy_contracts/DummyQuipCreate3Factory.sol) — **not** via `QuipFactory` or `DeployAll`.
+Test-only OpenZeppelin-based tokens in [`contracts/dummy_contracts/`](contracts/dummy_contracts/) support SDK/UI QA (ERC-20 decimals, ERC-721 transfers, ERC-1155 batch ops). They are deployed via [`DummyQuipCreate3Factory`](contracts/dummy_contracts/DummyQuipCreate3Factory.sol) — **not** via `QuipFactory` or `DeployAll`. Earlier hand-rolled support contracts (receivers, spender, arbitrary-call) have been moved to [`_archive/`](_archive/) and are no longer part of the active deployment.
 
 ### Prerequisites
 
@@ -295,7 +295,7 @@ Copy the printed address into `.env`:
 DUMMY_QUIP_CREATE3_FACTORY=0x...
 ```
 
-Optional: `DUMMY_QUIP_OWNER=0x...` (defaults to `vm.addr(PRIVATE_KEY)` for `DummyQuipERC20` and `DummyQuipPaymentReceiver`).
+No additional owner / role variable is required — the tokens have no `onlyOwner` functions and only need `PRIVATE_KEY` for the broadcast.
 
 **2. Predict dummy addresses** (optional dry run)
 
@@ -344,23 +344,18 @@ VERIFY= make deploy-dummies-op-sepolia
 
 ### Deployed contracts
 
-| Contract | Purpose |
-| --- | --- |
-| `DummyQuipERC20` (×2) | `tQ6` (6 decimals) and `tQ18` (18 decimals); public capped faucet + ungated `mint` |
-| `DummyQuipERC20Spender` | `transferFrom` / allowance tests |
-| `DummyQuipPaymentReceiver` | Native ETH receive + reference payments |
-| `DummyQuipNonPayableReceiver` | Native sends should fail |
-| `DummyQuipRevertingReceiver` | Always reverts on receive |
-| `DummyQuipERC721` | Minimal NFT (`tQNFT`); public capped faucet + ungated `mint` |
-| `DummyQuipERC1155` | Minimal multi-token; public capped faucet per id |
-| `DummyQuipArbitraryCall` | Records inbound calls + forwards calls via `execute(target, data)` |
+| Contract | Base | Surface |
+| --- | --- | --- |
+| `DummyQuipERC20` (×2) | OZ `ERC20` + `ERC20Burnable` | `tQ6` (6 decimals) / `tQ18` (18 decimals); ungated `mint(to, amount)` + standard ERC-20 + `burn` / `burnFrom` |
+| `DummyQuipERC721` | OZ `ERC721` + `ERC721Burnable` | NFT (`tQNFT`); ungated `mint(to, amount)` that auto-increments token IDs; tracks `totalSupply`; standard ERC-721 + `burn` |
+| `DummyQuipERC1155` | OZ `ERC1155` + `ERC1155Burnable` + `ERC1155Supply` | Multi-token; ungated `mint(to, id, amount)`; per-id `totalSupply(id)`; standard ERC-1155 + `burn` / `burnBatch` |
 
-### Example: mint 100 tQ6 via faucet (6 decimals)
+### Example: mint 100 tQ6 (6 decimals)
 
 ```bash
 # 100 tQ6 = 100 * 10^6 = 100000000 raw units
 cast send $DUMMY_QUIP_ERC20_6 \
-  "faucet(address,uint256)" \
+  "mint(address,uint256)" \
   $YOUR_ADDRESS \
   100000000 \
   --rpc-url $API_URL_OP_SEPOLIA \
