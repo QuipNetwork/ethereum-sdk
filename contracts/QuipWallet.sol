@@ -937,6 +937,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    function isKeySpent(
+        WOTSPlus.WinternitzAddress calldata key
+    ) public view returns (bool) {
+        return _isKeySpent(key);
+    }
+
+    /// @inheritdoc IQuipWallet
     function getKeyset(
         Codec.KeyType kind
     ) public view returns (WOTSPlus.WinternitzAddress[] memory) {

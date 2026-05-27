@@ -421,6 +421,27 @@ export class QuipWalletClient {
     );
   }
 
+  /// Returns true if `key` has ever been installed in this wallet — in any
+  /// keyset (transaction / recovery / verification) or either single-key
+  /// slot (`disasterRecoveryKey`, `ownershipKey`). Mirrors the contract's
+  /// monotonic `isKeySpent` burn index: once true, stays true even after
+  /// the key has been rotated out of its live slot.
+  ///
+  /// Use this rather than `isKey(kind, key)` for pre-flight checks before
+  /// sending a userOp whose `nextKey` is subject to the contract's
+  /// `_enforceUnspentKey` guard — `isKey` covers only currently-live
+  /// membership and will miss historically-burned keys.
+  async isKeySpent(key: WinternitzAddress): Promise<boolean> {
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: quipWalletAbi,
+        functionName: "isKeySpent",
+        args: [key],
+      })
+    );
+  }
+
   /// Read the head transaction key — `keyAt(Transaction, 0)`, the slot the
   /// SDK signs with by default. Note that this is just whichever key
   /// happens to occupy index 0 right now; the EnumerableSet's swap-pop
@@ -791,6 +812,7 @@ export class QuipWalletClient {
         buildDigest: (currentKey, nextKey) =>
           keysetDigest(
             kind,
+            functionName === "refreshKeys",
             this.walletAddress,
             BigInt(this.chainId),
             currentKey.publicSeed,
@@ -1547,10 +1569,10 @@ export class QuipWalletClient {
       };
     }
 
-    // 3. NextKeyAlreadyInUse — nextKey must not be present in any keyset
-    //    (transaction / recovery / verification) or match a fixed key
-    //    (disasterRecoveryKey / ownershipKey).
-    const inUse = await this.isAnyKey(nextKey);
+    // 3. NextKeyAlreadyInUse — nextKey must not have been previously
+    //    installed in any slot. Mirrors the contract's monotonic
+    //    `_enforceUnspentKey` check via the `isKeySpent` burn index.
+    const inUse = await this.isKeySpent(nextKey);
     if (inUse) {
       return {
         result: UserOpValidationFailure.NextKeyAlreadyInUse,
@@ -1847,79 +1869,4 @@ export class QuipWalletClient {
     }
   }
 
-  /// Returns true if `key` is present in any active keyset (transaction,
-  /// recovery, verification) or matches the wallet's fixed disaster /
-  /// ownership keys. Used by `simulateUserOp` to detect the
-  /// `NextKeyAlreadyInUse` rejection path. Bundles all 5 reads into one
-  /// Multicall3 round-trip (falls back to sequential on chains without
-  /// Multicall3 via `tryMulticall`).
-  private async isAnyKey(key: WinternitzAddress): Promise<boolean> {
-    const results = await tryMulticall(
-      this.publicClient,
-      [
-        {
-          address: this.walletAddress,
-          abi: quipWalletAbi,
-          functionName: "isKey" as const,
-          args: [KeyType.Transaction, key] as const,
-        },
-        {
-          address: this.walletAddress,
-          abi: quipWalletAbi,
-          functionName: "isKey" as const,
-          args: [KeyType.Recovery, key] as const,
-        },
-        {
-          address: this.walletAddress,
-          abi: quipWalletAbi,
-          functionName: "isKey" as const,
-          args: [KeyType.Verification, key] as const,
-        },
-        {
-          address: this.walletAddress,
-          abi: quipWalletAbi,
-          functionName: "getDisasterRecoveryKey" as const,
-        },
-        {
-          address: this.walletAddress,
-          abi: quipWalletAbi,
-          functionName: "getOwnershipKey" as const,
-        },
-      ],
-      { chainId: this.chainId }
-    );
-    // Treat any failed sub-read as a hard error — the caller's
-    // `simulateUserOp` expects the keyset checks to be authoritative.
-    const failures: { label: string; error: Error }[] = [];
-    const labels = [
-      "isKey(Transaction)",
-      "isKey(Recovery)",
-      "isKey(Verification)",
-      "getDisasterRecoveryKey",
-      "getOwnershipKey",
-    ] as const;
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (r.status === "failure") failures.push({ label: labels[i], error: r.error });
-    }
-    if (failures.length > 0) throw new PartialMulticallResultError(failures);
-
-    const inTx = (results[0] as { status: "success"; result: boolean }).result;
-    const inRc = (results[1] as { status: "success"; result: boolean }).result;
-    const inVf = (results[2] as { status: "success"; result: boolean }).result;
-    const disaster = (results[3] as { status: "success"; result: WinternitzAddress }).result;
-    const ownership = (results[4] as { status: "success"; result: WinternitzAddress }).result;
-    if (inTx || inRc || inVf) return true;
-    if (
-      disaster.publicSeed === key.publicSeed &&
-      disaster.publicKeyHash === key.publicKeyHash
-    )
-      return true;
-    if (
-      ownership.publicSeed === key.publicSeed &&
-      ownership.publicKeyHash === key.publicKeyHash
-    )
-      return true;
-    return false;
-  }
 }

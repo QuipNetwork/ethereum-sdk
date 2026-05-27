@@ -81,17 +81,33 @@ export const UPGRADE_PAYLOAD_SIZE = 5569;
 /// + 2144 (verifySig).
 export const RECOVERY_UPGRADE_PAYLOAD_SIZE = 4480;
 
+/// Offset at which the WOTS+ signature region begins within
+/// `paymasterAndData`. The paymaster's `userOpBindingHash` covers
+/// `paymasterAndData[:PAYMASTER_SIG_OFFSET]` and intentionally excludes
+/// the signature itself — binding the full field would be circular since
+/// the signature is what we're producing. Mirrors `_PAYMASTER_SIG_OFFSET`
+/// in `QuipPaymaster.sol`.
+export const PAYMASTER_SIG_OFFSET: number = 128;
+
 // Domain tags — keccak256 of stable string identifiers, must match
 // `WOTSPlusCodec.sol` exactly. Distinct tags per operation are load-bearing
 // security: removing or unifying any tag would let a signature authorizing
 // one flow be replayed against another.
 export const EXECUTE_TAG: Hex = keccak256(toHex("quip.digest.execute"));
-export const KEY_MGMT_TAG: Hex = keccak256(toHex("quip.digest.keyManagement"));
 export const ADD_TRANSACTION_KEYS_TAG: Hex = keccak256(
   toHex("quip.digest.addTransactionKeys")
 );
-export const VERIFICATION_KEYS_TAG: Hex = keccak256(
-  toHex("quip.digest.verificationKeys")
+export const ADD_RECOVERY_KEYS_TAG: Hex = keccak256(
+  toHex("quip.digest.addRecoveryKeys")
+);
+export const REFRESH_RECOVERY_KEYS_TAG: Hex = keccak256(
+  toHex("quip.digest.refreshRecoveryKeys")
+);
+export const ADD_VERIFICATION_KEYS_TAG: Hex = keccak256(
+  toHex("quip.digest.addVerificationKeys")
+);
+export const REFRESH_VERIFICATION_KEYS_TAG: Hex = keccak256(
+  toHex("quip.digest.refreshVerificationKeys")
 );
 export const UPGRADE_TAG: Hex = keccak256(toHex("quip.digest.upgrade"));
 export const VERIFICATION_TAG: Hex = keccak256(
@@ -163,10 +179,11 @@ function bigintToBytes32(value: bigint | number): Hex {
   return toHex(BigInt(value), { size: 32 });
 }
 
-function tagForKeyset(kind: KeyType | number): Hex {
+function tagForKeyset(kind: KeyType | number, replace: boolean): Hex {
   if (kind === KeyType.Transaction) return ADD_TRANSACTION_KEYS_TAG;
-  if (kind === KeyType.Verification) return VERIFICATION_KEYS_TAG;
-  return KEY_MGMT_TAG; // Recovery
+  if (kind === KeyType.Verification)
+    return replace ? REFRESH_VERIFICATION_KEYS_TAG : ADD_VERIFICATION_KEYS_TAG;
+  return replace ? REFRESH_RECOVERY_KEYS_TAG : ADD_RECOVERY_KEYS_TAG;
 }
 
 function tagForReplaceKeyAt(kind: KeyType | number): Hex {
@@ -875,12 +892,19 @@ export function executeDigest(
   );
 }
 
-/// Mirrors `WOTSPlusCodec.keysetDigest`. `kind` selects the domain tag:
-///   Transaction → ADD_TRANSACTION_KEYS_TAG
-///   Recovery    → KEY_MGMT_TAG
-///   Verification → VERIFICATION_KEYS_TAG
+/// Mirrors `WOTSPlusCodec.keysetDigest`. `(kind, replace)` selects the domain tag:
+///   Transaction          → ADD_TRANSACTION_KEYS_TAG (replace ignored — refresh-Transaction is contract-forbidden)
+///   Recovery,    add     → ADD_RECOVERY_KEYS_TAG
+///   Recovery,    refresh → REFRESH_RECOVERY_KEYS_TAG
+///   Verification, add    → ADD_VERIFICATION_KEYS_TAG
+///   Verification, refresh → REFRESH_VERIFICATION_KEYS_TAG
+///
+/// The `(kind, replace)` split is load-bearing replay-prevention: an `addKeys`
+/// signature must not be liftable to `refreshKeys` (which would clear the
+/// keyset before re-installing).
 export function keysetDigest(
   kind: KeyType | number,
+  replace: boolean,
   wallet: Address,
   chainId: bigint,
   s1: Hex,
@@ -891,7 +915,7 @@ export function keysetDigest(
 ): Hex {
   return keccak256(
     concat([
-      tagForKeyset(kind),
+      tagForKeyset(kind, replace),
       bigintToBytes32(chainId),
       addressToBytes32(wallet),
       s1,
@@ -1071,24 +1095,36 @@ export function erc4337ExecuteDigest(
   );
 }
 
-/// Commitment over the UserOp's constituent fields the paymaster signs.
-/// Mirrors `QuipPaymaster._verifyAndRotate`:
+/// Mirrors `QuipPaymaster._userOpBindingHash`: a keccak256 over the same
+/// field set as ERC-4337's userOpHash, with `paymasterAndData` truncated
+/// to `[:PAYMASTER_SIG_OFFSET]` so the WOTS+ signature region is excluded.
 ///
-///     opCommitment = keccak256(sender, nonce, keccak256(callData))
+///   keccak256(
+///     sender, nonce,
+///     keccak256(initCode), keccak256(callData),
+///     accountGasLimits, preVerificationGas, gasFees,
+///     keccak256(paymasterAndData[:PAYMASTER_SIG_OFFSET])
+///   )
 ///
-/// Constituent fields rather than `userOpHash` because `userOpHash`
-/// includes `paymasterAndData` — which contains the paymaster signature
-/// — creating a circular dependency.
-export function paymasterOpCommitment(
-  sender: Address,
-  nonce: bigint,
-  callData: Hex
-): Hex {
+/// Callers must have already staged the paymasterAndData prefix (header,
+/// validity bounds, nextVerifier) on `userOp` before invoking this — the
+/// signature region itself can stay zero / unset.
+export function userOpBindingHash(userOp: PackedUserOperation): Hex {
+  if (size(userOp.paymasterAndData) < PAYMASTER_SIG_OFFSET) {
+    throw new Error(
+      `userOpBindingHash: paymasterAndData length ${size(userOp.paymasterAndData)} is < ${PAYMASTER_SIG_OFFSET} (the prefix must be staged before computing the binding hash)`
+    );
+  }
   return keccak256(
     concat([
-      addressToBytes32(sender),
-      bigintToBytes32(nonce),
-      keccak256(callData),
+      addressToBytes32(userOp.sender),
+      bigintToBytes32(userOp.nonce),
+      keccak256(userOp.initCode),
+      keccak256(userOp.callData),
+      userOp.accountGasLimits,
+      bigintToBytes32(userOp.preVerificationGas),
+      userOp.gasFees,
+      keccak256(slice(userOp.paymasterAndData, 0, PAYMASTER_SIG_OFFSET)),
     ])
   );
 }
@@ -1101,21 +1137,19 @@ export function paymasterOpCommitment(
 ///       chainId,
 ///       paymaster,
 ///       currentVerifier.publicSeed, currentVerifier.publicKeyHash,
-///       nextVerifier.publicSeed, nextVerifier.publicKeyHash,
-///       paymasterOpCommitment(sender, nonce, callData)
+///       userOpBindingHash(userOp)
 ///     )
+///
+/// `nextVerifier`, `validUntil`/`validAfter`, and the paymaster's gas
+/// limits are bound transitively via `paymasterAndData[:PAYMASTER_SIG_OFFSET]`
+/// inside the binding hash — they do NOT appear as separate outer fields.
 export function paymasterUserOpDigest(
   paymaster: Address,
   chainId: bigint,
   currentVerifierSeed: Hex,
   currentVerifierHash: Hex,
-  nextVerifierSeed: Hex,
-  nextVerifierHash: Hex,
-  sender: Address,
-  nonce: bigint,
-  callData: Hex
+  bindingHash: Hex
 ): Hex {
-  const opCommitment = paymasterOpCommitment(sender, nonce, callData);
   return keccak256(
     concat([
       PAYMASTER_APPROVE_TAG,
@@ -1123,9 +1157,7 @@ export function paymasterUserOpDigest(
       addressToBytes32(paymaster),
       currentVerifierSeed,
       currentVerifierHash,
-      nextVerifierSeed,
-      nextVerifierHash,
-      opCommitment,
+      bindingHash,
     ])
   );
 }

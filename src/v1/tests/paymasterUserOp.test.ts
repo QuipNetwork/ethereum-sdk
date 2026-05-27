@@ -16,52 +16,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, it, expect } from "@jest/globals";
 import {
+  type Hex,
   concat,
   hexToBytes,
   keccak256,
   pad,
+  size,
+  slice,
   toHex,
 } from "viem";
 
 import {
+  type PackedUserOperation,
   type WinternitzAddress,
   type WinternitzElements,
   PAYMASTER_AND_DATA_LEN,
   PAYMASTER_APPROVE_TAG,
+  PAYMASTER_SIG_OFFSET,
   decodePaymasterAndData,
   packPaymasterAndData,
-  paymasterOpCommitment,
   paymasterUserOpDigest,
+  userOpBindingHash,
 } from "../wotsCodec.js";
 import {
   DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
   DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
 } from "../constants.js";
-
-/// Local thin wrapper so the existing object-form test cases keep reading
-/// cleanly. The codec function takes positional args (it mirrors the
-/// Solidity-side concat); the wrapper exists only for test ergonomics.
-function digest(params: {
-  paymaster: `0x${string}`;
-  chainId: bigint;
-  currentVerifier: WinternitzAddress;
-  nextVerifier: WinternitzAddress;
-  sender: `0x${string}`;
-  nonce: bigint;
-  callData: `0x${string}`;
-}) {
-  return paymasterUserOpDigest(
-    params.paymaster,
-    params.chainId,
-    params.currentVerifier.publicSeed,
-    params.currentVerifier.publicKeyHash,
-    params.nextVerifier.publicSeed,
-    params.nextVerifier.publicKeyHash,
-    params.sender,
-    params.nonce,
-    params.callData
-  );
-}
 
 const PAYMASTER = "0x2222222222222222222222222222222222222222" as const;
 const SENDER = "0x1111111111111111111111111111111111111111" as const;
@@ -83,6 +63,30 @@ function makeSig(seed: bigint): WinternitzElements {
   };
 }
 
+/// Construct a baseline `PackedUserOperation` with a fully staged
+/// paymasterAndData prefix (zero-byte sig placeholder). Each test starts
+/// from this and mutates one field to assert the binding/digest reacts.
+function baselineUserOp(): PackedUserOperation {
+  return {
+    sender: SENDER,
+    nonce: 7n,
+    initCode: "0xaabbcc",
+    callData: "0xddeeff00",
+    accountGasLimits: pad(toHex(0x1234n), { size: 32 }),
+    preVerificationGas: 21_000n,
+    gasFees: pad(toHex(0x5678n), { size: 32 }),
+    paymasterAndData: packPaymasterAndData({
+      paymaster: PAYMASTER,
+      validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+      postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
+      validUntil: 0,
+      validAfter: 0,
+      nextVerifier: makeKey(2n),
+    }),
+    signature: "0x",
+  };
+}
+
 describe("PAYMASTER_APPROVE_TAG", () => {
   it("matches keccak256('quip.digest.paymasterApprove')", () => {
     const expected = keccak256(toHex("quip.digest.paymasterApprove"));
@@ -90,183 +94,310 @@ describe("PAYMASTER_APPROVE_TAG", () => {
   });
 });
 
-describe("paymasterOpCommitment", () => {
-  it("matches the contract formula keccak256(sender, nonce, keccak256(callData))", () => {
-    const sender = SENDER;
-    const nonce = 42n;
-    const callData = "0xdeadbeef" as const;
+describe("PAYMASTER_SIG_OFFSET", () => {
+  it("equals 128 (matches the Solidity constant)", () => {
+    expect(PAYMASTER_SIG_OFFSET).toBe(128);
+  });
+});
 
+describe("userOpBindingHash", () => {
+  it("matches the manual hash of the 8-tuple field set", () => {
+    const userOp = baselineUserOp();
     const expected = keccak256(
       concat([
-        pad(sender as `0x${string}`, { size: 32, dir: "left" }),
-        pad(toHex(nonce), { size: 32 }),
-        keccak256(callData),
+        pad(userOp.sender, { size: 32, dir: "left" }),
+        pad(toHex(userOp.nonce), { size: 32 }),
+        keccak256(userOp.initCode),
+        keccak256(userOp.callData),
+        userOp.accountGasLimits,
+        pad(toHex(userOp.preVerificationGas), { size: 32 }),
+        userOp.gasFees,
+        keccak256(slice(userOp.paymasterAndData, 0, PAYMASTER_SIG_OFFSET)),
       ])
     );
-    expect(paymasterOpCommitment(sender, nonce, callData)).toBe(expected);
+    expect(userOpBindingHash(userOp)).toBe(expected);
   });
 
-  it("differs when any field changes", () => {
-    const base = paymasterOpCommitment(SENDER, 0n, "0x");
-    expect(paymasterOpCommitment(SENDER, 1n, "0x")).not.toBe(base);
-    expect(paymasterOpCommitment(SENDER, 0n, "0xff")).not.toBe(base);
-    const otherSender = "0x9999999999999999999999999999999999999999" as const;
-    expect(paymasterOpCommitment(otherSender, 0n, "0x")).not.toBe(base);
+  it("changes when sender changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    const mutated: PackedUserOperation = {
+      ...baselineUserOp(),
+      sender: "0x9999999999999999999999999999999999999999",
+    };
+    expect(userOpBindingHash(mutated)).not.toBe(base);
+  });
+
+  it("changes when nonce changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    expect(userOpBindingHash({ ...baselineUserOp(), nonce: 8n })).not.toBe(base);
+  });
+
+  it("changes when initCode changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    expect(
+      userOpBindingHash({ ...baselineUserOp(), initCode: "0x99" })
+    ).not.toBe(base);
+  });
+
+  it("changes when callData changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    expect(
+      userOpBindingHash({ ...baselineUserOp(), callData: "0x99" })
+    ).not.toBe(base);
+  });
+
+  it("changes when accountGasLimits changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    const mutated: PackedUserOperation = {
+      ...baselineUserOp(),
+      accountGasLimits: pad(toHex(0x9999n), { size: 32 }),
+    };
+    expect(userOpBindingHash(mutated)).not.toBe(base);
+  });
+
+  it("changes when preVerificationGas changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    expect(
+      userOpBindingHash({ ...baselineUserOp(), preVerificationGas: 99_999n })
+    ).not.toBe(base);
+  });
+
+  it("changes when gasFees changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    const mutated: PackedUserOperation = {
+      ...baselineUserOp(),
+      gasFees: pad(toHex(0x9999n), { size: 32 }),
+    };
+    expect(userOpBindingHash(mutated)).not.toBe(base);
+  });
+
+  it("changes when nextVerifier in paymasterAndData[:128] changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    const mutated: PackedUserOperation = {
+      ...baselineUserOp(),
+      paymasterAndData: packPaymasterAndData({
+        paymaster: PAYMASTER,
+        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
+        validUntil: 0,
+        validAfter: 0,
+        nextVerifier: makeKey(0x99n),
+      }),
+    };
+    expect(userOpBindingHash(mutated)).not.toBe(base);
+  });
+
+  it("changes when validUntil / validAfter in paymasterAndData[:128] changes", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    const mutatedUntil: PackedUserOperation = {
+      ...baselineUserOp(),
+      paymasterAndData: packPaymasterAndData({
+        paymaster: PAYMASTER,
+        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
+        validUntil: 100,
+        validAfter: 0,
+        nextVerifier: makeKey(2n),
+      }),
+    };
+    expect(userOpBindingHash(mutatedUntil)).not.toBe(base);
+
+    const mutatedAfter: PackedUserOperation = {
+      ...baselineUserOp(),
+      paymasterAndData: packPaymasterAndData({
+        paymaster: PAYMASTER,
+        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
+        validUntil: 0,
+        validAfter: 50,
+        nextVerifier: makeKey(2n),
+      }),
+    };
+    expect(userOpBindingHash(mutatedAfter)).not.toBe(base);
+  });
+
+  it("changes when paymaster gas limits in paymasterAndData[:128] change", () => {
+    const base = userOpBindingHash(baselineUserOp());
+    const mutated: PackedUserOperation = {
+      ...baselineUserOp(),
+      paymasterAndData: packPaymasterAndData({
+        paymaster: PAYMASTER,
+        validationGasLimit:
+          DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT + 1n,
+        postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
+        validUntil: 0,
+        validAfter: 0,
+        nextVerifier: makeKey(2n),
+      }),
+    };
+    expect(userOpBindingHash(mutated)).not.toBe(base);
+  });
+
+  it("does NOT change when the WOTS+ sig region of paymasterAndData mutates", () => {
+    // The sig region is intentionally excluded from the binding hash so the
+    // digest can be computed before the signature exists.
+    const baseUserOp = baselineUserOp();
+    const base = userOpBindingHash(baseUserOp);
+
+    const withSig: PackedUserOperation = {
+      ...baseUserOp,
+      paymasterAndData: packPaymasterAndData({
+        paymaster: PAYMASTER,
+        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
+        validUntil: 0,
+        validAfter: 0,
+        nextVerifier: makeKey(2n),
+        sig: makeSig(0x99n),
+      }),
+    };
+    expect(userOpBindingHash(withSig)).toBe(base);
+  });
+
+  it("throws when paymasterAndData is shorter than PAYMASTER_SIG_OFFSET", () => {
+    const truncated: PackedUserOperation = {
+      ...baselineUserOp(),
+      paymasterAndData: "0xdeadbeef",
+    };
+    expect(() => userOpBindingHash(truncated)).toThrow();
   });
 });
 
 describe("paymasterUserOpDigest", () => {
-  it("matches the contract formula (PAYMASTER_APPROVE_TAG | chainId | paymaster | currentKey | nextKey | opCommitment)", () => {
+  it("matches the manual hash (PAYMASTER_APPROVE_TAG | chainId | paymaster | currentVerifier | bindingHash)", () => {
     const chainId = 1n;
-    const currentKey = makeKey(1n);
-    const nextKey = makeKey(2n);
-    const nonce = 42n;
-    const callData = "0xabcd" as const;
+    const currentVerifier = makeKey(1n);
+    const userOp = baselineUserOp();
+    const bindingHash = userOpBindingHash(userOp);
 
-    const opCommitment = paymasterOpCommitment(SENDER, nonce, callData);
     const expected = keccak256(
       concat([
         PAYMASTER_APPROVE_TAG,
         pad(toHex(chainId), { size: 32 }),
-        pad(PAYMASTER as `0x${string}`, { size: 32, dir: "left" }),
-        currentKey.publicSeed,
-        currentKey.publicKeyHash,
-        nextKey.publicSeed,
-        nextKey.publicKeyHash,
-        opCommitment,
+        pad(PAYMASTER, { size: 32, dir: "left" }),
+        currentVerifier.publicSeed,
+        currentVerifier.publicKeyHash,
+        bindingHash,
       ])
     );
-
-    const actual = digest({
-      paymaster: PAYMASTER,
-      chainId,
-      currentVerifier: currentKey,
-      nextVerifier: nextKey,
-      sender: SENDER,
-      nonce,
-      callData,
-    });
-    expect(actual).toBe(expected);
+    expect(
+      paymasterUserOpDigest(
+        PAYMASTER,
+        chainId,
+        currentVerifier.publicSeed,
+        currentVerifier.publicKeyHash,
+        bindingHash
+      )
+    ).toBe(expected);
   });
 
-  it("differs when chainId / paymaster / verifiers / sender / nonce / callData change", () => {
-    const ck = makeKey(1n);
-    const nk = makeKey(2n);
-    const base = digest({
-      paymaster: PAYMASTER,
-      chainId: 1n,
-      currentVerifier: ck,
-      nextVerifier: nk,
-      sender: SENDER,
-      nonce: 0n,
-      callData: "0x",
-    });
+  it("changes when chainId / paymaster / currentVerifier / bindingHash change", () => {
+    const currentVerifier = makeKey(1n);
+    const userOp = baselineUserOp();
+    const bindingHash = userOpBindingHash(userOp);
 
-    const diff = (params: Parameters<typeof digest>[0]) => digest(params);
-
-    expect(
-      diff({
-        paymaster: PAYMASTER,
-        chainId: 8453n,
-        currentVerifier: ck,
-        nextVerifier: nk,
-        sender: SENDER,
-        nonce: 0n,
-        callData: "0x",
-      })
-    ).not.toBe(base);
-    expect(
-      diff({
-        paymaster: "0x0000000000000000000000000000000000000099",
-        chainId: 1n,
-        currentVerifier: ck,
-        nextVerifier: nk,
-        sender: SENDER,
-        nonce: 0n,
-        callData: "0x",
-      })
-    ).not.toBe(base);
-    expect(
-      diff({
-        paymaster: PAYMASTER,
-        chainId: 1n,
-        currentVerifier: makeKey(99n),
-        nextVerifier: nk,
-        sender: SENDER,
-        nonce: 0n,
-        callData: "0x",
-      })
-    ).not.toBe(base);
-    expect(
-      diff({
-        paymaster: PAYMASTER,
-        chainId: 1n,
-        currentVerifier: ck,
-        nextVerifier: makeKey(99n),
-        sender: SENDER,
-        nonce: 0n,
-        callData: "0x",
-      })
-    ).not.toBe(base);
-    expect(
-      diff({
-        paymaster: PAYMASTER,
-        chainId: 1n,
-        currentVerifier: ck,
-        nextVerifier: nk,
-        sender: "0x0000000000000000000000000000000000000099",
-        nonce: 0n,
-        callData: "0x",
-      })
-    ).not.toBe(base);
-    expect(
-      diff({
-        paymaster: PAYMASTER,
-        chainId: 1n,
-        currentVerifier: ck,
-        nextVerifier: nk,
-        sender: SENDER,
-        nonce: 7n,
-        callData: "0x",
-      })
-    ).not.toBe(base);
-    expect(
-      diff({
-        paymaster: PAYMASTER,
-        chainId: 1n,
-        currentVerifier: ck,
-        nextVerifier: nk,
-        sender: SENDER,
-        nonce: 0n,
-        callData: "0xff",
-      })
-    ).not.toBe(base);
-  });
-
-  it("wrapper matches the codec function", () => {
-    const ck = makeKey(0x11n);
-    const nk = makeKey(0x22n);
-    const viaWrapper = digest({
-      paymaster: PAYMASTER,
-      chainId: 31337n,
-      currentVerifier: ck,
-      nextVerifier: nk,
-      sender: SENDER,
-      nonce: 5n,
-      callData: "0xc0ffee",
-    });
-    const viaCodec = paymasterUserOpDigest(
+    const base = paymasterUserOpDigest(
       PAYMASTER,
-      31337n,
-      ck.publicSeed,
-      ck.publicKeyHash,
-      nk.publicSeed,
-      nk.publicKeyHash,
-      SENDER,
-      5n,
-      "0xc0ffee"
+      1n,
+      currentVerifier.publicSeed,
+      currentVerifier.publicKeyHash,
+      bindingHash
     );
-    expect(viaWrapper).toBe(viaCodec);
+
+    // Different chainId.
+    expect(
+      paymasterUserOpDigest(
+        PAYMASTER,
+        8453n,
+        currentVerifier.publicSeed,
+        currentVerifier.publicKeyHash,
+        bindingHash
+      )
+    ).not.toBe(base);
+
+    // Different paymaster.
+    expect(
+      paymasterUserOpDigest(
+        "0x0000000000000000000000000000000000000099",
+        1n,
+        currentVerifier.publicSeed,
+        currentVerifier.publicKeyHash,
+        bindingHash
+      )
+    ).not.toBe(base);
+
+    // Different currentVerifier seed.
+    const alt = makeKey(99n);
+    expect(
+      paymasterUserOpDigest(
+        PAYMASTER,
+        1n,
+        alt.publicSeed,
+        currentVerifier.publicKeyHash,
+        bindingHash
+      )
+    ).not.toBe(base);
+
+    // Different currentVerifier publicKeyHash.
+    expect(
+      paymasterUserOpDigest(
+        PAYMASTER,
+        1n,
+        currentVerifier.publicSeed,
+        alt.publicKeyHash,
+        bindingHash
+      )
+    ).not.toBe(base);
+
+    // Different bindingHash.
+    const otherBinding = userOpBindingHash({
+      ...userOp,
+      nonce: userOp.nonce + 1n,
+    });
+    expect(
+      paymasterUserOpDigest(
+        PAYMASTER,
+        1n,
+        currentVerifier.publicSeed,
+        currentVerifier.publicKeyHash,
+        otherBinding
+      )
+    ).not.toBe(base);
+  });
+
+  it("transitively reacts to every envelope field mutation via bindingHash", () => {
+    // End-to-end check that mutating any envelope field changes the digest
+    // (the binding hash is the channel through which they're bound).
+    const cv = makeKey(1n);
+    const chainId = 1n;
+    const baseDigest = paymasterUserOpDigest(
+      PAYMASTER,
+      chainId,
+      cv.publicSeed,
+      cv.publicKeyHash,
+      userOpBindingHash(baselineUserOp())
+    );
+
+    const mutations: ((u: PackedUserOperation) => PackedUserOperation)[] = [
+      (u) => ({ ...u, sender: "0x9999999999999999999999999999999999999999" }),
+      (u) => ({ ...u, nonce: u.nonce + 1n }),
+      (u) => ({ ...u, initCode: "0x99" }),
+      (u) => ({ ...u, callData: "0x99" }),
+      (u) => ({ ...u, accountGasLimits: pad(toHex(0x9999n), { size: 32 }) as Hex }),
+      (u) => ({ ...u, preVerificationGas: u.preVerificationGas + 1n }),
+      (u) => ({ ...u, gasFees: pad(toHex(0x9999n), { size: 32 }) as Hex }),
+    ];
+    for (const m of mutations) {
+      const mutated = m(baselineUserOp());
+      const mutatedDigest = paymasterUserOpDigest(
+        PAYMASTER,
+        chainId,
+        cv.publicSeed,
+        cv.publicKeyHash,
+        userOpBindingHash(mutated)
+      );
+      expect(mutatedDigest).not.toBe(baseDigest);
+    }
   });
 });
 
