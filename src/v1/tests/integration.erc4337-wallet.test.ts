@@ -242,6 +242,58 @@ describe("simulateUserOp — rejection paths", () => {
     expect(sim.keysBurnedIfRevert.wallet).toBe(false);
   }, 30_000);
 
+  test("NextKeyAlreadyInUse: nextKey was rotated out — monotonic burn index catches it", async () => {
+    // Regression test for the monotonic-burn audit fix. The contract's
+    // `isKeySpent` index keeps a key spent even after it has been rotated
+    // out of every live slot. A naive simulator that only checked live
+    // membership would miss this and let the userOp through to on-chain
+    // revert; this test pins the SDK to the contract's behavior.
+    const { client } = await freshWallet(0x53);
+    const headBefore = await client.getHeadTransactionKey();
+
+    // Submit a real execute via handleOps to rotate `headBefore` out.
+    const first = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
+    const handleHash = await stack.walletClient.writeContract({
+      chain: foundry,
+      address: CANONICAL_ENTRYPOINT_V07,
+      abi: entryPointV07Abi,
+      functionName: "handleOps",
+      args: [[first.userOp], stack.account.address],
+      account: stack.account,
+      gas: 2_000_000n,
+    });
+    await stack.publicClient.waitForTransactionReceipt({ hash: handleHash });
+
+    // `headBefore` must no longer be a live txn-keyset member but MUST still
+    // register as spent in the monotonic index.
+    expect(
+      await client.isKey(KeyType.Transaction, headBefore)
+    ).toBe(false);
+    expect(await client.isKeySpent(headBefore)).toBe(true);
+
+    // Build a second userOp (signed with the new head, post-rotation), then
+    // tamper its nextKey field to be the rotated-out `headBefore`.
+    const second = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");
+    const ghostSeed = headBefore.publicSeed.slice(2);
+    const ghostHash = headBefore.publicKeyHash.slice(2);
+    const sigHex = second.userOp.signature.slice(2);
+    const tampered =
+      "0x" +
+      sigHex.slice(0, 128) +
+      ghostSeed +
+      ghostHash +
+      sigHex.slice(128 + 128);
+    const malformed: PackedUserOperation = {
+      ...second.userOp,
+      signature: tampered as Hex,
+    };
+    const sim = await client.simulateUserOp(malformed);
+    expect(sim.walletValidation).toBe(
+      UserOpValidationFailure.NextKeyAlreadyInUse
+    );
+    expect(sim.keysBurnedIfRevert.wallet).toBe(false);
+  }, 60_000);
+
   test("InvalidSignature: WOTS+ sig elements tampered", async () => {
     const { client } = await freshWallet(0x45);
     const built = await client.buildExecuteUserOp(zeroAddress, 0n, "0x");

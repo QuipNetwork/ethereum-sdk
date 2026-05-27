@@ -37,6 +37,7 @@ import {
   paymasterUserOpDigest,
   unpackAccountGasLimits,
   unpackGasFees,
+  userOpBindingHash,
 } from "./wotsCodec.js";
 
 export interface BuildUserOpParams {
@@ -136,30 +137,28 @@ export function signWalletUserOp(params: {
 /// Sign a paymaster approval over the provided UserOp. The signing key is
 /// the WOTS+ keypair derived from `(vaultId, currentVerifier.publicSeed)`.
 /// `signer.sign(...)` auto-burns the key — once this method returns, the
-/// `currentVerifier` is dead, exactly per WOTS+ semantics. Caller assembles
-/// the final `paymasterAndData` by calling `codec.packPaymasterAndData` with
-/// the returned `sig`.
+/// `currentVerifier` is dead, exactly per WOTS+ semantics.
+///
+/// `params.userOp.paymasterAndData` MUST already have the paymaster prefix
+/// staged (header, validity bounds, nextVerifier) before this is called.
+/// The signature region (`paymasterAndData[PAYMASTER_SIG_OFFSET:]`) can be
+/// zero — it's excluded from the binding hash. Use `packPaymasterAndData`
+/// with `sig` omitted to construct the prefix.
 export function signPaymasterUserOp(params: {
   signer: QuipSigner;
   vaultId: Hex;
   paymaster: Address;
   chainId: bigint;
-  sender: Address;
-  nonce: bigint;
-  callData: Hex;
+  userOp: PackedUserOperation;
   currentVerifier: WinternitzAddress;
-  nextVerifier: WinternitzAddress;
 }): { sig: WinternitzElements; digest: Hex } {
+  const bindingHash = userOpBindingHash(params.userOp);
   const digest = paymasterUserOpDigest(
     params.paymaster,
     params.chainId,
     params.currentVerifier.publicSeed,
     params.currentVerifier.publicKeyHash,
-    params.nextVerifier.publicSeed,
-    params.nextVerifier.publicKeyHash,
-    params.sender,
-    params.nonce,
-    params.callData
+    bindingHash
   );
   return {
     sig: {
@@ -264,14 +263,20 @@ export function estimateSponsorshipCost(
 
 /// One-shot helper: sign the paymaster approval AND pack the resulting
 /// `paymasterAndData` for direct substitution onto the UserOp.
+///
+/// Order of operations:
+///   1. Stage the paymasterAndData prefix (header + validity + nextVerifier)
+///      onto a copy of `userOp` with a zero-byte placeholder in the sig region.
+///   2. Compute the binding hash and sign — the sig region is intentionally
+///      excluded from the binding so the digest can be produced before the
+///      signature exists.
+///   3. Re-pack the paymasterAndData with the real sig.
 export function buildSignedPaymasterAndData(params: {
   signer: QuipSigner;
   vaultId: Hex;
   paymaster: Address;
   chainId: bigint;
-  sender: Address;
-  nonce: bigint;
-  callData: Hex;
+  userOp: PackedUserOperation;
   currentVerifier: WinternitzAddress;
   nextVerifier: WinternitzAddress;
   validUntil: number;
@@ -279,23 +284,35 @@ export function buildSignedPaymasterAndData(params: {
   validationGasLimit?: bigint;
   postOpGasLimit?: bigint;
 }): { paymasterAndData: Hex; digest: Hex } {
+  const validationGasLimit =
+    params.validationGasLimit ?? DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT;
+  const postOpGasLimit =
+    params.postOpGasLimit ?? DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT;
+
+  const prefixWithZeroSig = packPaymasterAndData({
+    paymaster: params.paymaster,
+    validationGasLimit,
+    postOpGasLimit,
+    validUntil: params.validUntil,
+    validAfter: params.validAfter,
+    nextVerifier: params.nextVerifier,
+  });
+  const stagedUserOp: PackedUserOperation = {
+    ...params.userOp,
+    paymasterAndData: prefixWithZeroSig,
+  };
   const { sig, digest } = signPaymasterUserOp({
     signer: params.signer,
     vaultId: params.vaultId,
     paymaster: params.paymaster,
     chainId: params.chainId,
-    sender: params.sender,
-    nonce: params.nonce,
-    callData: params.callData,
+    userOp: stagedUserOp,
     currentVerifier: params.currentVerifier,
-    nextVerifier: params.nextVerifier,
   });
   const paymasterAndData = packPaymasterAndData({
     paymaster: params.paymaster,
-    validationGasLimit:
-      params.validationGasLimit ?? DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-    postOpGasLimit:
-      params.postOpGasLimit ?? DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
+    validationGasLimit,
+    postOpGasLimit,
     validUntil: params.validUntil,
     validAfter: params.validAfter,
     nextVerifier: params.nextVerifier,

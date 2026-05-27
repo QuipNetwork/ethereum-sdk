@@ -515,6 +515,21 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress calldata key
     ) external view returns (bool);
 
+    /// @notice Returns true if `key` has ever been installed in this wallet —
+    ///         in any keyset (transaction / recovery / verification) or either
+    ///         single-key slot (`disasterRecoveryKey`, `ownershipKey`).
+    /// @dev Monotonic: once true, stays true even after the key has been
+    ///      rotated out of its live slot. Off-chain callers should use this
+    ///      as the pre-flight check before sending a userOp whose `nextKey`
+    ///      will be subject to the contract's `_enforceUnspentKey` guard —
+    ///      `isKey(kind, key)` (live-membership) is insufficient because a
+    ///      key can be historically burned without being currently live.
+    /// @param key The Winternitz public key to query.
+    /// @return True if the key has ever been installed in this wallet.
+    function isKeySpent(
+        WOTSPlus.WinternitzAddress calldata key
+    ) external view returns (bool);
+
     /// @notice Returns every key in the selected keyset in a single read.
     /// @dev Storage-order array; identical semantics to iterating `keyAt`
     ///      from `0` to `keyCount(kind) - 1`. Off-chain callers should

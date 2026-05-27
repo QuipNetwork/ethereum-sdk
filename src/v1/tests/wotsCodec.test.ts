@@ -366,14 +366,31 @@ describe("digest parity (live Solidity)", () => {
     expect(tsDigest).toBe(solDigest);
   });
 
-  test("keysetDigest matches Solidity for each kind", async () => {
+  test("keysetDigest matches Solidity for each (kind, replace)", async () => {
     for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
-      const tsDigest = keysetDigest(kind, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH);
-      const solDigest = await callHarness("exposed_keysetDigest", [
-        kind, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
-      ]);
-      expect(tsDigest).toBe(solDigest);
+      for (const replace of [false, true]) {
+        const tsDigest = keysetDigest(kind, replace, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH);
+        const solDigest = await callHarness("exposed_keysetDigest", [
+          kind, replace, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
+        ]);
+        expect(tsDigest).toBe(solDigest);
+      }
     }
+  });
+
+  test("keysetDigest produces distinct values across (kind, replace) tuples", () => {
+    const digests = new Set<string>();
+    for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
+      for (const replace of [false, true]) {
+        digests.add(
+          keysetDigest(kind, replace, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH)
+        );
+      }
+    }
+    // 6 combinations, but refresh-Transaction collapses onto add-Transaction
+    // (the `replace` bit is intentionally ignored for Transaction since
+    // refresh-Transaction is contract-forbidden), so 5 distinct values.
+    expect(digests.size).toBe(5);
   });
 
   test("recoverWalletDigest matches Solidity", async () => {
