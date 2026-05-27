@@ -356,13 +356,20 @@ interface IQuipWallet {
     /// @notice Disabled; always reverts with `RenounceDisabled`.
     function renounceOwnership() external payable;
 
-    /// @notice Upgrades the wallet to a new implementation, verifying two PQ signatures and
-    ///         optionally migrating state.
-    /// @dev First verifies the upgrade authorization against `currentKey` using pqSig.
-    ///      Then delegatecalls `verifyUpgrade` on the new implementation, which independently
-    ///      verifies a second signature from the verifier key embedded in the payload.
-    ///      Optionally calls `migrate` if the payload includes migration data. Finally delegates
-    ///      to the parent `upgradeToAndCall` with empty calldata.
+    /// @notice Upgrades the wallet to a new implementation, gated by a WOTS+
+    ///         signature from the transaction keyset plus a scheme-compatibility
+    ///         probe against the new implementation, and optionally migrating state.
+    /// @dev Authorization order:
+    ///        1. Factory vetting check — `newImplementation` must be in the factory's
+    ///           vetted set and not deprecated. This is the actual gate on which
+    ///           implementations can be reached.
+    ///        2. WOTS+ rotation on `transactionKeys` using (currentKey, nextKey, pqSig).
+    ///           This is the actual upgrade authorization.
+    ///        3. Delegatecall to `newImplementation.verifyUpgrade(...)` — a
+    ///           scheme-compatibility probe (NOT a second authorization factor).
+    ///           See `verifyUpgrade` natspec for what this proves and what it does not.
+    ///      Optionally calls `migrate` if the payload's `shouldMigrate` byte is set.
+    ///      Finally delegates to the parent `upgradeToAndCall` with empty calldata.
     /// @param newImplementation The address of the new implementation contract.
     /// @param data Packed upgrade data: [0:64) currentKey, [64:128) nextKey,
     ///      [128:2272) pqSig, [2272:2336) verifier, [2336:4480) verifySig,
@@ -372,10 +379,35 @@ interface IQuipWallet {
         bytes calldata data
     ) external payable;
 
-    /// @notice Verifies a PQ signature from the new implementation's verifier key.
-    /// @dev Called via delegatecall from `upgradeToAndCall` on the new implementation.
-    ///      Factory vetting is the caller's responsibility; this function performs only
-    ///      scheme-specific verification. Future implementations may use a different PQ scheme.
+    /// @notice Scheme-compatibility probe run on the new implementation during
+    ///         `upgradeToAndCall`. NOT a second authorization factor.
+    /// @dev Called via delegatecall from `upgradeToAndCall` so the new implementation's
+    ///      bytecode executes against the wallet's storage. The (verifier, verifySig)
+    ///      pair in the payload is supplied by the upgrade caller and is constructed
+    ///      under whatever signature scheme the new implementation uses. The new impl's
+    ///      `_verifyImplementationSig` then runs that scheme's verify routine against
+    ///      the pair and reverts if it returns false.
+    ///
+    ///      What this proves:
+    ///        - The new implementation's signature-verification code path is reachable
+    ///          and produces `true` on a well-formed input under its declared scheme.
+    ///          This is the forward-compatibility hook for a future migration from
+    ///          WOTS+ to a different post-quantum scheme (e.g. SPHINCS+, a lattice
+    ///          scheme): an impl whose verifier code is missing, broken, or returns
+    ///          false unconditionally will fail this check and the upgrade reverts.
+    ///
+    ///      What this does NOT prove:
+    ///        - That the verifier was pre-authorized by wallet state, factory policy,
+    ///          governance, or any stored allowlist. The verifier keypair is generated
+    ///          by the caller; they sign with it themselves. The check is purely
+    ///          self-consistent.
+    ///        - That an independent third party approved the upgrade. The actual
+    ///          upgrade authorization is the WOTS+ rotation on `transactionKeys` that
+    ///          runs in `upgradeToAndCall` BEFORE this delegatecall.
+    ///
+    ///      Implementation gating is the factory's responsibility — `upgradeToAndCall`
+    ///      rejects any `newImplementation` not in the factory's vetted set. This
+    ///      function performs only scheme-specific verification.
     /// @param newImplementation The address of the new implementation being upgraded to.
     /// @param data Packed upgrade payload; verifier at [2272:2336), verifySig at [2336:4480).
     function verifyUpgrade(
@@ -383,11 +415,12 @@ interface IQuipWallet {
         bytes calldata data
     ) external view;
 
-    /// @notice Verifies a PQ signature from the new implementation's verifier key
-    ///         for the recoveryUpgrade path.
-    /// @dev Called via delegatecall from `recoveryUpgrade` on the new implementation.
-    ///      Shares the same (currentKey, newKey, pqSig) auth shape as `upgradeToAndCall`
-    ///      since the recovery path now rotates the consumed recovery key in place.
+    /// @notice Scheme-compatibility probe run on the new implementation during
+    ///         `recoveryUpgrade`. NOT a second authorization factor.
+    /// @dev See `verifyUpgrade` for the full semantics. The only difference is the
+    ///      payload it decodes from (recoveryUpgrade payload vs. upgradeToAndCall
+    ///      payload) and the auth keyset that already gated reaching this point
+    ///      (`recoveryKeys` rather than `transactionKeys`).
     /// @param newImplementation The address of the new implementation being upgraded to.
     /// @param data Packed recoveryUpgrade payload; verifier at [2272:2336),
     ///             verifySig at [2336:4480).
