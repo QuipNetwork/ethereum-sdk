@@ -1331,6 +1331,24 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///      and `verifyRecoveryUpgrade` (called via delegatecall from `recoveryUpgrade`).
     ///      The two public entry points differ only in which portion of their payload
     ///      they decode the verifier from; the verification logic is identical.
+    ///
+    ///      SECURITY: this is a self-consistency probe, not an authorization layer.
+    ///      The `verifier` arrives in calldata alongside its own `verifySig`; this
+    ///      function only checks that `verifySig` is valid for `verifier` over the
+    ///      verification digest, NOT that `verifier` was pre-authorized anywhere
+    ///      (no `verificationKeys` membership check, no factory registry lookup, no
+    ///      governance allowlist). Anyone who can reach this code path can supply a
+    ///      freshly generated verifier keypair and sign with it themselves.
+    ///
+    ///      What it actually proves: the new implementation's PQ verifier code path
+    ///      is reachable and produces `true` on a well-formed input under whatever
+    ///      scheme the new impl uses. A future impl migrating from WOTS+ to a
+    ///      different PQ scheme (SPHINCS+, lattice-based, etc.) would override this
+    ///      function to call its scheme's verify routine; the (verifier, verifySig)
+    ///      pair in the upgrade payload would then be constructed under that scheme.
+    ///      The actual upgrade authorization is the WOTS+ rotation on
+    ///      `transactionKeys` / `recoveryKeys` that already ran in the caller; the
+    ///      actual implementation gate is factory vetting.
     function _verifyImplementationSig(
         address newImplementation,
         WOTSPlus.WinternitzAddress calldata verifier,
