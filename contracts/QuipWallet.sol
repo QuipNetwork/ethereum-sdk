@@ -966,22 +966,22 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// @notice ERC-1271 validation. Requires BOTH a valid WOTS+ signature from a
     ///         verification-keyset member AND a valid ECDSA signature from the
     ///         classical `owner()` over the raw `hash`.
-    /// @dev Stateless/view: does NOT consume the WOTS+ key. Callers must rotate
-    ///      used verification keys out-of-band via `replaceKeyAt` to
-    ///      avoid WOTS+ key reuse.
+    /// @dev EIP-1271 mandates `view`, so this function cannot burn the verifier
+    ///      on-chain. Caller obligations:
+    ///        - Rotate the verifier after each signature via
+    ///          `replaceKeyAt(KeyType.Verification, ...)`. WOTS+ leaks chain
+    ///          material on every signature, so multi-use erodes unforgeability —
+    ///          a cryptographic requirement, not just integrator hygiene.
+    ///        - Bake a nonce / deadline into the signed `hash`. The wallet
+    ///          provides no anti-replay layer here; consumer protocols
+    ///          (Permit2, Seaport, etc.) follow this convention.
     ///
-    ///      AND semantics + raw-hash ECDSA is a failsafe: if the WOTS+ half ever
-    ///      breaks (scheme bug, verifier flaw), the ECDSA half still binds the
-    ///      hash to a signature from the wallet's classical owner. The ECDSA
-    ///      check requires `owner()` to be an EOA so `ecrecover` can return a
-    ///      meaningful address — contract owners do not currently satisfy this
-    ///      path.
+    ///      AND-gated ECDSA is a failsafe against a WOTS+ scheme break, not
+    ///      anti-replay. Requires `owner()` to be an EOA.
     ///
     ///      Signature layout: [0:64) verifier, [64:2208) pqSig, [2208:2273) ecdsaSig.
-    ///
-    ///      Defers to `_checkErc1271Signature` and collapses every non-`Ok`
-    ///      reason to the EIP-1271 failure magic. Callers that need to
-    ///      distinguish failure branches should `eth_call` `debugIsValidSignature`.
+    ///      Failure branches collapse to the EIP-1271 magic; use
+    ///      `debugIsValidSignature` via `eth_call` to discriminate.
     function isValidSignature(
         bytes32 hash,
         bytes calldata signature
