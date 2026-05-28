@@ -69,7 +69,7 @@ export const RECOVERY_KEY_AMOUNT = 10;
 export const INIT_PAYLOAD_SIZE = 1088;
 /// Payload size for `saveWallet`: 64 + 64 + 2144 + 5 × 64 + 10 × 64.
 export const SAVE_WALLET_PAYLOAD_SIZE = 3232;
-/// Payload size for `transferOwnership` / `completeOwnershipHandover`:
+/// Payload size for `transferOwnership`:
 /// 64 + 64 + 2144 + 32 (newOwner) + 64 (newDisasterKey) + 5 × 64 + 10 × 64.
 export const OWNERSHIP_TRANSFER_PAYLOAD_SIZE = 3328;
 /// Payload size for `upgradeToAndCall`: 64 + 64 + 2144 + 64 (verifier)
@@ -124,9 +124,6 @@ export const WITHDRAW_DEPOSIT_TAG: Hex = keccak256(
 );
 export const TRANSFER_OWNERSHIP_TAG: Hex = keccak256(
   toHex("quip.digest.transferOwnership")
-);
-export const COMPLETE_OWNERSHIP_HANDOVER_TAG: Hex = keccak256(
-  toHex("quip.digest.completeOwnershipHandover")
 );
 export const REPLACE_TRANSACTION_KEY_AT_TAG: Hex = keccak256(
   toHex("quip.digest.replaceTransactionKeyAt")
@@ -381,7 +378,7 @@ export function encodeSaveWallet(
 
 /// OwnershipTransfer payload (3328 bytes): currentOwnershipKey + newOwnershipKey +
 /// pqSig + newOwner + newDisasterKey + newTransactionKeys[5] + newRecoveryKeys[10].
-/// Used by both `transferOwnership(bytes)` and `completeOwnershipHandover(bytes)`.
+/// Used by `transferOwnership(bytes)`.
 export function encodeOwnershipTransfer(
   currentOwnershipKey: WinternitzAddress,
   newOwnershipKey: WinternitzAddress,
@@ -740,8 +737,7 @@ export function saveWalletKeysHash(
 }
 
 /// Mirrors the contract's `keccak256(abi.encode(newDisasterKey, newTransactionKeys,
-/// newRecoveryKeys))`. Used by both `transferOwnershipDigest` and
-/// `completeOwnershipHandoverDigest`.
+/// newRecoveryKeys))`. Bound payload-hash inside `transferOwnershipDigest`.
 export function ownershipTransferKeysHash(
   newDisasterKey: WinternitzAddress,
   newTransactionKeys: WinternitzAddress[],
@@ -833,31 +829,6 @@ export function transferOwnershipDigest(
       s2,
       h2,
       addressToBytes32(newOwner),
-      keysHash,
-    ])
-  );
-}
-
-export function completeOwnershipHandoverDigest(
-  wallet: Address,
-  chainId: bigint,
-  s1: Hex,
-  h1: Hex,
-  s2: Hex,
-  h2: Hex,
-  pendingOwner: Address,
-  keysHash: Hex
-): Hex {
-  return keccak256(
-    concat([
-      COMPLETE_OWNERSHIP_HANDOVER_TAG,
-      bigintToBytes32(chainId),
-      addressToBytes32(wallet),
-      s1,
-      h1,
-      s2,
-      h2,
-      addressToBytes32(pendingOwner),
       keysHash,
     ])
   );

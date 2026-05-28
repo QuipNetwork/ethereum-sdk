@@ -58,7 +58,6 @@ import {
   KeyType,
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
-  completeOwnershipHandoverDigest,
   computeUserOpHash,
   decodePaymasterAndData,
   decodeUserOpSignature,
@@ -370,8 +369,8 @@ export class QuipWalletClient {
   }
 
   /// Current `ownershipKey` — the WOTS+ public key that authorizes
-  /// `transferOwnership` / `completeOwnershipHandover`. Stored at a fixed
-  /// slot on chain and rotates on use.
+  /// `transferOwnership(bytes)`. Stored at a fixed slot on chain and
+  /// rotates on use.
   async getOwnershipKey(): Promise<WinternitzAddress> {
     return await withDecodedError(
       this.publicClient.readContract({
@@ -999,50 +998,6 @@ export class QuipWalletClient {
     },
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
-    return this.ownershipReinitialize(
-      ownershipPublicSeed,
-      params,
-      "transferOwnership",
-      opts
-    );
-  }
-
-  /// PQ-authenticated `completeOwnershipHandover(bytes)` — finalizes a
-  /// pending two-step ownership handover and re-initializes the wallet's PQ
-  /// state for the new owner. Shape matches `transferOwnership`; only the
-  /// signed digest's domain tag differs so a signature cannot be replayed
-  /// between the two paths.
-  async completeOwnershipHandover(
-    ownershipPublicSeed: Hex,
-    params: {
-      newOwner: Address;
-      newOwnershipKey: WinternitzAddress;
-      newDisasterRecoveryKey: WinternitzAddress;
-      newTransactionKeys: WinternitzAddress[];
-      newRecoveryKeys: WinternitzAddress[];
-    },
-    opts: TxOptions = {}
-  ): Promise<TransactionReceipt> {
-    return this.ownershipReinitialize(
-      ownershipPublicSeed,
-      params,
-      "completeOwnershipHandover",
-      opts
-    );
-  }
-
-  private async ownershipReinitialize(
-    ownershipPublicSeed: Hex,
-    params: {
-      newOwner: Address;
-      newOwnershipKey: WinternitzAddress;
-      newDisasterRecoveryKey: WinternitzAddress;
-      newTransactionKeys: WinternitzAddress[];
-      newRecoveryKeys: WinternitzAddress[];
-    },
-    functionName: "transferOwnership" | "completeOwnershipHandover",
-    opts: TxOptions
-  ): Promise<TransactionReceipt> {
     if (params.newTransactionKeys.length !== TRANSACTION_KEY_INIT_AMOUNT) {
       throw new IncorrectTransactionKeyAmountError();
     }
@@ -1059,11 +1014,7 @@ export class QuipWalletClient {
       params.newTransactionKeys,
       params.newRecoveryKeys
     );
-    const digestFn =
-      functionName === "transferOwnership"
-        ? transferOwnershipDigest
-        : completeOwnershipHandoverDigest;
-    const digest = digestFn(
+    const digest = transferOwnershipDigest(
       this.walletAddress,
       BigInt(this.chainId),
       currentOwnership.publicSeed,
@@ -1087,7 +1038,7 @@ export class QuipWalletClient {
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
       abi: quipWalletAbi,
-      functionName,
+      functionName: "transferOwnership",
       args: [payload],
       account: this.account,
     };
