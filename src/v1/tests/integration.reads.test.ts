@@ -206,12 +206,12 @@ describe("tryMulticall against deployed QuipFactory", () => {
     expect(results).toEqual([]);
   });
 
-  test("out-of-bounds vaultIds read surfaces as failure (not throw)", async () => {
+  test("out-of-bounds getVaultIdAt read surfaces as failure (not throw)", async () => {
     const calls = [
       {
         address: factoryAddress,
         abi: quipFactoryAbi,
-        functionName: "vaultIds" as const,
+        functionName: "getVaultIdAt" as const,
         args: [account.address, 0n] as const,
       },
     ];

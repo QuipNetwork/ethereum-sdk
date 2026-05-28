@@ -102,11 +102,61 @@ export class ClassicalTransferOwnershipDisabledError extends QuipError {
   }
 }
 
-export class ClassicalCompleteOwnershipHandoverDisabledError extends QuipError {
+export class OwnershipHandoverDisabledError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
-      "CLASSICAL_COMPLETE_OWNERSHIP_HANDOVER_DISABLED",
-      "Classical-side completeOwnershipHandover is disabled",
+      "OWNERSHIP_HANDOVER_DISABLED",
+      "Two-step ownership handover is disabled; use transferOwnership(bytes)",
+      opts
+    );
+  }
+}
+
+export class OnlyWalletError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "ONLY_WALLET",
+      "Factory.updateWalletOwner is callable only by wallets deployed by this factory",
+      opts
+    );
+  }
+}
+
+export class OwnerStateMismatchError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "OWNER_STATE_MISMATCH",
+      "Factory.updateWalletOwner: wallet.owner() does not match the newOwner argument",
+      opts
+    );
+  }
+}
+
+export class SameOwnerError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SAME_OWNER",
+      "Factory.updateWalletOwner: newOwner equals the wallet's currently-registered owner",
+      opts
+    );
+  }
+}
+
+export class RegistryDesyncError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "REGISTRY_DESYNC",
+      "Factory registry mutation returned false — _vaultIds set diverged from walletOwner source of truth",
+      opts
+    );
+  }
+}
+
+export class ZeroVaultIdError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "ZERO_VAULT_ID",
+      "vaultId must be non-zero; bytes32(0) is reserved as a registry sentinel",
       opts
     );
   }

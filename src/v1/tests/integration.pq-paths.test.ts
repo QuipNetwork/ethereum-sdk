@@ -279,67 +279,6 @@ describe("transferOwnership", () => {
   }, 30_000);
 });
 
-describe("completeOwnershipHandover", () => {
-  test("completes a Solady-style two-step handover and reinitializes PQ state with the new keys", async () => {
-    const { client, walletAddress, ownershipKey, isBurned } =
-      await freshWallet(0x65);
-    const newOwner = newOwnerAccount.address;
-
-    // Step 1: the prospective new owner records a handover request.
-    const requestHash = await newOwnerWalletClient.writeContract({
-      chain: foundry,
-      address: walletAddress,
-      abi: quipWalletAbi,
-      functionName: "requestOwnershipHandover",
-      account: newOwnerAccount,
-    });
-    await stack.publicClient.waitForTransactionReceipt({ hash: requestHash });
-    expect(await client.ownershipHandoverExpiresAt(newOwner)).toBeGreaterThan(
-      0n
-    );
-
-    // Step 2: current owner completes the handover via the PQ path.
-    const incomingSigner = new QuipSigner(
-      new Uint8Array(32).fill(0xb0),
-      createInMemoryBurnSet().consume
-    );
-    const incomingVault = toHex(new Uint8Array(32).fill(0xb0));
-    const newOwnershipKey = incomingSigner.generateKeyPair(incomingVault)
-      .publicKey;
-    const newDisasterRecoveryKey = incomingSigner.generateKeyPair(incomingVault)
-      .publicKey;
-    const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
-      () => incomingSigner.generateKeyPair(incomingVault).publicKey
-    );
-    const newRecoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
-      incomingSigner.generateKeyPair(incomingVault).publicKey
-    );
-
-    const receipt = await client.completeOwnershipHandover(
-      ownershipKey.publicSeed,
-      {
-        newOwner,
-        newOwnershipKey,
-        newDisasterRecoveryKey,
-        newTransactionKeys,
-        newRecoveryKeys,
-      }
-    );
-    expect(receipt.status).toBe("success");
-
-    const state = await client.getWalletState();
-    expect(state.owner).toBe(newOwner);
-    expect(state.ownershipKey.publicSeed).toBe(newOwnershipKey.publicSeed);
-    expect(state.disasterRecoveryKey.publicSeed).toBe(
-      newDisasterRecoveryKey.publicSeed
-    );
-    expect(isBurned(ownershipKey.publicSeed)).toBe(true);
-    // Handover slot is cleared by Solady once consumed.
-    expect(await client.ownershipHandoverExpiresAt(newOwner)).toBe(0n);
-  }, 90_000);
-});
-
 describe("saveWallet", () => {
   test("rotates the disaster-recovery key and reinstalls fresh transaction + recovery keysets", async () => {
     const { client, signer, vaultId, disasterKey, isBurned } =

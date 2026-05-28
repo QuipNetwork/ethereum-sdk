@@ -519,9 +519,9 @@ describe("QuipClient.createWalletWithImplementation", () => {
     const vaultId = toHex(new Uint8Array(32).fill(0xa1));
 
     const walletClientResult = await client.createWalletWithImplementation(
-      vaultId,
       signer,
-      0n
+      0n,
+      { vaultId }
     );
     expect(walletClientResult).toBeDefined();
     const addr = await walletClientResult.getAddress();

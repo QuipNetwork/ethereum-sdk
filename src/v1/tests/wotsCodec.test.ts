@@ -69,7 +69,6 @@ import {
   erc4337ExecuteDigest,
   saveWalletDigest,
   transferOwnershipDigest,
-  completeOwnershipHandoverDigest,
   RECOVERY_KEY_AMOUNT,
   TRANSACTION_KEY_INIT_AMOUNT,
   SAVE_WALLET_PAYLOAD_SIZE,
@@ -478,16 +477,6 @@ describe("digest parity (live Solidity)", () => {
       WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
     );
     const solDigest = await callHarness("exposed_transferOwnershipDigest", [
-      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
-    ]);
-    expect(tsDigest).toBe(solDigest);
-  });
-
-  test("completeOwnershipHandoverDigest matches Solidity", async () => {
-    const tsDigest = completeOwnershipHandoverDigest(
-      WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
-    );
-    const solDigest = await callHarness("exposed_completeOwnershipHandoverDigest", [
       WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, KEYS_HASH,
     ]);
     expect(tsDigest).toBe(solDigest);

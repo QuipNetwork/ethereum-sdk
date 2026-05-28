@@ -24,9 +24,11 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  toHex,
   zeroAddress,
   parseEventLogs,
 } from "viem";
+import { randomBytes } from "@noble/ciphers/webcrypto";
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import {
@@ -57,6 +59,15 @@ import {
   TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
 } from "./wotsCodec.js";
+
+/// Generate a CSPRNG-backed 32-byte vaultId. Default for `createWallet`
+/// when the caller omits `opts.vaultId`. A random vaultId is the only
+/// safe default given that the factory's vaultId namespace is GLOBAL
+/// (CREATE3 salt depends solely on vaultId); a predictable vaultId is
+/// front-runnable across users and across chains.
+export function randomVaultId(): Hex {
+  return toHex(randomBytes(32));
+}
 
 /// Aggregated factory state — one multicall round-trip's worth of view
 /// reads. Useful for an admin dashboard or pre-flight overview.
@@ -163,17 +174,27 @@ export class QuipClient {
   }
 
   /// Deploy a new QuipWallet via `deployLatestWalletProxy`. The SDK
-  /// generates every key for `vaultId` under `quipSigner`: one disaster
-  /// recovery key, one ownership key, five transaction keys, ten recovery
-  /// keys. Caller-supplied key material is intentionally NOT accepted —
+  /// generates every key under `quipSigner`: one disaster recovery key,
+  /// one ownership key, five transaction keys, ten recovery keys.
+  /// Caller-supplied key material is intentionally NOT accepted —
   /// every `publicSeed` is recoverable later from on-chain state plus
   /// `quipSigner.recoverKeyPair(vaultId, publicSeed)`, so the user's only
   /// off-chain backup obligation is the `quantumSecret` itself.
+  ///
+  /// `vaultId` defaults to a CSPRNG-generated 32-byte value. The factory's
+  /// vaultId namespace is GLOBAL (CREATE3 salt is keyed only on vaultId),
+  /// so a predictable vaultId is front-runnable: an attacker who observes
+  /// or guesses your intended vaultId can deploy at the same address first,
+  /// pinning your funds in a wallet whose PQ keys they control. Random is
+  /// the only safe default. Override only if you have a specific reason to
+  /// reproduce an address (e.g. cross-chain mirror — see TODO_SDK.md
+  /// §"Cross-chain vaultId capture").
   async createWallet(
-    vaultId: Hex,
     quipSigner: QuipSigner,
-    opts: TxOptions = {}
+    opts: TxOptions & { vaultId?: Hex } = {}
   ): Promise<QuipWalletClient> {
+    const { vaultId: providedVaultId, ...txOpts } = opts;
+    const vaultId = providedVaultId ?? randomVaultId();
     return this.deployWallet(
       vaultId,
       quipSigner,
@@ -181,21 +202,22 @@ export class QuipClient {
         functionName: "deployLatestWalletProxy",
         argsExceptInitPayload: () => [vaultId, this.account!] as const,
       },
-      opts
+      txOpts
     );
   }
 
   /// Deploy a new QuipWallet against the implementation at a specific
   /// index in the factory's vetted set (via `deploySpecificWalletProxy`).
   /// Use this when the caller explicitly wants an older, still-vetted
-  /// implementation rather than the latest. Same key-generation policy
-  /// as `createWallet`.
+  /// implementation rather than the latest. Same key-generation and
+  /// random-vaultId-default policy as `createWallet`.
   async createWalletWithImplementation(
-    vaultId: Hex,
     quipSigner: QuipSigner,
     index: bigint,
-    opts: TxOptions = {}
+    opts: TxOptions & { vaultId?: Hex } = {}
   ): Promise<QuipWalletClient> {
+    const { vaultId: providedVaultId, ...txOpts } = opts;
+    const vaultId = providedVaultId ?? randomVaultId();
     return this.deployWallet(
       vaultId,
       quipSigner,
@@ -203,7 +225,7 @@ export class QuipClient {
         functionName: "deploySpecificWalletProxy",
         argsExceptInitPayload: () => [vaultId, index, this.account!] as const,
       },
-      opts
+      txOpts
     );
   }
 
@@ -228,8 +250,8 @@ export class QuipClient {
       this.publicClient.readContract({
         address: this.factoryAddress!,
         abi: quipFactoryAbi,
-        functionName: "quips",
-        args: [this.account!, vaultId],
+        functionName: "wallets",
+        args: [vaultId],
       })
     );
 
@@ -335,8 +357,8 @@ export class QuipClient {
       this.publicClient.readContract({
         address: this.factoryAddress!,
         abi: quipFactoryAbi,
-        functionName: "quips",
-        args: [this.account!, vaultId],
+        functionName: "wallets",
+        args: [vaultId],
       })
     );
 
@@ -373,62 +395,45 @@ export class QuipClient {
       throw new NotConnectedError();
     }
 
+    // One multicall: `getVaultIds(owner)` + `getWallets(owner)` return
+    // parallel-indexed snapshots when read in the same block. Avoids
+    // the legacy `1 + N` round-trip pattern.
+    const results = await tryMulticall(
+      this.publicClient,
+      [
+        {
+          address: this.factoryAddress!,
+          abi: quipFactoryAbi,
+          functionName: "getVaultIds" as const,
+          args: [this.account!] as const,
+        },
+        {
+          address: this.factoryAddress!,
+          abi: quipFactoryAbi,
+          functionName: "getWallets" as const,
+          args: [this.account!] as const,
+        },
+      ],
+      { chainId: this.chainId }
+    );
+
+    const failures: { label: string; error: Error }[] = [];
+    if (results[0].status === "failure")
+      failures.push({ label: "getVaultIds", error: results[0].error });
+    if (results[1].status === "failure")
+      failures.push({ label: "getWallets", error: results[1].error });
+    if (failures.length > 0) throw new PartialMulticallResultError(failures);
+
+    const vaultIds = (results[0] as { status: "success"; result: Hex[] })
+      .result;
+    const walletAddrs = (
+      results[1] as { status: "success"; result: Address[] }
+    ).result;
+
     const vaultMap = new Map<string, Address>();
-    const batchSize = 50;
-    let offset = 0;
-
-    while (true) {
-      const vaultIdCalls = Array.from({ length: batchSize }, (_, i) => ({
-        address: this.factoryAddress!,
-        abi: quipFactoryAbi,
-        functionName: "vaultIds" as const,
-        args: [this.account!, BigInt(offset + i)] as const,
-      }));
-
-      const vaultIdResults = await tryMulticall(
-        this.publicClient,
-        vaultIdCalls,
-        { chainId: this.chainId }
-      );
-
-      const validVaultIds: Hex[] = [];
-      for (const r of vaultIdResults) {
-        if (r.status === "success") {
-          validVaultIds.push(r.result as Hex);
-        } else {
-          break; // past end of array
-        }
-      }
-
-      if (validVaultIds.length === 0) break;
-
-      const quipsCalls = validVaultIds.map((vaultId) => ({
-        address: this.factoryAddress!,
-        abi: quipFactoryAbi,
-        functionName: "quips" as const,
-        args: [this.account!, vaultId] as const,
-      }));
-
-      const quipsResults = await tryMulticall(
-        this.publicClient,
-        quipsCalls,
-        { chainId: this.chainId }
-      );
-
-      for (let i = 0; i < validVaultIds.length; i++) {
-        const r = quipsResults[i];
-        if (
-          r.status === "success" &&
-          (r.result as Address) !== zeroAddress
-        ) {
-          vaultMap.set(validVaultIds[i], r.result as Address);
-        }
-      }
-
-      if (validVaultIds.length < batchSize) break;
-      offset += batchSize;
+    for (let i = 0; i < vaultIds.length; i++) {
+      vaultMap.set(vaultIds[i], walletAddrs[i]);
     }
-
     return vaultMap;
   }
 
