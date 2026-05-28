@@ -16,7 +16,7 @@ Active Dev Branch : deploy/testnet
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `contracts/`           | Solidity contracts: `QuipFactory`, `QuipWallet`, `QuipPaymaster`, `WOTSPlusCodec`, `Deployer`.              |
 | `script/`              | Foundry deployment scripts (`*.s.sol`).                                                                     |
-| `scripts/`             | TypeScript operational scripts: `release.cts`, `fundDeployer.cts`, `drainDeployer.cts`, `balance.cts`, etc. |
+| `scripts/`             | TypeScript operational scripts: `release.ts`, `fundDeployer.cts`, `drainDeployer.cts`, `balance.cts`, etc.  |
 | `src/v1/`              | Current TypeScript SDK. Public entry: `src/v1/index.ts`.                                                    |
 | `src/v0/`              | Legacy SDK kept for migration.                                                                              |
 | `test/`                | Foundry tests (Solidity).                                                                                   |
@@ -46,7 +46,7 @@ Active Dev Branch : deploy/testnet
 - **GNU Make** — drives every workflow via the [`Makefile`](Makefile).
 - **[jq](https://jqlang.org)** — required by the storage-layout snapshot/check targets.
 
-Hardhat is also installed, but it's used **only** for MIDL deploy scripts and the release script. All EVM compilation, testing, and deployment goes through Foundry. See `hardhat.config.cts` for the scope of the Hardhat configuration. 
+Hardhat is also installed, but it's used **only** for MIDL deploy scripts (`deploy/midl_regtest/`). All EVM compilation, testing, deployment, and release-bytecode generation go through Foundry. See `hardhat.config.cts` for the scope of the Hardhat configuration. 
 
 ## Installation
 
@@ -146,13 +146,15 @@ bun run smoke:tarball      # pack + dry-install the SDK to verify exports
 
 ### Publishing a release
 
-The release script regenerates `src/v1/addresses.json` and `deployments/bytecode/` from the current Foundry build, then prepares the tarball for `npm publish`:
+The release script regenerates `src/v1/addresses.json` and `deployments/bytecode/` from the current Foundry build (compiler settings in `foundry.toml`), then prepares the tarball for `npm publish`:
 
 ```bash
-make release               # forge build + tsx scripts/release.cts
+make release               # forge build + tsx scripts/release.ts
 bun run smoke:tarball      # verify the tarball before publishing
 npm publish
 ```
+
+`scripts/release.ts` reads Foundry artifacts from `out/`, computes CREATE3 addresses, links the WOTSPlus library into `QuipFactory` / `QuipWallet` bytecode, and snapshots each release under `deployments/bytecode/<Contract>.sol/` with the compiler settings recorded verbatim from each artifact's metadata. MIDL deploys consume those snapshots via `lib/deploy.cts::loadReleaseBytecode` so the bytecode actually deployed on MIDL matches what was compiled by Foundry for the EVM chains.
 
 ---
 
