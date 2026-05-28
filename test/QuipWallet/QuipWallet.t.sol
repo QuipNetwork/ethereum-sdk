@@ -178,26 +178,6 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
-    function _buildCompleteOwnershipHandoverMessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory nextPq,
-        address pendingOwner,
-        bytes32 keysHash
-    ) internal view returns (bytes32) {
-        return
-            Codec.completeOwnershipHandoverDigest(
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                pendingOwner,
-                keysHash
-            );
-    }
-
     function _buildAddVerificationKeysMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,

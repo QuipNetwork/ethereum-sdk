@@ -39,10 +39,20 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     uint256 public executeFee = 0;
 
     /// @inheritdoc IQuipFactory
-    mapping(address => mapping(bytes32 => address)) public quips;
+    mapping(bytes32 vaultId => address wallet) public wallets;
 
     /// @inheritdoc IQuipFactory
-    mapping(address => bytes32[]) public vaultIds;
+    mapping(address wallet => bytes32 vaultId) public vaultIdOf;
+
+    /// @inheritdoc IQuipFactory
+    mapping(address wallet => address owner) public walletOwner;
+
+    /// @dev Per-owner set of vaultIds. Tracks CURRENT classical owner — the
+    ///      `transferOwnership(bytes)` flow on a wallet calls back into
+    ///      `updateWalletOwner` to move the entry between owners. Exposed
+    ///      via `getVaultIdCount` / `getVaultIdAt` / `getVaultIdIndex` /
+    ///      `getVaultIds` / `getWallets`.
+    mapping(address owner => EnumerableSetLib.Bytes32Set) internal _vaultIds;
 
     /// @dev Insertion-ordered set of vetted implementation codehashes.
     ///      Deprecated entries remain in the set to preserve index stability.
@@ -160,6 +170,37 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     }
 
     /// @inheritdoc IQuipFactory
+    function updateWalletOwner(address newOwner) external {
+        bytes32 vaultId = vaultIdOf[msg.sender];
+        if (vaultId == bytes32(0)) revert OnlyWallet();
+        if (newOwner == address(0)) revert ZeroAddressOwner();
+        // Authoritative read — the factory's own source of truth for
+        // who currently owns this wallet. The wallet does not get to pass
+        // a (potentially wrong) `oldOwner`.
+        address oldOwner = walletOwner[msg.sender];
+        if (oldOwner == newOwner) revert SameOwner();
+        // NB:
+        // Pins the callback to the tail of `transferOwnership(bytes)` —
+        // the only path that produces `wallet.owner() == newOwner` in the
+        // same transaction. `execute` / `executeBatch` can't mutate `owner()`
+        // (no path); `delegateExecute` / `storageStore` can't either because
+        // of transient storage guards.
+        if (IQuipWallet(msg.sender).owner() != newOwner)
+            revert OwnerStateMismatch();
+
+        walletOwner[msg.sender] = newOwner;
+        // Both mutations MUST succeed: `oldOwner` came from the factory's
+        // authoritative `walletOwner` mapping so its set must contain
+        // `vaultId`; `newOwner` cannot already hold it because vaultIds are
+        // globally unique (CREATE3) and each lives in at most one owner's
+        // set at a time. A `false` return here means the registry diverged
+        // from `walletOwner` somehow — revert loudly.
+        if (!_vaultIds[oldOwner].remove(vaultId)) revert RegistryDesync();
+        if (!_vaultIds[newOwner].add(vaultId)) revert RegistryDesync();
+        emit WalletOwnerChanged(vaultId, oldOwner, newOwner);
+    }
+
+    /// @inheritdoc IQuipFactory
     function renounceOwnership()
         public
         override(IQuipFactory, OZOwnable)
@@ -187,6 +228,45 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         bytes32 codehash
     ) external view returns (uint256) {
         return _vettedCode.indexOf(codehash);
+    }
+
+    /// @inheritdoc IQuipFactory
+    function getVaultIdCount(address owner_) external view returns (uint256) {
+        return _vaultIds[owner_].length();
+    }
+
+    /// @inheritdoc IQuipFactory
+    function getVaultIdAt(
+        address owner_,
+        uint256 index
+    ) external view returns (bytes32) {
+        return _vaultIds[owner_].at(index);
+    }
+
+    /// @inheritdoc IQuipFactory
+    function getVaultIdIndex(
+        address owner_,
+        bytes32 vaultId
+    ) external view returns (uint256) {
+        return _vaultIds[owner_].indexOf(vaultId);
+    }
+
+    /// @inheritdoc IQuipFactory
+    function getVaultIds(
+        address owner_
+    ) external view returns (bytes32[] memory) {
+        return _vaultIds[owner_].values();
+    }
+
+    /// @inheritdoc IQuipFactory
+    function getWallets(
+        address owner_
+    ) external view returns (address[] memory walletAddrs) {
+        bytes32[] memory ids = _vaultIds[owner_].values();
+        walletAddrs = new address[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            walletAddrs[i] = wallets[ids[i]];
+        }
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -230,6 +310,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         );
 
         if (to == address(0)) revert ZeroAddressOwner();
+        if (vaultId == bytes32(0)) revert ZeroVaultId();
         if (msg.value < creationFee)
             revert InsufficientCreationFee(msg.value, creationFee);
         uint256 contractValue = msg.value - creationFee;
@@ -240,8 +321,13 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         IQuipWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
-        quips[to][vaultId] = contractAddr;
-        vaultIds[to].push(vaultId);
+        wallets[vaultId] = contractAddr;
+        vaultIdOf[contractAddr] = vaultId;
+        walletOwner[contractAddr] = to;
+        // `.add` cannot return false here: vaultId is unique per CREATE3,
+        // and a fresh contract address never appeared in any set before.
+        // Guard anyway against future Solady changes.
+        if (!_vaultIds[to].add(vaultId)) revert RegistryDesync();
 
         emit QuipCreated(
             msg.value,

@@ -48,28 +48,19 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
     function _encodeOwnershipPayload(
         OwnershipPayloadCtx memory ctx,
         address newOwner,
-        bool isHandover,
         WOTSPlus.WinternitzAddress memory curOwnership,
         bytes32 curOwnershipPriv
     ) internal view returns (bytes memory) {
         bytes32 keysHash = keccak256(
             abi.encode(ctx.newDisaster, ctx.newTxn, ctx.newRec)
         );
-        bytes32 msgHash = isHandover
-            ? _buildCompleteOwnershipHandoverMessageHash(
-                address(wallet),
-                curOwnership,
-                ctx.nextOwnership,
-                newOwner,
-                keysHash
-            )
-            : _buildTransferOwnershipMessageHash(
-                address(wallet),
-                curOwnership,
-                ctx.nextOwnership,
-                newOwner,
-                keysHash
-            );
+        bytes32 msgHash = _buildTransferOwnershipMessageHash(
+            address(wallet),
+            curOwnership,
+            ctx.nextOwnership,
+            newOwner,
+            keysHash
+        );
         WOTSPlus.WinternitzElements memory sig = _sign(
             curOwnershipPriv,
             msgHash
@@ -130,7 +121,6 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
             bytes memory payload = _encodeOwnershipPayload(
                 directCtx,
                 BOB,
-                false,
                 ownershipPubkey,
                 ownershipPrivateKey
             );
@@ -197,67 +187,4 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
         }
     }
 
-    /// @dev 2-step handover using completeOwnershipHandover: request → complete.
-    function test_simulation_twoStepHandover() public {
-        currentPq = alicePubkey;
-        currentPrivKey = alicePrivateKey;
-
-        // Step 1: BOB requests handover
-        vm.prank(BOB);
-        wallet.requestOwnershipHandover();
-
-        // Step 2: ALICE completes the handover with PQ sig (full re-init under BOB).
-        OwnershipPayloadCtx memory handoverCtx = _deriveOwnershipKeys(
-            "lifecycle-handover"
-        );
-        {
-            bytes memory payload = _encodeOwnershipPayload(
-                handoverCtx,
-                BOB,
-                true,
-                ownershipPubkey,
-                ownershipPrivateKey
-            );
-            vm.prank(ALICE);
-            wallet.completeOwnershipHandover(payload);
-        }
-
-        // Verify ownership transferred
-        assertEq(wallet.owner(), BOB);
-
-        // Step 3: BOB operates wallet using a freshly installed txn key
-        currentPq = handoverCtx.newTxn[0];
-        currentPrivKey = handoverCtx.newTxnPrivs[0];
-        (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(
-            "bob-post-handover-key"
-        );
-        uint256 fee = wallet.getExecuteFee();
-        bytes32 execHash = _buildExecuteMessageHash(
-            address(wallet),
-            currentPq,
-            postPq,
-            BOB,
-            0.01 ether,
-            "",
-            fee
-        );
-        WOTSPlus.WinternitzElements memory execSig = _sign(
-            currentPrivKey,
-            execHash
-        );
-
-        vm.prank(BOB);
-        wallet.execute(
-            Codec.encodeExecute(currentPq, postPq, execSig, BOB, 0.01 ether, "")
-        );
-
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, postPq));
-
-        // Step 4: ALICE locked out
-        vm.prank(ALICE);
-        vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.execute(
-            Codec.encodeExecute(alicePubkey, postPq, execSig, BOB, 0, "")
-        );
-    }
 }

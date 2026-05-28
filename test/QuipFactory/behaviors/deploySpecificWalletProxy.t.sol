@@ -42,7 +42,9 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
         assertTrue(walletAddr.code.length > 0);
 
         // Check factory state
-        assertEq(factory.quips(ALICE, vaultId), walletAddr);
+        assertEq(factory.wallets(vaultId), walletAddr);
+        assertEq(factory.vaultIdOf(walletAddr), vaultId);
+        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
 
         // Check wallet state
         QuipWallet wallet = QuipWallet(payable(walletAddr));
@@ -147,8 +149,9 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
         );
         vm.stopPrank();
 
-        assertEq(factory.vaultIds(ALICE, 0), vaultId1);
-        assertEq(factory.vaultIds(ALICE, 1), vaultId2);
+        assertEq(factory.getVaultIdCount(ALICE), 2);
+        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId1), type(uint256).max);
+        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId2), type(uint256).max);
     }
 
     function test_deploySpecificWalletProxy_deploysWithSpecificImpl() public {
@@ -283,7 +286,8 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
 
         QuipWallet w = QuipWallet(payable(walletAddr));
         assertEq(w.owner(), BOB);
-        assertEq(factory.quips(BOB, vaultId), walletAddr);
+        assertEq(factory.wallets(vaultId), walletAddr);
+        assertNotEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);
     }
 
     // ── Reverts ──────────────────────────────────────────────────────

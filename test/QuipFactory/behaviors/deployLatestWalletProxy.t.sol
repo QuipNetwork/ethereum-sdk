@@ -40,7 +40,9 @@ contract QuipFactory_deployLatestWalletProxy is QuipFactoryTest {
         assertTrue(walletAddr.code.length > 0);
 
         // Check factory state
-        assertEq(factory.quips(ALICE, vaultId), walletAddr);
+        assertEq(factory.wallets(vaultId), walletAddr);
+        assertEq(factory.vaultIdOf(walletAddr), vaultId);
+        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
 
         // Check wallet state
         QuipWallet wallet = QuipWallet(payable(walletAddr));
@@ -143,8 +145,9 @@ contract QuipFactory_deployLatestWalletProxy is QuipFactoryTest {
         );
         vm.stopPrank();
 
-        assertEq(factory.vaultIds(ALICE, 0), vaultId1);
-        assertEq(factory.vaultIds(ALICE, 1), vaultId2);
+        assertEq(factory.getVaultIdCount(ALICE), 2);
+        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId1), type(uint256).max);
+        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId2), type(uint256).max);
     }
 
     function test_deployLatestWalletProxy_usesLatestActiveImpl() public {
@@ -278,7 +281,8 @@ contract QuipFactory_deployLatestWalletProxy is QuipFactoryTest {
 
         QuipWallet w = QuipWallet(payable(walletAddr));
         assertEq(w.owner(), BOB);
-        assertEq(factory.quips(BOB, vaultId), walletAddr);
+        assertEq(factory.wallets(vaultId), walletAddr);
+        assertNotEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);
     }
 
     // ── Reverts ──────────────────────────────────────────────────────
@@ -386,6 +390,25 @@ contract QuipFactory_deployLatestWalletProxy is QuipFactoryTest {
         vm.prank(ALICE);
         vm.expectRevert(IQuipFactory.ZeroAddressOwner.selector);
         factory.deployLatestWalletProxy(vaultId, payable(address(0)), payload);
+    }
+
+    /// @dev vaultId == 0 is reserved as the "not deployed by this factory"
+    ///      sentinel in the `vaultIdOf` reverse mapping; allowing it would
+    ///      collapse the `OnlyWallet` gate on `updateWalletOwner`.
+    function test_deployLatestWalletProxy_revertsWhen_vaultIdIsZero() public {
+        (
+            WOTSPlus.WinternitzAddress memory pubkey,
+            bytes32 pk
+        ) = _generateKeyPair("seed-zero-vid");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
+            pk,
+            10
+        );
+        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipFactory.ZeroVaultId.selector);
+        factory.deployLatestWalletProxy(bytes32(0), payable(ALICE), payload);
     }
 
     function test_deployLatestWalletProxy_revertsWhen_sameVaultIdDifferentSenders()

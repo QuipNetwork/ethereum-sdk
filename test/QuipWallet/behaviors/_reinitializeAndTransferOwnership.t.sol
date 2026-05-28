@@ -9,7 +9,7 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 
-/// @dev Behaviour tests for `_reinitializeAndTransferOwnership(payload, isHandover)`.
+/// @dev Behaviour tests for `_reinitializeAndTransferOwnership(payload)`.
 ///      Exercises the full re-init flow: decode payload, validate the supplied
 ///      ownership-key pair, verify WOTS+ sig over the transfer-or-handover digest,
 ///      rotate disaster + ownership keys, wipe/repopulate txn + recovery keysets,
@@ -114,23 +114,9 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
     function _digest(
         Ctx memory c,
         WOTSPlus.WinternitzAddress memory current,
-        WOTSPlus.WinternitzAddress memory newOwnership,
-        bool isHandover
+        WOTSPlus.WinternitzAddress memory newOwnership
     ) internal view returns (bytes32) {
         bytes32 kh = _keysHash(c);
-        if (isHandover) {
-            return
-                Codec.completeOwnershipHandoverDigest(
-                    address(harnessProxy),
-                    block.chainid,
-                    current.publicSeed,
-                    current.publicKeyHash,
-                    newOwnership.publicSeed,
-                    newOwnership.publicKeyHash,
-                    c.newOwner,
-                    kh
-                );
-        }
         return
             Codec.transferOwnershipDigest(
                 address(harnessProxy),
@@ -164,15 +150,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
     function _encodeTransfer(
         Ctx memory c
     ) internal view returns (bytes memory) {
-        bytes32 d = _digest(c, ownershipPub, c.newOwnership, false);
-        WOTSPlus.WinternitzElements memory sig = _sign(ownershipPriv, d);
-        return _encodeWithSig(c, ownershipPub, sig);
-    }
-
-    function _encodeHandover(
-        Ctx memory c
-    ) internal view returns (bytes memory) {
-        bytes32 d = _digest(c, ownershipPub, c.newOwnership, true);
+        bytes32 d = _digest(c, ownershipPub, c.newOwnership);
         WOTSPlus.WinternitzElements memory sig = _sign(ownershipPriv, d);
         return _encodeWithSig(c, ownershipPub, sig);
     }
@@ -186,7 +164,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         bytes memory payload = _encodeTransfer(c);
 
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
 
         assertEq(harnessProxy.owner(), NEW_OWNER);
         assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
@@ -194,22 +172,6 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 0);
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, c.newTxn[0]));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, c.newRec[0]));
-    }
-
-    function test_exposed_reinitializeAndTransferOwnership_handoverFlow()
-        public
-    {
-        // NEW_OWNER registers their handover request first, then ALICE completes.
-        vm.prank(NEW_OWNER);
-        harnessProxy.requestOwnershipHandover();
-
-        Ctx memory c = _freshCtx();
-        bytes memory payload = _encodeHandover(c);
-
-        vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, true);
-
-        assertEq(harnessProxy.owner(), NEW_OWNER);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_emitsEvent()
@@ -220,7 +182,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.recordLogs();
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         bytes32 expected = IQuipWallet.OwnershipReinitialized.selector;
@@ -245,7 +207,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.ZeroAddressOwner.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_revertsWhen_currentOwnershipKeyMismatch()
@@ -258,13 +220,13 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         ) = _generateKeyPair("h-rein-stray");
 
         // Sign a valid digest for `stray` (so we exercise only the mismatch gate).
-        bytes32 d = _digest(c, stray, c.newOwnership, false);
+        bytes32 d = _digest(c, stray, c.newOwnership);
         WOTSPlus.WinternitzElements memory sig = _sign(strayPriv, d);
         bytes memory payload = _encodeWithSig(c, stray, sig);
 
         vm.expectRevert(IQuipWallet.UnknownOwnershipKey.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newOwnershipKeyZero()
@@ -279,7 +241,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.UnknownOwnershipKey.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newOwnershipEqualsCurrent()
@@ -291,7 +253,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.SameKey.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newDisasterKeyZero()
@@ -306,7 +268,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.UnknownDisasterRecoveryKey.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_revertsWhen_signatureInvalid()
@@ -322,7 +284,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_revertsWhen_txnKeyDuplicate()
@@ -334,7 +296,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
     function test_exposed_reinitializeAndTransferOwnership_revertsWhen_recoveryKeyDuplicate()
@@ -346,20 +308,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
         vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, false);
+        harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    // isHandover=true with no prior handover request → Solady's
-    // `completeOwnershipHandover` reverts (NewOwnerIsZeroAddress / expired).
-    // Confirms the handover-specific suffix is reached when `isHandover == true`.
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_handoverWithoutRequest()
-        public
-    {
-        Ctx memory c = _freshCtx();
-        bytes memory payload = _encodeHandover(c);
-
-        vm.expectRevert(); // Solady's NoHandoverRequest selector; empty match is enough
-        vm.prank(ALICE);
-        harnessProxy.exposed_reinitializeAndTransferOwnership(payload, true);
-    }
 }

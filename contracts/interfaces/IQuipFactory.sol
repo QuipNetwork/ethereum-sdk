@@ -61,6 +61,30 @@ interface IQuipFactory {
     error ZeroMaxFee();
     /// @notice Thrown when the wallet owner address is zero.
     error ZeroAddressOwner();
+    /// @notice Thrown when `_deployProxy` is called with `vaultId == 0`. The zero
+    ///         vaultId is reserved as a sentinel for "not deployed by this factory"
+    ///         in the `vaultIdOf` reverse mapping; allowing it would collapse the
+    ///         "is this caller one of my wallets?" check in `updateWalletOwner`.
+    error ZeroVaultId();
+    /// @notice Thrown when `updateWalletOwner` is called by an address that is
+    ///         not a wallet deployed by this factory (i.e. `vaultIdOf[msg.sender]`
+    ///         is zero).
+    error OnlyWallet();
+    /// @notice Thrown when `updateWalletOwner` is called with `newOwner != owner()`
+    ///         on the calling wallet. Pins the callback to the tail of
+    ///         `transferOwnership(bytes)` where Solady's `_setOwner(newOwner)` has
+    ///         already committed.
+    error OwnerStateMismatch();
+    /// @notice Thrown when `updateWalletOwner` is called with `newOwner` equal
+    ///         to the wallet's currently-registered owner. The wallet has no
+    ///         business notifying a no-op transfer.
+    error SameOwner();
+    /// @notice Thrown when an EnumerableSet mutation inside `updateWalletOwner`
+    ///         returns `false` (i.e. `_vaultIds[oldOwner].remove(vaultId)` or
+    ///         `_vaultIds[newOwner].add(vaultId)`). Indicates the per-owner
+    ///         set has diverged from the factory's `walletOwner` source of
+    ///         truth — a "this should never happen" defense-in-depth revert.
+    error RegistryDesync();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
@@ -122,6 +146,19 @@ interface IQuipFactory {
     /// @param to The address that received the withdrawal.
     /// @param amount The amount of ETH withdrawn.
     event Withdrawn(address indexed to, uint256 amount);
+
+    /// @notice Emitted when a wallet's classical owner changes via the
+    ///         WOTS+-authenticated `transferOwnership(bytes)` path. The wallet
+    ///         calls back into the factory at the tail of that flow to keep
+    ///         the per-owner vaultIds set consistent with the wallet's `owner()`.
+    /// @param vaultId The wallet's vaultId (derived via `vaultIdOf[msg.sender]`).
+    /// @param oldOwner The owner before the transfer.
+    /// @param newOwner The owner after the transfer.
+    event WalletOwnerChanged(
+        bytes32 indexed vaultId,
+        address indexed oldOwner,
+        address indexed newOwner
+    );
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                        */
@@ -189,6 +226,30 @@ interface IQuipFactory {
         bytes calldata payload
     ) external payable returns (address);
 
+    /// @notice Callback used by deployed wallets to keep the per-owner
+    ///         vaultIds set consistent with `owner()` during the
+    ///         WOTS+-authenticated `transferOwnership(bytes)` flow.
+    /// @dev NOT callable outside that flow. The factory looks up `oldOwner`
+    ///      internally via `walletOwner[msg.sender]` — its own source of
+    ///      truth — so the wallet cannot pass a wrong value. Gates, in order:
+    ///        - `vaultIdOf[msg.sender] != 0` — caller must be a wallet
+    ///          deployed by THIS factory. Reverts `OnlyWallet` otherwise.
+    ///        - `newOwner != address(0)` — reverts `ZeroAddressOwner`.
+    ///        - `newOwner != walletOwner[msg.sender]` — reverts `SameOwner`.
+    ///        - `IQuipWallet(msg.sender).owner() == newOwner` — pins the
+    ///          callback to a moment when the wallet has ALREADY committed
+    ///          `_setOwner(newOwner)`. The only path producing that state
+    ///          is `transferOwnership(bytes)`. Reverts `OwnerStateMismatch`.
+    ///      On success, moves the vaultId from `walletOwner[msg.sender]`'s
+    ///      set to `newOwner`'s set, updates `walletOwner[msg.sender]`,
+    ///      and emits `WalletOwnerChanged`. The set mutations are guarded
+    ///      against `false` return values from `EnumerableSetLib.add`/
+    ///      `remove` and revert `RegistryDesync` if the set is unexpectedly
+    ///      out of sync (defense-in-depth; should be unreachable while
+    ///      invariant 16 holds).
+    /// @param newOwner The owner after the transfer (wallet `owner()` state check).
+    function updateWalletOwner(address newOwner) external;
+
     /// @notice Sets the fee charged when creating a new QuipWallet.
     /// @dev Only callable by the current admin.
     /// @param newFee The new creation fee in wei.
@@ -219,23 +280,89 @@ interface IQuipFactory {
     /// @return The maximum fee in wei.
     function MAX_FEE() external view returns (uint256);
 
-    /// @notice Returns the QuipWallet address for a given owner and vault ID.
-    /// @param owner The classical owner address.
-    /// @param vaultId The vault identifier.
-    /// @return The QuipWallet address, or `address(0)` if none exists.
-    function quips(
-        address owner,
-        bytes32 vaultId
-    ) external view returns (address);
+    /// @notice Returns the QuipWallet address deployed at `vaultId` on this
+    ///         factory.
+    /// @dev `vaultId` is a GLOBAL CREATE3 salt — same vaultId on every chain
+    ///      resolves to the same deterministic address. The outer
+    ///      `(owner, vaultId) → wallet` shape from earlier versions was
+    ///      misleading: the registry never gated lookup by owner, and the
+    ///      address is a pure function of the salt. Off-chain integrators
+    ///      MUST treat `vaultId` as a first-come-first-served global resource.
+    /// @param vaultId The vaultId used as CREATE3 salt.
+    /// @return The QuipWallet address, or `address(0)` if none deployed here.
+    function wallets(bytes32 vaultId) external view returns (address);
 
-    /// @notice Returns the vault ID at a given index for an owner.
+    /// @notice Returns the vaultId of a wallet deployed by this factory.
+    /// @dev Used by `updateWalletOwner` to authenticate the calling wallet
+    ///      and derive its vaultId implicitly without trusting an argument.
+    ///      Returns `bytes32(0)` if `wallet` was not deployed by this factory.
+    /// @param wallet The wallet contract address.
+    /// @return The vaultId, or `bytes32(0)` if unknown.
+    function vaultIdOf(address wallet) external view returns (bytes32);
+
+    /// @notice Returns the current classical owner of a wallet deployed by
+    ///         this factory. Source of truth for the per-owner `vaultIds`
+    ///         registry — updated atomically in `updateWalletOwner` so the
+    ///         wallet cannot supply a wrong `oldOwner`.
+    /// @dev Initialized to `to` in `_deployProxy`. Tracks the wallet's
+    ///      classical `owner()` across `transferOwnership(bytes)` rotations.
+    ///      Returns `address(0)` if `wallet` was not deployed by this factory.
+    /// @param wallet The wallet contract address.
+    /// @return The current owner, or `address(0)` if unknown.
+    function walletOwner(address wallet) external view returns (address);
+
+    /// @notice Returns the number of wallets currently owned by `owner` in
+    ///         this factory's registry.
+    /// @dev The set tracks CURRENT classical owner (not initial deployer).
+    ///      Updated atomically when `transferOwnership(bytes)` runs on a
+    ///      wallet via the `updateWalletOwner` callback.
     /// @param owner The classical owner address.
-    /// @param index The index into the owner's vault ID array.
-    /// @return The vault ID at the specified index.
-    function vaultIds(
+    function getVaultIdCount(address owner) external view returns (uint256);
+
+    /// @notice Returns the vaultId at `index` in `owner`'s set.
+    /// @dev Iteration order is not stable across removals (the underlying
+    ///      `EnumerableSetLib.Bytes32Set` uses swap-and-pop). Off-chain
+    ///      callers should pair `getVaultIdCount` with a contiguous range
+    ///      of `getVaultIdAt(0..N-1)` reads in a single block (or use
+    ///      `getVaultIds` for a one-shot snapshot).
+    /// @param owner The classical owner address.
+    /// @param index The index into `owner`'s set.
+    function getVaultIdAt(
         address owner,
         uint256 index
     ) external view returns (bytes32);
+
+    /// @notice Returns the index of `vaultId` in `owner`'s set, or
+    ///         `type(uint256).max` if `owner` does not currently own a
+    ///         wallet at this vaultId. Mirrors `getVettedCodeIndex`.
+    /// @param owner The classical owner address.
+    /// @param vaultId The vaultId to query.
+    function getVaultIdIndex(
+        address owner,
+        bytes32 vaultId
+    ) external view returns (uint256);
+
+    /// @notice Returns the full set of vaultIds currently owned by `owner`
+    ///         as a `bytes32[]` snapshot — one read, no pagination.
+    /// @dev Off-chain callers should prefer this over `getVaultIdCount` +
+    ///      `getVaultIdAt` loops to avoid the `1 + N` round-trip pattern.
+    ///      Order is undefined; the set uses swap-and-pop on removal.
+    /// @param owner The classical owner address.
+    function getVaultIds(
+        address owner
+    ) external view returns (bytes32[] memory);
+
+    /// @notice Returns the wallet addresses currently owned by `owner` —
+    ///         one address per entry in `owner`'s vaultId set, looked up via
+    ///         the `wallets[vaultId]` mapping. One read, no pagination.
+    /// @dev Parallel-indexed with `getVaultIds(owner)` when called in the
+    ///      same block (both iterate the same underlying set in the same
+    ///      order). Pair them via multicall to materialize a
+    ///      `(vaultId → wallet)` map without `1 + N` round-trips.
+    /// @param owner The classical owner address.
+    function getWallets(
+        address owner
+    ) external view returns (address[] memory);
 
     /// @notice Returns the number of vetted implementation codehashes.
     /// @return The count of entries in the vetted set.

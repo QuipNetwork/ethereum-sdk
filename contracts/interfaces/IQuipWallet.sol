@@ -46,9 +46,17 @@ interface IQuipWallet {
     /// @notice Thrown when the classical `transferOwnership(address)` is called directly.
     /// @dev Only the WOTS+-authenticated `transferOwnership(bytes)` path is permitted.
     error ClassicalTransferOwnershipDisabled();
-    /// @notice Thrown when the classical `completeOwnershipHandover(address)` is called directly.
-    /// @dev Only the WOTS+-authenticated `completeOwnershipHandover(bytes)` path is permitted.
-    error ClassicalCompleteOwnershipHandoverDisabled();
+    /// @notice Thrown when any of Solady's inherited two-step ownership handover
+    ///         entry points (`requestOwnershipHandover`, `cancelOwnershipHandover`,
+    ///         the classical `completeOwnershipHandover(address)`) is called.
+    /// @dev This wallet does not support two-step ownership handover. All ownership
+    ///      transfers MUST go through the WOTS+-authenticated `transferOwnership(bytes)`
+    ///      path, which atomically rotates the PQ ownership key, re-seeds the
+    ///      keysets, commits Solady's `_setOwner(newOwner)`, and notifies the
+    ///      factory via `updateWalletOwner`. The two-step pattern's typo-mitigation
+    ///      value is subsumed by the WOTS+ signature already committing
+    ///      cryptographically to `newOwner` in the signed digest.
+    error OwnershipHandoverDisabled();
 
     /// @notice Thrown when a provided key is already present in the target keyset,
     ///         or when a rotation's `nextKey` collides with the active transaction-key set.
@@ -482,20 +490,20 @@ interface IQuipWallet {
     ///      transaction keyset, and recovery keyset that the incoming owner alone controls.
     ///      The existing verification keyset is cleared (the new owner re-seeds it as needed).
     ///      The existing `ownershipKey` rotates to the supplied replacement (one-time-use).
+    ///      At the tail of this flow, the wallet calls back into the factory via
+    ///      `updateWalletOwner(oldOwner, newOwner)` so the factory's per-owner
+    ///      vaultIds set stays consistent with `owner()`.
     ///      Payload layout: [0:64) currentOwnershipKey, [64:128) newOwnershipKey,
     ///      [128:2272) pqSig, [2272:2304) newOwner, [2304:2368) newDisasterKey,
     ///      [2368:2688) newTransactionKeys[5], [2688:3328) newRecoveryKeys[10].
     /// @param payload Packed ownership-transfer data (3328 bytes).
     function transferOwnership(bytes calldata payload) external payable;
 
-    /// @notice Completes a two-step ownership handover to `pendingOwner` and fully re-initializes
-    ///         PQ state for the new owner.
-    /// @dev Same re-initialization semantics as `transferOwnership`; the difference is only the
-    ///      domain tag on the signed digest (so a signature cannot be lifted between the two
-    ///      code paths) and the final call into Solady's `completeOwnershipHandover`.
-    ///      Payload layout matches `transferOwnership` (3328 bytes).
-    /// @param payload Packed ownership-transfer data (3328 bytes).
-    function completeOwnershipHandover(bytes calldata payload) external payable;
+    /// @notice Returns the wallet's classical owner address (Solady Ownable).
+    /// @dev Read by the factory's `updateWalletOwner` callback to pin the
+    ///      callback to the tail of `transferOwnership(bytes)`. Exposed here
+    ///      so the factory does not need to depend on Solady's Ownable types.
+    function owner() external view returns (address);
 
     /// @notice Returns the current execute fee as set by the factory.
     /// @return The execute fee in wei.
