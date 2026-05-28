@@ -206,10 +206,9 @@ contract QuipWalletHarness is QuipWallet {
     }
 
     function exposed_reinitializeAndTransferOwnership(
-        bytes calldata payload,
-        bool isHandover
+        bytes calldata payload
     ) external {
-        _reinitializeAndTransferOwnership(payload, isHandover);
+        _reinitializeAndTransferOwnership(payload);
     }
 
     function exposed_installInitialKeys(

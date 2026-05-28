@@ -209,8 +209,6 @@ library WOTSPlusCodec {
         keccak256("quip.digest.withdrawDeposit");
     bytes32 internal constant TRANSFER_OWNERSHIP_TAG =
         keccak256("quip.digest.transferOwnership");
-    bytes32 internal constant COMPLETE_OWNERSHIP_HANDOVER_TAG =
-        keccak256("quip.digest.completeOwnershipHandover");
     /// @dev Per-kind domain tags for `replaceKeyAtDigest`. Distinct tags prevent a
     ///      signature authorizing `replaceKeyAt(Transaction, i, newKey)` from being
     ///      lifted and replayed against `replaceKeyAt(Recovery, ...)` or
@@ -1234,34 +1232,6 @@ library WOTSPlusCodec {
                 s2,
                 h2,
                 bytes32(uint256(uint160(newOwner))),
-                keysHash
-            );
-    }
-
-    /// @dev keccak256(abi.encode(COMPLETE_OWNERSHIP_HANDOVER_TAG, chainId, wallet, s1, h1, s2,
-    ///                           h2, pendingOwner, keysHash))
-    ///      where `keysHash = keccak256(abi.encode(newDisasterKey, newTransactionKeys,
-    ///      newRecoveryKeys))`.
-    function completeOwnershipHandoverDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        address pendingOwner,
-        bytes32 keysHash
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                COMPLETE_OWNERSHIP_HANDOVER_TAG,
-                bytes32(chainId),
-                bytes32(uint256(uint160(wallet))),
-                s1,
-                h1,
-                s2,
-                h2,
-                bytes32(uint256(uint160(pendingOwner))),
                 keysHash
             );
     }

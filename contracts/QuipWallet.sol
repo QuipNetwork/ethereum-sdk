@@ -313,11 +313,47 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         revert ClassicalTransferOwnershipDisabled();
     }
 
-    /// @dev Blocks the classical `completeOwnershipHandover(address)`.
-    ///      All handovers MUST go through the WOTS+-authenticated
-    ///      `completeOwnershipHandover(bytes)`.
+    /// @dev Disables Solady's two-step ownership handover. The wallet supports
+    ///      only the WOTS+-authenticated `transferOwnership(bytes)` path, which
+    ///      atomically rotates the PQ ownership key, re-seeds keysets, commits
+    ///      Solady's `_setOwner(newOwner)`, and notifies the factory. The two-
+    ///      step pattern's typo-mitigation value is subsumed by the WOTS+
+    ///      signature already committing cryptographically to `newOwner`.
+    function requestOwnershipHandover() public payable override {
+        revert OwnershipHandoverDisabled();
+    }
+
+    /// @dev Disabled; see `requestOwnershipHandover`.
+    function cancelOwnershipHandover() public payable override {
+        revert OwnershipHandoverDisabled();
+    }
+
+    /// @dev Disabled; see `requestOwnershipHandover`. The handover-bytes path
+    ///      that previously lived here has been removed entirely.
     function completeOwnershipHandover(address) public payable override {
-        revert ClassicalCompleteOwnershipHandoverDisabled();
+        revert OwnershipHandoverDisabled();
+    }
+
+    /// @inheritdoc IQuipWallet
+    /// @dev Trivial delegate to Solady's `Ownable.owner()`. Explicit override
+    ///      is required because both `IQuipWallet` and `Ownable` declare it.
+    function owner()
+        public
+        view
+        override(IQuipWallet, Ownable)
+        returns (address)
+    {
+        return Ownable.owner();
+    }
+
+    /// @dev Overridden to return 0 unconditionally. The two-step ownership
+    ///      handover is disabled (see `requestOwnershipHandover`), so no
+    ///      handover can ever be pending; returning 0 honestly reflects that
+    ///      to any tooling that speculatively reads this view.
+    function ownershipHandoverExpiresAt(
+        address
+    ) public pure override returns (uint256) {
+        return 0;
     }
 
     /// @inheritdoc IQuipWallet
@@ -561,14 +597,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     function transferOwnership(
         bytes calldata payload
     ) public payable onlyOwner {
-        _reinitializeAndTransferOwnership(payload, false);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function completeOwnershipHandover(
-        bytes calldata payload
-    ) public payable onlyOwner {
-        _reinitializeAndTransferOwnership(payload, true);
+        _reinitializeAndTransferOwnership(payload);
     }
 
     /// @inheritdoc IQuipWallet
@@ -1382,20 +1411,23 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Shared worker for `transferOwnership` and `completeOwnershipHandover`. Both call
-    ///      paths are full re-initializations of the wallet's PQ state on behalf of the new
-    ///      owner: the existing `ownershipKey` authorizes a bundle of (newOwner, new
-    ///      `ownershipKey`, new `disasterRecoveryKey`, new transactionKeys[5], new
-    ///      recoveryKeys[10]); on success the existing ownership key rotates, the disaster
-    ///      key is replaced, the transaction and recovery keysets are cleared and repopulated,
-    ///      and the verification keyset is cleared (the new owner re-seeds it out-of-band).
+    /// @dev Worker for `transferOwnership(bytes)`. A full re-initialization of
+    ///      the wallet's PQ state on behalf of the new owner: the existing
+    ///      `ownershipKey` authorizes a bundle of (newOwner, new `ownershipKey`,
+    ///      new `disasterRecoveryKey`, new transactionKeys[5], new
+    ///      recoveryKeys[10]); on success the existing ownership key rotates,
+    ///      the disaster key is replaced, the transaction and recovery keysets
+    ///      are cleared and repopulated, and the verification keyset is cleared
+    ///      (the new owner re-seeds it out-of-band).
     ///
-    ///      `isHandover` selects the domain tag on the signed digest so a signature produced
-    ///      for `transferOwnership` cannot be replayed against `completeOwnershipHandover`
-    ///      and vice versa.
+    ///      At the tail of this function — AFTER Solady's `_setOwner(newOwner)`
+    ///      has committed — the wallet calls back into the factory via
+    ///      `updateWalletOwner(oldOwner, newOwner)`. The factory verifies
+    ///      `wallet.owner() == newOwner` as a load-bearing predicate that pins
+    ///      the callback to this exact site; see `IQuipFactory.updateWalletOwner`
+    ///      for the full attack tree.
     function _reinitializeAndTransferOwnership(
-        bytes calldata payload,
-        bool isHandover
+        bytes calldata payload
     ) internal {
         (
             WOTSPlus.WinternitzAddress calldata currentOwnershipKey,
@@ -1434,27 +1466,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         bytes32 keysHash = EfficientHashLib.hash(
             abi.encode(newDisasterKey, newTransactionKeys, newRecoveryKeys)
         );
-        bytes32 digest = isHandover
-            ? Codec.completeOwnershipHandoverDigest(
-                address(this),
-                block.chainid,
-                currentOwnershipKey.publicSeed,
-                currentOwnershipKey.publicKeyHash,
-                newOwnershipKey.publicSeed,
-                newOwnershipKey.publicKeyHash,
-                newOwner,
-                keysHash
-            )
-            : Codec.transferOwnershipDigest(
-                address(this),
-                block.chainid,
-                currentOwnershipKey.publicSeed,
-                currentOwnershipKey.publicKeyHash,
-                newOwnershipKey.publicSeed,
-                newOwnershipKey.publicKeyHash,
-                newOwner,
-                keysHash
-            );
+        bytes32 digest = Codec.transferOwnershipDigest(
+            address(this),
+            block.chainid,
+            currentOwnershipKey.publicSeed,
+            currentOwnershipKey.publicKeyHash,
+            newOwnershipKey.publicSeed,
+            newOwnershipKey.publicKeyHash,
+            newOwner,
+            keysHash
+        );
 
         if (
             !WOTSPlus.verify(
@@ -1487,8 +1508,17 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             _safeAddKey($.recoveryKeys, newRecoveryKeys[i]);
         }
 
-        if (isHandover) Ownable.completeOwnershipHandover(newOwner);
-        else Ownable.transferOwnership(newOwner);
+        Ownable.transferOwnership(newOwner);
+
+        // Notify the factory so its per-owner vaultIds set tracks the new
+        // `owner()`. The factory reads the previous owner from its own
+        // `walletOwner[msg.sender]` mapping. 
+        // The pin-predicate `wallet.owner() == newOwner` ensures
+        // this callback can only run at the tail of the flow, AFTER Solady
+        // committed the transfer above. Reverts here roll back the whole
+        // transferOwnership — partial state (owner updated, registry stale)
+        // would be confusing.
+        IQuipFactory(FACTORY).updateWalletOwner(newOwner);
 
         emit OwnershipReinitialized(
             currentOwnershipKey,

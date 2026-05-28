@@ -575,29 +575,6 @@ contract WOTSPlusCodecHarness {
             );
     }
 
-    function exposed_completeOwnershipHandoverDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        address pendingOwner,
-        bytes32 keysHash
-    ) external pure returns (bytes32) {
-        return
-            Codec.completeOwnershipHandoverDigest(
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                pendingOwner,
-                keysHash
-            );
-    }
-
     // --- Decoders (recovery upgrade / save / replace / erc1271) ---
 
     function exposed_decodeSaveWallet(

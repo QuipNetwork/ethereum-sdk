@@ -72,7 +72,8 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
             payable(ALICE),
             payload
         );
-        assertEq(harness.quips(ALICE, vaultId), proxy);
+        assertEq(harness.wallets(vaultId), proxy);
+        assertEq(harness.vaultIdOf(proxy), vaultId);
     }
 
     function test_exposed_deployProxy_pushesVaultId() public {
@@ -84,7 +85,8 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
             payable(ALICE),
             payload
         );
-        assertEq(harness.vaultIds(ALICE, 0), vaultId);
+        assertEq(harness.getVaultIdCount(ALICE), 1);
+        assertNotEq(harness.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
     }
 
     function test_exposed_deployProxy_emitsQuipCreated() public {

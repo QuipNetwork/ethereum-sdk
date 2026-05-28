@@ -129,8 +129,8 @@ contract QuipFactoryTest is Test {
     }
 
     /// @dev Derive the ownership keypair deterministically from a vault seed.
-    ///      Tests that exercise `transferOwnership` / `completeOwnershipHandover` can
-    ///      re-derive the same keypair by feeding the vault seed back in.
+    ///      Tests that exercise `transferOwnership` can re-derive the same
+    ///      keypair by feeding the vault seed back in.
     function _generateOwnershipKey(
         bytes32 vaultSeed
     )
