@@ -31,6 +31,7 @@ Active Dev Branch : deploy/testnet
 | **This README**                                            | Setup, build/test commands, deploy commands.                                                                            |
 | **[SDK_README.md](SDK_README.md)**                         | You're consuming the published `@quip.network/ethereum-sdk` npm package.                                                |
 | **[INVARIANTS.md](INVARIANTS.md)**                         | You're auditing, extending, or porting the contracts/SDK. All cryptographic, on-chain, and SDK invariants in one place. |
+| **[GOVERNANCE.md](GOVERNANCE.md)**                         | Factory + paymaster trust model: what the owner can do, what they can't, recommended posture, and the planned move to on-chain governance. |
 | **[DEPLOYMENTS.md](DEPLOYMENTS.md)**                       | Canonical contract addresses, per-chain deployment status, salt schemes.                                                |
 | **[MIDL-DEPLOYMENT.md](MIDL-DEPLOYMENT.md)**               | Deploying onto MIDL (chain 777). Separate from the EVM workflow.                                                        |
 | **[MIDL-REOWN-INTEGRATION.md](MIDL-REOWN-INTEGRATION.md)** | Integrating Quip with Reown AppKit on MIDL.                                                                             |
