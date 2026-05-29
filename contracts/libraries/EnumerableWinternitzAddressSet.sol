@@ -67,6 +67,19 @@ library EnumerableWinternitzAddressSet {
     /// `uint32(bytes4(keccak256("EnumerableWinternitzAddressSet")))`.
     uint256 private constant _SLOT_SEED = 0x3e9f5d6a;
 
+    /// @dev In-memory size, in bytes, of `WOTSPlus.WinternitzAddress`. The
+    ///      struct is `(bytes32 publicSeed, bytes32 publicKeyHash)` →
+    ///      exactly two 32-byte slots → 0x40. The `values()` allocator and
+    ///      the per-element offset math depend on this exact size — if a
+    ///      future change to `WOTSPlus.WinternitzAddress` adds, removes, or
+    ///      reorders fields, every `_WINTERNITZ_ADDRESS_SIZE` reference in
+    ///      this library must be updated AND the allocator math reviewed.
+    ///      Solidity provides no static `sizeof`, so this constant exists
+    ///      as the documented single point of truth; tests for `values()`
+    ///      (see test/EnumerableWinternitzAddressSet) cross-check that the
+    ///      returned array is well-formed.
+    uint256 private constant _WINTERNITZ_ADDRESS_SIZE = 0x40;
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        STRUCTS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -518,6 +531,19 @@ library EnumerableWinternitzAddressSet {
 
     /// @dev Returns all pairs in the set.
     /// Note: This can consume more gas than the block gas limit for large sets.
+    ///
+    /// MEMORY LAYOUT INVARIANT (load-bearing — see `_WINTERNITZ_ADDRESS_SIZE`):
+    /// The returned dynamic array of struct memory uses Solidity's canonical
+    /// in-memory representation:
+    ///   [result + 0x00]            length word (= n)
+    ///   [result + 0x20 .. + 0x20+32n)   n pointer slots (each 32 bytes)
+    ///   [structs + i*0x40 ..)      n structs, each `_WINTERNITZ_ADDRESS_SIZE`
+    ///                              bytes wide
+    /// The free-memory pointer is advanced past the last struct.
+    /// If `WOTSPlus.WinternitzAddress` ever changes shape, both the
+    /// struct-offset math (`mul(i, _WINTERNITZ_ADDRESS_SIZE)`) and the
+    /// free-pointer advance (`add(structs, mul(n, _WINTERNITZ_ADDRESS_SIZE))`)
+    /// below must be revisited in lockstep with the constant.
     function values(
         WinternitzAddressSet storage set
     ) internal view returns (WOTSPlus.WinternitzAddress[] memory result) {
@@ -548,7 +574,8 @@ library EnumerableWinternitzAddressSet {
                 break
             }
 
-            // Allocate array: length word + n pointer slots + n structs (64 bytes each).
+            // Allocate array: length word + n pointer slots + n structs
+            // (each _WINTERNITZ_ADDRESS_SIZE bytes).
             result := mload(0x40)
             mstore(result, n)
             let ptrs := add(result, 0x20)
@@ -561,14 +588,14 @@ library EnumerableWinternitzAddressSet {
                 i := add(i, 1)
             } {
                 let off := add(rootSlot, shl(1, i))
-                let s := add(structs, mul(i, 0x40))
+                let s := add(structs, mul(i, _WINTERNITZ_ADDRESS_SIZE))
                 mstore(add(ptrs, shl(5, i)), s)
                 mstore(s, sload(off))
                 mstore(add(s, 0x20), sload(add(off, 1)))
             }
 
             // Update free memory pointer.
-            mstore(0x40, add(structs, mul(n, 0x40)))
+            mstore(0x40, add(structs, mul(n, _WINTERNITZ_ADDRESS_SIZE)))
         }
     }
 

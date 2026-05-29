@@ -141,6 +141,22 @@ library WOTSPlusCodec {
     uint256 internal constant TRANSACTION_KEY_INIT_AMOUNT = 5;
     uint256 internal constant RECOVERY_KEY_AMOUNT = 10;
 
+    /// @dev 160-bit mask applied to addresses decoded out of raw calldata
+    ///      words via `calldataload`. The packed-payload encoders right-align
+    ///      addresses with 12 zero bytes of left-padding, so on legitimate
+    ///      calldata the upper 96 bits are already zero. Masking is defence
+    ///      in depth: it guarantees any future code path that hashes or
+    ///      passes the address into further raw assembly sees a canonical
+    ///      value, regardless of what the caller stuffed into the upper
+    ///      bits of the 32-byte slot.
+    // The leading `00` is solc's documented workaround so a 20-byte hex
+    // literal isn't mistaken for an address. The numeric value is exactly
+    // `type(uint160).max` (160 ones); inline assembly only accepts direct
+    // number literals as constant references, not the `type(...)` form,
+    // so the literal form is used here.
+    uint256 internal constant _ADDRESS_MASK =
+        0x00ffffffffffffffffffffffffffffffffffffffff;
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                      DOMAIN TAGS                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -474,7 +490,11 @@ library WOTSPlusCodec {
             currentKey := payload.offset
             nextKey := add(payload.offset, 64)
             pqSig := add(payload.offset, 128)
-            target := calldataload(add(payload.offset, 2272))
+            // Mask the upper 96 bits — see `_ADDRESS_MASK` doc.
+            target := and(
+                calldataload(add(payload.offset, 2272)),
+                _ADDRESS_MASK
+            )
             value := calldataload(add(payload.offset, 2304))
         }
         data = payload[2336:];
@@ -503,7 +523,11 @@ library WOTSPlusCodec {
             currentKey := payload.offset
             nextKey := add(payload.offset, 64)
             pqSig := add(payload.offset, 128)
-            to := calldataload(add(payload.offset, 2272))
+            // Mask the upper 96 bits — see `_ADDRESS_MASK` doc.
+            to := and(
+                calldataload(add(payload.offset, 2272)),
+                _ADDRESS_MASK
+            )
             amount := calldataload(add(payload.offset, 2304))
         }
     }
@@ -603,7 +627,11 @@ library WOTSPlusCodec {
             currentOwnershipKey := payload.offset
             newOwnershipKey := add(payload.offset, 64)
             pqSig := add(payload.offset, 128)
-            newOwner := calldataload(add(payload.offset, 2272))
+            // Mask the upper 96 bits — see `_ADDRESS_MASK` doc.
+            newOwner := and(
+                calldataload(add(payload.offset, 2272)),
+                _ADDRESS_MASK
+            )
             newDisasterKey := add(payload.offset, 2304)
             newTransactionKeys := add(payload.offset, 2368)
             newRecoveryKeys := add(payload.offset, 2688)
