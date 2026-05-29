@@ -41,6 +41,37 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log("MIDL QuipFactory Deployment");
   console.log("===========================");
 
+  // Validate FACTORY_OWNER + MAX_FEE early — these are baked into the
+  // creation bytecode at deploy time. Setting either to a placeholder would
+  // ship a broken factory (vetImplementation reverts under onlyOwner if
+  // initialOwner = 0x0). Mirrors the env-var contract of DeployAll.s.sol.
+  const factoryOwner = process.env.FACTORY_OWNER;
+  if (!factoryOwner) {
+    throw new Error("FACTORY_OWNER must be set in env / .env file");
+  }
+  if (!hre.ethers.isAddress(factoryOwner)) {
+    throw new Error(`FACTORY_OWNER is not a valid address: ${factoryOwner}`);
+  }
+  if (factoryOwner === hre.ethers.ZeroAddress) {
+    throw new Error("FACTORY_OWNER must be non-zero");
+  }
+
+  const maxFeeRaw = process.env.MAX_FEE;
+  if (!maxFeeRaw) {
+    throw new Error(
+      "MAX_FEE must be set in env / .env file (wei, e.g. 100000000000000000 for 0.1 ETH)"
+    );
+  }
+  let maxFee: bigint;
+  try {
+    maxFee = BigInt(maxFeeRaw);
+  } catch {
+    throw new Error(`MAX_FEE must be an integer (wei). Got: ${maxFeeRaw}`);
+  }
+  if (maxFee === 0n) {
+    throw new Error("MAX_FEE must be non-zero");
+  }
+
   // Get MIDL environment (uses private key if available, falls back to mnemonic)
   const midl: MidlEnvironment = getMidlEnvironment(hre, "midl_regtest");
 
@@ -56,6 +87,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`\nOperations Wallet:`);
   console.log(`  Bitcoin: ${btcAddress} (${addressType})`);
   console.log(`  EVM:     ${evmAddress}`);
+  console.log(`\nFactory owner: ${factoryOwner}`);
+  console.log(`Max fee:       ${maxFee} wei`);
 
   // Check for Deployer contract
   const deployerDeployment = await midl.getDeployment("Deployer");
@@ -80,19 +113,20 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     );
   }
 
-  // Load QuipFactory bytecode from release (includes constructor args)
+  // Load QuipFactory linked creation bytecode from release. The release
+  // snapshot stops at "linked creation code, no ctor args" so we encode
+  // and append `(initialOwner, maxFee_)` here at deploy time — same
+  // contract as DeployAll.s.sol and 04_deploy_paymaster.cts.
   const factoryRelease = loadReleaseBytecode("QuipFactory.sol");
-  const factoryBytecode = factoryRelease.creationBytecode;
   const expectedAddress = factoryRelease.address;
+  const ctorArgs = hre.ethers.AbiCoder.defaultAbiCoder().encode(
+    ["address", "uint256"],
+    [factoryOwner, maxFee]
+  );
+  const factoryBytecode = factoryRelease.creationBytecode + ctorArgs.slice(2);
 
   console.log(`Using release bytecode for address: ${expectedAddress}`);
   console.log(`Bytecode size: ${(factoryBytecode.length - 2) / 2} bytes`);
-
-  if (factoryRelease.constructorArgs) {
-    console.log(`Constructor args from release:`);
-    console.log(`  initialOwner: ${factoryRelease.constructorArgs.initialOwner}`);
-    console.log(`  wotsLibrary: ${factoryRelease.constructorArgs.wotsLibrary}`);
-  }
 
   // Check if already deployed
   const existingCode = await hre.ethers.provider.getCode(expectedAddress);
