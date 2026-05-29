@@ -286,8 +286,22 @@ contract QuipPaymaster is
     ///      region itself. That truncation is necessary because the signature lives
     ///      inside `paymasterAndData`, so binding the full hash would be circular.
     ///      Backend signers MUST replicate this hash construction off-chain.
+    ///
+    ///      CALLER MUST: ensure `userOp.paymasterAndData.length ==
+    ///      `_PAYMASTER_AND_DATA_LEN` before invoking this function. The
+    ///      assembly below reads from fixed calldata offsets (`+12` for the
+    ///      next verifier, `+76` for the pqSig) inside the
+    ///      `paymasterData = paymasterAndData[_PAYMASTER_DATA_OFFSET:]`
+    ///      slice without internal bounds checks. If a future caller fails
+    ///      to enforce the length precondition, those reads silently walk
+    ///      past the calldata end, returning either zero or attacker-
+    ///      controlled garbage from neighbouring calldata. The single
+    ///      enforced caller today is
+    ///      `validatePaymasterUserOp` — the length gate lives at the early-
+    ///      return at the top of that function. Do NOT add a new caller
+    ///      without replicating that gate.
     /// @param userOp The full PackedUserOperation. `paymasterAndData` must be the
-    ///        complete 2272-byte layout (length-checked by the caller).
+    ///        complete `_PAYMASTER_AND_DATA_LEN`-byte layout (length-checked by the caller).
     /// @return valid True if the signature is valid and key rotation succeeded.
     function _verifyAndRotate(
         PackedUserOperation calldata userOp
@@ -295,6 +309,10 @@ contract QuipPaymaster is
         bytes calldata paymasterData = userOp
             .paymasterAndData[_PAYMASTER_DATA_OFFSET:];
 
+        // Offsets `+12` (validUntil 6B + validAfter 6B) and `+76`
+        // (verifier 64B starts at 12) are valid ONLY because the caller has
+        // already gated on `paymasterAndData.length`. See the CALLER MUST
+        // block in the NatSpec above.
         WOTSPlus.WinternitzAddress calldata nextVerifier;
         WOTSPlus.WinternitzElements calldata pqSig;
         assembly {
