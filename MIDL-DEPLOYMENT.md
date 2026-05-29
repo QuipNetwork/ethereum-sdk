@@ -1,5 +1,17 @@
 # Deploying smart contracts on Midl: Complete developer guide
 
+> ⚠️ **Research notes, not a runbook.** This document is pre-deployment exploration of the MIDL ecosystem — much of it was assembled from upstream docs and contains inferred patterns (look for `// Inferred pattern` and similar markers in the code blocks below). It is **not** the canonical procedure for deploying Quip contracts on MIDL.
+>
+> For the authoritative MIDL deploy path see:
+> - **Deploy scripts:** `deploy/midl_regtest/00_deploy_deployer.cts` → `01_deploy_wots.cts` → `02_deploy_factory.cts` → `03_deploy_wallet.cts` → `04_deploy_paymaster.cts` → `05_vet_wallet.cts`. Invoke via `npx hardhat deploy --network midl_regtest --tags <tag>`.
+> - **Address registry:** `src/v1/addresses.ts` `NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET]` and `src/addresses-midl.json` (written by the factory deploy step).
+> - **Trust model:** [GOVERNANCE.md](GOVERNANCE.md) covers the factory/paymaster owner posture and the planned migration to on-chain governance.
+> - **Deployments status:** [DEPLOYMENTS.md](DEPLOYMENTS.md) for canonical addresses and per-chain status.
+>
+> Treat the rest of this document as background on the MIDL platform itself — useful for understanding what the deploy scripts above are talking to, not as instructions to copy.
+
+---
+
 **Midl is a Bitcoin execution layer enabling native EVM smart contracts without bridging**—and it's currently in testnet only. Mainnet hasn't launched yet, pending performance validation and security audits. The network uses a unique architecture: users sign regular Bitcoin transactions, and Midl validators execute corresponding EVM logic, committing state back to Bitcoin via Merkle root proofs.
 
 ## Deployment configuration for Hardhat/ethers.js
