@@ -50,6 +50,7 @@ Hardhat is also installed, but it's used **only** for MIDL deploy scripts (`depl
 
 ## Installation
 
+> ⚠️ `npm install` alone is **not** sufficient for a fresh clone — the SDK build (`forge build` → `copy-abi` → `tsc`) needs Foundry's `soldeer` dependencies materialized first. Use `make install` below; it runs `forge soldeer install` and `npm install` together.
 
 ```bash
 git clone <repo>

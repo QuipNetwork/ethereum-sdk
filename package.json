@@ -74,7 +74,7 @@
     "clean": "rimraf dist out cache_forge",
     "copy-abi": "node scripts/copy-abi.js",
     "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json",
-    "prepare": "npm run build",
+    "prepack": "npm run build",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
     "lint:sol": "solhint 'contracts/**/*.sol'",
     "test": "forge test",
