@@ -82,7 +82,7 @@ contract QuipWallet_replaceKeys_Recovery is QuipWalletTest {
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, nextPq));
         // Both keysets preserved at their pre-call lengths.
         assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 10);
     }
 
     function test_replaceKeys_Recovery_txSigned_swapsN10_fullSet() public {
@@ -183,7 +183,7 @@ contract QuipWallet_replaceKeys_Recovery is QuipWalletTest {
         }
         assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), 10);
         // Transaction keyset untouched.
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 10);
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, alicePubkey));
     }
 

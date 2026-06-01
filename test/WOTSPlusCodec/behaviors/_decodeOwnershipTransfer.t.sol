@@ -22,8 +22,8 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
             bytes32(seed + 500),
             bytes32(seed + 501)
         );
-        // newTransactionKeys[5] (320)
-        for (uint256 i = 0; i < 5; i++) {
+        // newTransactionKeys[10] (640)
+        for (uint256 i = 0; i < 10; i++) {
             payload = abi.encodePacked(
                 payload,
                 bytes32(seed + 600 + i * 2),
@@ -36,6 +36,14 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
                 payload,
                 bytes32(seed + 700 + i * 2),
                 bytes32(seed + 701 + i * 2)
+            );
+        }
+        // newVerificationKeys[10] (640)
+        for (uint256 i = 0; i < 10; i++) {
+            payload = abi.encodePacked(
+                payload,
+                bytes32(seed + 800 + i * 2),
+                bytes32(seed + 801 + i * 2)
             );
         }
     }
@@ -53,8 +61,9 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
             ,
             address decodedOwner,
             WOTSPlus.WinternitzAddress memory newDisaster,
-            WOTSPlus.WinternitzAddress[5] memory newTxn,
-            WOTSPlus.WinternitzAddress[10] memory newRec
+            WOTSPlus.WinternitzAddress[10] memory newTxn,
+            WOTSPlus.WinternitzAddress[10] memory newRec,
+            WOTSPlus.WinternitzAddress[10] memory newVer
         ) = codec.exposed_decodeOwnershipTransfer(payload);
 
         assertEq(cur.publicSeed, bytes32(uint256(10)));
@@ -64,7 +73,7 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
         assertEq(decodedOwner, newOwner);
         assertEq(newDisaster.publicSeed, bytes32(uint256(10 + 500)));
         assertEq(newDisaster.publicKeyHash, bytes32(uint256(10 + 501)));
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             assertEq(
                 newTxn[i].publicSeed,
                 bytes32(uint256(10 + 600 + i * 2))
@@ -84,6 +93,16 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
                 bytes32(uint256(10 + 701 + i * 2))
             );
         }
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(
+                newVer[i].publicSeed,
+                bytes32(uint256(10 + 800 + i * 2))
+            );
+            assertEq(
+                newVer[i].publicKeyHash,
+                bytes32(uint256(10 + 801 + i * 2))
+            );
+        }
     }
 
     function test_exposed_decodeOwnershipTransfer_revertsWhen_emptyPayload()
@@ -92,7 +111,7 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                3328,
+                4288,
                 0
             )
         );
@@ -105,23 +124,23 @@ contract WOTSPlusCodec__decodeOwnershipTransfer is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                3328,
-                3327
+                4288,
+                4287
             )
         );
-        codec.exposed_decodeOwnershipTransfer(_filledBytes(3327));
+        codec.exposed_decodeOwnershipTransfer(_filledBytes(4287));
     }
 
-    /// @dev Property: any payload length other than 3328 reverts.
+    /// @dev Property: any payload length other than 4288 reverts.
     function testFuzz_exposed_decodeOwnershipTransfer_revertsWhen_wrongLength(
         uint256 len
     ) public {
-        len = bound(len, 0, 6000);
-        vm.assume(len != 3328);
+        len = bound(len, 0, 7000);
+        vm.assume(len != 4288);
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                3328,
+                4288,
                 len
             )
         );

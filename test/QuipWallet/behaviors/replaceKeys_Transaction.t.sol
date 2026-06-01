@@ -8,17 +8,16 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
 /// @dev Tests for `replaceKeys` when `kind == KeyType.Transaction`.
-///      Transaction set inits at 5 keys; tests size N to fit. The Recovery-
-///      signed → Transaction-target path is the canonical recovery-key
-///      authorization model — sign with a recovery key to atomically swap
-///      entries of the transaction keyset.
+///      Transaction set inits at 10 keys under always-10; tests size N to fit.
+///      The Recovery-signed → Transaction-target path is the canonical
+///      recovery-key authorization model — sign with a recovery key to
+///      atomically swap entries of the transaction keyset.
 contract QuipWallet_replaceKeys_Transaction is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
     /// @dev The harness wallet's actual transaction keys. Index 0 is
-    ///      `alicePubkey`; indices 1..4 are deterministically derived by
-    ///      `_encodeInitPayload` from `alicePubkey`'s components and differ
-    ///      from `harnessTxKeys[1..4]` (which belong to the base `wallet`).
-    WOTSPlus.WinternitzAddress[5] internal harnessTxKeys;
+    ///      `alicePubkey`; indices 1..9 are deterministically derived by
+    ///      `_encodeInitPayload` from `alicePubkey`'s components.
+    WOTSPlus.WinternitzAddress[10] internal harnessTxKeys;
 
     function setUp() public override {
         super.setUp();
@@ -40,7 +39,7 @@ contract QuipWallet_replaceKeys_Transaction is QuipWalletTest {
         // Mirror `_encodeInitPayload`'s txn-key derivation so tests can
         // reference the harness wallet's actual transaction-keyset members.
         harnessTxKeys[0] = alicePubkey;
-        for (uint256 i = 1; i < 5; i++) {
+        for (uint256 i = 1; i < 10; i++) {
             bytes32 seed = keccak256(
                 abi.encodePacked(
                     alicePubkey.publicSeed,
@@ -60,20 +59,20 @@ contract QuipWallet_replaceKeys_Transaction is QuipWalletTest {
     function test_replaceKeys_Transaction_recoverySigned_swapsAllTxKeys()
         public
     {
-        // Sign with recovery key 0, replace all 5 tx keys in one batch.
+        // Sign with recovery key 0, replace all 10 tx keys in one batch.
         bytes32 recPriv = _recoverySigningKey(alicePrivateKey, 0);
         WOTSPlus.WinternitzAddress memory currentRec = recoveryPubkeys[0];
 
         WOTSPlus.WinternitzAddress[]
-            memory oldKeys = new WOTSPlus.WinternitzAddress[](5);
-        for (uint256 i = 0; i < 5; i++) oldKeys[i] = harnessTxKeys[i];
+            memory oldKeys = new WOTSPlus.WinternitzAddress[](10);
+        for (uint256 i = 0; i < 10; i++) oldKeys[i] = harnessTxKeys[i];
 
         WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(
-            keccak256("tx-rec-N5"),
-            5
+            keccak256("tx-rec-N10"),
+            10
         );
         (WOTSPlus.WinternitzAddress memory nextRec, ) = _generateKeyPair(
-            "tx-rec-N5-next"
+            "tx-rec-N10-next"
         );
 
         bytes memory payload = _encodeReplaceKeysPayload(
@@ -87,7 +86,7 @@ contract QuipWallet_replaceKeys_Transaction is QuipWalletTest {
         );
 
         // Pre: all old tx keys in set; recovery signing key alive.
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, oldKeys[i]));
         }
         assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, currentRec));
@@ -96,13 +95,13 @@ contract QuipWallet_replaceKeys_Transaction is QuipWalletTest {
         harnessProxy.replaceKeys(payload);
 
         // Post: tx keyset fully rotated; recovery rotation committed.
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, oldKeys[i]));
             assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, newKeys[i]));
         }
         assertFalse(harnessProxy.isKey(Codec.KeyType.Recovery, currentRec));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, nextRec));
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), 10);
     }
 
@@ -143,7 +142,7 @@ contract QuipWallet_replaceKeys_Transaction is QuipWalletTest {
             assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, oldKeys[i]));
             assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, newKeys[i]));
         }
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 10);
     }
 
     function test_replaceKeys_Transaction_recoverySigned_N1_boundary() public {

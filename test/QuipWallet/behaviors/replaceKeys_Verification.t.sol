@@ -8,10 +8,10 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
 /// @dev Tests for `replaceKeys` when `kind == KeyType.Verification`.
-///      The verification set inits empty; tests seed it with 5 fresh keys
-///      directly via the harness escape hatch (`exposed_safeAddKey`) before
-///      exercising replaceKeys. Both Transaction-signed and Recovery-signed
-///      paths are covered.
+///      Under always-10, the verification set inits with 10 keys derived by
+///      `_encodeInitPayload` from `alicePubkey`. `seededVerifierKeys` mirrors
+///      that derivation so tests can name the in-set entries to swap.
+///      Both Transaction-signed and Recovery-signed paths are covered.
 contract QuipWallet_replaceKeys_Verification is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
     WOTSPlus.WinternitzAddress[] internal seededVerifierKeys;
@@ -33,16 +33,20 @@ contract QuipWallet_replaceKeys_Verification is QuipWalletTest {
         }(keccak256("replaceKeys-verif-vault"), payable(ALICE), payload);
         harnessProxy = QuipWalletHarness(payable(proxyAddr));
 
-        // Seed 5 verification keys directly via the harness escape hatch so
-        // we don't have to thread a `resetKeyset(Verification, …)` flow
-        // through every test's setup (which would install 10 and rotate the
-        // tx signing key).
-        for (uint256 i = 0; i < 5; i++) {
-            (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
-                keccak256(abi.encode("verif-seed", i))
+        // Mirror `_encodeInitPayload`'s "verify-fill" derivation so tests can
+        // reference the in-set verification keys.
+        for (uint256 i = 0; i < 10; i++) {
+            (WOTSPlus.WinternitzAddress memory key, ) = WOTSPlus.generateKeyPair(
+                keccak256(
+                    abi.encodePacked(
+                        alicePubkey.publicSeed,
+                        alicePubkey.publicKeyHash,
+                        "verify-fill",
+                        i
+                    )
+                )
             );
             seededVerifierKeys.push(key);
-            harnessProxy.exposed_safeAddKey(HarnessKeyset.Verification, key);
         }
     }
 
@@ -83,7 +87,7 @@ contract QuipWallet_replaceKeys_Verification is QuipWalletTest {
                 harnessProxy.isKey(Codec.KeyType.Verification, newKeys[i])
             );
         }
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 5);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 10);
         // Tx signing rotation committed.
         assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, alicePubkey));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, nextPq));
@@ -130,7 +134,7 @@ contract QuipWallet_replaceKeys_Verification is QuipWalletTest {
         assertFalse(harnessProxy.isKey(Codec.KeyType.Recovery, currentRec));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, nextRec));
         // Tx keyset untouched.
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 10);
     }
 
     function test_replaceKeys_Verification_txSigned_N1_boundary() public {

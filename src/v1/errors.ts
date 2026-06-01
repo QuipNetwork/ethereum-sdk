@@ -276,6 +276,16 @@ export class IncorrectTransactionKeyAmountError extends QuipError {
   }
 }
 
+export class IncorrectVerificationKeyAmountError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "INCORRECT_VERIFICATION_KEY_AMOUNT",
+      "Verification keyset must contain exactly MAX_KEYS entries",
+      opts
+    );
+  }
+}
+
 export class ImplementationNotVettedError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(

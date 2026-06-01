@@ -131,8 +131,9 @@ export function parseKeyRotationOnly(
 export interface WalletInitializedEvent {
   factory: Address;
   owner: Address;
-  transactionKeys: readonly WinternitzAddress[];
-  recoveryKeys: readonly WinternitzAddress[];
+  transactionKeysHash: Hex;
+  recoveryKeysHash: Hex;
+  verificationKeysHash: Hex;
 }
 
 export function parseWalletInitialized(
@@ -145,8 +146,9 @@ export function parseWalletInitialized(
   }).map((l) => ({
     factory: l.args.factory,
     owner: l.args.owner,
-    transactionKeys: l.args.transactionKeys,
-    recoveryKeys: l.args.recoveryKeys,
+    transactionKeysHash: l.args.transactionKeysHash,
+    recoveryKeysHash: l.args.recoveryKeysHash,
+    verificationKeysHash: l.args.verificationKeysHash,
   }));
 }
 
@@ -155,6 +157,7 @@ export interface WalletSavedEvent {
   newDisasterRecoveryKey: WinternitzAddress;
   newTransactionKeysHash: Hex;
   newRecoveryKeysHash: Hex;
+  newVerificationKeysHash: Hex;
 }
 
 export function parseWalletSaved(src: LogSource): WalletSavedEvent[] {
@@ -167,6 +170,7 @@ export function parseWalletSaved(src: LogSource): WalletSavedEvent[] {
     newDisasterRecoveryKey: l.args.newDisasterRecoveryKey,
     newTransactionKeysHash: l.args.newTransactionKeysHash,
     newRecoveryKeysHash: l.args.newRecoveryKeysHash,
+    newVerificationKeysHash: l.args.newVerificationKeysHash,
   }));
 }
 
@@ -177,6 +181,7 @@ export interface OwnershipReinitializedEvent {
   newDisasterRecoveryKey: WinternitzAddress;
   newTransactionKeysHash: Hex;
   newRecoveryKeysHash: Hex;
+  newVerificationKeysHash: Hex;
 }
 
 export function parseOwnershipReinitialized(
@@ -193,6 +198,7 @@ export function parseOwnershipReinitialized(
     newDisasterRecoveryKey: l.args.newDisasterRecoveryKey,
     newTransactionKeysHash: l.args.newTransactionKeysHash,
     newRecoveryKeysHash: l.args.newRecoveryKeysHash,
+    newVerificationKeysHash: l.args.newVerificationKeysHash,
   }));
 }
 
@@ -254,6 +260,8 @@ export function parseKeyReplaced(src: LogSource): KeyReplacedEvent[] {
 
 export interface WalletMigratedEvent {
   transactionKeysHash: Hex;
+  recoveryKeysHash: Hex;
+  verificationKeysHash: Hex;
 }
 
 export function parseWalletMigrated(src: LogSource): WalletMigratedEvent[] {
@@ -263,6 +271,8 @@ export function parseWalletMigrated(src: LogSource): WalletMigratedEvent[] {
     eventName: "WalletMigrated",
   }).map((l) => ({
     transactionKeysHash: l.args.transactionKeysHash,
+    recoveryKeysHash: l.args.recoveryKeysHash,
+    verificationKeysHash: l.args.verificationKeysHash,
   }));
 }
 

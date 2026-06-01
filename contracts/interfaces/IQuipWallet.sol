@@ -112,6 +112,10 @@ interface IQuipWallet {
     ///         `initialize`/`migrate` is incorrect.
     error IncorrectTransactionKeyAmount();
 
+    /// @notice Thrown when the number of verification keys provided to
+    ///         `initialize`/`migrate` is incorrect.
+    error IncorrectVerificationKeyAmount();
+
     /// @notice Thrown when the upgrade target's codehash is not in the factory's vetted set.
     error ImplementationNotVetted();
     /// @notice Thrown when the upgrade target's codehash has been deprecated.
@@ -186,55 +190,74 @@ interface IQuipWallet {
     );
 
     /// @notice Emitted when a wallet is initialized with its factory, owner, and keys.
+    /// @dev The three keyset arrays are summarized as `keccak256(abi.encode(arr))`
+    ///      hashes rather than emitted in full — off-chain indexers recompute
+    ///      from the init payload (available via the wallet-creation calldata).
     /// @param factory The QuipFactory that created this wallet.
     /// @param owner The classical owner address.
-    /// @param transactionKeys The initial set of 5 transaction keys.
-    /// @param recoveryKeys The initial set of 10 recovery keys.
+    /// @param transactionKeysHash `keccak256(abi.encode(transactionKeys[10]))`.
+    /// @param recoveryKeysHash `keccak256(abi.encode(recoveryKeys[10]))`.
+    /// @param verificationKeysHash `keccak256(abi.encode(verificationKeys[10]))`.
     event WalletInitialized(
         address indexed factory,
         address indexed owner,
-        WOTSPlus.WinternitzAddress[5] transactionKeys,
-        WOTSPlus.WinternitzAddress[10] recoveryKeys
+        bytes32 transactionKeysHash,
+        bytes32 recoveryKeysHash,
+        bytes32 verificationKeysHash
     );
 
     /// @notice Emitted when the wallet is rescued via the disaster recovery key.
+    /// @dev `saveWallet` wholesale-resets the three keysets to the installed
+    ///      always-10 batches; full arrays are summarized as hashes to keep
+    ///      the event payload bounded.
     /// @param oldDisasterRecoveryKey The consumed disaster recovery key.
     /// @param newDisasterRecoveryKey The installed replacement disaster recovery key.
-    /// @param newTransactionKeysHash `keccak256(abi.encode(newTransactionKeys))` — identifies
-    ///        the installed transaction-key batch without ballooning the event payload.
-    /// @param newRecoveryKeysHash `keccak256(abi.encode(newRecoveryKeys))` — identifies the
-    ///        installed recovery-key batch.
+    /// @param newTransactionKeysHash `keccak256(abi.encode(newTransactionKeys[10]))`.
+    /// @param newRecoveryKeysHash `keccak256(abi.encode(newRecoveryKeys[10]))`.
+    /// @param newVerificationKeysHash `keccak256(abi.encode(newVerificationKeys[10]))`.
     event WalletSaved(
         WOTSPlus.WinternitzAddress oldDisasterRecoveryKey,
         WOTSPlus.WinternitzAddress newDisasterRecoveryKey,
         bytes32 newTransactionKeysHash,
-        bytes32 newRecoveryKeysHash
+        bytes32 newRecoveryKeysHash,
+        bytes32 newVerificationKeysHash
     );
 
     /// @notice Emitted when ownership is transferred (or handed over) and the PQ state is
     ///         fully re-initialized for the incoming owner.
+    /// @dev `transferOwnership` wholesale-resets the three keysets to the installed
+    ///      always-10 batches; full arrays are summarized as hashes to keep the event
+    ///      payload bounded.
     /// @param oldOwnershipKey The consumed ownership key.
     /// @param newOwnershipKey The installed replacement ownership key.
     /// @param newOwner The classical address that now owns the wallet.
     /// @param newDisasterRecoveryKey The installed replacement disaster recovery key.
-    /// @param newTransactionKeysHash `keccak256(abi.encode(newTransactionKeys))`.
-    /// @param newRecoveryKeysHash `keccak256(abi.encode(newRecoveryKeys))`.
+    /// @param newTransactionKeysHash `keccak256(abi.encode(newTransactionKeys[10]))`.
+    /// @param newRecoveryKeysHash `keccak256(abi.encode(newRecoveryKeys[10]))`.
+    /// @param newVerificationKeysHash `keccak256(abi.encode(newVerificationKeys[10]))`.
     event OwnershipReinitialized(
         WOTSPlus.WinternitzAddress oldOwnershipKey,
         WOTSPlus.WinternitzAddress newOwnershipKey,
         address indexed newOwner,
         WOTSPlus.WinternitzAddress newDisasterRecoveryKey,
         bytes32 newTransactionKeysHash,
-        bytes32 newRecoveryKeysHash
+        bytes32 newRecoveryKeysHash,
+        bytes32 newVerificationKeysHash
     );
 
     /// @notice Emitted when PQ state is migrated during an upgrade.
-    /// @param transactionKeysHash `keccak256(abi.encode(transactionKeys))` of the
-    ///        migrated transaction-key set. The full array is not emitted because
-    ///        topics + data would balloon the upgrade calldata; a hash is the
-    ///        cheapest useful commitment — off-chain indexers can recompute it from
-    ///        the migrator payload, which is itself available via calldata.
-    event WalletMigrated(bytes32 indexed transactionKeysHash);
+    /// @dev The three keysets are reinstalled from the migrator payload.
+    ///      Full arrays are not emitted — a hash is the cheapest useful
+    ///      commitment, and off-chain indexers can recompute from the
+    ///      migrator payload via calldata.
+    /// @param transactionKeysHash `keccak256(abi.encode(transactionKeys[10]))`.
+    /// @param recoveryKeysHash `keccak256(abi.encode(recoveryKeys[10]))`.
+    /// @param verificationKeysHash `keccak256(abi.encode(verificationKeys[10]))`.
+    event WalletMigrated(
+        bytes32 indexed transactionKeysHash,
+        bytes32 recoveryKeysHash,
+        bytes32 verificationKeysHash
+    );
 
     /// @notice Emitted when a recovery key authorizes an emergency implementation upgrade.
     /// @param newImplementation The new implementation address.
@@ -374,7 +397,7 @@ interface IQuipWallet {
     /// @param newImplementation The address of the new implementation contract.
     /// @param data Packed upgrade data: [0:64) currentKey, [64:128) nextKey,
     ///      [128:2272) pqSig, [2272:2336) verifier, [2336:4480) verifySig,
-    ///      [4480] shouldMigrate, [4481:5569) migratorPayload (new init layout, 1088 bytes).
+    ///      [4480] shouldMigrate, [4481:6529) migratorPayload (new init layout, 2048 bytes).
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
@@ -431,22 +454,23 @@ interface IQuipWallet {
     ) external view;
 
     /// @notice Initializes the wallet with its classical owner, disaster recovery key,
-    ///         ownership key, transaction keys, and recovery keys.
+    ///         ownership key, transaction keys, recovery keys, and verification keys.
     /// @dev Can only be called once by the FACTORY. Uses Solady's `initializer` modifier.
     ///      Payload layout: [0:64) disasterRecoveryKey, [64:128) ownershipKey,
-    ///      [128:448) transactionKeys (5 x 64), [448:1088) recoveryKeys (10 x 64).
+    ///      [128:768) transactionKeys (10 x 64), [768:1408) recoveryKeys (10 x 64),
+    ///      [1408:2048) verificationKeys (10 x 64).
     /// @param newOwner The classical owner address.
-    /// @param payload Packed init data (1088 bytes).
+    /// @param payload Packed init data (2048 bytes).
     function initialize(
         address payable newOwner,
         bytes calldata payload
     ) external;
 
-    /// @notice Re-initializes the PQ state (disaster recovery key + ownership key + transaction
-    ///         + recovery keys) during an upgrade.
+    /// @notice Re-initializes the PQ state (disaster recovery key + ownership key +
+    ///         transaction, recovery, and verification keysets) during an upgrade.
     /// @dev Only callable by the classical owner. Called via delegatecall from upgradeToAndCall
     ///      so that it executes against proxy storage.
-    ///      Payload layout matches `initialize` (1088 bytes).
+    ///      Payload layout matches `initialize` (2048 bytes).
     /// @param payload Packed migration data matching the init layout.
     function migrate(bytes calldata payload) external;
 
@@ -480,16 +504,18 @@ interface IQuipWallet {
     ///      separate from the transaction keyset. The old owner knows all the current PQ key
     ///      material by virtue of having used it, so ownership transfer is treated as a full
     ///      re-initialization: the caller supplies a fresh `ownershipKey`, `disasterRecoveryKey`,
-    ///      transaction keyset, and recovery keyset that the incoming owner alone controls.
-    ///      The existing verification keyset is cleared (the new owner re-seeds it as needed).
-    ///      The existing `ownershipKey` rotates to the supplied replacement (one-time-use).
+    ///      transaction keyset, recovery keyset, and verification keyset that the incoming
+    ///      owner alone controls. All three keysets are wholesale-replaced to the always-10
+    ///      invariant. The existing `ownershipKey` rotates to the supplied replacement
+    ///      (one-time-use).
     ///      At the tail of this flow, the wallet calls back into the factory via
     ///      `updateWalletOwner(oldOwner, newOwner)` so the factory's per-owner
     ///      vaultIds set stays consistent with `owner()`.
     ///      Payload layout: [0:64) currentOwnershipKey, [64:128) newOwnershipKey,
     ///      [128:2272) pqSig, [2272:2304) newOwner, [2304:2368) newDisasterKey,
-    ///      [2368:2688) newTransactionKeys[5], [2688:3328) newRecoveryKeys[10].
-    /// @param payload Packed ownership-transfer data (3328 bytes).
+    ///      [2368:3008) newTransactionKeys[10], [3008:3648) newRecoveryKeys[10],
+    ///      [3648:4288) newVerificationKeys[10].
+    /// @param payload Packed ownership-transfer data (4288 bytes).
     function transferOwnership(bytes calldata payload) external payable;
 
     /// @notice Returns the wallet's classical owner address (Solady Ownable).
@@ -584,16 +610,18 @@ interface IQuipWallet {
     /// @return The full key state.
     function getAllKeys() external view returns (AllKeys memory);
 
-    /// @notice Last-resort rescue: resets `transactionKeys` and `recoveryKeys` using the
-    ///         wallet's disaster recovery key. Leaves `verificationKeys` and `owner()` intact.
+    /// @notice Last-resort rescue: resets `transactionKeys`, `recoveryKeys`, and
+    ///         `verificationKeys` using the wallet's disaster recovery key. Leaves
+    ///         `owner()` and `ownershipKey` intact.
     /// @dev Authorized solely by a WOTS+ signature from the stored disaster recovery key.
     ///      The key rotates on use — the payload carries a `newDisasterRecoveryKey` that
     ///      replaces the consumed one. No `onlyOwner` gate: if the classical owner is also
     ///      compromised, this path must still be reachable.
     ///
     ///      Payload layout: [0:64) currentDisasterKey, [64:128) newDisasterKey,
-    ///      [128:2272) pqSig, [2272:2592) newTransactionKeys[5], [2592:3232) newRecoveryKeys[10].
-    /// @param payload Packed saveWallet data (3232 bytes).
+    ///      [128:2272) pqSig, [2272:2912) newTransactionKeys[10],
+    ///      [2912:3552) newRecoveryKeys[10], [3552:4192) newVerificationKeys[10].
+    /// @param payload Packed saveWallet data (4192 bytes).
     function saveWallet(bytes calldata payload) external;
 
     /// @notice Emergency upgrade authorized by a recovery key, without migration.

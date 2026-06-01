@@ -46,8 +46,8 @@ import {
   verificationDigest,
   type WinternitzAddress,
   type WinternitzElements,
+  MAX_KEYS,
   RECOVERY_KEY_AMOUNT,
-  TRANSACTION_KEY_INIT_AMOUNT,
 } from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
@@ -174,6 +174,7 @@ describe("transferOwnership", () => {
     newDisasterRecoveryKey: WinternitzAddress;
     newTransactionKeys: WinternitzAddress[];
     newRecoveryKeys: WinternitzAddress[];
+    newVerificationKeys: WinternitzAddress[];
     incomingSigner: QuipSigner;
   } {
     // Standalone signer/vault representing the new owner's key material.
@@ -187,10 +188,13 @@ describe("transferOwnership", () => {
     const newDisasterRecoveryKey = incomingSigner.generateKeyPair(incomingVault)
       .publicKey;
     const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      { length: MAX_KEYS },
       () => incomingSigner.generateKeyPair(incomingVault).publicKey
     );
-    const newRecoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
+    const newRecoveryKeys = Array.from({ length: MAX_KEYS }, () =>
+      incomingSigner.generateKeyPair(incomingVault).publicKey
+    );
+    const newVerificationKeys = Array.from({ length: MAX_KEYS }, () =>
       incomingSigner.generateKeyPair(incomingVault).publicKey
     );
     return {
@@ -198,6 +202,7 @@ describe("transferOwnership", () => {
       newDisasterRecoveryKey,
       newTransactionKeys,
       newRecoveryKeys,
+      newVerificationKeys,
       incomingSigner,
     };
   }
@@ -217,6 +222,7 @@ describe("transferOwnership", () => {
       newDisasterRecoveryKey: params.newDisasterRecoveryKey,
       newTransactionKeys: params.newTransactionKeys,
       newRecoveryKeys: params.newRecoveryKeys,
+      newVerificationKeys: params.newVerificationKeys,
     });
     expect(receipt.status).toBe("success");
 
@@ -226,8 +232,9 @@ describe("transferOwnership", () => {
     expect(state.disasterRecoveryKey.publicSeed).toBe(
       params.newDisasterRecoveryKey.publicSeed
     );
-    expect(state.keyCounts.transaction).toBe(BigInt(TRANSACTION_KEY_INIT_AMOUNT));
-    expect(state.keyCounts.recovery).toBe(BigInt(RECOVERY_KEY_AMOUNT));
+    expect(state.keyCounts.transaction).toBe(BigInt(MAX_KEYS));
+    expect(state.keyCounts.recovery).toBe(BigInt(MAX_KEYS));
+    expect(state.keyCounts.verification).toBe(BigInt(MAX_KEYS));
 
     // Every freshly installed transaction key shows up in the on-chain set.
     const installed = new Set(state.transactionKeys.map((k) => k.publicSeed));
@@ -253,6 +260,7 @@ describe("transferOwnership", () => {
         newDisasterRecoveryKey: params.newDisasterRecoveryKey,
         newTransactionKeys: shortTransactionKeys,
         newRecoveryKeys: params.newRecoveryKeys,
+        newVerificationKeys: params.newVerificationKeys,
       })
     ).rejects.toBeInstanceOf(IncorrectTransactionKeyAmountError);
 
@@ -272,6 +280,7 @@ describe("transferOwnership", () => {
         newDisasterRecoveryKey: params.newDisasterRecoveryKey,
         newTransactionKeys: params.newTransactionKeys,
         newRecoveryKeys: shortRecoveryKeys,
+        newVerificationKeys: params.newVerificationKeys,
       })
     ).rejects.toBeInstanceOf(IncorrectRecoveryKeyAmountError);
 
@@ -298,11 +307,10 @@ describe("saveWallet", () => {
     expect(stateAfter.disasterRecoveryKey.publicSeed).not.toBe(
       disasterKey.publicSeed
     );
-    // Transaction + recovery keysets refilled to the init amounts.
-    expect(stateAfter.keyCounts.transaction).toBe(
-      BigInt(TRANSACTION_KEY_INIT_AMOUNT)
-    );
-    expect(stateAfter.keyCounts.recovery).toBe(BigInt(RECOVERY_KEY_AMOUNT));
+    // All three keysets refilled to MAX_KEYS (always-10).
+    expect(stateAfter.keyCounts.transaction).toBe(BigInt(MAX_KEYS));
+    expect(stateAfter.keyCounts.recovery).toBe(BigInt(MAX_KEYS));
+    expect(stateAfter.keyCounts.verification).toBe(BigInt(MAX_KEYS));
 
     // Signing disaster key burned.
     expect(isBurned(disasterKey.publicSeed)).toBe(true);

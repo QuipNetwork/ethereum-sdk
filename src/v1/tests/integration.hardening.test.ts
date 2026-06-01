@@ -28,7 +28,7 @@ import {
 } from "../errors.js";
 import {
   type WinternitzAddress,
-  TRANSACTION_KEY_INIT_AMOUNT,
+  MAX_KEYS,
 } from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
@@ -110,7 +110,7 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
     const { client, isBurned } = await createFreshWallet(stack, 0x21);
 
     const keyset = await client.getKeyset(KeyType.Transaction);
-    expect(keyset.length).toBe(TRANSACTION_KEY_INIT_AMOUNT);
+    expect(keyset.length).toBe(MAX_KEYS);
     const firstKey = keyset[0];
     const secondKey = keyset[1];
 

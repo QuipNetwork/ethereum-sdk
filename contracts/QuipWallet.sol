@@ -38,10 +38,10 @@ import {
 contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     using Keyset for Keyset.WinternitzAddressSet;
 
-    /// @dev Per-keyset capacity bound. Distinct from `Codec.RECOVERY_KEY_AMOUNT`
-    ///      (the protocol-required INITIAL recovery-set size, currently 10) and
-    ///      `Codec.TRANSACTION_KEY_INIT_AMOUNT` (initial transaction-set size,
-    ///      currently 5).
+    /// @dev Per-keyset capacity bound. Every keyset (`transactionKeys`,
+    ///      `recoveryKeys`, `verificationKeys`) holds exactly this many
+    ///      entries at every state-transition boundary. Matches
+    ///      `Codec.MAX_KEYS` by construction.
     uint256 public constant MAX_KEYS = 10;
     address payable public immutable FACTORY;
 
@@ -367,8 +367,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         (
             WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
             WOTSPlus.WinternitzAddress calldata ownershipKey,
-            WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
-            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+            WOTSPlus.WinternitzAddress[10] calldata transactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys,
+            WOTSPlus.WinternitzAddress[10] calldata verificationKeys
         ) = Codec.decodeInit(payload);
 
         _initializeOwner(newOwner);
@@ -377,14 +378,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             disasterRecoveryKey,
             ownershipKey,
             transactionKeys,
-            recoveryKeys
+            recoveryKeys,
+            verificationKeys
         );
 
         emit WalletInitialized(
             FACTORY,
             newOwner,
-            transactionKeys,
-            recoveryKeys
+            EfficientHashLib.hash(abi.encode(transactionKeys)),
+            EfficientHashLib.hash(abi.encode(recoveryKeys)),
+            EfficientHashLib.hash(abi.encode(verificationKeys))
         );
     }
 
@@ -606,8 +609,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             WOTSPlus.WinternitzAddress calldata currentDisasterKey,
             WOTSPlus.WinternitzAddress calldata newDisasterKey,
             WOTSPlus.WinternitzElements calldata pqSig,
-            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
-            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
+            WOTSPlus.WinternitzAddress[10] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newVerificationKeys
         ) = Codec.decodeSaveWallet(payload);
 
         Storage.Layout storage $ = Storage.layout();
@@ -628,7 +632,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _enforceUnspentKey(newDisasterKey);
 
         bytes32 keysHash = EfficientHashLib.hash(
-            abi.encode(newTransactionKeys, newRecoveryKeys)
+            abi.encode(newTransactionKeys, newRecoveryKeys, newVerificationKeys)
         );
         bytes32 digest = Codec.saveWalletDigest(
             address(this),
@@ -648,22 +652,27 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             )
         ) revert InvalidSignature();
 
-        // Consume the disaster key first, then reset txn + recovery keysets.
+        // Consume the disaster key first, then reset all three keysets.
         _setDisasterRecoveryKey(newDisasterKey);
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
-        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+        _clearKeys($.verificationKeys);
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
             _safeAddKey($.transactionKeys, newTransactionKeys[i]);
         }
-        for (uint256 i = 0; i < Codec.RECOVERY_KEY_AMOUNT; ++i) {
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
             _safeAddKey($.recoveryKeys, newRecoveryKeys[i]);
+        }
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            _safeAddKey($.verificationKeys, newVerificationKeys[i]);
         }
 
         emit WalletSaved(
             currentDisasterKey,
             newDisasterKey,
             EfficientHashLib.hash(abi.encode(newTransactionKeys)),
-            EfficientHashLib.hash(abi.encode(newRecoveryKeys))
+            EfficientHashLib.hash(abi.encode(newRecoveryKeys)),
+            EfficientHashLib.hash(abi.encode(newVerificationKeys))
         );
     }
 
@@ -885,21 +894,28 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         (
             WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
             WOTSPlus.WinternitzAddress calldata ownershipKey,
-            WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
-            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+            WOTSPlus.WinternitzAddress[10] calldata transactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys,
+            WOTSPlus.WinternitzAddress[10] calldata verificationKeys
         ) = Codec.decodeInit(payload);
 
         Storage.Layout storage $ = Storage.layout();
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
+        _clearKeys($.verificationKeys);
         _installInitialKeys(
             disasterRecoveryKey,
             ownershipKey,
             transactionKeys,
-            recoveryKeys
+            recoveryKeys,
+            verificationKeys
         );
 
-        emit WalletMigrated(EfficientHashLib.hash(abi.encode(transactionKeys)));
+        emit WalletMigrated(
+            EfficientHashLib.hash(abi.encode(transactionKeys)),
+            EfficientHashLib.hash(abi.encode(recoveryKeys)),
+            EfficientHashLib.hash(abi.encode(verificationKeys))
+        );
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -1389,11 +1405,10 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// @dev Worker for `transferOwnership(bytes)`. A full re-initialization of
     ///      the wallet's PQ state on behalf of the new owner: the existing
     ///      `ownershipKey` authorizes a bundle of (newOwner, new `ownershipKey`,
-    ///      new `disasterRecoveryKey`, new transactionKeys[5], new
-    ///      recoveryKeys[10]); on success the existing ownership key rotates,
-    ///      the disaster key is replaced, the transaction and recovery keysets
-    ///      are cleared and repopulated, and the verification keyset is cleared
-    ///      (the new owner re-seeds it out-of-band).
+    ///      new `disasterRecoveryKey`, new transactionKeys[10], new
+    ///      recoveryKeys[10], new verificationKeys[10]); on success the existing
+    ///      ownership key rotates, the disaster key is replaced, and all three
+    ///      keysets are cleared and repopulated to the always-10 invariant.
     ///
     ///      At the tail of this function — AFTER Solady's `_setOwner(newOwner)`
     ///      has committed — the wallet calls back into the factory via
@@ -1410,8 +1425,9 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             WOTSPlus.WinternitzElements calldata pqSig,
             address newOwner,
             WOTSPlus.WinternitzAddress calldata newDisasterKey,
-            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
-            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
+            WOTSPlus.WinternitzAddress[10] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newVerificationKeys
         ) = Codec.decodeOwnershipTransfer(payload);
 
         if (newOwner == address(0)) revert ZeroAddressOwner();
@@ -1439,7 +1455,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         ) revert UnknownDisasterRecoveryKey();
 
         bytes32 keysHash = EfficientHashLib.hash(
-            abi.encode(newDisasterKey, newTransactionKeys, newRecoveryKeys)
+            abi.encode(
+                newDisasterKey,
+                newTransactionKeys,
+                newRecoveryKeys,
+                newVerificationKeys
+            )
         );
         bytes32 digest = Codec.transferOwnershipDigest(
             address(this),
@@ -1476,18 +1497,21 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
         _clearKeys($.verificationKeys);
-        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
             _safeAddKey($.transactionKeys, newTransactionKeys[i]);
         }
-        for (uint256 i = 0; i < Codec.RECOVERY_KEY_AMOUNT; ++i) {
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
             _safeAddKey($.recoveryKeys, newRecoveryKeys[i]);
+        }
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            _safeAddKey($.verificationKeys, newVerificationKeys[i]);
         }
 
         Ownable.transferOwnership(newOwner);
 
         // Notify the factory so its per-owner vaultIds set tracks the new
         // `owner()`. The factory reads the previous owner from its own
-        // `walletOwner[msg.sender]` mapping. 
+        // `walletOwner[msg.sender]` mapping.
         // The pin-predicate `wallet.owner() == newOwner` ensures
         // this callback can only run at the tail of the flow, AFTER Solady
         // committed the transfer above. Reverts here roll back the whole
@@ -1501,19 +1525,22 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             newOwner,
             newDisasterKey,
             EfficientHashLib.hash(abi.encode(newTransactionKeys)),
-            EfficientHashLib.hash(abi.encode(newRecoveryKeys))
+            EfficientHashLib.hash(abi.encode(newRecoveryKeys)),
+            EfficientHashLib.hash(abi.encode(newVerificationKeys))
         );
     }
 
-    /// @dev Loads the disaster recovery key, ownership key, and the initial transaction-
-    ///      and recovery-key batches into storage, then asserts the post-state invariants.
-    ///      Shared by `initialize` and `migrate`; the caller is responsible for
-    ///      clearing any prior keyset state.
+    /// @dev Loads the disaster recovery key, ownership key, and the initial
+    ///      transaction-, recovery-, and verification-key batches into storage,
+    ///      then asserts the post-state invariants. Shared by `initialize` and
+    ///      `migrate`; the caller is responsible for clearing any prior keyset
+    ///      state.
     function _installInitialKeys(
         WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
         WOTSPlus.WinternitzAddress calldata ownershipKey,
-        WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
-        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+        WOTSPlus.WinternitzAddress[10] calldata transactionKeys,
+        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys,
+        WOTSPlus.WinternitzAddress[10] calldata verificationKeys
     ) internal {
         Storage.Layout storage $ = Storage.layout();
         // Each single-key assignment is preceded by `_enforceUnspentKey` so the new
@@ -1527,11 +1554,14 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         _setDisasterRecoveryKey(disasterRecoveryKey);
         _enforceUnspentKey(ownershipKey);
         _setOwnershipKey(ownershipKey);
-        for (uint256 i = 0; i < Codec.TRANSACTION_KEY_INIT_AMOUNT; ++i) {
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
             _safeAddKey($.transactionKeys, transactionKeys[i]);
         }
-        for (uint256 i = 0; i < Codec.RECOVERY_KEY_AMOUNT; ++i) {
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
             _safeAddKey($.recoveryKeys, recoveryKeys[i]);
+        }
+        for (uint256 i = 0; i < MAX_KEYS; ++i) {
+            _safeAddKey($.verificationKeys, verificationKeys[i]);
         }
         _verifyInitialState();
     }
@@ -1547,10 +1577,12 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             $.ownershipKey.publicSeed == bytes32(0) ||
             $.ownershipKey.publicKeyHash == bytes32(0)
         ) revert UnknownOwnershipKey();
-        if ($.transactionKeys.length() != Codec.TRANSACTION_KEY_INIT_AMOUNT)
+        if ($.transactionKeys.length() != MAX_KEYS)
             revert IncorrectTransactionKeyAmount();
-        if ($.recoveryKeys.length() != Codec.RECOVERY_KEY_AMOUNT)
+        if ($.recoveryKeys.length() != MAX_KEYS)
             revert IncorrectRecoveryKeyAmount();
+        if ($.verificationKeys.length() != MAX_KEYS)
+            revert IncorrectVerificationKeyAmount();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

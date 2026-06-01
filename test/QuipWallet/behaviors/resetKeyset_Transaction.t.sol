@@ -15,8 +15,8 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 ///          alicePubkey/nextPq in newKeys (burn index rejects either with
 ///          KeyInUse — covered in `resetKeyset_Recovery.t.sol`).
 ///        - Cross-keyset auth (signingKind = Recovery): recovery-key
-///          authorizes tx-set reset. Initial tx keyset (5 keys) is wiped and
-///          replaced with 10 fresh keys regardless of starting size.
+///          authorizes tx-set reset. Initial tx keyset (10 keys under
+///          always-10) is wiped and replaced with 10 fresh keys.
 contract QuipWallet_resetKeyset_Transaction is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
@@ -54,8 +54,8 @@ contract QuipWallet_resetKeyset_Transaction is QuipWalletTest {
             newKeys
         );
 
-        // Pre: tx set holds 5 init keys (alicePubkey + 4 derived fillers).
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
+        // Pre: tx set holds 10 init keys (alicePubkey + 9 derived fillers).
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 10);
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, alicePubkey));
 
         vm.prank(ALICE);

@@ -95,8 +95,12 @@ contract QuipWallet_keyAt is QuipWalletTest {
         wallet.keyAt(Codec.KeyType.Verification, 10);
     }
 
-    function test_keyAt_verificationRevertsWhen_emptySet() public {
-        vm.expectRevert(Keyset.IndexOutOfBounds.selector);
-        wallet.keyAt(Codec.KeyType.Verification, 0);
+    function test_keyAt_verificationReturnsAtInit() public view {
+        WOTSPlus.WinternitzAddress memory key = wallet.keyAt(
+            Codec.KeyType.Verification,
+            0
+        );
+        assertTrue(key.publicSeed != bytes32(0));
+        assertTrue(key.publicKeyHash != bytes32(0));
     }
 }

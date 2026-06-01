@@ -67,10 +67,10 @@ contract QuipWallet_scenario_verificationKeysLifecycle is QuipWalletTest {
     /// @dev Full lifecycle in one chain. Each step is its own internal
     ///      function so locals don't pile up in a single stack frame.
     function test_simulation_verificationKeysLifecycle() public {
-        // Step 1: empty at init.
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 0);
+        // Step 1: full at init (always-10 invariant).
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
 
-        // Step 2: seed 10 verifiers via tx-signed resetKeyset.
+        // Step 2: wholesale-reset to a known batch via tx-signed resetKeyset.
         _seedInitialVerifierBatch();
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
 
@@ -84,7 +84,7 @@ contract QuipWallet_scenario_verificationKeysLifecycle is QuipWalletTest {
         // Final invariants.
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
     }
 
     /// @dev Step 2 — seed.
@@ -293,7 +293,8 @@ contract QuipWallet_scenario_verificationKeysLifecycle is QuipWalletTest {
         }
         batch[4] = aliceTxnPubkeys[2]; // plant tx key in verification batch
         _expectKeyInUseOnResetVerification(batch, "verif-crossuniq-next");
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 0);
+        // Verification set unchanged from its init-full state.
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
     }
 
     /// @dev Mirror — collision against a recovery key reverts `KeyInUse`.

@@ -218,14 +218,16 @@ contract QuipWalletHarness is QuipWallet {
     function exposed_installInitialKeys(
         WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
         WOTSPlus.WinternitzAddress calldata ownershipKey,
-        WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
-        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+        WOTSPlus.WinternitzAddress[10] calldata transactionKeys,
+        WOTSPlus.WinternitzAddress[10] calldata recoveryKeys,
+        WOTSPlus.WinternitzAddress[10] calldata verificationKeys
     ) external {
         _installInitialKeys(
             disasterRecoveryKey,
             ownershipKey,
             transactionKeys,
-            recoveryKeys
+            recoveryKeys,
+            verificationKeys
         );
     }
 

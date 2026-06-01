@@ -19,9 +19,10 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
     struct OwnershipPayloadCtx {
         WOTSPlus.WinternitzAddress nextOwnership;
         WOTSPlus.WinternitzAddress newDisaster;
-        WOTSPlus.WinternitzAddress[5] newTxn;
-        bytes32[5] newTxnPrivs;
+        WOTSPlus.WinternitzAddress[10] newTxn;
+        bytes32[10] newTxnPrivs;
         WOTSPlus.WinternitzAddress[10] newRec;
+        WOTSPlus.WinternitzAddress[10] newVer;
     }
 
     function _deriveOwnershipKeys(
@@ -33,7 +34,7 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
         (ctx.newDisaster, ) = _generateKeyPair(
             keccak256(abi.encodePacked(seedPrefix, "-new-disaster"))
         );
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             (ctx.newTxn[i], ctx.newTxnPrivs[i]) = _generateKeyPair(
                 keccak256(abi.encodePacked(seedPrefix, "-txn", i))
             );
@@ -41,6 +42,11 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
         for (uint256 i = 0; i < 10; i++) {
             (ctx.newRec[i], ) = _generateKeyPair(
                 keccak256(abi.encodePacked(seedPrefix, "-rec", i))
+            );
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            (ctx.newVer[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked(seedPrefix, "-ver", i))
             );
         }
     }
@@ -52,7 +58,7 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
         bytes32 curOwnershipPriv
     ) internal view returns (bytes memory) {
         bytes32 keysHash = keccak256(
-            abi.encode(ctx.newDisaster, ctx.newTxn, ctx.newRec)
+            abi.encode(ctx.newDisaster, ctx.newTxn, ctx.newRec, ctx.newVer)
         );
         bytes32 msgHash = _buildTransferOwnershipMessageHash(
             address(wallet),
@@ -73,7 +79,8 @@ contract QuipWallet_ownershipLifecycle is QuipWalletTest {
                 newOwner,
                 ctx.newDisaster,
                 ctx.newTxn,
-                ctx.newRec
+                ctx.newRec,
+                ctx.newVer
             );
     }
 

@@ -8,11 +8,9 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
 /// @dev Tests for `resetKeyset` when `kind == KeyType.Verification`. The
-///      verification keyset starts empty (no init seeding), so resetKeyset's
-///      `_clearKeys` is a no-op and the install loop is what builds the set.
-///      This proves the always-10 invariant can be established on the
-///      verification keyset via resetKeyset even before the init payload
-///      changes that will seed it on deployment.
+///      verification keyset starts full (10 init-seeded keys), so resetKeyset's
+///      `_clearKeys` wipes the existing 10 and the install loop reinstalls a
+///      fresh 10 — exercising the always-10 invariant.
 contract QuipWallet_resetKeyset_Verification is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
@@ -33,9 +31,9 @@ contract QuipWallet_resetKeyset_Verification is QuipWalletTest {
         harnessProxy = QuipWalletHarness(payable(proxyAddr));
     }
 
-    function test_resetKeyset_Verification_txSigned_seedsFromEmpty() public {
-        // Pre: verification keyset empty.
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 0);
+    function test_resetKeyset_Verification_txSigned_wholesaleReplaces() public {
+        // Pre: verification keyset is full at init under the always-10 invariant.
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 10);
 
         WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(
             keccak256("verif-tx-seed")
@@ -68,7 +66,7 @@ contract QuipWallet_resetKeyset_Verification is QuipWalletTest {
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, nextPq));
     }
 
-    function test_resetKeyset_Verification_recoverySigned_seedsFromEmpty()
+    function test_resetKeyset_Verification_recoverySigned_wholesaleReplaces()
         public
     {
         bytes32 recPriv = _recoverySigningKey(alicePrivateKey, 0);

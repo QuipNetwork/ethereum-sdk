@@ -28,7 +28,7 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
         WOTSPlus.WinternitzAddress memory verifier;
         WOTSPlus.WinternitzElements memory pqSig;
         WOTSPlus.WinternitzElements memory verifySig;
-        bytes memory migrator = new bytes(1088);
+        bytes memory migrator = new bytes(2048);
 
         bytes memory encoded = codec.exposed_encodeUpgradeToAndCall(
             cur,
@@ -39,8 +39,8 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
             true,
             migrator
         );
-        // 64 + 64 + 2144 + 64 + 2144 + 1 + 1088 = 5569
-        assertEq(encoded.length, 5569);
+        // 64 + 64 + 2144 + 64 + 2144 + 1 + 2048 = 6529
+        assertEq(encoded.length, 6529);
     }
 
     function test_exposed_encodeUpgradeToAndCall_producesCorrectLengthMigrateFalse()
@@ -54,7 +54,7 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
         WOTSPlus.WinternitzAddress memory verifier;
         WOTSPlus.WinternitzElements memory pqSig;
         WOTSPlus.WinternitzElements memory verifySig;
-        bytes memory migrator = new bytes(1088);
+        bytes memory migrator = new bytes(2048);
 
         bytes memory encoded = codec.exposed_encodeUpgradeToAndCall(
             cur,
@@ -65,7 +65,7 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
             false,
             migrator
         );
-        assertEq(encoded.length, 5569);
+        assertEq(encoded.length, 6529);
         // shouldMigrate byte at offset 4480 must be 0x00.
         assertEq(uint8(encoded[4480]), 0);
     }
@@ -78,7 +78,7 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
         WOTSPlus.WinternitzAddress memory verifier;
         WOTSPlus.WinternitzElements memory pqSig;
         WOTSPlus.WinternitzElements memory verifySig;
-        bytes memory migrator = new bytes(1088);
+        bytes memory migrator = new bytes(2048);
 
         bytes memory encoded = codec.exposed_encodeUpgradeToAndCall(
             cur,
@@ -106,7 +106,7 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
         WOTSPlus.WinternitzElements memory verifySig;
         for (uint256 i = 0; i < 67; i++)
             verifySig.elements[i] = bytes32(i + 3000);
-        bytes memory migrator = new bytes(1088);
+        bytes memory migrator = new bytes(2048);
 
         bytes memory encoded = codec.exposed_encodeUpgradeToAndCall(
             cur,
@@ -156,7 +156,7 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
             .exposed_decodeUpgradeMigration(encoded);
 
         assertTrue(shouldMigrate);
-        assertEq(dMigrator.length, 1088);
+        assertEq(dMigrator.length, 2048);
         assertEq(dMigrator, migrator);
     }
 
@@ -184,7 +184,8 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
             _fuzzWinternitzAddress(seed, 100),
             _fuzzWinternitzAddress(seed, 101),
             _fuzzTransactionKeys(bytes32(uint256(seed) ^ 0xDEAD)),
-            _fuzzRecoveryKeys(bytes32(uint256(seed) ^ 0xBEEF))
+            _fuzzRecoveryKeys(bytes32(uint256(seed) ^ 0xBEEF)),
+            _fuzzVerificationKeys(bytes32(uint256(seed) ^ 0xCAFE))
         );
     }
 
@@ -228,15 +229,15 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
         (bool dShouldMigrate, bytes memory dMigrator) = codec
             .exposed_decodeUpgradeMigration(encoded);
         assertEq(dShouldMigrate, b.shouldMigrate);
-        assertEq(dMigrator.length, 1088);
+        assertEq(dMigrator.length, 2048);
         assertEq(dMigrator, b.migrator);
     }
 
     /// @dev Property: encode → decode preserves every field for any seed and
     ///      `shouldMigrate` flag, across all three decoders that consume the
-    ///      shared 5569-byte upgrade payload (auth + verification + migration).
-    ///      Migrator payload is fixed at 1088 bytes — decodeUpgradeMigration
-    ///      slices a fixed-width [4481:5569) range, so any other size breaks
+    ///      shared 6529-byte upgrade payload (auth + verification + migration).
+    ///      Migrator payload is fixed at 2048 bytes — decodeUpgradeMigration
+    ///      slices a fixed-width [4481:6529) range, so any other size breaks
     ///      the total length and would not roundtrip.
     function testFuzz_exposed_encodeUpgradeToAndCall_roundtrips(
         bytes32 seed,
@@ -252,7 +253,7 @@ contract WOTSPlusCodec__encodeUpgradeToAndCall is WOTSPlusCodecTest {
             b.shouldMigrate,
             b.migrator
         );
-        assertEq(encoded.length, 5569);
+        assertEq(encoded.length, 6529);
         _assertUpgradeAuth(b, encoded);
         _assertUpgradeVerification(b, encoded);
         _assertUpgradeMigration(b, encoded);

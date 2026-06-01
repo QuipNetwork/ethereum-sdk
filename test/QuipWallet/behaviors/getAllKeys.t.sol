@@ -63,10 +63,10 @@ contract QuipWallet_getAllKeys is QuipWalletTest {
         assertEq(verificationSeeded.length, 2);
     }
 
-    function test_getAllKeys_emptyVerificationKeysByDefault() public view {
+    function test_getAllKeys_allKeysetsFullAtInit() public view {
         IQuipWallet.AllKeys memory snap = wallet.getAllKeys();
-        assertEq(snap.verificationKeys.length, 0);
-        assertEq(snap.transactionKeys.length, 5);
+        assertEq(snap.transactionKeys.length, 10);
         assertEq(snap.recoveryKeys.length, 10);
+        assertEq(snap.verificationKeys.length, 10);
     }
 }

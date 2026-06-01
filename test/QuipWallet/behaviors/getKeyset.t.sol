@@ -10,10 +10,10 @@ contract QuipWallet_getKeyset is QuipWalletTest {
         WOTSPlus.WinternitzAddress[] memory keys = wallet.getKeyset(
             Codec.KeyType.Transaction
         );
-        assertEq(keys.length, 5);
+        assertEq(keys.length, 10);
         // Every entry must be one of the initial txn keys; collectively
         // the set must cover the whole batch.
-        bool[5] memory seen;
+        bool[10] memory seen;
         for (uint256 i = 0; i < keys.length; i++) {
             bool matched;
             for (uint256 j = 0; j < aliceTxnPubkeys.length; j++) {
@@ -70,11 +70,11 @@ contract QuipWallet_getKeyset is QuipWalletTest {
         }
     }
 
-    function test_getKeyset_verificationReturnsEmptyByDefault() public view {
+    function test_getKeyset_verificationReturnsTenAtInit() public view {
         WOTSPlus.WinternitzAddress[] memory keys = wallet.getKeyset(
             Codec.KeyType.Verification
         );
-        assertEq(keys.length, 0);
+        assertEq(keys.length, 10);
     }
 
     function test_getKeyset_verificationReturnsSeededBatch() public {

@@ -74,7 +74,7 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
 
         QuipWallet wallet = QuipWallet(payable(walletAddr));
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, pubkey));
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
     }
 
     function test_deploySpecificWalletProxy_emitsQuipCreatedEvent() public {

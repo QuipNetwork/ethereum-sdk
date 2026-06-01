@@ -75,8 +75,8 @@ import {
 import {
   encodeInit,
   type WinternitzAddress,
+  MAX_KEYS,
   RECOVERY_KEY_AMOUNT,
-  TRANSACTION_KEY_INIT_AMOUNT,
 } from "../wotsCodec.js";
 import {
   DEFAULT_ACCOUNT,
@@ -124,15 +124,23 @@ const MAX_FEE = parseEther("1");
 function buildInitPayload(signer: QuipSigner, vaultId: Hex) {
   const disaster = signer.generateKeyPair(vaultId).publicKey;
   const ownership = signer.generateKeyPair(vaultId).publicKey;
-  const transactionKeys = Array.from(
-    { length: TRANSACTION_KEY_INIT_AMOUNT },
-    () => signer.generateKeyPair(vaultId).publicKey
+  const transactionKeys = Array.from({ length: MAX_KEYS }, () =>
+    signer.generateKeyPair(vaultId).publicKey
   );
-  const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
+  const recoveryKeys = Array.from({ length: MAX_KEYS }, () =>
+    signer.generateKeyPair(vaultId).publicKey
+  );
+  const verificationKeys = Array.from({ length: MAX_KEYS }, () =>
     signer.generateKeyPair(vaultId).publicKey
   );
   return {
-    payload: encodeInit(disaster, ownership, transactionKeys, recoveryKeys),
+    payload: encodeInit(
+      disaster,
+      ownership,
+      transactionKeys,
+      recoveryKeys,
+      verificationKeys
+    ),
     transactionKeys,
   };
 }

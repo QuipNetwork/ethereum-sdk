@@ -73,7 +73,7 @@ contract QuipFactory_deployLatestWalletProxy is QuipFactoryTest {
         QuipWallet wallet = QuipWallet(payable(walletAddr));
         // The init payload here uses _encodeInitPayload which places `pubkey` at txn index 0.
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, pubkey));
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
     }
 
     function test_deployLatestWalletProxy_emitsQuipCreatedEvent() public {
