@@ -95,11 +95,12 @@ contract IntegrationBase is Test {
         WOTSPlus.WinternitzAddress[] memory recoveryKeys
     ) internal pure returns (bytes memory) {
         require(recoveryKeys.length == 10, "recoveryKeys length must be 10");
-        // Init layout (1088 bytes):
-        //   [0:64)     disasterRecoveryKey (deterministic filler)
-        //   [64:128)   ownershipKey         (deterministic filler)
-        //   [128:448)  transactionKeys[5]   (pqOwner at slot 0 + 4 fillers)
-        //   [448:1088) recoveryKeys[10]
+        // Init layout (2048 bytes):
+        //   [0:64)      disasterRecoveryKey (deterministic filler)
+        //   [64:128)    ownershipKey         (deterministic filler)
+        //   [128:768)   transactionKeys[10]  (pqOwner at slot 0 + 9 fillers)
+        //   [768:1408)  recoveryKeys[10]
+        //   [1408:2048) verificationKeys[10] (deterministic fillers)
         // pqOwner is the primary transaction key so tests can sign with
         // alicePrivateKey against the first transaction-keyset slot.
         (WOTSPlus.WinternitzAddress memory disaster, ) = WOTSPlus
@@ -130,7 +131,7 @@ contract IntegrationBase is Test {
             pqOwner.publicSeed,
             pqOwner.publicKeyHash
         );
-        for (uint256 i = 1; i < 5; i++) {
+        for (uint256 i = 1; i < 10; i++) {
             bytes32 seed = keccak256(
                 abi.encodePacked(
                     pqOwner.publicSeed,
@@ -152,6 +153,23 @@ contract IntegrationBase is Test {
                 payload,
                 recoveryKeys[i].publicSeed,
                 recoveryKeys[i].publicKeyHash
+            );
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            bytes32 seed = keccak256(
+                abi.encodePacked(
+                    pqOwner.publicSeed,
+                    pqOwner.publicKeyHash,
+                    "verify-fill",
+                    i
+                )
+            );
+            (WOTSPlus.WinternitzAddress memory filler, ) = WOTSPlus
+                .generateKeyPair(seed);
+            payload = abi.encodePacked(
+                payload,
+                filler.publicSeed,
+                filler.publicKeyHash
             );
         }
         return payload;

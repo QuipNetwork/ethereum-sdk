@@ -16,10 +16,11 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
     WOTSPlus.WinternitzAddress internal disasterPub;
     bytes32 internal disasterPriv;
 
-    /// @dev Fresh replacements written by saveWallet.
-    WOTSPlus.WinternitzAddress[5] internal freshTxn;
-    bytes32[5] internal freshTxnPrivs;
+    /// @dev Fresh replacements written by saveWallet (always-10 batches).
+    WOTSPlus.WinternitzAddress[10] internal freshTxn;
+    bytes32[10] internal freshTxnPrivs;
     WOTSPlus.WinternitzAddress[10] internal freshRec;
+    WOTSPlus.WinternitzAddress[10] internal freshVer;
 
     WOTSPlus.WinternitzAddress internal nextDisasterPub;
     bytes32 internal nextDisasterPriv;
@@ -30,20 +31,21 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
         (nextDisasterPub, nextDisasterPriv) = _generateKeyPair(
             keccak256(abi.encodePacked(VAULT_SEED, "next-disaster"))
         );
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             (freshTxn[i], freshTxnPrivs[i]) = _generateKeyPair(
                 keccak256(abi.encodePacked(VAULT_SEED, "fresh-txn", i))
             );
-        }
-        for (uint256 i = 0; i < 10; i++) {
             (freshRec[i], ) = _generateKeyPair(
                 keccak256(abi.encodePacked(VAULT_SEED, "fresh-rec", i))
+            );
+            (freshVer[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked(VAULT_SEED, "fresh-ver", i))
             );
         }
     }
 
     function _buildSaveWalletPayload() internal view returns (bytes memory) {
-        bytes32 keysHash = keccak256(abi.encode(freshTxn, freshRec));
+        bytes32 keysHash = keccak256(abi.encode(freshTxn, freshRec, freshVer));
         bytes32 digest = Codec.saveWalletDigest(
             address(wallet),
             block.chainid,
@@ -60,13 +62,14 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
                 nextDisasterPub,
                 sig,
                 freshTxn,
-                freshRec
+                freshRec,
+                freshVer
             );
     }
 
     /// @dev Precondition: original PQ keysets populated as set up by factory.
     function _assertPreSaveInvariants() internal view {
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
         assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[0]));
@@ -88,25 +91,24 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
         vm.prank(relayer);
         wallet.saveWallet(_buildSaveWalletPayload());
 
-        // Step 2: Invariants after rescue — both keysets swapped, owner + balance
-        //         + verificationKeys (not touched by saveWallet) all intact.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        // Step 2: Invariants after rescue — all three keysets swapped,
+        //         owner + balance preserved.
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        for (uint256 i = 0; i < 5; i++) {
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
+        for (uint256 i = 0; i < 10; i++) {
             assertFalse(
                 wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i])
             );
             assertTrue(wallet.isKey(Codec.KeyType.Transaction, freshTxn[i]));
-        }
-        for (uint256 i = 0; i < 10; i++) {
             assertFalse(
                 wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
             );
             assertTrue(wallet.isKey(Codec.KeyType.Recovery, freshRec[i]));
+            assertTrue(wallet.isKey(Codec.KeyType.Verification, freshVer[i]));
         }
         assertEq(wallet.owner(), ownerBefore);
         assertEq(address(wallet).balance, balBefore);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 0);
 
         // Step 3: The disaster key rotated to `nextDisasterPub`. The old
         //         disaster-sig cannot be replayed — the stored key no longer

@@ -23,20 +23,21 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 /// @dev All guarded operations carry an explicit (currentKey, nextKey) pair up front,
 ///      naming the transaction key being consumed and the replacement being installed.
 ///
-///      Init payload layout (1088 bytes, used by initialize & migrate):
+///      Init payload layout (2048 bytes, used by initialize & migrate):
 ///      [0:64)      WinternitzAddress     — disasterRecoveryKey
 ///      [64:128)    WinternitzAddress     — ownershipKey
-///      [128:448)   WinternitzAddress[5]  — transactionKeys (5 x 64)
-///      [448:1088)  WinternitzAddress[10] — recoveryKeys (10 x 64)
+///      [128:768)   WinternitzAddress[10] — transactionKeys (10 x 64)
+///      [768:1408)  WinternitzAddress[10] — recoveryKeys (10 x 64)
+///      [1408:2048) WinternitzAddress[10] — verificationKeys (10 x 64)
 ///
-///      upgradeToAndCall payload layout (5569 bytes):
+///      upgradeToAndCall payload layout (6529 bytes):
 ///      [0:64)      WinternitzAddress     — currentKey (publicSeed ++ publicKeyHash)
 ///      [64:128)    WinternitzAddress     — nextKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///      [2272:2336) WinternitzAddress     — verifier
 ///      [2336:4480) WinternitzElements    — verifySig (67 x 32)
 ///      [4480]      uint8                 — shouldMigrate (0x00 = false, 0x01 = true)
-///      [4481:5569) bytes                 — migratorPayload (init layout, 1088 bytes)
+///      [4481:6529) bytes                 — migratorPayload (init layout, 2048 bytes)
 ///
 ///      recoveryUpgrade payload layout (4480 bytes):
 ///      [0:64)      WinternitzAddress     — currentRecoveryKey
@@ -61,15 +62,24 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [2272:2304) bytes32               — to (left-padded address)
 ///      [2304:2336) uint256               — amount
 ///
-///      ownershipTransfer payload layout (3328 bytes, used by transferOwnership and
+///      saveWallet payload layout (4192 bytes):
+///      [0:64)      WinternitzAddress     — currentDisasterKey
+///      [64:128)    WinternitzAddress     — newDisasterKey
+///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
+///      [2272:2912) WinternitzAddress[10] — newTransactionKeys (10 x 64)
+///      [2912:3552) WinternitzAddress[10] — newRecoveryKeys (10 x 64)
+///      [3552:4192) WinternitzAddress[10] — newVerificationKeys (10 x 64)
+///
+///      ownershipTransfer payload layout (4288 bytes, used by transferOwnership and
 ///      completeOwnershipHandover):
 ///      [0:64)      WinternitzAddress     — currentOwnershipKey
 ///      [64:128)    WinternitzAddress     — newOwnershipKey
 ///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
 ///      [2272:2304) bytes32               — newOwner (left-padded address)
 ///      [2304:2368) WinternitzAddress     — newDisasterKey
-///      [2368:2688) WinternitzAddress[5]  — newTransactionKeys (5 x 64)
-///      [2688:3328) WinternitzAddress[10] — newRecoveryKeys (10 x 64)
+///      [2368:3008) WinternitzAddress[10] — newTransactionKeys (10 x 64)
+///      [3008:3648) WinternitzAddress[10] — newRecoveryKeys (10 x 64)
+///      [3648:4288) WinternitzAddress[10] — newVerificationKeys (10 x 64)
 ///
 ///      replaceKeys payload layout (2368 + 2*N*64 bytes, variable-length):
 ///      [0:32)      uint256               — kind (KeyType: target keyset)
@@ -100,8 +110,7 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [2208:2273) bytes                 — ecdsaSig (r(32) ++ s(32) ++ v(1))
 ///
 ///      Constants:
-///        TRANSACTION_KEY_INIT_AMOUNT = 5
-///        RECOVERY_KEY_AMOUNT         = 10
+///        MAX_KEYS = 10  (every keyset always holds exactly 10 entries)
 library WOTSPlusCodec {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
@@ -137,8 +146,11 @@ library WOTSPlusCodec {
     /*                       CONSTANTS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    uint256 internal constant TRANSACTION_KEY_INIT_AMOUNT = 5;
-    uint256 internal constant RECOVERY_KEY_AMOUNT = 10;
+    /// @dev Every keyset (`transactionKeys`, `recoveryKeys`, `verificationKeys`)
+    ///      holds exactly this many entries at every state-transition boundary
+    ///      (`initialize`, `migrate`, `saveWallet`, `transferOwnership`,
+    ///      `resetKeyset`). `replaceKeys` swaps N-for-N within this fixed size.
+    uint256 internal constant MAX_KEYS = 10;
 
     /// @dev 160-bit mask applied to addresses decoded out of raw calldata
     ///      words via `calldataload`. The packed-payload encoders right-align
@@ -229,15 +241,17 @@ library WOTSPlusCodec {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Decodes the init payload into disaster recovery key, ownership key, transaction
-    ///      keys, and recovery keys.
+    ///      keys, recovery keys, and verification keys.
     ///      Layout: [0:64) disasterRecoveryKey, [64:128) ownershipKey,
-    ///              [128:448) transactionKeys[5], [448:1088) recoveryKeys[10].
+    ///              [128:768) transactionKeys[10], [768:1408) recoveryKeys[10],
+    ///              [1408:2048) verificationKeys[10].
     ///      Used by initialize() and migrate().
-    /// @param payload The packed init or migrator payload (1088 bytes).
+    /// @param payload The packed init or migrator payload (2048 bytes).
     /// @return disasterRecoveryKey The last-resort WOTS+ rescue key at offset 0.
     /// @return ownershipKey The ownership-transfer WOTS+ key at offset 64.
-    /// @return transactionKeys The 5 initial transaction keys at offset 128.
-    /// @return recoveryKeys The 10 recovery keys at offset 448.
+    /// @return transactionKeys The 10 initial transaction keys at offset 128.
+    /// @return recoveryKeys The 10 recovery keys at offset 768.
+    /// @return verificationKeys The 10 verification keys at offset 1408.
     function decodeInit(
         bytes calldata payload
     )
@@ -246,25 +260,28 @@ library WOTSPlusCodec {
         returns (
             WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
             WOTSPlus.WinternitzAddress calldata ownershipKey,
-            WOTSPlus.WinternitzAddress[5] calldata transactionKeys,
-            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys
+            WOTSPlus.WinternitzAddress[10] calldata transactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata recoveryKeys,
+            WOTSPlus.WinternitzAddress[10] calldata verificationKeys
         )
     {
-        if (payload.length != 1088)
-            revert MalformedPayload(1088, payload.length);
+        if (payload.length != 2048)
+            revert MalformedPayload(2048, payload.length);
         assembly {
             disasterRecoveryKey := payload.offset
             ownershipKey := add(payload.offset, 64)
             transactionKeys := add(payload.offset, 128)
-            recoveryKeys := add(payload.offset, 448)
+            recoveryKeys := add(payload.offset, 768)
+            verificationKeys := add(payload.offset, 1408)
         }
     }
 
     /// @dev Decodes the saveWallet payload.
     ///      Layout: [0:64) currentDisasterKey, [64:128) newDisasterKey,
-    ///              [128:2272) pqSig, [2272:2592) newTransactionKeys[5],
-    ///              [2592:3232) newRecoveryKeys[10].
-    /// @param payload The packed saveWallet payload (3232 bytes).
+    ///              [128:2272) pqSig, [2272:2912) newTransactionKeys[10],
+    ///              [2912:3552) newRecoveryKeys[10],
+    ///              [3552:4192) newVerificationKeys[10].
+    /// @param payload The packed saveWallet payload (4192 bytes).
     function decodeSaveWallet(
         bytes calldata payload
     )
@@ -274,18 +291,20 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress calldata currentDisasterKey,
             WOTSPlus.WinternitzAddress calldata newDisasterKey,
             WOTSPlus.WinternitzElements calldata pqSig,
-            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
-            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
+            WOTSPlus.WinternitzAddress[10] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newVerificationKeys
         )
     {
-        if (payload.length != 3232)
-            revert MalformedPayload(3232, payload.length);
+        if (payload.length != 4192)
+            revert MalformedPayload(4192, payload.length);
         assembly {
             currentDisasterKey := payload.offset
             newDisasterKey := add(payload.offset, 64)
             pqSig := add(payload.offset, 128)
             newTransactionKeys := add(payload.offset, 2272)
-            newRecoveryKeys := add(payload.offset, 2592)
+            newRecoveryKeys := add(payload.offset, 2912)
+            newVerificationKeys := add(payload.offset, 3552)
         }
     }
 
@@ -307,8 +326,8 @@ library WOTSPlusCodec {
         )
     {
         // The full upgrade payload is shared between auth/verification/migration
-        // decoders, so the length precondition is the full 5569 bytes.
-        if (data.length != 5569) revert MalformedPayload(5569, data.length);
+        // decoders, so the length precondition is the full 6529 bytes.
+        if (data.length != 6529) revert MalformedPayload(6529, data.length);
         assembly {
             currentKey := data.offset
             nextKey := add(data.offset, 64)
@@ -362,8 +381,8 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata verifySig
         )
     {
-        // Operates on the full 5569-byte upgrade payload (shared with auth/migration).
-        if (data.length != 5569) revert MalformedPayload(5569, data.length);
+        // Operates on the full 6529-byte upgrade payload (shared with auth/migration).
+        if (data.length != 6529) revert MalformedPayload(6529, data.length);
         assembly {
             verifier := add(data.offset, 2272)
             verifySig := add(data.offset, 2336)
@@ -394,10 +413,10 @@ library WOTSPlusCodec {
     }
 
     /// @dev Decodes the upgradeToAndCall payload's migration portion.
-    ///      Layout: [4480] shouldMigrate, [4481:5569) migratorPayload.
-    /// @param data The packed upgrade payload (5569 bytes).
+    ///      Layout: [4480] shouldMigrate, [4481:6529) migratorPayload.
+    /// @param data The packed upgrade payload (6529 bytes).
     /// @return shouldMigrate True if state migration is required.
-    /// @return migratorPayload The 1088-byte init-layout payload for the new implementation.
+    /// @return migratorPayload The 2048-byte init-layout payload for the new implementation.
     function decodeUpgradeMigration(
         bytes calldata data
     )
@@ -407,7 +426,7 @@ library WOTSPlusCodec {
     {
         // Solidity indexing on the body below would already bounds-check, but
         // raise an explicit MalformedPayload for codec-wide uniformity.
-        if (data.length != 5569) revert MalformedPayload(5569, data.length);
+        if (data.length != 6529) revert MalformedPayload(6529, data.length);
         // The on-wire contract is "0x00 = false, 0x01 = true" — strictly
         // reject 0x02..0xff so an off-chain encoder bug can't smuggle
         // shouldMigrate=true via an undefined byte value. `MalformedPayload`
@@ -416,7 +435,7 @@ library WOTSPlusCodec {
         uint8 b = uint8(data[4480]);
         if (b > 1) revert MalformedPayload(1, b);
         shouldMigrate = b == 1;
-        migratorPayload = data[4481:5569];
+        migratorPayload = data[4481:6529];
     }
 
     /// @dev Decodes the ERC-4337 UserOp signature payload.
@@ -516,9 +535,9 @@ library WOTSPlusCodec {
     ///      rotates on use.
     ///      Layout: [0:64) currentOwnershipKey, [64:128) newOwnershipKey,
     ///              [128:2272) pqSig, [2272:2304) newOwner,
-    ///              [2304:2368) newDisasterKey, [2368:2688) newTransactionKeys[5],
-    ///              [2688:3328) newRecoveryKeys[10].
-    /// @param payload The packed ownership-transfer payload (3328 bytes).
+    ///              [2304:2368) newDisasterKey, [2368:3008) newTransactionKeys[10],
+    ///              [3008:3648) newRecoveryKeys[10], [3648:4288) newVerificationKeys[10].
+    /// @param payload The packed ownership-transfer payload (4288 bytes).
     function decodeOwnershipTransfer(
         bytes calldata payload
     )
@@ -530,12 +549,13 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata pqSig,
             address newOwner,
             WOTSPlus.WinternitzAddress calldata newDisasterKey,
-            WOTSPlus.WinternitzAddress[5] calldata newTransactionKeys,
-            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys
+            WOTSPlus.WinternitzAddress[10] calldata newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newRecoveryKeys,
+            WOTSPlus.WinternitzAddress[10] calldata newVerificationKeys
         )
     {
-        if (payload.length != 3328)
-            revert MalformedPayload(3328, payload.length);
+        if (payload.length != 4288)
+            revert MalformedPayload(4288, payload.length);
         assembly {
             currentOwnershipKey := payload.offset
             newOwnershipKey := add(payload.offset, 64)
@@ -547,7 +567,8 @@ library WOTSPlusCodec {
             )
             newDisasterKey := add(payload.offset, 2304)
             newTransactionKeys := add(payload.offset, 2368)
-            newRecoveryKeys := add(payload.offset, 2688)
+            newRecoveryKeys := add(payload.offset, 3008)
+            newVerificationKeys := add(payload.offset, 3648)
         }
     }
 
@@ -695,13 +716,14 @@ library WOTSPlusCodec {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Encodes the saveWallet payload.
-    /// @return The packed payload (3232 bytes).
+    /// @return The packed payload (4192 bytes).
     function encodeSaveWallet(
         WOTSPlus.WinternitzAddress memory currentDisasterKey,
         WOTSPlus.WinternitzAddress memory newDisasterKey,
         WOTSPlus.WinternitzElements memory pqSig,
-        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
     ) internal pure returns (bytes memory) {
         bytes memory payload = abi.encodePacked(
             currentDisasterKey.publicSeed,
@@ -710,30 +732,38 @@ library WOTSPlusCodec {
             newDisasterKey.publicKeyHash,
             pqSig.elements
         );
-        for (uint256 i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
             payload = abi.encodePacked(
                 payload,
                 newTransactionKeys[i].publicSeed,
                 newTransactionKeys[i].publicKeyHash
             );
         }
-        for (uint256 i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
             payload = abi.encodePacked(
                 payload,
                 newRecoveryKeys[i].publicSeed,
                 newRecoveryKeys[i].publicKeyHash
             );
         }
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newVerificationKeys[i].publicSeed,
+                newVerificationKeys[i].publicKeyHash
+            );
+        }
         return payload;
     }
 
     /// @dev Encodes the init payload.
-    /// @return The packed payload (1088 bytes).
+    /// @return The packed payload (2048 bytes).
     function encodeInit(
         WOTSPlus.WinternitzAddress memory disasterRecoveryKey,
         WOTSPlus.WinternitzAddress memory ownershipKey,
-        WOTSPlus.WinternitzAddress[5] memory transactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory recoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory transactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory recoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory verificationKeys
     ) internal pure returns (bytes memory) {
         bytes memory payload = abi.encodePacked(
             disasterRecoveryKey.publicSeed,
@@ -741,18 +771,25 @@ library WOTSPlusCodec {
             ownershipKey.publicSeed,
             ownershipKey.publicKeyHash
         );
-        for (uint256 i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
             payload = abi.encodePacked(
                 payload,
                 transactionKeys[i].publicSeed,
                 transactionKeys[i].publicKeyHash
             );
         }
-        for (uint256 i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
             payload = abi.encodePacked(
                 payload,
                 recoveryKeys[i].publicSeed,
                 recoveryKeys[i].publicKeyHash
+            );
+        }
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
+            payload = abi.encodePacked(
+                payload,
+                verificationKeys[i].publicSeed,
+                verificationKeys[i].publicKeyHash
             );
         }
         return payload;
@@ -820,15 +857,16 @@ library WOTSPlusCodec {
     }
 
     /// @dev Encodes the transferOwnership / completeOwnershipHandover payload.
-    /// @return The packed payload (3328 bytes).
+    /// @return The packed payload (4288 bytes).
     function encodeOwnershipTransfer(
         WOTSPlus.WinternitzAddress memory currentOwnershipKey,
         WOTSPlus.WinternitzAddress memory newOwnershipKey,
         WOTSPlus.WinternitzElements memory pqSig,
         address newOwner,
         WOTSPlus.WinternitzAddress memory newDisasterKey,
-        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
     ) internal pure returns (bytes memory) {
         bytes memory payload = abi.encodePacked(
             currentOwnershipKey.publicSeed,
@@ -840,18 +878,25 @@ library WOTSPlusCodec {
             newDisasterKey.publicSeed,
             newDisasterKey.publicKeyHash
         );
-        for (uint256 i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
             payload = abi.encodePacked(
                 payload,
                 newTransactionKeys[i].publicSeed,
                 newTransactionKeys[i].publicKeyHash
             );
         }
-        for (uint256 i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
             payload = abi.encodePacked(
                 payload,
                 newRecoveryKeys[i].publicSeed,
                 newRecoveryKeys[i].publicKeyHash
+            );
+        }
+        for (uint256 i = 0; i < MAX_KEYS; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newVerificationKeys[i].publicSeed,
+                newVerificationKeys[i].publicKeyHash
             );
         }
         return payload;

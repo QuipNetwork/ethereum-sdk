@@ -33,8 +33,8 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
             bytes32(uint256(600)),
             bytes32(uint256(601))
         );
-        // 5 transaction keys (320 bytes): seeds 1,3,5,7,9 / hashes 2,4,6,8,10
-        for (uint256 i = 0; i < 5; i++) {
+        // 10 transaction keys (640 bytes): seeds 1,3,5,...,19 / hashes 2,4,6,...,20.
+        for (uint256 i = 0; i < 10; i++) {
             payload = abi.encodePacked(
                 payload,
                 bytes32(uint256(2 * i + 1)),
@@ -47,6 +47,14 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
                 payload,
                 bytes32(i + 100),
                 bytes32(i + 200)
+            );
+        }
+        // 10 verification keys (640 bytes)
+        for (uint256 i = 0; i < 10; i++) {
+            payload = abi.encodePacked(
+                payload,
+                bytes32(i + 300),
+                bytes32(i + 400)
             );
         }
         return payload;

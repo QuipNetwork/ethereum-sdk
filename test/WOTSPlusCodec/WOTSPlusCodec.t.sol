@@ -22,12 +22,12 @@ contract WOTSPlusCodecTest is Test {
 
     // --- Helpers ---
 
-    /// @dev Build a 1088-byte init payload with known values.
-    ///      Layout: disaster key (64) + ownership key (64) + 5 transaction keys (320) +
-    ///              10 recovery keys (640).
+    /// @dev Build a 2048-byte init payload with known values.
+    ///      Layout: disaster key (64) + ownership key (64) + 10 transaction keys (640) +
+    ///              10 recovery keys (640) + 10 verification keys (640).
     ///      Disaster key seeds are at (startSeed+500, startSeed+501); ownership key seeds
     ///      are at (startSeed+600, startSeed+601). Both avoid colliding with the
-    ///      txn/recovery seed ranges used by existing tests.
+    ///      txn/recovery/verification seed ranges used by existing tests.
     function _buildInitPayload(
         uint256 startSeed
     ) internal pure returns (bytes memory payload) {
@@ -42,8 +42,8 @@ contract WOTSPlusCodecTest is Test {
             bytes32(startSeed + 600),
             bytes32(startSeed + 601)
         );
-        // 5 transaction keys (320 bytes)
-        for (uint256 i = 0; i < 5; i++) {
+        // 10 transaction keys (640 bytes)
+        for (uint256 i = 0; i < 10; i++) {
             payload = abi.encodePacked(
                 payload,
                 bytes32(startSeed + i * 2),
@@ -58,10 +58,18 @@ contract WOTSPlusCodecTest is Test {
                 bytes32(startSeed + 101 + i * 2)
             );
         }
+        // 10 verification keys (640 bytes)
+        for (uint256 i = 0; i < 10; i++) {
+            payload = abi.encodePacked(
+                payload,
+                bytes32(startSeed + 200 + i * 2),
+                bytes32(startSeed + 201 + i * 2)
+            );
+        }
     }
 
-    /// @dev Build a 5569-byte upgrade payload with known values.
-    ///      Layout: currentKey(64) + nextKey(64) + pqSig(2144) + verifier(64) + verifySig(2144) + shouldMigrate(1) + migratorPayload(1088)
+    /// @dev Build a 6529-byte upgrade payload with known values.
+    ///      Layout: currentKey(64) + nextKey(64) + pqSig(2144) + verifier(64) + verifySig(2144) + shouldMigrate(1) + migratorPayload(2048)
     function _buildUpgradePayload(
         uint256 seed
     ) internal pure returns (bytes memory payload) {
@@ -89,7 +97,7 @@ contract WOTSPlusCodecTest is Test {
         }
         // shouldMigrate (1)
         payload = abi.encodePacked(payload, uint8(1));
-        // migratorPayload (1088)
+        // migratorPayload (2048)
         payload = abi.encodePacked(payload, _buildInitPayload(seed + 5000));
     }
 
@@ -240,8 +248,8 @@ contract WOTSPlusCodecTest is Test {
 
     function _fuzzTransactionKeys(
         bytes32 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress[5] memory arr) {
-        for (uint256 i = 0; i < 5; i++) {
+    ) internal pure returns (WOTSPlus.WinternitzAddress[10] memory arr) {
+        for (uint256 i = 0; i < 10; i++) {
             arr[i] = _fuzzWinternitzAddress(seed, 1000 + i);
         }
     }
@@ -251,6 +259,25 @@ contract WOTSPlusCodecTest is Test {
     ) internal pure returns (WOTSPlus.WinternitzAddress[10] memory arr) {
         for (uint256 i = 0; i < 10; i++) {
             arr[i] = _fuzzWinternitzAddress(seed, 2000 + i);
+        }
+    }
+
+    function _fuzzVerificationKeys(
+        bytes32 seed
+    ) internal pure returns (WOTSPlus.WinternitzAddress[10] memory arr) {
+        for (uint256 i = 0; i < 10; i++) {
+            arr[i] = _fuzzWinternitzAddress(seed, 4000 + i);
+        }
+    }
+
+    /// @dev Transitional [5]-tx-keys fuzz helper. Retained for saveWallet /
+    ///      transferOwnership encoders that still use a [5] transaction batch
+    ///      until phases 3 and 4 of the always-10 work.
+    function _fuzzTransactionKeysLegacy5(
+        bytes32 seed
+    ) internal pure returns (WOTSPlus.WinternitzAddress[5] memory arr) {
+        for (uint256 i = 0; i < 5; i++) {
+            arr[i] = _fuzzWinternitzAddress(seed, 1000 + i);
         }
     }
 

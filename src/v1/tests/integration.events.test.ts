@@ -30,7 +30,6 @@ import {
   parseWalletReceipt,
 } from "../events.js";
 import {
-  TRANSACTION_KEY_INIT_AMOUNT,
   RECOVERY_KEY_AMOUNT,
 } from "../wotsCodec.js";
 import {
@@ -151,19 +150,27 @@ describe("Wallet event parsers — key management", () => {
 
 describe("parseWalletInitialized", () => {
   test("decodes the WalletInitialized log from a fresh wallet's creation receipt", async () => {
-    const { creationReceipt, transactionKeys } = await createFreshWallet(
-      stack,
-      0xc7
-    );
+    const { creationReceipt } = await createFreshWallet(stack, 0xc7);
     const events = parseWalletInitialized(creationReceipt);
     expect(events).toHaveLength(1);
     expect(events[0].owner.toLowerCase()).toBe(
       stack.account.address.toLowerCase()
     );
-    expect(events[0].transactionKeys).toHaveLength(TRANSACTION_KEY_INIT_AMOUNT);
-    expect(events[0].recoveryKeys).toHaveLength(RECOVERY_KEY_AMOUNT);
-    expect(events[0].transactionKeys[0].publicSeed).toBe(
-      transactionKeys[0].publicSeed
+    // Hash-shape WalletInitialized event: the three keyset hashes must all be
+    // non-zero (`keccak256(abi.encode([10]))` of any non-empty input is
+    // non-zero), and distinct from each other under the always-10 invariant
+    // (different keyset contents → different hashes).
+    expect(events[0].transactionKeysHash).not.toBe(
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    );
+    expect(events[0].recoveryKeysHash).not.toBe(
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    );
+    expect(events[0].verificationKeysHash).not.toBe(
+      "0x0000000000000000000000000000000000000000000000000000000000000000"
+    );
+    expect(events[0].transactionKeysHash).not.toBe(
+      events[0].recoveryKeysHash
     );
   }, 30_000);
 });

@@ -15,10 +15,10 @@ contract QuipWalletTest is QuipFactoryTest {
     /// @dev Primary active transaction key used by most tests (initially txn key 0).
     WOTSPlus.WinternitzAddress public alicePubkey;
     bytes32 public alicePrivateKey;
-    /// @dev The full initial set of 5 transaction keys, for tests that need to access
+    /// @dev The full initial set of 10 transaction keys, for tests that need to access
     ///      more than one key at once (e.g. multi-key swap via replaceKeys, drain).
-    WOTSPlus.WinternitzAddress[5] public aliceTxnPubkeys;
-    bytes32[5] public aliceTxnPrivkeys;
+    WOTSPlus.WinternitzAddress[10] public aliceTxnPubkeys;
+    bytes32[10] public aliceTxnPrivkeys;
     WOTSPlus.WinternitzAddress[] public recoveryPubkeys;
     /// @dev Ownership WOTS+ keypair derived from `VAULT_SEED` via `_generateOwnershipKey`.
     ///      Mirrors the derivation used by `_createWalletFull` so `transferOwnership` /
@@ -33,12 +33,12 @@ contract QuipWalletTest is QuipFactoryTest {
         // Deploy a wallet for ALICE with initial deposit
         (
             address walletAddr,
-            WOTSPlus.WinternitzAddress[5] memory txnPubs,
-            bytes32[5] memory txnPrivs,
+            WOTSPlus.WinternitzAddress[10] memory txnPubs,
+            bytes32[10] memory txnPrivs,
             WOTSPlus.WinternitzAddress[] memory rPubkeys
         ) = _createWalletFull(ALICE, VAULT_SEED, INITIAL_DEPOSIT);
         wallet = QuipWallet(payable(walletAddr));
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             aliceTxnPubkeys[i] = txnPubs[i];
             aliceTxnPrivkeys[i] = txnPrivs[i];
         }
@@ -63,14 +63,15 @@ contract QuipWalletTest is QuipFactoryTest {
         assertEq(address(wallet.quipFactory()), address(factory));
         assertEq(address(wallet).balance, INITIAL_DEPOSIT);
 
-        // All 5 initial transaction keys are active
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
-        for (uint256 i = 0; i < 5; i++) {
+        // All 10 initial transaction keys are active
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+        for (uint256 i = 0; i < 10; i++) {
             assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i]));
         }
 
-        // Recovery key checks
+        // Recovery and verification keysets are full at init.
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
     }
 
     // --- Wallet-specific helpers ---

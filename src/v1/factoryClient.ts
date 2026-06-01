@@ -56,7 +56,7 @@ import {
 import {
   type WinternitzAddress,
   encodeInit,
-  TRANSACTION_KEY_INIT_AMOUNT,
+  MAX_KEYS,
   RECOVERY_KEY_AMOUNT,
 } from "./wotsCodec.js";
 
@@ -262,11 +262,15 @@ export class QuipClient {
     const disaster = quipSigner.generateKeyPair(vaultId).publicKey;
     const ownership = quipSigner.generateKeyPair(vaultId).publicKey;
     const transactionKeys: WinternitzAddress[] = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      { length: MAX_KEYS },
       () => quipSigner.generateKeyPair(vaultId).publicKey
     );
     const recoveryKeys: WinternitzAddress[] = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
+      { length: MAX_KEYS },
+      () => quipSigner.generateKeyPair(vaultId).publicKey
+    );
+    const verificationKeys: WinternitzAddress[] = Array.from(
+      { length: MAX_KEYS },
       () => quipSigner.generateKeyPair(vaultId).publicKey
     );
 
@@ -274,7 +278,8 @@ export class QuipClient {
       disaster,
       ownership,
       transactionKeys,
-      recoveryKeys
+      recoveryKeys,
+      verificationKeys
     );
 
     const contractCall: ContractCallParams = {

@@ -73,10 +73,10 @@ contract WOTSPlusCodec__decodeRecoveryUpgradeVerification is
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
                 4480,
-                5569
+                6529
             )
         );
-        codec.exposed_decodeRecoveryUpgradeVerification(_filledBytes(5569));
+        codec.exposed_decodeRecoveryUpgradeVerification(_filledBytes(6529));
     }
 
     /// @dev Property: any payload length other than 4480 reverts.

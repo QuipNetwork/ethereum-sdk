@@ -142,16 +142,15 @@ contract QuipWallet_upgradeToAndCall_layoutPreservation is QuipWalletTest {
     ///      slot constant + the seed and asserting the keyset's lazyLen at
     ///      `not(rootSlot)` reflects the live element counts.
     function test_layoutLock_keysetRootSlotDerivation() public view {
-        // Live wallet has 5 txn keys + 10 recovery keys post-init, both eager.
-        // Eager-phase lazyLen = (count << 1) | 1.
+        // Live wallet has 10 entries in each keyset post-init under always-10,
+        // all eager. Eager-phase lazyLen = (count << 1) | 1.
         bytes32 txnRoot = _expectedRootSlot(TXN_KEYSET_SPACER_SLOT);
         bytes32 recRoot = _expectedRootSlot(REC_KEYSET_SPACER_SLOT);
         bytes32 vrfRoot = _expectedRootSlot(VRF_KEYSET_SPACER_SLOT);
 
-        assertEq(uint256(vm.load(address(wallet), ~txnRoot)), (5 << 1) | 1);
+        assertEq(uint256(vm.load(address(wallet), ~txnRoot)), (10 << 1) | 1);
         assertEq(uint256(vm.load(address(wallet), ~recRoot)), (10 << 1) | 1);
-        // Verification: empty (no seeding yet — verification starts empty).
-        assertEq(uint256(vm.load(address(wallet), ~vrfRoot)), 0);
+        assertEq(uint256(vm.load(address(wallet), ~vrfRoot)), (10 << 1) | 1);
 
         // Sanity: element 0 of the txn keyset matches alicePubkey via raw load.
         assertEq(vm.load(address(wallet), txnRoot), alicePubkey.publicSeed);
@@ -213,7 +212,7 @@ contract QuipWallet_upgradeToAndCall_layoutPreservation is QuipWalletTest {
         // Public-API smoke: V2 reads land at the same offsets V1 wrote to.
         assertEq(wallet.owner(), ALICE);
         assertEq(wallet.quipFactory(), address(factory));
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
         // `_seedVerificationKeys` installs MAX_KEYS=10 via resetKeyset.
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);

@@ -35,7 +35,7 @@ contract WOTSPlusCodec__decodeUpgradeVerification is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 0
             )
         );
@@ -48,23 +48,23 @@ contract WOTSPlusCodec__decodeUpgradeVerification is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 4480
             )
         );
         codec.exposed_decodeUpgradeVerification(_filledBytes(4480));
     }
 
-    /// @dev Property: any payload length other than 5569 reverts.
+    /// @dev Property: any payload length other than 6529 reverts.
     function testFuzz_exposed_decodeUpgradeVerification_revertsWhen_wrongLength(
         uint256 len
     ) public {
         len = bound(len, 0, 9000);
-        vm.assume(len != 5569);
+        vm.assume(len != 6529);
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 len
             )
         );

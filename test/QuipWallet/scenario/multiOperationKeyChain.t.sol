@@ -44,16 +44,16 @@ contract QuipWallet_scenario_multiOperationKeyChain is QuipWalletTest {
     ///        - the wallet's balance / fee accounting is preserved
     function test_scenario_multiOp_executeResetReplaceChain() public {
         // Snapshot starting state.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 0);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
 
         // ── Op A: execute(BOB, 0.01) ─────────────────────────────────
         uint256 bobBalBefore = BOB.balance;
         _opExecute(BOB, 0.01 ether, "op-A-next");
         assertEq(BOB.balance, bobBalBefore + 0.01 ether);
-        // Tx keyset stays at 5 (rotation is size-neutral). curPq is updated.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        // Tx keyset stays at 10 (rotation is size-neutral). curPq is updated.
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
 
         // ── Op B: resetKeyset(Verification, txSign) — seeds 10 ───────
         WOTSPlus.WinternitzAddress[10] memory verifBatch = _freshKeys10(
@@ -108,7 +108,7 @@ contract QuipWallet_scenario_multiOperationKeyChain is QuipWalletTest {
             assertTrue(wallet.isKey(Codec.KeyType.Recovery, newRecBatch[i]));
         }
         // Tx set still at 5.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
 
         // ── Op E: replaceKeys(Recovery, recoverySign, N=2) ──────────
         //
@@ -164,7 +164,7 @@ contract QuipWallet_scenario_multiOperationKeyChain is QuipWalletTest {
         _opExecute(BOB, 0.02 ether, "op-F-next");
         assertEq(BOB.balance, bobBalBefore + 0.02 ether);
         // Final state sanity.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
     }
@@ -202,7 +202,7 @@ contract QuipWallet_scenario_multiOperationKeyChain is QuipWalletTest {
         recCurPriv = _derivePrivKey("rsignA-recNext");
 
         // Tx set untouched.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
 
         // ── Op B: replaceKeys(Transaction, recSign, N=3) ─────────────
@@ -242,7 +242,7 @@ contract QuipWallet_scenario_multiOperationKeyChain is QuipWalletTest {
                 txNew
             )
         );
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         for (uint256 i = 0; i < 3; i++) {
             assertFalse(wallet.isKey(Codec.KeyType.Transaction, txOld[i]));
             assertTrue(wallet.isKey(Codec.KeyType.Transaction, txNew[i]));

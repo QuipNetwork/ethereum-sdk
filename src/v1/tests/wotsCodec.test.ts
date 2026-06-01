@@ -66,8 +66,8 @@ import {
   erc4337ExecuteDigest,
   saveWalletDigest,
   transferOwnershipDigest,
+  MAX_KEYS,
   RECOVERY_KEY_AMOUNT,
-  TRANSACTION_KEY_INIT_AMOUNT,
   SAVE_WALLET_PAYLOAD_SIZE,
   OWNERSHIP_TRANSFER_PAYLOAD_SIZE,
   UPGRADE_PAYLOAD_SIZE,
@@ -211,20 +211,22 @@ describe("encoder parity (live Solidity)", () => {
   test("encodeSaveWallet matches Solidity", async () => {
     const currentDisaster = makeKey(900n);
     const newDisaster = makeKey(902n);
-    const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
-      (_, i) => makeKey(BigInt(1000 + i * 2))
+    const newTransactionKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(1000 + i * 2))
     );
-    const newRecoveryKeys = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
-      (_, i) => makeKey(BigInt(2000 + i * 2))
+    const newRecoveryKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(2000 + i * 2))
+    );
+    const newVerificationKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(2500 + i * 2))
     );
     const tsEncoded = encodeSaveWallet(
       currentDisaster,
       newDisaster,
       sig,
       newTransactionKeys,
-      newRecoveryKeys
+      newRecoveryKeys,
+      newVerificationKeys
     );
     const solEncoded = await callHarness("exposed_encodeSaveWallet", [
       currentDisaster,
@@ -232,6 +234,7 @@ describe("encoder parity (live Solidity)", () => {
       sig,
       newTransactionKeys,
       newRecoveryKeys,
+      newVerificationKeys,
     ]);
     expect(tsEncoded).toBe(solEncoded);
   });
@@ -241,12 +244,16 @@ describe("encoder parity (live Solidity)", () => {
     const newOwnership = makeKey(802n);
     const newDisaster = makeKey(804n);
     const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      { length: MAX_KEYS },
       (_, i) => makeKey(BigInt(3000 + i * 2))
     );
     const newRecoveryKeys = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
+      { length: MAX_KEYS },
       (_, i) => makeKey(BigInt(4000 + i * 2))
+    );
+    const newVerificationKeys = Array.from(
+      { length: MAX_KEYS },
+      (_, i) => makeKey(BigInt(5000 + i * 2))
     );
     const tsEncoded = encodeOwnershipTransfer(
       currentOwnership,
@@ -255,7 +262,8 @@ describe("encoder parity (live Solidity)", () => {
       TARGET,
       newDisaster,
       newTransactionKeys,
-      newRecoveryKeys
+      newRecoveryKeys,
+      newVerificationKeys
     );
     const solEncoded = await callHarness("exposed_encodeOwnershipTransfer", [
       currentOwnership,
@@ -265,6 +273,7 @@ describe("encoder parity (live Solidity)", () => {
       newDisaster,
       newTransactionKeys,
       newRecoveryKeys,
+      newVerificationKeys,
     ]);
     expect(tsEncoded).toBe(solEncoded);
   });
@@ -282,7 +291,7 @@ describe("encoder parity (live Solidity)", () => {
   test("encodeUpgradeToAndCall (no migrate) matches Solidity", async () => {
     const verifier = makeKey(600n);
     const verifySig = makeSig(600n);
-    const zeroMigrator: Hex = `0x${"00".repeat(1088)}`;
+    const zeroMigrator: Hex = `0x${"00".repeat(2048)}`;
     const tsEncoded = encodeUpgradeToAndCall(
       cur,
       next,
@@ -307,19 +316,26 @@ describe("encoder parity (live Solidity)", () => {
   test("encodeUpgradeToAndCall (with migrate) matches Solidity", async () => {
     const verifier = makeKey(700n);
     const verifySig = makeSig(700n);
-    // Build a valid 1088-byte init layout (disaster + ownership + 5 txn + 10 recovery).
+    // Build a valid 2048-byte init layout: disaster + ownership + 10 txn + 10 recovery + 10 verification.
     const initDisaster = makeKey(7000n);
     const initOwnership = makeKey(7002n);
-    const initTxn = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
-      (_, i) => makeKey(BigInt(7100 + i * 2))
+    const initTxn = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(7100 + i * 2))
     );
-    const initRecovery = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
-      (_, i) => makeKey(BigInt(7200 + i * 2))
+    const initRecovery = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(7200 + i * 2))
     );
-    const migrator = encodeInit(initDisaster, initOwnership, initTxn, initRecovery);
-    expect(size(migrator)).toBe(1088);
+    const initVerification = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(7300 + i * 2))
+    );
+    const migrator = encodeInit(
+      initDisaster,
+      initOwnership,
+      initTxn,
+      initRecovery,
+      initVerification
+    );
+    expect(size(migrator)).toBe(2048);
 
     const tsEncoded = encodeUpgradeToAndCall(
       cur,
@@ -459,17 +475,24 @@ describe("digest parity (live Solidity)", () => {
   });
 
   test("saveWalletKeysHash matches Solidity", async () => {
-    const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
-      (_, i) => makeKey(BigInt(5000 + i * 2))
+    const newTransactionKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(5000 + i * 2))
     );
-    const newRecoveryKeys = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
-      (_, i) => makeKey(BigInt(6000 + i * 2))
+    const newRecoveryKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(6000 + i * 2))
     );
-    const tsHash = saveWalletKeysHash(newTransactionKeys, newRecoveryKeys);
+    const newVerificationKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(6500 + i * 2))
+    );
+    const tsHash = saveWalletKeysHash(
+      newTransactionKeys,
+      newRecoveryKeys,
+      newVerificationKeys
+    );
     const solHash = await callHarness("exposed_saveWalletKeysHash", [
-      newTransactionKeys, newRecoveryKeys,
+      newTransactionKeys,
+      newRecoveryKeys,
+      newVerificationKeys,
     ]);
     expect(tsHash).toBe(solHash);
   });
@@ -477,20 +500,28 @@ describe("digest parity (live Solidity)", () => {
   test("ownershipTransferKeysHash matches Solidity", async () => {
     const newDisaster = makeKey(7777n);
     const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      { length: MAX_KEYS },
       (_, i) => makeKey(BigInt(8000 + i * 2))
     );
     const newRecoveryKeys = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
+      { length: MAX_KEYS },
       (_, i) => makeKey(BigInt(9000 + i * 2))
+    );
+    const newVerificationKeys = Array.from(
+      { length: MAX_KEYS },
+      (_, i) => makeKey(BigInt(10000 + i * 2))
     );
     const tsHash = ownershipTransferKeysHash(
       newDisaster,
       newTransactionKeys,
-      newRecoveryKeys
+      newRecoveryKeys,
+      newVerificationKeys
     );
     const solHash = await callHarness("exposed_ownershipTransferKeysHash", [
-      newDisaster, newTransactionKeys, newRecoveryKeys,
+      newDisaster,
+      newTransactionKeys,
+      newRecoveryKeys,
+      newVerificationKeys,
     ]);
     expect(tsHash).toBe(solHash);
   });
@@ -518,24 +549,37 @@ describe("encode/decode roundtrip", () => {
   test("init", () => {
     const disaster = makeKey(999n);
     const ownership = makeKey(1001n);
-    const txnKeys = Array.from({ length: TRANSACTION_KEY_INIT_AMOUNT }, (_, i) =>
+    const txnKeys = Array.from({ length: 10 }, (_, i) =>
       makeKey(BigInt(2 + i * 2)),
     );
-    const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, (_, i) =>
-      makeKey(BigInt(10 + i * 2)),
+    const recoveryKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(100 + i * 2)),
     );
-    const encoded = encodeInit(disaster, ownership, txnKeys, recoveryKeys);
-    expect(size(encoded)).toBe(1088);
+    const verificationKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(200 + i * 2)),
+    );
+    const encoded = encodeInit(
+      disaster,
+      ownership,
+      txnKeys,
+      recoveryKeys,
+      verificationKeys,
+    );
+    expect(size(encoded)).toBe(2048);
     const decoded = decodeInit(encoded);
     expectAddressEq(decoded.disasterRecoveryKey, disaster);
     expectAddressEq(decoded.ownershipKey, ownership);
-    expect(decoded.transactionKeys.length).toBe(TRANSACTION_KEY_INIT_AMOUNT);
-    for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+    expect(decoded.transactionKeys.length).toBe(10);
+    for (let i = 0; i < 10; i++) {
       expectAddressEq(decoded.transactionKeys[i], txnKeys[i]);
     }
-    expect(decoded.recoveryKeys.length).toBe(RECOVERY_KEY_AMOUNT);
-    for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
+    expect(decoded.recoveryKeys.length).toBe(10);
+    for (let i = 0; i < 10; i++) {
       expectAddressEq(decoded.recoveryKeys[i], recoveryKeys[i]);
+    }
+    expect(decoded.verificationKeys.length).toBe(10);
+    for (let i = 0; i < 10; i++) {
+      expectAddressEq(decoded.verificationKeys[i], verificationKeys[i]);
     }
   });
 
@@ -623,33 +667,36 @@ describe("encode/decode roundtrip", () => {
   test("saveWallet", () => {
     const currentDisaster = makeKey(900n);
     const newDisaster = makeKey(902n);
-    const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
-      (_, i) => makeKey(BigInt(1000 + i * 2))
+    const newTransactionKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(1000 + i * 2))
     );
-    const newRecoveryKeys = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
-      (_, i) => makeKey(BigInt(2000 + i * 2))
+    const newRecoveryKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(2000 + i * 2))
+    );
+    const newVerificationKeys = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(2500 + i * 2))
     );
     const encoded = encodeSaveWallet(
       currentDisaster,
       newDisaster,
       sig,
       newTransactionKeys,
-      newRecoveryKeys
+      newRecoveryKeys,
+      newVerificationKeys
     );
     expect(size(encoded)).toBe(SAVE_WALLET_PAYLOAD_SIZE);
     const decoded = decodeSaveWallet(encoded);
     expectAddressEq(decoded.currentDisasterKey, currentDisaster);
     expectAddressEq(decoded.newDisasterKey, newDisaster);
     expectElementsEq(decoded.pqSig, sig);
-    expect(decoded.newTransactionKeys.length).toBe(TRANSACTION_KEY_INIT_AMOUNT);
-    for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+    expect(decoded.newTransactionKeys.length).toBe(10);
+    for (let i = 0; i < 10; i++) {
       expectAddressEq(decoded.newTransactionKeys[i], newTransactionKeys[i]);
-    }
-    expect(decoded.newRecoveryKeys.length).toBe(RECOVERY_KEY_AMOUNT);
-    for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
       expectAddressEq(decoded.newRecoveryKeys[i], newRecoveryKeys[i]);
+      expectAddressEq(
+        decoded.newVerificationKeys[i],
+        newVerificationKeys[i]
+      );
     }
   });
 
@@ -658,12 +705,16 @@ describe("encode/decode roundtrip", () => {
     const newOwnership = makeKey(802n);
     const newDisaster = makeKey(804n);
     const newTransactionKeys = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      { length: MAX_KEYS },
       (_, i) => makeKey(BigInt(3000 + i * 2))
     );
     const newRecoveryKeys = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
+      { length: MAX_KEYS },
       (_, i) => makeKey(BigInt(4000 + i * 2))
+    );
+    const newVerificationKeys = Array.from(
+      { length: MAX_KEYS },
+      (_, i) => makeKey(BigInt(5000 + i * 2))
     );
     const encoded = encodeOwnershipTransfer(
       currentOwnership,
@@ -672,7 +723,8 @@ describe("encode/decode roundtrip", () => {
       TARGET,
       newDisaster,
       newTransactionKeys,
-      newRecoveryKeys
+      newRecoveryKeys,
+      newVerificationKeys
     );
     expect(size(encoded)).toBe(OWNERSHIP_TRANSFER_PAYLOAD_SIZE);
     const decoded = decodeOwnershipTransfer(encoded);
@@ -681,11 +733,13 @@ describe("encode/decode roundtrip", () => {
     expectElementsEq(decoded.pqSig, sig);
     expect(getAddress(decoded.newOwner)).toBe(getAddress(TARGET));
     expectAddressEq(decoded.newDisasterKey, newDisaster);
-    for (let i = 0; i < TRANSACTION_KEY_INIT_AMOUNT; i++) {
+    for (let i = 0; i < MAX_KEYS; i++) {
       expectAddressEq(decoded.newTransactionKeys[i], newTransactionKeys[i]);
-    }
-    for (let i = 0; i < RECOVERY_KEY_AMOUNT; i++) {
       expectAddressEq(decoded.newRecoveryKeys[i], newRecoveryKeys[i]);
+      expectAddressEq(
+        decoded.newVerificationKeys[i],
+        newVerificationKeys[i]
+      );
     }
   });
 
@@ -709,7 +763,7 @@ describe("encode/decode roundtrip", () => {
     expectAddressEq(decoded.verifier, verifier);
     expectElementsEq(decoded.verifySig, verifySig);
     expect(decoded.shouldMigrate).toBe(false);
-    expect(size(decoded.migratorPayload)).toBe(1088);
+    expect(size(decoded.migratorPayload)).toBe(2048);
   });
 
   test("upgradeToAndCall with migrate", () => {
@@ -717,15 +771,22 @@ describe("encode/decode roundtrip", () => {
     const verifySig = makeSig(700n);
     const initDisaster = makeKey(8000n);
     const initOwnership = makeKey(8002n);
-    const initTxn = Array.from(
-      { length: TRANSACTION_KEY_INIT_AMOUNT },
-      (_, i) => makeKey(BigInt(8100 + i * 2))
+    const initTxn = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(8100 + i * 2))
     );
-    const initRecovery = Array.from(
-      { length: RECOVERY_KEY_AMOUNT },
-      (_, i) => makeKey(BigInt(8200 + i * 2))
+    const initRecovery = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(8200 + i * 2))
     );
-    const migrator = encodeInit(initDisaster, initOwnership, initTxn, initRecovery);
+    const initVerification = Array.from({ length: 10 }, (_, i) =>
+      makeKey(BigInt(8300 + i * 2))
+    );
+    const migrator = encodeInit(
+      initDisaster,
+      initOwnership,
+      initTxn,
+      initRecovery,
+      initVerification
+    );
     const encoded = encodeUpgradeToAndCall(
       cur,
       next,

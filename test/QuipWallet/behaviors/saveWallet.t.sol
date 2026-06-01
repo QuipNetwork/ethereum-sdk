@@ -11,22 +11,23 @@ contract QuipWallet_saveWallet is QuipWalletTest {
     WOTSPlus.WinternitzAddress internal disasterPub;
     bytes32 internal disasterPriv;
 
-    /// @dev A fresh batch of 5 transaction keys for rescue testing.
-    WOTSPlus.WinternitzAddress[5] internal freshTxnKeys;
-    /// @dev A fresh batch of 10 recovery keys for rescue testing.
+    /// @dev Fresh always-10 batches for rescue testing.
+    WOTSPlus.WinternitzAddress[10] internal freshTxnKeys;
     WOTSPlus.WinternitzAddress[10] internal freshRecoveryKeys;
+    WOTSPlus.WinternitzAddress[10] internal freshVerificationKeys;
 
     function setUp() public override {
         super.setUp();
         (disasterPub, disasterPriv) = _generateDisasterRecoveryKey(VAULT_SEED);
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             (freshTxnKeys[i], ) = _generateKeyPair(
                 keccak256(abi.encodePacked("fresh-txn", i))
             );
-        }
-        for (uint256 i = 0; i < 10; i++) {
             (freshRecoveryKeys[i], ) = _generateKeyPair(
                 keccak256(abi.encodePacked("fresh-rec", i))
+            );
+            (freshVerificationKeys[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked("fresh-ver", i))
             );
         }
     }
@@ -36,7 +37,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory next_
     ) internal view returns (bytes32) {
         bytes32 keysHash = keccak256(
-            abi.encode(freshTxnKeys, freshRecoveryKeys)
+            abi.encode(freshTxnKeys, freshRecoveryKeys, freshVerificationKeys)
         );
         return
             Codec.saveWalletDigest(
@@ -50,84 +51,64 @@ contract QuipWallet_saveWallet is QuipWalletTest {
             );
     }
 
+    function _encodedSavePayload(
+        WOTSPlus.WinternitzAddress memory cur,
+        WOTSPlus.WinternitzAddress memory next_,
+        WOTSPlus.WinternitzElements memory sig
+    ) internal view returns (bytes memory) {
+        return
+            Codec.encodeSaveWallet(
+                cur,
+                next_,
+                sig,
+                freshTxnKeys,
+                freshRecoveryKeys,
+                freshVerificationKeys
+            );
+    }
+
     // ── Happy paths ──────────────────────────────────────────────────
 
-    function test_saveWallet_replacesTxnAndRecoveryKeys() public {
+    function test_saveWallet_replacesAllThreeKeysets() public {
         (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
             "new-disaster-key"
         );
         bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
-        // Sanity: original txn/recovery keys are present.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        // Sanity: original keysets full at init.
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
         assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[0]));
 
         // Anyone can call — saveWallet has no access gate.
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
 
-        // Counts unchanged, but membership replaced.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        // All three keysets cleared and reinstalled at full size.
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        for (uint256 i = 0; i < 5; i++) {
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
+        for (uint256 i = 0; i < 10; i++) {
             assertFalse(
                 wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i])
             );
             assertTrue(
                 wallet.isKey(Codec.KeyType.Transaction, freshTxnKeys[i])
             );
-        }
-        for (uint256 i = 0; i < 10; i++) {
             assertFalse(
                 wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
             );
             assertTrue(
                 wallet.isKey(Codec.KeyType.Recovery, freshRecoveryKeys[i])
             );
-        }
-    }
-
-    function test_saveWallet_preservesVerificationKeys() public {
-        // Seed verification keys before rescue.
-        (
-            WOTSPlus.WinternitzAddress[] memory verKeys,
-
-        ) = _seedVerificationKeys(3);
-        // `_seedVerificationKeys` installs MAX_KEYS=10 via resetKeyset.
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
-
-        // Seeding consumes the initial transaction key; derive current disaster key
-        // from the unchanged vault seed. The current disaster key is still in storage.
-        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
-            "preserve-ver-new-disaster"
-        );
-        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
-        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
-
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
-
-        // Verification keyset is untouched.
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
-        for (uint256 i = 0; i < 3; i++) {
-            assertTrue(wallet.isKey(Codec.KeyType.Verification, verKeys[i]));
+            assertTrue(
+                wallet.isKey(
+                    Codec.KeyType.Verification,
+                    freshVerificationKeys[i]
+                )
+            );
         }
     }
 
@@ -138,27 +119,11 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
 
         // Replaying with the old (now-consumed) disaster key must fail.
         vm.expectRevert(IQuipWallet.UnknownDisasterRecoveryKey.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 
     function test_saveWallet_emitsWalletSaved() public {
@@ -173,17 +138,10 @@ contract QuipWallet_saveWallet is QuipWalletTest {
             disasterPub,
             newDisaster,
             keccak256(abi.encode(freshTxnKeys)),
-            keccak256(abi.encode(freshRecoveryKeys))
+            keccak256(abi.encode(freshRecoveryKeys)),
+            keccak256(abi.encode(freshVerificationKeys))
         );
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 
     // ── Revert paths ─────────────────────────────────────────────────
@@ -200,15 +158,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(bogusPriv, digest);
 
         vm.expectRevert(IQuipWallet.UnknownDisasterRecoveryKey.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                bogus,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(bogus, newDisaster, sig));
     }
 
     function test_saveWallet_revertsWhen_newDisasterKeyEqualsCurrent() public {
@@ -216,15 +166,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.SameKey.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                disasterPub,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, disasterPub, sig));
     }
 
     function test_saveWallet_revertsWhen_newDisasterKeyIsZero() public {
@@ -236,15 +178,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.UnknownDisasterRecoveryKey.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                zero,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, zero, sig));
     }
 
     function test_saveWallet_revertsWhen_badSignature() public {
@@ -257,15 +191,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory bad = _sign(wrongPriv, digest);
 
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                bad,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, bad));
     }
 
     // ── Cross-set key reuse (KeyInUse) ───────────────────────────────
@@ -281,13 +207,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
         wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                ownershipPubkey,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
+            _encodedSavePayload(disasterPub, ownershipPubkey, sig)
         );
     }
 
@@ -305,15 +225,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 
     /// @dev A new transaction key collides with the still-installed
@@ -327,15 +239,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 
     /// @dev A new recovery key collides with `newDisasterKey`. Caught by the
@@ -351,15 +255,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 
     /// @dev A new recovery key collides with the still-installed ownership key.
@@ -374,15 +270,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 
     /// @dev Cross-input collision: a recovery-key entry equals one of the
@@ -399,15 +287,54 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
+    }
+
+    /// @dev A new verification key collides with `newDisasterKey`. Caught by
+    ///      the verification loop's `_safeAddKey` after txn + recovery run
+    ///      cleanly.
+    function test_saveWallet_revertsWhen_newVerificationKeyEqualsNewDisasterKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "ver-eq-disaster"
         );
+        freshVerificationKeys[6] = newDisaster;
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
+    }
+
+    /// @dev A new verification key collides with a new transaction key.
+    function test_saveWallet_revertsWhen_newVerificationKeyEqualsNewTxnKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "ver-eq-txn-d"
+        );
+        freshVerificationKeys[2] = freshTxnKeys[0];
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
+    }
+
+    /// @dev A new verification key collides with a new recovery key.
+    function test_saveWallet_revertsWhen_newVerificationKeyEqualsNewRecoveryKey()
+        public
+    {
+        (WOTSPlus.WinternitzAddress memory newDisaster, ) = _generateKeyPair(
+            "ver-eq-rec-d"
+        );
+        freshVerificationKeys[7] = freshRecoveryKeys[0];
+        bytes32 digest = _buildSaveWalletDigest(disasterPub, newDisaster);
+        WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 
     /// @dev Digest must be bound to this wallet — a signature good for another wallet
@@ -417,7 +344,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
             "bound-to-wallet-new-disaster"
         );
         bytes32 keysHash = keccak256(
-            abi.encode(freshTxnKeys, freshRecoveryKeys)
+            abi.encode(freshTxnKeys, freshRecoveryKeys, freshVerificationKeys)
         );
         // Sign a digest bound to a DIFFERENT wallet address.
         bytes32 digest = Codec.saveWalletDigest(
@@ -432,14 +359,6 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.saveWallet(
-            Codec.encodeSaveWallet(
-                disasterPub,
-                newDisaster,
-                sig,
-                freshTxnKeys,
-                freshRecoveryKeys
-            )
-        );
+        wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
     }
 }

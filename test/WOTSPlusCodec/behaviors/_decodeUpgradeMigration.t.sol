@@ -25,7 +25,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         (, bytes memory migratorPayload) = codec.exposed_decodeUpgradeMigration(
             payload
         );
-        assertEq(migratorPayload.length, 1088);
+        assertEq(migratorPayload.length, 2048);
         // First 32 bytes of migratorPayload are the disaster recovery key's publicSeed,
         // seeded as (initSeed + 500) where initSeed = 1 + 5000.
         bytes32 expected = bytes32(uint256(1 + 5000 + 500));
@@ -42,7 +42,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 0
             )
         );
@@ -55,7 +55,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 4480
             )
         );
@@ -68,7 +68,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 5000
             )
         );
@@ -79,7 +79,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         public
         view
     {
-        bytes memory payload = _filledBytes(5569);
+        bytes memory payload = _filledBytes(6529);
         // `_filledBytes` writes 0xAB everywhere, including byte 4480 — but
         // the strict shouldMigrate check rejects anything outside {0x00,
         // 0x01}. Overwrite byte 4480 to a valid sentinel so this test
@@ -89,7 +89,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         (bool shouldMigrate, bytes memory mp) = codec
             .exposed_decodeUpgradeMigration(payload);
         assertTrue(shouldMigrate);
-        assertEq(mp.length, 1088);
+        assertEq(mp.length, 2048);
     }
 
     function test_exposed_decodeUpgradeMigration_revertsWhen_extraBytes()
@@ -99,23 +99,23 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 6000
             )
         );
         codec.exposed_decodeUpgradeMigration(payload);
     }
 
-    /// @dev Property: any payload length other than 5569 reverts.
+    /// @dev Property: any payload length other than 6529 reverts.
     function testFuzz_exposed_decodeUpgradeMigration_revertsWhen_wrongLength(
         uint256 len
     ) public {
         len = bound(len, 0, 9000);
-        vm.assume(len != 5569);
+        vm.assume(len != 6529);
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                5569,
+                6529,
                 len
             )
         );
@@ -130,7 +130,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
     function test_exposed_decodeUpgradeMigration_revertsWhen_shouldMigrateByte_0x02()
         public
     {
-        bytes memory payload = _filledBytes(5569);
+        bytes memory payload = _filledBytes(6529);
         payload[4480] = 0x02;
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -145,7 +145,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
     function test_exposed_decodeUpgradeMigration_revertsWhen_shouldMigrateByte_0xff()
         public
     {
-        bytes memory payload = _filledBytes(5569);
+        bytes memory payload = _filledBytes(6529);
         payload[4480] = 0xff;
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -164,7 +164,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         public
         view
     {
-        bytes memory payload = _filledBytes(5569);
+        bytes memory payload = _filledBytes(6529);
         payload[4480] = 0x00;
         (bool shouldMigrate, ) = codec.exposed_decodeUpgradeMigration(payload);
         assertFalse(shouldMigrate);
@@ -176,7 +176,7 @@ contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
         uint8 badByte
     ) public {
         vm.assume(badByte > 1);
-        bytes memory payload = _filledBytes(5569);
+        bytes memory payload = _filledBytes(6529);
         payload[4480] = bytes1(badByte);
         vm.expectRevert(
             abi.encodeWithSelector(

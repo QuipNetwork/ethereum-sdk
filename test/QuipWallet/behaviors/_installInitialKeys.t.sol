@@ -8,8 +8,9 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusStorage.sol";
 
-/// @dev Behaviour tests for `_installInitialKeys(disaster, ownership, txn[5], rec[10])`.
-///      Writes the two scalar keys, adds all 15 keyset members, then calls
+/// @dev Behaviour tests for
+///      `_installInitialKeys(disaster, ownership, txn[10], rec[10], ver[10])`.
+///      Writes the two scalar keys, adds all 30 keyset members, then calls
 ///      `_verifyInitialState()` to assert the post-state invariants.
 contract QuipWallet__installInitialKeys is QuipWalletTest {
     /// @dev Imported from `WOTSPlusStorage` so the offsets below stay aligned
@@ -44,9 +45,9 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
     function _validTxn()
         internal
         pure
-        returns (WOTSPlus.WinternitzAddress[5] memory arr)
+        returns (WOTSPlus.WinternitzAddress[10] memory arr)
     {
-        for (uint256 i = 0; i < 5; i++) arr[i] = _mkKey(0x1000 + i * 2);
+        for (uint256 i = 0; i < 10; i++) arr[i] = _mkKey(0x1000 + i * 2);
     }
 
     function _validRec()
@@ -55,6 +56,14 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
         returns (WOTSPlus.WinternitzAddress[10] memory arr)
     {
         for (uint256 i = 0; i < 10; i++) arr[i] = _mkKey(0x2000 + i * 2);
+    }
+
+    function _validVer()
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress[10] memory arr)
+    {
+        for (uint256 i = 0; i < 10; i++) arr[i] = _mkKey(0x2800 + i * 2);
     }
 
     function _validDisaster()
@@ -79,18 +88,20 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             _validDisaster(),
             _validOwnership(),
             _validTxn(),
-            _validRec()
+            _validRec(),
+            _validVer()
         );
 
-        assertEq(h.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(h.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(h.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(h.keyCount(Codec.KeyType.Verification), 10);
     }
 
     function test_exposed_installInitialKeys_revertsWhen_duplicateTxnKey()
         public
     {
         QuipWalletHarness h = _freshHarness(false);
-        WOTSPlus.WinternitzAddress[5] memory txn = _validTxn();
+        WOTSPlus.WinternitzAddress[10] memory txn = _validTxn();
         txn[4] = txn[0]; // collide entries 0 and 4
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
@@ -98,7 +109,8 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             _validDisaster(),
             _validOwnership(),
             txn,
-            _validRec()
+            _validRec(),
+            _validVer()
         );
     }
 
@@ -114,7 +126,25 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             _validDisaster(),
             _validOwnership(),
             _validTxn(),
-            rec
+            rec,
+            _validVer()
+        );
+    }
+
+    function test_exposed_installInitialKeys_revertsWhen_duplicateVerificationKey()
+        public
+    {
+        QuipWalletHarness h = _freshHarness(false);
+        WOTSPlus.WinternitzAddress[10] memory ver = _validVer();
+        ver[6] = ver[2];
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        h.exposed_installInitialKeys(
+            _validDisaster(),
+            _validOwnership(),
+            _validTxn(),
+            _validRec(),
+            ver
         );
     }
 
@@ -127,7 +157,8 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             _validDisaster(),
             _validOwnership(),
             _validTxn(),
-            _validRec()
+            _validRec(),
+            _validVer()
         );
     }
 
@@ -148,7 +179,8 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             zeroDisaster,
             _validOwnership(),
             _validTxn(),
-            _validRec()
+            _validRec(),
+            _validVer()
         );
     }
 
@@ -166,7 +198,8 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             _validDisaster(),
             zeroOwnership,
             _validTxn(),
-            _validRec()
+            _validRec(),
+            _validVer()
         );
     }
 
@@ -183,7 +216,7 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
         public
     {
         QuipWalletHarness h = _freshHarness(false);
-        WOTSPlus.WinternitzAddress[5] memory txn = _validTxn();
+        WOTSPlus.WinternitzAddress[10] memory txn = _validTxn();
         WOTSPlus.WinternitzAddress[10] memory rec = _validRec();
         rec[3] = txn[1]; // same key in both sets
 
@@ -192,7 +225,48 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             _validDisaster(),
             _validOwnership(),
             txn,
-            rec
+            rec,
+            _validVer()
+        );
+    }
+
+    // A verification key also appearing in the txn set: txn loop installs
+    // first, recovery loop runs cleanly, verification loop reverts.
+    function test_exposed_installInitialKeys_revertsWhen_verificationKeyAlsoInTxnSet()
+        public
+    {
+        QuipWalletHarness h = _freshHarness(false);
+        WOTSPlus.WinternitzAddress[10] memory txn = _validTxn();
+        WOTSPlus.WinternitzAddress[10] memory ver = _validVer();
+        ver[4] = txn[2];
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        h.exposed_installInitialKeys(
+            _validDisaster(),
+            _validOwnership(),
+            txn,
+            _validRec(),
+            ver
+        );
+    }
+
+    // A verification key also appearing in the recovery set: both loops run
+    // before verification; verification loop reverts.
+    function test_exposed_installInitialKeys_revertsWhen_verificationKeyAlsoInRecoverySet()
+        public
+    {
+        QuipWalletHarness h = _freshHarness(false);
+        WOTSPlus.WinternitzAddress[10] memory rec = _validRec();
+        WOTSPlus.WinternitzAddress[10] memory ver = _validVer();
+        ver[7] = rec[1];
+
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        h.exposed_installInitialKeys(
+            _validDisaster(),
+            _validOwnership(),
+            _validTxn(),
+            rec,
+            ver
         );
     }
 
@@ -204,7 +278,7 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
     {
         QuipWalletHarness h = _freshHarness(false);
         WOTSPlus.WinternitzAddress memory disaster = _validDisaster();
-        WOTSPlus.WinternitzAddress[5] memory txn = _validTxn();
+        WOTSPlus.WinternitzAddress[10] memory txn = _validTxn();
         txn[2] = disaster;
 
         vm.expectRevert(IQuipWallet.KeyInUse.selector);
@@ -212,7 +286,8 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             disaster,
             _validOwnership(),
             txn,
-            _validRec()
+            _validRec(),
+            _validVer()
         );
     }
 
@@ -232,7 +307,8 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             _validDisaster(),
             ownership,
             _validTxn(),
-            rec
+            rec,
+            _validVer()
         );
     }
 
@@ -250,7 +326,8 @@ contract QuipWallet__installInitialKeys is QuipWalletTest {
             shared,
             shared,
             _validTxn(),
-            _validRec()
+            _validRec(),
+            _validVer()
         );
     }
 }

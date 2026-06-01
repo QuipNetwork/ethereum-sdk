@@ -199,8 +199,8 @@ interface IQuipFactory {
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param to The classical address that will own the new wallet.
     /// @param payload Packed init data: [0:64) disasterRecoveryKey,
-    ///                [64:128) ownershipKey, [128:448) transactionKeys[5],
-    ///                [448:1088) recoveryKeys[10].
+    ///                [64:128) ownershipKey, [128:768) transactionKeys[10],
+    ///                [768:1408) recoveryKeys[10], [1408:2048) verificationKeys[10].
     /// @return The address of the newly deployed QuipWallet proxy.
     function deployLatestWalletProxy(
         bytes32 vaultId,
@@ -216,8 +216,8 @@ interface IQuipFactory {
     /// @param index The index into the vetted implementation set.
     /// @param to The classical address that will own the new wallet.
     /// @param payload Packed init data: [0:64) disasterRecoveryKey,
-    ///                [64:128) ownershipKey, [128:448) transactionKeys[5],
-    ///                [448:1088) recoveryKeys[10].
+    ///                [64:128) ownershipKey, [128:768) transactionKeys[10],
+    ///                [768:1408) recoveryKeys[10], [1408:2048) verificationKeys[10].
     /// @return The address of the newly deployed QuipWallet proxy.
     function deploySpecificWalletProxy(
         bytes32 vaultId,

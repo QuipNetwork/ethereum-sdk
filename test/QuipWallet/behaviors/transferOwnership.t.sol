@@ -15,14 +15,15 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
 
     WOTSPlus.WinternitzAddress internal newOwnershipKey;
     WOTSPlus.WinternitzAddress internal newDisasterKey;
-    WOTSPlus.WinternitzAddress[5] internal freshTxnKeys;
+    WOTSPlus.WinternitzAddress[10] internal freshTxnKeys;
     WOTSPlus.WinternitzAddress[10] internal freshRecoveryKeys;
+    WOTSPlus.WinternitzAddress[10] internal freshVerificationKeys;
 
     function setUp() public override {
         super.setUp();
         (newOwnershipKey, ) = _generateKeyPair("xfer-owner-new-ownership");
         (newDisasterKey, ) = _generateKeyPair("xfer-owner-new-disaster");
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             (freshTxnKeys[i], ) = _generateKeyPair(
                 keccak256(abi.encodePacked("xfer-txn", i))
             );
@@ -32,12 +33,22 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
                 keccak256(abi.encodePacked("xfer-rec", i))
             );
         }
+        for (uint256 i = 0; i < 10; i++) {
+            (freshVerificationKeys[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked("xfer-ver", i))
+            );
+        }
     }
 
     function _keysHash() internal view returns (bytes32) {
         return
             keccak256(
-                abi.encode(newDisasterKey, freshTxnKeys, freshRecoveryKeys)
+                abi.encode(
+                    newDisasterKey,
+                    freshTxnKeys,
+                    freshRecoveryKeys,
+                    freshVerificationKeys
+                )
             );
     }
 
@@ -49,7 +60,12 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory disasterKey
     ) internal view returns (bytes memory) {
         bytes32 keysHash = keccak256(
-            abi.encode(disasterKey, freshTxnKeys, freshRecoveryKeys)
+            abi.encode(
+                disasterKey,
+                freshTxnKeys,
+                freshRecoveryKeys,
+                freshVerificationKeys
+            )
         );
         bytes32 msgHash = _buildTransferOwnershipMessageHash(
             address(wallet),
@@ -70,7 +86,8 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
                 newOwner,
                 disasterKey,
                 freshTxnKeys,
-                freshRecoveryKeys
+                freshRecoveryKeys,
+                freshVerificationKeys
             );
     }
 
@@ -121,10 +138,11 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
         assertEq(factory.vaultIdOf(address(wallet)), vaultId);
     }
 
-    function test_transferOwnership_replacesTxnAndRecoveryKeys() public {
-        // Sanity: original keysets installed in setUp.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+    function test_transferOwnership_replacesAllThreeKeysets() public {
+        // Sanity: original keysets installed in setUp (init populates 10 of each).
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
         assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[0]));
 
@@ -139,51 +157,28 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
         vm.prank(ALICE);
         wallet.transferOwnership(payload);
 
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        for (uint256 i = 0; i < 5; i++) {
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
+        for (uint256 i = 0; i < 10; i++) {
             assertFalse(
                 wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i])
             );
             assertTrue(
                 wallet.isKey(Codec.KeyType.Transaction, freshTxnKeys[i])
             );
-        }
-        for (uint256 i = 0; i < 10; i++) {
             assertFalse(
                 wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
             );
             assertTrue(
                 wallet.isKey(Codec.KeyType.Recovery, freshRecoveryKeys[i])
             );
-        }
-    }
-
-    function test_transferOwnership_clearsVerificationKeys() public {
-        // Seed verification keys so we can observe the clear.
-        (
-            WOTSPlus.WinternitzAddress[] memory verKeys,
-
-        ) = _seedVerificationKeys(3);
-        // `_seedVerificationKeys` installs MAX_KEYS=10 via resetKeyset.
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
-
-        // `_seedVerificationKeys` consumes txn key 0; re-read alicePubkey.
-        alicePubkey = wallet.keyAt(Codec.KeyType.Transaction, 0);
-
-        bytes memory payload = _buildPayload(
-            ownershipPubkey,
-            ownershipPrivateKey,
-            newOwnershipKey,
-            BOB,
-            newDisasterKey
-        );
-        vm.prank(ALICE);
-        wallet.transferOwnership(payload);
-
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 0);
-        for (uint256 i = 0; i < verKeys.length; i++) {
-            assertFalse(wallet.isKey(Codec.KeyType.Verification, verKeys[i]));
+            assertTrue(
+                wallet.isKey(
+                    Codec.KeyType.Verification,
+                    freshVerificationKeys[i]
+                )
+            );
         }
     }
 
@@ -229,12 +224,27 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
             "dummy-new"
         );
         WOTSPlus.WinternitzElements memory dummySig;
+        WOTSPlus.WinternitzAddress[10] memory dummyTxn;
+        WOTSPlus.WinternitzAddress[10] memory dummyRec;
+        WOTSPlus.WinternitzAddress[10] memory dummyVer;
+        for (uint256 i = 0; i < 10; i++) {
+            (dummyTxn[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked("rotate-disaster-tx", i))
+            );
+            (dummyRec[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked("rotate-disaster-rec", i))
+            );
+            (dummyVer[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked("rotate-disaster-ver", i))
+            );
+        }
         bytes memory savePayload = Codec.encodeSaveWallet(
             origDisaster,
             dummyNew,
             dummySig,
-            freshTxnKeys,
-            freshRecoveryKeys
+            dummyTxn,
+            dummyRec,
+            dummyVer
         );
         vm.expectRevert(IQuipWallet.UnknownDisasterRecoveryKey.selector);
         wallet.saveWallet(savePayload);
@@ -272,7 +282,8 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
             BOB,
             newDisasterKey,
             keccak256(abi.encode(freshTxnKeys)),
-            keccak256(abi.encode(freshRecoveryKeys))
+            keccak256(abi.encode(freshRecoveryKeys)),
+            keccak256(abi.encode(freshVerificationKeys))
         );
 
         vm.prank(ALICE);
@@ -547,6 +558,63 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
         wallet.transferOwnership(payload);
     }
 
+    /// @dev `newVerificationKey == newDisasterKey`. Caught by the verification
+    ///      loop's `_safeAddKey` after the txn + recovery loops install cleanly.
+    function test_transferOwnership_revertsWhen_newVerKeyEqualsNewDisasterKey()
+        public
+    {
+        freshVerificationKeys[4] = newDisasterKey;
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newVerificationKey == newTxnKey`. Verification loop catches the
+    ///      collision against the freshly-installed `transactionKeys` set.
+    function test_transferOwnership_revertsWhen_newVerKeyEqualsNewTxnKey()
+        public
+    {
+        freshVerificationKeys[2] = freshTxnKeys[5];
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
+    /// @dev `newVerificationKey == newRecoveryKey`. Verification loop catches
+    ///      the collision against the freshly-installed `recoveryKeys` set.
+    function test_transferOwnership_revertsWhen_newVerKeyEqualsNewRecoveryKey()
+        public
+    {
+        freshVerificationKeys[8] = freshRecoveryKeys[3];
+        bytes memory payload = _buildPayload(
+            ownershipPubkey,
+            ownershipPrivateKey,
+            newOwnershipKey,
+            BOB,
+            newDisasterKey
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(IQuipWallet.KeyInUse.selector);
+        wallet.transferOwnership(payload);
+    }
+
     function test_transferOwnership_revertsWhen_invalidSignature() public {
         bytes32 keysHash = _keysHash();
         bytes32 msgHash = _buildTransferOwnershipMessageHash(
@@ -567,7 +635,8 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
             BOB,
             newDisasterKey,
             freshTxnKeys,
-            freshRecoveryKeys
+            freshRecoveryKeys,
+            freshVerificationKeys
         );
 
         vm.prank(ALICE);
@@ -601,7 +670,8 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
             BOB,
             newDisasterKey,
             freshTxnKeys,
-            freshRecoveryKeys
+            freshRecoveryKeys,
+            freshVerificationKeys
         );
 
         vm.prank(ALICE);

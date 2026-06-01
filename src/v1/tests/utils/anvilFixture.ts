@@ -51,8 +51,8 @@ import { QuipWalletClient } from "../../walletClient.js";
 import {
   encodeInit,
   type WinternitzAddress,
+  MAX_KEYS,
   RECOVERY_KEY_AMOUNT,
-  TRANSACTION_KEY_INIT_AMOUNT,
 } from "../../wotsCodec.js";
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -393,18 +393,21 @@ export async function createFreshWallet(
 
   const disasterKey = signer.generateKeyPair(vaultId).publicKey;
   const ownershipKey = signer.generateKeyPair(vaultId).publicKey;
-  const transactionKeys = Array.from(
-    { length: TRANSACTION_KEY_INIT_AMOUNT },
-    () => signer.generateKeyPair(vaultId).publicKey
+  const transactionKeys = Array.from({ length: MAX_KEYS }, () =>
+    signer.generateKeyPair(vaultId).publicKey
   );
-  const recoveryKeys = Array.from({ length: RECOVERY_KEY_AMOUNT }, () =>
+  const recoveryKeys = Array.from({ length: MAX_KEYS }, () =>
+    signer.generateKeyPair(vaultId).publicKey
+  );
+  const verificationKeys = Array.from({ length: MAX_KEYS }, () =>
     signer.generateKeyPair(vaultId).publicKey
   );
   const initPayload = encodeInit(
     disasterKey,
     ownershipKey,
     transactionKeys,
-    recoveryKeys
+    recoveryKeys,
+    verificationKeys
   );
 
   const hash = await stack.walletClient.writeContract({

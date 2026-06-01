@@ -11,15 +11,16 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         (
             WOTSPlus.WinternitzAddress memory disasterKey,
             WOTSPlus.WinternitzAddress memory ownershipKey,
-            WOTSPlus.WinternitzAddress[5] memory txnKeys,
-            WOTSPlus.WinternitzAddress[10] memory recKeys
+            WOTSPlus.WinternitzAddress[10] memory txnKeys,
+            WOTSPlus.WinternitzAddress[10] memory recKeys,
+            WOTSPlus.WinternitzAddress[10] memory verKeys
         ) = codec.exposed_decodeInit(payload);
 
         assertEq(disasterKey.publicSeed, bytes32(uint256(42 + 500)));
         assertEq(disasterKey.publicKeyHash, bytes32(uint256(42 + 501)));
         assertEq(ownershipKey.publicSeed, bytes32(uint256(42 + 600)));
         assertEq(ownershipKey.publicKeyHash, bytes32(uint256(42 + 601)));
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 10; i++) {
             assertEq(txnKeys[i].publicSeed, bytes32(uint256(42 + i * 2)));
             assertEq(
                 txnKeys[i].publicKeyHash,
@@ -31,6 +32,13 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
             assertEq(
                 recKeys[i].publicKeyHash,
                 bytes32(uint256(42 + 101 + i * 2))
+            );
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(verKeys[i].publicSeed, bytes32(uint256(42 + 200 + i * 2)));
+            assertEq(
+                verKeys[i].publicKeyHash,
+                bytes32(uint256(42 + 201 + i * 2))
             );
         }
     }
@@ -46,8 +54,8 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                1088,
-                1184
+                2048,
+                2144
             )
         );
         codec.exposed_decodeInit(payload);
@@ -55,11 +63,11 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
 
     function test_exposed_decodeInit_handlesMaxValues() public view {
         bytes memory payload = new bytes(0);
-        // disaster (2) + ownership (2) + txn (10) + rec (20) = 34 bytes32 slots.
-        for (uint256 i = 0; i < 34; i++) {
+        // disaster (2) + ownership (2) + txn (20) + rec (20) + ver (20) = 64 bytes32 slots.
+        for (uint256 i = 0; i < 64; i++) {
             payload = abi.encodePacked(payload, bytes32(type(uint256).max));
         }
-        (, , WOTSPlus.WinternitzAddress[5] memory txnKeys, ) = codec
+        (, , WOTSPlus.WinternitzAddress[10] memory txnKeys, , ) = codec
             .exposed_decodeInit(payload);
         assertEq(txnKeys[0].publicSeed, bytes32(type(uint256).max));
         assertEq(txnKeys[0].publicKeyHash, bytes32(type(uint256).max));
@@ -69,7 +77,7 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                1088,
+                2048,
                 0
             )
         );
@@ -84,25 +92,25 @@ contract WOTSPlusCodec__decodeInit is WOTSPlusCodecTest {
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                1088,
+                2048,
                 64
             )
         );
         codec.exposed_decodeInit(payload);
     }
 
-    /// @dev Property: any payload length other than 1088 reverts with
-    ///      MalformedPayload(1088, length). Fuzz across the full range to
+    /// @dev Property: any payload length other than 2048 reverts with
+    ///      MalformedPayload(2048, length). Fuzz across the full range to
     ///      exhaust off-by-N drift in the length precondition.
     function testFuzz_exposed_decodeInit_revertsWhen_wrongLength(
         uint256 len
     ) public {
         len = bound(len, 0, 4000);
-        vm.assume(len != 1088);
+        vm.assume(len != 2048);
         vm.expectRevert(
             abi.encodeWithSelector(
                 WOTSPlusCodec.MalformedPayload.selector,
-                1088,
+                2048,
                 len
             )
         );

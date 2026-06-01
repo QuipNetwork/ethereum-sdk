@@ -12,8 +12,9 @@ import {Vm} from "forge-std-1.14.0/Vm.sol";
 /// @dev Behaviour tests for `_reinitializeAndTransferOwnership(payload)`.
 ///      Exercises the full re-init flow: decode payload, validate the supplied
 ///      ownership-key pair, verify WOTS+ sig over the transfer-or-handover digest,
-///      rotate disaster + ownership keys, wipe/repopulate txn + recovery keysets,
-///      clear verification keyset, switch classical owner.
+///      rotate disaster + ownership keys, wipe/repopulate all three keysets
+///      (transaction, recovery, verification) to the always-10 invariant,
+///      switch classical owner.
 contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
 
@@ -29,8 +30,9 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         address newOwner;
         WOTSPlus.WinternitzAddress newOwnership;
         WOTSPlus.WinternitzAddress newDisaster;
-        WOTSPlus.WinternitzAddress[5] newTxn;
+        WOTSPlus.WinternitzAddress[10] newTxn;
         WOTSPlus.WinternitzAddress[10] newRec;
+        WOTSPlus.WinternitzAddress[10] newVer;
     }
 
     function setUp() public override {
@@ -92,7 +94,7 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         c.newOwner = NEW_OWNER;
         (c.newOwnership, ) = _generateKeyPair("h-rein-newown");
         (c.newDisaster, ) = _generateKeyPair("h-rein-newdisaster");
-        for (uint256 i; i < 5; i++) {
+        for (uint256 i; i < 10; i++) {
             (c.newTxn[i], ) = _generateKeyPair(
                 keccak256(abi.encodePacked("h-rein-newtxn", i))
             );
@@ -102,12 +104,17 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
                 keccak256(abi.encodePacked("h-rein-newrec", i))
             );
         }
+        for (uint256 i; i < 10; i++) {
+            (c.newVer[i], ) = _generateKeyPair(
+                keccak256(abi.encodePacked("h-rein-newver", i))
+            );
+        }
     }
 
     function _keysHash(Ctx memory c) internal pure returns (bytes32) {
         return
             EfficientHashLib.hash(
-                abi.encode(c.newDisaster, c.newTxn, c.newRec)
+                abi.encode(c.newDisaster, c.newTxn, c.newRec, c.newVer)
             );
     }
 
@@ -143,7 +150,8 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
                 c.newOwner,
                 c.newDisaster,
                 c.newTxn,
-                c.newRec
+                c.newRec,
+                c.newVer
             );
     }
 
@@ -167,11 +175,12 @@ contract QuipWallet__reinitializeAndTransferOwnership is QuipWalletTest {
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
 
         assertEq(harnessProxy.owner(), NEW_OWNER);
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 5);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Transaction), 10);
         assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 0);
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 10);
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, c.newTxn[0]));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, c.newRec[0]));
+        assertTrue(harnessProxy.isKey(Codec.KeyType.Verification, c.newVer[0]));
     }
 
     function test_exposed_reinitializeAndTransferOwnership_emitsEvent()
