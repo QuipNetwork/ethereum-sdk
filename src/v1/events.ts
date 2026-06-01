@@ -150,24 +150,6 @@ export function parseWalletInitialized(
   }));
 }
 
-export interface PqRecoveryEvent {
-  recoveryKey: WinternitzAddress;
-  newRecoveryKey: WinternitzAddress;
-  newTransactionKey: WinternitzAddress;
-}
-
-export function parsePqRecovery(src: LogSource): PqRecoveryEvent[] {
-  return parseEventLogs({
-    abi: quipWalletAbi,
-    logs: toLogs(src) as Log[],
-    eventName: "PqRecovery",
-  }).map((l) => ({
-    recoveryKey: l.args.recoveryKey,
-    newRecoveryKey: l.args.newRecoveryKey,
-    newTransactionKey: l.args.newTransactionKey,
-  }));
-}
-
 export interface WalletSavedEvent {
   oldDisasterRecoveryKey: WinternitzAddress;
   newDisasterRecoveryKey: WinternitzAddress;

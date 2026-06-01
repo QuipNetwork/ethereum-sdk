@@ -7,25 +7,44 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 
 /// @title QuipWallet Recovery Scenario Tests
-/// @dev Recovery flows: single recovery, replenish + recover, and full
-///      rotation of all 10 original recovery keys followed by replenishment.
-///
-///      Note: `recoverWallet` rotates the consumed recovery key with a fresh
-///      replacement (size-preserving), and clears+reseeds the transaction
-///      keyset. The recovery set's *size* never changes via recovery, but the
-///      *membership* rotates.
+/// @dev Recovery flows under the unified `resetKeyset(Tx, signingKind=Recovery)`
+///      surface: a recovery key authorizes a wholesale reset of the transaction
+///      keyset, rotating the signing recovery key in-place (size-preserving)
+///      and installing 10 fresh transaction keys.
 contract QuipWallet_recovery is QuipWalletTest {
     /// @dev Tracks the current PQ owner key across recovery steps.
     WOTSPlus.WinternitzAddress internal currentPq;
     bytes32 internal currentPrivKey;
 
-    /// @dev Recover wallet using the given recovery key index, setting a new PQ
-    ///      owner and rotating the recovery key to a fresh replacement.
+    /// @dev Generate 10 fresh transaction keys derived from `seed`. Returns the
+    ///      packed `[10]` array (codec input) plus a parallel `[10]` of private
+    ///      keys so callers can sign with any of them post-install.
+    function _freshTx10(
+        bytes32 seed
+    )
+        internal
+        view
+        returns (
+            WOTSPlus.WinternitzAddress[10] memory pubs,
+            bytes32[10] memory privs
+        )
+    {
+        for (uint256 i = 0; i < 10; i++) {
+            (pubs[i], privs[i]) = _generateKeyPair(
+                keccak256(abi.encodePacked(seed, "tx", i))
+            );
+        }
+    }
+
+    /// @dev Recover wallet using the given recovery key index: signs a
+    ///      `resetKeyset(Tx, signingKind=Recovery)` with the recovery key,
+    ///      installing 10 fresh transaction keys and rotating the consumed
+    ///      recovery key to `newRecoveryKey`.
     function _recoverWith(
         uint256 keyIndex,
         WOTSPlus.WinternitzAddress[] memory rPubkeys,
         bytes32 rBaseSeed,
-        bytes32 newPqSeed
+        bytes32 newTxSeed
     )
         internal
         returns (
@@ -33,40 +52,53 @@ contract QuipWallet_recovery is QuipWalletTest {
             WOTSPlus.WinternitzAddress memory newRecoveryKey
         )
     {
-        WOTSPlus.WinternitzAddress memory newPqOwner;
-        (newPqOwner, newPrivKey) = _generateKeyPair(newPqSeed);
+        (
+            WOTSPlus.WinternitzAddress[10] memory newTx10,
+            bytes32[10] memory newTx10Priv
+        ) = _freshTx10(newTxSeed);
         (newRecoveryKey, ) = _generateKeyPair(
-            keccak256(abi.encodePacked(newPqSeed, "recovery-replacement"))
+            keccak256(abi.encodePacked(newTxSeed, "recovery-replacement"))
         );
 
         WOTSPlus.WinternitzAddress memory rKey = rPubkeys[keyIndex];
-        bytes32 rKeySeed = keccak256(
-            abi.encodePacked(rBaseSeed, "recovery", keyIndex)
-        );
-        (, bytes32 rKeyPriv) = WOTSPlus.generateKeyPair(rKeySeed);
+        bytes32 rKeyPriv = _recoverySigningKeyFromBase(rBaseSeed, keyIndex);
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
+        bytes32 msgHash = _buildResetKeysetMessageHash(
+            Codec.KeyType.Transaction,
+            Codec.KeyType.Recovery,
             address(wallet),
             rKey,
             newRecoveryKey,
-            newPqOwner
+            newTx10
         );
         WOTSPlus.WinternitzElements memory sig = _sign(rKeyPriv, msgHash);
 
         vm.prank(wallet.owner());
-        wallet.recoverWallet(
-            Codec.encodeRecoverWallet(rKey, newRecoveryKey, newPqOwner, sig)
+        wallet.resetKeyset(
+            Codec.encodeResetKeyset(
+                Codec.KeyType.Transaction,
+                Codec.KeyType.Recovery,
+                rKey,
+                newRecoveryKey,
+                sig,
+                newTx10
+            )
         );
 
-        // `recoverWallet` drains the transaction keyset and installs exactly
-        // one replacement, and rotates the consumed recovery key in-place
-        // (size-preserving). Pin both invariants in the helper.
+        // `resetKeyset(Tx, signingKind=Recovery)` clears the tx set and installs
+        // the new 10; the consumed recovery key rotates in-place to
+        // `newRecoveryKey`. Pin both invariants in the helper.
         assertEq(
             wallet.keyCount(Codec.KeyType.Transaction),
-            1,
-            "recoverWallet did not drain+install exactly one txn key"
+            10,
+            "resetKeyset(Tx) did not install exactly 10 txn keys"
         );
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPqOwner));
+        for (uint256 i = 0; i < 10; i++) {
+            assertTrue(
+                wallet.isKey(Codec.KeyType.Transaction, newTx10[i]),
+                "installed tx key missing"
+            );
+        }
         assertFalse(
             wallet.isKey(Codec.KeyType.Recovery, rKey),
             "burned recovery key should be removed"
@@ -75,9 +107,24 @@ contract QuipWallet_recovery is QuipWalletTest {
             wallet.isKey(Codec.KeyType.Recovery, newRecoveryKey),
             "replacement recovery key should be installed"
         );
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
-        currentPq = newPqOwner;
-        currentPrivKey = newPrivKey;
+        currentPq = newTx10[0];
+        currentPrivKey = newTx10Priv[0];
+        newPrivKey = newTx10Priv[0];
+    }
+
+    /// @dev Recovery-key seed derivation that mirrors `_generateRecoveryKeys(base, n)`
+    ///      so a test that originally generated a recovery batch from `base` can
+    ///      sign with the i-th key by recomputing the same per-key seed.
+    function _recoverySigningKeyFromBase(
+        bytes32 base,
+        uint256 index
+    ) internal pure returns (bytes32 priv) {
+        bytes32 keySeed = keccak256(
+            abi.encodePacked(base, "recovery", index)
+        );
+        (, priv) = WOTSPlus.generateKeyPair(keySeed);
     }
 
     /// @dev Replenish recovery keys using the current PQ key. Uses
@@ -128,9 +175,9 @@ contract QuipWallet_recovery is QuipWalletTest {
     /// @dev Lose primary key, recover via recovery key, resume operations.
     function test_simulation_recoveryFlow() public {
         (
-            WOTSPlus.WinternitzAddress memory newPqOwner,
-            bytes32 newPqPrivKey
-        ) = _generateKeyPair("recovery-new-pq");
+            WOTSPlus.WinternitzAddress[10] memory newTx10,
+            bytes32[10] memory newTx10Priv
+        ) = _freshTx10("recovery-new-tx");
         (
             WOTSPlus.WinternitzAddress memory newRk,
         ) = _generateKeyPair("recovery-new-rk");
@@ -138,11 +185,13 @@ contract QuipWallet_recovery is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
         bytes32 recoverySigningKey = _recoverySigningKey(alicePrivateKey, 0);
 
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
+        bytes32 msgHash = _buildResetKeysetMessageHash(
+            Codec.KeyType.Transaction,
+            Codec.KeyType.Recovery,
             address(wallet),
             rKey,
             newRk,
-            newPqOwner
+            newTx10
         );
         WOTSPlus.WinternitzElements memory sig = _sign(
             recoverySigningKey,
@@ -150,21 +199,29 @@ contract QuipWallet_recovery is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        wallet.recoverWallet(
-            Codec.encodeRecoverWallet(rKey, newRk, newPqOwner, sig)
+        wallet.resetKeyset(
+            Codec.encodeResetKeyset(
+                Codec.KeyType.Transaction,
+                Codec.KeyType.Recovery,
+                rKey,
+                newRk,
+                sig,
+                newTx10
+            )
         );
 
-        // Verify pqOwner changed, txn keyset drained+seeded, and recovery
-        // keyset rotated (size preserved).
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPqOwner));
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 1);
+        // Verify tx keyset wholesale-replaced and recovery keyset rotated.
+        for (uint256 i = 0; i < 10; i++) {
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, newTx10[i]));
+        }
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertFalse(wallet.isKey(Codec.KeyType.Recovery, rKey));
         assertTrue(wallet.isKey(Codec.KeyType.Recovery, newRk));
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
-        // Resume operations with new key
-        currentPq = newPqOwner;
-        currentPrivKey = newPqPrivKey;
+        // Resume operations with one of the newly-installed tx keys
+        currentPq = newTx10[0];
+        currentPrivKey = newTx10Priv[0];
 
         (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
             "post-recovery-key"
@@ -188,7 +245,7 @@ contract QuipWallet_recovery is QuipWalletTest {
         vm.prank(ALICE);
         wallet.execute(
             Codec.encodeExecute(
-                newPqOwner,
+                currentPq,
                 nextPq,
                 execSig,
                 BOB,
@@ -249,27 +306,38 @@ contract QuipWallet_recovery is QuipWalletTest {
             );
         }
 
-        // Further recovery attempt with one of the burned originals fails.
-        (WOTSPlus.WinternitzAddress memory fakePq, ) = _generateKeyPair(
-            "fake-pq"
-        );
+        // Further recovery attempt with one of the burned originals fails —
+        // `_verifyAndRotate` on the recoveryKeys set sees the burned key is
+        // no longer a member and reverts with `UnknownKey`.
+        (
+            WOTSPlus.WinternitzAddress[10] memory fakeTx10,
+        ) = _freshTx10("fake-tx");
         (
             WOTSPlus.WinternitzAddress memory fakeRk,
         ) = _generateKeyPair("fake-rk");
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
         bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-        bytes32 msgHash = _buildRecoverWalletMessageHash(
+        bytes32 msgHash = _buildResetKeysetMessageHash(
+            Codec.KeyType.Transaction,
+            Codec.KeyType.Recovery,
             address(wallet),
             rKey,
             fakeRk,
-            fakePq
+            fakeTx10
         );
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipWallet.UnknownKey.selector);
-        wallet.recoverWallet(
-            Codec.encodeRecoverWallet(rKey, fakeRk, fakePq, sig)
+        wallet.resetKeyset(
+            Codec.encodeResetKeyset(
+                Codec.KeyType.Transaction,
+                Codec.KeyType.Recovery,
+                rKey,
+                fakeRk,
+                sig,
+                fakeTx10
+            )
         );
 
         // Replenish with fresh keys (clears the rotated set, installs 10 new).

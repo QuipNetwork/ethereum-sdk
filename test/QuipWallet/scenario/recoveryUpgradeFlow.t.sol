@@ -10,7 +10,8 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
 /// @title Recovery Upgrade Flow Scenario Test
 /// @dev Emergency upgrade via recovery key when PQ key is compromised.
-///      Flow: recoveryUpgrade (no PQ rotation) → recoverWallet (fix PQ key) → resume.
+///      Flow: recoveryUpgrade (no PQ rotation) → resetKeyset(Tx, signingKind=Recovery)
+///      (fix PQ keyset) → resume.
 contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
     QuipWallet public newImpl;
 
@@ -45,7 +46,8 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
             Codec.encodeRecoveryUpgrade(rKey, newRKey, sig, vPub, vSig);
     }
 
-    /// @dev Emergency upgrade via recovery key → recoverWallet → resume operations.
+    /// @dev Emergency upgrade via recovery key → resetKeyset(Tx, signingKind=Recovery)
+    ///      → resume operations.
     function test_simulation_recoveryUpgradeFlow() public {
         // Step 1: Simulate PQ key compromised — we still have recovery keys.
         //         Use recovery key 0 to perform emergency upgrade; the key
@@ -99,11 +101,15 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
         assertEq(address(wallet).balance, balBefore);
         assertEq(wallet.owner(), ALICE);
 
-        // Step 3: Fix the compromised PQ key via recoverWallet (using recovery key 1)
-        (
-            WOTSPlus.WinternitzAddress memory newPqOwner,
-            bytes32 newPqPrivKey
-        ) = _generateKeyPair("new-pq-after-recovery-upgrade");
+        // Step 3: Fix the compromised PQ keyset via
+        //         resetKeyset(Tx, signingKind=Recovery) using recovery key 1.
+        WOTSPlus.WinternitzAddress[10] memory newTx10;
+        bytes32[10] memory newTx10Priv;
+        for (uint256 i = 0; i < 10; i++) {
+            (newTx10[i], newTx10Priv[i]) = _generateKeyPair(
+                keccak256(abi.encodePacked("new-tx-after-recovery-upgrade", i))
+            );
+        }
         (
             WOTSPlus.WinternitzAddress memory newRk,
         ) = _generateKeyPair("new-rk-after-recovery-upgrade");
@@ -111,11 +117,13 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
         WOTSPlus.WinternitzAddress memory rKey1 = recoveryPubkeys[1];
         bytes32 rPrivKey1 = _recoverySigningKey(alicePrivateKey, 1);
 
-        bytes32 recoverHash = _buildRecoverWalletMessageHash(
+        bytes32 recoverHash = _buildResetKeysetMessageHash(
+            Codec.KeyType.Transaction,
+            Codec.KeyType.Recovery,
             address(wallet),
             rKey1,
             newRk,
-            newPqOwner
+            newTx10
         );
         WOTSPlus.WinternitzElements memory recoverSig = _sign(
             rPrivKey1,
@@ -123,25 +131,35 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
         );
 
         vm.prank(ALICE);
-        wallet.recoverWallet(
-            Codec.encodeRecoverWallet(rKey1, newRk, newPqOwner, recoverSig)
+        wallet.resetKeyset(
+            Codec.encodeResetKeyset(
+                Codec.KeyType.Transaction,
+                Codec.KeyType.Recovery,
+                rKey1,
+                newRk,
+                recoverSig,
+                newTx10
+            )
         );
 
-        // PQ key now fixed; recoverWallet rotated recovery key 1 in-place (size
-        // preserved at 10) and reseeded the transaction keyset.
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, newPqOwner));
+        // PQ keyset now reset; the signing recovery key rotated in-place
+        // (size preserved at 10) and the tx keyset holds the 10 fresh keys.
+        for (uint256 i = 0; i < 10; i++) {
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, newTx10[i]));
+        }
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertFalse(wallet.isKey(Codec.KeyType.Recovery, rKey1));
         assertTrue(wallet.isKey(Codec.KeyType.Recovery, newRk));
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
-        // Step 4: Resume normal operations with the new key
+        // Step 4: Resume normal operations using one of the new tx keys.
         (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(
             "post-recovery-upgrade-key"
         );
         uint256 fee = wallet.getExecuteFee();
         bytes32 execHash = _buildExecuteMessageHash(
             address(wallet),
-            newPqOwner,
+            newTx10[0],
             postPq,
             BOB,
             0.05 ether,
@@ -149,7 +167,7 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
             fee
         );
         WOTSPlus.WinternitzElements memory execSig = _sign(
-            newPqPrivKey,
+            newTx10Priv[0],
             execHash
         );
 
@@ -157,7 +175,7 @@ contract QuipWallet_recoveryUpgradeFlow is QuipWalletTest {
         vm.prank(ALICE);
         wallet.execute(
             Codec.encodeExecute(
-                newPqOwner,
+                newTx10[0],
                 postPq,
                 execSig,
                 BOB,

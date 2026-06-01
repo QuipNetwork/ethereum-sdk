@@ -156,24 +156,29 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
             assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
         }
 
-        // Step 5: Exercise the new recovery keyset — recoverWallet with the
-        //         first fresh recovery key proves it signs validly against the
-        //         post-saveWallet stored keyset.
+        // Step 5: Exercise the new recovery keyset — resetKeyset(Tx,
+        //         signingKind=Recovery) with the first fresh recovery key
+        //         proves it signs validly against the post-saveWallet stored
+        //         keyset.
         {
             bytes32 freshRecPriv = _freshRecoveryPriv(0);
-            (
-                WOTSPlus.WinternitzAddress memory postRecoveryPq,
-
-            ) = _generateKeyPair("disaster-post-recovery-pq");
+            WOTSPlus.WinternitzAddress[10] memory postRecoveryTx10;
+            for (uint256 i = 0; i < 10; i++) {
+                (postRecoveryTx10[i], ) = _generateKeyPair(
+                    keccak256(abi.encodePacked("disaster-post-recovery-tx", i))
+                );
+            }
             (
                 WOTSPlus.WinternitzAddress memory postRecoveryRk,
             ) = _generateKeyPair("disaster-post-recovery-rk");
 
-            bytes32 recHash = _buildRecoverWalletMessageHash(
+            bytes32 recHash = _buildResetKeysetMessageHash(
+                Codec.KeyType.Transaction,
+                Codec.KeyType.Recovery,
                 address(wallet),
                 freshRec[0],
                 postRecoveryRk,
-                postRecoveryPq
+                postRecoveryTx10
             );
             WOTSPlus.WinternitzElements memory recSig = _sign(
                 freshRecPriv,
@@ -181,20 +186,24 @@ contract QuipWallet_disasterRecovery is QuipWalletTest {
             );
 
             vm.prank(ALICE);
-            wallet.recoverWallet(
-                Codec.encodeRecoverWallet(
+            wallet.resetKeyset(
+                Codec.encodeResetKeyset(
+                    Codec.KeyType.Transaction,
+                    Codec.KeyType.Recovery,
                     freshRec[0],
                     postRecoveryRk,
-                    postRecoveryPq,
-                    recSig
+                    recSig,
+                    postRecoveryTx10
                 )
             );
 
-            // recoverWallet drains the txn set, installing exactly one new key.
-            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 1);
-            assertTrue(
-                wallet.isKey(Codec.KeyType.Transaction, postRecoveryPq)
-            );
+            // resetKeyset clears the txn set and installs the 10 fresh keys.
+            assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+            for (uint256 i = 0; i < 10; i++) {
+                assertTrue(
+                    wallet.isKey(Codec.KeyType.Transaction, postRecoveryTx10[i])
+                );
+            }
             // Consumed recovery key rotated in-place: original gone, replacement
             // installed, pool size preserved at 10.
             assertFalse(wallet.isKey(Codec.KeyType.Recovery, freshRec[0]));

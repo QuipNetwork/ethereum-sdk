@@ -327,49 +327,6 @@ describe("saveWallet", () => {
   }, 60_000);
 });
 
-describe("recoverWallet", () => {
-  test("recovers via a recovery key: replaces the transaction keyset with a fresh single key and rotates the recovery key", async () => {
-    const { client, recoveryKeys, isBurned } = await freshWallet(0x68);
-    const recoveryKey = recoveryKeys[0];
-
-    const stateBefore = await client.getWalletState();
-    expect(stateBefore.keyCounts.recovery).toBe(BigInt(RECOVERY_KEY_AMOUNT));
-
-    const receipt = await client.recoverWallet(recoveryKey.publicSeed);
-    expect(receipt.status).toBe("success");
-
-    const stateAfter = await client.getWalletState();
-    // Transaction keyset is cleared and reseeded with exactly one fresh key.
-    expect(stateAfter.keyCounts.transaction).toBe(1n);
-    expect(stateAfter.transactionKeys.length).toBe(1);
-    // Recovery keyset capacity is preserved (size-stable rotation).
-    expect(stateAfter.keyCounts.recovery).toBe(BigInt(RECOVERY_KEY_AMOUNT));
-    // The signing recovery key is gone.
-    const remainingRecoverySeeds = stateAfter.recoveryKeys.map(
-      (k) => k.publicSeed
-    );
-    expect(remainingRecoverySeeds).not.toContain(recoveryKey.publicSeed);
-
-    expect(isBurned(recoveryKey.publicSeed)).toBe(true);
-  }, 60_000);
-
-  test("transaction operations resume cleanly after recovery using the new seed key", async () => {
-    const { client, recoveryKeys, walletAddress } = await freshWallet(0x69);
-    await client.recoverWallet(recoveryKeys[0].publicSeed);
-
-    // The single new transaction key should drive a withdrawal end-to-end.
-    const recipient = privateKeyToAccount(
-      "0x0123456789012345678901234567890123456789012345678901234567890123"
-    ).address;
-    const depositBefore = await client.getDeposit();
-    const receipt = await client.withdrawDeposit(recipient, parseEther("0.05"));
-    expect(receipt.status).toBe("success");
-    const depositAfter = await client.getDeposit();
-    expect(depositBefore - depositAfter).toBe(parseEther("0.05"));
-    expect(walletAddress).toBe(await client.getAddress());
-  }, 90_000);
-});
-
 describe("upgradeWallet", () => {
   test("PQ-authenticated upgrade lands and burns a transaction key (no-migration branch)", async () => {
     const { client, walletAddress, isBurned } = await freshWallet(0x6a);
@@ -450,8 +407,8 @@ describe("recoveryUpgrade", () => {
     const remaining = stateAfter.recoveryKeys.map((k) => k.publicSeed);
     expect(remaining).not.toContain(recoveryKey.publicSeed);
 
-    // Transaction keyset is untouched by recoveryUpgrade (distinct from
-    // recoverWallet, which clears + reseeds it).
+    // Transaction keyset is untouched by recoveryUpgrade (recovery key
+    // rotates the recovery set only; tx keyset stays put).
     expect(stateAfter.keyCounts.transaction).toBe(
       stateBefore.keyCounts.transaction
     );
