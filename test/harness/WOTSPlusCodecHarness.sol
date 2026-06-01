@@ -109,30 +109,6 @@ contract WOTSPlusCodecHarness {
         data = _d;
     }
 
-    function exposed_decodeRecoverWallet(
-        bytes calldata payload
-    )
-        external
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress memory recoveryKey,
-            WOTSPlus.WinternitzAddress memory newRecoveryKey,
-            WOTSPlus.WinternitzAddress memory newTransactionKey,
-            WOTSPlus.WinternitzElements memory pqSig
-        )
-    {
-        (
-            WOTSPlus.WinternitzAddress calldata _rk,
-            WOTSPlus.WinternitzAddress calldata _newRk,
-            WOTSPlus.WinternitzAddress calldata _pq,
-            WOTSPlus.WinternitzElements calldata _sig
-        ) = Codec.decodeRecoverWallet(payload);
-        recoveryKey = _rk;
-        newRecoveryKey = _newRk;
-        newTransactionKey = _pq;
-        pqSig = _sig;
-    }
-
     // --- Encoders ---
 
     function exposed_encodeExecute(
@@ -154,45 +130,7 @@ contract WOTSPlusCodecHarness {
             );
     }
 
-    function exposed_encodeRecoverWallet(
-        WOTSPlus.WinternitzAddress memory recoveryKey,
-        WOTSPlus.WinternitzAddress memory newRecoveryKey,
-        WOTSPlus.WinternitzAddress memory newTransactionKey,
-        WOTSPlus.WinternitzElements memory pqSig
-    ) external pure returns (bytes memory) {
-        return
-            Codec.encodeRecoverWallet(
-                recoveryKey,
-                newRecoveryKey,
-                newTransactionKey,
-                pqSig
-            );
-    }
-
     // --- Hashers ---
-
-    function exposed_recoverWalletDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 recoverySeed,
-        bytes32 recoveryHash,
-        bytes32 newRecoverySeed,
-        bytes32 newRecoveryHash,
-        bytes32 newTransactionSeed,
-        bytes32 newTransactionHash
-    ) external pure returns (bytes32) {
-        return
-            Codec.recoverWalletDigest(
-                wallet,
-                chainId,
-                recoverySeed,
-                recoveryHash,
-                newRecoverySeed,
-                newRecoveryHash,
-                newTransactionSeed,
-                newTransactionHash
-            );
-    }
 
     function exposed_executeDigest(
         address wallet,

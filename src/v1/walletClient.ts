@@ -70,7 +70,6 @@ import {
   encodeUpgradeToAndCall,
   encodeUserOpSignature,
   encodeWithdrawDeposit,
-  encodeRecoverWallet,
   erc4337ExecuteDigest,
   executeDigest,
   keysetDigest,
@@ -87,7 +86,6 @@ import {
   upgradeDigest,
   upgradeRecoveryDigest,
   withdrawDepositDigest,
-  recoverWalletDigest,
 } from "./wotsCodec.js";
 import { buildUserOp } from "./userOp.js";
 import {
@@ -871,51 +869,6 @@ export class QuipWalletClient {
       keyOpts,
       txOpts
     );
-  }
-
-  /// PQ-authenticated `recoverWallet(bytes)`. The caller supplies a recovery
-  /// key's public seed; the SDK recovers the keypair, generates a fresh
-  /// replacement recovery key + a fresh transaction key (the new sole entry
-  /// in the cleared transaction keyset), signs the digest, and submits.
-  /// The recovery key used to sign is marked burned in `QuipSigner` after
-  /// broadcast — recovery keys are also one-time-use.
-  async recoverWallet(
-    recoveryPublicSeed: Hex,
-    opts: TxOptions = {}
-  ): Promise<TransactionReceipt> {
-    const recoveryKey = this.quipSigner.recoverKeyPair(
-      this.vaultId,
-      recoveryPublicSeed
-    ).publicKey;
-    const newRecoveryKey = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
-    const newTransactionKey = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
-
-    const digest = recoverWalletDigest(
-      this.walletAddress,
-      BigInt(this.chainId),
-      recoveryKey.publicSeed,
-      recoveryKey.publicKeyHash,
-      newRecoveryKey.publicSeed,
-      newRecoveryKey.publicKeyHash,
-      newTransactionKey.publicSeed,
-      newTransactionKey.publicKeyHash
-    );
-    const pqSig = this.signWith(recoveryPublicSeed, digest);
-    const payload = encodeRecoverWallet(
-      recoveryKey,
-      newRecoveryKey,
-      newTransactionKey,
-      pqSig
-    );
-
-    const contractCall: ContractCallParams = {
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "recoverWallet",
-      args: [payload],
-      account: this.account,
-    };
-    return this.executeWrite(contractCall, 0n, opts);
   }
 
   /// PQ-authenticated `saveWallet(bytes)` — last-resort rescue authorized by

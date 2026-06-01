@@ -36,7 +36,6 @@ import {
   KeyType,
   encodeInit,
   encodeExecute,
-  encodeRecoverWallet,
   encodeKeyManagement,
   encodeWithdrawDeposit,
   encodeReplaceKeyAt,
@@ -49,7 +48,6 @@ import {
   ownershipTransferKeysHash,
   decodeInit,
   decodeExecute,
-  decodeRecoverWallet,
   decodeKeyManagement,
   decodeWithdrawDeposit,
   decodeReplaceKeyAt,
@@ -60,7 +58,6 @@ import {
   decodeRecoveryUpgrade,
   executeDigest,
   keysetDigest,
-  recoverWalletDigest,
   withdrawDepositDigest,
   replaceKeyAtDigest,
   upgradeDigest,
@@ -173,17 +170,6 @@ describe("encoder parity (live Solidity)", () => {
     const tsEncoded = encodeExecute(cur, next, sig, TARGET, VALUE, "0xdeadbeef");
     const solEncoded = await callHarness("exposed_encodeExecute", [
       cur, next, sig, TARGET, VALUE, "0xdeadbeef",
-    ]);
-    expect(tsEncoded).toBe(solEncoded);
-  });
-
-  test("encodeRecoverWallet matches Solidity", async () => {
-    const recovery = makeKey(5n);
-    const newRecovery = makeKey(7n);
-    const newTransaction = makeKey(9n);
-    const tsEncoded = encodeRecoverWallet(recovery, newRecovery, newTransaction, sig);
-    const solEncoded = await callHarness("exposed_encodeRecoverWallet", [
-      recovery, newRecovery, newTransaction, sig,
     ]);
     expect(tsEncoded).toBe(solEncoded);
   });
@@ -392,16 +378,6 @@ describe("digest parity (live Solidity)", () => {
     expect(digests.size).toBe(5);
   });
 
-  test("recoverWalletDigest matches Solidity", async () => {
-    const tsDigest = recoverWalletDigest(
-      WALLET, CHAIN_ID, S1, H1, S2, H2, S3, H3,
-    );
-    const solDigest = await callHarness("exposed_recoverWalletDigest", [
-      WALLET, CHAIN_ID, S1, H1, S2, H2, S3, H3,
-    ]);
-    expect(tsDigest).toBe(solDigest);
-  });
-
   test("withdrawDepositDigest matches Solidity", async () => {
     const AMOUNT = 5n * 10n ** 18n;
     const tsDigest = withdrawDepositDigest(
@@ -584,19 +560,6 @@ describe("encode/decode roundtrip", () => {
     expect(getAddress(decoded.target)).toBe(getAddress(TARGET));
     expect(decoded.value).toBe(VALUE);
     expect(decoded.data).toBe("0x");
-  });
-
-  test("recoverWallet", () => {
-    const recovery = makeKey(5n);
-    const newRecovery = makeKey(7n);
-    const newTransaction = makeKey(9n);
-    const encoded = encodeRecoverWallet(recovery, newRecovery, newTransaction, sig);
-    expect(size(encoded)).toBe(2336);
-    const decoded = decodeRecoverWallet(encoded);
-    expectAddressEq(decoded.recoveryKey, recovery);
-    expectAddressEq(decoded.newRecoveryKey, newRecovery);
-    expectAddressEq(decoded.newTransactionKey, newTransaction);
-    expectElementsEq(decoded.pqSig, sig);
   });
 
   test("keyManagement with multiple keys", () => {

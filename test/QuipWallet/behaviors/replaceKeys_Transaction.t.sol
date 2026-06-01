@@ -9,9 +9,9 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
 /// @dev Tests for `replaceKeys` when `kind == KeyType.Transaction`.
 ///      Transaction set inits at 5 keys; tests size N to fit. The Recovery-
-///      signed → Transaction-target path is the canonical "recoverWallet
-///      replacement" — sign with a recovery key to wholesale-rotate the
-///      transaction keyset.
+///      signed → Transaction-target path is the canonical recovery-key
+///      authorization model — sign with a recovery key to atomically swap
+///      entries of the transaction keyset.
 contract QuipWallet_replaceKeys_Transaction is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
     /// @dev The harness wallet's actual transaction keys. Index 0 is

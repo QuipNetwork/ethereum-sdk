@@ -138,9 +138,6 @@ export const ERC1271_TAG: Hex = keccak256(toHex("quip.digest.erc1271"));
 export const SAVE_WALLET_TAG: Hex = keccak256(
   toHex("quip.digest.saveWallet")
 );
-export const RECOVER_WALLET_TAG: Hex = keccak256(
-  toHex("quip.digest.recoverWallet")
-);
 export const PAYMASTER_APPROVE_TAG: Hex = keccak256(
   toHex("quip.digest.paymasterApprove")
 );
@@ -248,22 +245,6 @@ export function encodeExecute(
     addressToBytes32(target),
     bigintToBytes32(value),
     data,
-  ]);
-}
-
-/// RecoverWallet payload (2336 bytes): recoveryKey + newRecoveryKey +
-/// newTransactionKey + pqSig.
-export function encodeRecoverWallet(
-  recoveryKey: WinternitzAddress,
-  newRecoveryKey: WinternitzAddress,
-  newTransactionKey: WinternitzAddress,
-  pqSig: WinternitzElements
-): Hex {
-  return concat([
-    packAddress(recoveryKey),
-    packAddress(newRecoveryKey),
-    packAddress(newTransactionKey),
-    packElements(pqSig),
   ]);
 }
 
@@ -495,20 +476,6 @@ export function decodeExecute(payload: Hex): {
     target: getAddress(slice(payload, 2284, 2304)),
     value: hexToBigInt(slice(payload, 2304, 2336)),
     data: size(payload) > 2336 ? slice(payload, 2336) : "0x",
-  };
-}
-
-export function decodeRecoverWallet(payload: Hex): {
-  recoveryKey: WinternitzAddress;
-  newRecoveryKey: WinternitzAddress;
-  newTransactionKey: WinternitzAddress;
-  pqSig: WinternitzElements;
-} {
-  return {
-    recoveryKey: sliceAddress(payload, 0),
-    newRecoveryKey: sliceAddress(payload, 64),
-    newTransactionKey: sliceAddress(payload, 128),
-    pqSig: sliceElements(payload, 192),
   };
 }
 
@@ -894,31 +861,6 @@ export function keysetDigest(
       s2,
       h2,
       keysHash,
-    ])
-  );
-}
-
-export function recoverWalletDigest(
-  wallet: Address,
-  chainId: bigint,
-  recoverySeed: Hex,
-  recoveryHash: Hex,
-  newRecoverySeed: Hex,
-  newRecoveryHash: Hex,
-  newTransactionSeed: Hex,
-  newTransactionHash: Hex
-): Hex {
-  return keccak256(
-    concat([
-      RECOVER_WALLET_TAG,
-      bigintToBytes32(chainId),
-      addressToBytes32(wallet),
-      recoverySeed,
-      recoveryHash,
-      newRecoverySeed,
-      newRecoveryHash,
-      newTransactionSeed,
-      newTransactionHash,
     ])
   );
 }

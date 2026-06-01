@@ -197,18 +197,6 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress[10] recoveryKeys
     );
 
-    /// @notice Emitted when the wallet is recovered using a recovery key.
-    /// @param recoveryKey The recovery key that authorized (and was burned by) the recovery.
-    /// @param newRecoveryKey The replacement recovery key installed in the recovery keyset
-    ///        in the burned key's place — preserves the wallet's recovery capacity.
-    /// @param newTransactionKey The single transaction key seeded during recovery (the
-    ///        transaction keyset is cleared and reseeded with this key alone).
-    event PqRecovery(
-        WOTSPlus.WinternitzAddress recoveryKey,
-        WOTSPlus.WinternitzAddress newRecoveryKey,
-        WOTSPlus.WinternitzAddress newTransactionKey
-    );
-
     /// @notice Emitted when the wallet is rescued via the disaster recovery key.
     /// @param oldDisasterRecoveryKey The consumed disaster recovery key.
     /// @param newDisasterRecoveryKey The installed replacement disaster recovery key.
@@ -595,12 +583,6 @@ interface IQuipWallet {
     ///      need a full snapshot.
     /// @return The full key state.
     function getAllKeys() external view returns (AllKeys memory);
-
-    /// @notice Recovers the wallet using a pre-registered recovery key.
-    /// @dev Drains the current transaction-key set and seeds exactly one new key.
-    ///      Payload layout: [0:64) recoveryKey, [64:128) newTransactionKey, [128:2272) pqSig.
-    /// @param payload Packed recoverWallet data (2272 bytes).
-    function recoverWallet(bytes calldata payload) external;
 
     /// @notice Last-resort rescue: resets `transactionKeys` and `recoveryKeys` using the
     ///         wallet's disaster recovery key. Leaves `verificationKeys` and `owner()` intact.

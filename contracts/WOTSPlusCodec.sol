@@ -71,11 +71,6 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [2368:2688) WinternitzAddress[5]  — newTransactionKeys (5 x 64)
 ///      [2688:3328) WinternitzAddress[10] — newRecoveryKeys (10 x 64)
 ///
-///      recoverWallet payload layout (2272 bytes):
-///      [0:64)      WinternitzAddress     — recoveryKey
-///      [64:128)    WinternitzAddress     — newTransactionKey
-///      [128:2272)  WinternitzElements    — pqSig (67 x 32)
-///
 ///      replaceKeys payload layout (2368 + 2*N*64 bytes, variable-length):
 ///      [0:32)      uint256               — kind (KeyType: target keyset)
 ///      [32:64)     uint256               — signingKind (KeyType: Tx or Recovery)
@@ -229,12 +224,6 @@ library WOTSPlusCodec {
     ///      `saveWallet` signature to a specific wallet, chain, and key-rotation pair.
     bytes32 internal constant SAVE_WALLET_TAG =
         keccak256("quip.digest.saveWallet");
-    /// @dev `recoverWallet` domain tag. Binds the three keys consumed/installed
-    ///      by `recoverWallet` (burned recovery key, its replacement, fresh
-    ///      transaction key). Distinct tag prevents cross-flow signature replay.
-    bytes32 internal constant RECOVER_WALLET_TAG =
-        keccak256("quip.digest.recoverWallet");
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        DECODERS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -520,32 +509,6 @@ library WOTSPlusCodec {
         }
     }
 
-    /// @dev Decodes the recoverWallet payload.
-    ///      Layout: [0:64) recoveryKey, [64:128) newRecoveryKey,
-    ///              [128:192) newTransactionKey, [192:2336) pqSig.
-    /// @param payload The packed recoverWallet payload (2336 bytes).
-    function decodeRecoverWallet(
-        bytes calldata payload
-    )
-        internal
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress calldata recoveryKey,
-            WOTSPlus.WinternitzAddress calldata newRecoveryKey,
-            WOTSPlus.WinternitzAddress calldata newTransactionKey,
-            WOTSPlus.WinternitzElements calldata pqSig
-        )
-    {
-        if (payload.length != 2336)
-            revert MalformedPayload(2336, payload.length);
-        assembly {
-            recoveryKey := payload.offset
-            newRecoveryKey := add(payload.offset, 64)
-            newTransactionKey := add(payload.offset, 128)
-            pqSig := add(payload.offset, 192)
-        }
-    }
-
     /// @dev Decodes the transferOwnership / completeOwnershipHandover payload.
     ///      The call is a full re-initialization: the caller hands the wallet to a new
     ///      classical owner along with a fresh set of PQ key material that the new owner
@@ -818,26 +781,6 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev Encodes the recoverWallet payload.
-    /// @return The packed payload (2336 bytes).
-    function encodeRecoverWallet(
-        WOTSPlus.WinternitzAddress memory recoveryKey,
-        WOTSPlus.WinternitzAddress memory newRecoveryKey,
-        WOTSPlus.WinternitzAddress memory newTransactionKey,
-        WOTSPlus.WinternitzElements memory pqSig
-    ) internal pure returns (bytes memory) {
-        return
-            abi.encodePacked(
-                recoveryKey.publicSeed,
-                recoveryKey.publicKeyHash,
-                newRecoveryKey.publicSeed,
-                newRecoveryKey.publicKeyHash,
-                newTransactionKey.publicSeed,
-                newTransactionKey.publicKeyHash,
-                pqSig.elements
-            );
-    }
-
     /// @dev Encodes the ERC-4337 UserOp signature payload.
     /// @return The packed signature (2272 bytes).
     function encodeUserOpSignature(
@@ -1055,36 +998,6 @@ library WOTSPlusCodec {
     /*  NOTE: WOTS+ signatures are incompatible with EIP-712. These  */
     /*  digests use domain tags instead of EIP-712 structured data.  */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// @dev keccak256(abi.encode(RECOVER_WALLET_TAG, chainId, wallet,
-    ///      recoverySeed, recoveryHash, newRecoverySeed, newRecoveryHash,
-    ///      newTransactionSeed, newTransactionHash))
-    ///      Binds all three keys consumed/installed by `recoverWallet`:
-    ///      the burned recovery key, its replacement, and the fresh transaction
-    ///      key that becomes the sole entry in the (cleared) transaction keyset.
-    function recoverWalletDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 recoverySeed,
-        bytes32 recoveryHash,
-        bytes32 newRecoverySeed,
-        bytes32 newRecoveryHash,
-        bytes32 newTransactionSeed,
-        bytes32 newTransactionHash
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                RECOVER_WALLET_TAG,
-                bytes32(chainId),
-                bytes32(uint256(uint160(wallet))),
-                recoverySeed,
-                recoveryHash,
-                newRecoverySeed,
-                newRecoveryHash,
-                newTransactionSeed,
-                newTransactionHash
-            );
-    }
 
     /// @dev keccak256(abi.encode(EXECUTE_TAG, chainId, wallet, s1, h1, s2, h2,
     ///                            target, value, opdataHash, fee))

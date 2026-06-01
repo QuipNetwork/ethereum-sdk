@@ -601,65 +601,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    /// @dev Rotates a recovery key and reseeds the transaction keyset in one atomic
-    ///      step. The signed digest binds (recoveryKey, newRecoveryKey, newTransactionKey)
-    ///      so the WOTS+ signature commits to *both* the replacement recovery key and
-    ///      the seed transaction key — neither is malleable post-sign.
-    ///
-    ///      Side effects:
-    ///        - `recoveryKey` is burned; `newRecoveryKey` is installed in its place
-    ///          via `_rotateKeys` (size-preserving — recovery capacity is conserved).
-    ///        - The transaction keyset is fully cleared and reseeded with the single
-    ///          `newTransactionKey`. Any in-flight transaction keys that may have been
-    ///          observed/leaked are revoked.
-    function recoverWallet(bytes calldata payload) public onlyOwner {
-        (
-            WOTSPlus.WinternitzAddress calldata recoveryKey,
-            WOTSPlus.WinternitzAddress calldata newRecoveryKey,
-            WOTSPlus.WinternitzAddress calldata newTransactionKey,
-            WOTSPlus.WinternitzElements calldata pqSig
-        ) = Codec.decodeRecoverWallet(payload);
-
-        Storage.Layout storage $ = Storage.layout();
-        // Cheapest-first fail-fast pre-checks before WOTS+ verify (~500k gas).
-        // The two `_enforceDifferentKeys` calls reject self-rotation and the
-        // newRecoveryKey/newTransactionKey collision (which would otherwise
-        // surface only at the trailing `_safeAddKey($.transactionKeys, ...)`
-        // long after WOTS+ verify and the recovery rotation have run).
-        _enforceDifferentKeys(recoveryKey, newRecoveryKey);
-        _enforceDifferentKeys(newRecoveryKey, newTransactionKey);
-        _enforceContained($.recoveryKeys, recoveryKey);
-        _enforceUnspentKey(newRecoveryKey);
-        _enforceUnspentKey(newTransactionKey);
-
-        bytes32 digest = Codec.recoverWalletDigest(
-            address(this),
-            block.chainid,
-            recoveryKey.publicSeed,
-            recoveryKey.publicKeyHash,
-            newRecoveryKey.publicSeed,
-            newRecoveryKey.publicKeyHash,
-            newTransactionKey.publicSeed,
-            newTransactionKey.publicKeyHash
-        );
-
-        if (
-            !WOTSPlus.verify(
-                recoveryKey,
-                WOTSPlus.WinternitzMessage({messageHash: digest}),
-                pqSig
-            )
-        ) revert InvalidSignature();
-
-        _rotateKeys($.recoveryKeys, recoveryKey, newRecoveryKey);
-
-        _clearKeys($.transactionKeys);
-        _safeAddKey($.transactionKeys, newTransactionKey);
-
-        emit PqRecovery(recoveryKey, newRecoveryKey, newTransactionKey);
-    }
-
-    /// @inheritdoc IQuipWallet
     function saveWallet(bytes calldata payload) public {
         (
             WOTSPlus.WinternitzAddress calldata currentDisasterKey,
@@ -1349,8 +1290,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///      verify gas and without producing a misleading no-op-shaped state
     ///      transition that would still consume the one-time WOTS+ signing
     ///      capability. Also used for cross-input checks where two new keys in
-    ///      the same call must be distinct (e.g. `recoverWallet`'s
-    ///      `newRecoveryKey` vs `newTransactionKey`).
+    ///      the same call must be distinct.
     function _enforceDifferentKeys(
         WOTSPlus.WinternitzAddress memory a,
         WOTSPlus.WinternitzAddress memory b
