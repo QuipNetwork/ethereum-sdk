@@ -92,6 +92,16 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///      [2304:2336) uint256               — index (into target keyset)
 ///      [2336:2400) WinternitzAddress     — newKey (replacement at index)
 ///
+///      replaceKeys payload layout (2368 + 2*N*64 bytes, variable-length):
+///      [0:32)      uint256               — kind (KeyType: target keyset)
+///      [32:64)     uint256               — signingKind (KeyType: Tx or Recovery)
+///      [64:96)     uint256               — n (length of each key array)
+///      [96:160)    WinternitzAddress     — currentKey (auth; in signingKind set)
+///      [160:224)   WinternitzAddress     — nextKey (replacement in signingKind set)
+///      [224:2368)  WinternitzElements    — pqSig (67 x 32)
+///      [2368:...)  WinternitzAddress[]   — oldKeys (n x 64)
+///      [...]       WinternitzAddress[]   — newKeys (n x 64)
+///
 ///      ERC-4337 UserOp signature layout (2272 bytes, used by validateUserOp):
 ///      [0:64)      WinternitzAddress     — currentKey
 ///      [64:128)    WinternitzAddress     — nextKey
@@ -236,6 +246,26 @@ library WOTSPlusCodec {
         keccak256("quip.digest.replaceRecoveryKeyAt");
     bytes32 internal constant REPLACE_VERIFICATION_KEY_AT_TAG =
         keccak256("quip.digest.replaceVerificationKeyAt");
+    /// @dev Per-(signingKind, targetKind) domain tags for `replaceKeysDigest`.
+    ///      Six tags = 2 signing keysets × 3 target keysets. Distinct tags
+    ///      prevent lifting a `replaceKeys` signature across either axis:
+    ///      a tx-signed replacement on the recovery keyset cannot be replayed
+    ///      against a tx-signed replacement on the verification keyset, nor
+    ///      against a recovery-signed replacement on any target. The signing
+    ///      keyset is restricted to {Transaction, Recovery} at the wallet
+    ///      level (verification keys are not signing-capable).
+    bytes32 internal constant REPLACE_KEYS_TXSIGN_TX_TAG =
+        keccak256("quip.digest.replaceKeys.txSign.tx");
+    bytes32 internal constant REPLACE_KEYS_TXSIGN_RECOVERY_TAG =
+        keccak256("quip.digest.replaceKeys.txSign.recovery");
+    bytes32 internal constant REPLACE_KEYS_TXSIGN_VERIFY_TAG =
+        keccak256("quip.digest.replaceKeys.txSign.verification");
+    bytes32 internal constant REPLACE_KEYS_RECSIGN_TX_TAG =
+        keccak256("quip.digest.replaceKeys.recoverySign.tx");
+    bytes32 internal constant REPLACE_KEYS_RECSIGN_RECOVERY_TAG =
+        keccak256("quip.digest.replaceKeys.recoverySign.recovery");
+    bytes32 internal constant REPLACE_KEYS_RECSIGN_VERIFY_TAG =
+        keccak256("quip.digest.replaceKeys.recoverySign.verification");
     bytes32 internal constant ERC1271_TAG = keccak256("quip.digest.erc1271");
     /// @dev Disaster-recovery domain tag. Used by `saveWalletDigest` to bind a
     ///      `saveWallet` signature to a specific wallet, chain, and key-rotation pair.
@@ -671,6 +701,75 @@ library WOTSPlusCodec {
         kind = KeyType(raw);
     }
 
+    /// @dev Decodes the replaceKeys payload.
+    ///      Layout: [0:32) kind, [32:64) signingKind, [64:96) n,
+    ///              [96:160) currentKey, [160:224) nextKey,
+    ///              [224:2368) pqSig, [2368:2368+n*64) oldKeys,
+    ///              [2368+n*64:2368+2*n*64) newKeys.
+    ///      Both `kind` and `signingKind` are encoded as left-padded uint256s;
+    ///      the enum cast implicitly validates the range via Solidity 0.8 panic.
+    ///      The explicit `n` enables a strict length check: the caller-supplied
+    ///      array stride must produce a payload exactly `2368 + 2*n*64` bytes
+    ///      long, catching truncation, garbage suffixes, and length/stride
+    ///      mismatches at the decode boundary.
+    ///      Assembly is split into small blocks because the Solidity stack
+    ///      budget for inline asm runs out if every calldata-ref assignment
+    ///      and every raw read live in the same block at once.
+    /// @param payload The packed replaceKeys payload.
+    function decodeReplaceKeys(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            KeyType kind,
+            KeyType signingKind,
+            uint256 n,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[] calldata oldKeys,
+            WOTSPlus.WinternitzAddress[] calldata newKeys
+        )
+    {
+        // Header (2368 bytes): kind(32) + signingKind(32) + n(32) +
+        // currentKey(64) + nextKey(64) + pqSig(2144). Read `n` first so the
+        // expected-length check is exact rather than a >= minimum.
+        if (payload.length < 2368)
+            revert MalformedPayload(2368, payload.length);
+        assembly {
+            n := calldataload(add(payload.offset, 64))
+        }
+        // Solidity 0.8 checked arithmetic: an absurdly large `n` overflows
+        // here and reverts before the length comparison runs, so we never
+        // index into payload with a wrapped offset.
+        uint256 expectedLen = 2368 + 2 * n * 64;
+        if (payload.length != expectedLen)
+            revert MalformedPayload(expectedLen, payload.length);
+
+        uint256 raw;
+        assembly {
+            raw := calldataload(payload.offset)
+        }
+        kind = KeyType(raw);
+        assembly {
+            raw := calldataload(add(payload.offset, 32))
+        }
+        signingKind = KeyType(raw);
+
+        assembly {
+            currentKey := add(payload.offset, 96)
+            nextKey := add(payload.offset, 160)
+            pqSig := add(payload.offset, 224)
+        }
+        assembly {
+            oldKeys.offset := add(payload.offset, 2368)
+            oldKeys.length := n
+            newKeys.offset := add(payload.offset, add(2368, mul(n, 64)))
+            newKeys.length := n
+        }
+    }
+
     /// @dev Decodes the ERC-1271 signature payload.
     ///      Layout: [0:64) verifier, [64:2208) pqSig, [2208:2273) ecdsaSig (r ++ s ++ v).
     ///      The ECDSA half is a standard 65-byte secp256k1 signature over the raw
@@ -932,6 +1031,48 @@ library WOTSPlusCodec {
                 newKey.publicSeed,
                 newKey.publicKeyHash
             );
+    }
+
+    /// @dev Encodes the replaceKeys payload. `n` is encoded explicitly even
+    ///      though `oldKeys.length` would suffice — the wire format carries
+    ///      it as a structural length-check field so `decodeReplaceKeys` can
+    ///      reject payloads whose stride and `n` disagree.
+    /// @return The packed payload (2368 + 2*n*64 bytes).
+    function encodeReplaceKeys(
+        KeyType kind,
+        KeyType signingKind,
+        uint256 n,
+        WOTSPlus.WinternitzAddress memory currentKey,
+        WOTSPlus.WinternitzAddress memory nextKey,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress[] memory oldKeys,
+        WOTSPlus.WinternitzAddress[] memory newKeys
+    ) internal pure returns (bytes memory) {
+        bytes memory payload = abi.encodePacked(
+            bytes32(uint256(kind)),
+            bytes32(uint256(signingKind)),
+            bytes32(n),
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
+            pqSig.elements
+        );
+        for (uint256 i = 0; i < oldKeys.length; i++) {
+            payload = abi.encodePacked(
+                payload,
+                oldKeys[i].publicSeed,
+                oldKeys[i].publicKeyHash
+            );
+        }
+        for (uint256 i = 0; i < newKeys.length; i++) {
+            payload = abi.encodePacked(
+                payload,
+                newKeys[i].publicSeed,
+                newKeys[i].publicKeyHash
+            );
+        }
+        return payload;
     }
 
     /// @dev Encodes the ERC-1271 signature payload.
@@ -1300,6 +1441,68 @@ library WOTSPlusCodec {
                 bytes32(index),
                 newSeed,
                 newHash
+            );
+    }
+
+    /// @dev Returns the digest that `replaceKeys` signs over. The tag is
+    ///      selected per `(signingKind, kind)` so a signature cannot be lifted
+    ///      across either axis (signing keyset OR target keyset). Six tag
+    ///      cases:
+    ///        Tx-sign,   Tx-target       → REPLACE_KEYS_TXSIGN_TX_TAG
+    ///        Tx-sign,   Recovery-target → REPLACE_KEYS_TXSIGN_RECOVERY_TAG
+    ///        Tx-sign,   Verify-target   → REPLACE_KEYS_TXSIGN_VERIFY_TAG
+    ///        Rec-sign,  Tx-target       → REPLACE_KEYS_RECSIGN_TX_TAG
+    ///        Rec-sign,  Recovery-target → REPLACE_KEYS_RECSIGN_RECOVERY_TAG
+    ///        Rec-sign,  Verify-target   → REPLACE_KEYS_RECSIGN_VERIFY_TAG
+    ///      `signingKind == Verification` is rejected by the wallet before
+    ///      this is invoked; the dispatch below falls into the Recovery-sign
+    ///      branch if reached, but the wallet's `_verifyAndRotate` would also
+    ///      reject the membership check.
+    ///      keccak256(abi.encode(tag, chainId, wallet, n,
+    ///                           s1, h1, s2, h2, oldKeysHash, newKeysHash))
+    function replaceKeysDigest(
+        KeyType kind,
+        KeyType signingKind,
+        uint256 n,
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        bytes32 oldKeysHash,
+        bytes32 newKeysHash
+    ) internal pure returns (bytes32) {
+        bytes32 tag;
+        if (signingKind == KeyType.Transaction) {
+            if (kind == KeyType.Transaction) {
+                tag = REPLACE_KEYS_TXSIGN_TX_TAG;
+            } else if (kind == KeyType.Recovery) {
+                tag = REPLACE_KEYS_TXSIGN_RECOVERY_TAG;
+            } else {
+                tag = REPLACE_KEYS_TXSIGN_VERIFY_TAG;
+            }
+        } else {
+            if (kind == KeyType.Transaction) {
+                tag = REPLACE_KEYS_RECSIGN_TX_TAG;
+            } else if (kind == KeyType.Recovery) {
+                tag = REPLACE_KEYS_RECSIGN_RECOVERY_TAG;
+            } else {
+                tag = REPLACE_KEYS_RECSIGN_VERIFY_TAG;
+            }
+        }
+        return
+            EfficientHashLib.hash(
+                tag,
+                bytes32(chainId),
+                bytes32(uint256(uint160(wallet))),
+                bytes32(n),
+                s1,
+                h1,
+                s2,
+                h2,
+                oldKeysHash,
+                newKeysHash
             );
     }
 

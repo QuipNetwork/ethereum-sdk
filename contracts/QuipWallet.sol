@@ -804,6 +804,88 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
+    /// @dev N-for-N swap on target keyset `kind`, authorized by one WOTS+
+    ///      signature from `signingKind` (tx or recovery). Codec asserts
+    ///      payload structural integrity: `payload.length == 2368 + 2*n*64`
+    ///      and `oldKeys.length == newKeys.length == n`. The function
+    ///      re-asserts the array lengths as belt-and-suspenders. 
+    ///      *********************************************************
+    ///      IF CODEC IS EDITED, THEN TRAILING BYTES MAY BE ADDED TO THE
+    ///      PAYLOAD
+    ///      *********************************************************
+    function replaceKeys(bytes calldata payload) public onlyOwner {
+        (
+            Codec.KeyType kind,
+            Codec.KeyType signingKind,
+            uint256 n,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[] calldata oldKeys,
+            WOTSPlus.WinternitzAddress[] calldata newKeys
+        ) = Codec.decodeReplaceKeys(payload);
+
+        // Re-assertion so future codec refactor that drops 
+        // the check fails loudly here.
+        if (oldKeys.length != n || newKeys.length != n)
+            revert MalformedPayload();
+
+        if (signingKind == Codec.KeyType.Verification)
+            revert InvalidSigningKeyset();
+        if (n == 0) revert EmptyKeys();
+
+        // SECURITY — CEI. The signing rotation IS the Effect that prevents
+        // signed-payload replay: `_verifyAndRotate` removes `currentKey`
+        // from the signing set, so a re-entrant call replaying this payload
+        // reverts with `UnknownKey`. The target-set loop below is purely
+        // internal — no external interactions on this path — but ordering
+        // still matters if a future refactor introduces one.
+        // The `_enforceContained` inside `_verifyAndRotate` doubles as the
+        // "claimed signingKind matches reality" integrity check.
+        // Digest computation is delegated to a helper to keep this frame's
+        // stack within the Solidity stack-too-deep budget.
+        _verifyAndRotate(
+            _keyset(signingKind),
+            currentKey,
+            nextKey,
+            pqSig,
+            _replaceKeysDigest(
+                kind,
+                signingKind,
+                n,
+                currentKey,
+                nextKey,
+                oldKeys,
+                newKeys
+            )
+        );
+
+        Keyset.WinternitzAddressSet storage target = _keyset(kind);
+
+        // DRIFT: cross-array overlap (oldKeys[i] == newKeys[j]) is caught by
+        // `_safeAddKey`'s `_enforceUnspentKey` (the original install
+        // `_markKeySpent`'d `oldKeys[i]`, so the same value cannot be
+        // re-added); missing-old-key is caught by `_safeRemoveKey`'s false-
+        // return revert. Weakening either helper regresses those checks
+        // silently.
+        // Order is remove-then-add — reversing trips `_safeAddKey`'s
+        // MAX_KEYS cap (target sits at capacity by invariant).
+        for (uint256 i = 0; i < n; ++i) {
+            _safeRemoveKey(target, oldKeys[i]);
+            _safeAddKey(target, newKeys[i]);
+        }
+
+        emit KeysReplaced(
+            kind,
+            signingKind,
+            currentKey,
+            nextKey,
+            oldKeys,
+            newKeys
+        );
+    }
+
+    /// @inheritdoc IQuipWallet
     function recoveryUpgrade(
         address newImplementation,
         bytes calldata payload
@@ -1221,6 +1303,34 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         if (kind == Codec.KeyType.Transaction) return $.transactionKeys;
         if (kind == Codec.KeyType.Recovery) return $.recoveryKeys;
         return $.verificationKeys;
+    }
+
+    /// @dev Builds the `replaceKeys` digest. Extracted from `replaceKeys` so
+    ///      its 11-arg signature does not consume the caller's stack frame
+    ///      and trip Solidity's stack-too-deep budget.
+    function _replaceKeysDigest(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        uint256 n,
+        WOTSPlus.WinternitzAddress calldata currentKey,
+        WOTSPlus.WinternitzAddress calldata nextKey,
+        WOTSPlus.WinternitzAddress[] calldata oldKeys,
+        WOTSPlus.WinternitzAddress[] calldata newKeys
+    ) internal view returns (bytes32) {
+        return
+            Codec.replaceKeysDigest(
+                kind,
+                signingKind,
+                n,
+                address(this),
+                block.chainid,
+                currentKey.publicSeed,
+                currentKey.publicKeyHash,
+                nextKey.publicSeed,
+                nextKey.publicKeyHash,
+                EfficientHashLib.hash(abi.encode(oldKeys)),
+                EfficientHashLib.hash(abi.encode(newKeys))
+            );
     }
 
     /// @dev Reverts with `UnknownKey` if `key` is not a member of `set`.

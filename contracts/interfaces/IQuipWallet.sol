@@ -93,6 +93,19 @@ interface IQuipWallet {
     /// @notice Thrown when `refreshKeys` is called with `WOTSPlusCodec.KeyType.Transaction`.
     /// @dev Only `recoverWallet` may drain the transaction keyset.
     error RefreshTransactionForbidden();
+    /// @notice Thrown by `replaceKeys` when the caller-declared `signingKind` is
+    ///         `WOTSPlusCodec.KeyType.Verification`. Verification keys are not
+    ///         signing-capable; only Transaction or Recovery may authorize.
+    error InvalidSigningKeyset();
+    /// @notice Thrown by `replaceKeys` if the post-decode array lengths disagree
+    ///         with the caller-supplied `n`. The codec already enforces
+    ///         `oldKeys.length == newKeys.length == n` during decode; this is
+    ///         a belt-and-suspenders re-assertion at the wallet level so a
+    ///         future codec refactor that drops the check fails loudly here.
+    /// @dev Distinct from `WOTSPlusCodec.MalformedPayload(expected, actual)`,
+    ///      which surfaces on bytes-level length / stride mismatches inside
+    ///      the decoder.
+    error MalformedPayload();
     /// @notice Thrown when the number of recovery keys provided is incorrect.
     error IncorrectRecoveryKeyAmount();
     /// @notice Thrown when `replaceKeyAt(Transaction, index, newKey)` targets the same
@@ -285,6 +298,25 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress oldKey,
         WOTSPlus.WinternitzAddress newKey,
         WOTSPlus.WinternitzAddress nextKey
+    );
+
+    /// @notice Emitted when an N-for-N key swap via `replaceKeys` succeeds.
+    /// @dev Emitted after both the signing-keyset rotation and the target-set
+    ///      remove+add loop have committed. `kind` and `signingKind` together
+    ///      identify which of the 6 (signingKind × targetKind) variants ran.
+    /// @param kind The target keyset whose entries were swapped.
+    /// @param signingKind The keyset that authorized the swap (Tx or Recovery).
+    /// @param currentKey The consumed (rotated-out) key from `signingKind` set.
+    /// @param nextKey The replacement key installed in `signingKind` set.
+    /// @param oldKeys The N keys removed from the target keyset.
+    /// @param newKeys The N keys installed in the target keyset.
+    event KeysReplaced(
+        WOTSPlusCodec.KeyType indexed kind,
+        WOTSPlusCodec.KeyType indexed signingKind,
+        WOTSPlus.WinternitzAddress currentKey,
+        WOTSPlus.WinternitzAddress nextKey,
+        WOTSPlus.WinternitzAddress[] oldKeys,
+        WOTSPlus.WinternitzAddress[] newKeys
     );
 
     /// @notice Emitted when the inner call of an ERC-4337 execution reverts but
@@ -658,6 +690,43 @@ interface IQuipWallet {
     ///      [160:2304) pqSig, [2304:2336) index, [2336:2400) newKey.
     /// @param payload Packed replaceKeyAt data (2400 bytes).
     function replaceKeyAt(bytes calldata payload) external;
+
+    /// @notice Atomically swaps N keys in/out of the target keyset under one
+    ///         WOTS+ signature. The signing keyset may differ from the target,
+    ///         enabling cross-keyset authorization (e.g. a recovery key may
+    ///         authorize a replacement on the transaction keyset).
+    /// @dev Authorization model:
+    ///        - `signingKind` ∈ {Transaction, Recovery}. Verification is
+    ///          rejected with `InvalidSigningKeyset`.
+    ///        - `kind` selects the target keyset (any of the three) whose
+    ///          entries are swapped.
+    ///        - Six (signingKind × kind) combinations are valid; each has its
+    ///          own domain tag in the digest so a signature cannot be lifted
+    ///          across signing or target keysets.
+    ///      Behavior:
+    ///        - The signing keyset rotates `(currentKey → nextKey)` exactly
+    ///          once via `_verifyAndRotate`, which doubles as the
+    ///          membership integrity check for `signingKind`.
+    ///        - The target keyset undergoes `n` ordered `(remove, add)` pairs:
+    ///          `target.remove(oldKeys[i])` then `target.add(newKeys[i])` for
+    ///          each `i ∈ [0, n)`. Per-iteration remove-then-add keeps the
+    ///          set below `MAX_KEYS` at all times (reversing would trip the
+    ///          capacity cap since the target sits at `MAX_KEYS` by
+    ///          invariant).
+    ///        - One signature covers the entire batch; verification is not
+    ///          per-iteration.
+    ///      Caller obligations when `signingKind == kind`:
+    ///        - `currentKey` MUST NOT appear in `oldKeys` (signing rotation
+    ///          already removed it; the redundant remove reverts
+    ///          `KeyRemovalFailed`).
+    ///        - `nextKey` MUST NOT appear in `newKeys` (signing rotation
+    ///          already installed and burned it in `isKeySpent`; the
+    ///          redundant add reverts `KeyInUse`).
+    ///      Payload layout: [0:32) kind, [32:64) signingKind, [64:96) n,
+    ///      [96:160) currentKey, [160:224) nextKey, [224:2368) pqSig,
+    ///      [2368:2368+n*64) oldKeys, [2368+n*64:2368+2*n*64) newKeys.
+    /// @param payload Packed replaceKeys data (2368 + 2*n*64 bytes).
+    function replaceKeys(bytes calldata payload) external;
 
     /// @notice Returns the implementation version of this wallet.
     /// @dev Reads the ERC-1967 implementation slot and queries the factory for

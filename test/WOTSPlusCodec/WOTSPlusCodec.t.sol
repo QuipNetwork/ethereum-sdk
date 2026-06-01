@@ -167,6 +167,44 @@ contract WOTSPlusCodecTest is Test {
         }
     }
 
+    /// @dev Build a replaceKeys payload (2368 + 2*N*64 bytes).
+    ///      Layout: kind(32) + signingKind(32) + n(32) + currentKey(64) +
+    ///              nextKey(64) + pqSig(2144) + oldKeys(n*64) + newKeys(n*64).
+    ///      currentKey seeds at (seed, seed+1); nextKey at (seed+2, seed+3);
+    ///      pqSig at (seed+100..seed+166); oldKeys[i] at (seed+1000+i*2, ...+1);
+    ///      newKeys[i] at (seed+2000+i*2, ...+1). Ranges chosen to avoid
+    ///      collisions with other helpers.
+    function _buildReplaceKeysPayload(
+        uint256 seed,
+        uint256 n,
+        Codec.KeyType kind,
+        Codec.KeyType signingKind
+    ) internal pure returns (bytes memory payload) {
+        payload = abi.encodePacked(
+            bytes32(uint256(kind)),
+            bytes32(uint256(signingKind)),
+            bytes32(n)
+        );
+        // currentKey + nextKey + pqSig (2272 bytes)
+        payload = abi.encodePacked(payload, _buildAuthPrefixPayload(seed));
+        // oldKeys
+        for (uint256 i = 0; i < n; i++) {
+            payload = abi.encodePacked(
+                payload,
+                bytes32(seed + 1000 + i * 2),
+                bytes32(seed + 1001 + i * 2)
+            );
+        }
+        // newKeys
+        for (uint256 i = 0; i < n; i++) {
+            payload = abi.encodePacked(
+                payload,
+                bytes32(seed + 2000 + i * 2),
+                bytes32(seed + 2001 + i * 2)
+            );
+        }
+    }
+
     /// @dev Create N zero bytes.
     function _zeros(uint256 n) internal pure returns (bytes memory) {
         return new bytes(n);
