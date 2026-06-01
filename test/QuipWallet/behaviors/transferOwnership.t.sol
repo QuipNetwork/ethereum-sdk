@@ -165,7 +165,8 @@ contract QuipWallet_transferOwnership is QuipWalletTest {
             WOTSPlus.WinternitzAddress[] memory verKeys,
 
         ) = _seedVerificationKeys(3);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
+        // `_seedVerificationKeys` installs MAX_KEYS=10 via resetKeyset.
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
 
         // `_seedVerificationKeys` consumes txn key 0; re-read alicePubkey.
         alicePubkey = wallet.keyAt(Codec.KeyType.Transaction, 0);

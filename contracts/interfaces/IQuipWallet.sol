@@ -88,14 +88,12 @@ interface IQuipWallet {
     ///         Catastrophic for a one-time-signature scheme — silent under-rotation would leave a
     ///         spent WOTS+ key live in the active set.
     error KeyRemovalFailed();
-    /// @notice Thrown when an empty key array is provided to an add/refresh operation.
+    /// @notice Thrown by `replaceKeys` when `n == 0`.
     error EmptyKeys();
-    /// @notice Thrown when `refreshKeys` is called with `WOTSPlusCodec.KeyType.Transaction`.
-    /// @dev Only `recoverWallet` may drain the transaction keyset.
-    error RefreshTransactionForbidden();
-    /// @notice Thrown by `replaceKeys` when the caller-declared `signingKind` is
-    ///         `WOTSPlusCodec.KeyType.Verification`. Verification keys are not
-    ///         signing-capable; only Transaction or Recovery may authorize.
+    /// @notice Thrown by `replaceKeys` / `resetKeyset` when the caller-declared
+    ///         `signingKind` is `WOTSPlusCodec.KeyType.Verification`.
+    ///         Verification keys are not signing-capable; only Transaction or
+    ///         Recovery may authorize.
     error InvalidSigningKeyset();
     /// @notice Thrown by `replaceKeys` if the post-decode array lengths disagree
     ///         with the caller-supplied `n`. The codec already enforces
@@ -108,16 +106,6 @@ interface IQuipWallet {
     error MalformedPayload();
     /// @notice Thrown when the number of recovery keys provided is incorrect.
     error IncorrectRecoveryKeyAmount();
-    /// @notice Thrown when `replaceKeyAt(Transaction, index, newKey)` targets the same
-    ///         key the caller is signing with. The auth rotation already consumes that
-    ///         key; replacing it again in the same call is nonsensical.
-    error ReplaceAuthKeyForbidden();
-    /// @notice Thrown when `replaceKeyAt(Transaction, ..., newKey)` would install
-    ///         `newKey == currentKey` — i.e. the key the caller is signing with.
-    ///         The WOTS+ signature consumed during the auth rotation already
-    ///         reveals roughly half of `currentKey`'s secret, so re-installing
-    ///         it would seat a known-compromised key in the active set.
-    error ReinstallSpentKeyForbidden();
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
     /// @notice Thrown when the number of transaction keys provided to
@@ -252,24 +240,6 @@ interface IQuipWallet {
         bytes32 newRecoveryKeysHash
     );
 
-    /// @notice Emitted when keys are added to a keyset via `addKeys`.
-    /// @param kind The keyset that received the additions.
-    /// @param nextKey The installed transaction key after rotation.
-    /// @param count The number of keys added.
-    event KeysAdded(
-        WOTSPlusCodec.KeyType indexed kind,
-        WOTSPlus.WinternitzAddress nextKey,
-        uint256 count
-    );
-
-    /// @notice Emitted when a keyset is cleared and replaced via `refreshKeys`.
-    /// @param kind The keyset that was refreshed.
-    /// @param nextKey The installed transaction key after rotation.
-    event KeysRefreshed(
-        WOTSPlusCodec.KeyType indexed kind,
-        WOTSPlus.WinternitzAddress nextKey
-    );
-
     /// @notice Emitted when PQ state is migrated during an upgrade.
     /// @param transactionKeysHash `keccak256(abi.encode(transactionKeys))` of the
     ///        migrated transaction-key set. The full array is not emitted because
@@ -284,20 +254,6 @@ interface IQuipWallet {
     event RecoveryUpgrade(
         address indexed newImplementation,
         WOTSPlus.WinternitzAddress recoveryKey
-    );
-
-    /// @notice Emitted when a key at a specific index is replaced via `replaceKeyAt`.
-    /// @param kind The keyset whose entry was replaced.
-    /// @param index The index that was replaced.
-    /// @param oldKey The removed key.
-    /// @param newKey The replacement key.
-    /// @param nextKey The installed transaction key after the auth rotation.
-    event KeyReplaced(
-        WOTSPlusCodec.KeyType indexed kind,
-        uint256 indexed index,
-        WOTSPlus.WinternitzAddress oldKey,
-        WOTSPlus.WinternitzAddress newKey,
-        WOTSPlus.WinternitzAddress nextKey
     );
 
     /// @notice Emitted when an N-for-N key swap via `replaceKeys` succeeds.
@@ -317,6 +273,23 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress nextKey,
         WOTSPlus.WinternitzAddress[] oldKeys,
         WOTSPlus.WinternitzAddress[] newKeys
+    );
+
+    /// @notice Emitted when a keyset is wholesale-reset via `resetKeyset`.
+    /// @dev Emitted after the signing-keyset rotation and the target-set
+    ///      clear+install have committed. `kind` and `signingKind` together
+    ///      identify which of the 6 (signingKind × targetKind) variants ran.
+    /// @param kind The target keyset that was cleared and reinstalled.
+    /// @param signingKind The keyset that authorized the reset (Tx or Recovery).
+    /// @param currentKey The consumed (rotated-out) key from `signingKind` set.
+    /// @param nextKey The replacement key installed in `signingKind` set.
+    /// @param newKeys The 10 keys installed as the entire new target keyset.
+    event KeysetReset(
+        WOTSPlusCodec.KeyType indexed kind,
+        WOTSPlusCodec.KeyType indexed signingKind,
+        WOTSPlus.WinternitzAddress currentKey,
+        WOTSPlus.WinternitzAddress nextKey,
+        WOTSPlus.WinternitzAddress[10] newKeys
     );
 
     /// @notice Emitted when the inner call of an ERC-4337 execution reverts but
@@ -641,27 +614,6 @@ interface IQuipWallet {
     /// @param payload Packed saveWallet data (3232 bytes).
     function saveWallet(bytes calldata payload) external;
 
-    /// @notice Appends new keys to the target keyset, authorized by a WOTS+ signature.
-    /// @dev Consumes `currentKey` / installs `nextKey` from the transaction keyset.
-    ///      For `WOTSPlusCodec.KeyType.Transaction`, the extras are appended to
-    ///      the active transaction set;
-    ///      for `Recovery` / `Verification`, the target set is extended.
-    ///      The transaction rotation is committed before the target-set write.
-    ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
-    ///      [160:2304) pqSig, [2304:...) keys (N x 64).
-    /// @param payload Packed keyManagement data (>= 2304 bytes).
-    function addKeys(bytes calldata payload) external;
-
-    /// @notice Clears the target keyset and installs a fresh batch.
-    /// @dev Reverts with `RefreshTransactionForbidden` when
-    ///      `kind == WOTSPlusCodec.KeyType.Transaction` —
-    ///      only `recoverWallet` may drain the transaction keyset.
-    ///      Consumes `currentKey` / installs `nextKey` from the transaction keyset.
-    ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
-    ///      [160:2304) pqSig, [2304:...) keys (N x 64).
-    /// @param payload Packed keyManagement data (>= 2304 bytes).
-    function refreshKeys(bytes calldata payload) external;
-
     /// @notice Emergency upgrade authorized by a recovery key, without migration.
     /// @dev Verifies the recovery-key signature, delegatecalls `verifyRecoveryUpgrade` on
     ///      the new implementation, then rotates the consumed recovery key in place —
@@ -676,20 +628,6 @@ interface IQuipWallet {
         address newImplementation,
         bytes calldata payload
     ) external;
-
-    /// @notice Replaces a single key at the given index in the keyset selected by
-    ///         `kind`. Authorized by a transaction-key rotation.
-    /// @dev Removes the key at `index` and installs `newKey` in its place on the
-    ///      target keyset. The auth rotation (currentKey → nextKey) always runs on
-    ///      the transaction keyset. For `kind == Transaction` the target keyset is
-    ///      the same as the auth keyset — the key at `index` must NOT equal
-    ///      `currentKey` (reverts with `ReplaceAuthKeyForbidden`). The two
-    ///      operations ordering is read-oldKey → auth-rotate → remove-oldKey →
-    ///      add-newKey, so `oldKey` is captured from the pre-rotation snapshot.
-    ///      Payload layout: [0:32) kind, [32:96) currentKey, [96:160) nextKey,
-    ///      [160:2304) pqSig, [2304:2336) index, [2336:2400) newKey.
-    /// @param payload Packed replaceKeyAt data (2400 bytes).
-    function replaceKeyAt(bytes calldata payload) external;
 
     /// @notice Atomically swaps N keys in/out of the target keyset under one
     ///         WOTS+ signature. The signing keyset may differ from the target,
@@ -727,6 +665,42 @@ interface IQuipWallet {
     ///      [2368:2368+n*64) oldKeys, [2368+n*64:2368+2*n*64) newKeys.
     /// @param payload Packed replaceKeys data (2368 + 2*n*64 bytes).
     function replaceKeys(bytes calldata payload) external;
+
+    /// @notice Wholesale clears the target keyset and reinstalls 10 fresh keys
+    ///         under one WOTS+ signature. The signing keyset may differ from
+    ///         the target, enabling cross-keyset authorization.
+    /// @dev Authorization model:
+    ///        - `signingKind` ∈ {Transaction, Recovery}. Verification is
+    ///          rejected with `InvalidSigningKeyset`.
+    ///        - `kind` selects the target keyset (any of the three) that is
+    ///          cleared and reinstalled.
+    ///        - Six (signingKind × kind) combinations are valid; each has its
+    ///          own domain tag in the digest so a signature cannot be lifted
+    ///          across signing or target keysets.
+    ///      Behavior:
+    ///        - The signing keyset rotates `(currentKey → nextKey)` exactly
+    ///          once via `_verifyAndRotate`, which doubles as the membership
+    ///          integrity check for `signingKind`.
+    ///        - The target keyset is `_clearKeys`'d (single-pass remove),
+    ///          then 10 `_safeAddKey` calls install `newKeys` in order. Each
+    ///          add is guarded by the global `isKeySpent` index, so any
+    ///          historically-installed key (including `currentKey` and
+    ///          `nextKey`) is rejected with `KeyInUse`.
+    ///        - One signature covers the whole reset; verification is not
+    ///          per-key.
+    ///      Same-keyset auth (`signingKind == kind`) sequencing:
+    ///        - Rotate adds `nextKey` to the target; clear wipes it again;
+    ///          install loop rebuilds the target from `newKeys`. The caller
+    ///          MUST NOT include `currentKey` or `nextKey` in `newKeys` — the
+    ///          burn index will reject either with `KeyInUse`.
+    ///      Resets the target to exactly `MAX_KEYS` entries regardless of its
+    ///      starting size (works even when the verification keyset is empty
+    ///      before the always-10 invariant is established).
+    ///      Payload layout: [0:32) kind, [32:64) signingKind,
+    ///      [64:128) currentKey, [128:192) nextKey, [192:2336) pqSig,
+    ///      [2336:2976) newKeys[10].
+    /// @param payload Packed resetKeyset data (2976 bytes).
+    function resetKeyset(bytes calldata payload) external;
 
     /// @notice Returns the implementation version of this wallet.
     /// @dev Reads the ERC-1967 implementation slot and queries the factory for

@@ -29,11 +29,19 @@ contract QuipWalletHarness is QuipWallet {
         return $.verificationKeys;
     }
 
+    /// @dev Test-only setup helper that bulk-installs an array of keys via
+    ///      the burn-index-checked `_safeAddKey` primitive. Replaces the
+    ///      retired `_addKeys` wallet helper. Callers that exceed `MAX_KEYS`
+    ///      or supply a historically-spent key get the corresponding
+    ///      `_safeAddKey` revert (`KeyAdditionFailed` / `KeyInUse`).
     function exposed_addKeys(
         HarnessKeyset kind,
         WOTSPlus.WinternitzAddress[] calldata keys
     ) external {
-        _addKeys(_set(kind), keys);
+        Keyset.WinternitzAddressSet storage set = _set(kind);
+        for (uint256 i = 0; i < keys.length; i++) {
+            _safeAddKey(set, keys[i]);
+        }
     }
 
     function exposed_clearKeys(HarnessKeyset kind) external {
@@ -171,10 +179,6 @@ contract QuipWalletHarness is QuipWallet {
         bytes32 digest
     ) external {
         _verifyAndRotate(_set(kind), currentKey, nextKey, pqSig, digest);
-    }
-
-    function exposed_manageKeys(bytes calldata payload, bool replace) external {
-        _manageKeys(payload, replace);
     }
 
     /// @dev Exposes `_keyset` by returning the set's length — a proxy observation since

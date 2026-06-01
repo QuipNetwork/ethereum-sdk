@@ -18,7 +18,7 @@ import {WOTSPlusStorage as Storage} from "../../../contracts/storage/WOTSPlusSto
 ///
 ///      2. BIT-FOR-BIT PRESERVATION (full-state): heavily populate a V1 wallet
 ///         (transactionKeys, recoveryKeys, eager-phase verificationKeys with at
-///         least one position-mapping update via `replaceKeyAt`), `vm.load`
+///         least one position-mapping update via `replaceKeys`), `vm.load`
 ///         every slot that holds wallet state, run a no-migration upgrade,
 ///         re-load, and `assertEq`. Allowed deltas: the ERC-1967 impl slot
 ///         (V1 → V2) and the transactionKeys rotation that
@@ -150,7 +150,7 @@ contract QuipWallet_upgradeToAndCall_layoutPreservation is QuipWalletTest {
 
         assertEq(uint256(vm.load(address(wallet), ~txnRoot)), (5 << 1) | 1);
         assertEq(uint256(vm.load(address(wallet), ~recRoot)), (10 << 1) | 1);
-        // Verification: empty (no addKeys for verification yet).
+        // Verification: empty (no seeding yet — verification starts empty).
         assertEq(uint256(vm.load(address(wallet), ~vrfRoot)), 0);
 
         // Sanity: element 0 of the txn keyset matches alicePubkey via raw load.
@@ -215,7 +215,8 @@ contract QuipWallet_upgradeToAndCall_layoutPreservation is QuipWalletTest {
         assertEq(wallet.quipFactory(), address(factory));
         assertEq(wallet.keyCount(Codec.KeyType.Transaction), 5);
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 7);
+        // `_seedVerificationKeys` installs MAX_KEYS=10 via resetKeyset.
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

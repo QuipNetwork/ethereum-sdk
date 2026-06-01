@@ -16,7 +16,7 @@ contract QuipWalletTest is QuipFactoryTest {
     WOTSPlus.WinternitzAddress public alicePubkey;
     bytes32 public alicePrivateKey;
     /// @dev The full initial set of 5 transaction keys, for tests that need to access
-    ///      more than one key at once (e.g. multi-key, addKeys(Transaction, …), drain).
+    ///      more than one key at once (e.g. multi-key swap via replaceKeys, drain).
     WOTSPlus.WinternitzAddress[5] public aliceTxnPubkeys;
     bytes32[5] public aliceTxnPrivkeys;
     WOTSPlus.WinternitzAddress[] public recoveryPubkeys;
@@ -118,46 +118,6 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
-    function _buildAddRecoveryKeysMessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory nextPq,
-        WOTSPlus.WinternitzAddress[] memory newKeys
-    ) internal view returns (bytes32) {
-        return
-            Codec.keysetDigest(
-                Codec.KeyType.Recovery,
-                false, // replace = false (append mode for addKeys)
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(newKeys))
-            );
-    }
-
-    function _buildReplenishRecoveryKeysMessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory nextPq,
-        WOTSPlus.WinternitzAddress[] memory newKeys
-    ) internal view returns (bytes32) {
-        return
-            Codec.keysetDigest(
-                Codec.KeyType.Recovery,
-                true, // replace = true (clear-then-replace mode for refreshKeys)
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(newKeys))
-            );
-    }
-
     function _buildTransferOwnershipMessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory currentPq,
@@ -175,69 +135,6 @@ contract QuipWalletTest is QuipFactoryTest {
                 nextPq.publicKeyHash,
                 newOwner,
                 keysHash
-            );
-    }
-
-    function _buildAddVerificationKeysMessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory nextPq,
-        WOTSPlus.WinternitzAddress[] memory newKeys
-    ) internal view returns (bytes32) {
-        return
-            Codec.keysetDigest(
-                Codec.KeyType.Verification,
-                false, // replace = false (append mode for addKeys)
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(newKeys))
-            );
-    }
-
-    function _buildReplenishVerificationKeysMessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory nextPq,
-        WOTSPlus.WinternitzAddress[] memory newKeys
-    ) internal view returns (bytes32) {
-        return
-            Codec.keysetDigest(
-                Codec.KeyType.Verification,
-                true, // replace = true (clear-then-replace mode for refreshKeys)
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(newKeys))
-            );
-    }
-
-    function _buildReplaceKeyAtMessageHash(
-        Codec.KeyType kind,
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory currentPq,
-        WOTSPlus.WinternitzAddress memory nextPq,
-        uint256 index,
-        WOTSPlus.WinternitzAddress memory newKey
-    ) internal view returns (bytes32) {
-        return
-            Codec.replaceKeyAtDigest(
-                kind,
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                index,
-                newKey.publicSeed,
-                newKey.publicKeyHash
             );
     }
 
@@ -266,6 +163,28 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
+    function _buildResetKeysetMessageHash(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory nextPq,
+        WOTSPlus.WinternitzAddress[10] memory newKeys
+    ) internal view returns (bytes32) {
+        return
+            Codec.resetKeysetDigest(
+                kind,
+                signingKind,
+                wallet_,
+                block.chainid,
+                currentPq.publicSeed,
+                currentPq.publicKeyHash,
+                nextPq.publicSeed,
+                nextPq.publicKeyHash,
+                keccak256(abi.encode(newKeys))
+            );
+    }
+
     function _buildErc1271MessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory verifier,
@@ -281,10 +200,14 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
-    /// @dev Seeds the default `wallet`'s verificationKeys with `n` fresh keys by signing
-    ///      an `addKeys(KeyType.Verification, …)` call with the current pqOwner. Rotates
-    ///      `alicePubkey` / `alicePrivateKey` to a fresh pqOwner so downstream calls keep working.
-    /// @return keys The generated Winternitz public keys now in the keys set.
+    /// @dev Seeds the default `wallet`'s verificationKeys via `resetKeyset` —
+    ///      the always-10 invariant means we always install exactly 10 fresh
+    ///      keys on each call, regardless of `n`. Returns the first `n` of
+    ///      them so existing callers that asked for `_seedVerificationKeys(k)`
+    ///      get a `k`-length pair of pubkey/privkey arrays without rewriting.
+    ///      Rotates `alicePubkey` / `alicePrivateKey` to a fresh tx key so
+    ///      downstream calls keep working.
+    /// @return keys The first `n` Winternitz pubkeys installed in the set.
     /// @return privateKeys Matching private keys for signing ERC-1271 messages.
     function _seedVerificationKeys(
         uint256 n
@@ -295,11 +218,13 @@ contract QuipWalletTest is QuipFactoryTest {
             bytes32[] memory privateKeys
         )
     {
-        keys = new WOTSPlus.WinternitzAddress[](n);
-        privateKeys = new bytes32[](n);
-        for (uint256 i = 0; i < n; i++) {
-            bytes32 seed = keccak256(abi.encodePacked("vk-seed", i));
-            (keys[i], privateKeys[i]) = _generateKeyPair(seed);
+        WOTSPlus.WinternitzAddress[10] memory all10;
+        bytes32[10] memory priv10;
+        for (uint256 i = 0; i < 10; i++) {
+            bytes32 seed = keccak256(
+                abi.encodePacked("vk-seed", alicePrivateKey, i)
+            );
+            (all10[i], priv10[i]) = _generateKeyPair(seed);
         }
 
         (
@@ -311,11 +236,13 @@ contract QuipWalletTest is QuipFactoryTest {
                 )
             );
 
-        bytes32 msgHash = _buildAddVerificationKeysMessageHash(
+        bytes32 msgHash = _buildResetKeysetMessageHash(
+            Codec.KeyType.Verification,
+            Codec.KeyType.Transaction,
             address(wallet),
             alicePubkey,
             nextPq,
-            keys
+            all10
         );
         WOTSPlus.WinternitzElements memory sig = _sign(
             alicePrivateKey,
@@ -323,11 +250,26 @@ contract QuipWalletTest is QuipFactoryTest {
         );
 
         vm.prank(ALICE);
-        wallet.addKeys(Codec.encodeKeyManagement(Codec.KeyType.Verification, alicePubkey, nextPq, sig, keys)
+        wallet.resetKeyset(
+            Codec.encodeResetKeyset(
+                Codec.KeyType.Verification,
+                Codec.KeyType.Transaction,
+                alicePubkey,
+                nextPq,
+                sig,
+                all10
+            )
         );
 
         alicePubkey = nextPq;
         alicePrivateKey = nextPqKey;
+
+        keys = new WOTSPlus.WinternitzAddress[](n);
+        privateKeys = new bytes32[](n);
+        for (uint256 i = 0; i < n; i++) {
+            keys[i] = all10[i];
+            privateKeys[i] = priv10[i];
+        }
     }
 
     function _buildRecoveryUpgradeMessageHash(

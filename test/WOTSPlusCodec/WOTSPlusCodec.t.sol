@@ -95,7 +95,7 @@ contract WOTSPlusCodecTest is Test {
 
     /// @dev Build a 2272-byte auth-rotation prefix payload — the shared
     ///      `currentKey | nextKey | pqSig` shape that prefixes most authenticated
-    ///      payloads (execute, withdrawDeposit, replaceKeyAt, ownership transfer,
+    ///      payloads (execute, withdrawDeposit, replaceKeys, ownership transfer,
     ///      4337 user-op signature).
     ///      Layout: currentKey(64) + nextKey(64) + pqSig(2144).
     function _buildAuthPrefixPayload(
@@ -147,26 +147,6 @@ contract WOTSPlusCodecTest is Test {
         }
     }
 
-    /// @dev Build a keyManagement payload (2304 + N*64 bytes).
-    function _buildKeyManagementPayload(
-        uint256 seed,
-        uint256 numKeys,
-        Codec.KeyType kind
-    ) internal pure returns (bytes memory payload) {
-        payload = abi.encodePacked(bytes32(uint256(kind)));
-        payload = abi.encodePacked(
-            payload,
-            _buildAuthPrefixPayload(seed)
-        );
-        for (uint256 i = 0; i < numKeys; i++) {
-            payload = abi.encodePacked(
-                payload,
-                bytes32(seed + 500 + i * 2),
-                bytes32(seed + 501 + i * 2)
-            );
-        }
-    }
-
     /// @dev Build a replaceKeys payload (2368 + 2*N*64 bytes).
     ///      Layout: kind(32) + signingKind(32) + n(32) + currentKey(64) +
     ///              nextKey(64) + pqSig(2144) + oldKeys(n*64) + newKeys(n*64).
@@ -201,6 +181,30 @@ contract WOTSPlusCodecTest is Test {
                 payload,
                 bytes32(seed + 2000 + i * 2),
                 bytes32(seed + 2001 + i * 2)
+            );
+        }
+    }
+
+    /// @dev Build a resetKeyset payload (2976 bytes, fixed).
+    ///      Layout: kind(32) + signingKind(32) + currentKey(64) + nextKey(64) +
+    ///              pqSig(2144) + newKeys[10](640).
+    ///      currentKey/nextKey/pqSig seed offsets match `_buildAuthPrefixPayload`.
+    ///      newKeys[i] at (seed+3000+i*2, ...+1).
+    function _buildResetKeysetPayload(
+        uint256 seed,
+        Codec.KeyType kind,
+        Codec.KeyType signingKind
+    ) internal pure returns (bytes memory payload) {
+        payload = abi.encodePacked(
+            bytes32(uint256(kind)),
+            bytes32(uint256(signingKind))
+        );
+        payload = abi.encodePacked(payload, _buildAuthPrefixPayload(seed));
+        for (uint256 i = 0; i < 10; i++) {
+            payload = abi.encodePacked(
+                payload,
+                bytes32(seed + 3000 + i * 2),
+                bytes32(seed + 3001 + i * 2)
             );
         }
     }

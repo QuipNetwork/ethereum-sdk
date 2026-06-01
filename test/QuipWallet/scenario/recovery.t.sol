@@ -80,7 +80,8 @@ contract QuipWallet_recovery is QuipWalletTest {
         currentPrivKey = newPrivKey;
     }
 
-    /// @dev Replenish recovery keys using the current PQ key.
+    /// @dev Replenish recovery keys using the current PQ key. Uses
+    ///      `resetKeyset(Recovery)` tx-signed by the active transaction key.
     function _replenishKeys(
         bytes32 newRecoverySeed
     ) internal returns (WOTSPlus.WinternitzAddress[] memory newKeys) {
@@ -90,18 +91,34 @@ contract QuipWallet_recovery is QuipWalletTest {
             keccak256(abi.encodePacked(newRecoverySeed, "next-pq"))
         );
 
-        newKeys = _generateRecoveryKeys(newRecoverySeed, 10);
+        WOTSPlus.WinternitzAddress[10] memory newKeys10;
+        WOTSPlus.WinternitzAddress[]
+            memory genKeys = _generateRecoveryKeys(newRecoverySeed, 10);
+        for (uint256 i = 0; i < 10; i++) {
+            newKeys10[i] = genKeys[i];
+        }
+        newKeys = genKeys;
 
-        bytes32 digest = _buildReplenishRecoveryKeysMessageHash(
+        bytes32 digest = _buildResetKeysetMessageHash(
+            Codec.KeyType.Recovery,
+            Codec.KeyType.Transaction,
             address(wallet),
             currentPq,
             nextPq,
-            newKeys
+            newKeys10
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, digest);
 
         vm.prank(wallet.owner());
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Recovery, currentPq, nextPq, sig, newKeys)
+        wallet.resetKeyset(
+            Codec.encodeResetKeyset(
+                Codec.KeyType.Recovery,
+                Codec.KeyType.Transaction,
+                currentPq,
+                nextPq,
+                sig,
+                newKeys10
+            )
         );
 
         currentPq = nextPq;
@@ -191,7 +208,7 @@ contract QuipWallet_recovery is QuipWalletTest {
         _recoverWith(0, recoveryPubkeys, alicePrivateKey, "replenish-pq-1");
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
-        // Step 2: Replenish with fresh 10 recovery keys (refreshKeys clears+adds).
+        // Step 2: Replenish with fresh 10 recovery keys via resetKeyset.
         bytes32 newRecoverySeed = keccak256("new-recovery-seed");
         WOTSPlus.WinternitzAddress[] memory newKeys = _replenishKeys(
             newRecoverySeed

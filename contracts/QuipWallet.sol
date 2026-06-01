@@ -727,83 +727,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function addKeys(bytes calldata payload) public onlyOwner {
-        _manageKeys(payload, false);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function refreshKeys(bytes calldata payload) public onlyOwner {
-        _manageKeys(payload, true);
-    }
-
-    /// @inheritdoc IQuipWallet
-    function replaceKeyAt(bytes calldata payload) public onlyOwner {
-        (
-            Codec.KeyType kind,
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            uint256 index,
-            WOTSPlus.WinternitzAddress calldata newKey
-        ) = Codec.decodeReplaceKeyAt(payload);
-
-        Storage.Layout storage $ = Storage.layout();
-        Keyset.WinternitzAddressSet storage target = _keyset(kind);
-
-        // Snapshot `oldKey` before the auth rotation so the position reference is
-        // stable. `at` reverts with `Keyset.IndexOutOfBounds` if `index` is out of
-        // range, so no separate bounds check is needed here.
-        WOTSPlus.WinternitzAddress memory oldKey = target.at(index);
-
-        // Pre-verify guards. Catch malformed payloads before paying for digest
-        // hashing and WOTS+ verification.
-        //
-        // 1. `oldKey == currentKey` (Transaction only): the auth rotation
-        //    consumes `currentKey`, so trying to also replace it at its own
-        //    slot would double-remove. Standalone rotation is achievable via
-        //    any other transaction-key-bearing operation.
-        if (
-            kind == Codec.KeyType.Transaction &&
-            oldKey.publicSeed == currentKey.publicSeed &&
-            oldKey.publicKeyHash == currentKey.publicKeyHash
-        ) revert ReplaceAuthKeyForbidden();
-        // 2. `newKey == currentKey` (Transaction only): prevent double use of WOTS
-        if (
-            kind == Codec.KeyType.Transaction &&
-            newKey.publicSeed == currentKey.publicSeed &&
-            newKey.publicKeyHash == currentKey.publicKeyHash
-        ) revert ReinstallSpentKeyForbidden();
-        // 3. `newKey == oldKey` (any kind): a remove-then-add of the same key
-        //    is a no-op shaped operation, almost certainly a payload-builder
-        //    bug. `_enforceDifferentKeys` reverts `SameKey`.
-        _enforceDifferentKeys(oldKey, newKey);
-
-        bytes32 digest = Codec.replaceKeyAtDigest(
-            kind,
-            address(this),
-            block.chainid,
-            currentKey.publicSeed,
-            currentKey.publicKeyHash,
-            nextKey.publicSeed,
-            nextKey.publicKeyHash,
-            index,
-            newKey.publicSeed,
-            newKey.publicKeyHash
-        );
-
-        _verifyAndRotate($.transactionKeys, currentKey, nextKey, pqSig, digest);
-
-        // Indexed replacement on `target`. Goes through `_rotateKeys` (which
-        // wraps the safe remove + safe add primitives) so a library-level
-        // bool=false on either op reverts loudly via `KeyRemovalFailed` /
-        // `KeyAdditionFailed`. The size-neutral remove-then-add preserves the
-        // MAX_KEYS cap.
-        _rotateKeys(target, oldKey, newKey);
-
-        emit KeyReplaced(kind, index, oldKey, newKey, nextKey);
-    }
-
-    /// @inheritdoc IQuipWallet
     /// @dev N-for-N swap on target keyset `kind`, authorized by one WOTS+
     ///      signature from `signingKind` (tx or recovery). Codec asserts
     ///      payload structural integrity: `payload.length == 2368 + 2*n*64`
@@ -883,6 +806,69 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             oldKeys,
             newKeys
         );
+    }
+
+    /// @inheritdoc IQuipWallet
+    /// @dev Wholesale reset of target keyset `kind`, authorized by one WOTS+
+    ///      signature from `signingKind` (tx or recovery). Sequence is:
+    ///      verify+rotate signing keyset → clear target → install 10 new keys.
+    ///      When `signingKind == kind`, the rotation transiently adds
+    ///      `nextKey` to the target, which the subsequent `_clearKeys` wipes;
+    ///      `_safeAddKey`'s burn-index guard then rejects any `newKeys[i]`
+    ///      matching `currentKey` or `nextKey` with `KeyInUse`.
+    ///      Codec asserts the fixed 2976-byte payload length, so no
+    ///      wallet-level length re-assertion is needed.
+    function resetKeyset(bytes calldata payload) public onlyOwner {
+        (
+            Codec.KeyType kind,
+            Codec.KeyType signingKind,
+            WOTSPlus.WinternitzAddress calldata currentKey,
+            WOTSPlus.WinternitzAddress calldata nextKey,
+            WOTSPlus.WinternitzElements calldata pqSig,
+            WOTSPlus.WinternitzAddress[10] calldata newKeys
+        ) = Codec.decodeResetKeyset(payload);
+
+        if (signingKind == Codec.KeyType.Verification)
+            revert InvalidSigningKeyset();
+
+        // SECURITY — CEI. The signing rotation IS the Effect that prevents
+        // signed-payload replay: `_verifyAndRotate` removes `currentKey` from
+        // the signing set, so a re-entrant call replaying this payload
+        // reverts with `UnknownKey`. Target-set mutations below are purely
+        // internal — no external interactions on this path — but ordering
+        // still matters if a future refactor introduces one.
+        _verifyAndRotate(
+            _keyset(signingKind),
+            currentKey,
+            nextKey,
+            pqSig,
+            Codec.resetKeysetDigest(
+                kind,
+                signingKind,
+                address(this),
+                block.chainid,
+                currentKey.publicSeed,
+                currentKey.publicKeyHash,
+                nextKey.publicSeed,
+                nextKey.publicKeyHash,
+                EfficientHashLib.hash(abi.encode(newKeys))
+            )
+        );
+
+        Keyset.WinternitzAddressSet storage target = _keyset(kind);
+
+        // Wipe the target in a single pass, then install the 10 fresh keys.
+        // `_clearKeys` is a no-op on an empty set (verification keyset before
+        // the always-10 invariant is established). The install loop calls
+        // `_safeAddKey` which enforces the burn-index check — any historical
+        // key, including `currentKey` and `nextKey` from the rotation above,
+        // reverts `KeyInUse`.
+        _clearKeys(target);
+        for (uint256 i = 0; i < 10; ++i) {
+            _safeAddKey(target, newKeys[i]);
+        }
+
+        emit KeysetReset(kind, signingKind, currentKey, nextKey, newKeys);
     }
 
     /// @inheritdoc IQuipWallet
@@ -1080,7 +1066,7 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     /// @dev EIP-1271 mandates `view`, so this function cannot burn the verifier
     ///      on-chain. Caller obligations:
     ///        - Rotate the verifier after each signature via
-    ///          `replaceKeyAt(KeyType.Verification, ...)`. WOTS+ leaks chain
+    ///          `replaceKeys(KeyType.Verification, ...)`. WOTS+ leaks chain
     ///          material on every signature, so multi-use erodes unforgeability —
     ///          a cryptographic requirement, not just integrator hygiene.
     ///        - Bake a nonce / deadline into the signed `hash`. The wallet
@@ -1177,20 +1163,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         return Erc1271ValidationResult.Ok;
     }
 
-    /// @dev Appends calldata-provided keys to `set`, capped at `MAX_KEYS`. Each add
-    ///      goes through `_safeAddKey` so the global uniqueness pre-check catches
-    ///      cross-keyset collisions (`KeyInUse`) and within-batch duplicates
-    ///      (the second occurrence finds the first already in `set`).
-    function _addKeys(
-        Keyset.WinternitzAddressSet storage set,
-        WOTSPlus.WinternitzAddress[] calldata keys
-    ) internal {
-        uint256 len = keys.length;
-        for (uint256 i = 0; i < len; ++i) {
-            _safeAddKey(set, keys[i]);
-        }
-    }
-
     /// @dev Drains all entries from `set` via the library's single-pass
     ///      `clear()` helper. Snapshots the prior length and asserts the
     ///      returned count matches so a library invariant violation still
@@ -1205,8 +1177,8 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
 
     /// @dev Removes `currentKey` and installs `nextKey` in `set`. Remove-then-add
     ///      preserves size so a rotation at full capacity cannot trip the `MAX_KEYS` cap.
-    ///      Memory-typed parameters so callers can pass either calldata (auto-copied)
-    ///      or memory keys (e.g. from `target.at(index)` in `replaceKeyAt`).
+    ///      Memory-typed parameters so callers can pass either calldata
+    ///      (auto-copied) or memory keys.
     function _rotateKeys(
         Keyset.WinternitzAddressSet storage set,
         WOTSPlus.WinternitzAddress memory currentKey,
@@ -1246,53 +1218,6 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             )
         ) revert InvalidSignature();
         _rotateKeys(set, currentKey, nextKey);
-    }
-
-    /// @dev Shared worker for `addKeys` (append) and `refreshKeys` (clear-then-replace).
-    ///      Decodes the payload, enforces/verifies/rotates the transaction keyset, then
-    ///      applies the side-effect on the target keyset selected by `kind`.
-    ///      For `replace == true`, disallows `Codec.KeyType.Transaction` and clears the target
-    ///      before appending — emits `KeysRefreshed`. Otherwise emits `KeysAdded`.
-    function _manageKeys(bytes calldata payload, bool replace) internal {
-        (
-            Codec.KeyType kind,
-            WOTSPlus.WinternitzAddress calldata currentKey,
-            WOTSPlus.WinternitzAddress calldata nextKey,
-            WOTSPlus.WinternitzElements calldata pqSig,
-            WOTSPlus.WinternitzAddress[] calldata newKeys
-        ) = Codec.decodeKeyManagement(payload);
-
-        if (replace && kind == Codec.KeyType.Transaction)
-            revert RefreshTransactionForbidden();
-        if (newKeys.length == 0) revert EmptyKeys();
-
-        bytes32 keysHash = EfficientHashLib.hash(abi.encode(newKeys));
-        bytes32 digest = Codec.keysetDigest(
-            kind,
-            replace,
-            address(this),
-            block.chainid,
-            currentKey.publicSeed,
-            currentKey.publicKeyHash,
-            nextKey.publicSeed,
-            nextKey.publicKeyHash,
-            keysHash
-        );
-
-        _verifyAndRotate(
-            Storage.layout().transactionKeys,
-            currentKey,
-            nextKey,
-            pqSig,
-            digest
-        );
-
-        Keyset.WinternitzAddressSet storage target = _keyset(kind);
-        if (replace) _clearKeys(target);
-        _addKeys(target, newKeys);
-
-        if (replace) emit KeysRefreshed(kind, nextKey);
-        else emit KeysAdded(kind, nextKey, newKeys.length);
     }
 
     /// @dev Returns the target keyset for `kind`.
