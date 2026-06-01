@@ -89,9 +89,10 @@ contract QuipWallet_keyAt is QuipWalletTest {
     }
 
     function test_keyAt_verificationRevertsWhen_outOfBounds() public {
+        // resetKeyset installs MAX_KEYS=10; out-of-bounds is at index 10.
         _seedVerificationKeys(2);
         vm.expectRevert(Keyset.IndexOutOfBounds.selector);
-        wallet.keyAt(Codec.KeyType.Verification, 2);
+        wallet.keyAt(Codec.KeyType.Verification, 10);
     }
 
     function test_keyAt_verificationRevertsWhen_emptySet() public {

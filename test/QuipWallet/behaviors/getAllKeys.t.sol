@@ -57,8 +57,9 @@ contract QuipWallet_getAllKeys is QuipWalletTest {
             );
         }
 
-        // Verification batch covers the seeded entries.
-        assertEq(snap.verificationKeys.length, 2);
+        // `_seedVerificationKeys` always installs MAX_KEYS=10 via resetKeyset
+        // (the `2` requested only sets the size of the returned helper array).
+        assertEq(snap.verificationKeys.length, 10);
         assertEq(verificationSeeded.length, 2);
     }
 

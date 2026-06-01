@@ -8,10 +8,10 @@ import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
 
 /// @dev Tests for `replaceKeys` when `kind == KeyType.Verification`.
-///      The verification set inits empty; tests seed it with `n` fresh keys
-///      via `_seedVerificationKeys` (which signs an `addKeys(Verification,…)`
-///      call) before exercising replaceKeys. Both Transaction-signed and
-///      Recovery-signed paths are covered.
+///      The verification set inits empty; tests seed it with 5 fresh keys
+///      directly via the harness escape hatch (`exposed_safeAddKey`) before
+///      exercising replaceKeys. Both Transaction-signed and Recovery-signed
+///      paths are covered.
 contract QuipWallet_replaceKeys_Verification is QuipWalletTest {
     QuipWalletHarness public harnessProxy;
     WOTSPlus.WinternitzAddress[] internal seededVerifierKeys;
@@ -34,8 +34,9 @@ contract QuipWallet_replaceKeys_Verification is QuipWalletTest {
         harnessProxy = QuipWalletHarness(payable(proxyAddr));
 
         // Seed 5 verification keys directly via the harness escape hatch so
-        // we don't have to thread an `addKeys(Verification, …)` flow through
-        // every test's setup (which would also rotate the tx signing key).
+        // we don't have to thread a `resetKeyset(Verification, …)` flow
+        // through every test's setup (which would install 10 and rotate the
+        // tx signing key).
         for (uint256 i = 0; i < 5; i++) {
             (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
                 keccak256(abi.encode("verif-seed", i))

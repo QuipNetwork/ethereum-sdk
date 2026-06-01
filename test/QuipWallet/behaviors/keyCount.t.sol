@@ -19,35 +19,11 @@ contract QuipWallet_keyCount is QuipWalletTest {
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 0);
     }
 
-    function test_keyCount_verificationTracksAddsAndRefreshes() public {
+    function test_keyCount_verificationTracksResetKeyset() public {
+        // `_seedVerificationKeys` installs exactly MAX_KEYS=10 via resetKeyset
+        // regardless of the requested `n`. A second call wipes-and-reinstalls
+        // another 10. Either way the count after seeding is 10.
         _seedVerificationKeys(3);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
-
-        // Refresh with 5 fresh keys.
-        WOTSPlus.WinternitzAddress[]
-            memory fresh = new WOTSPlus.WinternitzAddress[](5);
-        for (uint256 i = 0; i < 5; i++) {
-            (fresh[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked("count-refresh", i))
-            );
-        }
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "count-refresh-next"
-        );
-        bytes32 msgHash = _buildReplenishVerificationKeysMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            fresh
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
-        vm.prank(ALICE);
-        wallet.refreshKeys(Codec.encodeKeyManagement(Codec.KeyType.Verification, alicePubkey, nextPq, sig, fresh)
-        );
-
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 5);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
     }
 }

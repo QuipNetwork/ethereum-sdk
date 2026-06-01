@@ -103,7 +103,8 @@ contract QuipWallet_saveWallet is QuipWalletTest {
             WOTSPlus.WinternitzAddress[] memory verKeys,
 
         ) = _seedVerificationKeys(3);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
+        // `_seedVerificationKeys` installs MAX_KEYS=10 via resetKeyset.
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
 
         // Seeding consumes the initial transaction key; derive current disaster key
         // from the unchanged vault seed. The current disaster key is still in storage.
@@ -124,7 +125,7 @@ contract QuipWallet_saveWallet is QuipWalletTest {
         );
 
         // Verification keyset is untouched.
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 3);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         for (uint256 i = 0; i < 3; i++) {
             assertTrue(wallet.isKey(Codec.KeyType.Verification, verKeys[i]));
         }

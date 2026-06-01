@@ -78,28 +78,27 @@ contract QuipWallet_getKeyset is QuipWalletTest {
     }
 
     function test_getKeyset_verificationReturnsSeededBatch() public {
+        // `_seedVerificationKeys` always installs MAX_KEYS=10 (returns the
+        // first `n` of them). The full keyset must contain each returned key.
         (WOTSPlus.WinternitzAddress[] memory seeded, ) = _seedVerificationKeys(
             3
         );
         WOTSPlus.WinternitzAddress[] memory keys = wallet.getKeyset(
             Codec.KeyType.Verification
         );
-        assertEq(keys.length, 3);
-        bool[3] memory seen;
-        for (uint256 i = 0; i < keys.length; i++) {
-            bool matched;
-            for (uint256 j = 0; j < 3; j++) {
+        assertEq(keys.length, 10);
+        for (uint256 j = 0; j < seeded.length; j++) {
+            bool found;
+            for (uint256 i = 0; i < keys.length; i++) {
                 if (
                     seeded[j].publicSeed == keys[i].publicSeed &&
                     seeded[j].publicKeyHash == keys[i].publicKeyHash
                 ) {
-                    assertFalse(seen[j], "duplicate verification key");
-                    seen[j] = true;
-                    matched = true;
+                    found = true;
                     break;
                 }
             }
-            assertTrue(matched, "verification key not found in seeded batch");
+            assertTrue(found, "seeded key not present in keyset");
         }
     }
 }
