@@ -241,6 +241,31 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
+    function _buildReplaceKeysMessageHash(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        address wallet_,
+        WOTSPlus.WinternitzAddress memory currentPq,
+        WOTSPlus.WinternitzAddress memory nextPq,
+        WOTSPlus.WinternitzAddress[] memory oldKeys,
+        WOTSPlus.WinternitzAddress[] memory newKeys
+    ) internal view returns (bytes32) {
+        return
+            Codec.replaceKeysDigest(
+                kind,
+                signingKind,
+                oldKeys.length,
+                wallet_,
+                block.chainid,
+                currentPq.publicSeed,
+                currentPq.publicKeyHash,
+                nextPq.publicSeed,
+                nextPq.publicKeyHash,
+                keccak256(abi.encode(oldKeys)),
+                keccak256(abi.encode(newKeys))
+            );
+    }
+
     function _buildErc1271MessageHash(
         address wallet_,
         WOTSPlus.WinternitzAddress memory verifier,

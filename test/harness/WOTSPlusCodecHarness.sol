@@ -897,4 +897,101 @@ contract WOTSPlusCodecHarness {
                 abi.encode(newDisasterKey, newTransactionKeys, newRecoveryKeys)
             );
     }
+
+    // --- replaceKeys ---
+
+    /// @dev The 8-value return tuple from `Codec.decodeReplaceKeys` would
+    ///      blow the stack budget if surfaced directly. Bundled into a struct
+    ///      so callers receive one memory pointer.
+    struct DecodedReplaceKeys {
+        Codec.KeyType kind;
+        Codec.KeyType signingKind;
+        uint256 n;
+        WOTSPlus.WinternitzAddress currentKey;
+        WOTSPlus.WinternitzAddress nextKey;
+        WOTSPlus.WinternitzElements pqSig;
+        WOTSPlus.WinternitzAddress[] oldKeys;
+        WOTSPlus.WinternitzAddress[] newKeys;
+    }
+
+    function exposed_decodeReplaceKeys(
+        bytes calldata payload
+    ) external pure returns (DecodedReplaceKeys memory out) {
+        (
+            Codec.KeyType _k,
+            Codec.KeyType _sk,
+            uint256 _n,
+            WOTSPlus.WinternitzAddress calldata _c,
+            WOTSPlus.WinternitzAddress calldata _nx,
+            WOTSPlus.WinternitzElements calldata _sig,
+            WOTSPlus.WinternitzAddress[] calldata _old,
+            WOTSPlus.WinternitzAddress[] calldata _new
+        ) = Codec.decodeReplaceKeys(payload);
+        out.kind = _k;
+        out.signingKind = _sk;
+        out.n = _n;
+        out.currentKey = _c;
+        out.nextKey = _nx;
+        out.pqSig = _sig;
+        out.oldKeys = new WOTSPlus.WinternitzAddress[](_old.length);
+        out.newKeys = new WOTSPlus.WinternitzAddress[](_new.length);
+        for (uint256 i = 0; i < _old.length; i++) {
+            out.oldKeys[i] = _old[i];
+        }
+        for (uint256 i = 0; i < _new.length; i++) {
+            out.newKeys[i] = _new[i];
+        }
+    }
+
+    function exposed_encodeReplaceKeys(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        uint256 n,
+        WOTSPlus.WinternitzAddress memory currentKey,
+        WOTSPlus.WinternitzAddress memory nextKey,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress[] memory oldKeys,
+        WOTSPlus.WinternitzAddress[] memory newKeys
+    ) external pure returns (bytes memory) {
+        return
+            Codec.encodeReplaceKeys(
+                kind,
+                signingKind,
+                n,
+                currentKey,
+                nextKey,
+                pqSig,
+                oldKeys,
+                newKeys
+            );
+    }
+
+    function exposed_replaceKeysDigest(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        uint256 n,
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        bytes32 oldKeysHash,
+        bytes32 newKeysHash
+    ) external pure returns (bytes32) {
+        return
+            Codec.replaceKeysDigest(
+                kind,
+                signingKind,
+                n,
+                wallet,
+                chainId,
+                s1,
+                h1,
+                s2,
+                h2,
+                oldKeysHash,
+                newKeysHash
+            );
+    }
 }
