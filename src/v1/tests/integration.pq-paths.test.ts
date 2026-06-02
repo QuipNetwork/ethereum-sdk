@@ -47,7 +47,6 @@ import {
   type WinternitzAddress,
   type WinternitzElements,
   MAX_KEYS,
-  RECOVERY_KEY_AMOUNT,
 } from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
@@ -391,7 +390,7 @@ describe("recoveryUpgrade", () => {
     const recoveryKey = recoveryKeys[0];
 
     const stateBefore = await client.getWalletState();
-    expect(stateBefore.keyCounts.recovery).toBe(BigInt(RECOVERY_KEY_AMOUNT));
+    expect(stateBefore.keyCounts.recovery).toBe(BigInt(MAX_KEYS));
 
     const { verifier, verifySig } = buildVerifierAttestation(
       walletAddress,
@@ -410,7 +409,7 @@ describe("recoveryUpgrade", () => {
 
     const stateAfter = await client.getWalletState();
     // Recovery capacity is preserved (size-stable swap).
-    expect(stateAfter.keyCounts.recovery).toBe(BigInt(RECOVERY_KEY_AMOUNT));
+    expect(stateAfter.keyCounts.recovery).toBe(BigInt(MAX_KEYS));
     // The old recovery key is gone.
     const remaining = stateAfter.recoveryKeys.map((k) => k.publicSeed);
     expect(remaining).not.toContain(recoveryKey.publicSeed);

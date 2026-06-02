@@ -51,10 +51,10 @@ import {
   KeyAdditionFailedError,
   KeyRemovalFailedError,
   EmptyKeysError,
-  RefreshTransactionForbiddenError,
   IncorrectRecoveryKeyAmountError,
-  ReplaceAuthKeyForbiddenError,
-  ReinstallSpentKeyForbiddenError,
+  IncorrectVerificationKeyAmountError,
+  InvalidSigningKeysetError,
+  MalformedPayloadError,
   NotUpgradingError,
   IncorrectTransactionKeyAmountError,
   ImplementationNotVettedError,
@@ -135,13 +135,12 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   KeyAdditionFailed: (_, o) => new KeyAdditionFailedError(o),
   KeyRemovalFailed: (_, o) => new KeyRemovalFailedError(o),
   EmptyKeys: (_, o) => new EmptyKeysError(o),
-  RefreshTransactionForbidden: (_, o) =>
-    new RefreshTransactionForbiddenError(o),
   IncorrectRecoveryKeyAmount: (_, o) =>
     new IncorrectRecoveryKeyAmountError(o),
-  ReplaceAuthKeyForbidden: (_, o) => new ReplaceAuthKeyForbiddenError(o),
-  ReinstallSpentKeyForbidden: (_, o) =>
-    new ReinstallSpentKeyForbiddenError(o),
+  IncorrectVerificationKeyAmount: (_, o) =>
+    new IncorrectVerificationKeyAmountError(o),
+  InvalidSigningKeyset: (_, o) => new InvalidSigningKeysetError(o),
+  MalformedPayload: (_, o) => new MalformedPayloadError(o),
   NotUpgrading: (_, o) => new NotUpgradingError(o),
   IncorrectTransactionKeyAmount: (_, o) =>
     new IncorrectTransactionKeyAmountError(o),

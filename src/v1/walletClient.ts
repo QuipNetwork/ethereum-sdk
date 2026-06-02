@@ -47,7 +47,6 @@ import {
   IncorrectVerificationKeyAmountError,
   PartialMulticallResultError,
   PaymasterValidationFailure,
-  RefreshTransactionForbiddenError,
   UnknownKeyError,
   UserOpValidationFailure,
 } from "./errors.js";
@@ -58,29 +57,29 @@ import {
   type WinternitzElements,
   KeyType,
   MAX_KEYS,
-  RECOVERY_KEY_AMOUNT,
   computeUserOpHash,
   decodePaymasterAndData,
   decodeUserOpSignature,
   encodeExecute,
-  encodeKeyManagement,
   encodeOwnershipTransfer,
   encodeRecoveryUpgrade,
-  encodeReplaceKeyAt,
+  encodeReplaceKeys,
+  encodeResetKeyset,
   encodeSaveWallet,
   encodeUpgradeToAndCall,
   encodeUserOpSignature,
   encodeWithdrawDeposit,
   erc4337ExecuteDigest,
   executeDigest,
-  keysetDigest,
   keysHash as codecKeysHash,
   opdataHash as codecOpdataHash,
   ownershipTransferKeysHash,
   packAccountGasLimits,
   packGasFees,
   paymasterVerifierKeyUsedSlot,
-  replaceKeyAtDigest,
+  replaceKeysDigest,
+  resetKeysetDigest,
+  resetKeysetKeysHash,
   saveWalletDigest,
   saveWalletKeysHash,
   transferOwnershipDigest,
@@ -288,9 +287,9 @@ export interface SimulateUserOpResult {
 }
 
 /// Descriptor passed to `prepareSignedWrite`. Captures the variation
-/// between the codec-payload writes (executeWithPayload, withdrawDeposit,
-/// addKeys/refreshKeys, replaceKeyAt) so the orchestration code lives in
-/// one place.
+/// between the codec-payload writes (execute, withdrawDepositTo,
+/// replaceKeys, resetKeyset) so the orchestration code lives in one
+/// place.
 interface SignedWriteSpec {
   buildDigest: (currentKey: WinternitzAddress, nextKey: WinternitzAddress) => Hex;
   buildPayload: (
@@ -298,7 +297,7 @@ interface SignedWriteSpec {
     nextKey: WinternitzAddress,
     pqSig: WinternitzElements
   ) => Hex;
-  functionName: "execute" | "withdrawDepositTo" | "addKeys" | "refreshKeys" | "replaceKeyAt";
+  functionName: "execute" | "withdrawDepositTo" | "replaceKeys" | "resetKeyset";
   totalValue: bigint;
 }
 
@@ -768,108 +767,253 @@ export class QuipWalletClient {
     );
   }
 
-  /// Add `keys` to the `kind` keyset. Backend: `addKeys(bytes payload)`.
-  /// Synchronous pre-flight rejects empty batches and within-batch
-  /// duplicates without consuming a transaction key.
-  async addKeys(
-    kind: KeyType,
-    keys: WinternitzAddress[],
+  /// PQ-authenticated `replaceKeys(bytes)` targeting the transaction
+  /// keyset, signed by a transaction key.
+  ///
+  /// Partial N-for-N swap: removes each entry in `oldKeys` from the
+  /// transaction set and installs the matching entry in `newKeys`.
+  /// `oldKeys` must reference keys currently in the transaction set;
+  /// `newKeys` must not collide with any currently-installed key
+  /// (across any keyset) or any previously burned key. If `newKeys`
+  /// is omitted the SDK generates fresh keys under this signer/vault.
+  ///
+  /// Because the on-chain `replaceKeys` first rotates the signing
+  /// keyset (consuming the head transaction key and installing its
+  /// replacement) BEFORE the remove/add loop runs, AND the target
+  /// keyset here is ALSO the transaction set, `oldKeys` MUST NOT
+  /// contain the head tx key being used to sign, and `newKeys` MUST
+  /// NOT contain the SDK-generated next-tx replacement. The wallet
+  /// rejects either with `KeyRemovalFailed` / `KeyInUse`. This
+  /// constraint does not apply to `replaceRecoveryKeys` /
+  /// `replaceVerificationKeys` since their target keysets are
+  /// distinct from the signing keyset.
+  async replaceTxKeys(
+    oldKeys: WinternitzAddress[],
+    newKeys?: WinternitzAddress[],
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    this.validateKeyBatch(keys);
-    return this.keyManagementWrite(kind, keys, "addKeys", opts);
-  }
-
-  /// Replace the entire `kind` keyset with `keys`. Backend:
-  /// `refreshKeys(bytes payload)`. Refreshing the Transaction keyset is
-  /// forbidden at the contract level — this method throws
-  /// `RefreshTransactionForbiddenError` synchronously when `kind` is
-  /// Transaction so callers don't burn a key on a guaranteed-revert call.
-  async refreshKeys(
-    kind: KeyType,
-    keys: WinternitzAddress[],
-    opts: TxOptions & TransactionKeyOptions = {}
-  ): Promise<TransactionReceipt> {
-    if (kind === KeyType.Transaction) {
-      throw new RefreshTransactionForbiddenError();
-    }
-    this.validateKeyBatch(keys);
-    return this.keyManagementWrite(kind, keys, "refreshKeys", opts);
-  }
-
-  private async keyManagementWrite(
-    kind: KeyType,
-    keys: WinternitzAddress[],
-    functionName: "addKeys" | "refreshKeys",
-    opts: TxOptions & TransactionKeyOptions
-  ): Promise<TransactionReceipt> {
-    const keysetHashHex = codecKeysHash(keys);
-    const { keyOpts, txOpts } = splitWriteOpts(opts);
-    return this.prepareSignedWrite(
-      {
-        buildDigest: (currentKey, nextKey) =>
-          keysetDigest(
-            kind,
-            functionName === "refreshKeys",
-            this.walletAddress,
-            BigInt(this.chainId),
-            currentKey.publicSeed,
-            currentKey.publicKeyHash,
-            nextKey.publicSeed,
-            nextKey.publicKeyHash,
-            keysetHashHex
-          ),
-        buildPayload: (currentKey, nextKey, pqSig) =>
-          encodeKeyManagement(kind, currentKey, nextKey, pqSig, keys),
-        functionName,
-        totalValue: 0n,
-      },
-      keyOpts,
-      txOpts
+    return this.replaceKeysTxSigned(
+      KeyType.Transaction,
+      oldKeys,
+      newKeys,
+      opts
     );
   }
 
-  /// Replace the key at `(kind, index)` with `newKey`. Backend:
-  /// `replaceKeyAt(bytes payload)`. Synchronous pre-flight rejects a
-  /// zero-equivalent batch via `validateKeyBatch([newKey])`.
-  async replaceKeyAt(
-    kind: KeyType,
-    index: bigint,
-    newKey: WinternitzAddress,
+  /// PQ-authenticated `replaceKeys(bytes)` targeting the recovery
+  /// keyset, signed by a transaction key. Partial N-for-N swap;
+  /// `oldKeys` must reference keys currently in the recovery set.
+  /// If `newKeys` is omitted the SDK generates fresh keys.
+  async replaceRecoveryKeys(
+    oldKeys: WinternitzAddress[],
+    newKeys?: WinternitzAddress[],
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    this.validateKeyBatch([newKey]);
+    return this.replaceKeysTxSigned(KeyType.Recovery, oldKeys, newKeys, opts);
+  }
+
+  /// PQ-authenticated `replaceKeys(bytes)` targeting the verification
+  /// keyset, signed by a transaction key. Partial N-for-N swap;
+  /// `oldKeys` must reference keys currently in the verification set.
+  /// If `newKeys` is omitted the SDK generates fresh keys.
+  async replaceVerificationKeys(
+    oldKeys: WinternitzAddress[],
+    newKeys?: WinternitzAddress[],
+    opts: TxOptions & TransactionKeyOptions = {}
+  ): Promise<TransactionReceipt> {
+    return this.replaceKeysTxSigned(
+      KeyType.Verification,
+      oldKeys,
+      newKeys,
+      opts
+    );
+  }
+
+  /// Shared body for the tx-signed `replaceKeys` wrappers
+  /// (`replaceTxKeys`, `replaceRecoveryKeys`, `replaceVerificationKeys`).
+  /// All three differ only by target keyset; the signing key is always
+  /// a transaction key picked via the standard head-rotation path.
+  /// Recovery-signed `replaceKeys` is intentionally not exposed.
+  private async replaceKeysTxSigned(
+    target: KeyType,
+    oldKeys: WinternitzAddress[],
+    newKeys: WinternitzAddress[] | undefined,
+    opts: TxOptions & TransactionKeyOptions
+  ): Promise<TransactionReceipt> {
+    if (oldKeys.length === 0) throw new EmptyKeysError();
+    const generated =
+      newKeys ??
+      Array.from(
+        { length: oldKeys.length },
+        () => this.quipSigner.generateKeyPair(this.vaultId).publicKey
+      );
+    if (generated.length !== oldKeys.length) {
+      throw new Error(
+        `replaceKeys: newKeys.length (${generated.length}) must equal oldKeys.length (${oldKeys.length})`
+      );
+    }
+    this.validateKeyBatch(oldKeys);
+    this.validateKeyBatch(generated);
+
+    const oldKeysHash = codecKeysHash(oldKeys);
+    const newKeysHash = codecKeysHash(generated);
+    const n = BigInt(oldKeys.length);
     const { keyOpts, txOpts } = splitWriteOpts(opts);
     return this.prepareSignedWrite(
       {
         buildDigest: (currentKey, nextKey) =>
-          replaceKeyAtDigest(
-            kind,
+          replaceKeysDigest(
+            target,
+            KeyType.Transaction,
             this.walletAddress,
             BigInt(this.chainId),
+            n,
             currentKey.publicSeed,
             currentKey.publicKeyHash,
             nextKey.publicSeed,
             nextKey.publicKeyHash,
-            index,
-            newKey.publicSeed,
-            newKey.publicKeyHash
+            oldKeysHash,
+            newKeysHash
           ),
         buildPayload: (currentKey, nextKey, pqSig) =>
-          encodeReplaceKeyAt(
-            kind,
+          encodeReplaceKeys(
+            target,
+            KeyType.Transaction,
             currentKey,
             nextKey,
             pqSig,
-            index,
-            newKey
+            oldKeys,
+            generated
           ),
-        functionName: "replaceKeyAt",
+        functionName: "replaceKeys",
         totalValue: 0n,
       },
       keyOpts,
       txOpts
     );
+  }
+
+  /// PQ-authenticated `resetKeyset(bytes)` targeting the recovery
+  /// keyset, signed by a transaction key. Wholesale-replaces all 10
+  /// recovery keys with a fresh batch generated under this
+  /// signer/vault.
+  async resetRecoveryKeys(
+    opts: TxOptions & TransactionKeyOptions = {}
+  ): Promise<TransactionReceipt> {
+    return this.resetKeysetTxSigned(KeyType.Recovery, opts);
+  }
+
+  /// PQ-authenticated `resetKeyset(bytes)` targeting the verification
+  /// keyset, signed by a transaction key. Wholesale-replaces all 10
+  /// verification keys with a fresh batch generated under this
+  /// signer/vault.
+  async resetVerificationKeys(
+    opts: TxOptions & TransactionKeyOptions = {}
+  ): Promise<TransactionReceipt> {
+    return this.resetKeysetTxSigned(KeyType.Verification, opts);
+  }
+
+  /// Shared body for the tx-signed reset wrappers
+  /// (`resetRecoveryKeys`, `resetVerificationKeys`). Reset of the
+  /// transaction keyset under tx-signing is intentionally not exposed
+  /// — `recoverWallet` is the supported path for replacing tx keys
+  /// wholesale, and it requires a recovery key.
+  private async resetKeysetTxSigned(
+    target: KeyType.Recovery | KeyType.Verification,
+    opts: TxOptions & TransactionKeyOptions
+  ): Promise<TransactionReceipt> {
+    const newKeys: WinternitzAddress[] = Array.from(
+      { length: MAX_KEYS },
+      () => this.quipSigner.generateKeyPair(this.vaultId).publicKey
+    );
+    const newKeysHashHex = resetKeysetKeysHash(newKeys);
+    const { keyOpts, txOpts } = splitWriteOpts(opts);
+    return this.prepareSignedWrite(
+      {
+        buildDigest: (currentKey, nextKey) =>
+          resetKeysetDigest(
+            target,
+            KeyType.Transaction,
+            this.walletAddress,
+            BigInt(this.chainId),
+            currentKey.publicSeed,
+            currentKey.publicKeyHash,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
+            newKeysHashHex
+          ),
+        buildPayload: (currentKey, nextKey, pqSig) =>
+          encodeResetKeyset(
+            target,
+            KeyType.Transaction,
+            currentKey,
+            nextKey,
+            pqSig,
+            newKeys
+          ),
+        functionName: "resetKeyset",
+        totalValue: 0n,
+      },
+      keyOpts,
+      txOpts
+    );
+  }
+
+  /// PQ-authenticated `resetKeyset(bytes)` targeting the transaction
+  /// keyset, signed by a recovery key. This is the "I've lost or
+  /// compromised my transaction keys" recovery path — a single
+  /// recovery key wipes and reinstalls all 10 transaction keys
+  /// atomically.
+  ///
+  /// `recoveryPublicSeed` selects which currently-installed recovery
+  /// key to sign with. The SDK generates a replacement recovery key
+  /// (which rotates into the recovery set) plus 10 fresh transaction
+  /// keys, all under this signer/vault. The signing recovery key is
+  /// marked burned in `QuipSigner` once the signature is produced.
+  async recoverWallet(
+    recoveryPublicSeed: Hex,
+    opts: TxOptions = {}
+  ): Promise<TransactionReceipt> {
+    const currentRecovery = this.quipSigner.recoverKeyPair(
+      this.vaultId,
+      recoveryPublicSeed
+    ).publicKey;
+    const nextRecovery = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
+    const newTxKeys: WinternitzAddress[] = Array.from(
+      { length: MAX_KEYS },
+      () => this.quipSigner.generateKeyPair(this.vaultId).publicKey
+    );
+
+    const newKeysHashHex = resetKeysetKeysHash(newTxKeys);
+    const digest = resetKeysetDigest(
+      KeyType.Transaction,
+      KeyType.Recovery,
+      this.walletAddress,
+      BigInt(this.chainId),
+      currentRecovery.publicSeed,
+      currentRecovery.publicKeyHash,
+      nextRecovery.publicSeed,
+      nextRecovery.publicKeyHash,
+      newKeysHashHex
+    );
+    const pqSig = this.signWith(recoveryPublicSeed, digest);
+    const payload = encodeResetKeyset(
+      KeyType.Transaction,
+      KeyType.Recovery,
+      currentRecovery,
+      nextRecovery,
+      pqSig,
+      newTxKeys
+    );
+
+    const contractCall: ContractCallParams = {
+      address: this.walletAddress,
+      abi: quipWalletAbi,
+      functionName: "resetKeyset",
+      args: [payload],
+      account: this.account,
+    };
+    return this.executeWrite(contractCall, 0n, opts);
   }
 
   /// PQ-authenticated `saveWallet(bytes)` — last-resort rescue authorized by
@@ -1021,9 +1165,11 @@ export class QuipWalletClient {
   ///      `verifySig` — these come from the impl deployer, not the wallet
   ///      owner.
   ///
-  /// Set `migrationPayload` to a 1088-byte init payload to trigger
-  /// `migrate(...)` against the new implementation. Leave undefined (or pass
-  /// `"0x"`) for a no-migration upgrade; the SDK zero-fills the trailing 1088
+  /// Set `migrationPayload` to a 2048-byte init payload (always-10:
+  /// disasterRecoveryKey + ownershipKey + transactionKeys[10] +
+  /// recoveryKeys[10] + verificationKeys[10]) to trigger `migrate(...)`
+  /// against the new implementation. Leave undefined (or pass `"0x"`)
+  /// for a no-migration upgrade; the SDK zero-fills the trailing 2048
   /// bytes the contract requires for layout symmetry.
   async upgradeWallet(
     newImplementation: Address,

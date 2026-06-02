@@ -1198,9 +1198,9 @@ library WOTSPlusCodec {
     /// @dev keccak256(abi.encode(TRANSFER_OWNERSHIP_TAG, chainId, wallet, s1, h1, s2, h2,
     ///                           newOwner, keysHash))
     ///      where `keysHash = keccak256(abi.encode(newDisasterKey, newTransactionKeys,
-    ///      newRecoveryKeys))`. The ownership-transfer digest commits to the entire
-    ///      re-initialization bundle so the WOTS+ signature cannot be separated from
-    ///      the key material it installs.
+    ///      newRecoveryKeys, newVerificationKeys))`. The ownership-transfer digest
+    ///      commits to the entire re-initialization bundle so the WOTS+ signature
+    ///      cannot be separated from the key material it installs.
     function transferOwnershipDigest(
         address wallet,
         uint256 chainId,
@@ -1368,7 +1368,8 @@ library WOTSPlusCodec {
 
     /// @dev keccak256(abi.encode(SAVE_WALLET_TAG, chainId, wallet, currentSeed,
     ///                           currentHash, newSeed, newHash, keysHash))
-    ///      where `keysHash = keccak256(abi.encode(newTransactionKeys, newRecoveryKeys))`.
+    ///      where `keysHash = keccak256(abi.encode(newTransactionKeys,
+    ///      newRecoveryKeys, newVerificationKeys))`.
     function saveWalletDigest(
         address wallet,
         uint256 chainId,

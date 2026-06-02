@@ -216,41 +216,11 @@ export class EmptyKeysError extends QuipError {
   }
 }
 
-export class RefreshTransactionForbiddenError extends QuipError {
-  constructor(opts?: QuipErrorOptions) {
-    super(
-      "REFRESH_TRANSACTION_FORBIDDEN",
-      "Refreshing the transaction keyset is forbidden",
-      opts
-    );
-  }
-}
-
 export class IncorrectRecoveryKeyAmountError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
       "INCORRECT_RECOVERY_KEY_AMOUNT",
-      "Recovery keyset must contain exactly MAX_RECOVERY_KEYS keys",
-      opts
-    );
-  }
-}
-
-export class ReplaceAuthKeyForbiddenError extends QuipError {
-  constructor(opts?: QuipErrorOptions) {
-    super(
-      "REPLACE_AUTH_KEY_FORBIDDEN",
-      "Replacing the authoritative key via replaceKeyAt is forbidden",
-      opts
-    );
-  }
-}
-
-export class ReinstallSpentKeyForbiddenError extends QuipError {
-  constructor(opts?: QuipErrorOptions) {
-    super(
-      "REINSTALL_SPENT_KEY_FORBIDDEN",
-      "Cannot reinstall a previously consumed key",
+      "Recovery keyset must contain exactly MAX_KEYS entries",
       opts
     );
   }
@@ -281,6 +251,26 @@ export class IncorrectVerificationKeyAmountError extends QuipError {
     super(
       "INCORRECT_VERIFICATION_KEY_AMOUNT",
       "Verification keyset must contain exactly MAX_KEYS entries",
+      opts
+    );
+  }
+}
+
+export class InvalidSigningKeysetError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "INVALID_SIGNING_KEYSET",
+      "signingKind must be Transaction or Recovery (Verification not allowed)",
+      opts
+    );
+  }
+}
+
+export class MalformedPayloadError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "MALFORMED_PAYLOAD",
+      "Payload byte layout disagrees with the expected structure",
       opts
     );
   }

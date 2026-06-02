@@ -36,30 +36,32 @@ import {
   KeyType,
   encodeInit,
   encodeExecute,
-  encodeKeyManagement,
   encodeWithdrawDeposit,
-  encodeReplaceKeyAt,
+  encodeReplaceKeys,
+  encodeResetKeyset,
   encodeUserOpSignature,
   encodeSaveWallet,
   encodeOwnershipTransfer,
   encodeUpgradeToAndCall,
   encodeRecoveryUpgrade,
+  keysHash,
   saveWalletKeysHash,
   ownershipTransferKeysHash,
+  resetKeysetKeysHash,
   decodeInit,
   decodeExecute,
-  decodeKeyManagement,
   decodeWithdrawDeposit,
-  decodeReplaceKeyAt,
+  decodeReplaceKeys,
+  decodeResetKeyset,
   decodeUserOpSignature,
   decodeSaveWallet,
   decodeOwnershipTransfer,
   decodeUpgradeToAndCall,
   decodeRecoveryUpgrade,
   executeDigest,
-  keysetDigest,
   withdrawDepositDigest,
-  replaceKeyAtDigest,
+  replaceKeysDigest,
+  resetKeysetDigest,
   upgradeDigest,
   verificationDigest,
   upgradeRecoveryDigest,
@@ -67,7 +69,6 @@ import {
   saveWalletDigest,
   transferOwnershipDigest,
   MAX_KEYS,
-  RECOVERY_KEY_AMOUNT,
   SAVE_WALLET_PAYLOAD_SIZE,
   OWNERSHIP_TRANSFER_PAYLOAD_SIZE,
   UPGRADE_PAYLOAD_SIZE,
@@ -174,15 +175,6 @@ describe("encoder parity (live Solidity)", () => {
     expect(tsEncoded).toBe(solEncoded);
   });
 
-  test("encodeKeyManagement matches Solidity", async () => {
-    const keys: WinternitzAddress[] = [makeKey(200n), makeKey(202n)];
-    const tsEncoded = encodeKeyManagement(KeyType.Recovery, cur, next, sig, keys);
-    const solEncoded = await callHarness("exposed_encodeKeyManagement", [
-      KeyType.Recovery, cur, next, sig, keys,
-    ]);
-    expect(tsEncoded).toBe(solEncoded);
-  });
-
   test("encodeWithdrawDeposit matches Solidity", async () => {
     const tsEncoded = encodeWithdrawDeposit(cur, next, sig, TARGET, VALUE);
     const solEncoded = await callHarness("exposed_encodeWithdrawDeposit", [
@@ -191,11 +183,50 @@ describe("encoder parity (live Solidity)", () => {
     expect(tsEncoded).toBe(solEncoded);
   });
 
-  test("encodeReplaceKeyAt matches Solidity", async () => {
-    const newKey = makeKey(42n);
-    const tsEncoded = encodeReplaceKeyAt(KeyType.Recovery, cur, next, sig, 3n, newKey);
-    const solEncoded = await callHarness("exposed_encodeReplaceKeyAt", [
-      KeyType.Recovery, cur, next, sig, 3n, newKey,
+  test("encodeReplaceKeys matches Solidity", async () => {
+    const oldKeys: WinternitzAddress[] = [makeKey(200n), makeKey(202n), makeKey(204n)];
+    const newKeys: WinternitzAddress[] = [makeKey(300n), makeKey(302n), makeKey(304n)];
+    const tsEncoded = encodeReplaceKeys(
+      KeyType.Recovery,
+      KeyType.Transaction,
+      cur,
+      next,
+      sig,
+      oldKeys,
+      newKeys
+    );
+    const solEncoded = await callHarness("exposed_encodeReplaceKeys", [
+      KeyType.Recovery,
+      KeyType.Transaction,
+      3n,
+      cur,
+      next,
+      sig,
+      oldKeys,
+      newKeys,
+    ]);
+    expect(tsEncoded).toBe(solEncoded);
+  });
+
+  test("encodeResetKeyset matches Solidity", async () => {
+    const newKeys: WinternitzAddress[] = Array.from({ length: MAX_KEYS }, (_, i) =>
+      makeKey(BigInt(400 + i * 2))
+    );
+    const tsEncoded = encodeResetKeyset(
+      KeyType.Verification,
+      KeyType.Transaction,
+      cur,
+      next,
+      sig,
+      newKeys
+    );
+    const solEncoded = await callHarness("exposed_encodeResetKeyset", [
+      KeyType.Verification,
+      KeyType.Transaction,
+      cur,
+      next,
+      sig,
+      newKeys,
     ]);
     expect(tsEncoded).toBe(solEncoded);
   });
@@ -367,31 +398,68 @@ describe("digest parity (live Solidity)", () => {
     expect(tsDigest).toBe(solDigest);
   });
 
-  test("keysetDigest matches Solidity for each (kind, replace)", async () => {
-    for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
-      for (const replace of [false, true]) {
-        const tsDigest = keysetDigest(kind, replace, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH);
-        const solDigest = await callHarness("exposed_keysetDigest", [
-          kind, replace, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH,
+  test("replaceKeysDigest matches Solidity for each (signingKind, kind)", async () => {
+    const OLD_HASH = toHex(0xfeedn, { size: 32 });
+    const NEW_HASH = toHex(0xbeefn, { size: 32 });
+    const N = 4n;
+    for (const signingKind of [KeyType.Transaction, KeyType.Recovery]) {
+      for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
+        const tsDigest = replaceKeysDigest(
+          kind, signingKind, WALLET, CHAIN_ID, N, S1, H1, S2, H2, OLD_HASH, NEW_HASH,
+        );
+        const solDigest = await callHarness("exposed_replaceKeysDigest", [
+          kind, signingKind, N, WALLET, CHAIN_ID, S1, H1, S2, H2, OLD_HASH, NEW_HASH,
         ]);
         expect(tsDigest).toBe(solDigest);
       }
     }
   });
 
-  test("keysetDigest produces distinct values across (kind, replace) tuples", () => {
+  test("replaceKeysDigest produces 6 distinct values across (signingKind, kind)", () => {
+    const OLD_HASH = toHex(0xfeedn, { size: 32 });
+    const NEW_HASH = toHex(0xbeefn, { size: 32 });
+    const N = 4n;
     const digests = new Set<string>();
-    for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
-      for (const replace of [false, true]) {
+    for (const signingKind of [KeyType.Transaction, KeyType.Recovery]) {
+      for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
         digests.add(
-          keysetDigest(kind, replace, WALLET, CHAIN_ID, S1, H1, S2, H2, KEYS_HASH)
+          replaceKeysDigest(
+            kind, signingKind, WALLET, CHAIN_ID, N, S1, H1, S2, H2, OLD_HASH, NEW_HASH,
+          )
         );
       }
     }
-    // 6 combinations, but refresh-Transaction collapses onto add-Transaction
-    // (the `replace` bit is intentionally ignored for Transaction since
-    // refresh-Transaction is contract-forbidden), so 5 distinct values.
-    expect(digests.size).toBe(5);
+    expect(digests.size).toBe(6);
+  });
+
+  test("resetKeysetDigest matches Solidity for each (signingKind, kind)", async () => {
+    const NEW_HASH = toHex(0xfacen, { size: 32 });
+    for (const signingKind of [KeyType.Transaction, KeyType.Recovery]) {
+      for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
+        const tsDigest = resetKeysetDigest(
+          kind, signingKind, WALLET, CHAIN_ID, S1, H1, S2, H2, NEW_HASH,
+        );
+        const solDigest = await callHarness("exposed_resetKeysetDigest", [
+          kind, signingKind, WALLET, CHAIN_ID, S1, H1, S2, H2, NEW_HASH,
+        ]);
+        expect(tsDigest).toBe(solDigest);
+      }
+    }
+  });
+
+  test("resetKeysetDigest produces 6 distinct values across (signingKind, kind)", () => {
+    const NEW_HASH = toHex(0xfacen, { size: 32 });
+    const digests = new Set<string>();
+    for (const signingKind of [KeyType.Transaction, KeyType.Recovery]) {
+      for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
+        digests.add(
+          resetKeysetDigest(
+            kind, signingKind, WALLET, CHAIN_ID, S1, H1, S2, H2, NEW_HASH,
+          )
+        );
+      }
+    }
+    expect(digests.size).toBe(6);
   });
 
   test("withdrawDepositDigest matches Solidity", async () => {
@@ -403,20 +471,6 @@ describe("digest parity (live Solidity)", () => {
       WALLET, CHAIN_ID, S1, H1, S2, H2, TARGET, AMOUNT,
     ]);
     expect(tsDigest).toBe(solDigest);
-  });
-
-  test("replaceKeyAtDigest matches Solidity for each kind", async () => {
-    const NEW_SEED = toHex(101n, { size: 32 });
-    const NEW_HASH = toHex(102n, { size: 32 });
-    for (const kind of [KeyType.Transaction, KeyType.Recovery, KeyType.Verification]) {
-      const tsDigest = replaceKeyAtDigest(
-        kind, WALLET, CHAIN_ID, S1, H1, S2, H2, 7n, NEW_SEED, NEW_HASH,
-      );
-      const solDigest = await callHarness("exposed_replaceKeyAtDigest", [
-        kind, WALLET, CHAIN_ID, S1, H1, S2, H2, 7n, NEW_SEED, NEW_HASH,
-      ]);
-      expect(tsDigest).toBe(solDigest);
-    }
   });
 
   test("upgradeDigest matches Solidity", async () => {
@@ -606,27 +660,55 @@ describe("encode/decode roundtrip", () => {
     expect(decoded.data).toBe("0x");
   });
 
-  test("keyManagement with multiple keys", () => {
-    const keys = [makeKey(200n), makeKey(202n), makeKey(204n)];
-    const encoded = encodeKeyManagement(KeyType.Recovery, cur, next, sig, keys);
-    expect(size(encoded)).toBe(2304 + 3 * 64);
-    const decoded = decodeKeyManagement(encoded);
+  test("replaceKeys with N=3", () => {
+    const oldKeys = [makeKey(200n), makeKey(202n), makeKey(204n)];
+    const newKeys = [makeKey(300n), makeKey(302n), makeKey(304n)];
+    const encoded = encodeReplaceKeys(
+      KeyType.Recovery,
+      KeyType.Transaction,
+      cur,
+      next,
+      sig,
+      oldKeys,
+      newKeys
+    );
+    expect(size(encoded)).toBe(2368 + 2 * 3 * 64);
+    const decoded = decodeReplaceKeys(encoded);
     expect(decoded.kind).toBe(KeyType.Recovery);
+    expect(decoded.signingKind).toBe(KeyType.Transaction);
+    expect(decoded.n).toBe(3n);
     expectAddressEq(decoded.currentKey, cur);
     expectAddressEq(decoded.nextKey, next);
     expectElementsEq(decoded.pqSig, sig);
-    expect(decoded.keys.length).toBe(3);
     for (let i = 0; i < 3; i++) {
-      expectAddressEq(decoded.keys[i], keys[i]);
+      expectAddressEq(decoded.oldKeys[i], oldKeys[i]);
+      expectAddressEq(decoded.newKeys[i], newKeys[i]);
     }
   });
 
-  test("keyManagement with zero keys", () => {
-    const encoded = encodeKeyManagement(KeyType.Verification, cur, next, sig, []);
-    expect(size(encoded)).toBe(2304);
-    const decoded = decodeKeyManagement(encoded);
+  test("resetKeyset (always-10)", () => {
+    const newKeys = Array.from({ length: MAX_KEYS }, (_, i) =>
+      makeKey(BigInt(400 + i * 2))
+    );
+    const encoded = encodeResetKeyset(
+      KeyType.Verification,
+      KeyType.Transaction,
+      cur,
+      next,
+      sig,
+      newKeys
+    );
+    expect(size(encoded)).toBe(2976);
+    const decoded = decodeResetKeyset(encoded);
     expect(decoded.kind).toBe(KeyType.Verification);
-    expect(decoded.keys.length).toBe(0);
+    expect(decoded.signingKind).toBe(KeyType.Transaction);
+    expectAddressEq(decoded.currentKey, cur);
+    expectAddressEq(decoded.nextKey, next);
+    expectElementsEq(decoded.pqSig, sig);
+    expect(decoded.newKeys.length).toBe(MAX_KEYS);
+    for (let i = 0; i < MAX_KEYS; i++) {
+      expectAddressEq(decoded.newKeys[i], newKeys[i]);
+    }
   });
 
   test("withdrawDeposit", () => {
@@ -640,19 +722,6 @@ describe("encode/decode roundtrip", () => {
     expectElementsEq(decoded.pqSig, sig);
     expect(getAddress(decoded.to)).toBe(getAddress(TO));
     expect(decoded.amount).toBe(AMOUNT);
-  });
-
-  test("replaceKeyAt", () => {
-    const newKey = makeKey(42n);
-    const encoded = encodeReplaceKeyAt(KeyType.Recovery, cur, next, sig, 3n, newKey);
-    expect(size(encoded)).toBe(2400);
-    const decoded = decodeReplaceKeyAt(encoded);
-    expect(decoded.kind).toBe(KeyType.Recovery);
-    expectAddressEq(decoded.currentKey, cur);
-    expectAddressEq(decoded.nextKey, next);
-    expectElementsEq(decoded.pqSig, sig);
-    expect(decoded.index).toBe(3n);
-    expectAddressEq(decoded.newKey, newKey);
   });
 
   test("userOpSignature", () => {
