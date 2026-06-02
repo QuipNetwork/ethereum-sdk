@@ -183,7 +183,7 @@ describe("Dual-signature contract on execute(bytes)", () => {
     // before the contract rotates, so the on-chain state stays consistent;
     // the signer's burned-key set is the only thing left dirty (and that's
     // the correct WOTS+ semantic — once a sig exists, the key is dead).
-    const sigElements: Hex[] = signer.sign(
+    const sigElements: Hex[] = await signer.sign(
       digest,
       toHex(vaultId),
       currentKey.publicSeed

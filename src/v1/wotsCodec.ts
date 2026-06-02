@@ -28,18 +28,6 @@ import {
   toHex,
 } from "viem";
 
-/// The ABI expects bytes32[67] for a WOTS+ signature; this fixed-length tuple
-/// is what viem requires for typed argument passing.
-export type Bytes32Tuple67 = readonly [
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-];
-
 export interface WinternitzAddress {
   publicSeed: Hex;
   publicKeyHash: Hex;
@@ -88,6 +76,9 @@ export const RECOVERY_UPGRADE_PAYLOAD_SIZE = 4480;
 /// + currentKey(64) + nextKey(64) + pqSig(2144). Total payload is
 /// `REPLACE_KEYS_HEADER_SIZE + 2 * n * 64` bytes (variable length).
 export const REPLACE_KEYS_HEADER_SIZE = 2368;
+/// Total byte length of an ERC-1271 signature payload:
+/// 64 (verifier) + 2144 (pqSig) + 65 (ecdsaSig: r ++ s ++ v).
+export const ERC1271_SIGNATURE_LEN = 2273;
 /// Payload size for `resetKeyset`: kind(32) + signingKind(32)
 /// + currentKey(64) + nextKey(64) + pqSig(2144) + newKeys[10] (640).
 /// Fixed at the always-10 invariant size.
@@ -578,6 +569,13 @@ export function decodeInit(payload: Hex): {
   };
 }
 
+/// Minimum byte length of the `execute(bytes)` payload — the WOTS+
+/// signing/rotation prefix plus the target+value tail. Extra bytes past
+/// this offset are the inner-call `data`.
+export const EXECUTE_HEADER_SIZE = 2336;
+/// Exact byte length of the `withdrawDepositTo(bytes)` payload.
+export const WITHDRAW_DEPOSIT_PAYLOAD_SIZE = 2336;
+
 export function decodeExecute(payload: Hex): {
   currentKey: WinternitzAddress;
   nextKey: WinternitzAddress;
@@ -586,6 +584,11 @@ export function decodeExecute(payload: Hex): {
   value: bigint;
   data: Hex;
 } {
+  if (size(payload) < EXECUTE_HEADER_SIZE) {
+    throw new Error(
+      `decodeExecute: expected >= ${EXECUTE_HEADER_SIZE} bytes, got ${size(payload)}`
+    );
+  }
   return {
     currentKey: sliceAddress(payload, 0),
     nextKey: sliceAddress(payload, 64),
@@ -603,6 +606,11 @@ export function decodeWithdrawDeposit(payload: Hex): {
   to: Address;
   amount: bigint;
 } {
+  if (size(payload) !== WITHDRAW_DEPOSIT_PAYLOAD_SIZE) {
+    throw new Error(
+      `decodeWithdrawDeposit: expected ${WITHDRAW_DEPOSIT_PAYLOAD_SIZE} bytes, got ${size(payload)}`
+    );
+  }
   return {
     currentKey: sliceAddress(payload, 0),
     nextKey: sliceAddress(payload, 64),
@@ -790,6 +798,83 @@ export function decodeReplaceKeys(payload: Hex): {
     oldKeys,
     newKeys,
   };
+}
+
+/// Encodes the ERC-1271 signature payload that `QuipWallet.isValidSignature`
+/// expects. Layout (mirrors `WOTSPlusCodec.encodeErc1271Signature`):
+///   [0:64)      verifier      (publicSeed ++ publicKeyHash)
+///   [64:2208)   pqSig         (67 × 32 bytes)
+///   [2208:2273) ecdsaSig      (standard secp256k1 r ++ s ++ v, 65 bytes)
+///
+/// The ECDSA half is an AND-mode failsafe verified against the wallet's
+/// classical `owner()`. It signs the raw ERC-1271 `hash` (no domain tag),
+/// not the WOTS+ digest.
+export function encodeErc1271Signature(
+  verifier: WinternitzAddress,
+  pqSig: WinternitzElements,
+  ecdsaSig: Hex
+): Hex {
+  if (pqSig.elements.length !== WOTS_ELEMENTS_COUNT) {
+    throw new Error(
+      `encodeErc1271Signature: pqSig.elements.length must be ${WOTS_ELEMENTS_COUNT}, got ${pqSig.elements.length}`
+    );
+  }
+  if (size(ecdsaSig) !== 65) {
+    throw new Error(
+      `encodeErc1271Signature: ecdsaSig must be 65 bytes, got ${size(ecdsaSig)}`
+    );
+  }
+  return concat([
+    verifier.publicSeed,
+    verifier.publicKeyHash,
+    concat(pqSig.elements),
+    ecdsaSig,
+  ]);
+}
+
+/// Decodes the ERC-1271 signature payload. Inverse of
+/// `encodeErc1271Signature`. Throws on length mismatch (matches the
+/// contract's `MalformedPayload(2273, signature.length)` revert).
+export function decodeErc1271Signature(signature: Hex): {
+  verifier: WinternitzAddress;
+  pqSig: WinternitzElements;
+  ecdsaSig: Hex;
+} {
+  if (size(signature) !== ERC1271_SIGNATURE_LEN) {
+    throw new Error(
+      `decodeErc1271Signature: expected ${ERC1271_SIGNATURE_LEN} bytes, got ${size(signature)}`
+    );
+  }
+  return {
+    verifier: sliceAddress(signature, 0),
+    pqSig: sliceElements(signature, 64),
+    ecdsaSig: slice(signature, 2208, 2273),
+  };
+}
+
+/// Mirrors `WOTSPlusCodec.erc1271Digest`:
+///   keccak256(abi.encode(ERC1271_TAG, chainId, wallet,
+///                        verifierSeed, verifierHash, messageHash))
+///
+/// `messageHash` is the raw ERC-1271 `hash` argument — NOT EIP-712 typed.
+/// See INVARIANTS.md for the wallet's signature-domain contract.
+export function erc1271Digest(
+  wallet: Address,
+  chainId: bigint,
+  verifierSeed: Hex,
+  verifierHash: Hex,
+  messageHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      ERC1271_TAG,
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      verifierSeed,
+      verifierHash,
+      messageHash,
+    ])
+  );
 }
 
 export function decodeResetKeyset(payload: Hex): {
@@ -1434,18 +1519,18 @@ export function computeUserOpHash(
 /// Quip paymaster's layout (`QuipPaymaster.sol:52-59` + `INVARIANTS.md:229`):
 ///
 ///   [0:20)     paymaster address
-///   [20:36)    validationGasLimit (uint128)
-///   [36:52)    postOpGasLimit     (uint128)
-///   [52:58)    validUntil         (uint48 / 6 bytes)
-///   [58:64)    validAfter         (uint48 / 6 bytes)
-///   [64:128)   nextVerifier       (publicSeed + publicKeyHash, 64 bytes)
-///   [128:2272) WOTS+ signature    (67 × 32 = 2144 bytes)
+///   [20:36)    verificationGasLimit (uint128)  // EP v0.7 `paymasterVerificationGasLimit`
+///   [36:52)    postOpGasLimit       (uint128)
+///   [52:58)    validUntil           (uint48 / 6 bytes)
+///   [58:64)    validAfter           (uint48 / 6 bytes)
+///   [64:128)   nextVerifier         (publicSeed + publicKeyHash, 64 bytes)
+///   [128:2272) WOTS+ signature      (67 × 32 = 2144 bytes)
 ///
 /// `sig` defaults to all-zeros when omitted (used during digest
 /// computation; substitute the real signature once it's produced).
 export function packPaymasterAndData(params: {
   paymaster: Address;
-  validationGasLimit: bigint;
+  verificationGasLimit: bigint;
   postOpGasLimit: bigint;
   validUntil: number; // uint48
   validAfter: number; // uint48
@@ -1453,11 +1538,11 @@ export function packPaymasterAndData(params: {
   sig?: WinternitzElements;
 }): Hex {
   if (
-    params.validationGasLimit < 0n ||
-    params.validationGasLimit >= 1n << 128n
+    params.verificationGasLimit < 0n ||
+    params.verificationGasLimit >= 1n << 128n
   ) {
     throw new Error(
-      `packPaymasterAndData: validationGasLimit out of uint128 range: ${params.validationGasLimit}`
+      `packPaymasterAndData: verificationGasLimit out of uint128 range: ${params.verificationGasLimit}`
     );
   }
   if (params.postOpGasLimit < 0n || params.postOpGasLimit >= 1n << 128n) {
@@ -1481,7 +1566,7 @@ export function packPaymasterAndData(params: {
       ? concat(params.sig.elements)
       : (("0x" + "00".repeat(67 * 32)) as Hex);
 
-  const validationGasLimitHex = pad(toHex(params.validationGasLimit), {
+  const verificationGasLimitHex = pad(toHex(params.verificationGasLimit), {
     size: 16,
   });
   const postOpGasLimitHex = pad(toHex(params.postOpGasLimit), { size: 16 });
@@ -1490,7 +1575,7 @@ export function packPaymasterAndData(params: {
 
   return concat([
     params.paymaster,
-    validationGasLimitHex,
+    verificationGasLimitHex,
     postOpGasLimitHex,
     validUntilHex,
     validAfterHex,
@@ -1505,7 +1590,7 @@ export function packPaymasterAndData(params: {
 /// paymaster rejects any other length on chain).
 export function decodePaymasterAndData(pmd: Hex): {
   paymaster: Address;
-  validationGasLimit: bigint;
+  verificationGasLimit: bigint;
   postOpGasLimit: bigint;
   validUntil: number;
   validAfter: number;
@@ -1519,7 +1604,7 @@ export function decodePaymasterAndData(pmd: Hex): {
   }
   return {
     paymaster: getAddress(slice(pmd, 0, 20)),
-    validationGasLimit: hexToBigInt(slice(pmd, 20, 36)),
+    verificationGasLimit: hexToBigInt(slice(pmd, 20, 36)),
     postOpGasLimit: hexToBigInt(slice(pmd, 36, 52)),
     validUntil: Number(hexToBigInt(slice(pmd, 52, 58))),
     validAfter: Number(hexToBigInt(slice(pmd, 58, 64))),

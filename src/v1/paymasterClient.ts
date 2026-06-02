@@ -312,7 +312,7 @@ export class QuipPaymasterClient {
     nextVerifier?: WinternitzAddress;
     validUntil?: number;
     validAfter?: number;
-    validationGasLimit?: bigint;
+    verificationGasLimit?: bigint;
     postOpGasLimit?: bigint;
   }): Promise<{
     userOp: PackedUserOperation;
@@ -351,7 +351,7 @@ export class QuipPaymasterClient {
     const validUntil = params.validUntil ?? 0;
     const validAfter = params.validAfter ?? 0;
 
-    const { paymasterAndData, digest } = buildSignedPaymasterAndData({
+    const { paymasterAndData, digest } = await buildSignedPaymasterAndData({
       signer: params.operatorSigner,
       vaultId: params.vaultId,
       paymaster: this.paymasterAddress,
@@ -361,8 +361,8 @@ export class QuipPaymasterClient {
       nextVerifier: next,
       validUntil,
       validAfter,
-      ...(params.validationGasLimit !== undefined && {
-        validationGasLimit: params.validationGasLimit,
+      ...(params.verificationGasLimit !== undefined && {
+        verificationGasLimit: params.verificationGasLimit,
       }),
       ...(params.postOpGasLimit !== undefined && {
         postOpGasLimit: params.postOpGasLimit,

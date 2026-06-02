@@ -26,11 +26,9 @@ import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { quipWalletAbi } from "./abi/QuipWallet.js";
 import {
-  type QuipError,
   PaymasterValidationFailure,
   UserOpValidationFailure,
 } from "./errors.js";
-import { decodeRevertBytes } from "./internal/decodeError.js";
 import { KeyType, type WinternitzAddress } from "./wotsCodec.js";
 
 /// Source for every parser — either a full `TransactionReceipt` or a raw
@@ -79,34 +77,6 @@ export function parseExecutionSucceeded(
     target: l.args.target,
     value: l.args.value,
     dataHash: l.args.dataHash,
-  }));
-}
-
-export interface ExecutionRevertedEvent {
-  target: Address;
-  value: bigint;
-  dataHash: Hex;
-  /// Raw revert bytes the inner call produced.
-  result: Hex;
-  /// Decoded reason if the revert bytes match a known Quip custom error.
-  /// `null` when the revert is empty (`0x`) or its selector is outside the
-  /// Quip ABI surface (e.g. a third-party target's custom error).
-  decodedReason: QuipError | null;
-}
-
-export function parseExecutionReverted(
-  src: LogSource
-): ExecutionRevertedEvent[] {
-  return parseEventLogs({
-    abi: quipWalletAbi,
-    logs: toLogs(src) as Log[],
-    eventName: "ExecutionReverted",
-  }).map((l) => ({
-    target: l.args.target,
-    value: l.args.value,
-    dataHash: l.args.dataHash,
-    result: l.args.result,
-    decodedReason: decodeRevertBytes(l.args.result),
   }));
 }
 
@@ -564,19 +534,20 @@ export function parseUserOpSponsored(
  *  ───────────────────────────────────────────────────────────────────  */
 
 /// Discriminated union over what a wallet `execute(bytes)` receipt can
-/// represent at the contract level. Three mutually exclusive shapes:
+/// represent at the contract level. Two mutually exclusive shapes:
 ///
 ///   - 'executed'      — inner call succeeded. Carries the target / value /
 ///                       calldata-hash and the wallet-side rotation. The
 ///                       `KeyRotated` pair is present whenever the wallet
 ///                       consumed a transaction key (i.e. every `execute`).
-///   - 'reverted'      — inner call reverted. Carries the raw revert bytes
-///                       plus a decoded `QuipError` reason when the selector
-///                       matches a known Quip custom error.
 ///   - 'rotation-only' — `execute(zeroAddr, 0, "0x")` — the wallet rotates
 ///                       its head transaction key without making an inner
 ///                       call. Distinguishable from a real transfer-to-zero
-///                       by the absence of `ExecutionSucceeded` / `Reverted`.
+///                       by the absence of `ExecutionSucceeded`.
+///
+/// Inner-call failure reverts the whole transaction (no event is emitted,
+/// no key rotates) — there is no 'reverted' shape because the receipt
+/// itself indicates the failure.
 ///
 /// A receipt may also carry no wallet-execute event at all (e.g. a
 /// key-management write like `replaceKeys` produces `KeysReplaced` +
@@ -592,15 +563,6 @@ export type WalletTxResult =
       rotation: KeyRotatedEvent;
     }
   | {
-      kind: "reverted";
-      target: Address;
-      value: bigint;
-      dataHash: Hex;
-      result: Hex;
-      decodedReason: QuipError | null;
-      rotation: KeyRotatedEvent;
-    }
-  | {
       kind: "rotation-only";
       currentKey: WinternitzAddress;
       nextKey: WinternitzAddress;
@@ -613,7 +575,6 @@ export function parseWalletReceipt(src: LogSource): WalletTxResult | null {
   const logs = toLogs(src);
 
   const successes = parseExecutionSucceeded(logs);
-  const reverts = parseExecutionReverted(logs);
   const rotationsOnly = parseKeyRotationOnly(logs);
 
   if (rotationsOnly.length > 0) {
@@ -625,34 +586,20 @@ export function parseWalletReceipt(src: LogSource): WalletTxResult | null {
     };
   }
 
-  // For executed/reverted shapes we expect the KeyRotated emitted alongside.
-  if (successes.length > 0 || reverts.length > 0) {
+  if (successes.length > 0) {
     const rotations = parseKeyRotated(logs);
     if (rotations.length === 0) {
       // Defensive: every execute path emits exactly one KeyRotated. If the
       // receipt is malformed, treat it as no result.
       return null;
     }
-    const rotation = rotations[0];
-    if (successes.length > 0) {
-      const s = successes[0];
-      return {
-        kind: "executed",
-        target: s.target,
-        value: s.value,
-        dataHash: s.dataHash,
-        rotation,
-      };
-    }
-    const r = reverts[0];
+    const s = successes[0];
     return {
-      kind: "reverted",
-      target: r.target,
-      value: r.value,
-      dataHash: r.dataHash,
-      result: r.result,
-      decodedReason: r.decodedReason,
-      rotation,
+      kind: "executed",
+      target: s.target,
+      value: s.value,
+      dataHash: s.dataHash,
+      rotation: rotations[0],
     };
   }
 

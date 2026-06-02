@@ -201,7 +201,7 @@ interface IQuipWallet {
     event WalletInitialized(
         address indexed factory,
         address indexed owner,
-        bytes32 transactionKeysHash,
+        bytes32 indexed transactionKeysHash,
         bytes32 recoveryKeysHash,
         bytes32 verificationKeysHash
     );
@@ -218,7 +218,7 @@ interface IQuipWallet {
     event WalletSaved(
         WOTSPlus.WinternitzAddress oldDisasterRecoveryKey,
         WOTSPlus.WinternitzAddress newDisasterRecoveryKey,
-        bytes32 newTransactionKeysHash,
+        bytes32 indexed newTransactionKeysHash,
         bytes32 newRecoveryKeysHash,
         bytes32 newVerificationKeysHash
     );
@@ -240,7 +240,7 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress newOwnershipKey,
         address indexed newOwner,
         WOTSPlus.WinternitzAddress newDisasterRecoveryKey,
-        bytes32 newTransactionKeysHash,
+        bytes32 indexed newTransactionKeysHash,
         bytes32 newRecoveryKeysHash,
         bytes32 newVerificationKeysHash
     );
@@ -301,19 +301,6 @@ interface IQuipWallet {
         WOTSPlus.WinternitzAddress currentKey,
         WOTSPlus.WinternitzAddress nextKey,
         WOTSPlus.WinternitzAddress[10] newKeys
-    );
-
-    /// @notice Emitted when the inner call of an ERC-4337 execution reverts but
-    ///         key rotation commits.
-    /// @param target The target of the failed call.
-    /// @param value The ETH value attempted.
-    /// @param dataHash The keccak256 hash of the calldata.
-    /// @param result The revert data from the failed call.
-    event ExecutionReverted(
-        address indexed target,
-        uint256 value,
-        bytes32 dataHash,
-        bytes result
     );
 
     /// @notice Discriminates the four reasons `_validateSignature` may return

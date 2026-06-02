@@ -21,13 +21,17 @@ import { KeyAlreadyBurnedError } from "./errors.js";
 /// Atomic check-and-claim function for WOTS+ public seeds.
 ///
 /// The SDK invokes this exactly once at the top of every `QuipSigner.sign(...)`
-/// call. The contract:
+/// call and **awaits** it before the WOTS+ signature is produced. The contract:
 ///
 /// - If the seed has already been claimed, throw `KeyAlreadyBurnedError`.
 /// - Otherwise, mark the seed as claimed and return.
 ///
 /// The function must be deterministic per `publicSeed`: once `consume(seed)`
-/// returns successfully, every subsequent `consume(seed)` MUST throw.
+/// returns (or resolves) successfully, every subsequent `consume(seed)` MUST
+/// throw. Returns either `void` (sync default) or `Promise<void>` (async
+/// implementations backed by Redis / Postgres / KMS / etc.). The signer
+/// awaits the result either way, so the atomicity guarantee is preserved
+/// for both shapes.
 ///
 /// **Case-insensitive identity.** The `Hex` type is a hex-encoded byte string;
 /// `0xABCD…` and `0xabcd…` represent the same seed. Custom `ConsumeKeyFn`
@@ -38,7 +42,7 @@ import { KeyAlreadyBurnedError } from "./errors.js";
 /// default; production callers should back this with durable storage so a
 /// process restart cannot resurrect a burned key. See `SDK_README.md` for the
 /// operational contract.
-export type ConsumeKeyFn = (publicSeed: Hex) => void;
+export type ConsumeKeyFn = (publicSeed: Hex) => Promise<void> | void;
 
 /// Concrete implementation returned by `createInMemoryBurnSet()`. Exposes
 /// `consume` (the function the signer takes) and a `clear()` escape hatch

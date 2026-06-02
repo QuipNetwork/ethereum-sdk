@@ -149,13 +149,18 @@ export class QuipSigner {
   /// `consume`, the WOTS+ sign call runs; if it raises, the seed is
   /// already burned — the safe failure mode.
   ///
+  /// The method is `async` so production `ConsumeKeyFn` implementations
+  /// backed by Redis / Postgres / KMS can return a Promise; the await runs
+  /// inside this method, so a sync `consume` works transparently too. The
+  /// WOTS+ signing itself is synchronous.
+  ///
   /// The signature is returned as 67 `Hex` bytes32 elements, ready to
   /// drop straight into the codec's `WinternitzElements` shape:
   ///
-  ///   const sig = signer.sign(digest, vaultId, currentKey.publicSeed);
+  ///   const sig = await signer.sign(digest, vaultId, currentKey.publicSeed);
   ///   const pqSig: WinternitzElements = { elements: sig };
-  public sign(message: Hex, vaultId: Hex, publicSeed: Hex): Hex[] {
-    this.consume(publicSeed);
+  public async sign(message: Hex, vaultId: Hex, publicSeed: Hex): Promise<Hex[]> {
+    await this.consume(publicSeed);
     const key = this.recoverKeyPair(vaultId, publicSeed);
     const sig = this.wots.sign(
       key.privateKey,

@@ -276,6 +276,25 @@ export class MalformedPayloadError extends QuipError {
   }
 }
 
+/// Mirrors `WOTSPlusCodec.MalformedPayload(uint256 expected, uint256 actual)`
+/// — distinct from `IQuipWallet.MalformedPayload()` (zero-arg). Same name,
+/// different selectors; this class preserves the codec's diagnostic
+/// expected/actual fields so callers can inspect the size mismatch.
+export class MalformedCodecPayloadError extends QuipError {
+  readonly expected: bigint;
+  readonly actual: bigint;
+
+  constructor(expected: bigint, actual: bigint, opts?: QuipErrorOptions) {
+    super(
+      "MALFORMED_CODEC_PAYLOAD",
+      `Codec payload size mismatch: expected ${expected.toString()} bytes, got ${actual.toString()}`,
+      opts
+    );
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
 export class ImplementationNotVettedError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(

@@ -22,6 +22,7 @@ import {
   type TransactionReceipt,
   decodeFunctionResult,
   encodeFunctionData,
+  zeroAddress,
   zeroHash,
 } from "viem";
 
@@ -45,10 +46,15 @@ import {
   IncorrectRecoveryKeyAmountError,
   IncorrectTransactionKeyAmountError,
   IncorrectVerificationKeyAmountError,
+  KeyInUseError,
   PartialMulticallResultError,
   PaymasterValidationFailure,
+  SameKeyError,
   UnknownKeyError,
+  UnknownDisasterRecoveryKeyError,
+  UnknownOwnershipKeyError,
   UserOpValidationFailure,
+  ZeroAddressOwnerError,
 } from "./errors.js";
 import { decodeContractError } from "./internal/decodeError.js";
 import {
@@ -309,6 +315,18 @@ export class QuipWalletClient {
   private quipSigner: QuipSigner;
   private vaultId: Hex;
   private chainId: number;
+  /// Per-instance caches for two values that are stable over a wallet
+  /// instance's lifetime modulo factory-owner action:
+  ///   - `entryPoint` is set once at impl deploy and never rotates without an
+  ///     `upgradeToAndCall` — effectively immutable for a given impl version,
+  ///     so we cache indefinitely. Call `refreshFees()` after a known upgrade.
+  ///   - `executeFee` is owner-mutable via the factory; cached for the
+  ///     lifetime of this `QuipWalletClient` instance to spare an `eth_call`
+  ///     per write. Long-lived clients that need fresh values should call
+  ///     `refreshFees()` (or construct a new client).
+  /// Both default to `null` and fill on first read.
+  private cachedEntryPoint: Address | null = null;
+  private cachedExecuteFee: bigint | null = null;
 
   constructor(
     quipSigner: QuipSigner,
@@ -332,14 +350,26 @@ export class QuipWalletClient {
     return this.walletAddress;
   }
 
+  /// Drop the cached `executeFee` and `entryPoint`. Call after a known
+  /// factory-owner fee change or after a wallet upgrade that could rotate
+  /// the EntryPoint reference. The next call to `getExecuteFee` /
+  /// `getEntryPoint` will re-fetch.
+  public refreshFees(): void {
+    this.cachedExecuteFee = null;
+    this.cachedEntryPoint = null;
+  }
+
   async getExecuteFee(): Promise<bigint> {
-    return await withDecodedError(
+    if (this.cachedExecuteFee !== null) return this.cachedExecuteFee;
+    const fee = await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
         abi: quipWalletAbi,
         functionName: "getExecuteFee",
       })
     );
+    this.cachedExecuteFee = fee;
+    return fee;
   }
 
   /// Wallet's ETH balance held with the ERC-4337 EntryPoint (used to pay
@@ -579,10 +609,12 @@ export class QuipWalletClient {
 
   /// Sign a digest with the recovered private key for `currentKey`. The
   /// SDK's `QuipSigner` regenerates the keypair from `(quantumSecret, vaultId,
-  /// publicSeed)` deterministically.
-  private signWith(currentSeed: Hex, digest: Hex): WinternitzElements {
+  /// publicSeed)` deterministically. Async because `QuipSigner.sign` awaits
+  /// the injected `ConsumeKeyFn`, which production callers may back with
+  /// Redis/Postgres/KMS (see [[burn-set-async]]).
+  private async signWith(currentSeed: Hex, digest: Hex): Promise<WinternitzElements> {
     return {
-      elements: this.quipSigner.sign(digest, this.vaultId, currentSeed),
+      elements: await this.quipSigner.sign(digest, this.vaultId, currentSeed),
     };
   }
 
@@ -628,7 +660,7 @@ export class QuipWalletClient {
   ): Promise<TransactionReceipt> {
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
     const digest = spec.buildDigest(currentKey, nextKey);
-    const pqSig = this.signWith(currentKey.publicSeed, digest);
+    const pqSig = await this.signWith(currentKey.publicSeed, digest);
     const payload = spec.buildPayload(currentKey, nextKey, pqSig);
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
@@ -654,6 +686,53 @@ export class QuipWalletClient {
       if (seen.has(id)) throw new DuplicateKeyError();
       seen.add(id);
     }
+  }
+
+  /// Case-insensitive structural equality on the (publicSeed, publicKeyHash)
+  /// pair. The `Hex` type is a hex-encoded byte string, so two keys with
+  /// different casings must compare equal.
+  private static _sameKey(a: WinternitzAddress, b: WinternitzAddress): boolean {
+    return (
+      a.publicSeed.toLowerCase() === b.publicSeed.toLowerCase() &&
+      a.publicKeyHash.toLowerCase() === b.publicKeyHash.toLowerCase()
+    );
+  }
+
+  /// Pre-flight: confirm `derivedKey` actually lives on chain as the
+  /// claimed signing key (single-slot Ownership/DisasterRecovery key, or
+  /// an entry in the Recovery / Transaction / Verification keyset). Throws
+  /// the appropriate typed error BEFORE `signWith` runs.
+  ///
+  /// Catches two distinct foot-guns at the same time:
+  ///   - Wrong `quantumSecret` loaded (different vault than expected) —
+  ///     the SDK derives a valid keypair from any secret, but it won't
+  ///     match the wallet's on-chain key, so the WOTS+ verify would revert
+  ///     anyway. We catch it here before the seed burns.
+  ///   - Key already rotated by a concurrent op — same outcome.
+  ///
+  /// `kind === KeyType.Verification` is rejected upstream (verification
+  /// keys never sign), so this helper only accepts the four signing
+  /// surfaces.
+  private async _preflightSigningKey(
+    kind: "Ownership" | "DisasterRecovery" | KeyType.Transaction | KeyType.Recovery,
+    derivedKey: WinternitzAddress
+  ): Promise<void> {
+    if (kind === "Ownership") {
+      const onChain = await this.getOwnershipKey();
+      if (!QuipWalletClient._sameKey(onChain, derivedKey)) {
+        throw new UnknownOwnershipKeyError();
+      }
+      return;
+    }
+    if (kind === "DisasterRecovery") {
+      const onChain = await this.getDisasterRecoveryKey();
+      if (!QuipWalletClient._sameKey(onChain, derivedKey)) {
+        throw new UnknownDisasterRecoveryKeyError();
+      }
+      return;
+    }
+    const live = await this.isKey(kind, derivedKey);
+    if (!live) throw new UnknownKeyError();
   }
 
   /// Codec-payload `execute(bytes)`. Replaces the legacy
@@ -718,7 +797,7 @@ export class QuipWalletClient {
       codecOpdataHash(data),
       fee
     );
-    const pqSig = this.signWith(currentKey.publicSeed, digest);
+    const pqSig = await this.signWith(currentKey.publicSeed, digest);
     const payload = encodeExecute(currentKey, nextKey, pqSig, target, value, data);
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
@@ -978,6 +1057,11 @@ export class QuipWalletClient {
       this.vaultId,
       recoveryPublicSeed
     ).publicKey;
+    // Pre-flight: confirm currentRecovery actually lives in the on-chain
+    // recovery keyset before the seed burns. Catches wrong-secret loads
+    // and concurrent-rotation races (HARDENING-1, HARDENING-2).
+    await this._preflightSigningKey(KeyType.Recovery, currentRecovery);
+
     const nextRecovery = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
     const newTxKeys: WinternitzAddress[] = Array.from(
       { length: MAX_KEYS },
@@ -996,7 +1080,7 @@ export class QuipWalletClient {
       nextRecovery.publicKeyHash,
       newKeysHashHex
     );
-    const pqSig = this.signWith(recoveryPublicSeed, digest);
+    const pqSig = await this.signWith(recoveryPublicSeed, digest);
     const payload = encodeResetKeyset(
       KeyType.Transaction,
       KeyType.Recovery,
@@ -1035,6 +1119,10 @@ export class QuipWalletClient {
       this.vaultId,
       disasterRecoveryPublicSeed
     ).publicKey;
+    // Pre-flight: confirm currentDisaster matches the wallet's stored
+    // disaster-recovery key before the seed burns (HARDENING-1, HARDENING-2).
+    await this._preflightSigningKey("DisasterRecovery", currentDisaster);
+
     const newDisaster = this.quipSigner.generateKeyPair(this.vaultId).publicKey;
     const newTransactionKeys: WinternitzAddress[] = Array.from(
       { length: MAX_KEYS },
@@ -1063,7 +1151,7 @@ export class QuipWalletClient {
       newDisaster.publicKeyHash,
       keysHashHex
     );
-    const pqSig = this.signWith(disasterRecoveryPublicSeed, digest);
+    const pqSig = await this.signWith(disasterRecoveryPublicSeed, digest);
     const payload = encodeSaveWallet(
       currentDisaster,
       newDisaster,
@@ -1114,10 +1202,55 @@ export class QuipWalletClient {
       throw new IncorrectVerificationKeyAmountError();
     }
 
+    // H7: cheap constraint checks that mirror the contract's reverts. Done
+    // before signWith so a malformed call doesn't burn the ownership key.
+    // The contract rejects:
+    //   - newOwner == 0x0
+    //   - newOwnershipKey with zero publicSeed / publicKeyHash
+    //   - newDisasterRecoveryKey with zero publicSeed / publicKeyHash
+    //   - newOwnershipKey == newDisasterRecoveryKey (collision)
+    if (params.newOwner === zeroAddress) {
+      throw new ZeroAddressOwnerError();
+    }
+    if (
+      params.newOwnershipKey.publicSeed === zeroHash ||
+      params.newOwnershipKey.publicKeyHash === zeroHash
+    ) {
+      throw new UnknownOwnershipKeyError();
+    }
+    if (
+      params.newDisasterRecoveryKey.publicSeed === zeroHash ||
+      params.newDisasterRecoveryKey.publicKeyHash === zeroHash
+    ) {
+      throw new UnknownDisasterRecoveryKeyError();
+    }
+    if (
+      QuipWalletClient._sameKey(
+        params.newOwnershipKey,
+        params.newDisasterRecoveryKey
+      )
+    ) {
+      throw new KeyInUseError();
+    }
+
     const currentOwnership = this.quipSigner.recoverKeyPair(
       this.vaultId,
       ownershipPublicSeed
     ).publicKey;
+    // Pre-flight: confirm currentOwnership matches the wallet's stored
+    // ownership key before the seed burns. Ownership key is single-slot —
+    // burning it without an on-chain rotation bricks the wallet's transfer
+    // path. See HARDENING-1, HARDENING-2.
+    await this._preflightSigningKey("Ownership", currentOwnership);
+
+    // Reject newOwnershipKey == currentOwnership (would not survive
+    // `_verifyAndRotate`'s SameKey check — but we already have the on-chain
+    // key in hand, so we can fail clean before signing).
+    if (
+      QuipWalletClient._sameKey(params.newOwnershipKey, currentOwnership)
+    ) {
+      throw new SameKeyError();
+    }
     const keysHashHex = ownershipTransferKeysHash(
       params.newDisasterRecoveryKey,
       params.newTransactionKeys,
@@ -1134,7 +1267,7 @@ export class QuipWalletClient {
       params.newOwner,
       keysHashHex
     );
-    const pqSig = this.signWith(ownershipPublicSeed, digest);
+    const pqSig = await this.signWith(ownershipPublicSeed, digest);
     const payload = encodeOwnershipTransfer(
       currentOwnership,
       params.newOwnershipKey,
@@ -1191,7 +1324,7 @@ export class QuipWalletClient {
       nextKey.publicSeed,
       nextKey.publicKeyHash
     );
-    const pqSig = this.signWith(currentKey.publicSeed, digest);
+    const pqSig = await this.signWith(currentKey.publicSeed, digest);
     const shouldMigrate =
       options.migrationPayload !== undefined && options.migrationPayload !== "0x";
     const payload = encodeUpgradeToAndCall(
@@ -1236,6 +1369,10 @@ export class QuipWalletClient {
       this.vaultId,
       recoveryPublicSeed
     ).publicKey;
+    // Pre-flight: confirm currentRecoveryKey is still installed before
+    // the seed burns (HARDENING-1, HARDENING-2).
+    await this._preflightSigningKey(KeyType.Recovery, currentRecoveryKey);
+
     const newRecoveryKey =
       options.newRecoveryKey ??
       this.quipSigner.generateKeyPair(this.vaultId).publicKey;
@@ -1249,7 +1386,7 @@ export class QuipWalletClient {
       newRecoveryKey.publicSeed,
       newRecoveryKey.publicKeyHash
     );
-    const pqSig = this.signWith(recoveryPublicSeed, digest);
+    const pqSig = await this.signWith(recoveryPublicSeed, digest);
     const payload = encodeRecoveryUpgrade(
       currentRecoveryKey,
       newRecoveryKey,
@@ -1535,7 +1672,7 @@ export class QuipWalletClient {
       userOpHash,
       executeFee
     );
-    const pqSig = this.signWith(currentKey.publicSeed, walletDigest);
+    const pqSig = await this.signWith(currentKey.publicSeed, walletDigest);
     const signature = encodeUserOpSignature(currentKey, nextKey, pqSig);
     return {
       userOp: { ...userOp, signature },
@@ -1562,17 +1699,13 @@ export class QuipWalletClient {
   ): Promise<SimulateUserOpResult> {
     const entryPoint = opts.entryPoint ?? (await this.getEntryPoint());
 
-    // --- Wallet side ---
-    const walletPart = await this.simulateWalletValidation(
-      userOp,
-      entryPoint
-    );
-
-    // --- Paymaster side ---
-    const paymasterPart = await this.simulatePaymasterValidation(
-      userOp,
-      entryPoint
-    );
+    // The wallet- and paymaster-side validations are independent (each has
+    // its own pre-checks + eth_call). Run them concurrently so the slower
+    // of the two sets total latency instead of the sum.
+    const [walletPart, paymasterPart] = await Promise.all([
+      this.simulateWalletValidation(userOp, entryPoint),
+      this.simulatePaymasterValidation(userOp, entryPoint),
+    ]);
 
     return {
       walletValidation: walletPart.result,
@@ -1623,8 +1756,13 @@ export class QuipWalletClient {
       };
     }
 
-    // 2. StaleCurrentKey — currentKey must be in the transaction keyset.
-    const currentIsActive = await this.isKey(KeyType.Transaction, currentKey);
+    // 2 + 3. Run `isKey(currentKey)` and `isKeySpent(nextKey)` in parallel
+    // — both are independent view reads. Saves one RPC RTT per simulation.
+    // Order of error-precedence is preserved by destructure-then-check.
+    const [currentIsActive, inUse] = await Promise.all([
+      this.isKey(KeyType.Transaction, currentKey),
+      this.isKeySpent(nextKey),
+    ]);
     if (!currentIsActive) {
       return {
         result: UserOpValidationFailure.StaleCurrentKey,
@@ -1632,11 +1770,6 @@ export class QuipWalletClient {
         validationData: null,
       };
     }
-
-    // 3. NextKeyAlreadyInUse — nextKey must not have been previously
-    //    installed in any slot. Mirrors the contract's monotonic
-    //    `_enforceUnspentKey` check via the `isKeySpent` burn index.
-    const inUse = await this.isKeySpent(nextKey);
     if (inUse) {
       return {
         result: UserOpValidationFailure.NextKeyAlreadyInUse,
@@ -1839,14 +1972,19 @@ export class QuipWalletClient {
   }
 
   /// Read the EntryPoint address from the wallet's `entryPoint()` view.
+  /// Cached per-instance; call `refreshFees()` to invalidate after a known
+  /// upgrade that could rotate the EntryPoint reference.
   async getEntryPoint(): Promise<Address> {
-    return await withDecodedError(
+    if (this.cachedEntryPoint !== null) return this.cachedEntryPoint;
+    const ep = await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
         abi: quipWalletAbi,
         functionName: "entryPoint",
       })
     );
+    this.cachedEntryPoint = ep;
+    return ep;
   }
 
   /// Read the wallet's current implementation version — the index of the

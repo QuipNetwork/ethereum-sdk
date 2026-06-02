@@ -21,18 +21,11 @@ import {
   encodeAbiParameters,
   encodeEventTopics,
   keccak256,
-  toFunctionSelector,
   zeroHash,
 } from "viem";
 
 import { quipWalletAbi } from "../abi/QuipWallet.js";
 import {
-  InvalidSignatureError,
-  KeyInUseError,
-  UnknownContractError,
-} from "../errors.js";
-import {
-  parseExecutionReverted,
   parseExecutionSucceeded,
   parseKeyRotated,
   parseWalletReceipt,
@@ -129,51 +122,6 @@ describe("parseExecutionSucceeded", () => {
     expect(parsed[0].target.toLowerCase()).toBe(TARGET.toLowerCase());
     expect(parsed[0].value).toBe(123n);
     expect(parsed[0].dataHash).toBe(dataHash);
-  });
-});
-
-describe("parseExecutionReverted", () => {
-  /// Helper: produce an ExecutionReverted log carrying `result` as the
-  /// inner revert bytes.
-  function execRevertedLog(result: Hex): Log {
-    const topics = encodeEventTopics({
-      abi: quipWalletAbi,
-      eventName: "ExecutionReverted",
-      args: { target: TARGET },
-    });
-    const data = encodeAbiParameters(
-      [{ type: "uint256" }, { type: "bytes32" }, { type: "bytes" }],
-      [0n, keccak256("0x"), result]
-    );
-    return makeLog({ topics, data });
-  }
-
-  it("decodedReason resolves to InvalidSignatureError for that selector", () => {
-    const sel = toFunctionSelector("InvalidSignature()") as Hex;
-    const parsed = parseExecutionReverted([execRevertedLog(sel)]);
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0].result).toBe(sel);
-    expect(parsed[0].decodedReason).toBeInstanceOf(InvalidSignatureError);
-  });
-
-  it("decodedReason resolves to KeyInUseError for that selector", () => {
-    const sel = toFunctionSelector("KeyInUse()") as Hex;
-    const parsed = parseExecutionReverted([execRevertedLog(sel)]);
-    expect(parsed[0].decodedReason).toBeInstanceOf(KeyInUseError);
-  });
-
-  it("decodedReason is UnknownContractError for an out-of-surface selector", () => {
-    // A made-up selector with valid abi-encoded args (single uint256 = 0).
-    const revertBytes = ("0xdeadbeef" +
-      "00".repeat(32)) as Hex;
-    const parsed = parseExecutionReverted([execRevertedLog(revertBytes)]);
-    // Unknown selectors decode with no errorName → UnknownContractError.
-    expect(parsed[0].decodedReason).toBeInstanceOf(UnknownContractError);
-  });
-
-  it("decodedReason is null for empty revert (0x)", () => {
-    const parsed = parseExecutionReverted([execRevertedLog("0x")]);
-    expect(parsed[0].decodedReason).toBeNull();
   });
 });
 

@@ -368,7 +368,7 @@ library WOTSPlusCodec {
     /// @dev Decodes the upgradeToAndCall payload's verification portion.
     ///      Layout: [2272:2336) verifier, [2336:4480) verifySig.
     ///      Used by verifyUpgrade() in the upgradeToAndCall path.
-    /// @param data The packed upgrade payload (5505 bytes).
+    /// @param data The packed upgrade payload (6529 bytes).
     /// @return verifier The verifier's WinternitzAddress at offset 2272.
     /// @return verifySig The verifier's WinternitzElements at offset 2336.
     function decodeUpgradeVerification(
@@ -1013,7 +1013,7 @@ library WOTSPlusCodec {
     }
 
     /// @dev Encodes the full upgradeToAndCall payload (auth + verification + migration).
-    /// @return The packed payload (5505 bytes).
+    /// @return The packed payload (6529 bytes).
     function encodeUpgradeToAndCall(
         WOTSPlus.WinternitzAddress memory currentKey,
         WOTSPlus.WinternitzAddress memory nextKey,
