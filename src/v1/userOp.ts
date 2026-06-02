@@ -93,7 +93,7 @@ export function buildUserOp(params: BuildUserOpParams): PackedUserOperation {
 /// The signing key is the WOTS+ keypair derived from `(vaultId, currentKey.publicSeed)`.
 /// `QuipSigner.sign(...)` auto-burns the key — once this function returns,
 /// the `currentKey` is dead in the signer.
-export function signWalletUserOp(params: {
+export async function signWalletUserOp(params: {
   signer: QuipSigner;
   vaultId: Hex;
   userOp: PackedUserOperation;
@@ -103,7 +103,7 @@ export function signWalletUserOp(params: {
   currentKey: WinternitzAddress;
   nextKey: WinternitzAddress;
   executeFee: bigint;
-}): { signature: Hex; walletDigest: Hex; userOpHash: Hex } {
+}): Promise<{ signature: Hex; walletDigest: Hex; userOpHash: Hex }> {
   const userOpHash = computeUserOpHash(
     params.userOp,
     params.entryPoint,
@@ -120,7 +120,7 @@ export function signWalletUserOp(params: {
     params.executeFee
   );
   const pqSig: WinternitzElements = {
-    elements: params.signer.sign(
+    elements: await params.signer.sign(
       walletDigest,
       params.vaultId,
       params.currentKey.publicSeed
@@ -144,14 +144,14 @@ export function signWalletUserOp(params: {
 /// The signature region (`paymasterAndData[PAYMASTER_SIG_OFFSET:]`) can be
 /// zero — it's excluded from the binding hash. Use `packPaymasterAndData`
 /// with `sig` omitted to construct the prefix.
-export function signPaymasterUserOp(params: {
+export async function signPaymasterUserOp(params: {
   signer: QuipSigner;
   vaultId: Hex;
   paymaster: Address;
   chainId: bigint;
   userOp: PackedUserOperation;
   currentVerifier: WinternitzAddress;
-}): { sig: WinternitzElements; digest: Hex } {
+}): Promise<{ sig: WinternitzElements; digest: Hex }> {
   const bindingHash = userOpBindingHash(params.userOp);
   const digest = paymasterUserOpDigest(
     params.paymaster,
@@ -162,7 +162,7 @@ export function signPaymasterUserOp(params: {
   );
   return {
     sig: {
-      elements: params.signer.sign(
+      elements: await params.signer.sign(
         digest,
         params.vaultId,
         params.currentVerifier.publicSeed
@@ -271,7 +271,7 @@ export function estimateSponsorshipCost(
 ///      excluded from the binding so the digest can be produced before the
 ///      signature exists.
 ///   3. Re-pack the paymasterAndData with the real sig.
-export function buildSignedPaymasterAndData(params: {
+export async function buildSignedPaymasterAndData(params: {
   signer: QuipSigner;
   vaultId: Hex;
   paymaster: Address;
@@ -281,17 +281,17 @@ export function buildSignedPaymasterAndData(params: {
   nextVerifier: WinternitzAddress;
   validUntil: number;
   validAfter: number;
-  validationGasLimit?: bigint;
+  verificationGasLimit?: bigint;
   postOpGasLimit?: bigint;
-}): { paymasterAndData: Hex; digest: Hex } {
-  const validationGasLimit =
-    params.validationGasLimit ?? DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT;
+}): Promise<{ paymasterAndData: Hex; digest: Hex }> {
+  const verificationGasLimit =
+    params.verificationGasLimit ?? DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT;
   const postOpGasLimit =
     params.postOpGasLimit ?? DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT;
 
   const prefixWithZeroSig = packPaymasterAndData({
     paymaster: params.paymaster,
-    validationGasLimit,
+    verificationGasLimit,
     postOpGasLimit,
     validUntil: params.validUntil,
     validAfter: params.validAfter,
@@ -301,7 +301,7 @@ export function buildSignedPaymasterAndData(params: {
     ...params.userOp,
     paymasterAndData: prefixWithZeroSig,
   };
-  const { sig, digest } = signPaymasterUserOp({
+  const { sig, digest } = await signPaymasterUserOp({
     signer: params.signer,
     vaultId: params.vaultId,
     paymaster: params.paymaster,
@@ -311,7 +311,7 @@ export function buildSignedPaymasterAndData(params: {
   });
   const paymasterAndData = packPaymasterAndData({
     paymaster: params.paymaster,
-    validationGasLimit,
+    verificationGasLimit,
     postOpGasLimit,
     validUntil: params.validUntil,
     validAfter: params.validAfter,

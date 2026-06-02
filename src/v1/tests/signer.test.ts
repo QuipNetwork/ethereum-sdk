@@ -29,36 +29,36 @@ const VAULT_ID: Hex = toHex(new Uint8Array(32).fill(0x01));
 const MESSAGE: Hex = toHex(new Uint8Array(32).fill(0x77));
 
 describe("QuipSigner burned-key tracking via injected consume", () => {
-  it("sign succeeds when key is not burned", () => {
+  it("sign succeeds when key is not burned", async () => {
     const burnSet = createInMemoryBurnSet();
     const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signer.generateKeyPair(VAULT_ID);
-    const sig = signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    const sig = await signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(sig.length).toBe(67);
     for (const el of sig) {
       expect(el.length).toBe(2 + 64);
     }
   });
 
-  it("sign records the burn via the injected consume (second sign throws)", () => {
+  it("sign records the burn via the injected consume (second sign throws)", async () => {
     const burnSet = createInMemoryBurnSet();
     const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signer.generateKeyPair(VAULT_ID);
-    signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    await signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     const otherMessage: Hex = toHex(new Uint8Array(32).fill(0xaa));
-    expect(() =>
+    await expect(
       signer.sign(otherMessage, VAULT_ID, kp.publicKey.publicSeed)
-    ).toThrow(KeyAlreadyBurnedError);
+    ).rejects.toThrow(KeyAlreadyBurnedError);
   });
 
-  it("KeyAlreadyBurnedError carries the publicSeed", () => {
+  it("KeyAlreadyBurnedError carries the publicSeed", async () => {
     const burnSet = createInMemoryBurnSet();
     const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signer.generateKeyPair(VAULT_ID);
     // Pre-burn via the burn set directly.
     burnSet.consume(kp.publicKey.publicSeed);
     try {
-      signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+      await signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
       throw new Error("expected sign to throw");
     } catch (e) {
       expect(e).toBeInstanceOf(KeyAlreadyBurnedError);
@@ -69,71 +69,99 @@ describe("QuipSigner burned-key tracking via injected consume", () => {
     }
   });
 
-  it("burning one key does not affect another", () => {
+  it("burning one key does not affect another", async () => {
     const burnSet = createInMemoryBurnSet();
     const signer = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const a = signer.generateKeyPair(VAULT_ID);
     const b = signer.generateKeyPair(VAULT_ID);
     burnSet.consume(a.publicKey.publicSeed);
     // Signing with b still works.
-    const sig = signer.sign(MESSAGE, VAULT_ID, b.publicKey.publicSeed);
+    const sig = await signer.sign(MESSAGE, VAULT_ID, b.publicKey.publicSeed);
     expect(sig.length).toBe(67);
     // Signing with a throws.
-    expect(() =>
+    await expect(
       signer.sign(MESSAGE, VAULT_ID, a.publicKey.publicSeed)
-    ).toThrow(KeyAlreadyBurnedError);
+    ).rejects.toThrow(KeyAlreadyBurnedError);
   });
 
-  it("each signer can be wired to its own burn set (independent state)", () => {
+  it("each signer can be wired to its own burn set (independent state)", async () => {
     const burnSetA = createInMemoryBurnSet();
     const burnSetB = createInMemoryBurnSet();
     const signerA = new QuipSigner(QUANTUM_SECRET, burnSetA.consume);
     const signerB = new QuipSigner(QUANTUM_SECRET, burnSetB.consume);
     const kp = signerA.generateKeyPair(VAULT_ID);
-    signerA.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    await signerA.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     // signerA's burn was recorded in burnSetA; burnSetB is untouched, so
     // signerB can still sign with the same seed.
-    const sig = signerB.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    const sig = await signerB.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(sig.length).toBe(67);
   });
 
-  it("two signers sharing a burn set share burn state", () => {
+  it("two signers sharing a burn set share burn state", async () => {
     const burnSet = createInMemoryBurnSet();
     const signerA = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const signerB = new QuipSigner(QUANTUM_SECRET, burnSet.consume);
     const kp = signerA.generateKeyPair(VAULT_ID);
-    signerA.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    await signerA.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     // The burn surfaces through signerB because both signers share the
     // same consume function.
-    expect(() =>
+    await expect(
       signerB.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed)
-    ).toThrow(KeyAlreadyBurnedError);
+    ).rejects.toThrow(KeyAlreadyBurnedError);
   });
 });
 
 describe("QuipSigner consume runs BEFORE the WOTS+ signature", () => {
-  it("a failing consume short-circuits before any signature exists", () => {
+  it("a failing consume short-circuits before any signature exists", async () => {
     const failing = (_publicSeed: Hex): void => {
       throw new KeyAlreadyBurnedError(_publicSeed);
     };
     const signer = new QuipSigner(QUANTUM_SECRET, failing);
     const kp = signer.generateKeyPair(VAULT_ID);
-    expect(() =>
+    await expect(
       signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed)
-    ).toThrow(KeyAlreadyBurnedError);
+    ).rejects.toThrow(KeyAlreadyBurnedError);
   });
 
-  it("consume is invoked exactly once per sign() call", () => {
+  it("consume is invoked exactly once per sign() call", async () => {
     let calls = 0;
     const tracker = (_publicSeed: Hex): void => {
       calls += 1;
     };
     const signer = new QuipSigner(QUANTUM_SECRET, tracker);
     const kp = signer.generateKeyPair(VAULT_ID);
-    signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    await signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(calls).toBe(1);
-    signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    await signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
     expect(calls).toBe(2);
+  });
+
+  it("async consume is awaited (Promise-returning ConsumeKeyFn supported)", async () => {
+    // Production users back the burn set with Redis / Postgres / KMS — their
+    // ConsumeKeyFn returns Promise<void>. Verify the signer awaits the promise
+    // so the burn record is committed before WOTS+ produces the signature.
+    let resolved = false;
+    const asyncConsume = async (_publicSeed: Hex): Promise<void> => {
+      await new Promise((r) => setTimeout(r, 5));
+      resolved = true;
+    };
+    const signer = new QuipSigner(QUANTUM_SECRET, asyncConsume);
+    const kp = signer.generateKeyPair(VAULT_ID);
+    const sig = await signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed);
+    expect(resolved).toBe(true);
+    expect(sig.length).toBe(67);
+  });
+
+  it("async consume that rejects short-circuits before any signature exists", async () => {
+    const rejecting = async (publicSeed: Hex): Promise<void> => {
+      await new Promise((r) => setTimeout(r, 1));
+      throw new KeyAlreadyBurnedError(publicSeed);
+    };
+    const signer = new QuipSigner(QUANTUM_SECRET, rejecting);
+    const kp = signer.generateKeyPair(VAULT_ID);
+    await expect(
+      signer.sign(MESSAGE, VAULT_ID, kp.publicKey.publicSeed)
+    ).rejects.toThrow(KeyAlreadyBurnedError);
   });
 });
 
@@ -157,7 +185,7 @@ describe("QuipSigner key-derivation self-test", () => {
     expect(recovered.publicKey.publicKeyHash).toBe(kp.publicKey.publicKeyHash);
   });
 
-  it("self-test does NOT call the burn-set consume (sentinel sig is local-only)", () => {
+  it("self-test does NOT call the burn-set consume (sentinel sig is local-only)", async () => {
     let calls = 0;
     const tracker = (_publicSeed: Hex): void => {
       calls += 1;
@@ -169,7 +197,7 @@ describe("QuipSigner key-derivation self-test", () => {
     const _kp = signer.generateKeyPair(VAULT_ID);
     expect(calls).toBe(0);
     // And a real sign() afterwards still works (the key is not burned).
-    const sig = signer.sign(MESSAGE, VAULT_ID, _kp.publicKey.publicSeed);
+    const sig = await signer.sign(MESSAGE, VAULT_ID, _kp.publicKey.publicSeed);
     expect(sig.length).toBe(67);
     expect(calls).toBe(1);
   });

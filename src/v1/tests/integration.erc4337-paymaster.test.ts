@@ -337,7 +337,7 @@ describe("simulateUserOp — paymaster rejection paths", () => {
     // paymasterAndData so we can still exercise `simulateUserOp`'s
     // `NoVerifierRegistered` branch.
     const nextVerifier = operator.generateKeyPair(operatorVault).publicKey;
-    const { paymasterAndData } = buildSignedPaymasterAndData({
+    const { paymasterAndData } = await buildSignedPaymasterAndData({
       signer: operator,
       vaultId: operatorVault,
       paymaster: paymasterAddress,

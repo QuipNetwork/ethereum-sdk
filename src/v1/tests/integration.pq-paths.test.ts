@@ -40,7 +40,7 @@ import { createInMemoryBurnSet } from "../burnSet.js";
 import {
   IncorrectRecoveryKeyAmountError,
   IncorrectTransactionKeyAmountError,
-  KeyAlreadyBurnedError,
+  UnknownDisasterRecoveryKeyError,
 } from "../errors.js";
 import {
   verificationDigest,
@@ -66,11 +66,11 @@ let newOwnerWalletClient: WalletClient;
 // Build a verifier `WinternitzAddress` + `WinternitzElements` pair for the
 // upgrade paths. In production this comes from the impl deployer's signed
 // attestation; here a one-off signer + burn set stands in.
-function buildVerifierAttestation(
+async function buildVerifierAttestation(
   walletAddress: Address,
   newImplementation: Address,
   saltByte: number
-): { verifier: WinternitzAddress; verifySig: WinternitzElements } {
+): Promise<{ verifier: WinternitzAddress; verifySig: WinternitzElements }> {
   const verifierSigner = new QuipSigner(
     new Uint8Array(32).fill(saltByte),
     createInMemoryBurnSet().consume
@@ -84,7 +84,7 @@ function buildVerifierAttestation(
     verifier.publicSeed,
     verifier.publicKeyHash
   );
-  const elements = verifierSigner.sign(
+  const elements = await verifierSigner.sign(
     digest,
     verifierVault,
     verifier.publicSeed
@@ -324,13 +324,18 @@ describe("saveWallet", () => {
     }
   }, 90_000);
 
-  test("a burned disaster key cannot be reused for a second saveWallet", async () => {
+  test("a spent disaster key cannot be reused for a second saveWallet", async () => {
     const { client, disasterKey } = await freshWallet(0x67);
     await client.saveWallet(disasterKey.publicSeed);
 
+    // First saveWallet rotated the disaster key in the wallet, so the
+    // SDK's H1/H2 pre-flight (compare derived publicKeyHash to the
+    // wallet's current `getDisasterRecoveryKey()`) fires first and the
+    // seed is never re-burned. This is the intended behavior — the
+    // typed error is "the key isn't installed", not "the key is burned".
     await expect(
       client.saveWallet(disasterKey.publicSeed)
-    ).rejects.toBeInstanceOf(KeyAlreadyBurnedError);
+    ).rejects.toBeInstanceOf(UnknownDisasterRecoveryKeyError);
   }, 60_000);
 });
 
@@ -343,7 +348,7 @@ describe("upgradeWallet", () => {
     // codehash and the wallet's UUPS path overwrites the impl slot. The point
     // of this test is that the SDK's signing/payload flow produces a payload
     // the wallet accepts end-to-end.
-    const { verifier, verifySig } = buildVerifierAttestation(
+    const { verifier, verifySig } = await buildVerifierAttestation(
       walletAddress,
       stack.walletImplAddress,
       0xc0
@@ -366,7 +371,7 @@ describe("upgradeWallet", () => {
   test("upgrade with a 0x migrationPayload takes the no-migrate branch (shouldMigrate=false)", async () => {
     const { client, walletAddress, isBurned } = await freshWallet(0x6b);
     const head = await client.getHeadTransactionKey();
-    const { verifier, verifySig } = buildVerifierAttestation(
+    const { verifier, verifySig } = await buildVerifierAttestation(
       walletAddress,
       stack.walletImplAddress,
       0xc1
@@ -392,7 +397,7 @@ describe("recoveryUpgrade", () => {
     const stateBefore = await client.getWalletState();
     expect(stateBefore.keyCounts.recovery).toBe(BigInt(MAX_KEYS));
 
-    const { verifier, verifySig } = buildVerifierAttestation(
+    const { verifier, verifySig } = await buildVerifierAttestation(
       walletAddress,
       stack.walletImplAddress,
       0xc2
@@ -427,7 +432,7 @@ describe("recoveryUpgrade", () => {
     const recoveryKey = recoveryKeys[1];
     const explicitNewRecovery = signer.generateKeyPair(vaultId).publicKey;
 
-    const { verifier, verifySig } = buildVerifierAttestation(
+    const { verifier, verifySig } = await buildVerifierAttestation(
       walletAddress,
       stack.walletImplAddress,
       0xc3

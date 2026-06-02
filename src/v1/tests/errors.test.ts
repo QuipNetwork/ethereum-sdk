@@ -51,6 +51,7 @@ import {
   IncorrectRecoveryKeyAmountError,
   IncorrectVerificationKeyAmountError,
   InvalidSigningKeysetError,
+  MalformedCodecPayloadError,
   MalformedPayloadError,
   NotUpgradingError,
   IncorrectTransactionKeyAmountError,
@@ -233,6 +234,19 @@ const ROUND_TRIP_CASES: ReadonlyArray<{
   { name: "IncorrectVerificationKeyAmount", abi: quipWalletAbi, klass: IncorrectVerificationKeyAmountError },
   { name: "InvalidSigningKeyset", abi: quipWalletAbi, klass: InvalidSigningKeysetError },
   { name: "MalformedPayload", abi: quipWalletAbi, klass: MalformedPayloadError },
+  // Codec variant — same name, different selector (expected, actual). Dispatches
+  // by args length to the parametric error class.
+  {
+    name: "MalformedPayload",
+    abi: quipWalletAbi,
+    args: [2048n, 1024n],
+    klass: MalformedCodecPayloadError,
+    inspect: (e) => {
+      const x = e as MalformedCodecPayloadError;
+      expect(x.expected).toBe(2048n);
+      expect(x.actual).toBe(1024n);
+    },
+  },
   { name: "NotUpgrading", abi: quipWalletAbi, klass: NotUpgradingError },
   { name: "IncorrectTransactionKeyAmount", abi: quipWalletAbi, klass: IncorrectTransactionKeyAmountError },
   { name: "ImplementationNotVetted", abi: quipWalletAbi, klass: ImplementationNotVettedError },

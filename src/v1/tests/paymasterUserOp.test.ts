@@ -77,7 +77,7 @@ function baselineUserOp(): PackedUserOperation {
     gasFees: pad(toHex(0x5678n), { size: 32 }),
     paymasterAndData: packPaymasterAndData({
       paymaster: PAYMASTER,
-      validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+      verificationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
       postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
       validUntil: 0,
       validAfter: 0,
@@ -177,7 +177,7 @@ describe("userOpBindingHash", () => {
       ...baselineUserOp(),
       paymasterAndData: packPaymasterAndData({
         paymaster: PAYMASTER,
-        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        verificationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
         postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
         validUntil: 0,
         validAfter: 0,
@@ -193,7 +193,7 @@ describe("userOpBindingHash", () => {
       ...baselineUserOp(),
       paymasterAndData: packPaymasterAndData({
         paymaster: PAYMASTER,
-        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        verificationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
         postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
         validUntil: 100,
         validAfter: 0,
@@ -206,7 +206,7 @@ describe("userOpBindingHash", () => {
       ...baselineUserOp(),
       paymasterAndData: packPaymasterAndData({
         paymaster: PAYMASTER,
-        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        verificationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
         postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
         validUntil: 0,
         validAfter: 50,
@@ -222,7 +222,7 @@ describe("userOpBindingHash", () => {
       ...baselineUserOp(),
       paymasterAndData: packPaymasterAndData({
         paymaster: PAYMASTER,
-        validationGasLimit:
+        verificationGasLimit:
           DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT + 1n,
         postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
         validUntil: 0,
@@ -243,7 +243,7 @@ describe("userOpBindingHash", () => {
       ...baseUserOp,
       paymasterAndData: packPaymasterAndData({
         paymaster: PAYMASTER,
-        validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        verificationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
         postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
         validUntil: 0,
         validAfter: 0,
@@ -405,7 +405,7 @@ describe("packPaymasterAndData", () => {
   it("produces 2272 bytes total", () => {
     const out = packPaymasterAndData({
       paymaster: PAYMASTER,
-      validationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+      verificationGasLimit: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
       postOpGasLimit: DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
       validUntil: 0,
       validAfter: 0,
@@ -424,7 +424,7 @@ describe("packPaymasterAndData", () => {
     const sig = makeSig(0x88n);
     const out = packPaymasterAndData({
       paymaster: PAYMASTER,
-      validationGasLimit: validationGas,
+      verificationGasLimit: validationGas,
       postOpGasLimit: postOpGas,
       validUntil,
       validAfter,
@@ -437,7 +437,7 @@ describe("packPaymasterAndData", () => {
     expect(toHex(bytes.slice(0, 20)).toLowerCase()).toBe(
       PAYMASTER.toLowerCase()
     );
-    // [20:36) validationGasLimit (uint128 big-endian)
+    // [20:36) verificationGasLimit (uint128 big-endian)
     expect(BigInt(toHex(bytes.slice(20, 36)))).toBe(validationGas);
     // [36:52) postOpGasLimit
     expect(BigInt(toHex(bytes.slice(36, 52)))).toBe(postOpGas);
@@ -460,7 +460,7 @@ describe("packPaymasterAndData", () => {
   it("defaults sig to zeros when omitted (for digest computation)", () => {
     const out = packPaymasterAndData({
       paymaster: PAYMASTER,
-      validationGasLimit: 1n,
+      verificationGasLimit: 1n,
       postOpGasLimit: 1n,
       validUntil: 0,
       validAfter: 0,
@@ -476,14 +476,14 @@ describe("packPaymasterAndData", () => {
   it("rejects out-of-range values", () => {
     const base = {
       paymaster: PAYMASTER,
-      validationGasLimit: 1n,
+      verificationGasLimit: 1n,
       postOpGasLimit: 1n,
       validUntil: 0,
       validAfter: 0,
       nextVerifier: makeKey(1n),
     };
     expect(() =>
-      packPaymasterAndData({ ...base, validationGasLimit: 1n << 128n })
+      packPaymasterAndData({ ...base, verificationGasLimit: 1n << 128n })
     ).toThrow();
     expect(() =>
       packPaymasterAndData({ ...base, postOpGasLimit: 1n << 128n })
@@ -501,7 +501,7 @@ describe("decodePaymasterAndData", () => {
   it("round-trips through packPaymasterAndData", () => {
     const input = {
       paymaster: PAYMASTER,
-      validationGasLimit: 1_234_567n,
+      verificationGasLimit: 1_234_567n,
       postOpGasLimit: 50_000n,
       validUntil: 9_999,
       validAfter: 42,
@@ -511,7 +511,7 @@ describe("decodePaymasterAndData", () => {
     const packed = packPaymasterAndData(input);
     const out = decodePaymasterAndData(packed);
     expect(out.paymaster.toLowerCase()).toBe(PAYMASTER.toLowerCase());
-    expect(out.validationGasLimit).toBe(input.validationGasLimit);
+    expect(out.verificationGasLimit).toBe(input.verificationGasLimit);
     expect(out.postOpGasLimit).toBe(input.postOpGasLimit);
     expect(out.validUntil).toBe(input.validUntil);
     expect(out.validAfter).toBe(input.validAfter);

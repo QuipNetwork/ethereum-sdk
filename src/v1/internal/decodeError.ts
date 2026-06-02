@@ -54,6 +54,7 @@ import {
   IncorrectRecoveryKeyAmountError,
   IncorrectVerificationKeyAmountError,
   InvalidSigningKeysetError,
+  MalformedCodecPayloadError,
   MalformedPayloadError,
   NotUpgradingError,
   IncorrectTransactionKeyAmountError,
@@ -140,7 +141,14 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   IncorrectVerificationKeyAmount: (_, o) =>
     new IncorrectVerificationKeyAmountError(o),
   InvalidSigningKeyset: (_, o) => new InvalidSigningKeysetError(o),
-  MalformedPayload: (_, o) => new MalformedPayloadError(o),
+  // Two distinct contract errors share the name `MalformedPayload`:
+  //   - `IQuipWallet.MalformedPayload()` (zero-arg, wallet belt-and-suspenders)
+  //   - `WOTSPlusCodec.MalformedPayload(uint256,uint256)` (codec size mismatch)
+  // Dispatch on args length so the codec variant preserves expected/actual.
+  MalformedPayload: (args, o) =>
+    args.length === 2
+      ? new MalformedCodecPayloadError(args[0] as bigint, args[1] as bigint, o)
+      : new MalformedPayloadError(o),
   NotUpgrading: (_, o) => new NotUpgradingError(o),
   IncorrectTransactionKeyAmount: (_, o) =>
     new IncorrectTransactionKeyAmountError(o),
@@ -229,6 +237,20 @@ function decodeRaw(raw: Hex): ExtractedRevert | null {
   }
 }
 
+/// Reconstruct the 4-byte selector for a decoded error fragment by looking
+/// up the canonical signature in our combined ABI. Returns `undefined` if
+/// the name doesn't match a known fragment (UnknownContractError path).
+function selectorForName(errorName: string): Hex | undefined {
+  for (const fragment of COMBINED_ERROR_ABI) {
+    if (fragment.type !== "error" || fragment.name !== errorName) continue;
+    const sig = `${fragment.name}(${(fragment.inputs ?? [])
+      .map((i) => i.type)
+      .join(",")})`;
+    return toFunctionSelector(sig);
+  }
+  return undefined;
+}
+
 /// Walk a viem `BaseError` chain looking for revert data. We try, in order:
 ///   1. A `ContractFunctionRevertedError` with decoded `data` (writeContract /
 ///      readContract path — viem already decoded against the call's ABI).
@@ -245,9 +267,14 @@ function extractRevert(err: unknown): ExtractedRevert | null {
   ) as ContractFunctionRevertedError | null;
   if (reverted) {
     if (reverted.data) {
+      // viem decoded against the call's ABI but doesn't expose the original
+      // 4-byte selector here. Reconstruct it from the canonical signature so
+      // typed `QuipError`s always carry `.selector` for log forwarding.
+      const selector = selectorForName(reverted.data.errorName);
       return {
         errorName: reverted.data.errorName,
         args: reverted.data.args ?? [],
+        ...(selector && { selector }),
       };
     }
     if (reverted.raw) {

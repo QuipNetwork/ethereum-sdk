@@ -87,9 +87,9 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
     expect(isBurned(head.publicSeed)).toBe(true);
     // Sanity: signer.sign with a fresh (never-burned) key works.
     const dummySeed = toHex(new Uint8Array(32).fill(0xfe));
-    expect(() =>
+    await expect(
       signer.sign(toHex(new Uint8Array(32)), vaultId, dummySeed)
-    ).not.toThrow();
+    ).resolves.not.toThrow();
   }, 30_000);
 
   test("retry with the same key throws KeyAlreadyBurnedError; retry with a different key succeeds", async () => {
