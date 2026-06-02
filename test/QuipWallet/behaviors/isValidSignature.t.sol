@@ -34,7 +34,11 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[1], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        // ECDSA half signs the EIP-712 wrap, not the raw `msgHash`.
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         bytes memory encoded = Codec.encodeErc1271Signature(
             keys[1],
@@ -58,7 +62,10 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         wallet.isValidSignature(
             msgHash,
@@ -87,7 +94,10 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(outsiderKey, digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         assertEq(
             wallet.isValidSignature(
@@ -105,7 +115,11 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
         (, bytes32 wrongKey) = _generateKeyPair("erc1271-wrong-key");
         bytes32 msgHash = keccak256("erc1271-bad-sig");
         WOTSPlus.WinternitzElements memory bad = _sign(wrongKey, msgHash);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        // Valid ECDSA so the test isolates the WOTS+ failure path.
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         assertEq(
             wallet.isValidSignature(
@@ -128,7 +142,12 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
             keccak256("hash-A")
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, keccak256("hash-B"));
+        // ECDSA half is valid for the caller-passed hash (hash-B); the
+        // failure isolates the WOTS+ "wrong message hash" branch.
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), keccak256("hash-B"))
+        );
 
         assertEq(
             wallet.isValidSignature(
@@ -153,7 +172,12 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        // Valid ECDSA against this wallet so the failure isolates the
+        // WOTS+ wallet-binding branch.
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         assertEq(
             wallet.isValidSignature(
@@ -179,7 +203,12 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(notOwnerKey, msgHash);
+        // Non-owner key signs the correct EIP-712 target → recovery yields
+        // an address that is not `owner()` → ECDSA branch rejects.
+        bytes memory ecdsa = _ecdsaSign(
+            notOwnerKey,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         assertEq(
             wallet.isValidSignature(
@@ -204,10 +233,15 @@ contract QuipWallet_isValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        // ECDSA signs a different hash; caller passes `msgHash`.
+        // ECDSA signs the EIP-712 wrap of a DIFFERENT hash; caller passes
+        // `msgHash`. Contract recovers against `wrap(msgHash)`, which
+        // yields an address that is not `owner()` → ECDSA branch rejects.
         bytes memory ecdsa = _ecdsaSign(
             ALICE_KEY,
-            keccak256("not-the-actual-hash")
+            _buildErc1271EcdsaTarget(
+                address(wallet),
+                keccak256("not-the-actual-hash")
+            )
         );
 
         assertEq(

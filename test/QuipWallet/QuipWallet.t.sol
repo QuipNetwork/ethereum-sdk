@@ -182,6 +182,38 @@ contract QuipWalletTest is QuipFactoryTest {
             );
     }
 
+    /// @dev Mirror of `QuipWallet.quipSignedHashEcdsaTarget(hash)` computed
+    ///      independently of the contract — pinning the EIP-712 layout the
+    ///      ECDSA half of `isValidSignature` recovers against. If Solady's
+    ///      `_hashTypedData` or the wallet's `_domainNameAndVersion` drift,
+    ///      tests using this helper will fail and surface the divergence.
+    function _buildErc1271EcdsaTarget(
+        address wallet_,
+        bytes32 hash
+    ) internal view returns (bytes32) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256(bytes("QuipWallet")),
+                keccak256(bytes("1")),
+                block.chainid,
+                wallet_
+            )
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                keccak256("QuipSignedHash(bytes32 hash)"),
+                hash
+            )
+        );
+        return
+            keccak256(
+                abi.encodePacked(bytes2(0x1901), domainSeparator, structHash)
+            );
+    }
+
     /// @dev Seeds the default `wallet`'s verificationKeys via `resetKeyset` —
     ///      the always-10 invariant means we always install exactly 10 fresh
     ///      keys on each call, regardless of `n`. Returns the first `n` of

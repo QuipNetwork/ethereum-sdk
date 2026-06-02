@@ -22,6 +22,7 @@ import {
   type TransactionReceipt,
   decodeFunctionResult,
   encodeFunctionData,
+  size,
   zeroAddress,
   zeroHash,
 } from "viem";
@@ -66,6 +67,7 @@ import {
   computeUserOpHash,
   decodePaymasterAndData,
   decodeUserOpSignature,
+  encodeErc1271Signature,
   encodeExecute,
   encodeOwnershipTransfer,
   encodeRecoveryUpgrade,
@@ -75,6 +77,7 @@ import {
   encodeUpgradeToAndCall,
   encodeUserOpSignature,
   encodeWithdrawDeposit,
+  erc1271Digest,
   erc4337ExecuteDigest,
   executeDigest,
   keysHash as codecKeysHash,
@@ -567,6 +570,93 @@ export class QuipWalletClient {
       recoveryKeys,
       verificationKeys,
     };
+  }
+
+  /// Returns the canonical EIP-712 typed-data envelope the classical
+  /// `owner()` key must sign for `isValidSignature(hash, blob)` to accept
+  /// the resulting ECDSA half. Spread directly into
+  /// `viem.WalletClient.signTypedData(...)`,
+  /// `ethers.Signer.signTypedData(...)`, MetaMask's `eth_signTypedData_v4`,
+  /// or any other EIP-712-aware signer:
+  ///
+  /// ```ts
+  /// const ecdsaSig = await walletClient.signTypedData({
+  ///   ...client.erc1271TypedData(hash),
+  ///   account: ownerAccount,
+  /// });
+  /// const blob = await client.signErc1271({ hash, verifier, ecdsaSig });
+  /// ```
+  ///
+  /// Mirrors `QuipWallet.quipSignedHashEcdsaTarget(hash)` exactly — the
+  /// integrator never has to retype the domain literals (`"QuipWallet"`,
+  /// `"1"`, the `QuipSignedHash` type) and cannot silently desync from the
+  /// wallet's `_domainNameAndVersion()`.
+  erc1271TypedData(hash: Hex): {
+    domain: {
+      name: "QuipWallet";
+      version: "1";
+      chainId: number;
+      verifyingContract: Address;
+    };
+    types: { QuipSignedHash: [{ name: "hash"; type: "bytes32" }] };
+    primaryType: "QuipSignedHash";
+    message: { hash: Hex };
+  } {
+    return {
+      domain: {
+        name: "QuipWallet",
+        version: "1",
+        chainId: this.chainId,
+        verifyingContract: this.walletAddress,
+      },
+      types: { QuipSignedHash: [{ name: "hash", type: "bytes32" }] },
+      primaryType: "QuipSignedHash",
+      message: { hash },
+    };
+  }
+
+  /// One-shot helper for integrators producing an ERC-1271 signature
+  /// against this QuipWallet. Takes the protocol's `hash` (e.g. a Permit2
+  /// or Seaport EIP-712 digest) plus a pre-produced 65-byte `ecdsaSig`
+  /// from the classical `owner()` key, signs the WOTS+ half internally,
+  /// and returns the 2273-byte blob ready to hand to
+  /// `wallet.isValidSignature(hash, blob)`.
+  ///
+  /// The WOTS+ half signs
+  /// `erc1271Digest(wallet, chainId, verifier.publicSeed,
+  ///                verifier.publicKeyHash, hash)`
+  /// (Quip-domain binding to wallet + chain + verifier).
+  ///
+  /// The ECDSA half (`ecdsaSig`) must be a 65-byte (r || s || v)
+  /// secp256k1 signature from `owner()` over the EIP-712 wrap returned by
+  /// `erc1271TypedData(hash)`. Produce it however the integrator's
+  /// classical signer wants — viem, ethers, MetaMask, hardware wallets,
+  /// server-side KMS, etc.
+  ///
+  /// Burns one verification-keyset entry (the chosen `verifier`). Verifier
+  /// rotation is the integrator's responsibility — see
+  /// `IQuipWallet.isValidSignature` natspec.
+  async signErc1271(params: {
+    hash: Hex;
+    verifier: WinternitzAddress;
+    ecdsaSig: Hex;
+  }): Promise<Hex> {
+    if (size(params.ecdsaSig) !== 65) {
+      throw new Error(
+        `signErc1271: ecdsaSig must be 65 bytes, got ${size(params.ecdsaSig)}`
+      );
+    }
+
+    const pqDigest = erc1271Digest(
+      this.walletAddress,
+      BigInt(this.chainId),
+      params.verifier.publicSeed,
+      params.verifier.publicKeyHash,
+      params.hash
+    );
+    const pqSig = await this.signWith(params.verifier.publicSeed, pqDigest);
+
+    return encodeErc1271Signature(params.verifier, pqSig, params.ecdsaSig);
   }
 
   /// Funnel for every payload-based write. Each write method builds its
