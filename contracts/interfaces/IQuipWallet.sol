@@ -719,4 +719,22 @@ interface IQuipWallet {
         bytes32 hash,
         bytes calldata signature
     ) external view returns (Erc1271ValidationResult);
+
+    /// @notice Returns the EIP-712-wrapped hash that the ECDSA half of
+    ///         `isValidSignature` recovers against. Useful for SDK
+    ///         integrators that need to compute the signing target locally —
+    ///         the returned bytes32 is what the classical `owner()` key must
+    ///         produce a secp256k1 signature over.
+    /// @dev    The wrap binds the ECDSA signature to this wallet's EIP-712
+    ///         domain (`name="QuipWallet"`, `version="1"`, `chainId`,
+    ///         `verifyingContract=address(this)`), preventing replay across
+    ///         wallets that share the same classical `owner()`.
+    /// @param  hash The raw 32-byte hash a protocol (Permit2, Seaport, …)
+    ///         hands to `isValidSignature`.
+    /// @return The EIP-712 typed-data hash:
+    ///         `keccak256(0x1901 || domainSeparator ||
+    ///         keccak256(abi.encode(QUIP_SIGNED_HASH_TYPEHASH, hash)))`,
+    ///         where `QUIP_SIGNED_HASH_TYPEHASH ==
+    ///         keccak256("QuipSignedHash(bytes32 hash)")`.
+    function quipSignedHashEcdsaTarget(bytes32 hash) external view returns (bytes32);
 }

@@ -73,6 +73,19 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     bytes32 private constant _OWNERSHIP_KEY_HASH_SLOT =
         0xd236c5053dd0f156c8b3373802638cbeb13d4fb4daee39c2ecb72bad342cf704;
 
+    /// @dev EIP-712 type hash for the wrapper struct that nests the
+    ///      ERC-1271 `hash` argument before ECDSA recovery. Pattern mirrors
+    ///      Safe's `SafeMessage(bytes message)`: the classical signature
+    ///      binds to this wallet's EIP-712 domain (name, version, chainId,
+    ///      verifyingContract) so a Permit2-style sig crafted for one
+    ///      QuipWallet cannot be replayed against another with the same
+    ///      classical `owner()`. The WOTS+ half is already wallet-bound via
+    ///      `WOTSPlusCodec.erc1271Digest`; this typehash adds the same
+    ///      binding to the ECDSA half. Mirrored in the SDK by
+    ///      `quipSignedHashEcdsaTarget(...)` in `wotsCodec.ts`.
+    bytes32 private constant _QUIP_SIGNED_HASH_TYPEHASH =
+        keccak256("QuipSignedHash(bytes32 hash)");
+
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
         FACTORY = factory_;
@@ -1017,9 +1030,13 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             });
     }
 
-    /// @notice ERC-1271 validation. Requires BOTH a valid WOTS+ signature from a
-    ///         verification-keyset member AND a valid ECDSA signature from the
-    ///         classical `owner()` over the raw `hash`.
+    /// @notice ERC-1271 validation. Requires BOTH:
+    ///           - a valid WOTS+ signature from a verification-keyset member
+    ///             over `WOTSPlusCodec.erc1271Digest(wallet, chainId,
+    ///             verifier.publicSeed, verifier.publicKeyHash, hash)`, AND
+    ///           - a valid ECDSA signature from the classical `owner()` over
+    ///             the EIP-712 wrap returned by
+    ///             `quipSignedHashEcdsaTarget(hash)`.
     /// @dev EIP-1271 mandates `view`, so this function cannot burn the verifier
     ///      on-chain. Caller obligations:
     ///        - Rotate the verifier after each signature via
@@ -1029,6 +1046,15 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
     ///        - Bake a nonce / deadline into the signed `hash`. The wallet
     ///          provides no anti-replay layer here; consumer protocols
     ///          (Permit2, Seaport, etc.) follow this convention.
+    ///
+    ///      Domain binding (defence in depth):
+    ///        - WOTS+ commits to `(wallet, chainId, verifier)` via the
+    ///          Quip-domain `erc1271Digest`.
+    ///        - ECDSA commits to `(name="QuipWallet", version="1", chainId,
+    ///          verifyingContract=wallet)` via standard EIP-712 nesting.
+    ///      A sig forged for one QuipWallet cannot be replayed against
+    ///      another with the same classical `owner()` — even if WOTS+ were
+    ///      broken cryptographically.
     ///
     ///      AND-gated ECDSA is a failsafe against a WOTS+ scheme break, not
     ///      anti-replay. Requires `owner()` to be an EOA.
@@ -1053,6 +1079,16 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
         bytes calldata signature
     ) external view returns (Erc1271ValidationResult) {
         return _checkErc1271Signature(hash, signature);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function quipSignedHashEcdsaTarget(
+        bytes32 hash
+    ) public view returns (bytes32) {
+        return
+            _hashTypedData(
+                keccak256(abi.encode(_QUIP_SIGNED_HASH_TYPEHASH, hash))
+            );
     }
 
     /// @inheritdoc IQuipWallet
@@ -1090,7 +1126,15 @@ contract QuipWallet is IQuipWallet, ERC4337, Initializable {
             bytes calldata ecdsaSig
         ) = Codec.decodeErc1271Signature(signature);
 
-        address recovered = ECDSA.tryRecoverCalldata(hash, ecdsaSig);
+        // EIP-712 wrap: bind the ECDSA half to this wallet's domain so a sig
+        // crafted for one QuipWallet cannot be replayed against another with
+        // the same `owner()`. The WOTS+ half already binds via `erc1271Digest`
+        // (commits to verifier + wallet + chain). Routed through the public
+        // view so SDK integrators and this verifier share one source of truth.
+        address recovered = ECDSA.tryRecoverCalldata(
+            quipSignedHashEcdsaTarget(hash),
+            ecdsaSig
+        );
         if (recovered == address(0) || recovered != owner()) {
             return Erc1271ValidationResult.InvalidEcdsaSignature;
         }

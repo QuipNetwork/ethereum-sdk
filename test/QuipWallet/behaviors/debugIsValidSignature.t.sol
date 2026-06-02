@@ -29,7 +29,10 @@ contract QuipWallet_debugIsValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[1], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         bytes memory encoded = Codec.encodeErc1271Signature(
             keys[1],
@@ -178,7 +181,10 @@ contract QuipWallet_debugIsValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(outsiderKey, digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         assertEq(
             uint8(
@@ -201,7 +207,10 @@ contract QuipWallet_debugIsValidSignature is QuipWalletTest {
         (, bytes32 wrongKey) = _generateKeyPair("erc1271-debug-wrong-key");
         bytes32 msgHash = keccak256("erc1271-debug-bad-sig");
         WOTSPlus.WinternitzElements memory bad = _sign(wrongKey, msgHash);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         assertEq(
             uint8(
@@ -231,7 +240,10 @@ contract QuipWallet_debugIsValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
 
         assertEq(
             uint8(
@@ -261,7 +273,10 @@ contract QuipWallet_debugIsValidSignature is QuipWalletTest {
             keccak256("debug-hash-A")
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, keccak256("debug-hash-B"));
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), keccak256("debug-hash-B"))
+        );
 
         assertEq(
             uint8(
@@ -306,7 +321,10 @@ contract QuipWallet_debugIsValidSignature is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
         bytes memory encoded = Codec.encodeErc1271Signature(
             keys[0],
             sig,

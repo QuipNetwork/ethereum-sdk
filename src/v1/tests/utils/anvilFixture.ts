@@ -85,6 +85,7 @@ export const ANVIL_PORTS = {
   pqPaths: 8555,
   // 8556 reserved
   dualSig: 8557,
+  erc1271: 8558,
 } as const;
 
 // ─── Forge artifact loading ─────────────────────────────────────────

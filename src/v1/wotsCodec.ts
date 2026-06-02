@@ -155,6 +155,28 @@ export const RESET_KEYSET_RECSIGN_VERIFY_TAG: Hex = keccak256(
   toHex("quip.digest.resetKeyset.recoverySign.verification")
 );
 export const ERC1271_TAG: Hex = keccak256(toHex("quip.digest.erc1271"));
+
+/// EIP-712 type hash for the wrapper struct that nests the ERC-1271 `hash`
+/// argument before ECDSA recovery. Mirrors
+/// `QuipWallet._QUIP_SIGNED_HASH_TYPEHASH`. The classical half of the
+/// ERC-1271 signature is over
+/// `quipSignedHashEcdsaTarget(wallet, chainId, hash)`, NOT the raw `hash`.
+export const QUIP_SIGNED_HASH_TYPEHASH: Hex = keccak256(
+  toHex("QuipSignedHash(bytes32 hash)")
+);
+
+/// EIP-712 domain typehash (immutable across EIP-712 implementations).
+const _EIP712_DOMAIN_TYPEHASH: Hex = keccak256(
+  toHex(
+    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+  )
+);
+
+/// Pre-hashed `name` and `version` fields for the QuipWallet EIP-712
+/// domain. Wallet pins these in `_domainNameAndVersion()` — any drift here
+/// would silently desync the SDK's ECDSA target from the contract's.
+const _QUIP_DOMAIN_NAME_HASH: Hex = keccak256(toHex("QuipWallet"));
+const _QUIP_DOMAIN_VERSION_HASH: Hex = keccak256(toHex("1"));
 export const SAVE_WALLET_TAG: Hex = keccak256(
   toHex("quip.digest.saveWallet")
 );
@@ -807,8 +829,10 @@ export function decodeReplaceKeys(payload: Hex): {
 ///   [2208:2273) ecdsaSig      (standard secp256k1 r ++ s ++ v, 65 bytes)
 ///
 /// The ECDSA half is an AND-mode failsafe verified against the wallet's
-/// classical `owner()`. It signs the raw ERC-1271 `hash` (no domain tag),
-/// not the WOTS+ digest.
+/// classical `owner()`. It signs `quipSignedHashEcdsaTarget(wallet, chainId,
+/// hash)` — the EIP-712 wrap of the raw `hash` under the wallet's domain —
+/// NOT the raw `hash` itself. The WOTS+ half signs `erc1271Digest(...)` over
+/// the raw `hash` under the Quip domain.
 export function encodeErc1271Signature(
   verifier: WinternitzAddress,
   pqSig: WinternitzElements,
@@ -875,6 +899,49 @@ export function erc1271Digest(
       messageHash,
     ])
   );
+}
+
+/// Compute the EIP-712-wrapped hash that the wallet's ECDSA half of
+/// `isValidSignature` will recover against. Mirrors
+/// `QuipWallet.quipSignedHashEcdsaTarget(hash)` byte-for-byte:
+///   keccak256(0x1901 || domainSeparator || keccak256(abi.encode(
+///       QUIP_SIGNED_HASH_TYPEHASH, hash)))
+/// where `domainSeparator` is the EIP-712 separator for the wallet's domain
+/// (name="QuipWallet", version="1", chainId, verifyingContract=wallet).
+///
+/// SDK integrators can call this locally to obtain the exact 32-byte digest
+/// the classical `owner()` key must produce a secp256k1 signature over,
+/// without an extra `wallet.quipSignedHashEcdsaTarget(hash)` RPC.
+export function quipSignedHashEcdsaTarget(
+  wallet: Address,
+  chainId: bigint,
+  hash: Hex
+): Hex {
+  const domainSeparator = keccak256(
+    encodeAbiParameters(
+      [
+        { type: "bytes32" },
+        { type: "bytes32" },
+        { type: "bytes32" },
+        { type: "uint256" },
+        { type: "address" },
+      ],
+      [
+        _EIP712_DOMAIN_TYPEHASH,
+        _QUIP_DOMAIN_NAME_HASH,
+        _QUIP_DOMAIN_VERSION_HASH,
+        chainId,
+        wallet,
+      ]
+    )
+  );
+  const structHash = keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "bytes32" }],
+      [QUIP_SIGNED_HASH_TYPEHASH, hash]
+    )
+  );
+  return keccak256(concat(["0x1901", domainSeparator, structHash]));
 }
 
 export function decodeResetKeyset(payload: Hex): {

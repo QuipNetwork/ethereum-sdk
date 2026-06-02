@@ -275,7 +275,10 @@ contract QuipWallet_scenario_verificationKeysLifecycle is QuipWalletTest {
             msgHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(verifierPriv, digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            _buildErc1271EcdsaTarget(address(wallet), msgHash)
+        );
         return Codec.encodeErc1271Signature(verifier, sig, ecdsa);
     }
 
