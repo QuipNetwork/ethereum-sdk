@@ -67,7 +67,7 @@ import { QuipPaymasterClient } from "../paymasterClient.js";
 import {
   parseExecutionSucceeded,
   parseKeyRotated,
-  parseKeysAdded,
+  parseKeysetReset,
   parseQuipCreated,
   parseUserOpSponsored,
   parseWalletReceipt,
@@ -76,7 +76,6 @@ import {
   encodeInit,
   type WinternitzAddress,
   MAX_KEYS,
-  RECOVERY_KEY_AMOUNT,
 } from "../wotsCodec.js";
 import {
   DEFAULT_ACCOUNT,
@@ -349,14 +348,12 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
       });
       expect(recipientAfter - recipientBefore).toBe(parseEther("0.1"));
 
-      // ─── 3. Add verification keys (key management surface) ────────────
-      const newKey = signer.generateKeyPair(vaultId).publicKey;
-      const addKeysReceipt = await client.addKeys(KeyType.Verification, [
-        newKey,
-      ]);
-      const addedEvents = parseKeysAdded(addKeysReceipt);
-      expect(addedEvents).toHaveLength(1);
-      expect(addedEvents[0].kind).toBe(KeyType.Verification);
+      // ─── 3. Reset verification keys (key management surface) ──────────
+      const resetReceipt = await client.resetVerificationKeys();
+      const resetEvents = parseKeysetReset(resetReceipt);
+      expect(resetEvents).toHaveLength(1);
+      expect(resetEvents[0].kind).toBe(KeyType.Verification);
+      expect(resetEvents[0].signingKind).toBe(KeyType.Transaction);
 
       // ─── 4. Sponsored UserOp end-to-end via the EntryPoint ────────────
       // Register a verifier for this wallet on the paymaster.

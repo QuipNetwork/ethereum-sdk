@@ -20,18 +20,14 @@ import { toHex, zeroAddress } from "viem";
 import { KeyType } from "../walletClient.js";
 import {
   parseExecutionSucceeded,
-  parseKeyReplaced,
   parseKeyRotated,
   parseKeyRotationOnly,
-  parseKeysAdded,
-  parseKeysRefreshed,
+  parseKeysReplaced,
+  parseKeysetReset,
   parseQuipCreated,
   parseWalletInitialized,
   parseWalletReceipt,
 } from "../events.js";
-import {
-  RECOVERY_KEY_AMOUNT,
-} from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
@@ -108,43 +104,40 @@ describe("Wallet event parsers — execution path", () => {
 });
 
 describe("Wallet event parsers — key management", () => {
-  test("parseKeysAdded decodes addKeys receipt", async () => {
-    const { client, signer, vaultId } = await createFreshWallet(stack, 0xc4);
-    // Recovery keyset starts at full capacity (10). Use the Verification
-    // keyset which starts empty.
-    const newKeys = [
-      signer.generateKeyPair(toHex(vaultId)).publicKey,
-      signer.generateKeyPair(toHex(vaultId)).publicKey,
-    ];
-    const receipt = await client.addKeys(KeyType.Verification, newKeys);
-    const events = parseKeysAdded(receipt);
+  test("parseKeysReplaced decodes replaceTxKeys receipt", async () => {
+    const { client } = await createFreshWallet(stack, 0xc4);
+    const txKeyset = await client.getKeyset(KeyType.Transaction);
+    // Pick two tx keys that won't be the signing head: index 5 and 6 are
+    // safely off the head-rotation path under the SDK's default picker.
+    const oldKeys = [txKeyset[5], txKeyset[6]];
+    const receipt = await client.replaceTxKeys(oldKeys);
+    const events = parseKeysReplaced(receipt);
     expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe(KeyType.Verification);
-    expect(events[0].count).toBe(2n);
+    expect(events[0].kind).toBe(KeyType.Transaction);
+    expect(events[0].signingKind).toBe(KeyType.Transaction);
+    expect(events[0].oldKeys.length).toBe(2);
+    expect(events[0].newKeys.length).toBe(2);
     // KeyRotated also emitted (the signing tx key rotated).
     expect(parseKeyRotated(receipt)).toHaveLength(1);
   }, 30_000);
 
-  test("parseKeysRefreshed decodes refreshKeys receipt", async () => {
-    const { client, signer, vaultId } = await createFreshWallet(stack, 0xc5);
-    const newRecovery = Array.from({ length: 3 }, () =>
-      signer.generateKeyPair(toHex(vaultId)).publicKey
-    );
-    const receipt = await client.refreshKeys(KeyType.Recovery, newRecovery);
-    const events = parseKeysRefreshed(receipt);
+  test("parseKeysetReset decodes resetRecoveryKeys receipt", async () => {
+    const { client } = await createFreshWallet(stack, 0xc5);
+    const receipt = await client.resetRecoveryKeys();
+    const events = parseKeysetReset(receipt);
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe(KeyType.Recovery);
+    expect(events[0].signingKind).toBe(KeyType.Transaction);
+    expect(events[0].newKeys.length).toBe(10);
   }, 30_000);
 
-  test("parseKeyReplaced decodes replaceKeyAt receipt", async () => {
-    const { client, signer, vaultId } = await createFreshWallet(stack, 0xc6);
-    const newKey = signer.generateKeyPair(toHex(vaultId)).publicKey;
-    const receipt = await client.replaceKeyAt(KeyType.Recovery, 0n, newKey);
-    const events = parseKeyReplaced(receipt);
+  test("parseKeysetReset decodes resetVerificationKeys receipt", async () => {
+    const { client } = await createFreshWallet(stack, 0xc6);
+    const receipt = await client.resetVerificationKeys();
+    const events = parseKeysetReset(receipt);
     expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe(KeyType.Recovery);
-    expect(events[0].index).toBe(0n);
-    expect(events[0].newKey.publicSeed).toBe(newKey.publicSeed);
+    expect(events[0].kind).toBe(KeyType.Verification);
+    expect(events[0].signingKind).toBe(KeyType.Transaction);
   }, 30_000);
 });
 

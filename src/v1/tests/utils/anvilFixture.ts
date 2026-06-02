@@ -52,7 +52,6 @@ import {
   encodeInit,
   type WinternitzAddress,
   MAX_KEYS,
-  RECOVERY_KEY_AMOUNT,
 } from "../../wotsCodec.js";
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -339,6 +338,7 @@ export interface FreshWallet {
   ownershipKey: WinternitzAddress;
   transactionKeys: WinternitzAddress[];
   recoveryKeys: WinternitzAddress[];
+  verificationKeys: WinternitzAddress[];
   initPayload: Hex;
   creationReceipt: TransactionReceipt;
   burnSet: InMemoryBurnSet;
@@ -465,6 +465,7 @@ export async function createFreshWallet(
     ownershipKey,
     transactionKeys,
     recoveryKeys,
+    verificationKeys,
     initPayload,
     creationReceipt,
     burnSet,

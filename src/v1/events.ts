@@ -202,59 +202,55 @@ export function parseOwnershipReinitialized(
   }));
 }
 
-export interface KeysAddedEvent {
+/// `KeysReplaced` is emitted when an N-for-N swap via `replaceKeys`
+/// succeeds. `kind` identifies the target keyset; `signingKind` says
+/// which set authorized the swap (Tx or Recovery).
+export interface KeysReplacedEvent {
   kind: KeyType;
+  signingKind: KeyType;
+  currentKey: WinternitzAddress;
   nextKey: WinternitzAddress;
-  count: bigint;
+  oldKeys: readonly WinternitzAddress[];
+  newKeys: readonly WinternitzAddress[];
 }
 
-export function parseKeysAdded(src: LogSource): KeysAddedEvent[] {
+export function parseKeysReplaced(src: LogSource): KeysReplacedEvent[] {
   return parseEventLogs({
     abi: quipWalletAbi,
     logs: toLogs(src) as Log[],
-    eventName: "KeysAdded",
+    eventName: "KeysReplaced",
   }).map((l) => ({
     kind: Number(l.args.kind) as KeyType,
+    signingKind: Number(l.args.signingKind) as KeyType,
+    currentKey: l.args.currentKey,
     nextKey: l.args.nextKey,
-    count: l.args.count,
+    oldKeys: l.args.oldKeys,
+    newKeys: l.args.newKeys,
   }));
 }
 
-export interface KeysRefreshedEvent {
+/// `KeysetReset` is emitted when a keyset is wholesale-reset via
+/// `resetKeyset`. `kind` identifies the target keyset; `signingKind`
+/// says which set authorized the reset (Tx or Recovery).
+export interface KeysetResetEvent {
   kind: KeyType;
+  signingKind: KeyType;
+  currentKey: WinternitzAddress;
   nextKey: WinternitzAddress;
+  newKeys: readonly WinternitzAddress[];
 }
 
-export function parseKeysRefreshed(src: LogSource): KeysRefreshedEvent[] {
+export function parseKeysetReset(src: LogSource): KeysetResetEvent[] {
   return parseEventLogs({
     abi: quipWalletAbi,
     logs: toLogs(src) as Log[],
-    eventName: "KeysRefreshed",
+    eventName: "KeysetReset",
   }).map((l) => ({
     kind: Number(l.args.kind) as KeyType,
+    signingKind: Number(l.args.signingKind) as KeyType,
+    currentKey: l.args.currentKey,
     nextKey: l.args.nextKey,
-  }));
-}
-
-export interface KeyReplacedEvent {
-  kind: KeyType;
-  index: bigint;
-  oldKey: WinternitzAddress;
-  newKey: WinternitzAddress;
-  nextKey: WinternitzAddress;
-}
-
-export function parseKeyReplaced(src: LogSource): KeyReplacedEvent[] {
-  return parseEventLogs({
-    abi: quipWalletAbi,
-    logs: toLogs(src) as Log[],
-    eventName: "KeyReplaced",
-  }).map((l) => ({
-    kind: Number(l.args.kind) as KeyType,
-    index: l.args.index,
-    oldKey: l.args.oldKey,
-    newKey: l.args.newKey,
-    nextKey: l.args.nextKey,
+    newKeys: l.args.newKeys,
   }));
 }
 
@@ -583,10 +579,10 @@ export function parseUserOpSponsored(
 ///                       by the absence of `ExecutionSucceeded` / `Reverted`.
 ///
 /// A receipt may also carry no wallet-execute event at all (e.g. a
-/// key-management write like `addKeys` produces `KeysAdded` + `KeyRotated`
-/// but no execution event). In that case `parseWalletReceipt` returns
-/// `null` — the caller is expected to use a more specific parser
-/// (`parseKeysAdded`, etc.) for those flows.
+/// key-management write like `replaceKeys` produces `KeysReplaced` +
+/// `KeyRotated` but no execution event). In that case `parseWalletReceipt`
+/// returns `null` — the caller is expected to use a more specific parser
+/// (`parseKeysReplaced`, `parseKeysetReset`, etc.) for those flows.
 export type WalletTxResult =
   | {
       kind: "executed";

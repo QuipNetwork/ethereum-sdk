@@ -57,7 +57,6 @@ import {
   type WinternitzAddress,
   encodeInit,
   MAX_KEYS,
-  RECOVERY_KEY_AMOUNT,
 } from "./wotsCodec.js";
 
 /// Generate a CSPRNG-backed 32-byte vaultId. Default for `createWallet`
@@ -175,7 +174,8 @@ export class QuipClient {
 
   /// Deploy a new QuipWallet via `deployLatestWalletProxy`. The SDK
   /// generates every key under `quipSigner`: one disaster recovery key,
-  /// one ownership key, five transaction keys, ten recovery keys.
+  /// one ownership key, ten transaction keys, ten recovery keys, ten
+  /// verification keys (the always-10 keyset invariant).
   /// Caller-supplied key material is intentionally NOT accepted —
   /// every `publicSeed` is recoverable later from on-chain state plus
   /// `quipSigner.recoverKeyPair(vaultId, publicSeed)`, so the user's only

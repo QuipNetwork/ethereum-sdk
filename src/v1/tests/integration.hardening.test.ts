@@ -52,35 +52,21 @@ afterAll(async () => {
 // ─── Tests ──────────────────────────────────────────────────────────
 
 describe("Phase 4.5 — pre-flight key-batch validation", () => {
-  test("addKeys with empty array throws EmptyKeysError synchronously", async () => {
+  test("replaceTxKeys with empty oldKeys throws EmptyKeysError synchronously", async () => {
     const { client } = await createFreshWallet(stack, 0x10);
-    await expect(client.addKeys(KeyType.Recovery, [])).rejects.toBeInstanceOf(
+    await expect(client.replaceTxKeys([])).rejects.toBeInstanceOf(
       EmptyKeysError
     );
   });
 
-  test("addKeys with within-batch duplicate throws DuplicateKeyError synchronously", async () => {
-    const { client, signer, vaultId } = await createFreshWallet(stack, 0x11);
-    const k = signer.generateKeyPair(toHex(vaultId)).publicKey;
+  test("replaceTxKeys with within-batch duplicate throws DuplicateKeyError synchronously", async () => {
+    const { client } = await createFreshWallet(stack, 0x11);
+    const keyset = await client.getKeyset(KeyType.Transaction);
+    // Pass the same currently-installed tx key twice — the SDK's pre-flight
+    // batch validation rejects within-batch duplicates before signing.
     await expect(
-      client.addKeys(KeyType.Recovery, [k, k])
+      client.replaceTxKeys([keyset[5], keyset[5]])
     ).rejects.toBeInstanceOf(DuplicateKeyError);
-  });
-
-  test("refreshKeys on Transaction kind throws RefreshTransactionForbiddenError synchronously", async () => {
-    const { client, signer, vaultId, isBurned } = await createFreshWallet(
-      stack,
-      0x12
-    );
-    const k = signer.generateKeyPair(toHex(vaultId)).publicKey;
-    // Pre-flight invariant from Phase 4: refreshing the Transaction keyset
-    // is forbidden at the contract level — the SDK throws before sign().
-    await expect(
-      client.refreshKeys(KeyType.Transaction, [k])
-    ).rejects.toThrow();
-    // The signing key must not be burned, since no broadcast happened.
-    const head = await client.getHeadTransactionKey();
-    expect(isBurned(head.publicSeed)).toBe(false);
   });
 });
 

@@ -64,7 +64,6 @@ export const WOTS_ELEMENTS_COUNT = 67;
 /// Every keyset (transactionKeys, recoveryKeys, verificationKeys) holds
 /// exactly this many entries at every state-transition boundary.
 export const MAX_KEYS = 10;
-export const RECOVERY_KEY_AMOUNT = 10;
 
 /// Payload size for `initialize` / `migrate`: 64 (disasterRecoveryKey)
 /// + 64 (ownershipKey) + 10 × 64 (transactionKeys) + 10 × 64 (recoveryKeys)
@@ -85,6 +84,14 @@ export const UPGRADE_PAYLOAD_SIZE = 6529;
 /// Payload size for `recoveryUpgrade`: 64 + 64 + 2144 + 64 (verifier)
 /// + 2144 (verifySig).
 export const RECOVERY_UPGRADE_PAYLOAD_SIZE = 4480;
+/// Header size for `replaceKeys`: kind(32) + signingKind(32) + n(32)
+/// + currentKey(64) + nextKey(64) + pqSig(2144). Total payload is
+/// `REPLACE_KEYS_HEADER_SIZE + 2 * n * 64` bytes (variable length).
+export const REPLACE_KEYS_HEADER_SIZE = 2368;
+/// Payload size for `resetKeyset`: kind(32) + signingKind(32)
+/// + currentKey(64) + nextKey(64) + pqSig(2144) + newKeys[10] (640).
+/// Fixed at the always-10 invariant size.
+export const RESET_KEYSET_PAYLOAD_SIZE = 2976;
 
 /// Offset at which the WOTS+ signature region begins within
 /// `paymasterAndData`. The paymaster's `userOpBindingHash` covers
@@ -99,21 +106,6 @@ export const PAYMASTER_SIG_OFFSET: number = 128;
 // security: removing or unifying any tag would let a signature authorizing
 // one flow be replayed against another.
 export const EXECUTE_TAG: Hex = keccak256(toHex("quip.digest.execute"));
-export const ADD_TRANSACTION_KEYS_TAG: Hex = keccak256(
-  toHex("quip.digest.addTransactionKeys")
-);
-export const ADD_RECOVERY_KEYS_TAG: Hex = keccak256(
-  toHex("quip.digest.addRecoveryKeys")
-);
-export const REFRESH_RECOVERY_KEYS_TAG: Hex = keccak256(
-  toHex("quip.digest.refreshRecoveryKeys")
-);
-export const ADD_VERIFICATION_KEYS_TAG: Hex = keccak256(
-  toHex("quip.digest.addVerificationKeys")
-);
-export const REFRESH_VERIFICATION_KEYS_TAG: Hex = keccak256(
-  toHex("quip.digest.refreshVerificationKeys")
-);
 export const UPGRADE_TAG: Hex = keccak256(toHex("quip.digest.upgrade"));
 export const VERIFICATION_TAG: Hex = keccak256(
   toHex("quip.digest.verification")
@@ -130,14 +122,46 @@ export const WITHDRAW_DEPOSIT_TAG: Hex = keccak256(
 export const TRANSFER_OWNERSHIP_TAG: Hex = keccak256(
   toHex("quip.digest.transferOwnership")
 );
-export const REPLACE_TRANSACTION_KEY_AT_TAG: Hex = keccak256(
-  toHex("quip.digest.replaceTransactionKeyAt")
+/// Per-(signingKind, targetKind) tags for `replaceKeys`. Six tags =
+/// 2 signing keysets × 3 target keysets. See contract docs on
+/// `replaceKeysDigest` for the rationale (cross-axis replay prevention).
+export const REPLACE_KEYS_TXSIGN_TX_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceKeys.txSign.tx")
 );
-export const REPLACE_RECOVERY_KEY_AT_TAG: Hex = keccak256(
-  toHex("quip.digest.replaceRecoveryKeyAt")
+export const REPLACE_KEYS_TXSIGN_RECOVERY_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceKeys.txSign.recovery")
 );
-export const REPLACE_VERIFICATION_KEY_AT_TAG: Hex = keccak256(
-  toHex("quip.digest.replaceVerificationKeyAt")
+export const REPLACE_KEYS_TXSIGN_VERIFY_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceKeys.txSign.verification")
+);
+export const REPLACE_KEYS_RECSIGN_TX_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceKeys.recoverySign.tx")
+);
+export const REPLACE_KEYS_RECSIGN_RECOVERY_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceKeys.recoverySign.recovery")
+);
+export const REPLACE_KEYS_RECSIGN_VERIFY_TAG: Hex = keccak256(
+  toHex("quip.digest.replaceKeys.recoverySign.verification")
+);
+/// Per-(signingKind, targetKind) tags for `resetKeyset`. Same shape
+/// as the `REPLACE_KEYS_*` family.
+export const RESET_KEYSET_TXSIGN_TX_TAG: Hex = keccak256(
+  toHex("quip.digest.resetKeyset.txSign.tx")
+);
+export const RESET_KEYSET_TXSIGN_RECOVERY_TAG: Hex = keccak256(
+  toHex("quip.digest.resetKeyset.txSign.recovery")
+);
+export const RESET_KEYSET_TXSIGN_VERIFY_TAG: Hex = keccak256(
+  toHex("quip.digest.resetKeyset.txSign.verification")
+);
+export const RESET_KEYSET_RECSIGN_TX_TAG: Hex = keccak256(
+  toHex("quip.digest.resetKeyset.recoverySign.tx")
+);
+export const RESET_KEYSET_RECSIGN_RECOVERY_TAG: Hex = keccak256(
+  toHex("quip.digest.resetKeyset.recoverySign.recovery")
+);
+export const RESET_KEYSET_RECSIGN_VERIFY_TAG: Hex = keccak256(
+  toHex("quip.digest.resetKeyset.recoverySign.verification")
 );
 export const ERC1271_TAG: Hex = keccak256(toHex("quip.digest.erc1271"));
 export const SAVE_WALLET_TAG: Hex = keccak256(
@@ -178,23 +202,42 @@ function bigintToBytes32(value: bigint | number): Hex {
   return toHex(BigInt(value), { size: 32 });
 }
 
-function tagForKeyset(kind: KeyType | number, replace: boolean): Hex {
-  if (kind === KeyType.Transaction) return ADD_TRANSACTION_KEYS_TAG;
-  if (kind === KeyType.Verification)
-    return replace ? REFRESH_VERIFICATION_KEYS_TAG : ADD_VERIFICATION_KEYS_TAG;
-  return replace ? REFRESH_RECOVERY_KEYS_TAG : ADD_RECOVERY_KEYS_TAG;
+/// Selects the `replaceKeysDigest` tag for a given `(signingKind, kind)`
+/// pair. Six tags total; mirrors the 2-D dispatch in
+/// `WOTSPlusCodec.replaceKeysDigest`.
+function tagForReplaceKeys(
+  kind: KeyType | number,
+  signingKind: KeyType | number
+): Hex {
+  if (signingKind === KeyType.Transaction) {
+    if (kind === KeyType.Transaction) return REPLACE_KEYS_TXSIGN_TX_TAG;
+    if (kind === KeyType.Recovery) return REPLACE_KEYS_TXSIGN_RECOVERY_TAG;
+    return REPLACE_KEYS_TXSIGN_VERIFY_TAG;
+  }
+  if (kind === KeyType.Transaction) return REPLACE_KEYS_RECSIGN_TX_TAG;
+  if (kind === KeyType.Recovery) return REPLACE_KEYS_RECSIGN_RECOVERY_TAG;
+  return REPLACE_KEYS_RECSIGN_VERIFY_TAG;
 }
 
-function tagForReplaceKeyAt(kind: KeyType | number): Hex {
-  if (kind === KeyType.Transaction) return REPLACE_TRANSACTION_KEY_AT_TAG;
-  if (kind === KeyType.Recovery) return REPLACE_RECOVERY_KEY_AT_TAG;
-  return REPLACE_VERIFICATION_KEY_AT_TAG;
+/// Selects the `resetKeysetDigest` tag for a given `(signingKind, kind)`
+/// pair. Mirrors the 2-D dispatch in `WOTSPlusCodec.resetKeysetDigest`.
+function tagForResetKeyset(
+  kind: KeyType | number,
+  signingKind: KeyType | number
+): Hex {
+  if (signingKind === KeyType.Transaction) {
+    if (kind === KeyType.Transaction) return RESET_KEYSET_TXSIGN_TX_TAG;
+    if (kind === KeyType.Recovery) return RESET_KEYSET_TXSIGN_RECOVERY_TAG;
+    return RESET_KEYSET_TXSIGN_VERIFY_TAG;
+  }
+  if (kind === KeyType.Transaction) return RESET_KEYSET_RECSIGN_TX_TAG;
+  if (kind === KeyType.Recovery) return RESET_KEYSET_RECSIGN_RECOVERY_TAG;
+  return RESET_KEYSET_RECSIGN_VERIFY_TAG;
 }
 
 /// Mirrors the contract's `keccak256(abi.encode(keys))` over a
-/// `WinternitzAddress[]`. Used as the bound payload-hash inside
-/// `keysetDigest` so the signature commits to the exact set of keys
-/// being added/refreshed.
+/// `WinternitzAddress[]`. Used as the `oldKeysHash` / `newKeysHash`
+/// bound-payload-hashes inside `replaceKeysDigest`.
 export function keysHash(keys: WinternitzAddress[]): Hex {
   const encoded = encodeAbiParameters(
     [
@@ -219,6 +262,9 @@ export function opdataHash(data: Hex): Hex {
 
 /// Init payload (2048 bytes): disasterRecoveryKey + ownershipKey +
 /// transactionKeys[10] + recoveryKeys[10] + verificationKeys[10].
+/// All three keysets must contain exactly `MAX_KEYS` (10) entries per the
+/// always-10 invariant — the contract's `_verifyInitialState` would revert
+/// otherwise, but we reject early to save the caller a wasted broadcast.
 export function encodeInit(
   disasterRecoveryKey: WinternitzAddress,
   ownershipKey: WinternitzAddress,
@@ -226,6 +272,21 @@ export function encodeInit(
   recoveryKeys: WinternitzAddress[],
   verificationKeys: WinternitzAddress[]
 ): Hex {
+  if (transactionKeys.length !== MAX_KEYS) {
+    throw new Error(
+      `encodeInit: transactionKeys.length must be ${MAX_KEYS}, got ${transactionKeys.length}`
+    );
+  }
+  if (recoveryKeys.length !== MAX_KEYS) {
+    throw new Error(
+      `encodeInit: recoveryKeys.length must be ${MAX_KEYS}, got ${recoveryKeys.length}`
+    );
+  }
+  if (verificationKeys.length !== MAX_KEYS) {
+    throw new Error(
+      `encodeInit: verificationKeys.length must be ${MAX_KEYS}, got ${verificationKeys.length}`
+    );
+  }
   return concat([
     packAddress(disasterRecoveryKey),
     packAddress(ownershipKey),
@@ -255,24 +316,6 @@ export function encodeExecute(
   ]);
 }
 
-/// KeyManagement payload (2304 + N*64 bytes): kind + currentKey + nextKey +
-/// pqSig + keys[]. Used for both `addKeys` and `refreshKeys`.
-export function encodeKeyManagement(
-  kind: KeyType | number,
-  currentKey: WinternitzAddress,
-  nextKey: WinternitzAddress,
-  pqSig: WinternitzElements,
-  keys: WinternitzAddress[]
-): Hex {
-  return concat([
-    bigintToBytes32(BigInt(kind)),
-    packAddress(currentKey),
-    packAddress(nextKey),
-    packElements(pqSig),
-    ...keys.map(packAddress),
-  ]);
-}
-
 /// WithdrawDeposit payload (2336 bytes): currentKey + nextKey + pqSig + to +
 /// amount.
 export function encodeWithdrawDeposit(
@@ -288,26 +331,6 @@ export function encodeWithdrawDeposit(
     packElements(pqSig),
     addressToBytes32(to),
     bigintToBytes32(amount),
-  ]);
-}
-
-/// ReplaceKeyAt payload (2400 bytes): kind + currentKey + nextKey + pqSig +
-/// index + newKey.
-export function encodeReplaceKeyAt(
-  kind: KeyType | number,
-  currentKey: WinternitzAddress,
-  nextKey: WinternitzAddress,
-  pqSig: WinternitzElements,
-  index: bigint,
-  newKey: WinternitzAddress
-): Hex {
-  return concat([
-    bigintToBytes32(BigInt(kind)),
-    packAddress(currentKey),
-    packAddress(nextKey),
-    packElements(pqSig),
-    bigintToBytes32(index),
-    packAddress(newKey),
   ]);
 }
 
@@ -462,6 +485,64 @@ export function encodeRecoveryUpgrade(
   ]);
 }
 
+/// ReplaceKeys payload (`REPLACE_KEYS_HEADER_SIZE + 2*n*64` bytes):
+/// kind + signingKind + n + currentKey + nextKey + pqSig + oldKeys[n] + newKeys[n].
+/// `kind` is the target keyset; `signingKind` is the keyset whose
+/// `currentKey` authorized the swap (Tx or Recovery only — Verification
+/// is rejected at the wallet level).
+export function encodeReplaceKeys(
+  kind: KeyType | number,
+  signingKind: KeyType | number,
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+  oldKeys: WinternitzAddress[],
+  newKeys: WinternitzAddress[]
+): Hex {
+  if (oldKeys.length !== newKeys.length) {
+    throw new Error(
+      `encodeReplaceKeys: oldKeys.length (${oldKeys.length}) must equal newKeys.length (${newKeys.length})`
+    );
+  }
+  return concat([
+    bigintToBytes32(BigInt(kind)),
+    bigintToBytes32(BigInt(signingKind)),
+    bigintToBytes32(BigInt(oldKeys.length)),
+    packAddress(currentKey),
+    packAddress(nextKey),
+    packElements(pqSig),
+    ...oldKeys.map(packAddress),
+    ...newKeys.map(packAddress),
+  ]);
+}
+
+/// ResetKeyset payload (`RESET_KEYSET_PAYLOAD_SIZE` = 2976 bytes):
+/// kind + signingKind + currentKey + nextKey + pqSig + newKeys[10].
+/// `kind` is the target keyset; `signingKind` is the keyset whose
+/// `currentKey` authorized the reset (Tx or Recovery only).
+export function encodeResetKeyset(
+  kind: KeyType | number,
+  signingKind: KeyType | number,
+  currentKey: WinternitzAddress,
+  nextKey: WinternitzAddress,
+  pqSig: WinternitzElements,
+  newKeys: WinternitzAddress[]
+): Hex {
+  if (newKeys.length !== MAX_KEYS) {
+    throw new Error(
+      `encodeResetKeyset: newKeys.length must be ${MAX_KEYS}, got ${newKeys.length}`
+    );
+  }
+  return concat([
+    bigintToBytes32(BigInt(kind)),
+    bigintToBytes32(BigInt(signingKind)),
+    packAddress(currentKey),
+    packAddress(nextKey),
+    packElements(pqSig),
+    ...newKeys.map(packAddress),
+  ]);
+}
+
 export function decodeInit(payload: Hex): {
   disasterRecoveryKey: WinternitzAddress;
   ownershipKey: WinternitzAddress;
@@ -469,6 +550,11 @@ export function decodeInit(payload: Hex): {
   recoveryKeys: WinternitzAddress[];
   verificationKeys: WinternitzAddress[];
 } {
+  if (size(payload) !== INIT_PAYLOAD_SIZE) {
+    throw new Error(
+      `decodeInit: expected ${INIT_PAYLOAD_SIZE} bytes, got ${size(payload)}`
+    );
+  }
   const disasterRecoveryKey = sliceAddress(payload, 0);
   const ownershipKey = sliceAddress(payload, 64);
   const transactionKeys: WinternitzAddress[] = [];
@@ -510,28 +596,6 @@ export function decodeExecute(payload: Hex): {
   };
 }
 
-export function decodeKeyManagement(payload: Hex): {
-  kind: number;
-  currentKey: WinternitzAddress;
-  nextKey: WinternitzAddress;
-  pqSig: WinternitzElements;
-  keys: WinternitzAddress[];
-} {
-  const payloadSize = size(payload);
-  const keyCount = (payloadSize - 2304) / 64;
-  const keys: WinternitzAddress[] = [];
-  for (let i = 0; i < keyCount; i++) {
-    keys.push(sliceAddress(payload, 2304 + i * 64));
-  }
-  return {
-    kind: Number(hexToBigInt(slice(payload, 0, 32))),
-    currentKey: sliceAddress(payload, 32),
-    nextKey: sliceAddress(payload, 96),
-    pqSig: sliceElements(payload, 160),
-    keys,
-  };
-}
-
 export function decodeWithdrawDeposit(payload: Hex): {
   currentKey: WinternitzAddress;
   nextKey: WinternitzAddress;
@@ -545,24 +609,6 @@ export function decodeWithdrawDeposit(payload: Hex): {
     pqSig: sliceElements(payload, 128),
     to: getAddress(slice(payload, 2284, 2304)),
     amount: hexToBigInt(slice(payload, 2304, 2336)),
-  };
-}
-
-export function decodeReplaceKeyAt(payload: Hex): {
-  kind: number;
-  currentKey: WinternitzAddress;
-  nextKey: WinternitzAddress;
-  pqSig: WinternitzElements;
-  index: bigint;
-  newKey: WinternitzAddress;
-} {
-  return {
-    kind: Number(hexToBigInt(slice(payload, 0, 32))),
-    currentKey: sliceAddress(payload, 32),
-    nextKey: sliceAddress(payload, 96),
-    pqSig: sliceElements(payload, 160),
-    index: hexToBigInt(slice(payload, 2304, 2336)),
-    newKey: sliceAddress(payload, 2336),
   };
 }
 
@@ -701,6 +747,75 @@ export function decodeRecoveryUpgrade(payload: Hex): {
     pqSig: sliceElements(payload, 128),
     verifier: sliceAddress(payload, 2272),
     verifySig: sliceElements(payload, 2336),
+  };
+}
+
+export function decodeReplaceKeys(payload: Hex): {
+  kind: number;
+  signingKind: number;
+  n: bigint;
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  oldKeys: WinternitzAddress[];
+  newKeys: WinternitzAddress[];
+} {
+  if (size(payload) < REPLACE_KEYS_HEADER_SIZE) {
+    throw new Error(
+      `decodeReplaceKeys: expected at least ${REPLACE_KEYS_HEADER_SIZE} bytes, got ${size(payload)}`
+    );
+  }
+  const n = hexToBigInt(slice(payload, 64, 96));
+  const expectedLen = REPLACE_KEYS_HEADER_SIZE + 2 * Number(n) * 64;
+  if (size(payload) !== expectedLen) {
+    throw new Error(
+      `decodeReplaceKeys: expected ${expectedLen} bytes for n=${n}, got ${size(payload)}`
+    );
+  }
+  const oldKeys: WinternitzAddress[] = [];
+  const newKeys: WinternitzAddress[] = [];
+  for (let i = 0; i < Number(n); i++) {
+    oldKeys.push(sliceAddress(payload, REPLACE_KEYS_HEADER_SIZE + i * 64));
+    newKeys.push(
+      sliceAddress(payload, REPLACE_KEYS_HEADER_SIZE + (Number(n) + i) * 64)
+    );
+  }
+  return {
+    kind: Number(hexToBigInt(slice(payload, 0, 32))),
+    signingKind: Number(hexToBigInt(slice(payload, 32, 64))),
+    n,
+    currentKey: sliceAddress(payload, 96),
+    nextKey: sliceAddress(payload, 160),
+    pqSig: sliceElements(payload, 224),
+    oldKeys,
+    newKeys,
+  };
+}
+
+export function decodeResetKeyset(payload: Hex): {
+  kind: number;
+  signingKind: number;
+  currentKey: WinternitzAddress;
+  nextKey: WinternitzAddress;
+  pqSig: WinternitzElements;
+  newKeys: WinternitzAddress[];
+} {
+  if (size(payload) !== RESET_KEYSET_PAYLOAD_SIZE) {
+    throw new Error(
+      `decodeResetKeyset: expected ${RESET_KEYSET_PAYLOAD_SIZE} bytes, got ${size(payload)}`
+    );
+  }
+  const newKeys: WinternitzAddress[] = [];
+  for (let i = 0; i < MAX_KEYS; i++) {
+    newKeys.push(sliceAddress(payload, 2336 + i * 64));
+  }
+  return {
+    kind: Number(hexToBigInt(slice(payload, 0, 32))),
+    signingKind: Number(hexToBigInt(slice(payload, 32, 64))),
+    currentKey: sliceAddress(payload, 64),
+    nextKey: sliceAddress(payload, 128),
+    pqSig: sliceElements(payload, 192),
+    newKeys,
   };
 }
 
@@ -862,6 +977,90 @@ export function transferOwnershipDigest(
   );
 }
 
+/// Mirrors `WOTSPlusCodec.replaceKeysDigest`. The domain tag is selected
+/// per `(signingKind, kind)` — six tags total. Pre-hash both `oldKeys`
+/// and `newKeys` via `keysHash` before passing them in.
+export function replaceKeysDigest(
+  kind: KeyType | number,
+  signingKind: KeyType | number,
+  wallet: Address,
+  chainId: bigint,
+  n: bigint,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+  oldKeysHash: Hex,
+  newKeysHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      tagForReplaceKeys(kind, signingKind),
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      bigintToBytes32(n),
+      s1,
+      h1,
+      s2,
+      h2,
+      oldKeysHash,
+      newKeysHash,
+    ])
+  );
+}
+
+/// Mirrors `WOTSPlusCodec.resetKeysetDigest`. Tag selected per
+/// `(signingKind, kind)`; pre-hash `newKeys[10]` via `resetKeysetKeysHash`
+/// before passing in.
+export function resetKeysetDigest(
+  kind: KeyType | number,
+  signingKind: KeyType | number,
+  wallet: Address,
+  chainId: bigint,
+  s1: Hex,
+  h1: Hex,
+  s2: Hex,
+  h2: Hex,
+  newKeysHash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      tagForResetKeyset(kind, signingKind),
+      bigintToBytes32(chainId),
+      addressToBytes32(wallet),
+      s1,
+      h1,
+      s2,
+      h2,
+      newKeysHash,
+    ])
+  );
+}
+
+/// Mirrors the contract's `keccak256(abi.encode(newKeys))` over a
+/// fixed-size `[10]` tuple. Used as the bound `newKeysHash` inside
+/// `resetKeysetDigest`.
+export function resetKeysetKeysHash(newKeys: WinternitzAddress[]): Hex {
+  if (newKeys.length !== MAX_KEYS) {
+    throw new Error(
+      `resetKeysetKeysHash: expected ${MAX_KEYS} keys, got ${newKeys.length}`
+    );
+  }
+  const encoded = encodeAbiParameters(
+    [
+      {
+        type: "tuple[10]",
+        components: [
+          { type: "bytes32", name: "publicSeed" },
+          { type: "bytes32", name: "publicKeyHash" },
+        ],
+      },
+    ],
+    [newKeys] as unknown as [unknown] as never
+  );
+  return keccak256(encoded);
+}
+
 export function executeDigest(
   wallet: Address,
   chainId: bigint,
@@ -891,41 +1090,6 @@ export function executeDigest(
   );
 }
 
-/// Mirrors `WOTSPlusCodec.keysetDigest`. `(kind, replace)` selects the domain tag:
-///   Transaction          → ADD_TRANSACTION_KEYS_TAG (replace ignored — refresh-Transaction is contract-forbidden)
-///   Recovery,    add     → ADD_RECOVERY_KEYS_TAG
-///   Recovery,    refresh → REFRESH_RECOVERY_KEYS_TAG
-///   Verification, add    → ADD_VERIFICATION_KEYS_TAG
-///   Verification, refresh → REFRESH_VERIFICATION_KEYS_TAG
-///
-/// The `(kind, replace)` split is load-bearing replay-prevention: an `addKeys`
-/// signature must not be liftable to `refreshKeys` (which would clear the
-/// keyset before re-installing).
-export function keysetDigest(
-  kind: KeyType | number,
-  replace: boolean,
-  wallet: Address,
-  chainId: bigint,
-  s1: Hex,
-  h1: Hex,
-  s2: Hex,
-  h2: Hex,
-  keysHash: Hex
-): Hex {
-  return keccak256(
-    concat([
-      tagForKeyset(kind, replace),
-      bigintToBytes32(chainId),
-      addressToBytes32(wallet),
-      s1,
-      h1,
-      s2,
-      h2,
-      keysHash,
-    ])
-  );
-}
-
 export function withdrawDepositDigest(
   wallet: Address,
   chainId: bigint,
@@ -947,34 +1111,6 @@ export function withdrawDepositDigest(
       h2,
       addressToBytes32(to),
       bigintToBytes32(amount),
-    ])
-  );
-}
-
-export function replaceKeyAtDigest(
-  kind: KeyType | number,
-  wallet: Address,
-  chainId: bigint,
-  s1: Hex,
-  h1: Hex,
-  s2: Hex,
-  h2: Hex,
-  index: bigint,
-  newSeed: Hex,
-  newHash: Hex
-): Hex {
-  return keccak256(
-    concat([
-      tagForReplaceKeyAt(kind),
-      bigintToBytes32(chainId),
-      addressToBytes32(wallet),
-      s1,
-      h1,
-      s2,
-      h2,
-      bigintToBytes32(index),
-      newSeed,
-      newHash,
     ])
   );
 }
