@@ -81,13 +81,19 @@ assert.equal(decoded.disasterRecoveryKey.publicSeed, disaster.publicSeed, "disas
 
 console.log("  - sign + burn (no network)...");
 const message = "0x" + "77".repeat(32);
-const sig = signer.sign(message, vaultId, txKeys[0].publicSeed);
+// QuipSigner.sign is async (burn-set consumption goes through an async hook).
+const sig = await signer.sign(message, vaultId, txKeys[0].publicSeed);
 assert.equal(sig.length, 67, `sig length wrong: ${sig.length}`);
+let burnErr;
 try {
-  signer.sign(message, vaultId, txKeys[0].publicSeed);
-  throw new Error("second sign should have thrown");
+  await signer.sign(message, vaultId, txKeys[0].publicSeed);
 } catch (e) {
-  assert(e instanceof errors.KeyAlreadyBurnedError, `expected KeyAlreadyBurnedError, got ${e?.constructor?.name}`);
+  burnErr = e;
 }
+assert(burnErr, "second sign should have thrown");
+assert(
+  burnErr instanceof errors.KeyAlreadyBurnedError,
+  `expected KeyAlreadyBurnedError, got ${burnErr?.constructor?.name}`,
+);
 
 console.log("OK");
