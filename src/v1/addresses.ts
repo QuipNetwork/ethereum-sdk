@@ -30,17 +30,27 @@ export interface NetworkAddresses {
   Deployer: Address;
   WOTSPlus: Address;
   QuipFactory: Address;
+  /// QuipWallet implementation that the factory clones via CREATE3 on
+  /// `createWallet`. The impl itself is never called directly (its
+  /// initializers are gated); surfaced so tooling can verify which
+  /// implementation is vetted on a given chain.
+  QuipWalletImpl: Address;
   /// ERC-4337 v0.7 EntryPoint. The canonical address
   /// `0x0000000071727De22E5E9d8BAf0edAc6f37da032` is the same across every
   /// chain where v0.7 is deployed — it's a CREATE2 deployment with a
   /// fixed salt. Per-chain entry exists so alternative deployments (e.g.
   /// MIDL, app-specific bundlers) can override.
   EntryPoint: Address;
-  /// Per-chain QuipPaymaster deployment. Zero address indicates no
-  /// paymaster is deployed on this chain — `QuipPaymasterClient` rejects
-  /// construction against a zero address. Populated once the paymaster
-  /// is deployed per-chain (Phase 7 release prep).
+  /// Per-chain QuipPaymaster proxy address (user-facing). Zero address
+  /// indicates no paymaster is deployed on this chain —
+  /// `QuipPaymasterClient` rejects construction against a zero address.
+  /// Populated once the paymaster is deployed per-chain (Phase 7
+  /// release prep).
   QuipPaymaster: Address;
+  /// Bare QuipPaymaster implementation behind the ERC1967 proxy. Inert
+  /// by design (`_disableInitializers()` runs in its constructor);
+  /// exposed for upgrade-path verification and source-code reconciliation.
+  QuipPaymasterImpl: Address;
 }
 
 /// Canonical ERC-4337 v0.7 EntryPoint address. Same on every mainnet /
@@ -90,17 +100,23 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     Deployer: addresses.Deployer as Address,
     WOTSPlus: addresses.WOTSPlus as Address,
     QuipFactory: addresses.QuipFactory as Address,
+    QuipWalletImpl: addresses.QuipWalletImpl as Address,
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
     QuipPaymaster: addresses.QuipPaymaster as Address,
+    QuipPaymasterImpl: addresses.QuipPaymasterImpl as Address,
   },
-  // MIDL Testnet (Chain ID 777) - different deployment mechanism
-  // These addresses will be populated after MIDL deployment
+  // MIDL Testnet (Chain ID 777) — separate deployment lineage with its
+  // own Deployer (see deployments/midl/Deployer.json). The wallet /
+  // paymaster impl addresses below are placeholders mirroring v1 until
+  // an independent MIDL deploy is recorded.
   [CHAIN_IDS.MIDL_TESTNET]: {
     Deployer: "0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1",
     WOTSPlus: "0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e",
     QuipFactory: "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC",
+    QuipWalletImpl: "0x81648CBFA79aD8f2c4A59E0DdeA03b1BC8b34cfb",
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
     QuipPaymaster: "0x4A952d592fAe490762f492dC65487eE2B53Ef554",
+    QuipPaymasterImpl: "0xeEFb077B9A0B63BA06ce72Ae07E016A9efA82ed7",
   },
 };
 

@@ -39,7 +39,7 @@ contract DeployImplementation is Script {
 
         Deployer deployer = Deployer(deployerAddr);
 
-        bytes32 salt = keccak256(abi.encodePacked("QUIP:QuipWallet:V1"));
+        bytes32 salt = keccak256(abi.encodePacked("QUIP:QuipWallet:V1.1"));
         address expectedAddress = CREATE3.predictDeterministicAddress(salt, deployerAddr);
 
         console.log("Deployer:", deployerAddr);

@@ -38,8 +38,8 @@ import {QuipPaymaster} from "../contracts/QuipPaymaster.sol";
  *   PAYMASTER_OWNER  - Initial owner of the paymaster proxy (independent of factory owner)
  */
 contract DeployPaymaster is Script {
-    bytes32 internal constant IMPL_SALT = keccak256("QUIP:QuipPaymaster:Impl:V1");
-    bytes32 internal constant PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1");
+    bytes32 internal constant IMPL_SALT = keccak256("QUIP:QuipPaymaster:Impl:V1.1");
+    bytes32 internal constant PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1.1");
 
     function run() external {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");

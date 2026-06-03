@@ -43,10 +43,10 @@ import {QuipPaymaster} from "../contracts/QuipPaymaster.sol";
  *   PAYMASTER_OWNER  - Initial owner of the paymaster proxy
  */
 contract DeployAll is Script {
-    bytes32 internal constant WOTSPLUS_SALT = keccak256("QUIP:WOTSPlus:V1");
-    bytes32 internal constant FACTORY_SALT = keccak256("QUIP:QuipFactory:V1");
-    bytes32 internal constant PAYMASTER_IMPL_SALT = keccak256("QUIP:QuipPaymaster:Impl:V1");
-    bytes32 internal constant PAYMASTER_PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1");
+    bytes32 internal constant WOTSPLUS_SALT = keccak256("QUIP:WOTSPlus:V1.1");
+    bytes32 internal constant FACTORY_SALT = keccak256("QUIP:QuipFactory:V1.1");
+    bytes32 internal constant PAYMASTER_IMPL_SALT = keccak256("QUIP:QuipPaymaster:Impl:V1.1");
+    bytes32 internal constant PAYMASTER_PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1.1");
 
     function run() external {
         address deployerAddr = vm.envAddress("DEPLOYER_ADDRESS");
