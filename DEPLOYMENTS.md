@@ -1,34 +1,40 @@
 # Deployments
 
-## v1 — canonical addresses (CREATE3 via CreateX-bootstrapped Deployer)
+## v1.1 — canonical addresses (CREATE3 via the v1 Deployer)
 
-All v1 contracts share the same addresses on every chain where CreateX is
-available. Computed before any deploy is broadcast — run `make
-predict-addresses` to see them locally with no env vars and no RPC.
+All v1.1 contracts share the same addresses on every chain where the v1
+Deployer is bootstrapped. Live on Base Sepolia as of 2026-06-03; other
+CREATE3 chains require a v1.1 deploy to materialize. Computed before any
+deploy is broadcast — run `make predict-addresses` to see them locally
+with no env vars and no RPC.
 
 | Contract | Address |
 |---|---|
-| Deployer | `0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1` |
-| WOTSPlus | `0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e` |
-| QuipFactory | `0xE567d318819c067c26fC1E44D04beD2b4FE93BCC` |
-| QuipWallet (impl) | `0x81648CBFA79aD8f2c4A59E0DdeA03b1BC8b34cfb` |
-| QuipPaymaster (impl) | `0xeEFb077B9A0B63BA06ce72Ae07E016A9efA82ed7` |
-| QuipPaymaster (proxy, canonical) | `0x4A952d592fAe490762f492dC65487eE2B53Ef554` |
+| Deployer (v1, reused) | `0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1` |
+| WOTSPlus | `0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723` |
+| QuipFactory | `0xd175378EC511e56BbffcC802375C6ad7d892c083` |
+| QuipWallet (impl) | `0xDe0Eb22871dC0F51B0C625c9a4ff9e8D1ac96d64` |
+| QuipPaymaster (impl) | `0x557453653005e6F35EA3265733f3F1c4643A1627` |
+| QuipPaymaster (proxy, canonical) | `0xC4209cD353CF7B1dbBf6F6B4d08bC5461aC7E145` |
 
 > The QuipPaymaster proxy is the user-facing paymaster address; the impl
 > behind it is intentionally inert (`_disableInitializers()` runs in its
 > constructor).
+>
+> The Deployer keeps its v1 salt — bumping the contract-host's address
+> would break the cross-chain pin without a corresponding redeploy
+> everywhere. Only the downstream contracts roll forward.
 
 ### Salts
 
 | Contract | Salt preimage |
 |---|---|
-| Deployer (via CreateX) | `QUIP:Deployer:V1` |
-| WOTSPlus | `QUIP:WOTSPlus:V1` |
-| QuipFactory | `QUIP:QuipFactory:V1` |
-| QuipWallet impl | `QUIP:QuipWallet:V1` |
-| QuipPaymaster impl | `QUIP:QuipPaymaster:Impl:V1` |
-| QuipPaymaster proxy | `QUIP:QuipPaymaster:Proxy:V1` |
+| Deployer (via CreateX, unchanged) | `QUIP:Deployer:V1` |
+| WOTSPlus | `QUIP:WOTSPlus:V1.1` |
+| QuipFactory | `QUIP:QuipFactory:V1.1` |
+| QuipWallet impl | `QUIP:QuipWallet:V1.1` |
+| QuipPaymaster impl | `QUIP:QuipPaymaster:Impl:V1.1` |
+| QuipPaymaster proxy | `QUIP:QuipPaymaster:Proxy:V1.1` |
 
 ### Deployer bootstrap
 
@@ -60,7 +66,7 @@ the `[profile.deploy]` profile in `foundry.toml`:
 ```toml
 [profile.deploy]
 libraries = [
-    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus:0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e"
+    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus:0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723"
 ]
 ```
 
@@ -115,7 +121,7 @@ MAX_FEE=1000000000000000                       # wallet creation fee (wei)
 PAYMASTER_OWNER=0x...                          # controls paymaster
 
 # Per-release (only for deploy-impl-* / vet-impl-*)
-FACTORY_ADDRESS=0xE567d318819c067c26fC1E44D04beD2b4FE93BCC
+FACTORY_ADDRESS=0xd175378EC511e56BbffcC802375C6ad7d892c083
 IMPLEMENTATION=0x...                           # filled in after deploy-impl
 ```
 
