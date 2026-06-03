@@ -63,19 +63,31 @@ const PROXY_INITCODE_HASH: Hex =
 
 // ── Salts ───────────────────────────────────────────────────────────────
 // Mirror the Solidity deploy scripts (script/Deploy*.s.sol) exactly:
-//   keccak256("QUIP:<Name>:V1").
+//   keccak256("QUIP:<Name>:<Version>").
+//
+// The Deployer keeps its v1 salt — its on-chain address is the cross-chain
+// pin point, and bumping it would invalidate every downstream prediction
+// without a corresponding redeploy via CreateX everywhere. All other
+// contracts roll forward to V1.1 in lockstep with the deploy scripts.
 
-function quipSalt(name: string): Hex {
-  return keccak256(toHex(`QUIP:${name}:V1`));
+const DEPLOYER_SALT_PREIMAGE = "QUIP:Deployer:V1";
+const DOWNSTREAM_VERSION = "V1.1";
+
+function downstreamSalt(name: string): Hex {
+  return keccak256(toHex(`QUIP:${name}:${DOWNSTREAM_VERSION}`));
 }
 
 const SALTS = {
-  Deployer: quipSalt("Deployer"),
-  WOTSPlus: quipSalt("WOTSPlus"),
-  QuipFactory: quipSalt("QuipFactory"),
-  QuipWallet: quipSalt("QuipWallet"),
-  QuipPaymasterImpl: keccak256(toHex("QUIP:QuipPaymaster:Impl:V1")),
-  QuipPaymasterProxy: keccak256(toHex("QUIP:QuipPaymaster:Proxy:V1")),
+  Deployer: keccak256(toHex(DEPLOYER_SALT_PREIMAGE)),
+  WOTSPlus: downstreamSalt("WOTSPlus"),
+  QuipFactory: downstreamSalt("QuipFactory"),
+  QuipWallet: downstreamSalt("QuipWallet"),
+  QuipPaymasterImpl: keccak256(
+    toHex(`QUIP:QuipPaymaster:Impl:${DOWNSTREAM_VERSION}`),
+  ),
+  QuipPaymasterProxy: keccak256(
+    toHex(`QUIP:QuipPaymaster:Proxy:${DOWNSTREAM_VERSION}`),
+  ),
 } as const;
 
 // ── CREATE3 derivation ──────────────────────────────────────────────────
@@ -330,11 +342,18 @@ function main(): void {
 
   // src/v1/addresses.json — canonical EVM CREATE3 addresses. MIDL keeps its
   // own per-chain entry in src/v1/addresses.ts (NETWORK_ADDRESSES[777]).
+  //
+  // Shape must match `NetworkAddresses` in src/v1/addresses.ts (the SDK
+  // reads this JSON at module load and asserts every field as `Address`).
+  // The wallet/paymaster impl entries are surfaced so tooling can verify
+  // which impls are vetted on a given chain without re-deriving from salts.
   const addresses = {
     Deployer: DEPLOYER_ADDRESS,
     WOTSPlus: WOTS_ADDRESS,
     QuipFactory: FACTORY_ADDRESS,
+    QuipWalletImpl: WALLET_ADDRESS,
     QuipPaymaster: PAYMASTER_PROXY_ADDRESS,
+    QuipPaymasterImpl: PAYMASTER_IMPL_ADDRESS,
   };
   fs.writeFileSync(ADDRESSES_FILE, JSON.stringify(addresses, null, 2) + "\n");
   console.log(`Wrote ${path.relative(ROOT, ADDRESSES_FILE)}`);
