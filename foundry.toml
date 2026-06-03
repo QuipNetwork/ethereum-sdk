@@ -33,7 +33,7 @@ pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversacc
 # The address below is computed by: forge script script/PredictAddresses.s.sol
 [profile.deploy]
 libraries = [
-    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus:0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e"
+    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus:0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723"
 ]
 
 [rpc_endpoints]

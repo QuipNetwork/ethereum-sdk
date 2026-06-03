@@ -30,7 +30,7 @@ import {QuipFactory} from "../contracts/QuipFactory.sol";
  *   MAX_FEE          - Maximum wallet-creation fee in wei (e.g. 1000000000000000 = 0.001 ETH)
  */
 contract DeployQuipFactory is Script {
-    bytes32 internal constant SALT = keccak256("QUIP:QuipFactory:V1");
+    bytes32 internal constant SALT = keccak256("QUIP:QuipFactory:V1.1");
 
     function run() external {
         address deployerAddr = vm.envAddress("DEPLOYER_ADDRESS");

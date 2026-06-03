@@ -25,7 +25,7 @@ import {Deployer} from "../contracts/Deployer.sol";
  *   DEPLOYER_ADDRESS - Deployer contract address (bootstrapped via DeployDeployer)
  */
 contract DeployWOTSPlus is Script {
-    bytes32 internal constant SALT = keccak256("QUIP:WOTSPlus:V1");
+    bytes32 internal constant SALT = keccak256("QUIP:WOTSPlus:V1.1");
 
     function run() external {
         address deployerAddr = vm.envAddress("DEPLOYER_ADDRESS");

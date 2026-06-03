@@ -43,11 +43,11 @@ contract PredictAddresses is Script {
         }
         console.log("");
 
-        _predict(deployerAddr, "WOTSPlus", keccak256("QUIP:WOTSPlus:V1"));
-        _predict(deployerAddr, "QuipFactory", keccak256("QUIP:QuipFactory:V1"));
-        _predict(deployerAddr, "QuipWallet (impl)", keccak256("QUIP:QuipWallet:V1"));
-        _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1"));
-        _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1"));
+        _predict(deployerAddr, "WOTSPlus", keccak256("QUIP:WOTSPlus:V1.1"));
+        _predict(deployerAddr, "QuipFactory", keccak256("QUIP:QuipFactory:V1.1"));
+        _predict(deployerAddr, "QuipWallet (impl)", keccak256("QUIP:QuipWallet:V1.1"));
+        _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
+        _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
     }
 
     function _predict(address deployer, string memory name, bytes32 salt) internal pure {
