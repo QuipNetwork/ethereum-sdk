@@ -64,14 +64,19 @@ const burnSet = createInMemoryBurnSet();
 const signer = new QuipSigner(quantumSecret, burnSet.consume);
 const disaster = signer.generateKeyPair(vaultId).publicKey;
 const ownership = signer.generateKeyPair(vaultId).publicKey;
-const txKeys = Array.from({ length: 5 }, () => signer.generateKeyPair(vaultId).publicKey);
-const recoveryKeys = Array.from({ length: 10 }, () => signer.generateKeyPair(vaultId).publicKey);
-const initPayload = WotsCodec.encodeInit(disaster, ownership, txKeys, recoveryKeys);
-// 1088 bytes = (1 + 1 + 5 + 10) * 64; hex string is 0x + 2176 chars.
-assert.equal(initPayload.length, 2 + 1088 * 2, `init payload wrong size: ${initPayload.length}`);
+// Init payload is fixed-shape: 3 keysets of MAX_KEYS (=10) each plus the
+// disaster and ownership keys. (1 + 1 + 10 + 10 + 10) * 64 = 2048 bytes.
+const MAX_KEYS = WotsCodec.MAX_KEYS;
+assert.equal(MAX_KEYS, 10, "MAX_KEYS drift — smoke check assumes 10");
+const txKeys = Array.from({ length: MAX_KEYS }, () => signer.generateKeyPair(vaultId).publicKey);
+const recoveryKeys = Array.from({ length: MAX_KEYS }, () => signer.generateKeyPair(vaultId).publicKey);
+const verificationKeys = Array.from({ length: MAX_KEYS }, () => signer.generateKeyPair(vaultId).publicKey);
+const initPayload = WotsCodec.encodeInit(disaster, ownership, txKeys, recoveryKeys, verificationKeys);
+assert.equal(initPayload.length, 2 + WotsCodec.INIT_PAYLOAD_SIZE * 2, `init payload wrong size: ${initPayload.length}`);
 const decoded = WotsCodec.decodeInit(initPayload);
-assert.equal(decoded.transactionKeys.length, 5, "decoded tx-key count");
-assert.equal(decoded.recoveryKeys.length, 10, "decoded recovery-key count");
+assert.equal(decoded.transactionKeys.length, MAX_KEYS, "decoded tx-key count");
+assert.equal(decoded.recoveryKeys.length, MAX_KEYS, "decoded recovery-key count");
+assert.equal(decoded.verificationKeys.length, MAX_KEYS, "decoded verification-key count");
 assert.equal(decoded.disasterRecoveryKey.publicSeed, disaster.publicSeed, "disaster seed round-trip");
 
 console.log("  - sign + burn (no network)...");
