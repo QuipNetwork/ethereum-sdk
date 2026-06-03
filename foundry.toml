@@ -11,6 +11,16 @@ bytecode_hash = "none"
 extra_output = ["abi", "storageLayout"]
 extra_output_files = ["abi"]
 
+# Invariant fuzz budget — sized for ~2 min local runtime against the QuipWallet
+# light suite (WOTS+ signing dominates per-call cost). The heavy suite
+# (LocalHeavy.t.sol) overrides further via inline `forge-config` annotation.
+# Override via env vars (`FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=500
+# forge test ...`) for CI / overnight stress runs.
+[invariant]
+runs = 20
+depth = 200
+fail_on_revert = false
+
 [dependencies]
 forge-std = "1.14.0"
 solady = "0.1.26"
