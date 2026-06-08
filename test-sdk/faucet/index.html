@@ -1,0 +1,1256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Quip Dummy Dapp — Base Sepolia</title>
+    <style>
+      :root {
+        --bg: #f5f3ee;
+        --bg-alt: #ecebe4;
+        --ink: #0a0a0a;
+        --ink-soft: #4a4a45;
+        --line: #0a0a0a;
+        --line-soft: #c3c1b8;
+        --ok: #1f6f3a;
+        --err: #a02020;
+        --warn: #8a5b00;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          "Liberation Mono", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 14px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        min-height: 100dvh;
+      }
+      main {
+        max-width: 780px;
+        margin: 0 auto;
+        padding: 48px 24px 80px;
+      }
+
+      /* ─── Type ─── */
+      .title {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        margin: 0 0 4px;
+      }
+      .subtitle {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--ink-soft);
+        margin: 0;
+      }
+      h2.section {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        margin: 0 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 1.5px solid var(--line);
+      }
+      h3.card-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin: 0 0 4px;
+      }
+      .desc {
+        font-size: 13px;
+        color: var(--ink-soft);
+        margin: 0 0 12px;
+      }
+      .hint-quip {
+        font-size: 13px;
+        color: var(--err);
+        font-weight: 600;
+        margin: 0 0 12px;
+      }
+
+      /* ─── Header ─── */
+      header.app {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 28px;
+        padding-bottom: 16px;
+        border-bottom: 1.5px solid var(--line);
+        flex-wrap: wrap;
+      }
+      .chain-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        background: var(--bg-alt);
+        border: 1.5px solid var(--line);
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .chain-pill .dot {
+        width: 8px;
+        height: 8px;
+        background: var(--ink-soft);
+        border: 1px solid var(--line);
+      }
+      .chain-pill.ok .dot { background: var(--ok); }
+      .chain-pill.bad .dot { background: var(--warn); }
+
+      /* ─── Cards ─── */
+      .card {
+        background: var(--bg);
+        border: 1.5px solid var(--line);
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .subcard {
+        background: var(--bg-alt);
+        border: 1.5px solid var(--line);
+        padding: 16px;
+      }
+      .subcard + .subcard { margin-top: 14px; }
+
+      /* ─── Form controls ─── */
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .row.bottom { align-items: flex-end; }
+      .row > .grow { flex: 1; min-width: 200px; }
+      label.field {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ink-soft);
+        margin-bottom: 4px;
+      }
+      input[type="text"], input[type="number"] {
+        width: 100%;
+        padding: 10px 12px;
+        background: var(--bg);
+        border: 1.5px solid var(--line);
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 13px;
+        outline: none;
+        border-radius: 0;
+      }
+      input[type="text"]:focus, input[type="number"]:focus {
+        background: #fff;
+      }
+
+      /* ─── Buttons ─── */
+      button {
+        font-family: var(--sans);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        padding: 10px 18px;
+        background: var(--ink);
+        color: var(--bg);
+        border: 1.5px solid var(--line);
+        cursor: pointer;
+        border-radius: 0;
+        transition: background 80ms linear, color 80ms linear;
+      }
+      button:hover:not(:disabled) {
+        background: var(--bg);
+        color: var(--ink);
+      }
+      button:active:not(:disabled) { transform: translate(1px, 1px); }
+      button:disabled {
+        background: var(--bg-alt);
+        color: var(--ink-soft);
+        cursor: not-allowed;
+        border-style: dashed;
+      }
+      button.ghost {
+        background: var(--bg);
+        color: var(--ink);
+      }
+      button.ghost:hover:not(:disabled) {
+        background: var(--ink);
+        color: var(--bg);
+      }
+      button.warn {
+        background: var(--warn);
+        color: var(--bg);
+      }
+      button.warn:hover:not(:disabled) {
+        background: var(--bg);
+        color: var(--warn);
+        border-color: var(--warn);
+      }
+      button.danger { background: var(--err); color: var(--bg); }
+      button.danger:hover:not(:disabled) {
+        background: var(--bg);
+        color: var(--err);
+        border-color: var(--err);
+      }
+      button.small {
+        padding: 6px 10px;
+        font-size: 10px;
+      }
+
+      /* ─── Segmented control (1155 picker) ─── */
+      .seg {
+        display: inline-flex;
+        border: 1.5px solid var(--line);
+        background: var(--bg);
+      }
+      .seg label { cursor: pointer; }
+      .seg input { position: absolute; opacity: 0; pointer-events: none; }
+      .seg span {
+        display: inline-block;
+        padding: 8px 14px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 600;
+        border-right: 1.5px solid var(--line);
+      }
+      .seg label:last-child span { border-right: 0; }
+      .seg input:checked + span {
+        background: var(--ink);
+        color: var(--bg);
+      }
+
+      /* ─── Mono / hex display ─── */
+      .mono {
+        font-family: var(--mono);
+        font-size: 12px;
+        word-break: break-all;
+        color: var(--ink);
+      }
+      .mono-dim {
+        font-family: var(--mono);
+        font-size: 12px;
+        word-break: break-all;
+        color: var(--ink-soft);
+      }
+      .kv {
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+      .kv .k { color: var(--ink-soft); }
+      .kv .v { color: var(--ink); }
+
+      /* ─── Activity log ─── */
+      .activity-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+        padding-bottom: 6px;
+        border-bottom: 1.5px solid var(--line);
+      }
+      .activity-head h2 { margin: 0; border: 0; padding: 0; }
+      .activity-actions { display: flex; gap: 8px; }
+      .log {
+        font-family: var(--mono);
+        font-size: 12px;
+        max-height: 340px;
+        overflow-y: auto;
+        border: 1.5px solid var(--line);
+        background: var(--bg-alt);
+      }
+      .log .line {
+        display: grid;
+        grid-template-columns: auto auto 1fr;
+        gap: 12px;
+        align-items: baseline;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .log .line:last-child { border-bottom: 0; }
+      .log .ts {
+        color: var(--ink-soft);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .log .tag {
+        padding: 1px 6px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        white-space: nowrap;
+      }
+      .log .tag.ok { color: var(--ok); border-color: var(--ok); }
+      .log .tag.err { color: var(--err); border-color: var(--err); }
+      .log .tag.info { color: var(--ink); }
+      .log .msg {
+        word-break: break-all;
+        color: var(--ink);
+      }
+      .log .msg a {
+        color: var(--ink);
+        text-underline-offset: 2px;
+      }
+      .log .msg .sub {
+        display: block;
+        color: var(--ink-soft);
+        font-size: 11px;
+        margin-top: 2px;
+      }
+      .log:empty::after {
+        content: "(no activity yet)";
+        display: block;
+        padding: 16px;
+        color: var(--ink-soft);
+        font-style: italic;
+      }
+
+      /* ─── Deploys ─── */
+      .deploys {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 14px;
+        font-size: 12px;
+      }
+      .deploys .name {
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 11px;
+      }
+      .deploys a {
+        color: var(--ink);
+        font-family: var(--mono);
+      }
+      .deploys .pending {
+        color: var(--warn);
+        font-family: var(--mono);
+        font-style: italic;
+      }
+
+      /* ─── Footer ─── */
+      footer {
+        margin-top: 32px;
+        padding-top: 16px;
+        border-top: 1.5px solid var(--line);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ink-soft);
+        text-align: center;
+      }
+
+      .hidden { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="app">
+        <div>
+          <p class="title">Quip Dummy Dapp</p>
+          <p class="subtitle">Permissionless mints · Base Sepolia · testnet only</p>
+        </div>
+        <div id="chainPill" class="chain-pill">
+          <span class="dot"></span>
+          <span id="chainPillLabel">Not connected</span>
+        </div>
+      </header>
+
+      <!-- ─── Wallet ─── -->
+      <section class="card" aria-label="Wallet">
+        <h2 class="section">Wallet</h2>
+        <p class="desc">
+          Connect a browser wallet. Tokens are minted to (and gas paid by)
+          the connected account. Grab Base Sepolia ETH from a
+          <a href="https://docs.base.org/chain/network-information" target="_blank"
+             rel="noreferrer noopener">public faucet</a> if you need it.
+        </p>
+        <div class="row">
+          <button id="connectBtn">Connect Wallet</button>
+          <div id="signerInfo" class="mono" style="flex: 1; min-width: 220px;">
+            Not connected
+          </div>
+        </div>
+        <div id="switchRow" class="row hidden" style="margin-top: 12px;">
+          <button id="switchBtn" class="warn">Switch to Base Sepolia</button>
+        </div>
+      </section>
+
+      <!-- ─── Deployed contracts ─── -->
+      <section class="card" aria-label="Deployed contracts">
+        <h2 class="section">Deployed contracts</h2>
+        <div class="deploys" id="deploys"></div>
+      </section>
+
+      <!-- ─── Mint ─── -->
+      <section class="card" aria-label="Mint">
+        <h2 class="section">Mint</h2>
+
+        <div class="subcard">
+          <h3 class="card-title">Mint recipient</h3>
+          <p class="desc">
+            All three mint actions below send tokens to this address. Defaults
+            to your connected wallet. Leave blank to mint to yourself.
+          </p>
+          <p class="hint-quip">
+            You might want to put in the address of your Quip wallet here.
+          </p>
+          <div class="row bottom">
+            <div style="flex: 1; min-width: 240px;">
+              <label class="field" for="mintRecipient">Recipient (0x…)</label>
+              <input
+                id="mintRecipient"
+                class="mono"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="0x… (defaults to connected wallet)"
+              />
+            </div>
+            <button id="resetRecipientBtn" class="ghost small" title="Reset to your connected wallet address">
+              ↻ Use my wallet
+            </button>
+          </div>
+        </div>
+
+        <div class="subcard">
+          <h3 class="card-title">tQ6 — ERC-20</h3>
+          <p class="desc">
+            6-decimal dummy ERC-20. Mints in whole-token units.
+          </p>
+          <div class="row bottom">
+            <div style="flex: 1; min-width: 160px;">
+              <label class="field" for="erc20Amount">Amount</label>
+              <input id="erc20Amount" type="number" min="0" step="any" value="100" />
+            </div>
+            <button data-action="mint-erc20">Mint tQ6</button>
+          </div>
+        </div>
+
+        <div class="subcard">
+          <h3 class="card-title">NFT — ERC-721</h3>
+          <p class="desc">
+            One NFT per click. Token id auto-assigned by the contract.
+          </p>
+          <div class="row">
+            <button data-action="mint-erc721">Mint 1 NFT</button>
+          </div>
+        </div>
+
+        <div class="subcard">
+          <h3 class="card-title">Multi-token — ERC-1155</h3>
+          <p class="desc">
+            Closed set: only token id 1 and id 2 exist.
+          </p>
+          <div class="row" style="margin-bottom: 12px;">
+            <label class="seg">
+              <input type="radio" name="erc1155Id" value="1" checked />
+              <span>Token 1</span>
+            </label>
+            <label class="seg">
+              <input type="radio" name="erc1155Id" value="2" />
+              <span>Token 2</span>
+            </label>
+          </div>
+          <div class="row bottom">
+            <div style="flex: 1; min-width: 160px;">
+              <label class="field" for="erc1155Amount">Copies</label>
+              <input id="erc1155Amount" type="number" min="1" step="1" value="10" />
+            </div>
+            <button data-action="mint-erc1155">Mint</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── Arbitrary Call ─── -->
+      <section class="card" aria-label="Arbitrary call">
+        <h2 class="section">Arbitrary call · test target</h2>
+        <p class="desc">
+          Two no-arg buttons. Counters are keyed on
+          <code class="mono">msg.sender</code>, so when called directly your
+          counter is your EOA's; through a smart wallet, the wallet's.
+        </p>
+
+        <div class="subcard">
+          <h3 class="card-title">Ping — successful call</h3>
+          <p class="desc">
+            Bumps <code class="mono">pingCountOf[you]</code> by 1. That's it.
+          </p>
+          <div class="row bottom">
+            <button data-action="ping">Ping</button>
+            <button id="refreshPingCount" class="ghost small" title="Refresh your pingCountOf reading">↻ Count</button>
+            <div class="kv" style="margin-left: auto;">
+              <span class="k">YOUR COUNT:</span>
+              <span class="v" id="pingCountReading">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="subcard">
+          <h3 class="card-title">Always-revert — exercise the revert path</h3>
+          <p class="desc">
+            Reverts with the <code class="mono">AlwaysReverts()</code>
+            custom error. We catch it, match the 4-byte selector, and log
+            the observation as a success.
+          </p>
+          <div class="row">
+            <button data-action="always-revert" class="danger">Trigger revert</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ─── Activity ─── -->
+      <section class="card" aria-label="Activity">
+        <div class="activity-head">
+          <h2 class="section">Activity</h2>
+          <div class="activity-actions">
+            <button id="downloadLogBtn" class="ghost small">Download</button>
+            <button id="clearLogBtn" class="ghost small">Clear</button>
+          </div>
+        </div>
+        <div id="log" class="log" aria-live="polite"></div>
+      </section>
+
+      <footer>
+        Base Sepolia · chain id 84532 · no real funds at risk
+      </footer>
+    </main>
+
+    <script>
+      // ───────────────────────────────────────────────────────────────────────
+      // Config — single source of truth.
+      // ───────────────────────────────────────────────────────────────────────
+      const CHAIN_ID = 84532; // Base Sepolia
+      const CHAIN_ID_HEX = "0x14a34";
+      const EXPLORER = "https://sepolia.basescan.org";
+
+      // Base Sepolia dummy deploys (CREATE3, factory 0xAA68B21c…0c52).
+      // The frozen OP Sepolia version with the old addresses is at
+      // test-sdk/_archive/faucet-op-sepolia/index.html for reference.
+      const CONTRACTS = {
+        erc20: {
+          address: "0x983f05beDC54c1a7F76CdfE48169987a0aF86705",
+          label: "tQ6 (ERC-20, 6 decimals)",
+          decimals: 6,
+          deployed: true,
+        },
+        erc721: {
+          address: "0xABc9fd3C1bE3E3FFEF6634075459D06D6C3F6be4",
+          label: "DummyQuip NFT (ERC-721)",
+          deployed: true,
+        },
+        erc1155: {
+          address: "0x1d14B57155ba680e7a8bd1b9630ad1dDf6C31b8D",
+          label: "DummyQuip Multi-token (ERC-1155)",
+          deployed: true,
+        },
+        arbitraryCall: {
+          // CREATE3-deterministic address from factory + salt
+          // (quip.dummy.DummyQuipArbitraryCall.v1).
+          address: "0x961b7fedAba6e2915D68D122BFb9f7265E42E200",
+          label: "DummyQuipArbitraryCall",
+          deployed: true,
+        },
+      };
+
+      // 4-byte function selectors. Verified with `cast sig`. NO 0x prefix —
+      // the single 0x is added by the caller right before sending.
+      const SELECTORS = {
+        mintErc20:    "40c10f19", // mint(address,uint256)
+        mintErc721:   "6a627842", // mint(address)
+        mintOne:      "d48e13c3", // mintOne(address,uint256)
+        mintTwo:      "beda81e3", // mintTwo(address,uint256)
+        ping:         "5c36b186", // ping()
+        alwaysRevert: "9fb37853", // alwaysRevert()
+        pingCountOf:  "1f650589", // pingCountOf(address)
+      };
+
+      // Custom-error selector for AlwaysReverts(). Computed: first 4 bytes
+      // of keccak256("AlwaysReverts()").
+      const ALWAYS_REVERTS_SELECTOR = "0x47e794ec";
+
+      const NETWORK_PARAMS = {
+        chainId: CHAIN_ID_HEX,
+        chainName: "Base Sepolia",
+        nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://sepolia.base.org"],
+        blockExplorerUrls: [EXPLORER],
+      };
+
+      // ───────────────────────────────────────────────────────────────────────
+      // State.
+      // ───────────────────────────────────────────────────────────────────────
+      const state = {
+        eth: null,
+        signer: null,
+        chainIdHex: null,
+        activity: [], // structured log entries for download
+      };
+
+      // ───────────────────────────────────────────────────────────────────────
+      // Hex / encoding helpers. No library used.
+      // ───────────────────────────────────────────────────────────────────────
+      const isHexAddress = (a) => /^0x[a-fA-F0-9]{40}$/.test(a || "");
+      const stripHex = (h) => (h.startsWith("0x") ? h.slice(2) : h);
+      const pad32 = (hex) => stripHex(hex).padStart(64, "0");
+      const shortAddr = (a) => a.slice(0, 6) + "…" + a.slice(-4);
+      const shortHex  = (h) => h.slice(0, 10) + "…" + h.slice(-6);
+
+      function encodeAddress(addr) {
+        if (!isHexAddress(addr)) throw new Error(`bad address: ${addr}`);
+        return pad32(addr.toLowerCase());
+      }
+      function encodeUint256(value) {
+        const v = typeof value === "bigint" ? value : BigInt(value);
+        if (v < 0n) throw new Error("negative uint256");
+        return v.toString(16).padStart(64, "0");
+      }
+      function parseUnits(value, decimals) {
+        const s = String(value).trim();
+        if (!/^\d*(\.\d+)?$/.test(s) || s === "" || s === ".") {
+          throw new Error("invalid amount");
+        }
+        const [whole, frac = ""] = s.split(".");
+        const fracPadded = (frac + "0".repeat(decimals)).slice(0, decimals);
+        const combined = (whole + fracPadded).replace(/^0+(?=\d)/, "");
+        return BigInt(combined === "" ? "0" : combined);
+      }
+
+
+      // ───────────────────────────────────────────────────────────────────────
+      // Calldata builders.
+      // ───────────────────────────────────────────────────────────────────────
+      function buildMintErc20(to, rawAmount) {
+        return SELECTORS.mintErc20 + encodeAddress(to) + encodeUint256(rawAmount);
+      }
+      function buildMintErc721(to) {
+        return SELECTORS.mintErc721 + encodeAddress(to);
+      }
+      function buildMint1155(tokenId, to, amount) {
+        const sel = tokenId === 1 ? SELECTORS.mintOne : SELECTORS.mintTwo;
+        return sel + encodeAddress(to) + encodeUint256(amount);
+      }
+      function buildPing() {
+        return SELECTORS.ping;
+      }
+      function buildAlwaysRevert() {
+        return SELECTORS.alwaysRevert;
+      }
+      function buildPingCountOf(addr) {
+        return SELECTORS.pingCountOf + encodeAddress(addr);
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // DOM helpers.
+      // ───────────────────────────────────────────────────────────────────────
+      const $ = (id) => document.getElementById(id);
+      const logEl = () => $("log");
+
+      function log(entry) {
+        // entry = { kind, message, sub?, tx?, url?, extra? }
+        const fullEntry = {
+          ts: new Date().toISOString(),
+          ...entry,
+        };
+        state.activity.push(fullEntry);
+        renderLine(fullEntry);
+      }
+
+      function renderLine(entry) {
+        const line = document.createElement("div");
+        line.className = "line";
+
+        const ts = document.createElement("span");
+        ts.className = "ts";
+        ts.textContent = new Date(entry.ts).toLocaleTimeString();
+
+        const tag = document.createElement("span");
+        tag.className = "tag " + (entry.kind || "info");
+        tag.textContent = entry.kind || "info";
+
+        const msg = document.createElement("span");
+        msg.className = "msg";
+        if (typeof entry.message === "string") {
+          msg.appendChild(document.createTextNode(entry.message));
+        } else if (entry.message instanceof Node) {
+          msg.appendChild(entry.message);
+        }
+        if (entry.url && entry.tx) {
+          msg.appendChild(document.createTextNode(" → "));
+          const a = document.createElement("a");
+          a.href = entry.url;
+          a.target = "_blank";
+          a.rel = "noreferrer noopener";
+          a.textContent = shortHex(entry.tx);
+          msg.appendChild(a);
+        }
+        if (entry.sub) {
+          const sub = document.createElement("span");
+          sub.className = "sub";
+          sub.textContent = entry.sub;
+          msg.appendChild(sub);
+        }
+
+        line.append(ts, tag, msg);
+        logEl().prepend(line);
+      }
+
+      function rerenderLog() {
+        const el = logEl();
+        el.innerHTML = "";
+        // Most recent first.
+        for (let i = state.activity.length - 1; i >= 0; i--) {
+          renderLine(state.activity[i]);
+        }
+      }
+
+      function clearLog() {
+        state.activity = [];
+        logEl().innerHTML = "";
+      }
+
+      function downloadLog() {
+        if (state.activity.length === 0) {
+          log({ kind: "info", message: "Activity log is empty; nothing to download." });
+          return;
+        }
+        const blob = new Blob(
+          [JSON.stringify(state.activity, null, 2)],
+          { type: "application/json" }
+        );
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        a.href = url;
+        a.download = `quip-dummy-dapp-activity-${stamp}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function explorerTxUrl(hash) { return `${EXPLORER}/tx/${hash}`; }
+      function explorerAddrUrl(addr) { return `${EXPLORER}/address/${addr}`; }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // Wallet plumbing.
+      // ───────────────────────────────────────────────────────────────────────
+      function detectProvider() {
+        const eth = window.ethereum;
+        if (!eth) return null;
+        if (Array.isArray(eth.providers) && eth.providers.length) {
+          const mm = eth.providers.find((p) => p.isMetaMask);
+          return mm || eth.providers[0];
+        }
+        return eth;
+      }
+
+      async function ensureChain() {
+        if (!state.eth) return false;
+        const id = await state.eth.request({ method: "eth_chainId" });
+        state.chainIdHex = id;
+        renderChainPill();
+        return id?.toLowerCase() === CHAIN_ID_HEX;
+      }
+
+      async function switchChain() {
+        if (!state.eth) return;
+        try {
+          await state.eth.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: CHAIN_ID_HEX }],
+          });
+        } catch (err) {
+          if (err && (err.code === 4902 || err.code === -32603)) {
+            try {
+              await state.eth.request({
+                method: "wallet_addEthereumChain",
+                params: [NETWORK_PARAMS],
+              });
+            } catch (addErr) {
+              log({ kind: "err", message: `Could not add Base Sepolia: ${addErr.message || addErr}` });
+            }
+          } else {
+            log({ kind: "err", message: `Chain switch failed: ${err.message || err}` });
+          }
+        }
+        await ensureChain();
+      }
+
+      async function connect() {
+        const eth = detectProvider();
+        if (!eth) {
+          log({
+            kind: "err",
+            message: "No browser wallet found. Install MetaMask or any other EIP-1193 wallet, then reload.",
+          });
+          return;
+        }
+        state.eth = eth;
+        try {
+          const accounts = await eth.request({ method: "eth_requestAccounts" });
+          if (!accounts || !accounts.length) {
+            log({ kind: "err", message: "No accounts returned by wallet." });
+            return;
+          }
+          state.signer = accounts[0];
+          renderSigner();
+          await ensureChain();
+          log({ kind: "ok", message: `Connected as ${state.signer}` });
+          refreshPingCount();
+        } catch (err) {
+          log({ kind: "err", message: `Connect rejected: ${err.message || err}` });
+        }
+
+        eth.on?.("accountsChanged", (accs) => {
+          state.signer = accs && accs[0] ? accs[0] : null;
+          renderSigner();
+          if (state.signer) {
+            log({ kind: "info", message: `Account switched to ${state.signer}` });
+            refreshPingCount();
+          } else {
+            log({ kind: "info", message: "Disconnected from wallet." });
+            $("pingCountReading").textContent = "—";
+          }
+        });
+        eth.on?.("chainChanged", async (id) => {
+          state.chainIdHex = id;
+          renderChainPill();
+          log({ kind: "info", message: `Chain changed to ${id}` });
+        });
+      }
+
+      function renderSigner() {
+        const btn = $("connectBtn");
+        const info = $("signerInfo");
+        if (state.signer) {
+          btn.textContent = "Connected · " + shortAddr(state.signer);
+          btn.classList.add("ghost");
+          info.textContent = state.signer;
+        } else {
+          btn.textContent = "Connect Wallet";
+          btn.classList.remove("ghost");
+          info.textContent = "Not connected";
+        }
+        setMintButtonsEnabled();
+      }
+
+      function renderChainPill() {
+        const pill = $("chainPill");
+        const label = $("chainPillLabel");
+        const switchRow = $("switchRow");
+        if (!state.chainIdHex) {
+          pill.classList.remove("ok", "bad");
+          label.textContent = "Not connected";
+          switchRow.classList.add("hidden");
+          setMintButtonsEnabled();
+          return;
+        }
+        const ok = state.chainIdHex.toLowerCase() === CHAIN_ID_HEX;
+        pill.classList.toggle("ok", ok);
+        pill.classList.toggle("bad", !ok);
+        label.textContent = ok ? "Base Sepolia" : `Wrong network (${state.chainIdHex})`;
+        switchRow.classList.toggle("hidden", ok);
+        setMintButtonsEnabled();
+      }
+
+      // Each action button maps to the dummy contract it ultimately calls.
+      // Used to gate buttons on (chain ok) AND (target contract deployed).
+      const ACTION_TO_CONTRACT = {
+        "mint-erc20":   "erc20",
+        "mint-erc721":  "erc721",
+        "mint-erc1155": "erc1155",
+        "ping":         "arbitraryCall",
+        "always-revert":"arbitraryCall",
+      };
+
+      function setMintButtonsEnabled() {
+        const ready =
+          !!state.signer &&
+          state.chainIdHex?.toLowerCase() === CHAIN_ID_HEX;
+        for (const btn of document.querySelectorAll("button[data-action]")) {
+          const ckey = ACTION_TO_CONTRACT[btn.dataset.action];
+          const contract = ckey ? CONTRACTS[ckey] : null;
+          const deployed = !!contract?.deployed;
+          const enabled = ready && deployed;
+          btn.disabled = !enabled;
+          btn.title = enabled
+            ? ""
+            : !state.signer
+            ? "Connect a wallet to mint."
+            : state.chainIdHex?.toLowerCase() !== CHAIN_ID_HEX
+            ? "Switch to Base Sepolia to mint."
+            : `${contract?.label ?? "Contract"} not yet deployed on Base Sepolia.`;
+        }
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // Tx send.
+      // ───────────────────────────────────────────────────────────────────────
+      async function sendTx({ to, data, label, sub }) {
+        if (!state.eth || !state.signer) throw new Error("Wallet not connected.");
+        if (state.chainIdHex?.toLowerCase() !== CHAIN_ID_HEX) {
+          throw new Error("Wrong network — switch to Base Sepolia first.");
+        }
+        log({ kind: "info", message: `${label} · requesting signature…`, sub });
+        const hash = await state.eth.request({
+          method: "eth_sendTransaction",
+          params: [{ from: state.signer, to, data }],
+        });
+        log({
+          kind: "ok",
+          message: label,
+          sub,
+          tx: hash,
+          url: explorerTxUrl(hash),
+        });
+        return hash;
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // Reads.
+      // ───────────────────────────────────────────────────────────────────────
+      async function ethCall({ to, data, from }) {
+        const tx = { to, data };
+        if (from) tx.from = from;
+        return state.eth.request({
+          method: "eth_call",
+          params: [tx, "latest"],
+        });
+      }
+
+      // Wait for a tx receipt, polling latency-tolerantly. Returns the
+      // raw EIP-1474 receipt (with `status: "0x0" | "0x1"`). Throws if
+      // the receipt isn't seen within `timeoutMs`.
+      async function waitForReceipt(hash, { timeoutMs = 60000, intervalMs = 1500 } = {}) {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          const r = await state.eth.request({
+            method: "eth_getTransactionReceipt",
+            params: [hash],
+          });
+          if (r) return r;
+          await new Promise((res) => setTimeout(res, intervalMs));
+        }
+        throw new Error(`receipt for ${hash} not seen within ${timeoutMs / 1000}s`);
+      }
+
+      async function refreshPingCount() {
+        if (!state.signer) return;
+        if (!CONTRACTS.arbitraryCall.deployed) {
+          $("pingCountReading").textContent = "(contract not deployed yet)";
+          return;
+        }
+        try {
+          const ret = await ethCall({
+            to: CONTRACTS.arbitraryCall.address,
+            data: "0x" + buildPingCountOf(state.signer),
+          });
+          // Returndata is 32 bytes of big-endian uint256.
+          const count = BigInt(ret || "0x0");
+          $("pingCountReading").textContent = count.toString();
+        } catch (err) {
+          $("pingCountReading").textContent = `read failed: ${err.message || err}`;
+        }
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // Action handlers.
+      // ───────────────────────────────────────────────────────────────────────
+      function getSignerOrThrow() {
+        if (!state.signer || !isHexAddress(state.signer)) {
+          throw new Error("Connect a wallet first.");
+        }
+        return state.signer;
+      }
+
+      // Resolve the mint recipient. Empty input falls back to the connected
+      // wallet (preserves the original mint-to-me UX). A non-empty input must
+      // be a valid 0x-prefixed 20-byte hex address; otherwise we abort BEFORE
+      // signing so the user doesn't burn gas on a tx that would only revert
+      // on the contract's address validation anyway.
+      function getMintRecipientOrThrow() {
+        const raw = ($("mintRecipient").value || "").trim();
+        if (raw === "") return getSignerOrThrow();
+        if (!isHexAddress(raw)) {
+          throw new Error(
+            `Recipient "${raw}" is not a valid address. Expected 0x followed by 40 hex chars.`
+          );
+        }
+        return raw;
+      }
+
+      async function mintErc20() {
+        const to = getMintRecipientOrThrow();
+        const human = $("erc20Amount").value;
+        const raw = parseUnits(human, CONTRACTS.erc20.decimals);
+        if (raw === 0n) throw new Error("Amount must be > 0.");
+        await sendTx({
+          to: CONTRACTS.erc20.address,
+          data: "0x" + buildMintErc20(to, raw),
+          label: `Mint ${human} tQ6 → ${shortAddr(to)}`,
+        });
+      }
+
+      async function mintErc721() {
+        const to = getMintRecipientOrThrow();
+        await sendTx({
+          to: CONTRACTS.erc721.address,
+          data: "0x" + buildMintErc721(to),
+          label: `Mint 1 NFT → ${shortAddr(to)}`,
+        });
+      }
+
+      async function mintErc1155() {
+        const to = getMintRecipientOrThrow();
+        const id = Number(document.querySelector('input[name="erc1155Id"]:checked').value);
+        if (id !== 1 && id !== 2) throw new Error("Pick token 1 or 2.");
+        const amount = BigInt(($("erc1155Amount").value || "0").trim());
+        if (amount <= 0n) throw new Error("Amount must be > 0.");
+        await sendTx({
+          to: CONTRACTS.erc1155.address,
+          data: "0x" + buildMint1155(id, to, amount),
+          label: `Mint ${amount} of token #${id} → ${shortAddr(to)}`,
+        });
+      }
+
+      async function doPing() {
+        getSignerOrThrow();
+        await sendTx({
+          to: CONTRACTS.arbitraryCall.address,
+          data: "0x" + buildPing(),
+          label: "Ping",
+        });
+        // RPCs often serve stale reads right after a write. Give the node a
+        // moment, then re-poll. Two attempts is usually plenty on Base Sepolia.
+        setTimeout(refreshPingCount, 1500);
+        setTimeout(refreshPingCount, 4500);
+      }
+
+      async function doAlwaysRevert() {
+        const from = getSignerOrThrow();
+        const to = CONTRACTS.arbitraryCall.address;
+        const data = "0x" + buildAlwaysRevert();
+
+        // Step 1: eth_call pre-flight to capture the revert data. This is a
+        // read-only simulation — no gas, no signature, no tx. If it succeeds
+        // the contract is BROKEN (it should always revert).
+        let selectorMatched = false;
+        try {
+          await ethCall({ to, data, from });
+          log({
+            kind: "err",
+            message: "eth_call did not revert — contract is broken (unexpected).",
+          });
+          return;
+        } catch (err) {
+          const revertData = extractRevertData(err);
+          if (revertData && revertData.toLowerCase().startsWith(ALWAYS_REVERTS_SELECTOR)) {
+            selectorMatched = true;
+            log({
+              kind: "info",
+              message: "Pre-flight: AlwaysReverts() selector matched ✓",
+              sub: `revert data: ${revertData}`,
+            });
+          } else {
+            log({
+              kind: "err",
+              message: "Pre-flight reverted with unexpected data",
+              sub: revertData ? `data: ${revertData}` : (err.message || String(err)),
+            });
+            return;
+          }
+        }
+
+        // Step 2: actually submit a reverting tx on-chain. MetaMask will
+        // warn that "this transaction will likely fail" — that's the whole
+        // point. After we get a hash, wait for the receipt and verify
+        // `status: "0x0"` (i.e. the EVM reverted execution).
+        //
+        // We HARD-CODE `gas: 0xc350` (50,000) here. Without it, MetaMask
+        // tries to estimate via eth_estimateGas, which RPCs correctly return
+        // as an error for guaranteed-revert calls. MetaMask's fallback is
+        // ~block.gasLimit (1.2B on Base Sepolia) × gasPrice — which shows the
+        // user an absurd network fee even though the actual on-chain charge
+        // is the ~21,300 gas of a custom-error revert. 50k is way more than
+        // we need and still tiny in fee terms.
+        log({ kind: "info", message: "Submitting on-chain revert tx…" });
+        const hash = await state.eth.request({
+          method: "eth_sendTransaction",
+          params: [{ from, to, data, gas: "0xc350" }],
+        });
+        log({
+          kind: "info",
+          message: "Tx submitted; waiting for receipt",
+          tx: hash,
+          url: explorerTxUrl(hash),
+        });
+
+        let receipt;
+        try {
+          receipt = await waitForReceipt(hash);
+        } catch (err) {
+          log({ kind: "err", message: `Receipt poll failed: ${err.message || err}` });
+          return;
+        }
+
+        if (receipt.status === "0x0") {
+          log({
+            kind: "ok",
+            message: "On-chain revert confirmed (receipt status = 0x0) ✓",
+            sub: selectorMatched
+              ? "AlwaysReverts() selector matched in pre-flight."
+              : "",
+            tx: hash,
+            url: explorerTxUrl(hash),
+          });
+        } else {
+          log({
+            kind: "err",
+            message: `Tx mined with status=${receipt.status} (expected 0x0)`,
+            tx: hash,
+            url: explorerTxUrl(hash),
+          });
+        }
+      }
+
+      function extractRevertData(err) {
+        // Walks the various places EIP-1193 / viem / MetaMask stash revert
+        // returndata.
+        return (
+          err?.data?.originalError?.data ||
+          err?.data?.data ||
+          err?.data ||
+          err?.cause?.data ||
+          err?.error?.data ||
+          null
+        );
+      }
+
+      // ───────────────────────────────────────────────────────────────────────
+      // Glue.
+      // ───────────────────────────────────────────────────────────────────────
+      function withErrorLog(fn) {
+        return async (ev) => {
+          const btn = ev?.currentTarget;
+          if (btn) {
+            btn.disabled = true;
+            btn.dataset._label = btn.textContent;
+            btn.textContent = "…";
+          }
+          try {
+            await fn(ev);
+          } catch (err) {
+            const msg =
+              err?.shortMessage || err?.data?.message || err?.message || String(err);
+            log({ kind: "err", message: msg });
+          } finally {
+            if (btn) {
+              btn.disabled = false;
+              btn.textContent = btn.dataset._label;
+            }
+          }
+        };
+      }
+
+      function renderDeploys() {
+        const root = $("deploys");
+        root.innerHTML = "";
+        const rows = [
+          ["tQ6 / ERC-20", CONTRACTS.erc20],
+          ["NFT / ERC-721", CONTRACTS.erc721],
+          ["Multi-token / ERC-1155", CONTRACTS.erc1155],
+          ["ArbitraryCall", CONTRACTS.arbitraryCall],
+        ];
+        for (const [name, info] of rows) {
+          const nameEl = document.createElement("div");
+          nameEl.className = "name";
+          nameEl.textContent = name;
+          const addrEl = document.createElement("div");
+          if (info.deployed) {
+            const a = document.createElement("a");
+            a.href = explorerAddrUrl(info.address);
+            a.target = "_blank";
+            a.rel = "noreferrer noopener";
+            a.textContent = info.address;
+            addrEl.appendChild(a);
+          } else {
+            const span = document.createElement("span");
+            span.className = "pending";
+            span.textContent = `${info.address} (not yet deployed)`;
+            addrEl.appendChild(span);
+          }
+          root.append(nameEl, addrEl);
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        renderDeploys();
+        setMintButtonsEnabled();
+        $("pingCountReading").textContent =
+          CONTRACTS.arbitraryCall.deployed
+            ? "—"
+            : "(contract not deployed yet)";
+
+        const eth = detectProvider();
+        if (eth) {
+          state.eth = eth;
+          eth.request({ method: "eth_chainId" })
+            .then((id) => { state.chainIdHex = id; renderChainPill(); })
+            .catch(() => {});
+          eth.request({ method: "eth_accounts" })
+            .then((accs) => {
+              if (accs && accs[0]) {
+                state.signer = accs[0];
+                renderSigner();
+                refreshPingCount();
+              }
+            })
+            .catch(() => {});
+        }
+
+        $("connectBtn").addEventListener("click", withErrorLog(connect));
+        $("switchBtn").addEventListener("click", withErrorLog(switchChain));
+        $("refreshPingCount").addEventListener("click", withErrorLog(refreshPingCount));
+        $("downloadLogBtn").addEventListener("click", downloadLog);
+        $("clearLogBtn").addEventListener("click", clearLog);
+        // "↻ Use my wallet": clear the override so getMintRecipientOrThrow()
+        // falls back to the connected signer.
+        $("resetRecipientBtn").addEventListener("click", () => {
+          $("mintRecipient").value = "";
+        });
+        document
+          .querySelector('[data-action="mint-erc20"]')
+          .addEventListener("click", withErrorLog(mintErc20));
+        document
+          .querySelector('[data-action="mint-erc721"]')
+          .addEventListener("click", withErrorLog(mintErc721));
+        document
+          .querySelector('[data-action="mint-erc1155"]')
+          .addEventListener("click", withErrorLog(mintErc1155));
+        document
+          .querySelector('[data-action="ping"]')
+          .addEventListener("click", withErrorLog(doPing));
+        document
+          .querySelector('[data-action="always-revert"]')
+          .addEventListener("click", withErrorLog(doAlwaysRevert));
+      });
+    </script>
+  </body>
+</html>

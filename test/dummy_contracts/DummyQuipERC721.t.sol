@@ -45,28 +45,41 @@ contract DummyQuipERC721Test is Test {
         assertTrue(nft.supportsInterface(type(IERC165).interfaceId));
     }
 
-    function testMintSequentialIds() public {
+    function testMintReturnsAssignedIdAndIncrementsCounter() public {
         vm.prank(alice);
-        nft.mint(alice, 3);
-
-        assertEq(nft.nextTokenId(), 3);
-        assertEq(nft.totalSupply(), 3);
-        assertEq(nft.balanceOf(alice), 3);
+        uint256 firstId = nft.mint(alice);
+        assertEq(firstId, 0);
+        assertEq(nft.nextTokenId(), 1);
         assertEq(nft.ownerOf(0), alice);
+
+        vm.prank(alice);
+        uint256 secondId = nft.mint(alice);
+        assertEq(secondId, 1);
+        assertEq(nft.nextTokenId(), 2);
         assertEq(nft.ownerOf(1), alice);
-        assertEq(nft.ownerOf(2), alice);
+
+        assertEq(nft.totalSupply(), 2);
+        assertEq(nft.balanceOf(alice), 2);
     }
 
     function testMintIsUngated() public {
+        // Anyone (alice) can mint to anyone else (bob); no Ownable / faucet.
         vm.prank(alice);
-        nft.mint(bob, 2);
+        nft.mint(bob);
+        vm.prank(alice);
+        nft.mint(bob);
+
         assertEq(nft.balanceOf(bob), 2);
         assertEq(nft.totalSupply(), 2);
+        assertEq(nft.ownerOf(0), bob);
+        assertEq(nft.ownerOf(1), bob);
     }
 
     function testTransferAndApprove() public {
         vm.prank(alice);
-        nft.mint(alice, 2);
+        nft.mint(alice);
+        vm.prank(alice);
+        nft.mint(alice);
 
         vm.prank(alice);
         nft.approve(bob, 0);
@@ -81,7 +94,7 @@ contract DummyQuipERC721Test is Test {
 
     function testTransferFromInsufficientApprovalUsesOZError() public {
         vm.prank(alice);
-        nft.mint(alice, 1);
+        nft.mint(alice);
 
         vm.prank(bob);
         vm.expectRevert(
@@ -93,7 +106,7 @@ contract DummyQuipERC721Test is Test {
     function testSafeTransferToReceiver() public {
         GoodReceiver721 receiver = new GoodReceiver721();
         vm.prank(alice);
-        nft.mint(alice, 1);
+        nft.mint(alice);
 
         vm.prank(alice);
         nft.safeTransferFrom(alice, address(receiver), 0);
@@ -104,7 +117,7 @@ contract DummyQuipERC721Test is Test {
     function testSafeTransferToNonReceiverReverts() public {
         BadReceiver721 receiver = new BadReceiver721();
         vm.prank(alice);
-        nft.mint(alice, 1);
+        nft.mint(alice);
 
         vm.prank(alice);
         vm.expectRevert(
@@ -117,7 +130,9 @@ contract DummyQuipERC721Test is Test {
 
     function testBurnDecrementsTotalSupply() public {
         vm.prank(alice);
-        nft.mint(alice, 2);
+        nft.mint(alice);
+        vm.prank(alice);
+        nft.mint(alice);
 
         assertEq(nft.totalSupply(), 2);
 

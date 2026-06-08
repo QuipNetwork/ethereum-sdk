@@ -237,29 +237,56 @@ deploy-dummies:
 deploy-dummy-erc20s:
 	forge script script/dummy_contracts/DeployDummyQuipERC20s.s.sol $(DUMMY_FORGE_FLAGS)
 
+# OP Sepolia — uses the default PRIVATE_KEY (leaked, but already bound to
+# this chain's deploys) and the OP-pinned CREATE3 factory address.
+#
+# Overrides are passed as `$(MAKE) target VAR=val` (command-line args), NOT as
+# `VAR=val $(MAKE) target` (env vars). Both forms set VAR in the child make,
+# but the child also does `include .env` which sets VAR as a Makefile variable
+# — and Makefile-defined values outrank environment values. Command-line args,
+# however, beat Makefile assignments, so this is the form that actually wins.
 deploy-dummy-create3-op-sepolia:
-	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummy-create3
+	$(MAKE) deploy-dummy-create3 \
+	  RPC_URL=$(API_URL_OP_SEPOLIA)
 
 predict-dummy-op-sepolia:
-	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) predict-dummies
+	$(MAKE) predict-dummies \
+	  RPC_URL=$(API_URL_OP_SEPOLIA) \
+	  DUMMY_QUIP_CREATE3_FACTORY=$(DUMMY_QUIP_CREATE3_FACTORY_OP_SEPOLIA)
 
 deploy-dummies-op-sepolia:
-	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummies
+	$(MAKE) deploy-dummies \
+	  RPC_URL=$(API_URL_OP_SEPOLIA) \
+	  DUMMY_QUIP_CREATE3_FACTORY=$(DUMMY_QUIP_CREATE3_FACTORY_OP_SEPOLIA)
 
 deploy-dummy-erc20s-op-sepolia:
-	RPC_URL=$(API_URL_OP_SEPOLIA) $(MAKE) deploy-dummy-erc20s
+	$(MAKE) deploy-dummy-erc20s \
+	  RPC_URL=$(API_URL_OP_SEPOLIA) \
+	  DUMMY_QUIP_CREATE3_FACTORY=$(DUMMY_QUIP_CREATE3_FACTORY_OP_SEPOLIA)
 
+# Base Sepolia — uses a separate, gitignored operator key (PRIVATE_KEY_BASE_SEPOLIA)
+# and the Base-pinned CREATE3 factory address.
 deploy-dummy-create3-base-sepolia:
-	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummy-create3
+	$(MAKE) deploy-dummy-create3 \
+	  RPC_URL=$(API_URL_BASE_SEPOLIA) \
+	  PRIVATE_KEY=$(PRIVATE_KEY_BASE_SEPOLIA)
 
 predict-dummy-base-sepolia:
-	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) predict-dummies
+	$(MAKE) predict-dummies \
+	  RPC_URL=$(API_URL_BASE_SEPOLIA) \
+	  DUMMY_QUIP_CREATE3_FACTORY=$(DUMMY_QUIP_CREATE3_FACTORY_BASE_SEPOLIA)
 
 deploy-dummies-base-sepolia:
-	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummies
+	$(MAKE) deploy-dummies \
+	  RPC_URL=$(API_URL_BASE_SEPOLIA) \
+	  PRIVATE_KEY=$(PRIVATE_KEY_BASE_SEPOLIA) \
+	  DUMMY_QUIP_CREATE3_FACTORY=$(DUMMY_QUIP_CREATE3_FACTORY_BASE_SEPOLIA)
 
 deploy-dummy-erc20s-base-sepolia:
-	RPC_URL=$(API_URL_BASE_SEPOLIA) $(MAKE) deploy-dummy-erc20s
+	$(MAKE) deploy-dummy-erc20s \
+	  RPC_URL=$(API_URL_BASE_SEPOLIA) \
+	  PRIVATE_KEY=$(PRIVATE_KEY_BASE_SEPOLIA) \
+	  DUMMY_QUIP_CREATE3_FACTORY=$(DUMMY_QUIP_CREATE3_FACTORY_BASE_SEPOLIA)
 
 deploy-dummy-create3-sepolia:
 	RPC_URL=$(API_URL_SEPOLIA) $(MAKE) deploy-dummy-create3

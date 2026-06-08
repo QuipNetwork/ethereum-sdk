@@ -7,21 +7,27 @@ import {ERC721Burnable} from
 
 /// @title DummyQuipERC721
 /// @notice Test-only ERC-721 built on OpenZeppelin for Quip QA / testnet flows.
-/// @dev Exposes a single ungated `mint(to, amount)` that auto-increments token IDs,
-///      plus burn via ERC721Burnable. Tracks `totalSupply`. Not for production.
+/// @dev Exposes a parameter-free `mint(to)` that auto-allocates the next sequential
+///      token id; callers never have to pick or coordinate ids. Returns the minted
+///      id so the caller learns it from the call return. Burnable via
+///      ERC721Burnable. Tracks `totalSupply`. Not for production.
 contract DummyQuipERC721 is ERC721, ERC721Burnable {
+    /// @notice Monotonic counter; equals the id that the next `mint` call will assign.
     uint256 public nextTokenId;
+    /// @notice Live total supply (incremented on mint, decremented on burn).
     uint256 public totalSupply;
 
     constructor(string memory name_, string memory symbol_) ERC721(name_, symbol_) {}
 
-    /// @notice Ungated mint of `amount` sequential token IDs to `to`.
-    function mint(address to, uint256 amount) external {
-        for (uint256 i = 0; i < amount; ++i) {
-            _safeMint(to, nextTokenId);
-            unchecked {
-                nextTokenId += 1;
-            }
+    /// @notice Mint exactly one NFT to `to`. Caller does not pick the id.
+    /// @param to Recipient (EOA or contract — `_safeMint` enforces ERC721 receiver hook).
+    /// @return tokenId Id assigned to the newly minted token (equal to the pre-call
+    ///                 value of `nextTokenId`).
+    function mint(address to) external returns (uint256 tokenId) {
+        tokenId = nextTokenId;
+        _safeMint(to, tokenId);
+        unchecked {
+            nextTokenId += 1;
         }
     }
 

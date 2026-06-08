@@ -21,6 +21,7 @@ contract PredictDummyQuipDummies is Script {
         _print(factory, "DummyQuipERC20EighteenDecimals", Config.saltERC20EighteenDecimals());
         _print(factory, "DummyQuipERC721", Config.saltERC721());
         _print(factory, "DummyQuipERC1155", Config.saltERC1155());
+        _print(factory, "DummyQuipArbitraryCall", Config.saltArbitraryCall());
     }
 
     function _print(DummyQuipCreate3Factory factory, string memory label, bytes32 salt)

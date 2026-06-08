@@ -13,6 +13,7 @@ contract DeployDummyQuipDummies is Script {
         address dummyQuipERC20EighteenDecimals;
         address dummyQuipERC721;
         address dummyQuipERC1155;
+        address dummyQuipArbitraryCall;
     }
 
     function run() external returns (DummyQuipDummyAddresses memory deployed) {
@@ -57,6 +58,13 @@ contract DeployDummyQuipDummies is Script {
             Config.codeERC1155()
         );
 
+        deployed.dummyQuipArbitraryCall = _deployIfNeeded(
+            factory,
+            "DummyQuipArbitraryCall",
+            Config.saltArbitraryCall(),
+            Config.codeArbitraryCall()
+        );
+
         vm.stopBroadcast();
 
         console.log("--- DummyQuip dummy deployment complete ---");
@@ -64,6 +72,7 @@ contract DeployDummyQuipDummies is Script {
         console.log("DummyQuipERC20EighteenDecimals:", deployed.dummyQuipERC20EighteenDecimals);
         console.log("DummyQuipERC721:", deployed.dummyQuipERC721);
         console.log("DummyQuipERC1155:", deployed.dummyQuipERC1155);
+        console.log("DummyQuipArbitraryCall:", deployed.dummyQuipArbitraryCall);
     }
 
     function _deployIfNeeded(

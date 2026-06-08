@@ -9,15 +9,27 @@ import {ERC1155Supply} from
 
 /// @title DummyQuipERC1155
 /// @notice Test-only ERC-1155 built on OpenZeppelin for Quip QA / testnet flows.
-/// @dev Exposes a single ungated `mint(to, id, amount)` plus burn via ERC1155Burnable
-///      and `totalSupply(id)` via ERC1155Supply. URI is set once in the constructor.
-///      Not for production.
+/// @dev Constrains the universe of tokens to exactly two ids — `TOKEN_ID_ONE` (1)
+///      and `TOKEN_ID_TWO` (2). Mints go through `mintOne` / `mintTwo`; there is
+///      no generic `mint(id, amount)` entrypoint, so the closed set is enforced
+///      structurally (you can't typo your way into id=3). Burnable via
+///      ERC1155Burnable and supply-tracked via ERC1155Supply. Not for production.
 contract DummyQuipERC1155 is ERC1155, ERC1155Burnable, ERC1155Supply {
+    /// @notice Canonical id for token type one.
+    uint256 public constant TOKEN_ID_ONE = 1;
+    /// @notice Canonical id for token type two.
+    uint256 public constant TOKEN_ID_TWO = 2;
+
     constructor(string memory uri_) ERC1155(uri_) {}
 
-    /// @notice Ungated per-id mint.
-    function mint(address to, uint256 id, uint256 amount) external {
-        _mint(to, id, amount, "");
+    /// @notice Mint `amount` of token type 1 to `to`. Ungated.
+    function mintOne(address to, uint256 amount) external {
+        _mint(to, TOKEN_ID_ONE, amount, "");
+    }
+
+    /// @notice Mint `amount` of token type 2 to `to`. Ungated.
+    function mintTwo(address to, uint256 amount) external {
+        _mint(to, TOKEN_ID_TWO, amount, "");
     }
 
     /// @dev Resolve diamond inheritance between ERC1155 and ERC1155Supply.
