@@ -753,6 +753,10 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         WOTSPlus.WinternitzAddress memory nextPub,
         bytes32 priv
     ) internal returns (bytes memory) {
+        // Migrator payload: 2048 zero bytes. `shouldMigrate=false` so
+        // the wallet never decodes or delegatecalls into this section.
+        bytes memory dummyMigrator = new bytes(2048);
+
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
             block.chainid,
@@ -760,7 +764,9 @@ contract WOTSPlusImplementationInvariantHandler is Test {
             cur.publicSeed,
             cur.publicKeyHash,
             nextPub.publicSeed,
-            nextPub.publicKeyHash
+            nextPub.publicKeyHash,
+            false,
+            keccak256(dummyMigrator)
         );
         WOTSPlus.WinternitzElements memory pqSig = _signWith(priv, digest);
 
@@ -770,10 +776,16 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         );
         WOTSPlus.WinternitzElements memory vSig = _signWith(verifierPriv, vDigest);
 
-        // Migrator payload: 2048 zero bytes. `shouldMigrate=false` so
-        // the wallet never decodes or delegatecalls into this section.
-        bytes memory dummyMigrator = new bytes(2048);
-        return Codec.encodeUpgradeToAndCall(cur, nextPub, pqSig, verifierPub, vSig, false, dummyMigrator);
+        return
+            Codec.encodeUpgradeToAndCall(
+                cur,
+                nextPub,
+                pqSig,
+                verifierPub,
+                vSig,
+                false,
+                dummyMigrator
+            );
     }
 
     /*════════════════════════ view helpers ══════════════════════════════*/

@@ -43,6 +43,12 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
     ) internal {
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
 
+        // Migrator payload (2048 bytes init layout)
+        bytes memory migratorPayload = _encodeInitPayload(
+            migratePq,
+            migrateRecoveryKeys
+        );
+
         // Auth signature
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
@@ -51,7 +57,9 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
             currentPq.publicSeed,
             currentPq.publicKeyHash,
             nextPq.publicSeed,
-            nextPq.publicKeyHash
+            nextPq.publicKeyHash,
+            true,
+            keccak256(migratorPayload)
         );
         WOTSPlus.WinternitzElements memory pqSig = _sign(currentPrivKey, digest);
 
@@ -59,10 +67,15 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
         (WOTSPlus.WinternitzAddress memory vPub, WOTSPlus.WinternitzElements memory vSig) =
             _buildVerifierData(impl, "migrate-verifier");
 
-        // Migrator payload (704 bytes init layout)
-        bytes memory migratorPayload = _encodeInitPayload(migratePq, migrateRecoveryKeys);
-
-        bytes memory data = Codec.encodeUpgradeToAndCall(currentPq, nextPq, pqSig, vPub, vSig, true, migratorPayload);
+        bytes memory data = Codec.encodeUpgradeToAndCall(
+            currentPq,
+            nextPq,
+            pqSig,
+            vPub,
+            vSig,
+            true,
+            migratorPayload
+        );
 
         vm.prank(ALICE);
         wallet.upgradeToAndCall(impl, data);

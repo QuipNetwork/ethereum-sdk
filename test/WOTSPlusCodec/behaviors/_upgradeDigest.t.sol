@@ -12,18 +12,66 @@ contract WOTSPlusCodec__upgradeDigest is WOTSPlusCodecTest {
     bytes32 constant S2 = bytes32(uint256(20));
     bytes32 constant H2 = bytes32(uint256(21));
 
+    function _zeroMigratorHash() private pure returns (bytes32) {
+        return keccak256(new bytes(2048));
+    }
+
     function test_exposed_upgradeDigest_matchesManualHash() public view {
+        bytes32 zeroMigratorHash = _zeroMigratorHash();
         bytes32 tag = keccak256("quip.digest.upgrade");
         address impl = address(0xDEAD);
         bytes32 expected = EfficientHashLib.hash(
-            tag, bytes32(C), bytes32(uint256(uint160(W))), bytes32(uint256(uint160(impl))), S1, H1, S2, H2
+            tag,
+            bytes32(C),
+            bytes32(uint256(uint160(W))),
+            bytes32(uint256(uint160(impl))),
+            S1,
+            H1,
+            S2,
+            H2,
+            bytes32(0),
+            zeroMigratorHash
         );
-        assertEq(codec.exposed_upgradeDigest(W, C, impl, S1, H1, S2, H2), expected);
+        assertEq(
+            codec.exposed_upgradeDigest(
+                W,
+                C,
+                impl,
+                S1,
+                H1,
+                S2,
+                H2,
+                false,
+                zeroMigratorHash
+            ),
+            expected
+        );
     }
 
     function test_exposed_upgradeDigest_differsByImplementation() public view {
-        bytes32 a = codec.exposed_upgradeDigest(W, C, address(0x1), S1, H1, S2, H2);
-        bytes32 b = codec.exposed_upgradeDigest(W, C, address(0x2), S1, H1, S2, H2);
+        bytes32 zeroMigratorHash = _zeroMigratorHash();
+        bytes32 a = codec.exposed_upgradeDigest(
+            W,
+            C,
+            address(0x1),
+            S1,
+            H1,
+            S2,
+            H2,
+            false,
+            zeroMigratorHash
+        );
+        bytes32 b = codec.exposed_upgradeDigest(
+            W,
+            C,
+            address(0x2),
+            S1,
+            H1,
+            S2,
+            H2,
+            false,
+            zeroMigratorHash
+        );
         assertTrue(a != b);
     }
 }

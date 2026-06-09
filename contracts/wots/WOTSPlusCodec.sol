@@ -1109,7 +1109,10 @@ library WOTSPlusCodec {
             );
     }
 
-    /// @dev keccak256(abi.encode(UPGRADE_TAG, chainId, wallet, newImpl, s1, h1, s2, h2))
+    /// @dev keccak256(abi.encode(UPGRADE_TAG, chainId, wallet, newImpl, s1, h1, s2, h2,
+    ///                           shouldMigrate, migratorPayloadHash))
+    ///      `migratorPayloadHash = keccak256(migratorPayload)` over the full 2048-byte
+    ///      on-wire slot (zero-filled when shouldMigrate is false).
     function upgradeDigest(
         address wallet,
         uint256 chainId,
@@ -1117,7 +1120,9 @@ library WOTSPlusCodec {
         bytes32 s1,
         bytes32 h1,
         bytes32 s2,
-        bytes32 h2
+        bytes32 h2,
+        bool shouldMigrate,
+        bytes32 migratorPayloadHash
     ) internal pure returns (bytes32) {
         return
             EfficientHashLib.hash(
@@ -1128,7 +1133,9 @@ library WOTSPlusCodec {
                 s1,
                 h1,
                 s2,
-                h2
+                h2,
+                bytes32(uint256(shouldMigrate ? 1 : 0)),
+                migratorPayloadHash
             );
     }
 

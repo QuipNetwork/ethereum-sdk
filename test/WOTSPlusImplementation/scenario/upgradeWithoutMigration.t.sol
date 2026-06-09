@@ -42,24 +42,13 @@ contract WOTSPlusImplementation_upgradeWithoutMigration is WOTSPlusImplementatio
     {
         (nextPq, nextPrivKey) = _generateKeyPair("upgrade-next-pq");
 
-        bytes32 digest = Codec.upgradeDigest(
-            address(wallet),
-            block.chainid,
-            impl,
-            currentPq.publicSeed,
-            currentPq.publicKeyHash,
-            nextPq.publicSeed,
-            nextPq.publicKeyHash
-        );
-        WOTSPlus.WinternitzElements memory pqSig = _sign(currentPrivKey, digest);
-
-        (WOTSPlus.WinternitzAddress memory vPub, WOTSPlus.WinternitzElements memory vSig) =
-            _buildVerifierData(impl, "no-migrate-verifier");
-
-        // Dummy migrator payload (704 bytes) — unused but required by layout
-        WOTSPlus.WinternitzAddress memory dummyPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
-        WOTSPlus.WinternitzAddress[] memory dummyKeys = new WOTSPlus.WinternitzAddress[](10);
+        // Dummy migrator payload (2048 bytes) — unused but required by layout
+        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
+            publicSeed: bytes32(uint256(1)),
+            publicKeyHash: bytes32(uint256(2))
+        });
+        WOTSPlus.WinternitzAddress[]
+            memory dummyKeys = new WOTSPlus.WinternitzAddress[](10);
         for (uint256 i = 0; i < 10; i++) {
             dummyKeys[i] = WOTSPlus.WinternitzAddress({
                 publicSeed: bytes32(uint256(i + 1)), publicKeyHash: bytes32(uint256(i + 100))
@@ -67,7 +56,36 @@ contract WOTSPlusImplementation_upgradeWithoutMigration is WOTSPlusImplementatio
         }
         bytes memory migratorPayload = _encodeInitPayload(dummyPq, dummyKeys);
 
-        bytes memory data = Codec.encodeUpgradeToAndCall(currentPq, nextPq, pqSig, vPub, vSig, false, migratorPayload);
+        bytes32 digest = Codec.upgradeDigest(
+            address(wallet),
+            block.chainid,
+            impl,
+            currentPq.publicSeed,
+            currentPq.publicKeyHash,
+            nextPq.publicSeed,
+            nextPq.publicKeyHash,
+            false,
+            keccak256(migratorPayload)
+        );
+        WOTSPlus.WinternitzElements memory pqSig = _sign(
+            currentPrivKey,
+            digest
+        );
+
+        (
+            WOTSPlus.WinternitzAddress memory vPub,
+            WOTSPlus.WinternitzElements memory vSig
+        ) = _buildVerifierData(impl, "no-migrate-verifier");
+
+        bytes memory data = Codec.encodeUpgradeToAndCall(
+            currentPq,
+            nextPq,
+            pqSig,
+            vPub,
+            vSig,
+            false,
+            migratorPayload
+        );
 
         vm.prank(ALICE);
         wallet.upgradeToAndCall(impl, data);

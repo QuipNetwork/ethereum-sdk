@@ -39,9 +39,55 @@ contract WOTSPlusCodec__upgradeRecoveryDigest is WOTSPlusCodecTest {
         assertTrue(a != b);
     }
 
-    function test_exposed_upgradeRecoveryDigest_differsFromUpgradeDigest() public view {
-        bytes32 a = codec.exposed_upgradeRecoveryDigest(W, C, address(0xDEAD), RS1, RH1, RS2, RH2);
-        bytes32 b = codec.exposed_upgradeDigest(W, C, address(0xDEAD), S1, H1, S2, H2);
+    function test_exposed_upgradeRecoveryDigest_differsByNewRecoveryKey()
+        public
+        view
+    {
+        bytes32 a = codec.exposed_upgradeRecoveryDigest(
+            W,
+            C,
+            address(0xDEAD),
+            RS1,
+            RH1,
+            RS2,
+            RH2
+        );
+        bytes32 b = codec.exposed_upgradeRecoveryDigest(
+            W,
+            C,
+            address(0xDEAD),
+            RS1,
+            RH1,
+            bytes32(uint256(99)),
+            bytes32(uint256(100))
+        );
+        assertTrue(a != b);
+    }
+
+    function test_exposed_upgradeRecoveryDigest_differsFromUpgradeDigest()
+        public
+        view
+    {
+        bytes32 a = codec.exposed_upgradeRecoveryDigest(
+            W,
+            C,
+            address(0xDEAD),
+            RS1,
+            RH1,
+            RS2,
+            RH2
+        );
+        bytes32 b = codec.exposed_upgradeDigest(
+            W,
+            C,
+            address(0xDEAD),
+            S1,
+            H1,
+            S2,
+            H2,
+            false,
+            keccak256(new bytes(2048))
+        );
         assertTrue(a != b);
     }
 }
