@@ -1,6 +1,7 @@
-// Hardhat is used exclusively for:
-// - MIDL deploy scripts (deploy/midl_regtest/)
-// - Release script (scripts/release.cts)
+// Hardhat is used exclusively for MIDL deploy orchestration
+// (deploy/midl_regtest/). Those scripts deploy Foundry-compiled bytecode
+// recorded by `npm run release` (scripts/release.ts) — the solc settings
+// below never produce shipped artifacts.
 // EVM chains use Foundry for compilation, testing, and deployment.
 
 import { HardhatUserConfig } from "hardhat/config";
