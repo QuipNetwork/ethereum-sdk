@@ -1,0 +1,9 @@
+{
+    "wake.compiler.solc.remappings": [
+        "@openzeppelin-contracts-5.6.0-rc.1/=dependencies/@openzeppelin-contracts-5.6.0-rc.1/",
+        "@quip.network/hashsigs-solidity-0.1.0/=dependencies/@quip.network-hashsigs-solidity-0.1.0/",
+        "forge-std-1.14.0/=dependencies/forge-std-1.14.0/src/",
+        "pcaversaccio-createx-1.0.0/=dependencies/pcaversaccio-createx-1.0.0/",
+        "solady-0.1.26/=dependencies/solady-0.1.26/"
+    ]
+}

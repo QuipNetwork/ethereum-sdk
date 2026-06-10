@@ -897,54 +897,6 @@ export class WOTSPlusImplementationClient {
     );
   }
 
-  /// Pre-flight version: return the prepared tx (gas + fees) without sending.
-  ///
-  /// ⚠️ This DOES burn the signing key: producing the estimate requires a
-  /// real WOTS+ signature, and `QuipSigner.sign` invokes the injected
-  /// `ConsumeKeyFn` before signing. The signed payload is also transmitted
-  /// to the RPC endpoint inside `eth_estimateGas` (not broadcast to the
-  /// mempool, but visible to the RPC operator). Treat the chosen key as
-  /// spent after calling this — a subsequent send must use a fresh key.
-  async estimateExecute(
-    target: Address,
-    value: bigint,
-    data: Hex,
-    opts: TxOptions & TransactionKeyOptions = {}
-  ): Promise<PreparedTx> {
-    await this.assertProviderBinding({ account: true });
-    const fee = await this.getExecuteFee();
-    const totalValue = fee + value;
-    const { currentKey, nextKey } = await this.pickTransactionKeyPair(opts);
-    const digest = executeDigest(
-      this.walletAddress,
-      BigInt(this.chainId),
-      currentKey.publicSeed,
-      currentKey.publicKeyHash,
-      nextKey.publicSeed,
-      nextKey.publicKeyHash,
-      target,
-      value,
-      codecOpdataHash(data),
-      fee
-    );
-    const pqSig = await this.signWith(currentKey.publicSeed, digest);
-    const payload = encodeExecute(currentKey, nextKey, pqSig, target, value, data);
-    const contractCall: ContractCallParams = {
-      address: this.walletAddress,
-      abi: wotsPlusImplementationAbi,
-      functionName: "execute",
-      args: [payload],
-      value: totalValue,
-      account: this.account,
-    };
-    return prepareTx({
-      publicClient: this.publicClient,
-      contractParams: contractCall,
-      totalValue,
-      opts,
-    });
-  }
-
   /// PQ-authenticated `withdrawDepositTo(bytes)` — pulls ETH from the
   /// wallet's ERC-4337 EntryPoint deposit.
   async withdrawDeposit(
