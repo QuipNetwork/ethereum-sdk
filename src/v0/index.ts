@@ -14,6 +14,20 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
+
+/**
+ * @deprecated LEGACY — v0 contract surface only.
+ *
+ * This module targets the original (pre-v1) QuipWallet/QuipFactory deployments:
+ * the single-`pqOwner` model, the two-key recovery payload, and the v0 upgrade
+ * payload layout. It is kept solely so existing v0 wallets remain operable.
+ *
+ * Do NOT use it against v1 wallets — the method names, payload shapes, and
+ * codec offsets do not match the v1 contract ABI and will produce malformed
+ * payloads or calls to functions that no longer exist.
+ *
+ * For all new integrations import from `@quip.network/ethereum-sdk/v1` instead.
+ */
 import { ethers } from "ethers";
 import { QuipWallet__factory } from "./typechain-types/factories/contracts/QuipWallet__factory.js";
 import { QuipFactory__factory } from "./typechain-types/factories/contracts/QuipFactory__factory.js";

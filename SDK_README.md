@@ -4,6 +4,8 @@
 
 For installation and a quickstart, see the package `README.md`. This file is the "what you need to know to use this correctly" companion.
 
+> ⚠️ **The `./v0` export is legacy.** It targets the original pre-v1 contract deployments (single-`pqOwner` model, old payload layouts) and exists only so already-deployed v0 wallets remain operable. Its method names and codec offsets do **not** match the v1 contract ABI — using it against a v1 wallet produces malformed payloads. All new integrations must import from `@quip.network/ethereum-sdk/v1`.
+
 ---
 
 ## Mental model
