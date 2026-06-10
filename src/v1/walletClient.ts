@@ -1389,7 +1389,9 @@ export class WOTSPlusImplementationClient {
   /// recoveryKeys[10] + verificationKeys[10]) to trigger `migrate(...)`
   /// against the new implementation. Leave undefined (or pass `"0x"`)
   /// for a no-migration upgrade; the SDK zero-fills the trailing 2048
-  /// bytes the contract requires for layout symmetry.
+  /// bytes the contract requires for layout symmetry. The pqSig digest
+  /// commits to `shouldMigrate` and `keccak256(migratorPayload)` so the
+  /// migration tail cannot be tampered post-sign.
   async upgradeWallet(
     newImplementation: Address,
     verifier: WinternitzAddress,
