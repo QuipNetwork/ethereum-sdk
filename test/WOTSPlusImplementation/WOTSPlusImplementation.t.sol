@@ -307,10 +307,9 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         WOTSPlus.WinternitzAddress memory migratePqOwner,
         WOTSPlus.WinternitzAddress[] memory migrateRecoveryKeys
     ) internal view returns (bytes memory) {
-        bytes memory migratorPayload = _buildUpgradeMigratorPayload(
-            migratePqOwner,
-            migrateRecoveryKeys
-        );
+        bytes memory migratorPayload = shouldMigrate
+            ? _buildUpgradeMigratorPayload(migratePqOwner, migrateRecoveryKeys)
+            : new bytes(2048);
 
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),

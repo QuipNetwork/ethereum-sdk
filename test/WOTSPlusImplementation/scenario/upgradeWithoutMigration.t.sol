@@ -42,20 +42,9 @@ contract WOTSPlusImplementation_upgradeWithoutMigration is WOTSPlusImplementatio
     {
         (nextPq, nextPrivKey) = _generateKeyPair("upgrade-next-pq");
 
-        // Dummy migrator payload (2048 bytes) — unused but required by layout
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory dummyKeys = new WOTSPlus.WinternitzAddress[](10);
-        for (uint256 i = 0; i < 10; i++) {
-            dummyKeys[i] = WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(uint256(i + 1)),
-                publicKeyHash: bytes32(uint256(i + 100))
-            });
-        }
-        bytes memory migratorPayload = _encodeInitPayload(dummyPq, dummyKeys);
+        // No migration: migrator slot is zero-filled (2048 bytes). The wallet
+        // never decodes or delegatecalls into it when shouldMigrate=false.
+        bytes memory migratorPayload = new bytes(2048);
 
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
