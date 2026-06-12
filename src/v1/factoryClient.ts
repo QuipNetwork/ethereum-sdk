@@ -41,6 +41,10 @@ import { QuipWalletClient } from "./walletClient.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { tryMulticall } from "./internal/multicall.js";
 import {
+  assertProviderState,
+  boundChain,
+} from "./internal/providerState.js";
+import {
   type TxOptions,
   type ContractCallParams,
   prepareTx,
@@ -244,6 +248,18 @@ export class QuipClient {
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
 
+    // Fail closed if the provider switched chain or dropped the bound
+    // account since `initialize()`. Wrong-chain deploys are otherwise
+    // silent: the supported EVM chains share CREATE3-deterministic
+    // factory addresses, so a stale chainId would deploy the wallet on
+    // whichever chain the provider is now pointed at.
+    await assertProviderState({
+      publicClient: this.publicClient,
+      expectedChainId: this.chainId!,
+      walletClient: this.walletClient,
+      expectedAccount: this.account!,
+    });
+
     const creationFee = await this.getCreationFee();
 
     const existingWalletAddress = await withDecodedError(
@@ -299,7 +315,9 @@ export class QuipClient {
 
     const hash = await withDecodedError(
       this.walletClient.writeContract({
-        chain: null,
+        // Backstop behind `assertProviderState`: a non-null chain
+        // re-enables viem's own chain assertion inside `writeContract`.
+        chain: boundChain(this.chainId!),
         ...contractCall,
         gas: prepared.gas,
         ...prepared.fees,
@@ -396,7 +414,16 @@ export class QuipClient {
 
   async getVaults(): Promise<Map<string, Address>> {
     await this.initializationPromise;
-    if (!this.account) {
+    await assertProviderState({
+      publicClient: this.publicClient,
+      expectedChainId: this.chainId!,
+    });
+    // Re-resolve the active account on every call instead of using the
+    // `initialize()`-time snapshot: a read should reflect the provider's
+    // current account, not silently return the previous account's vaults
+    // after the user switches.
+    const [account] = await this.walletClient.getAddresses();
+    if (!account) {
       throw new NotConnectedError();
     }
 
@@ -410,13 +437,13 @@ export class QuipClient {
           address: this.factoryAddress!,
           abi: quipFactoryAbi,
           functionName: "getVaultIds" as const,
-          args: [this.account!] as const,
+          args: [account] as const,
         },
         {
           address: this.factoryAddress!,
           abi: quipFactoryAbi,
           functionName: "getWallets" as const,
-          args: [this.account!] as const,
+          args: [account] as const,
         },
       ],
       { chainId: this.chainId }

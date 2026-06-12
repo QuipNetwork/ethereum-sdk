@@ -644,6 +644,47 @@ export class UnsupportedNetworkError extends QuipError {
   }
 }
 
+export class ChainChangedError extends QuipError {
+  readonly expectedChainId: number;
+  readonly actualChainId: number;
+
+  constructor(
+    expectedChainId: number,
+    actualChainId: number,
+    opts?: QuipErrorOptions
+  ) {
+    super(
+      "CHAIN_CHANGED",
+      `Provider is now on chain ${actualChainId} but this client was constructed for chain ${expectedChainId}. ` +
+        `Clients are bound to one chain — construct a new client after switching networks.`,
+      opts
+    );
+    this.expectedChainId = expectedChainId;
+    this.actualChainId = actualChainId;
+  }
+}
+
+export class AccountChangedError extends QuipError {
+  readonly expectedAccount: string;
+  readonly availableAccounts: readonly string[];
+
+  constructor(
+    expectedAccount: string,
+    availableAccounts: readonly string[],
+    opts?: QuipErrorOptions
+  ) {
+    super(
+      "ACCOUNT_CHANGED",
+      `Provider no longer exposes account ${expectedAccount} (available: ${
+        availableAccounts.length > 0 ? availableAccounts.join(", ") : "none"
+      }). Clients are bound to one account — construct a new client after switching accounts.`,
+      opts
+    );
+    this.expectedAccount = expectedAccount;
+    this.availableAccounts = availableAccounts;
+  }
+}
+
 export class MulticallUnavailableError extends QuipError {
   readonly chainId: number;
 
