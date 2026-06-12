@@ -61,6 +61,24 @@ The SDK ships `createInMemoryBurnSet()` as the process-local default. **Producti
 
 ---
 
+## Clients are bound to one (chain, account) — recreate on switch
+
+`QuipClient`, `QuipWalletClient`, and `QuipPaymasterClient` each capture a `(chainId, account)` pair at construction/`initialize()` and **never follow the provider** when the user switches network or account afterwards. This is the wagmi/viem convention: the embedding app owns provider reactivity (it is already listening to `chainChanged`/`accountsChanged` for its UI); the SDK client is an immutable value object.
+
+The SDK enforces the binding rather than trusting it. Every write — and every signing surface, including `signExecuteUserOp`, `signErc1271`, and `sponsorUserOp` — re-reads the provider's live chain (and, for EOA-submitted writes, its available accounts) **before any WOTS+ signature is produced**, and throws on divergence:
+
+- `ChainChangedError` (`code: "CHAIN_CHANGED"`) — the provider is on a different chain than the client was constructed for.
+- `AccountChangedError` (`code: "ACCOUNT_CHANGED"`) — the provider no longer exposes the bound account.
+
+The pre-sign placement is deliberate: keys burn at sign time (see above), so a stale provider caught any later — by viem's chain assertion or by the provider rejecting the `from` — would already have cost a one-time key. Catch these errors, and recover by constructing a new client against the switched provider. Do not retry the same call in a loop.
+
+Two deliberate exceptions to the snapshot rule:
+
+- `QuipClient.getVaults()` re-resolves the provider's **active account on every call** — a read should reflect reality, not return the previous account's vault list after a switch.
+- Writes also pass the bound chain to viem (instead of `chain: null`), re-enabling viem's built-in chain-consistency assertion as a backstop behind the SDK's own pre-sign check.
+
+---
+
 ## Two execution paths, same invariant
 
 The on-chain consequence of a revert differs depending on which path the write took:

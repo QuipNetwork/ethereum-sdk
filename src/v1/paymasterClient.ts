@@ -32,6 +32,10 @@ import {
 import { QuipSigner } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
+  assertProviderState,
+  boundChain,
+} from "./internal/providerState.js";
+import {
   type TxOptions,
   type PreparedTx,
   type ContractCallParams,
@@ -320,6 +324,14 @@ export class QuipPaymasterClient {
     currentVerifier: WinternitzAddress;
     nextVerifier: WinternitzAddress;
   }> {
+    // Pre-flight: the sponsorship digest binds `this.chainId` and the
+    // operator's WOTS+ verifier key burns at sign time — fail closed
+    // BEFORE signing if the provider has switched chains. No account
+    // check: the sponsorship is submitted by the bundler, not this EOA.
+    await assertProviderState({
+      publicClient: this.publicClient,
+      expectedChainId: this.chainId,
+    });
     // Pre-flight: ensure the paymaster recognizes the supplied currentVerifier
     // BEFORE the operator's signer burns it. Two failure modes:
     //   - sender has no verifier registered  → PqVerifierNotRegisteredError
@@ -412,14 +424,26 @@ export class QuipPaymasterClient {
     totalValue: bigint,
     opts: TxOptions
   ): Promise<TransactionReceipt> {
+    // Fail closed if the provider switched chain or dropped the bound
+    // account since construction. No PQ key burns on these EOA writes,
+    // but a stale chainId would otherwise target whichever chain the
+    // provider is now pointed at (deposit/withdraw on the wrong chain).
+    await assertProviderState({
+      publicClient: this.publicClient,
+      expectedChainId: this.chainId,
+      walletClient: this.walletClient,
+      expectedAccount: this.account,
+    });
     const prepared = await prepareTx({
       publicClient: this.publicClient,
       contractParams: contractCall,
       totalValue,
       opts,
     });
+    // Backstop behind `assertProviderState`: a non-null chain re-enables
+    // viem's own chain-consistency assertion inside `writeContract`.
     const writeParams = {
-      chain: null,
+      chain: boundChain(this.chainId),
       ...contractCall,
       gas: prepared.gas,
       ...prepared.fees,

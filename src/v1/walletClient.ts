@@ -34,6 +34,10 @@ import { QuipSigner } from "./signer.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { tryMulticall } from "./internal/multicall.js";
 import {
+  assertProviderState,
+  boundChain,
+} from "./internal/providerState.js";
+import {
   type TxOptions,
   type PreparedTx,
   type ContractCallParams,
@@ -646,6 +650,7 @@ export class QuipWalletClient {
         `signErc1271: ecdsaSig must be 65 bytes, got ${size(params.ecdsaSig)}`
       );
     }
+    await this.assertProviderBinding({ account: false });
 
     const pqDigest = erc1271Digest(
       this.walletAddress,
@@ -682,8 +687,10 @@ export class QuipWalletClient {
     contractCall: ContractCallParams,
     prepared: PreparedTx
   ): Promise<TransactionReceipt> {
+    // Backstop behind `assertProviderBinding`: a non-null chain re-enables
+    // viem's own chain-consistency assertion inside `writeContract`.
     const writeParams = {
-      chain: null,
+      chain: boundChain(this.chainId),
       ...contractCall,
       gas: prepared.gas,
       ...prepared.fees,
@@ -706,6 +713,31 @@ export class QuipWalletClient {
     return {
       elements: await this.quipSigner.sign(digest, this.vaultId, currentSeed),
     };
+  }
+
+  /// Guard: re-read the provider's live chain (and, for EOA-submitted
+  /// writes, its available accounts) and compare against the
+  /// `(chainId, account)` pair this client was constructed with. Throws
+  /// `ChainChangedError` / `AccountChangedError`; recover by constructing
+  /// a new client against the switched provider.
+  ///
+  /// MUST run before `signWith` — the WOTS+ key burns at sign time, so a
+  /// stale provider caught any later (viem's chain assertion, the provider
+  /// rejecting the `from`) has already cost the caller a one-time key.
+  /// `account: false` is for signing surfaces with no EOA submission
+  /// (userOps go through a bundler, ERC-1271 signatures are off-chain) —
+  /// their digests still bind `this.chainId`, so the chain check applies.
+  private async assertProviderBinding(opts: {
+    account: boolean;
+  }): Promise<void> {
+    await assertProviderState({
+      publicClient: this.publicClient,
+      expectedChainId: this.chainId,
+      ...(opts.account && {
+        walletClient: this.walletClient,
+        expectedAccount: this.account,
+      }),
+    });
   }
 
   /// Pick a transaction key to sign with according to `keyOpts`:
@@ -748,6 +780,7 @@ export class QuipWalletClient {
     keyOpts: TransactionKeyOptions,
     txOpts: TxOptions
   ): Promise<TransactionReceipt> {
+    await this.assertProviderBinding({ account: true });
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
     const digest = spec.buildDigest(currentKey, nextKey);
     const pqSig = await this.signWith(currentKey.publicSeed, digest);
@@ -865,13 +898,20 @@ export class QuipWalletClient {
   }
 
   /// Pre-flight version: return the prepared tx (gas + fees) without sending.
-  /// Does NOT burn the signing key — no broadcast occurs.
+  ///
+  /// ⚠️ This DOES burn the signing key: producing the estimate requires a
+  /// real WOTS+ signature, and `QuipSigner.sign` invokes the injected
+  /// `ConsumeKeyFn` before signing. The signed payload is also transmitted
+  /// to the RPC endpoint inside `eth_estimateGas` (not broadcast to the
+  /// mempool, but visible to the RPC operator). Treat the chosen key as
+  /// spent after calling this — a subsequent send must use a fresh key.
   async estimateExecute(
     target: Address,
     value: bigint,
     data: Hex,
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<PreparedTx> {
+    await this.assertProviderBinding({ account: true });
     const fee = await this.getExecuteFee();
     const totalValue = fee + value;
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(opts);
@@ -1143,6 +1183,7 @@ export class QuipWalletClient {
     recoveryPublicSeed: Hex,
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
+    await this.assertProviderBinding({ account: true });
     const currentRecovery = this.quipSigner.recoverKeyPair(
       this.vaultId,
       recoveryPublicSeed
@@ -1205,6 +1246,7 @@ export class QuipWalletClient {
     disasterRecoveryPublicSeed: Hex,
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
+    await this.assertProviderBinding({ account: true });
     const currentDisaster = this.quipSigner.recoverKeyPair(
       this.vaultId,
       disasterRecoveryPublicSeed
@@ -1282,6 +1324,7 @@ export class QuipWalletClient {
     },
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
+    await this.assertProviderBinding({ account: true });
     if (params.newTransactionKeys.length !== MAX_KEYS) {
       throw new IncorrectTransactionKeyAmountError();
     }
@@ -1403,6 +1446,7 @@ export class QuipWalletClient {
     } = {},
     opts: TxOptions & TransactionKeyOptions = {}
   ): Promise<TransactionReceipt> {
+    await this.assertProviderBinding({ account: true });
     const { keyOpts, txOpts } = splitWriteOpts(opts);
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
     const digest = upgradeDigest(
@@ -1455,6 +1499,7 @@ export class QuipWalletClient {
     options: { newRecoveryKey?: WinternitzAddress } = {},
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
+    await this.assertProviderBinding({ account: true });
     const currentRecoveryKey = this.quipSigner.recoverKeyPair(
       this.vaultId,
       recoveryPublicSeed
@@ -1746,6 +1791,7 @@ export class QuipWalletClient {
   async signExecuteUserOp(
     prepared: PreparedExecuteUserOp
   ): Promise<BuildExecuteUserOpResult> {
+    await this.assertProviderBinding({ account: false });
     const { userOp, currentKey, nextKey, entryPoint, executeFee } = prepared;
     const userOpHash = computeUserOpHash(
       userOp,
