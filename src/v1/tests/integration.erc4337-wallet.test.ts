@@ -52,7 +52,7 @@ import {
 
 // The wallet ABI is loaded here (not from the central abi/ dir) because some
 // tests need it to compute selectors against the actual deployed bytecode.
-const { walletAbi: quipWalletDeployAbi } = loadForgeArtifacts();
+const { walletAbi: wotsPlusImplementationDeployAbi } = loadForgeArtifacts();
 
 let stack: AnvilStack;
 
@@ -548,7 +548,7 @@ describe("Wallet UserOp builders for alternate inner-call paths", () => {
     const selector = built.userOp.callData.slice(0, 10);
     const executeBatchSelector = encodeFunctionData({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      abi: quipWalletDeployAbi as any,
+      abi: wotsPlusImplementationDeployAbi as any,
       functionName: "executeBatch",
       args: [[{ target: zeroAddress, value: 0n, data: "0x" }]],
     }).slice(0, 10);
@@ -566,7 +566,7 @@ describe("Wallet UserOp builders for alternate inner-call paths", () => {
     const selector = built.userOp.callData.slice(0, 10);
     const delegateSelector = encodeFunctionData({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      abi: quipWalletDeployAbi as any,
+      abi: wotsPlusImplementationDeployAbi as any,
       functionName: "delegateExecute",
       args: [zeroAddress, "0x"],
     }).slice(0, 10);
@@ -587,7 +587,7 @@ describe("Wallet UserOp builders for alternate inner-call paths", () => {
     const selector = built.userOp.callData.slice(0, 10);
     const ssSelector = encodeFunctionData({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      abi: quipWalletDeployAbi as any,
+      abi: wotsPlusImplementationDeployAbi as any,
       functionName: "storageStore",
       args: [slot, value],
     }).slice(0, 10);

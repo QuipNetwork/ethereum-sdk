@@ -50,8 +50,8 @@ import {
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { quipWalletAbi } from "../abi/QuipWallet.js";
-import { QuipWalletClient } from "../walletClient.js";
+import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
+import { WOTSPlusImplementationClient } from "../walletClient.js";
 import {
   InvalidSignatureError,
   UnknownContractError,
@@ -118,11 +118,11 @@ describe("Dual-signature contract on execute(bytes)", () => {
       0xd1
     );
 
-    // Construct a QuipWalletClient bound to `stranger` (non-owner EOA)
+    // Construct a WOTSPlusImplementationClient bound to `stranger` (non-owner EOA)
     // but using the real signer/vaultId so the WOTS+ half is valid. The
     // EOA mismatch is what should trip the gate — proving the ECDSA
     // outer is independently enforced.
-    const strangerClient = new QuipWalletClient(
+    const strangerClient = new WOTSPlusImplementationClient(
       signer,
       vaultId,
       walletAddress,
@@ -209,7 +209,7 @@ describe("Dual-signature contract on execute(bytes)", () => {
       await withDecodedError(
         stack.publicClient.simulateContract({
           address: walletAddress,
-          abi: quipWalletAbi,
+          abi: wotsPlusImplementationAbi,
           functionName: "execute",
           args: [tamperedPayload],
           account: stack.account.address,

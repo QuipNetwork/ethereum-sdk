@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {IQuipWallet} from "../../contracts/interfaces/IQuipWallet.sol";
+import {IWOTSPlusImplementation} from "../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
 
 import {IntegrationBase, IEntryPoint, IEntryPointExt, IEntryPointStake, PackedUserOperation} from "./IntegrationBase.t.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 
 /// @title Sponsored Transaction Integration Test
 /// @dev Fork test against the real EntryPoint v0.7 on Base Sepolia.
-///      Full end-to-end flow: the QuipPaymaster sponsors a QuipWallet UserOp.
+///      Full end-to-end flow: the QuipPaymaster sponsors a WOTSPlusImplementation UserOp.
 ///      The EntryPoint orchestrates validatePaymasterUserOp → validateUserOp →
 ///      execution → postOp. Proves sponsorship via deposit accounting and event.
 contract Integration_sponsoredTransaction is IntegrationBase {

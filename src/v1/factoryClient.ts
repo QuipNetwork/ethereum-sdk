@@ -37,7 +37,7 @@ import {
   CHAIN_IDS,
 } from "./addresses.js";
 import { QuipSigner } from "./signer.js";
-import { QuipWalletClient } from "./walletClient.js";
+import { WOTSPlusImplementationClient } from "./walletClient.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { tryMulticall } from "./internal/multicall.js";
 import {
@@ -176,7 +176,7 @@ export class QuipClient {
     );
   }
 
-  /// Deploy a new QuipWallet via `deployLatestWalletProxy`. The SDK
+  /// Deploy a new WOTSPlusImplementation via `deployLatestWalletProxy`. The SDK
   /// generates every key under `quipSigner`: one disaster recovery key,
   /// one ownership key, ten transaction keys, ten recovery keys, ten
   /// verification keys (the always-10 keyset invariant).
@@ -196,7 +196,7 @@ export class QuipClient {
   async createWallet(
     quipSigner: QuipSigner,
     opts: TxOptions & { vaultId?: Hex } = {}
-  ): Promise<QuipWalletClient> {
+  ): Promise<WOTSPlusImplementationClient> {
     const { vaultId: providedVaultId, ...txOpts } = opts;
     const vaultId = providedVaultId ?? randomVaultId();
     return this.deployWallet(
@@ -210,7 +210,7 @@ export class QuipClient {
     );
   }
 
-  /// Deploy a new QuipWallet against the implementation at a specific
+  /// Deploy a new WOTSPlusImplementation against the implementation at a specific
   /// index in the factory's vetted set (via `deploySpecificWalletProxy`).
   /// Use this when the caller explicitly wants an older, still-vetted
   /// implementation rather than the latest. Same key-generation and
@@ -219,7 +219,7 @@ export class QuipClient {
     quipSigner: QuipSigner,
     index: bigint,
     opts: TxOptions & { vaultId?: Hex } = {}
-  ): Promise<QuipWalletClient> {
+  ): Promise<WOTSPlusImplementationClient> {
     const { vaultId: providedVaultId, ...txOpts } = opts;
     const vaultId = providedVaultId ?? randomVaultId();
     return this.deployWallet(
@@ -236,7 +236,7 @@ export class QuipClient {
   /// Shared write pipeline behind every wallet-deployment factory method:
   /// generates the wallet's initial key material, packs the init payload,
   /// preflights / sends / waits, decodes `QuipCreated` from the receipt,
-  /// and returns a bound `QuipWalletClient`.
+  /// and returns a bound `WOTSPlusImplementationClient`.
   private async deployWallet(
     vaultId: Hex,
     quipSigner: QuipSigner,
@@ -245,7 +245,7 @@ export class QuipClient {
       argsExceptInitPayload: () => readonly unknown[];
     },
     opts: TxOptions
-  ): Promise<QuipWalletClient> {
+  ): Promise<WOTSPlusImplementationClient> {
     await this.initializationPromise;
 
     // Fail closed if the provider switched chain or dropped the bound
@@ -335,7 +335,7 @@ export class QuipClient {
     });
     const newWalletAddress = logs[0].args.quip;
 
-    return new QuipWalletClient(
+    return new WOTSPlusImplementationClient(
       quipSigner,
       vaultId,
       newWalletAddress,
@@ -346,7 +346,7 @@ export class QuipClient {
     );
   }
 
-  /// Resolve an existing wallet by `vaultId` and return a `QuipWalletClient`
+  /// Resolve an existing wallet by `vaultId` and return a `WOTSPlusImplementationClient`
   /// bound to it.
   ///
   /// **Signer check is head-key-only.** Before returning, this method
@@ -373,7 +373,7 @@ export class QuipClient {
   async getVault(
     vaultId: Hex,
     quipSigner: QuipSigner
-  ): Promise<QuipWalletClient> {
+  ): Promise<WOTSPlusImplementationClient> {
     await this.initializationPromise;
 
     const walletAddress = await withDecodedError(
@@ -389,7 +389,7 @@ export class QuipClient {
       throw new NoVaultFoundError(vaultId);
     }
 
-    const client = new QuipWalletClient(
+    const client = new WOTSPlusImplementationClient(
       quipSigner,
       vaultId,
       walletAddress,

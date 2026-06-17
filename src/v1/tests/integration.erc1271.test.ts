@@ -19,7 +19,7 @@
 //   1. `quipSignedHashEcdsaTarget(wallet, chainId, hash)` (SDK) matches
 //      `wallet.quipSignedHashEcdsaTarget(hash)` (contract) byte-for-byte
 //      across fixed and fuzzed hashes.
-//   2. `QuipWalletClient.signErc1271(...)` produces a 2273-byte blob the
+//   2. `WOTSPlusImplementationClient.signErc1271(...)` produces a 2273-byte blob the
 //      live contract accepts (returns the EIP-1271 magic `0x1626ba7e`).
 //   3. Signing with a non-owner classical key produces a blob the wallet
 //      rejects (magic `0xffffffff`).
@@ -34,7 +34,7 @@ import { type Hex, toHex, keccak256 } from "viem";
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
 import { quipSignedHashEcdsaTarget } from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
@@ -92,7 +92,7 @@ describe("ERC-1271 EIP-712 wrap parity", () => {
       );
       const onChain = (await stack.publicClient.readContract({
         address: walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "quipSignedHashEcdsaTarget",
         args: [hash],
       })) as Hex;
@@ -112,7 +112,7 @@ describe("ERC-1271 EIP-712 wrap parity", () => {
       );
       const onChain = (await stack.publicClient.readContract({
         address: walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "quipSignedHashEcdsaTarget",
         args: [hash],
       })) as Hex;
@@ -140,7 +140,7 @@ describe("ERC-1271 EIP-712 wrap parity", () => {
   }, 30_000);
 });
 
-describe("QuipWalletClient.signErc1271 end-to-end", () => {
+describe("WOTSPlusImplementationClient.signErc1271 end-to-end", () => {
   test("owner-signed blob is accepted by isValidSignature", async () => {
     const { client, walletAddress, verificationKeys } = await createFreshWallet(
       stack,
@@ -160,7 +160,7 @@ describe("QuipWalletClient.signErc1271 end-to-end", () => {
 
     const result = (await stack.publicClient.readContract({
       address: walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "isValidSignature",
       args: [hash, blob],
     })) as Hex;
@@ -189,7 +189,7 @@ describe("QuipWalletClient.signErc1271 end-to-end", () => {
 
     const result = (await stack.publicClient.readContract({
       address: walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "isValidSignature",
       args: [hash, blob],
     })) as Hex;
@@ -214,7 +214,7 @@ describe("QuipWalletClient.signErc1271 end-to-end", () => {
 
     const result = (await stack.publicClient.readContract({
       address: walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "isValidSignature",
       args: [hash, blob],
     })) as Hex;
@@ -233,7 +233,7 @@ describe("EIP-712 compliance", () => {
 
     const domain = (await stack.publicClient.readContract({
       address: walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "eip712Domain",
     })) as readonly [
       Hex,
@@ -292,7 +292,7 @@ describe("EIP-712 compliance", () => {
 
     const result = (await stack.publicClient.readContract({
       address: walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "isValidSignature",
       args: [hash, blob],
     })) as Hex;
@@ -326,7 +326,7 @@ describe("EIP-712 compliance", () => {
 
     const result = (await stack.publicClient.readContract({
       address: walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "isValidSignature",
       args: [hash, blob],
     })) as Hex;
@@ -356,7 +356,7 @@ describe("EIP-712 compliance", () => {
 
     const result = (await stack.publicClient.readContract({
       address: target.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "isValidSignature",
       args: [hash, blob],
     })) as Hex;
@@ -402,7 +402,7 @@ describe("EIP-712 compliance", () => {
     });
     const result = (await stack.publicClient.readContract({
       address: walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "isValidSignature",
       args: [hash, blob],
     })) as Hex;

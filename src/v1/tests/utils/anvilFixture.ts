@@ -47,7 +47,7 @@ import { entryPointV07Abi } from "../../abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
 import { QuipSigner } from "../../signer.js";
 import { createInMemoryBurnSet, type InMemoryBurnSet } from "../../burnSet.js";
-import { QuipWalletClient } from "../../walletClient.js";
+import { WOTSPlusImplementationClient } from "../../walletClient.js";
 import {
   encodeInit,
   type WinternitzAddress,
@@ -133,7 +133,7 @@ export function loadForgeArtifacts(): ForgeArtifacts {
     "out/QuipFactory.sol/QuipFactory.json"
   );
   const walletArtifact = readForgeArtifact(
-    "out/QuipWallet.sol/QuipWallet.json"
+    "out/WOTSPlusImplementation.sol/WOTSPlusImplementation.json"
   );
   const paymasterArtifact = readForgeArtifact(
     "out/QuipPaymaster.sol/QuipPaymaster.json"
@@ -333,7 +333,7 @@ export async function stopAnvilStack(stack: AnvilStack): Promise<void> {
 export interface FreshWallet {
   signer: QuipSigner;
   vaultId: Hex;
-  client: QuipWalletClient;
+  client: WOTSPlusImplementationClient;
   walletAddress: Address;
   disasterKey: WinternitzAddress;
   ownershipKey: WinternitzAddress;
@@ -447,7 +447,7 @@ export async function createFreshWallet(
     });
   }
 
-  const client = new QuipWalletClient(
+  const client = new WOTSPlusImplementationClient(
     signer,
     vaultId,
     walletAddress,

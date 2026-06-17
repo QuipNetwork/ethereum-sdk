@@ -27,7 +27,7 @@ import {
   zeroHash,
 } from "viem";
 
-import { quipWalletAbi } from "./abi/QuipWallet.js";
+import { wotsPlusImplementationAbi } from "./abi/WOTSPlusImplementation.js";
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "./abi/EntryPointV07.js";
 import { QuipSigner } from "./signer.js";
@@ -314,7 +314,7 @@ interface SignedWriteSpec {
   totalValue: bigint;
 }
 
-export class QuipWalletClient {
+export class WOTSPlusImplementationClient {
   private publicClient: PublicClient;
   private walletClient: WalletClient;
   private walletAddress: Address;
@@ -328,7 +328,7 @@ export class QuipWalletClient {
   ///     `upgradeToAndCall` — effectively immutable for a given impl version,
   ///     so we cache indefinitely. Call `refreshFees()` after a known upgrade.
   ///   - `executeFee` is owner-mutable via the factory; cached for the
-  ///     lifetime of this `QuipWalletClient` instance to spare an `eth_call`
+  ///     lifetime of this `WOTSPlusImplementationClient` instance to spare an `eth_call`
   ///     per write. Long-lived clients that need fresh values should call
   ///     `refreshFees()` (or construct a new client).
   /// Both default to `null` and fill on first read.
@@ -371,7 +371,7 @@ export class QuipWalletClient {
     const fee = await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "getExecuteFee",
       })
     );
@@ -385,7 +385,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "getDeposit",
       })
     );
@@ -397,7 +397,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "getDisasterRecoveryKey",
       })
     );
@@ -410,7 +410,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "getOwnershipKey",
       })
     );
@@ -420,7 +420,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "keyCount",
         args: [kind],
       })
@@ -434,7 +434,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "keyAt",
         args: [kind, index],
       })
@@ -448,7 +448,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "isKey",
         args: [kind, key],
       })
@@ -469,7 +469,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "isKeySpent",
         args: [key],
       })
@@ -493,7 +493,7 @@ export class QuipWalletClient {
     const keys = await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "getKeyset",
         args: [kind],
       })
@@ -503,12 +503,12 @@ export class QuipWalletClient {
 
   async getWalletState(): Promise<WalletState> {
     const calls = [
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "owner" as const },
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "quipFactory" as const },
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "entryPoint" as const },
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getExecuteFee" as const },
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getDeposit" as const },
-      { address: this.walletAddress, abi: quipWalletAbi, functionName: "getAllKeys" as const },
+      { address: this.walletAddress, abi: wotsPlusImplementationAbi, functionName: "owner" as const },
+      { address: this.walletAddress, abi: wotsPlusImplementationAbi, functionName: "quipFactory" as const },
+      { address: this.walletAddress, abi: wotsPlusImplementationAbi, functionName: "entryPoint" as const },
+      { address: this.walletAddress, abi: wotsPlusImplementationAbi, functionName: "getExecuteFee" as const },
+      { address: this.walletAddress, abi: wotsPlusImplementationAbi, functionName: "getDeposit" as const },
+      { address: this.walletAddress, abi: wotsPlusImplementationAbi, functionName: "getAllKeys" as const },
     ];
 
     const results = await tryMulticall(this.publicClient, calls, {
@@ -591,7 +591,7 @@ export class QuipWalletClient {
   /// const blob = await client.signErc1271({ hash, verifier, ecdsaSig });
   /// ```
   ///
-  /// Mirrors `QuipWallet.quipSignedHashEcdsaTarget(hash)` exactly — the
+  /// Mirrors `WOTSPlusImplementation.quipSignedHashEcdsaTarget(hash)` exactly — the
   /// integrator never has to retype the domain literals (`"QuipWallet"`,
   /// `"1"`, the `QuipSignedHash` type) and cannot silently desync from the
   /// wallet's `_domainNameAndVersion()`.
@@ -620,7 +620,7 @@ export class QuipWalletClient {
   }
 
   /// One-shot helper for integrators producing an ERC-1271 signature
-  /// against this QuipWallet. Takes the protocol's `hash` (e.g. a Permit2
+  /// against this WOTSPlusImplementation. Takes the protocol's `hash` (e.g. a Permit2
   /// or Seaport EIP-712 digest) plus a pre-produced 65-byte `ecdsaSig`
   /// from the classical `owner()` key, signs the WOTS+ half internally,
   /// and returns the 2273-byte blob ready to hand to
@@ -639,7 +639,7 @@ export class QuipWalletClient {
   ///
   /// Burns one verification-keyset entry (the chosen `verifier`). Verifier
   /// rotation is the integrator's responsibility — see
-  /// `IQuipWallet.isValidSignature` natspec.
+  /// `IWOTSPlusImplementation.isValidSignature` natspec.
   async signErc1271(params: {
     hash: Hex;
     verifier: WinternitzAddress;
@@ -787,7 +787,7 @@ export class QuipWalletClient {
     const payload = spec.buildPayload(currentKey, nextKey, pqSig);
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: spec.functionName,
       args: [payload],
       account: this.account,
@@ -842,14 +842,14 @@ export class QuipWalletClient {
   ): Promise<void> {
     if (kind === "Ownership") {
       const onChain = await this.getOwnershipKey();
-      if (!QuipWalletClient._sameKey(onChain, derivedKey)) {
+      if (!WOTSPlusImplementationClient._sameKey(onChain, derivedKey)) {
         throw new UnknownOwnershipKeyError();
       }
       return;
     }
     if (kind === "DisasterRecovery") {
       const onChain = await this.getDisasterRecoveryKey();
-      if (!QuipWalletClient._sameKey(onChain, derivedKey)) {
+      if (!WOTSPlusImplementationClient._sameKey(onChain, derivedKey)) {
         throw new UnknownDisasterRecoveryKeyError();
       }
       return;
@@ -931,7 +931,7 @@ export class QuipWalletClient {
     const payload = encodeExecute(currentKey, nextKey, pqSig, target, value, data);
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "execute",
       args: [payload],
       value: totalValue,
@@ -1223,7 +1223,7 @@ export class QuipWalletClient {
 
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "resetKeyset",
       args: [payload],
       account: this.account,
@@ -1295,7 +1295,7 @@ export class QuipWalletClient {
 
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "saveWallet",
       args: [payload],
       account: this.account,
@@ -1358,7 +1358,7 @@ export class QuipWalletClient {
       throw new UnknownDisasterRecoveryKeyError();
     }
     if (
-      QuipWalletClient._sameKey(
+      WOTSPlusImplementationClient._sameKey(
         params.newOwnershipKey,
         params.newDisasterRecoveryKey
       )
@@ -1380,7 +1380,7 @@ export class QuipWalletClient {
     // `_verifyAndRotate`'s SameKey check — but we already have the on-chain
     // key in hand, so we can fail clean before signing).
     if (
-      QuipWalletClient._sameKey(params.newOwnershipKey, currentOwnership)
+      WOTSPlusImplementationClient._sameKey(params.newOwnershipKey, currentOwnership)
     ) {
       throw new SameKeyError();
     }
@@ -1414,7 +1414,7 @@ export class QuipWalletClient {
 
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "transferOwnership",
       args: [payload],
       account: this.account,
@@ -1473,7 +1473,7 @@ export class QuipWalletClient {
 
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "upgradeToAndCall",
       args: [newImplementation, payload],
       account: this.account,
@@ -1532,7 +1532,7 @@ export class QuipWalletClient {
 
     const contractCall: ContractCallParams = {
       address: this.walletAddress,
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "recoveryUpgrade",
       args: [newImplementation, payload],
       account: this.account,
@@ -1587,7 +1587,7 @@ export class QuipWalletClient {
     opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
   ): Promise<PreparedExecuteUserOp> {
     const callData = encodeFunctionData({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "execute",
       args: [target, value, data],
     });
@@ -1604,7 +1604,7 @@ export class QuipWalletClient {
     opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
   ): Promise<PreparedExecuteUserOp> {
     const callData = encodeFunctionData({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "executeBatch",
       args: [calls.map((c) => ({ target: c.target, value: c.value, data: c.data }))],
     });
@@ -1621,7 +1621,7 @@ export class QuipWalletClient {
     opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
   ): Promise<PreparedExecuteUserOp> {
     const callData = encodeFunctionData({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "delegateExecute",
       args: [delegate, data],
     });
@@ -1638,7 +1638,7 @@ export class QuipWalletClient {
     opts: BuildExecuteUserOpOptions & TransactionKeyOptions = {}
   ): Promise<PreparedExecuteUserOp> {
     const callData = encodeFunctionData({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "storageStore",
       args: [slot, value],
     });
@@ -1921,7 +1921,7 @@ export class QuipWalletClient {
       BigInt(this.chainId)
     );
     const validateData = encodeFunctionData({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "validateUserOp",
       args: [userOp, userOpHash, 0n],
     });
@@ -1938,7 +1938,7 @@ export class QuipWalletClient {
       };
     }
     const validationRaw = decodeFunctionResult({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       functionName: "validateUserOp",
       data: callResult.data,
     }) as bigint;
@@ -2115,7 +2115,7 @@ export class QuipWalletClient {
     const ep = await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "entryPoint",
       })
     );
@@ -2130,7 +2130,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "version",
       })
     );
@@ -2148,7 +2148,7 @@ export class QuipWalletClient {
     const raw = await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "debugIsValidSignature",
         args: [hash, signature],
       })
@@ -2166,7 +2166,7 @@ export class QuipWalletClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "ownershipHandoverExpiresAt",
         args: [pendingOwner],
       })
@@ -2193,7 +2193,7 @@ export class QuipWalletClient {
     try {
       return await this.publicClient.estimateContractGas({
         address: this.walletAddress,
-        abi: quipWalletAbi,
+        abi: wotsPlusImplementationAbi,
         functionName: "execute",
         args: [target, value, data],
         account: entryPoint,

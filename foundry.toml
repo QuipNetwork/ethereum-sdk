@@ -11,7 +11,7 @@ bytecode_hash = "none"
 extra_output = ["abi", "storageLayout"]
 extra_output_files = ["abi"]
 
-# Invariant fuzz budget — sized for ~2 min local runtime against the QuipWallet
+# Invariant fuzz budget — sized for ~2 min local runtime against the WOTSPlusImplementation
 # light suite (WOTS+ signing dominates per-call cost). The heavy suite
 # (LocalHeavy.t.sol) overrides further via inline `forge-config` annotation.
 # Override via env vars (`FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=500
@@ -28,7 +28,7 @@ solady = "0.1.26"
 "@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "https://gitlab.com/piqued/hashsigs-solidity.git", branch = "main" }
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
 
-# Deploy profile: links WOTSPlus at its CREATE3 address for QuipWallet compilation.
+# Deploy profile: links WOTSPlus at its CREATE3 address for WOTSPlusImplementation compilation.
 # Usage: FOUNDRY_PROFILE=deploy forge script ...
 # The address below is computed by: forge script script/PredictAddresses.s.sol
 [profile.deploy]

@@ -62,7 +62,7 @@ import { entryPointV07Abi } from "../abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";
-import { QuipWalletClient, KeyType } from "../walletClient.js";
+import { WOTSPlusImplementationClient, KeyType } from "../walletClient.js";
 import { QuipPaymasterClient } from "../paymasterClient.js";
 import {
   parseExecutionSucceeded,
@@ -88,7 +88,7 @@ const {
   factoryBytecode,
   walletArtifact,
   walletUnlinkedBytecode,
-  walletAbi: quipWalletDeployAbi,
+  walletAbi: wotsPlusImplementationDeployAbi,
   paymasterArtifact,
   paymasterUnlinkedBytecode,
   paymasterAbi: quipPaymasterDeployAbi,
@@ -208,7 +208,7 @@ beforeAll(async () => {
   );
   const implHash = await walletClient.deployContract({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    abi: quipWalletDeployAbi as any,
+    abi: wotsPlusImplementationDeployAbi as any,
     bytecode: walletBytecode,
     args: [factoryAddress],
     account,
@@ -311,7 +311,7 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
       );
       const walletAddress = createdEvents[0].quip;
 
-      const client = new QuipWalletClient(
+      const client = new WOTSPlusImplementationClient(
         signer,
         vaultId,
         walletAddress,

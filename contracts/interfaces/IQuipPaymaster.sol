@@ -20,8 +20,9 @@ import {IPaymaster} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IE
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipPaymaster
-/// @notice A UUPS-upgradeable ERC-4337 verifying paymaster that sponsors gas for QuipWallet
-///         operations by validating a per-wallet WOTS+ signature from a trusted backend signer.
+/// @notice A UUPS-upgradeable ERC-4337 verifying paymaster that sponsors gas for
+///         WOTSPlusImplementation operations by validating a per-wallet WOTS+ signature
+///         from a trusted backend signer.
 ///         Each sponsored wallet has its own WOTS+ verifier key chain, so key rotation
 ///         serializes per-wallet rather than globally.
 ///

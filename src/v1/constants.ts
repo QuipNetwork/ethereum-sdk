@@ -22,7 +22,7 @@ export const DEFAULT_CONFIRMATIONS = 1;
 
 /// Conservative default gas budgets for the ERC-4337 wallet validation +
 /// execute path. Real values should come from state-override estimation in
-/// `QuipWalletClient.prepareExecuteUserOp`; these are the fallback when the
+/// `WOTSPlusImplementationClient.prepareExecuteUserOp`; these are the fallback when the
 /// caller skips estimation.
 export const DEFAULT_VERIFICATION_GAS_LIMIT: bigint = 1_500_000n;
 export const DEFAULT_CALL_GAS_LIMIT: bigint = 500_000n;

@@ -24,7 +24,7 @@ import {
   zeroHash,
 } from "viem";
 
-import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
 import {
   parseExecutionSucceeded,
   parseKeyRotated,
@@ -71,7 +71,7 @@ describe("parseKeyRotated", () => {
     const oldKey = makeKey(1n);
     const newKey = makeKey(2n);
     const topics = encodeEventTopics({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       eventName: "KeyRotated",
       args: {},
     });
@@ -108,7 +108,7 @@ describe("parseKeyRotated", () => {
 describe("parseExecutionSucceeded", () => {
   it("decodes target/value/dataHash", () => {
     const topics = encodeEventTopics({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       eventName: "ExecutionSucceeded",
       args: { target: TARGET },
     });
@@ -128,7 +128,7 @@ describe("parseExecutionSucceeded", () => {
 describe("parseWalletReceipt", () => {
   function rotatedLog() {
     const topics = encodeEventTopics({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       eventName: "KeyRotated",
       args: {},
     });
@@ -156,7 +156,7 @@ describe("parseWalletReceipt", () => {
 
   function succeededLog() {
     const topics = encodeEventTopics({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       eventName: "ExecutionSucceeded",
       args: { target: TARGET },
     });
@@ -169,7 +169,7 @@ describe("parseWalletReceipt", () => {
 
   function rotationOnlyLog() {
     const topics = encodeEventTopics({
-      abi: quipWalletAbi,
+      abi: wotsPlusImplementationAbi,
       eventName: "KeyRotationOnly",
       args: {},
     });

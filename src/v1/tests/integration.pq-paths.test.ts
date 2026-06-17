@@ -34,7 +34,7 @@ import {
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";
 import {

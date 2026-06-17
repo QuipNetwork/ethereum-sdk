@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 
 contract WOTSPlusCodecHarness {
     // --- Decoders ---

@@ -11,7 +11,7 @@ import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
  *
  *      The Deployer address itself is derived from CreateX + the
  *      `DEPLOYER_SALT`, matching how `DeployDeployer.s.sol` bootstraps it.
- *      All downstream addresses (WOTSPlus, QuipFactory, QuipWallet impl,
+ *      All downstream addresses (WOTSPlus, QuipFactory, WOTSPlusImplementation impl,
  *      QuipPaymaster impl + proxy) are derived through that Deployer +
  *      their respective salts via solady's CREATE3.
  *
@@ -45,7 +45,7 @@ contract PredictAddresses is Script {
 
         _predict(deployerAddr, "WOTSPlus", keccak256("QUIP:WOTSPlus:V1.1"));
         _predict(deployerAddr, "QuipFactory", keccak256("QUIP:QuipFactory:V1.1"));
-        _predict(deployerAddr, "QuipWallet (impl)", keccak256("QUIP:QuipWallet:V1.1"));
+        _predict(deployerAddr, "WOTSPlusImplementation (impl)", keccak256("QUIP:WOTSPlusImplementation:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
     }

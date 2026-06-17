@@ -4,19 +4,19 @@ pragma solidity ^0.8.33;
 import {Vm} from "forge-std-1.14.0/Test.sol";
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipFactoryHarness} from "../../harness/QuipFactoryHarness.sol";
-import {QuipWallet} from "../../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
-import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract QuipFactory__deployProxy is QuipFactoryTest {
     QuipFactoryHarness public harness;
-    QuipWallet public impl;
+    WOTSPlusImplementation public impl;
 
     function setUp() public override {
         super.setUp();
         harness = new QuipFactoryHarness(payable(ADMIN), 0.1 ether);
-        impl = new QuipWallet(payable(address(harness)));
+        impl = new WOTSPlusImplementation(payable(address(harness)));
         vm.prank(ADMIN);
         harness.vetImplementation(address(impl));
     }
@@ -68,7 +68,7 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
             payable(ALICE),
             payload
         );
-        assertEq(QuipWallet(payable(proxy)).owner(), ALICE);
+        assertEq(WOTSPlusImplementation(payable(proxy)).owner(), ALICE);
     }
 
     function test_exposed_deployProxy_storesQuipMapping() public {
@@ -159,7 +159,7 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
 
     function test_exposed_deployProxy_revertsWhen_zeroAddressOwner() public {
         bytes memory payload = _buildPayload();
-        vm.expectRevert(IQuipWallet.ZeroAddressOwner.selector);
+        vm.expectRevert(IWOTSPlusImplementation.ZeroAddressOwner.selector);
         harness.exposed_deployProxy{value: 1 ether}(
             address(impl),
             keccak256("v5"),

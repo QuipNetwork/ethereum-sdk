@@ -23,7 +23,7 @@ import {
   toFunctionSelector,
 } from "viem";
 
-import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
 import { quipFactoryAbi } from "../abi/QuipFactory.js";
 import { quipPaymasterAbi } from "../abi/QuipPaymaster.js";
 
@@ -88,7 +88,7 @@ const COMBINED_ERROR_ABI: Abi = (() => {
   const seen = new Set<string>();
   const merged: Abi[number][] = [];
   for (const fragment of [
-    ...quipWalletAbi,
+    ...wotsPlusImplementationAbi,
     ...quipFactoryAbi,
     ...quipPaymasterAbi,
   ]) {
@@ -142,7 +142,7 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
     new IncorrectVerificationKeyAmountError(o),
   InvalidSigningKeyset: (_, o) => new InvalidSigningKeysetError(o),
   // Two distinct contract errors share the name `MalformedPayload`:
-  //   - `IQuipWallet.MalformedPayload()` (zero-arg, wallet belt-and-suspenders)
+  //   - `IWOTSPlusImplementation.MalformedPayload()` (zero-arg, wallet belt-and-suspenders)
   //   - `WOTSPlusCodec.MalformedPayload(uint256,uint256)` (codec size mismatch)
   // Dispatch on args length so the codec variant preserves expected/actual.
   MalformedPayload: (args, o) =>

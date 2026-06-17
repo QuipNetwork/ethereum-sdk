@@ -5,17 +5,17 @@ import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
-import {QuipWallet} from "../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../contracts/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 
 /// @title QuipFactory Base Test
 /// @dev Base contract for testing QuipFactory. Deploys full stack via CREATE3
-///      and vets an initial QuipWallet implementation for proxy deployment.
+///      and vets an initial WOTSPlusImplementation implementation for proxy deployment.
 contract QuipFactoryTest is Test {
     Deployer public deployer;
     QuipFactory public factory;
-    QuipWallet public walletImplementation;
+    WOTSPlusImplementation public walletImplementation;
 
     address public ADMIN = makeAddr("admin");
     address public BOB = makeAddr("bob");
@@ -49,8 +49,8 @@ contract QuipFactoryTest is Test {
         address factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
         factory = QuipFactory(payable(factoryAddr));
 
-        // Deploy and vet a QuipWallet implementation
-        walletImplementation = new QuipWallet(payable(address(factory)));
+        // Deploy and vet a WOTSPlusImplementation implementation
+        walletImplementation = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(walletImplementation));
     }
@@ -176,7 +176,7 @@ contract QuipFactoryTest is Test {
         }
     }
 
-    /// @dev Deploy a QuipWallet proxy through the factory and return its address.
+    /// @dev Deploy a WOTSPlusImplementation proxy through the factory and return its address.
     ///      Returns the FIRST (index 0) transaction key as the "primary" signing key for
     ///      convenience. Other 9 transaction keys are returned in `txnPubkeys`/`txnPrivkeys`.
     function _createWallet(
@@ -339,7 +339,7 @@ contract QuipFactoryTest is Test {
             );
     }
 
-    /// @dev Compute the expected CREATE3 address for a QuipWallet
+    /// @dev Compute the expected CREATE3 address for a WOTSPlusImplementation
     function _computeWalletAddress(
         bytes32 vaultId,
         address
@@ -347,8 +347,8 @@ contract QuipFactoryTest is Test {
         return CREATE3.predictDeterministicAddress(vaultId, address(factory));
     }
 
-    /// @dev Deploy a fresh uninitialized QuipWallet proxy via CREATE3.
-    function _deployFreshProxy(bytes32 salt) internal returns (QuipWallet) {
+    /// @dev Deploy a fresh uninitialized WOTSPlusImplementation proxy via CREATE3.
+    function _deployFreshProxy(bytes32 salt) internal returns (WOTSPlusImplementation) {
         bytes memory proxyInitcode = abi.encodePacked(
             hex"603d3d8160223d3973",
             address(walletImplementation),
@@ -357,6 +357,6 @@ contract QuipFactoryTest is Test {
             hex"cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3"
         );
         address proxyAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
-        return QuipWallet(payable(proxyAddr));
+        return WOTSPlusImplementation(payable(proxyAddr));
     }
 }

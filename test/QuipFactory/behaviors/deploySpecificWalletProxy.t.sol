@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/wots/WOTSPlusCodec.sol";
 
-import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
-import {QuipWallet} from "../../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
@@ -47,7 +47,7 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
         assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
 
         // Check wallet state
-        QuipWallet wallet = QuipWallet(payable(walletAddr));
+        WOTSPlusImplementation wallet = WOTSPlusImplementation(payable(walletAddr));
         assertEq(wallet.owner(), ALICE);
         assertEq(address(wallet.quipFactory()), address(factory));
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
@@ -72,7 +72,7 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
 
         assertEq(walletAddr.balance, INITIAL_DEPOSIT);
 
-        QuipWallet wallet = QuipWallet(payable(walletAddr));
+        WOTSPlusImplementation wallet = WOTSPlusImplementation(payable(walletAddr));
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, pubkey));
         assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
     }
@@ -156,7 +156,7 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
 
     function test_deploySpecificWalletProxy_deploysWithSpecificImpl() public {
         // Deploy and vet a second implementation
-        QuipWallet impl2 = new QuipWallet(payable(address(factory)));
+        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(impl2));
 
@@ -181,7 +181,7 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
         );
 
         assertTrue(walletAddr.code.length > 0);
-        QuipWallet wallet = QuipWallet(payable(walletAddr));
+        WOTSPlusImplementation wallet = WOTSPlusImplementation(payable(walletAddr));
         assertEq(wallet.owner(), ALICE);
     }
 
@@ -284,7 +284,7 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
             payload
         );
 
-        QuipWallet w = QuipWallet(payable(walletAddr));
+        WOTSPlusImplementation w = WOTSPlusImplementation(payable(walletAddr));
         assertEq(w.owner(), BOB);
         assertEq(factory.wallets(vaultId), walletAddr);
         assertNotEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);

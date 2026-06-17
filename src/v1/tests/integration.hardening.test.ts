@@ -18,7 +18,7 @@ import { type Address, type Hex, toHex, zeroAddress } from "viem";
 
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";
-import { QuipWalletClient, KeyType } from "../walletClient.js";
+import { WOTSPlusImplementationClient, KeyType } from "../walletClient.js";
 import {
   DuplicateKeyError,
   EmptyKeysError,
@@ -190,14 +190,14 @@ describe("Phase 4.5 — burned-key tracking on broadcast", () => {
 
 describe("Phase 4.5 — multicall partial-failure surfacing", () => {
   test("getWalletState against a no-code address throws PartialMulticallResultError", async () => {
-    // Point a QuipWalletClient at an address with no code. The factory +
-    // impl are deployed, but this random EOA address has no QuipWallet.
+    // Point a WOTSPlusImplementationClient at an address with no code. The factory +
+    // impl are deployed, but this random EOA address has no WOTSPlusImplementation.
     const signer = new QuipSigner(
       new Uint8Array(32).fill(0x30),
       createInMemoryBurnSet().consume
     );
     const noCodeAddr = "0xdeAdbEefdEAdbeefdEadbEEFdeadbeEFdEaDbeef" as Address;
-    const client = new QuipWalletClient(
+    const client = new WOTSPlusImplementationClient(
       signer,
       toHex(new Uint8Array(32).fill(0x30)),
       noCodeAddr,
@@ -233,7 +233,7 @@ describe("Phase 4.5 — multicall partial-failure surfacing", () => {
       new Uint8Array(32).fill(0x31),
       createInMemoryBurnSet().consume
     );
-    const client = new QuipWalletClient(
+    const client = new WOTSPlusImplementationClient(
       signer,
       toHex(new Uint8Array(32).fill(0x31)),
       stack.factoryAddress,

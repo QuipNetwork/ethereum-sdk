@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 
-import {IQuipWallet} from "../../contracts/interfaces/IQuipWallet.sol";
+import {IWOTSPlusImplementation} from "../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
 
 import {IntegrationBase, IEntryPoint, IEntryPointExt, PackedUserOperation} from "./IntegrationBase.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";

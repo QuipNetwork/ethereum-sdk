@@ -24,7 +24,7 @@ import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ow
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
-import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
+import {IWOTSPlusImplementation} from "./wots/interfaces/IWOTSPlusImplementation.sol";
 
 /// @title QuipFactory
 contract QuipFactory is IQuipFactory, Ownable2Step {
@@ -185,7 +185,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         // same transaction. `execute` / `executeBatch` can't mutate `owner()`
         // (no path); `delegateExecute` / `storageStore` can't either because
         // of transient storage guards.
-        if (IQuipWallet(msg.sender).owner() != newOwner)
+        if (IWOTSPlusImplementation(msg.sender).owner() != newOwner)
             revert OwnerStateMismatch();
 
         walletOwner[msg.sender] = newOwner;
@@ -319,7 +319,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
             vaultId
         );
 
-        IQuipWallet(contractAddr).initialize(to, payload);
+        IWOTSPlusImplementation(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         wallets[vaultId] = contractAddr;
         vaultIdOf[contractAddr] = vaultId;
