@@ -27,7 +27,7 @@ import {
   withDecodedError,
 } from "../internal/decodeError.js";
 
-import { quipWalletAbi } from "../abi/QuipWallet.js";
+import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
 import { quipFactoryAbi } from "../abi/QuipFactory.js";
 import { quipPaymasterAbi } from "../abi/QuipPaymaster.js";
 
@@ -215,30 +215,30 @@ const ROUND_TRIP_CASES: ReadonlyArray<{
   inspect?: (e: QuipError) => void;
 }> = [
   // Wallet — no args
-  { name: "ZeroAddressFactory", abi: quipWalletAbi, klass: ZeroAddressFactoryError },
-  { name: "ZeroAddressOwner", abi: quipWalletAbi, klass: ZeroAddressOwnerError },
-  { name: "InvalidFactory", abi: quipWalletAbi, klass: InvalidFactoryError },
-  { name: "InvalidSignature", abi: quipWalletAbi, klass: InvalidSignatureError },
-  { name: "RenounceDisabled", abi: quipWalletAbi, klass: RenounceDisabledError },
-  { name: "ClassicalWithdrawDisabled", abi: quipWalletAbi, klass: ClassicalWithdrawDisabledError },
-  { name: "ClassicalTransferOwnershipDisabled", abi: quipWalletAbi, klass: ClassicalTransferOwnershipDisabledError },
-  { name: "OwnershipHandoverDisabled", abi: quipWalletAbi, klass: OwnershipHandoverDisabledError },
-  { name: "DuplicateKey", abi: quipWalletAbi, klass: DuplicateKeyError },
-  { name: "KeyInUse", abi: quipWalletAbi, klass: KeyInUseError },
-  { name: "SameKey", abi: quipWalletAbi, klass: SameKeyError },
-  { name: "UnknownKey", abi: quipWalletAbi, klass: UnknownKeyError },
-  { name: "KeyAdditionFailed", abi: quipWalletAbi, klass: KeyAdditionFailedError },
-  { name: "KeyRemovalFailed", abi: quipWalletAbi, klass: KeyRemovalFailedError },
-  { name: "EmptyKeys", abi: quipWalletAbi, klass: EmptyKeysError },
-  { name: "IncorrectRecoveryKeyAmount", abi: quipWalletAbi, klass: IncorrectRecoveryKeyAmountError },
-  { name: "IncorrectVerificationKeyAmount", abi: quipWalletAbi, klass: IncorrectVerificationKeyAmountError },
-  { name: "InvalidSigningKeyset", abi: quipWalletAbi, klass: InvalidSigningKeysetError },
-  { name: "MalformedPayload", abi: quipWalletAbi, klass: MalformedPayloadError },
+  { name: "ZeroAddressFactory", abi: wotsPlusImplementationAbi, klass: ZeroAddressFactoryError },
+  { name: "ZeroAddressOwner", abi: wotsPlusImplementationAbi, klass: ZeroAddressOwnerError },
+  { name: "InvalidFactory", abi: wotsPlusImplementationAbi, klass: InvalidFactoryError },
+  { name: "InvalidSignature", abi: wotsPlusImplementationAbi, klass: InvalidSignatureError },
+  { name: "RenounceDisabled", abi: wotsPlusImplementationAbi, klass: RenounceDisabledError },
+  { name: "ClassicalWithdrawDisabled", abi: wotsPlusImplementationAbi, klass: ClassicalWithdrawDisabledError },
+  { name: "ClassicalTransferOwnershipDisabled", abi: wotsPlusImplementationAbi, klass: ClassicalTransferOwnershipDisabledError },
+  { name: "OwnershipHandoverDisabled", abi: wotsPlusImplementationAbi, klass: OwnershipHandoverDisabledError },
+  { name: "DuplicateKey", abi: wotsPlusImplementationAbi, klass: DuplicateKeyError },
+  { name: "KeyInUse", abi: wotsPlusImplementationAbi, klass: KeyInUseError },
+  { name: "SameKey", abi: wotsPlusImplementationAbi, klass: SameKeyError },
+  { name: "UnknownKey", abi: wotsPlusImplementationAbi, klass: UnknownKeyError },
+  { name: "KeyAdditionFailed", abi: wotsPlusImplementationAbi, klass: KeyAdditionFailedError },
+  { name: "KeyRemovalFailed", abi: wotsPlusImplementationAbi, klass: KeyRemovalFailedError },
+  { name: "EmptyKeys", abi: wotsPlusImplementationAbi, klass: EmptyKeysError },
+  { name: "IncorrectRecoveryKeyAmount", abi: wotsPlusImplementationAbi, klass: IncorrectRecoveryKeyAmountError },
+  { name: "IncorrectVerificationKeyAmount", abi: wotsPlusImplementationAbi, klass: IncorrectVerificationKeyAmountError },
+  { name: "InvalidSigningKeyset", abi: wotsPlusImplementationAbi, klass: InvalidSigningKeysetError },
+  { name: "MalformedPayload", abi: wotsPlusImplementationAbi, klass: MalformedPayloadError },
   // Codec variant — same name, different selector (expected, actual). Dispatches
   // by args length to the parametric error class.
   {
     name: "MalformedPayload",
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     args: [2048n, 1024n],
     klass: MalformedCodecPayloadError,
     inspect: (e) => {
@@ -247,18 +247,18 @@ const ROUND_TRIP_CASES: ReadonlyArray<{
       expect(x.actual).toBe(1024n);
     },
   },
-  { name: "NotUpgrading", abi: quipWalletAbi, klass: NotUpgradingError },
-  { name: "IncorrectTransactionKeyAmount", abi: quipWalletAbi, klass: IncorrectTransactionKeyAmountError },
-  { name: "ImplementationNotVetted", abi: quipWalletAbi, klass: ImplementationNotVettedError },
-  { name: "ImplementationDeprecated", abi: quipWalletAbi, klass: ImplementationDeprecatedError },
-  { name: "UnknownDisasterRecoveryKey", abi: quipWalletAbi, klass: UnknownDisasterRecoveryKeyError },
-  { name: "UnknownOwnershipKey", abi: quipWalletAbi, klass: UnknownOwnershipKeyError },
-  { name: "GuardedSlotWriteDenied", abi: quipWalletAbi, klass: GuardedSlotWriteDeniedError },
+  { name: "NotUpgrading", abi: wotsPlusImplementationAbi, klass: NotUpgradingError },
+  { name: "IncorrectTransactionKeyAmount", abi: wotsPlusImplementationAbi, klass: IncorrectTransactionKeyAmountError },
+  { name: "ImplementationNotVetted", abi: wotsPlusImplementationAbi, klass: ImplementationNotVettedError },
+  { name: "ImplementationDeprecated", abi: wotsPlusImplementationAbi, klass: ImplementationDeprecatedError },
+  { name: "UnknownDisasterRecoveryKey", abi: wotsPlusImplementationAbi, klass: UnknownDisasterRecoveryKeyError },
+  { name: "UnknownOwnershipKey", abi: wotsPlusImplementationAbi, klass: UnknownOwnershipKeyError },
+  { name: "GuardedSlotWriteDenied", abi: wotsPlusImplementationAbi, klass: GuardedSlotWriteDeniedError },
 
   // Wallet — parametric
   {
     name: "GuardedSlotTampered",
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     args: [3],
     klass: GuardedSlotTamperedError,
     inspect: (e) => {
@@ -329,7 +329,7 @@ describe("decodeContractError selector round-trip", () => {
   );
 
   test("withDecodedError unwraps a rejected viem call", async () => {
-    const revert = fakeRevert(quipWalletAbi, "InvalidSignature");
+    const revert = fakeRevert(wotsPlusImplementationAbi, "InvalidSignature");
     await expect(
       withDecodedError(Promise.reject(revert))
     ).rejects.toBeInstanceOf(InvalidSignatureError);
@@ -365,14 +365,14 @@ describe("decodeContractError selector round-trip", () => {
   });
 
   test("dedupe: shared error names (RenounceDisabled, ZeroAddressOwner, ImplementationNotVetted) decode regardless of source ABI", () => {
-    // RenounceDisabled appears in QuipWallet, QuipFactory, QuipPaymaster.
+    // RenounceDisabled appears in WOTSPlusImplementation, QuipFactory, QuipPaymaster.
     // Same selector either way; should always decode to the single typed class.
-    const fromWallet = fakeRevert(quipWalletAbi, "RenounceDisabled");
+    const fromWallet = fakeRevert(wotsPlusImplementationAbi, "RenounceDisabled");
     const fromFactory = fakeRevert(quipFactoryAbi, "RenounceDisabled");
     expect(decodeContractError(fromWallet)).toBeInstanceOf(RenounceDisabledError);
     expect(decodeContractError(fromFactory)).toBeInstanceOf(RenounceDisabledError);
 
-    const ownerFromWallet = fakeRevert(quipWalletAbi, "ZeroAddressOwner");
+    const ownerFromWallet = fakeRevert(wotsPlusImplementationAbi, "ZeroAddressOwner");
     const ownerFromFactory = fakeRevert(quipFactoryAbi, "ZeroAddressOwner");
     const ownerFromPm = fakeRevert(quipPaymasterAbi, "ZeroAddressOwner");
     expect(decodeContractError(ownerFromWallet)).toBeInstanceOf(ZeroAddressOwnerError);

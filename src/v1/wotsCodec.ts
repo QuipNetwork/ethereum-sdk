@@ -37,7 +37,7 @@ export interface WinternitzElements {
   elements: Hex[];
 }
 
-/// Mirrors `IQuipWallet.KeyType`. Same enum, also exported from
+/// Mirrors `IWOTSPlusImplementation.KeyType`. Same enum, also exported from
 /// `walletClient.ts`; this copy lets codec consumers avoid pulling in the
 /// full client module.
 export enum KeyType {
@@ -158,7 +158,7 @@ export const ERC1271_TAG: Hex = keccak256(toHex("quip.digest.erc1271"));
 
 /// EIP-712 type hash for the wrapper struct that nests the ERC-1271 `hash`
 /// argument before ECDSA recovery. Mirrors
-/// `QuipWallet._QUIP_SIGNED_HASH_TYPEHASH`. The classical half of the
+/// `WOTSPlusImplementation._QUIP_SIGNED_HASH_TYPEHASH`. The classical half of the
 /// ERC-1271 signature is over
 /// `quipSignedHashEcdsaTarget(wallet, chainId, hash)`, NOT the raw `hash`.
 export const QUIP_SIGNED_HASH_TYPEHASH: Hex = keccak256(
@@ -172,7 +172,7 @@ const _EIP712_DOMAIN_TYPEHASH: Hex = keccak256(
   )
 );
 
-/// Pre-hashed `name` and `version` fields for the QuipWallet EIP-712
+/// Pre-hashed `name` and `version` fields for the WOTSPlusImplementation EIP-712
 /// domain. Wallet pins these in `_domainNameAndVersion()` — any drift here
 /// would silently desync the SDK's ECDSA target from the contract's.
 const _QUIP_DOMAIN_NAME_HASH: Hex = keccak256(toHex("QuipWallet"));
@@ -822,7 +822,7 @@ export function decodeReplaceKeys(payload: Hex): {
   };
 }
 
-/// Encodes the ERC-1271 signature payload that `QuipWallet.isValidSignature`
+/// Encodes the ERC-1271 signature payload that `WOTSPlusImplementation.isValidSignature`
 /// expects. Layout (mirrors `WOTSPlusCodec.encodeErc1271Signature`):
 ///   [0:64)      verifier      (publicSeed ++ publicKeyHash)
 ///   [64:2208)   pqSig         (67 × 32 bytes)
@@ -903,7 +903,7 @@ export function erc1271Digest(
 
 /// Compute the EIP-712-wrapped hash that the wallet's ECDSA half of
 /// `isValidSignature` will recover against. Mirrors
-/// `QuipWallet.quipSignedHashEcdsaTarget(hash)` byte-for-byte:
+/// `WOTSPlusImplementation.quipSignedHashEcdsaTarget(hash)` byte-for-byte:
 ///   keccak256(0x1901 || domainSeparator || keccak256(abi.encode(
 ///       QUIP_SIGNED_HASH_TYPEHASH, hash)))
 /// where `domainSeparator` is the EIP-712 separator for the wallet's domain

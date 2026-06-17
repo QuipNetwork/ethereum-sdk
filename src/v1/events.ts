@@ -24,7 +24,7 @@ import {
 
 import { quipFactoryAbi } from "./abi/QuipFactory.js";
 import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
-import { quipWalletAbi } from "./abi/QuipWallet.js";
+import { wotsPlusImplementationAbi } from "./abi/WOTSPlusImplementation.js";
 import {
   PaymasterValidationFailure,
   UserOpValidationFailure,
@@ -41,7 +41,7 @@ function toLogs(src: LogSource): readonly Log[] {
 }
 
 /*  ───────────────────────────────────────────────────────────────────  *
- *  Wallet events (IQuipWallet)                                          *
+ *  Wallet events (IWOTSPlusImplementation)                                          *
  *  ───────────────────────────────────────────────────────────────────  */
 
 export interface KeyRotatedEvent {
@@ -51,7 +51,7 @@ export interface KeyRotatedEvent {
 
 export function parseKeyRotated(src: LogSource): KeyRotatedEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "KeyRotated",
   }).map((l) => ({
@@ -70,7 +70,7 @@ export function parseExecutionSucceeded(
   src: LogSource
 ): ExecutionSucceededEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "ExecutionSucceeded",
   }).map((l) => ({
@@ -89,7 +89,7 @@ export function parseKeyRotationOnly(
   src: LogSource
 ): KeyRotationOnlyEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "KeyRotationOnly",
   }).map((l) => ({
@@ -110,7 +110,7 @@ export function parseWalletInitialized(
   src: LogSource
 ): WalletInitializedEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "WalletInitialized",
   }).map((l) => ({
@@ -132,7 +132,7 @@ export interface WalletSavedEvent {
 
 export function parseWalletSaved(src: LogSource): WalletSavedEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "WalletSaved",
   }).map((l) => ({
@@ -158,7 +158,7 @@ export function parseOwnershipReinitialized(
   src: LogSource
 ): OwnershipReinitializedEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "OwnershipReinitialized",
   }).map((l) => ({
@@ -186,7 +186,7 @@ export interface KeysReplacedEvent {
 
 export function parseKeysReplaced(src: LogSource): KeysReplacedEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "KeysReplaced",
   }).map((l) => ({
@@ -212,7 +212,7 @@ export interface KeysetResetEvent {
 
 export function parseKeysetReset(src: LogSource): KeysetResetEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "KeysetReset",
   }).map((l) => ({
@@ -232,7 +232,7 @@ export interface WalletMigratedEvent {
 
 export function parseWalletMigrated(src: LogSource): WalletMigratedEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "WalletMigrated",
   }).map((l) => ({
@@ -251,7 +251,7 @@ export function parseRecoveryUpgrade(
   src: LogSource
 ): RecoveryUpgradeEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "RecoveryUpgrade",
   }).map((l) => ({
@@ -268,7 +268,7 @@ export function parseUserOpValidationRejected(
   src: LogSource
 ): UserOpValidationRejectedEvent[] {
   return parseEventLogs({
-    abi: quipWalletAbi,
+    abi: wotsPlusImplementationAbi,
     logs: toLogs(src) as Log[],
     eventName: "UserOpValidationRejected",
   }).map((l) => ({

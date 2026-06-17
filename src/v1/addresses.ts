@@ -30,11 +30,11 @@ export interface NetworkAddresses {
   Deployer: Address;
   WOTSPlus: Address;
   QuipFactory: Address;
-  /// QuipWallet implementation that the factory clones via CREATE3 on
+  /// WOTSPlusImplementation implementation that the factory clones via CREATE3 on
   /// `createWallet`. The impl itself is never called directly (its
   /// initializers are gated); surfaced so tooling can verify which
   /// implementation is vetted on a given chain.
-  QuipWalletImpl: Address;
+  WOTSPlusImplementation: Address;
   /// ERC-4337 v0.7 EntryPoint. The canonical address
   /// `0x0000000071727De22E5E9d8BAf0edAc6f37da032` is the same across every
   /// chain where v0.7 is deployed — it's a CREATE2 deployment with a
@@ -100,7 +100,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     Deployer: addresses.Deployer as Address,
     WOTSPlus: addresses.WOTSPlus as Address,
     QuipFactory: addresses.QuipFactory as Address,
-    QuipWalletImpl: addresses.QuipWalletImpl as Address,
+    WOTSPlusImplementation: addresses.WOTSPlusImplementation as Address,
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
     QuipPaymaster: addresses.QuipPaymaster as Address,
     QuipPaymasterImpl: addresses.QuipPaymasterImpl as Address,
@@ -113,7 +113,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     Deployer: "0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1",
     WOTSPlus: "0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e",
     QuipFactory: "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC",
-    QuipWalletImpl: "0x81648CBFA79aD8f2c4A59E0DdeA03b1BC8b34cfb",
+    WOTSPlusImplementation: "0x81648CBFA79aD8f2c4A59E0DdeA03b1BC8b34cfb",
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
     QuipPaymaster: "0x4A952d592fAe490762f492dC65487eE2B53Ef554",
     QuipPaymasterImpl: "0xeEFb077B9A0B63BA06ce72Ae07E016A9efA82ed7",

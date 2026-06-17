@@ -96,7 +96,7 @@ describe("Wallet event parsers — execution path", () => {
 
   // Note: the contract does not currently emit `ExecutionReverted` —
   // `LibCall.callContract` bubbles inner reverts so the whole `execute(bytes)`
-  // reverts together. The event is declared in `IQuipWallet.sol` as
+  // reverts together. The event is declared in `IWOTSPlusImplementation.sol` as
   // future-ready (for an ERC-4337 path where the wallet absorbs inner reverts
   // while still committing key rotation). The parser + `decodedReason` chain
   // is covered by `src/events.test.ts`; no live integration trigger exists

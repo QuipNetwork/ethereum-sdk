@@ -19,7 +19,7 @@ pragma solidity ^0.8.33;
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipFactory
-/// @notice Factory for creating and managing QuipWallet proxies secured by
+/// @notice Factory for creating and managing WOTSPlusImplementation proxies secured by
 ///         Winternitz one-time signatures.
 ///         Supports multiple vetted implementation versions with index-based selection.
 interface IQuipFactory {
@@ -123,7 +123,7 @@ interface IQuipFactory {
     /// @param newFee The new execute fee.
     event ExecuteFeeUpdated(uint256 oldFee, uint256 newFee);
 
-    /// @notice Emitted when a new QuipWallet proxy is created.
+    /// @notice Emitted when a new WOTSPlusImplementation proxy is created.
     /// @param amount The ETH value sent with the creation transaction.
     /// @param when The block timestamp at which the wallet was created.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
@@ -132,7 +132,7 @@ interface IQuipFactory {
     ///        the backstop that authorizes `saveWallet` if transaction and recovery keysets
     ///        are ever corrupted. This key is the most stable identifier an off-chain indexer
     ///        can associate with the wallet, since it rotates only on emergency rescue.
-    /// @param quip The address of the newly deployed QuipWallet proxy.
+    /// @param quip The address of the newly deployed WOTSPlusImplementation proxy.
     event QuipCreated(
         uint256 amount,
         uint256 when,
@@ -192,7 +192,7 @@ interface IQuipFactory {
     /// @param impl The deployed implementation contract address.
     function undeprecateImplementation(address impl) external;
 
-    /// @notice Deploys a new QuipWallet proxy using the latest active implementation,
+    /// @notice Deploys a new WOTSPlusImplementation proxy using the latest active implementation,
     ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
     /// @dev Iterates backwards through the vetted set to find the most recently added
     ///      non-deprecated implementation. Uses CREATE3 for deterministic addressing.
@@ -201,15 +201,16 @@ interface IQuipFactory {
     /// @param payload Packed init data: [0:64) disasterRecoveryKey,
     ///                [64:128) ownershipKey, [128:768) transactionKeys[10],
     ///                [768:1408) recoveryKeys[10], [1408:2048) verificationKeys[10].
-    /// @return The address of the newly deployed QuipWallet proxy.
+    /// @return The address of the newly deployed WOTSPlusImplementation proxy.
     function deployLatestWalletProxy(
         bytes32 vaultId,
         address payable to,
         bytes calldata payload
     ) external payable returns (address);
 
-    /// @notice Deploys a new QuipWallet proxy using the implementation at a specific index,
-    ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
+    /// @notice Deploys a new WOTSPlusImplementation proxy using the implementation at a
+    ///         specific index, initializes it, and forwards deposited ETH (minus creation
+    ///         fee) to the wallet.
     /// @dev The index corresponds to insertion order in the vetted set. Reverts if the
     ///      implementation at the given index is deprecated.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
@@ -218,7 +219,7 @@ interface IQuipFactory {
     /// @param payload Packed init data: [0:64) disasterRecoveryKey,
     ///                [64:128) ownershipKey, [128:768) transactionKeys[10],
     ///                [768:1408) recoveryKeys[10], [1408:2048) verificationKeys[10].
-    /// @return The address of the newly deployed QuipWallet proxy.
+    /// @return The address of the newly deployed WOTSPlusImplementation proxy.
     function deploySpecificWalletProxy(
         bytes32 vaultId,
         uint256 index,
@@ -236,7 +237,7 @@ interface IQuipFactory {
     ///          deployed by THIS factory. Reverts `OnlyWallet` otherwise.
     ///        - `newOwner != address(0)` — reverts `ZeroAddressOwner`.
     ///        - `newOwner != walletOwner[msg.sender]` — reverts `SameOwner`.
-    ///        - `IQuipWallet(msg.sender).owner() == newOwner` — pins the
+    ///        - `IWOTSPlusImplementation(msg.sender).owner() == newOwner` — pins the
     ///          callback to a moment when the wallet has ALREADY committed
     ///          `_setOwner(newOwner)`. The only path producing that state
     ///          is `transferOwnership(bytes)`. Reverts `OwnerStateMismatch`.
@@ -250,7 +251,7 @@ interface IQuipFactory {
     /// @param newOwner The owner after the transfer (wallet `owner()` state check).
     function updateWalletOwner(address newOwner) external;
 
-    /// @notice Sets the fee charged when creating a new QuipWallet.
+    /// @notice Sets the fee charged when creating a new WOTSPlusImplementation.
     /// @dev Only callable by the current admin.
     /// @param newFee The new creation fee in wei.
     function setCreationFee(uint256 newFee) external;
@@ -280,7 +281,7 @@ interface IQuipFactory {
     /// @return The maximum fee in wei.
     function MAX_FEE() external view returns (uint256);
 
-    /// @notice Returns the QuipWallet address deployed at `vaultId` on this
+    /// @notice Returns the WOTSPlusImplementation address deployed at `vaultId` on this
     ///         factory.
     /// @dev `vaultId` is a GLOBAL CREATE3 salt — same vaultId on every chain
     ///      resolves to the same deterministic address. The outer
@@ -289,7 +290,7 @@ interface IQuipFactory {
     ///      address is a pure function of the salt. Off-chain integrators
     ///      MUST treat `vaultId` as a first-come-first-served global resource.
     /// @param vaultId The vaultId used as CREATE3 salt.
-    /// @return The QuipWallet address, or `address(0)` if none deployed here.
+    /// @return The WOTSPlusImplementation address, or `address(0)` if none deployed here.
     function wallets(bytes32 vaultId) external view returns (address);
 
     /// @notice Returns the vaultId of a wallet deployed by this factory.

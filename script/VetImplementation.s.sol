@@ -6,7 +6,7 @@ import {QuipFactory} from "../contracts/QuipFactory.sol";
 
 /**
  * @title VetImplementation
- * @dev Vets an already-deployed QuipWallet implementation on the QuipFactory.
+ * @dev Vets an already-deployed WOTSPlusImplementation implementation on the QuipFactory.
  *      The caller must be the factory owner.
  *
  * Usage:
@@ -15,7 +15,7 @@ import {QuipFactory} from "../contracts/QuipFactory.sol";
  * Environment:
  *   PRIVATE_KEY - Factory owner private key
  *   FACTORY_ADDRESS - QuipFactory contract address
- *   IMPLEMENTATION - Deployed QuipWallet implementation address to vet
+ *   IMPLEMENTATION - Deployed WOTSPlusImplementation implementation address to vet
  */
 contract VetImplementation is Script {
     function run() external {

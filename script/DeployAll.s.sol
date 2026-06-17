@@ -21,7 +21,7 @@ import {QuipPaymaster} from "../contracts/QuipPaymaster.sol";
  *      `Deployer.deploy(bytecode, salt)` → solady CREATE3. Their addresses
  *      depend only on (Deployer, salt); they're identical on every chain.
  *
- *      QuipWallet implementation + factory-side vetting is intentionally
+ *      WOTSPlusImplementation implementation + factory-side vetting is intentionally
  *      separate — see DeployImplementation.s.sol + VetImplementation.s.sol.
  *      Wallet impls evolve per release; bundling them here would conflate
  *      one-time infra deploy with per-release vetting.

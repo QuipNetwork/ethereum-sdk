@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
-import {QuipWallet} from "../../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 
 contract QuipFactory_getVettedCodeIndex is QuipFactoryTest {
@@ -14,7 +14,7 @@ contract QuipFactory_getVettedCodeIndex is QuipFactoryTest {
     function test_getVettedCodeIndex_returnsCorrectIndexForMultipleImpls()
         public
     {
-        QuipWallet secondImpl = new QuipWallet(payable(address(factory)));
+        WOTSPlusImplementation secondImpl = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(secondImpl));
 

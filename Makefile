@@ -53,8 +53,8 @@ gas:
 	forge test --gas-report
 
 # ── Storage Layout ────────────────────────────────────────────────
-# Snapshot the QuipWallet ERC-7201 namespace layout (`WOTSPlusStorage.Layout`)
-# via the test-only probe contract `QuipWalletLayoutProbe`. ERC-7201 namespaced
+# Snapshot the WOTSPlusImplementation ERC-7201 namespace layout (`WOTSPlusStorage.Layout`)
+# via the test-only probe contract `WOTSPlusImplementationLayoutProbe`. ERC-7201 namespaced
 # storage is invisible to `forge inspect storageLayout` directly because it
 # isn't a top-level state variable; the probe wraps the struct as a public
 # state var so solc emits the full per-field slot/offset/type breakdown.
@@ -66,18 +66,18 @@ gas:
 # Usage:
 #   make storage-layout-snapshot  # regenerate fixture (after intentional change)
 #   make storage-layout-check     # CI gate; fails on drift
-STORAGE_LAYOUT_FIXTURE := test/fixtures/QuipWallet.storageLayout.json
+STORAGE_LAYOUT_FIXTURE := test/fixtures/WOTSPlusImplementation.storageLayout.json
 STORAGE_LAYOUT_NORMALIZE := walk(if type == "object" and has("astId") then del(.astId) else . end) \
 	| walk(if type == "string" then gsub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage") else . end) \
 	| .types |= with_entries(.key |= sub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage"))
 
 storage-layout-snapshot:
-	forge inspect QuipWalletLayoutProbe storageLayout --json \
+	forge inspect WOTSPlusImplementationLayoutProbe storageLayout --json \
 		| jq '$(STORAGE_LAYOUT_NORMALIZE)' > $(STORAGE_LAYOUT_FIXTURE)
 	@echo "✅ Wrote $(STORAGE_LAYOUT_FIXTURE)"
 
 storage-layout-check:
-	@forge inspect QuipWalletLayoutProbe storageLayout --json \
+	@forge inspect WOTSPlusImplementationLayoutProbe storageLayout --json \
 		| jq '$(STORAGE_LAYOUT_NORMALIZE)' \
 		| diff -u $(STORAGE_LAYOUT_FIXTURE) - \
 		|| (echo ""; echo "❌ Storage layout drift detected."; \
@@ -139,7 +139,7 @@ predict-addresses:
 #   MAX_FEE                 QuipFactory creation fee in wei (deploy-all-* only)
 #   PAYMASTER_OWNER         QuipPaymaster proxy initial owner (deploy-all-* only)
 #   FACTORY_ADDRESS         existing QuipFactory address (deploy-impl-*, vet-impl-*)
-#   IMPLEMENTATION          QuipWallet impl address (vet-impl-* only)
+#   IMPLEMENTATION          WOTSPlusImplementation impl address (vet-impl-* only)
 #   API_URL_BASE_SEPOLIA    https://… RPC endpoint
 #   ETHERSCAN_API_KEY       Etherscan v2 key (used for --verify)
 

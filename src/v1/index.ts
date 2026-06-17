@@ -18,7 +18,7 @@
 // ABIs
 export { deployerAbi } from "./abi/Deployer.js";
 export { quipFactoryAbi } from "./abi/QuipFactory.js";
-export { quipWalletAbi } from "./abi/QuipWallet.js";
+export { wotsPlusImplementationAbi } from "./abi/WOTSPlusImplementation.js";
 export { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 export { entryPointV07Abi } from "./abi/EntryPointV07.js";
 
@@ -30,7 +30,7 @@ export * from "./constants.js";
 // Core SDK classes
 export { QuipSigner } from "./signer.js";
 export type { WinternitzKeyPair } from "./signer.js";
-export { QuipWalletClient } from "./walletClient.js";
+export { WOTSPlusImplementationClient } from "./walletClient.js";
 export { QuipClient } from "./factoryClient.js";
 export { QuipPaymasterClient } from "./paymasterClient.js";
 

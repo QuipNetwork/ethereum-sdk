@@ -277,7 +277,7 @@ export class MalformedPayloadError extends QuipError {
 }
 
 /// Mirrors `WOTSPlusCodec.MalformedPayload(uint256 expected, uint256 actual)`
-/// — distinct from `IQuipWallet.MalformedPayload()` (zero-arg). Same name,
+/// — distinct from `IWOTSPlusImplementation.MalformedPayload()` (zero-arg). Same name,
 /// different selectors; this class preserves the codec's diagnostic
 /// expected/actual fields so callers can inspect the size mismatch.
 export class MalformedCodecPayloadError extends QuipError {
@@ -517,7 +517,7 @@ export class VerifierMismatchError extends QuipError {
   }
 }
 
-/// Mirrors `IQuipWallet.UserOpValidationFailure`.
+/// Mirrors `IWOTSPlusImplementation.UserOpValidationFailure`.
 export enum UserOpValidationFailure {
   ZeroNextKey = 0,
   StaleCurrentKey = 1,
@@ -535,7 +535,7 @@ export enum PaymasterValidationFailure {
   InvalidSignature = 5,
 }
 
-/// Mirrors `IQuipWallet.Erc1271ValidationResult`.
+/// Mirrors `IWOTSPlusImplementation.Erc1271ValidationResult`.
 export enum Erc1271ValidationResult {
   Ok = 0,
   BadSignatureLength = 1,

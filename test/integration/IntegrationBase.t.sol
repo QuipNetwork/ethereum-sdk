@@ -5,10 +5,10 @@ import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
-import {QuipWallet} from "../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../contracts/wots/WOTSPlusImplementation.sol";
 import {QuipPaymaster} from "../../contracts/QuipPaymaster.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 /// @dev Minimal extension of IEntryPoint to expose getUserOpHash on the fork.
@@ -33,8 +33,8 @@ contract IntegrationBase is Test {
 
     Deployer public deployer;
     QuipFactory public factory;
-    QuipWallet public walletImpl;
-    QuipWallet public wallet;
+    WOTSPlusImplementation public walletImpl;
+    WOTSPlusImplementation public wallet;
     QuipPaymaster public paymaster;
 
     WOTSPlus.WinternitzAddress public alicePubkey;
@@ -191,7 +191,7 @@ contract IntegrationBase is Test {
         );
         factory = QuipFactory(payable(factoryAddr));
 
-        walletImpl = new QuipWallet(payable(address(factory)));
+        walletImpl = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(walletImpl));
 
@@ -214,7 +214,7 @@ contract IntegrationBase is Test {
             payable(ALICE),
             initPayload
         );
-        wallet = QuipWallet(payable(walletAddr));
+        wallet = WOTSPlusImplementation(payable(walletAddr));
 
         IEntryPointStake(ENTRY_POINT).depositTo{value: 5 ether}(
             address(wallet)

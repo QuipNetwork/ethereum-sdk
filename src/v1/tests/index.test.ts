@@ -17,10 +17,10 @@
 import { toHex } from "viem";
 import {
   QuipSigner as BarrelQuipSigner,
-  QuipWalletClient as BarrelQuipWalletClient,
+  WOTSPlusImplementationClient as BarrelWOTSPlusImplementationClient,
   QuipClient as BarrelQuipClient,
   KeyType as BarrelKeyType,
-  quipWalletAbi,
+  wotsPlusImplementationAbi,
   quipFactoryAbi,
   quipPaymasterAbi,
   deployerAbi,
@@ -28,18 +28,18 @@ import {
 
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";
-import { QuipWalletClient, KeyType } from "../walletClient.js";
+import { WOTSPlusImplementationClient, KeyType } from "../walletClient.js";
 import { QuipClient } from "../factoryClient.js";
 
 describe("Phase 0 module split", () => {
   test("barrel exports are identical to module exports", () => {
     expect(BarrelQuipSigner).toBe(QuipSigner);
-    expect(BarrelQuipWalletClient).toBe(QuipWalletClient);
+    expect(BarrelWOTSPlusImplementationClient).toBe(WOTSPlusImplementationClient);
     expect(BarrelQuipClient).toBe(QuipClient);
     expect(BarrelKeyType).toBe(KeyType);
   });
 
-  test("KeyType enum values mirror IQuipWallet.KeyType", () => {
+  test("KeyType enum values mirror IWOTSPlusImplementation.KeyType", () => {
     expect(KeyType.Transaction).toBe(0);
     expect(KeyType.Recovery).toBe(1);
     expect(KeyType.Verification).toBe(2);
@@ -60,7 +60,7 @@ describe("Phase 0 module split", () => {
   });
 
   test("ABIs are exported from the barrel", () => {
-    expect(Array.isArray(quipWalletAbi)).toBe(true);
+    expect(Array.isArray(wotsPlusImplementationAbi)).toBe(true);
     expect(Array.isArray(quipFactoryAbi)).toBe(true);
     expect(Array.isArray(quipPaymasterAbi)).toBe(true);
     expect(Array.isArray(deployerAbi)).toBe(true);

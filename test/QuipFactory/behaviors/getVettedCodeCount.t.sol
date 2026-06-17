@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
-import {QuipWallet} from "../../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 
 contract QuipFactory_getVettedCodeCount is QuipFactoryTest {
     function test_getVettedCodeCount_returnsOneAfterSetUp() public view {
@@ -10,7 +10,7 @@ contract QuipFactory_getVettedCodeCount is QuipFactoryTest {
     }
 
     function test_getVettedCodeCount_incrementsAfterVetting() public {
-        QuipWallet secondImpl = new QuipWallet(payable(address(factory)));
+        WOTSPlusImplementation secondImpl = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(secondImpl));
 
