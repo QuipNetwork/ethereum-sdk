@@ -6,10 +6,17 @@ solc_version = "0.8.33"
 evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
+# via_ir is REQUIRED: the SHRINCS verifier (dependency ShrincsForsC.sol) hits stack-too-deep
+# under the legacy pipeline. Enabling it project-wide keeps a single build/test command.
+# NOTE: this changes WOTSPlus codegen, so the [profile.deploy] WOTSPlus link address below
+# must be regenerated via script/PredictAddresses.s.sol before the next on-chain deploy.
+via_ir = true
 cbor_metadata = false
 bytecode_hash = "none"
 extra_output = ["abi", "storageLayout"]
 extra_output_files = ["abi"]
+# Allow reading JSON test vectors (Rust-generated SHRINCS/wallet fixtures).
+fs_permissions = [{ access = "read", path = "./test/test_vectors/" }]
 
 # Invariant fuzz budget — sized for ~2 min local runtime against the WOTSPlusImplementation
 # light suite (WOTS+ signing dominates per-call cost). The heavy suite
