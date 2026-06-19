@@ -99,12 +99,10 @@ contract DeployAll is Script {
         console.log("Deployed at:", deployed);
     }
 
-    function _deployFactory(
-        Deployer deployer,
-        uint256 privateKey,
-        address owner,
-        uint256 maxFee
-    ) internal returns (address deployed) {
+    function _deployFactory(Deployer deployer, uint256 privateKey, address owner, uint256 maxFee)
+        internal
+        returns (address deployed)
+    {
         console.log("\n--- QuipFactory ---");
         address expected = CREATE3.predictDeterministicAddress(FACTORY_SALT, address(deployer));
         console.log("Expected:", expected);
@@ -114,10 +112,7 @@ contract DeployAll is Script {
             return expected;
         }
 
-        bytes memory bytecode = abi.encodePacked(
-            type(QuipFactory).creationCode,
-            abi.encode(owner, maxFee)
-        );
+        bytes memory bytecode = abi.encodePacked(type(QuipFactory).creationCode, abi.encode(owner, maxFee));
         vm.startBroadcast(privateKey);
         deployed = deployer.deploy(bytecode, FACTORY_SALT);
         vm.stopBroadcast();
@@ -143,38 +138,27 @@ contract DeployAll is Script {
         console.log("Deployed at:", impl);
     }
 
-    function _deployPaymasterProxy(
-        Deployer deployer,
-        uint256 privateKey,
-        address impl,
-        address owner
-    ) internal returns (address proxy) {
+    function _deployPaymasterProxy(Deployer deployer, uint256 privateKey, address impl, address owner)
+        internal
+        returns (address proxy)
+    {
         console.log("\n--- QuipPaymaster proxy ---");
         address expected = CREATE3.predictDeterministicAddress(PAYMASTER_PROXY_SALT, address(deployer));
         console.log("Expected:", expected);
 
         if (expected.code.length > 0) {
             console.log("Already deployed.");
-            require(
-                QuipPaymaster(payable(expected)).owner() == owner,
-                "Paymaster owner mismatch on existing proxy"
-            );
+            require(QuipPaymaster(payable(expected)).owner() == owner, "Paymaster owner mismatch on existing proxy");
             return expected;
         }
 
         bytes memory initData = abi.encodeCall(QuipPaymaster.initialize, (owner));
-        bytes memory proxyBytecode = abi.encodePacked(
-            type(ERC1967Proxy).creationCode,
-            abi.encode(impl, initData)
-        );
+        bytes memory proxyBytecode = abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
         vm.startBroadcast(privateKey);
         proxy = deployer.deploy(proxyBytecode, PAYMASTER_PROXY_SALT);
         vm.stopBroadcast();
         require(proxy == expected, "Paymaster proxy address mismatch");
-        require(
-            QuipPaymaster(payable(proxy)).owner() == owner,
-            "Paymaster owner not set during initialize"
-        );
+        require(QuipPaymaster(payable(proxy)).owner() == owner, "Paymaster owner not set during initialize");
         console.log("Deployed at:", proxy);
     }
 }

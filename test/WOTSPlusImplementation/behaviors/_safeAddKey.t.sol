@@ -22,20 +22,15 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
         bare = new WOTSPlusImplementationHarness(payable(address(factory)));
     }
 
-    function _makeKey(
-        uint256 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(seed),
-                publicKeyHash: bytes32(seed + 1000)
-            });
+    function _makeKey(uint256 seed) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: bytes32(seed), publicKeyHash: bytes32(seed + 1000)});
     }
 
-    function _makeKeys(
-        uint256 startSeed,
-        uint256 count
-    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory keys) {
+    function _makeKeys(uint256 startSeed, uint256 count)
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress[] memory keys)
+    {
         keys = new WOTSPlus.WinternitzAddress[](count);
         for (uint256 i = 0; i < count; i++) {
             keys[i] = _makeKey(startSeed + i * 2);
@@ -75,9 +70,7 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
 
     // ── Cross-keyset uniqueness (KeyInUse) ─────────────────────────────
 
-    function test_exposed_safeAddKey_revertsWhen_keyInTransactionSet_targetRecovery()
-        public
-    {
+    function test_exposed_safeAddKey_revertsWhen_keyInTransactionSet_targetRecovery() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb00);
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
 
@@ -85,9 +78,7 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
         bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
     }
 
-    function test_exposed_safeAddKey_revertsWhen_keyInTransactionSet_targetVerification()
-        public
-    {
+    function test_exposed_safeAddKey_revertsWhen_keyInTransactionSet_targetVerification() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb10);
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
 
@@ -95,9 +86,7 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
     }
 
-    function test_exposed_safeAddKey_revertsWhen_keyInRecoverySet_targetTransaction()
-        public
-    {
+    function test_exposed_safeAddKey_revertsWhen_keyInRecoverySet_targetTransaction() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb20);
         bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
 
@@ -105,9 +94,7 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
     }
 
-    function test_exposed_safeAddKey_revertsWhen_keyInRecoverySet_targetVerification()
-        public
-    {
+    function test_exposed_safeAddKey_revertsWhen_keyInRecoverySet_targetVerification() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb30);
         bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
 
@@ -115,9 +102,7 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
     }
 
-    function test_exposed_safeAddKey_revertsWhen_keyInVerificationSet_targetTransaction()
-        public
-    {
+    function test_exposed_safeAddKey_revertsWhen_keyInVerificationSet_targetTransaction() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb40);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
 
@@ -125,9 +110,7 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
     }
 
-    function test_exposed_safeAddKey_revertsWhen_keyInVerificationSet_targetRecovery()
-        public
-    {
+    function test_exposed_safeAddKey_revertsWhen_keyInVerificationSet_targetRecovery() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb50);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
 
@@ -135,9 +118,7 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
         bare.exposed_safeAddKey(HarnessKeyset.Recovery, key);
     }
 
-    function test_exposed_safeAddKey_revertsWhen_keyEqualsDisasterRecoveryKey()
-        public
-    {
+    function test_exposed_safeAddKey_revertsWhen_keyEqualsDisasterRecoveryKey() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xbb60);
         bare.setDisasterRecoveryKey(key);
 
@@ -185,20 +166,16 @@ contract WOTSPlusImplementation__safeAddKey is WOTSPlusImplementationTest {
     }
 
     function test_exposed_safeAddKey_revertsWhen_zeroSeed() public {
-        WOTSPlus.WinternitzAddress memory key = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(uint256(1))
-        });
+        WOTSPlus.WinternitzAddress memory key =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(1))});
 
         vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
     }
 
     function test_exposed_safeAddKey_revertsWhen_zeroHash() public {
-        WOTSPlus.WinternitzAddress memory key = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(0)
-        });
+        WOTSPlus.WinternitzAddress memory key =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(0)});
 
         vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);

@@ -65,10 +65,7 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
     ///      the case where the upstream library bumps the constant without
     ///      bumping the dependency version — easy to miss in diff review.
     function test_numSignatureChunks_isExactlySixtySeven() public pure {
-        assertEq(
-            uint256(WOTSPlus.NumSignatureChunks),
-            _EXPECTED_NUM_SIGNATURE_CHUNKS
-        );
+        assertEq(uint256(WOTSPlus.NumSignatureChunks), _EXPECTED_NUM_SIGNATURE_CHUNKS);
     }
 
     /// @dev The auth-prefix size is the load-bearing derived quantity. Pins
@@ -76,10 +73,7 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
     function test_authPrefixSize_equalsTwoAddressesPlusElements() public pure {
         WOTSPlus.WinternitzAddress memory addr;
         WOTSPlus.WinternitzElements memory elems;
-        assertEq(
-            2 * abi.encode(addr).length + abi.encode(elems).length,
-            _EXPECTED_AUTH_PREFIX_SIZE
-        );
+        assertEq(2 * abi.encode(addr).length + abi.encode(elems).length, _EXPECTED_AUTH_PREFIX_SIZE);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -104,12 +98,10 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
     ///      `2 × sizeof(WinternitzAddress) + sizeof(WinternitzElements)`.
     function test_decodeExecute_offsetsDeriveFromUpstreamSizes() public view {
         WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xcafe01)),
-            publicKeyHash: bytes32(uint256(0xcafe02))
+            publicSeed: bytes32(uint256(0xcafe01)), publicKeyHash: bytes32(uint256(0xcafe02))
         });
         WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xcafe03)),
-            publicKeyHash: bytes32(uint256(0xcafe04))
+            publicSeed: bytes32(uint256(0xcafe03)), publicKeyHash: bytes32(uint256(0xcafe04))
         });
         WOTSPlus.WinternitzElements memory sig;
         address target = address(uint160(0xdeadbeef));
@@ -117,10 +109,7 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
         bytes memory opdata = hex"a1b2c3";
 
         bytes memory payload = abi.encodePacked(
-            _buildAuthPrefixFromUpstream(cur, nxt, sig),
-            bytes32(uint256(uint160(target))),
-            value,
-            opdata
+            _buildAuthPrefixFromUpstream(cur, nxt, sig), bytes32(uint256(uint160(target))), value, opdata
         );
         // Sanity: the prefix-derived payload must be exactly the size the
         // codec's literal `2336` constant assumes (auth prefix + 32 target +
@@ -129,8 +118,7 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
 
         (
             WOTSPlus.WinternitzAddress memory dCur,
-            WOTSPlus.WinternitzAddress memory dNxt,
-            ,
+            WOTSPlus.WinternitzAddress memory dNxt,,
             address t,
             uint256 v,
             bytes memory d
@@ -148,33 +136,24 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
     /// @dev Same shape as `decodeExecute` but for the `to` / `amount` field
     ///      pair in `decodeWithdrawDeposit`. Layout is identical except the
     ///      payload is fixed-length (no trailing dynamic data).
-    function test_decodeWithdrawDeposit_offsetsDeriveFromUpstreamSizes()
-        public
-        view
-    {
+    function test_decodeWithdrawDeposit_offsetsDeriveFromUpstreamSizes() public view {
         WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xbeef01)),
-            publicKeyHash: bytes32(uint256(0xbeef02))
+            publicSeed: bytes32(uint256(0xbeef01)), publicKeyHash: bytes32(uint256(0xbeef02))
         });
         WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xbeef03)),
-            publicKeyHash: bytes32(uint256(0xbeef04))
+            publicSeed: bytes32(uint256(0xbeef03)), publicKeyHash: bytes32(uint256(0xbeef04))
         });
         WOTSPlus.WinternitzElements memory sig;
         address to = address(uint160(0xfeedface));
         uint256 amount = 123 ether;
 
-        bytes memory payload = abi.encodePacked(
-            _buildAuthPrefixFromUpstream(cur, nxt, sig),
-            bytes32(uint256(uint160(to))),
-            amount
-        );
+        bytes memory payload =
+            abi.encodePacked(_buildAuthPrefixFromUpstream(cur, nxt, sig), bytes32(uint256(uint160(to))), amount);
         assertEq(payload.length, _EXPECTED_AUTH_PREFIX_SIZE + 64);
 
         (
             WOTSPlus.WinternitzAddress memory dCur,
-            WOTSPlus.WinternitzAddress memory dNxt,
-            ,
+            WOTSPlus.WinternitzAddress memory dNxt,,
             address dTo,
             uint256 dAmount
         ) = codec.exposed_decodeWithdrawDeposit(payload);
@@ -191,10 +170,7 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
     ///      one of those offsets is `2272 + k × 64` for various k. Pinning
     ///      one decoded value at each of the four boundary positions covers
     ///      all of them in a single test.
-    function test_decodeOwnershipTransfer_offsetsDeriveFromUpstreamSizes()
-        public
-        view
-    {
+    function test_decodeOwnershipTransfer_offsetsDeriveFromUpstreamSizes() public view {
         bytes memory payload = _buildOwnershipPayload();
         assertEq(payload.length, 4288);
         _assertOwnershipDecodesAtPinnedOffsets(payload);
@@ -204,43 +180,33 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
     ///      depth manageable. Sentinels are deterministic so the assertion
     ///      half can reconstruct expected values independently.
     function _buildOwnershipPayload() internal pure returns (bytes memory) {
-        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xa1a2)),
-            publicKeyHash: bytes32(uint256(0xa3a4))
-        });
-        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xa5a6)),
-            publicKeyHash: bytes32(uint256(0xa7a8))
-        });
+        WOTSPlus.WinternitzAddress memory cur =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(0xa1a2)), publicKeyHash: bytes32(uint256(0xa3a4))});
+        WOTSPlus.WinternitzAddress memory nxt =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(0xa5a6)), publicKeyHash: bytes32(uint256(0xa7a8))});
         WOTSPlus.WinternitzElements memory sig;
-        WOTSPlus.WinternitzAddress memory newDisaster = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xd1)),
-            publicKeyHash: bytes32(uint256(0xd2))
-        });
+        WOTSPlus.WinternitzAddress memory newDisaster =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(0xd1)), publicKeyHash: bytes32(uint256(0xd2))});
         // Each keyset = 10 WinternitzAddresses. Distinct first-element
         // sentinels (0x100 / 0x200 / 0x300) so the decoder reading from
         // offsets 2368, 3008, 3648 must hit a unique value to pass.
-        return
-            abi.encodePacked(
-                _buildAuthPrefixFromUpstream(cur, nxt, sig),
-                bytes32(uint256(uint160(0x0b0b0b))),
-                abi.encode(newDisaster),
-                _buildKeysetBlock(0x100),
-                _buildKeysetBlock(0x200),
-                _buildKeysetBlock(0x300)
-            );
+        return abi.encodePacked(
+            _buildAuthPrefixFromUpstream(cur, nxt, sig),
+            bytes32(uint256(uint160(0x0b0b0b))),
+            abi.encode(newDisaster),
+            _buildKeysetBlock(0x100),
+            _buildKeysetBlock(0x200),
+            _buildKeysetBlock(0x300)
+        );
     }
 
     /// @dev Decodes a `_buildOwnershipPayload`-shaped payload and asserts
     ///      every field landed at its expected offset. Split from the test
     ///      body to keep the decoder's 8-tuple return out of the test stack.
-    function _assertOwnershipDecodesAtPinnedOffsets(
-        bytes memory payload
-    ) internal view {
+    function _assertOwnershipDecodesAtPinnedOffsets(bytes memory payload) internal view {
         (
             WOTSPlus.WinternitzAddress memory dCur,
-            WOTSPlus.WinternitzAddress memory dNxt,
-            ,
+            WOTSPlus.WinternitzAddress memory dNxt,,
             address dNewOwner,
             WOTSPlus.WinternitzAddress memory dNewDisaster,
             WOTSPlus.WinternitzAddress[10] memory dTxKeys,
@@ -268,13 +234,10 @@ contract WOTSPlusCodec_upstreamTypeSizeRegression is WOTSPlusCodecTest {
     ///      `WinternitzAddress` size. If the struct ever changes shape, this
     ///      helper produces a differently-sized block and the
     ///      `payload.length == 4288` assertion above fails.
-    function _buildKeysetBlock(
-        uint256 startSeed
-    ) internal pure returns (bytes memory block_) {
+    function _buildKeysetBlock(uint256 startSeed) internal pure returns (bytes memory block_) {
         for (uint256 i = 0; i < 10; ++i) {
             WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(startSeed + i * 2),
-                publicKeyHash: bytes32(startSeed + i * 2 + 1)
+                publicSeed: bytes32(startSeed + i * 2), publicKeyHash: bytes32(startSeed + i * 2 + 1)
             });
             block_ = abi.encodePacked(block_, abi.encode(a));
         }

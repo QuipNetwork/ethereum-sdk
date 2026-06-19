@@ -59,11 +59,9 @@ contract EnumerableWinternitzAddressSet_values_sentinel is Test {
     /*─────────────────────────── helpers ───────────────────────────────*/
 
     function _mkAddr(uint256 i) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: keccak256(abi.encode("seed", i)),
-                publicKeyHash: keccak256(abi.encode("hash", i))
-            });
+        return WOTSPlus.WinternitzAddress({
+            publicSeed: keccak256(abi.encode("seed", i)), publicKeyHash: keccak256(abi.encode("hash", i))
+        });
     }
 
     /// Populate the set with `n` distinct elements derived deterministically
@@ -83,16 +81,8 @@ contract EnumerableWinternitzAddressSet_values_sentinel is Test {
         for (uint256 i = 0; i < n; ++i) {
             WOTSPlus.WinternitzAddress memory canonical = harness.at(i);
             // Field-by-field equality.
-            assertEq(
-                batch[i].publicSeed,
-                canonical.publicSeed,
-                "publicSeed drift between values() and at()"
-            );
-            assertEq(
-                batch[i].publicKeyHash,
-                canonical.publicKeyHash,
-                "publicKeyHash drift between values() and at()"
-            );
+            assertEq(batch[i].publicSeed, canonical.publicSeed, "publicSeed drift between values() and at()");
+            assertEq(batch[i].publicKeyHash, canonical.publicKeyHash, "publicKeyHash drift between values() and at()");
             // Total-byte-shape equality. If the in-memory struct grew or
             // shrank silently, abi.encode would still pad/truncate per the
             // type's declared layout — so this is the layout sentinel.

@@ -23,63 +23,35 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
 
     function _buildPayload() internal pure returns (bytes memory) {
         // disaster recovery key (64 bytes): seed 500, hash 501.
-        bytes memory payload = abi.encodePacked(
-            bytes32(uint256(500)),
-            bytes32(uint256(501))
-        );
+        bytes memory payload = abi.encodePacked(bytes32(uint256(500)), bytes32(uint256(501)));
         // ownership key (64 bytes): seed 600, hash 601.
-        payload = abi.encodePacked(
-            payload,
-            bytes32(uint256(600)),
-            bytes32(uint256(601))
-        );
+        payload = abi.encodePacked(payload, bytes32(uint256(600)), bytes32(uint256(601)));
         // 10 transaction keys (640 bytes): seeds 1,3,5,...,19 / hashes 2,4,6,...,20.
         for (uint256 i = 0; i < 10; i++) {
-            payload = abi.encodePacked(
-                payload,
-                bytes32(uint256(2 * i + 1)),
-                bytes32(uint256(2 * i + 2))
-            );
+            payload = abi.encodePacked(payload, bytes32(uint256(2 * i + 1)), bytes32(uint256(2 * i + 2)));
         }
         // 10 recovery keys (640 bytes)
         for (uint256 i = 0; i < 10; i++) {
-            payload = abi.encodePacked(
-                payload,
-                bytes32(i + 100),
-                bytes32(i + 200)
-            );
+            payload = abi.encodePacked(payload, bytes32(i + 100), bytes32(i + 200));
         }
         // 10 verification keys (640 bytes)
         for (uint256 i = 0; i < 10; i++) {
-            payload = abi.encodePacked(
-                payload,
-                bytes32(i + 300),
-                bytes32(i + 400)
-            );
+            payload = abi.encodePacked(payload, bytes32(i + 300), bytes32(i + 400));
         }
         return payload;
     }
 
     function test_exposed_deployProxy_deploysAndInitializes() public {
         bytes memory payload = _buildPayload();
-        address proxy = harness.exposed_deployProxy{value: 1 ether}(
-            address(impl),
-            keccak256("v1"),
-            payable(ALICE),
-            payload
-        );
+        address proxy =
+            harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v1"), payable(ALICE), payload);
         assertEq(WOTSPlusImplementation(payable(proxy)).owner(), ALICE);
     }
 
     function test_exposed_deployProxy_storesQuipMapping() public {
         bytes32 vaultId = keccak256("v2");
         bytes memory payload = _buildPayload();
-        address proxy = harness.exposed_deployProxy{value: 1 ether}(
-            address(impl),
-            vaultId,
-            payable(ALICE),
-            payload
-        );
+        address proxy = harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, payable(ALICE), payload);
         assertEq(harness.wallets(vaultId), proxy);
         assertEq(harness.vaultIdOf(proxy), vaultId);
     }
@@ -87,12 +59,7 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
     function test_exposed_deployProxy_pushesVaultId() public {
         bytes32 vaultId = keccak256("v3");
         bytes memory payload = _buildPayload();
-        harness.exposed_deployProxy{value: 1 ether}(
-            address(impl),
-            vaultId,
-            payable(ALICE),
-            payload
-        );
+        harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, payable(ALICE), payload);
         assertEq(harness.getVaultIdCount(ALICE), 1);
         assertNotEq(harness.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
     }
@@ -102,33 +69,19 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
         bytes32 vaultId = keccak256("v-event");
 
         vm.recordLogs();
-        address proxy = harness.exposed_deployProxy{value: 1 ether}(
-            address(impl),
-            vaultId,
-            payable(ALICE),
-            payload
-        );
+        address proxy = harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, payable(ALICE), payload);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         bool found;
         for (uint256 i; i < logs.length; i++) {
-            if (
-                logs[i].emitter == address(harness) &&
-                logs[i].topics[0] == IQuipFactory.QuipCreated.selector
-            ) {
+            if (logs[i].emitter == address(harness) && logs[i].topics[0] == IQuipFactory.QuipCreated.selector) {
                 found = true;
                 // vaultId / creator / quip are indexed → topics[1..3].
                 bytes32 vid = logs[i].topics[1];
                 address creator = address(uint160(uint256(logs[i].topics[2])));
                 address quip = address(uint160(uint256(logs[i].topics[3])));
-                (
-                    uint256 amount,
-                    ,
-                    WOTSPlus.WinternitzAddress memory pqPub
-                ) = abi.decode(
-                        logs[i].data,
-                        (uint256, uint256, WOTSPlus.WinternitzAddress)
-                    );
+                (uint256 amount,, WOTSPlus.WinternitzAddress memory pqPub) =
+                    abi.decode(logs[i].data, (uint256, uint256, WOTSPlus.WinternitzAddress));
                 assertEq(amount, 1 ether);
                 assertEq(vid, vaultId);
                 assertEq(creator, ALICE);
@@ -147,12 +100,8 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
         harness.setCreationFee(0.01 ether);
 
         bytes memory payload = _buildPayload();
-        address proxy = harness.exposed_deployProxy{value: 1 ether}(
-            address(impl),
-            keccak256("v4"),
-            payable(ALICE),
-            payload
-        );
+        address proxy =
+            harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v4"), payable(ALICE), payload);
         // 1 ether - 0.01 fee = 0.99 ether forwarded to proxy
         assertEq(proxy.balance, 0.99 ether);
     }
@@ -160,12 +109,7 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
     function test_exposed_deployProxy_revertsWhen_zeroAddressOwner() public {
         bytes memory payload = _buildPayload();
         vm.expectRevert(IWOTSPlusImplementation.ZeroAddressOwner.selector);
-        harness.exposed_deployProxy{value: 1 ether}(
-            address(impl),
-            keccak256("v5"),
-            payable(address(0)),
-            payload
-        );
+        harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v5"), payable(address(0)), payload);
     }
 
     function test_exposed_deployProxy_revertsWhen_insufficientFee() public {
@@ -173,18 +117,7 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
         harness.setCreationFee(0.01 ether);
 
         bytes memory payload = _buildPayload();
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IQuipFactory.InsufficientCreationFee.selector,
-                0.005 ether,
-                0.01 ether
-            )
-        );
-        harness.exposed_deployProxy{value: 0.005 ether}(
-            address(impl),
-            keccak256("v6"),
-            payable(ALICE),
-            payload
-        );
+        vm.expectRevert(abi.encodeWithSelector(IQuipFactory.InsufficientCreationFee.selector, 0.005 ether, 0.01 ether));
+        harness.exposed_deployProxy{value: 0.005 ether}(address(impl), keccak256("v6"), payable(ALICE), payload);
     }
 }

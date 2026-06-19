@@ -15,102 +15,41 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      must not be accepted.
     function test_signatureReplay_oldSignatureFailsAfterKeyRotation() public {
         uint256 transferAmount = 0.1 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "next-key-1"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-1");
 
         // Build a valid execute (transfer) signature with alicePrivateKey
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            transferAmount,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         // Consume alicePubkey via a benign execute that rotates it out of the
         // transaction set.
-        (
-            WOTSPlus.WinternitzAddress memory rotatedPubkey,
-            bytes32 rotatedPrivKey
-        ) = _generateKeyPair("rotated-key");
+        (WOTSPlus.WinternitzAddress memory rotatedPubkey, bytes32 rotatedPrivKey) = _generateKeyPair("rotated-key");
         uint256 rotateFee = wallet.getExecuteFee();
-        bytes32 rotateMsgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            rotatedPubkey,
-            BOB,
-            0,
-            "",
-            rotateFee
-        );
-        WOTSPlus.WinternitzElements memory rotateSig = _sign(
-            alicePrivateKey,
-            rotateMsgHash
-        );
+        bytes32 rotateMsgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, rotatedPubkey, BOB, 0, "", rotateFee);
+        WOTSPlus.WinternitzElements memory rotateSig = _sign(alicePrivateKey, rotateMsgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                rotatedPubkey,
-                rotateSig,
-                BOB,
-                0,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, rotatedPubkey, rotateSig, BOB, 0, ""));
 
         // Now try to replay the original signature — alicePubkey was consumed
         // by the rotation above, so it is no longer a member of the set.
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.UnknownKey.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                transferAmount,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, transferAmount, ""));
     }
 
     /// @dev A signature computed for wallet A must not work on wallet B,
     ///      even if both share the same initial pqOwner.
     function test_signatureReplay_crossWalletSignatureFails() public {
         // Deploy a second wallet for BOB using a DIFFERENT seed but same recovery structure
-        (
-            address bobWalletAddr,
-            WOTSPlus.WinternitzAddress memory bobPubkey,
-            bytes32 bobPrivateKey,
-
-        ) = _createWallet(BOB, "bob-replay-vault", INITIAL_DEPOSIT);
+        (address bobWalletAddr, WOTSPlus.WinternitzAddress memory bobPubkey, bytes32 bobPrivateKey,) =
+            _createWallet(BOB, "bob-replay-vault", INITIAL_DEPOSIT);
 
         // Build a valid execute signature for ALICE's wallet
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "next-key-cross"
-        );
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            0.1 ether,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-cross");
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         // Try to use Alice's signature on Bob's wallet — alicePubkey is not
         // a transaction key in Bob's wallet, so it fails at the key-set check
@@ -118,16 +57,7 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
         WOTSPlusImplementation bobWallet = WOTSPlusImplementation(payable(bobWalletAddr));
         vm.prank(BOB);
         vm.expectRevert(IWOTSPlusImplementation.UnknownKey.selector);
-        bobWallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        bobWallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0.1 ether, ""));
     }
 
     /// @dev Two distinct in-keyset auth keys X and Y rotate independently:
@@ -135,31 +65,15 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      down keyset independence so a future "single rotation per block",
     ///      shared-cooldown, or transient-mutex refactor cannot silently
     ///      degrade UX by serializing rotations across distinct keys.
-    function test_signatureReplay_distinctAuthKeysRotateIndependently()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextX, ) = _generateKeyPair(
-            "indep-next-X"
-        );
-        (WOTSPlus.WinternitzAddress memory nextY, ) = _generateKeyPair(
-            "indep-next-Y"
-        );
+    function test_signatureReplay_distinctAuthKeysRotateIndependently() public {
+        (WOTSPlus.WinternitzAddress memory nextX,) = _generateKeyPair("indep-next-X");
+        (WOTSPlus.WinternitzAddress memory nextY,) = _generateKeyPair("indep-next-Y");
 
         uint256 amountX = 0.05 ether;
         uint256 amountY = 0.07 ether;
 
-        bytes memory payloadX = _signedTransferPayload(
-            aliceTxnPubkeys[0],
-            aliceTxnPrivkeys[0],
-            nextX,
-            amountX
-        );
-        bytes memory payloadY = _signedTransferPayload(
-            aliceTxnPubkeys[1],
-            aliceTxnPrivkeys[1],
-            nextY,
-            amountY
-        );
+        bytes memory payloadX = _signedTransferPayload(aliceTxnPubkeys[0], aliceTxnPrivkeys[0], nextX, amountX);
+        bytes memory payloadY = _signedTransferPayload(aliceTxnPubkeys[1], aliceTxnPrivkeys[1], nextY, amountY);
 
         uint256 bobBalBefore = BOB.balance;
 
@@ -187,27 +101,13 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      present" rule (e.g. a recently-rotated grace period) cannot
     ///      silently let one WOTS+ public key live in two slots — which would
     ///      let a single revealed signature consume it twice.
-    function test_signatureReplay_collidingNextKeyRevertsWithKeyInUse()
-        public
-    {
+    function test_signatureReplay_collidingNextKeyRevertsWithKeyInUse() public {
         // Same nextKey N for both payloads — owner-side mistake (or attacker
         // post-leak) that the wallet must catch.
-        (WOTSPlus.WinternitzAddress memory nextN, ) = _generateKeyPair(
-            "colliding-next-N"
-        );
+        (WOTSPlus.WinternitzAddress memory nextN,) = _generateKeyPair("colliding-next-N");
 
-        bytes memory payloadX = _signedTransferPayload(
-            aliceTxnPubkeys[0],
-            aliceTxnPrivkeys[0],
-            nextN,
-            0.05 ether
-        );
-        bytes memory payloadY = _signedTransferPayload(
-            aliceTxnPubkeys[1],
-            aliceTxnPrivkeys[1],
-            nextN,
-            0.07 ether
-        );
+        bytes memory payloadX = _signedTransferPayload(aliceTxnPubkeys[0], aliceTxnPrivkeys[0], nextN, 0.05 ether);
+        bytes memory payloadY = _signedTransferPayload(aliceTxnPubkeys[1], aliceTxnPrivkeys[1], nextN, 0.07 ether);
 
         // First payload lands: X rotated out, N installed.
         vm.prank(ALICE);
@@ -234,15 +134,7 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
         WOTSPlus.WinternitzAddress memory nextKey,
         uint256 value
     ) internal view returns (bytes memory) {
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            currentKey,
-            nextKey,
-            BOB,
-            value,
-            "",
-            0
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentKey, nextKey, BOB, value, "", 0);
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, msgHash);
         return Codec.encodeExecute(currentKey, nextKey, sig, BOB, value, "");
     }
@@ -251,39 +143,17 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      contract call (non-empty data), because the dataHash differs.
     function test_signatureReplay_dataHashDifferentiatesOperations() public {
         uint256 value = 0.1 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "next-key-cross-op"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("next-key-cross-op");
 
         // Build a signature for a pure transfer (empty data)
-        bytes32 transferMsgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            value,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory transferSig = _sign(
-            alicePrivateKey,
-            transferMsgHash
-        );
+        bytes32 transferMsgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, value, "", 0);
+        WOTSPlus.WinternitzElements memory transferSig = _sign(alicePrivateKey, transferMsgHash);
 
         // Try using it for a call with non-empty data — different dataHash
         bytes memory callData = abi.encodeWithSignature("nonExistent()");
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                transferSig,
-                BOB,
-                value,
-                callData
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, transferSig, BOB, value, callData));
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -298,58 +168,35 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      otherwise-identical fields. Distinct `RESET_KEYSET_*` and
     ///      `REPLACE_KEYS_*` tag families bind each preimage to its function
     ///      family; the digests differ, so the WOTS+ verify fails.
-    function test_signatureReplay_resetKeysetSigCannotBeLiftedToReplaceKeys()
-        public
-    {
+    function test_signatureReplay_resetKeysetSigCannotBeLiftedToReplaceKeys() public {
         // 10 fresh recovery keys for resetKeyset, plus the same 10 reused as
         // the newKeys side of a replaceKeys payload that swaps the current
         // recovery batch in for the 10 fresh ones.
         WOTSPlus.WinternitzAddress[10] memory newKeys10;
-        WOTSPlus.WinternitzAddress[]
-            memory newKeysDyn = new WOTSPlus.WinternitzAddress[](10);
+        WOTSPlus.WinternitzAddress[] memory newKeysDyn = new WOTSPlus.WinternitzAddress[](10);
         for (uint256 i = 0; i < 10; i++) {
-            (newKeys10[i], ) = _generateKeyPair(
-                keccak256(abi.encode("xfn-rec-new", i))
-            );
+            (newKeys10[i],) = _generateKeyPair(keccak256(abi.encode("xfn-rec-new", i)));
             newKeysDyn[i] = newKeys10[i];
         }
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "xfn-rec-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("xfn-rec-next");
 
         // Sign the resetKeyset digest with alicePrivateKey.
         bytes32 resetDigest = _buildResetKeysetMessageHash(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            newKeys10
+            Codec.KeyType.Recovery, Codec.KeyType.Transaction, address(wallet), alicePubkey, nextPq, newKeys10
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            resetDigest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, resetDigest);
 
         // Lift that exact sig into a replaceKeys(Recovery, Transaction, n=10)
         // payload. `oldKeys` is the wallet's current recovery batch so the
         // remove side would succeed; what should fail is signature
         // verification (the wallet recomputes replaceKeysDigest, which uses
         // REPLACE_KEYS_TXSIGN_RECOVERY_TAG, not the reset tag).
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](10);
+        WOTSPlus.WinternitzAddress[] memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](10);
         for (uint256 i = 0; i < 10; i++) {
             oldKeysDyn[i] = recoveryPubkeys[i];
         }
         bytes memory replacePayload = Codec.encodeReplaceKeys(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Transaction,
-            10,
-            alicePubkey,
-            nextPq,
-            sig,
-            oldKeysDyn,
-            newKeysDyn
+            Codec.KeyType.Recovery, Codec.KeyType.Transaction, 10, alicePubkey, nextPq, sig, oldKeysDyn, newKeysDyn
         );
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
@@ -360,24 +207,16 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      `resetKeyset`. Asymmetrically the more dangerous direction — a
     ///      lifted reset signature would WIPE the target keyset, whereas a
     ///      lifted replace would only attempt a same-N swap.
-    function test_signatureReplay_replaceKeysSigCannotBeLiftedToResetKeyset()
-        public
-    {
+    function test_signatureReplay_replaceKeysSigCannotBeLiftedToResetKeyset() public {
         WOTSPlus.WinternitzAddress[10] memory newKeys10;
-        WOTSPlus.WinternitzAddress[]
-            memory newKeysDyn = new WOTSPlus.WinternitzAddress[](10);
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](10);
+        WOTSPlus.WinternitzAddress[] memory newKeysDyn = new WOTSPlus.WinternitzAddress[](10);
+        WOTSPlus.WinternitzAddress[] memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](10);
         for (uint256 i = 0; i < 10; i++) {
-            (newKeys10[i], ) = _generateKeyPair(
-                keccak256(abi.encode("xfn-mirror-new", i))
-            );
+            (newKeys10[i],) = _generateKeyPair(keccak256(abi.encode("xfn-mirror-new", i)));
             newKeysDyn[i] = newKeys10[i];
             oldKeysDyn[i] = recoveryPubkeys[i];
         }
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "xfn-mirror-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("xfn-mirror-next");
 
         bytes32 replaceDigest = _buildReplaceKeysMessageHash(
             Codec.KeyType.Recovery,
@@ -388,18 +227,10 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
             oldKeysDyn,
             newKeysDyn
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            replaceDigest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, replaceDigest);
 
         bytes memory resetPayload = Codec.encodeResetKeyset(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Transaction,
-            alicePubkey,
-            nextPq,
-            sig,
-            newKeys10
+            Codec.KeyType.Recovery, Codec.KeyType.Transaction, alicePubkey, nextPq, sig, newKeys10
         );
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
@@ -413,20 +244,14 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      function. The `signingKind` field is encoded in the digest and
     ///      ALSO selects which keyset is checked for `currentKey` membership;
     ///      we sign with alicePrivateKey (tx) but the lifted call claims rec.
-    function test_signatureReplay_replaceKeys_txSigCannotBeLiftedToRecoverySig()
-        public
-    {
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](2);
-        WOTSPlus.WinternitzAddress[]
-            memory newKeysDyn = new WOTSPlus.WinternitzAddress[](2);
+    function test_signatureReplay_replaceKeys_txSigCannotBeLiftedToRecoverySig() public {
+        WOTSPlus.WinternitzAddress[] memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](2);
+        WOTSPlus.WinternitzAddress[] memory newKeysDyn = new WOTSPlus.WinternitzAddress[](2);
         oldKeysDyn[0] = recoveryPubkeys[0];
         oldKeysDyn[1] = recoveryPubkeys[1];
-        (newKeysDyn[0], ) = _generateKeyPair("xsign-new-0");
-        (newKeysDyn[1], ) = _generateKeyPair("xsign-new-1");
-        (WOTSPlus.WinternitzAddress memory nextRec, ) = _generateKeyPair(
-            "xsign-next-rec"
-        );
+        (newKeysDyn[0],) = _generateKeyPair("xsign-new-0");
+        (newKeysDyn[1],) = _generateKeyPair("xsign-new-1");
+        (WOTSPlus.WinternitzAddress memory nextRec,) = _generateKeyPair("xsign-next-rec");
 
         // Sign for (kind=Recovery, signingKind=Transaction). currentKey is
         // alicePubkey, which is in the tx set.
@@ -439,10 +264,7 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
             oldKeysDyn,
             newKeysDyn
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            txSignDigest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, txSignDigest);
 
         // Lift to (kind=Recovery, signingKind=Recovery). Wallet's
         // `_verifyAndRotate` routes membership-check at `recoveryKeys`, which
@@ -452,14 +274,7 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
         // refactor regressed the digest separation, the membership routing
         // would still catch this.
         bytes memory liftedPayload = Codec.encodeReplaceKeys(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Recovery,
-            2,
-            alicePubkey,
-            nextRec,
-            sig,
-            oldKeysDyn,
-            newKeysDyn
+            Codec.KeyType.Recovery, Codec.KeyType.Recovery, 2, alicePubkey, nextRec, sig, oldKeysDyn, newKeysDyn
         );
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.UnknownKey.selector);
@@ -471,21 +286,15 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      separates targets within a fixed signingKind. Here the
     ///      currentKey (alicePubkey) IS in the tx set so membership passes;
     ///      what blocks the lift is the digest tag (recovery vs verify).
-    function test_signatureReplay_replaceKeys_recoveryTargetSigCannotBeLiftedToVerifyTarget()
-        public
-    {
+    function test_signatureReplay_replaceKeys_recoveryTargetSigCannotBeLiftedToVerifyTarget() public {
         // Seed verification so the lifted call has somewhere to remove from.
         _seedVerificationKeys(10);
 
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](1);
-        WOTSPlus.WinternitzAddress[]
-            memory newKeysDyn = new WOTSPlus.WinternitzAddress[](1);
+        WOTSPlus.WinternitzAddress[] memory oldKeysDyn = new WOTSPlus.WinternitzAddress[](1);
+        WOTSPlus.WinternitzAddress[] memory newKeysDyn = new WOTSPlus.WinternitzAddress[](1);
         oldKeysDyn[0] = recoveryPubkeys[0];
-        (newKeysDyn[0], ) = _generateKeyPair("xkind-new-0");
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "xkind-next"
-        );
+        (newKeysDyn[0],) = _generateKeyPair("xkind-new-0");
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("xkind-next");
 
         // Sign for (kind=Recovery, signingKind=Transaction).
         // `_seedVerificationKeys` rotated alicePubkey, so re-read.
@@ -498,23 +307,13 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
             oldKeysDyn,
             newKeysDyn
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            recoveryDigest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, recoveryDigest);
 
         // Lift to (kind=Verification, signingKind=Transaction). Same auth
         // key, same n, same keys — but the digest tag is
         // REPLACE_KEYS_TXSIGN_VERIFY_TAG, not REPLACE_KEYS_TXSIGN_RECOVERY_TAG.
         bytes memory liftedPayload = Codec.encodeReplaceKeys(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            1,
-            alicePubkey,
-            nextPq,
-            sig,
-            oldKeysDyn,
-            newKeysDyn
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, 1, alicePubkey, nextPq, sig, oldKeysDyn, newKeysDyn
         );
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
@@ -526,39 +325,16 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
     ///      `resetKeyset`, even on a different keyset. Burns persist in the
     ///      global `isKeySpent` index, and `_safeAddKey`'s
     ///      `_enforceUnspentKey` re-checks it on every install.
-    function test_signatureReplay_resetKeyset_revertsWhen_installsSpentKey()
-        public
-    {
+    function test_signatureReplay_resetKeyset_revertsWhen_installsSpentKey() public {
         // Step 1: spend alicePubkey via execute, rotating it out.
-        (
-            WOTSPlus.WinternitzAddress memory rotatedPubkey,
-            bytes32 rotatedPriv
-        ) = _generateKeyPair("audit-reset-burn-rotated");
+        (WOTSPlus.WinternitzAddress memory rotatedPubkey, bytes32 rotatedPriv) =
+            _generateKeyPair("audit-reset-burn-rotated");
         uint256 rotateFee = wallet.getExecuteFee();
-        bytes32 rotateMsgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            rotatedPubkey,
-            BOB,
-            0,
-            "",
-            rotateFee
-        );
-        WOTSPlus.WinternitzElements memory rotateSig = _sign(
-            alicePrivateKey,
-            rotateMsgHash
-        );
+        bytes32 rotateMsgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, rotatedPubkey, BOB, 0, "", rotateFee);
+        WOTSPlus.WinternitzElements memory rotateSig = _sign(alicePrivateKey, rotateMsgHash);
         vm.prank(ALICE);
-        wallet.execute{value: rotateFee}(
-            Codec.encodeExecute(
-                alicePubkey,
-                rotatedPubkey,
-                rotateSig,
-                BOB,
-                0,
-                ""
-            )
-        );
+        wallet.execute{value: rotateFee}(Codec.encodeExecute(alicePubkey, rotatedPubkey, rotateSig, BOB, 0, ""));
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
 
         // Step 2: build a resetKeyset(Verification, txSign) payload that
@@ -566,38 +342,21 @@ contract WOTSPlusImplementation_signatureReplay is WOTSPlusImplementationTest {
         // currentKey is the now-active rotatedPubkey.
         WOTSPlus.WinternitzAddress[10] memory newKeys10;
         for (uint256 i = 0; i < 10; i++) {
-            (newKeys10[i], ) = _generateKeyPair(
-                keccak256(abi.encode("audit-reset-fresh", i))
-            );
+            (newKeys10[i],) = _generateKeyPair(keccak256(abi.encode("audit-reset-fresh", i)));
         }
         newKeys10[7] = alicePubkey; // the SPENT key
 
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "audit-reset-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("audit-reset-next");
         bytes32 resetDigest = _buildResetKeysetMessageHash(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            rotatedPubkey,
-            nextPq,
-            newKeys10
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, address(wallet), rotatedPubkey, nextPq, newKeys10
         );
-        WOTSPlus.WinternitzElements memory resetSig = _sign(
-            rotatedPriv,
-            resetDigest
-        );
+        WOTSPlus.WinternitzElements memory resetSig = _sign(rotatedPriv, resetDigest);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         wallet.resetKeyset(
             Codec.encodeResetKeyset(
-                Codec.KeyType.Verification,
-                Codec.KeyType.Transaction,
-                rotatedPubkey,
-                nextPq,
-                resetSig,
-                newKeys10
+                Codec.KeyType.Verification, Codec.KeyType.Transaction, rotatedPubkey, nextPq, resetSig, newKeys10
             )
         );
 

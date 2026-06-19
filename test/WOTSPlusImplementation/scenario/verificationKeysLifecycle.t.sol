@@ -39,28 +39,18 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
         _OG_ALICE_PRIVATE = alicePrivateKey;
     }
 
-    function _ecdsaSign(
-        uint256 privKey,
-        bytes32 hash
-    ) internal pure returns (bytes memory) {
+    function _ecdsaSign(uint256 privKey, bytes32 hash) internal pure returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privKey, hash);
         return abi.encodePacked(r, s, v);
     }
 
-    function _freshKeys10WithPriv(
-        bytes32 seed
-    )
+    function _freshKeys10WithPriv(bytes32 seed)
         internal
         pure
-        returns (
-            WOTSPlus.WinternitzAddress[10] memory keys,
-            bytes32[10] memory privs
-        )
+        returns (WOTSPlus.WinternitzAddress[10] memory keys, bytes32[10] memory privs)
     {
         for (uint256 i = 0; i < 10; i++) {
-            (keys[i], privs[i]) = WOTSPlus.generateKeyPair(
-                keccak256(abi.encode(seed, i))
-            );
+            (keys[i], privs[i]) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 
@@ -89,40 +79,22 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
 
     /// @dev Step 2 — seed.
     function _seedInitialVerifierBatch() internal {
-        (
-            WOTSPlus.WinternitzAddress[10] memory keys,
-            bytes32[10] memory privs
-        ) = _freshKeys10WithPriv("verif-life-batch-1");
+        (WOTSPlus.WinternitzAddress[10] memory keys, bytes32[10] memory privs) =
+            _freshKeys10WithPriv("verif-life-batch-1");
         for (uint256 i = 0; i < 10; i++) {
             verifBatch1[i] = keys[i];
             verifBatch1Priv[i] = privs[i];
         }
 
-        (
-            WOTSPlus.WinternitzAddress memory nextTx,
-            bytes32 nextTxPriv
-        ) = _generateKeyPair("verif-life-next-1");
+        (WOTSPlus.WinternitzAddress memory nextTx, bytes32 nextTxPriv) = _generateKeyPair("verif-life-next-1");
         bytes32 digest = _buildResetKeysetMessageHash(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            alicePubkey,
-            nextTx,
-            keys
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, address(wallet), alicePubkey, nextTx, keys
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            digest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
         vm.prank(ALICE);
         wallet.resetKeyset(
             Codec.encodeResetKeyset(
-                Codec.KeyType.Verification,
-                Codec.KeyType.Transaction,
-                alicePubkey,
-                nextTx,
-                sig,
-                keys
+                Codec.KeyType.Verification, Codec.KeyType.Transaction, alicePubkey, nextTx, sig, keys
             )
         );
         alicePubkey = nextTx;
@@ -137,18 +109,11 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
 
         // ERC-1271 valid via the in-set verifier.
         bytes32 msgHash = keccak256("verif-life-msg");
-        bytes memory inSetSig = _encodeErc1271(
-            targetVerifier,
-            targetPriv,
-            msgHash
-        );
+        bytes memory inSetSig = _encodeErc1271(targetVerifier, targetPriv, msgHash);
         assertEq(wallet.isValidSignature(msgHash, inSetSig), MAGIC);
 
         // Rotate that verifier out via tx-signed replaceKeys(N=1).
-        (
-            WOTSPlus.WinternitzAddress memory newVerif,
-            bytes32 newVerifPriv
-        ) = _generateKeyPair("verif-life-rot-2");
+        (WOTSPlus.WinternitzAddress memory newVerif, bytes32 newVerifPriv) = _generateKeyPair("verif-life-rot-2");
         _rotateOneVerifier(targetVerifier, newVerif);
         rotatedInVerifier = newVerif;
         rotatedInVerifierPriv = newVerifPriv;
@@ -158,11 +123,7 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
 
         // Replacement verifier on a fresh message returns MAGIC.
         bytes32 msgHash2 = keccak256("verif-life-msg2");
-        bytes memory replacementSig = _encodeErc1271(
-            newVerif,
-            newVerifPriv,
-            msgHash2
-        );
+        bytes memory replacementSig = _encodeErc1271(newVerif, newVerifPriv, msgHash2);
         assertEq(wallet.isValidSignature(msgHash2, replacementSig), MAGIC);
     }
 
@@ -172,41 +133,20 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
         WOTSPlus.WinternitzAddress memory oldVerifier,
         WOTSPlus.WinternitzAddress memory newVerifier
     ) internal {
-        WOTSPlus.WinternitzAddress[]
-            memory oldArr = new WOTSPlus.WinternitzAddress[](1);
-        WOTSPlus.WinternitzAddress[]
-            memory newArr = new WOTSPlus.WinternitzAddress[](1);
+        WOTSPlus.WinternitzAddress[] memory oldArr = new WOTSPlus.WinternitzAddress[](1);
+        WOTSPlus.WinternitzAddress[] memory newArr = new WOTSPlus.WinternitzAddress[](1);
         oldArr[0] = oldVerifier;
         newArr[0] = newVerifier;
-        (
-            WOTSPlus.WinternitzAddress memory nextTx,
-            bytes32 nextTxPriv
-        ) = _generateKeyPair("verif-life-rot-next");
+        (WOTSPlus.WinternitzAddress memory nextTx, bytes32 nextTxPriv) = _generateKeyPair("verif-life-rot-next");
 
         bytes32 digest = _buildReplaceKeysMessageHash(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            alicePubkey,
-            nextTx,
-            oldArr,
-            newArr
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, address(wallet), alicePubkey, nextTx, oldArr, newArr
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            digest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
         vm.prank(ALICE);
         wallet.replaceKeys(
             Codec.encodeReplaceKeys(
-                Codec.KeyType.Verification,
-                Codec.KeyType.Transaction,
-                1,
-                alicePubkey,
-                nextTx,
-                sig,
-                oldArr,
-                newArr
+                Codec.KeyType.Verification, Codec.KeyType.Transaction, 1, alicePubkey, nextTx, sig, oldArr, newArr
             )
         );
         alicePubkey = nextTx;
@@ -219,80 +159,48 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
     function _wholesaleResetViaRecoverySig() internal {
         bytes32 recPriv = _recoverySigningKey(_OG_ALICE_PRIVATE, 0);
         WOTSPlus.WinternitzAddress memory recCur = recoveryPubkeys[0];
-        (WOTSPlus.WinternitzAddress memory recNext, ) = _generateKeyPair(
-            "verif-life-recNext"
-        );
-        (
-            WOTSPlus.WinternitzAddress[10] memory batch2,
-
-        ) = _freshKeys10WithPriv("verif-life-batch-2");
+        (WOTSPlus.WinternitzAddress memory recNext,) = _generateKeyPair("verif-life-recNext");
+        (WOTSPlus.WinternitzAddress[10] memory batch2,) = _freshKeys10WithPriv("verif-life-batch-2");
 
         bytes32 digest = _buildResetKeysetMessageHash(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Recovery,
-            address(wallet),
-            recCur,
-            recNext,
-            batch2
+            Codec.KeyType.Verification, Codec.KeyType.Recovery, address(wallet), recCur, recNext, batch2
         );
         WOTSPlus.WinternitzElements memory sig = _sign(recPriv, digest);
         vm.prank(ALICE);
         wallet.resetKeyset(
-            Codec.encodeResetKeyset(
-                Codec.KeyType.Verification,
-                Codec.KeyType.Recovery,
-                recCur,
-                recNext,
-                sig,
-                batch2
-            )
+            Codec.encodeResetKeyset(Codec.KeyType.Verification, Codec.KeyType.Recovery, recCur, recNext, sig, batch2)
         );
 
         // None of batch1 remains; the rotated-in replacement is also wiped
         // by the wholesale reset.
         for (uint256 i = 0; i < 10; i++) {
-            assertFalse(
-                wallet.isKey(Codec.KeyType.Verification, verifBatch1[i])
-            );
+            assertFalse(wallet.isKey(Codec.KeyType.Verification, verifBatch1[i]));
             assertTrue(wallet.isKey(Codec.KeyType.Verification, batch2[i]));
         }
-        assertFalse(
-            wallet.isKey(Codec.KeyType.Verification, rotatedInVerifier)
-        );
+        assertFalse(wallet.isKey(Codec.KeyType.Verification, rotatedInVerifier));
         // Recovery rotation committed.
         assertFalse(wallet.isKey(Codec.KeyType.Recovery, recCur));
         assertTrue(wallet.isKey(Codec.KeyType.Recovery, recNext));
     }
 
-    function _encodeErc1271(
-        WOTSPlus.WinternitzAddress memory verifier,
-        bytes32 verifierPriv,
-        bytes32 msgHash
-    ) internal view returns (bytes memory) {
-        bytes32 digest = _buildErc1271MessageHash(
-            address(wallet),
-            verifier,
-            msgHash
-        );
+    function _encodeErc1271(WOTSPlus.WinternitzAddress memory verifier, bytes32 verifierPriv, bytes32 msgHash)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 digest = _buildErc1271MessageHash(address(wallet), verifier, msgHash);
         WOTSPlus.WinternitzElements memory sig = _sign(verifierPriv, digest);
-        bytes memory ecdsa = _ecdsaSign(
-            ALICE_KEY,
-            _buildErc1271EcdsaTarget(address(wallet), msgHash)
-        );
+        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, _buildErc1271EcdsaTarget(address(wallet), msgHash));
         return Codec.encodeErc1271Signature(verifier, sig, ecdsa);
     }
 
     /// @dev Cross-keyset uniqueness: attempting to seed verification with a
     ///      batch that includes a key currently active in the tx keyset
     ///      reverts `KeyInUse`.
-    function test_simulation_verificationCrossKeysetUniqueness_revertsOnTxKeyCollision()
-        public
-    {
+    function test_simulation_verificationCrossKeysetUniqueness_revertsOnTxKeyCollision() public {
         WOTSPlus.WinternitzAddress[10] memory batch;
         for (uint256 i = 0; i < 10; i++) {
-            (batch[i], ) = _generateKeyPair(
-                keccak256(abi.encode("verif-crossuniq", i))
-            );
+            (batch[i],) = _generateKeyPair(keccak256(abi.encode("verif-crossuniq", i)));
         }
         batch[4] = aliceTxnPubkeys[2]; // plant tx key in verification batch
         _expectKeyInUseOnResetVerification(batch, "verif-crossuniq-next");
@@ -301,48 +209,28 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
     }
 
     /// @dev Mirror — collision against a recovery key reverts `KeyInUse`.
-    function test_simulation_verificationCrossKeysetUniqueness_revertsOnRecoveryKeyCollision()
-        public
-    {
+    function test_simulation_verificationCrossKeysetUniqueness_revertsOnRecoveryKeyCollision() public {
         WOTSPlus.WinternitzAddress[10] memory batch;
         for (uint256 i = 0; i < 10; i++) {
-            (batch[i], ) = _generateKeyPair(
-                keccak256(abi.encode("verif-crossuniq-rec", i))
-            );
+            (batch[i],) = _generateKeyPair(keccak256(abi.encode("verif-crossuniq-rec", i)));
         }
         batch[0] = recoveryPubkeys[5];
         _expectKeyInUseOnResetVerification(batch, "verif-crossuniq-rec-next");
     }
 
-    function _expectKeyInUseOnResetVerification(
-        WOTSPlus.WinternitzAddress[10] memory batch,
-        bytes32 nextSeed
-    ) internal {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            nextSeed
-        );
+    function _expectKeyInUseOnResetVerification(WOTSPlus.WinternitzAddress[10] memory batch, bytes32 nextSeed)
+        internal
+    {
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair(nextSeed);
         bytes32 digest = _buildResetKeysetMessageHash(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            batch
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, address(wallet), alicePubkey, nextPq, batch
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            digest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         wallet.resetKeyset(
             Codec.encodeResetKeyset(
-                Codec.KeyType.Verification,
-                Codec.KeyType.Transaction,
-                alicePubkey,
-                nextPq,
-                sig,
-                batch
+                Codec.KeyType.Verification, Codec.KeyType.Transaction, alicePubkey, nextPq, sig, batch
             )
         );
     }

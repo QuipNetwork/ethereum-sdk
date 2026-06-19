@@ -49,13 +49,11 @@ contract QuipPaymasterInvariantHandler is Test {
 
     // Constants mirror the paymaster's; kept as local copies so the handler
     // never needs to access internal contract state.
-    address internal constant _ENTRY_POINT =
-        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address internal constant _ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
     uint256 internal constant _PAYMASTER_SIG_OFFSET = 128;
     uint128 internal constant _DEFAULT_PM_VERIFICATION_GAS = 100_000;
     uint128 internal constant _DEFAULT_PM_POSTOP_GAS = 50_000;
-    bytes32 internal constant _PAYMASTER_APPROVE_TAG =
-        keccak256("quip.digest.paymasterApprove");
+    bytes32 internal constant _PAYMASTER_APPROVE_TAG = keccak256("quip.digest.paymasterApprove");
 
     /// @dev Fixed-size pool of wallet addresses the fuzz selectors operate
     ///      against. Size 4 gives the cross-wallet isolation invariant a
@@ -111,8 +109,7 @@ contract QuipPaymasterInvariantHandler is Test {
     function initialize(InitParams calldata p) external {
         require(address(paymaster) == address(0), "handler already init");
         require(
-            p.wallets.length == p.initialPubs.length &&
-                p.wallets.length == p.initialPrivs.length,
+            p.wallets.length == p.initialPubs.length && p.wallets.length == p.initialPrivs.length,
             "init length mismatch"
         );
         paymaster = p.paymaster;
@@ -126,15 +123,11 @@ contract QuipPaymasterInvariantHandler is Test {
 
     /*══════════════════════════ helpers ════════════════════════════════*/
 
-    function _keyHash(
-        WOTSPlus.WinternitzAddress memory k
-    ) internal pure returns (bytes32) {
+    function _keyHash(WOTSPlus.WinternitzAddress memory k) internal pure returns (bytes32) {
         return EfficientHashLib.hash(k.publicSeed, k.publicKeyHash);
     }
 
-    function _isZero(
-        WOTSPlus.WinternitzAddress memory k
-    ) internal pure returns (bool) {
+    function _isZero(WOTSPlus.WinternitzAddress memory k) internal pure returns (bool) {
         return k.publicSeed == bytes32(0) && k.publicKeyHash == bytes32(0);
     }
 
@@ -147,23 +140,16 @@ contract QuipPaymasterInvariantHandler is Test {
         }
     }
 
-    function _freshKeyPair()
-        internal
-        returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv)
-    {
+    function _freshKeyPair() internal returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) {
         seedCounter++;
-        bytes32 seed = keccak256(
-            abi.encodePacked("pm-handler-fresh", seedCounter, address(this))
-        );
+        bytes32 seed = keccak256(abi.encodePacked("pm-handler-fresh", seedCounter, address(this)));
         (pub, priv) = WOTSPlus.generateKeyPair(seed);
     }
 
     /// @dev Snapshot the hashes of every wallet's current verifier
     ///      EXCEPT the one indexed by `exclude`. Used by selectors that
     ///      mutate one wallet to assert the others are untouched.
-    function _snapshotOthers(
-        uint256 exclude
-    ) internal view returns (bytes32[] memory hashes) {
+    function _snapshotOthers(uint256 exclude) internal view returns (bytes32[] memory hashes) {
         hashes = new bytes32[](wallets.length);
         for (uint256 i = 0; i < wallets.length; i++) {
             if (i == exclude) continue;
@@ -171,10 +157,7 @@ contract QuipPaymasterInvariantHandler is Test {
         }
     }
 
-    function _checkOthersUnchanged(
-        uint256 exclude,
-        bytes32[] memory pre
-    ) internal {
+    function _checkOthersUnchanged(uint256 exclude, bytes32[] memory pre) internal {
         for (uint256 i = 0; i < wallets.length; i++) {
             if (i == exclude) continue;
             bytes32 post = _keyHash(paymaster.getPqVerifier(wallets[i]));
@@ -189,62 +172,52 @@ contract QuipPaymasterInvariantHandler is Test {
     /// @dev Mirrors `QuipPaymaster._userOpBindingHash`. Memory-only —
     ///      contract uses calldata slices, but `keccak256` of identical
     ///      bytes yields the same digest regardless of source location.
-    function _userOpBindingHash(
-        PackedUserOperation memory userOp
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                bytes32(uint256(uint160(userOp.sender))),
-                bytes32(userOp.nonce),
-                EfficientHashLib.hash(userOp.initCode),
-                EfficientHashLib.hash(userOp.callData),
-                userOp.accountGasLimits,
-                bytes32(userOp.preVerificationGas),
-                userOp.gasFees,
-                EfficientHashLib.hash(
-                    _slice(userOp.paymasterAndData, 0, _PAYMASTER_SIG_OFFSET)
-                )
-            );
+    function _userOpBindingHash(PackedUserOperation memory userOp) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            bytes32(uint256(uint160(userOp.sender))),
+            bytes32(userOp.nonce),
+            EfficientHashLib.hash(userOp.initCode),
+            EfficientHashLib.hash(userOp.callData),
+            userOp.accountGasLimits,
+            bytes32(userOp.preVerificationGas),
+            userOp.gasFees,
+            EfficientHashLib.hash(_slice(userOp.paymasterAndData, 0, _PAYMASTER_SIG_OFFSET))
+        );
     }
 
     /// @dev Mirrors `QuipPaymaster._verifyAndRotate`'s outer digest.
-    function _paymasterApprovalDigest(
-        WOTSPlus.WinternitzAddress memory currentPub,
-        bytes32 bindingHash
-    ) internal view returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                _PAYMASTER_APPROVE_TAG,
-                bytes32(block.chainid),
-                bytes32(uint256(uint160(address(paymaster)))),
-                currentPub.publicSeed,
-                currentPub.publicKeyHash,
-                bindingHash
-            );
+    function _paymasterApprovalDigest(WOTSPlus.WinternitzAddress memory currentPub, bytes32 bindingHash)
+        internal
+        view
+        returns (bytes32)
+    {
+        return EfficientHashLib.hash(
+            _PAYMASTER_APPROVE_TAG,
+            bytes32(block.chainid),
+            bytes32(uint256(uint160(address(paymaster)))),
+            currentPub.publicSeed,
+            currentPub.publicKeyHash,
+            bindingHash
+        );
     }
 
-    function _paymasterAndDataPrefix(
-        uint48 validUntil,
-        uint48 validAfter,
-        WOTSPlus.WinternitzAddress memory nextPub
-    ) internal view returns (bytes memory) {
-        return
-            abi.encodePacked(
-                address(paymaster),
-                _DEFAULT_PM_VERIFICATION_GAS,
-                _DEFAULT_PM_POSTOP_GAS,
-                validUntil,
-                validAfter,
-                nextPub.publicSeed,
-                nextPub.publicKeyHash
-            );
+    function _paymasterAndDataPrefix(uint48 validUntil, uint48 validAfter, WOTSPlus.WinternitzAddress memory nextPub)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encodePacked(
+            address(paymaster),
+            _DEFAULT_PM_VERIFICATION_GAS,
+            _DEFAULT_PM_POSTOP_GAS,
+            validUntil,
+            validAfter,
+            nextPub.publicSeed,
+            nextPub.publicKeyHash
+        );
     }
 
-    function _slice(
-        bytes memory data,
-        uint256 start,
-        uint256 len
-    ) internal pure returns (bytes memory out) {
+    function _slice(bytes memory data, uint256 start, uint256 len) internal pure returns (bytes memory out) {
         out = new bytes(len);
         for (uint256 i = 0; i < len; i++) {
             out[i] = data[start + i];
@@ -255,25 +228,18 @@ contract QuipPaymasterInvariantHandler is Test {
     ///      selectors only mutate `paymasterAndData`; all other fields
     ///      stay at fixed defaults so the binding hash construction has
     ///      no DOF that the handler doesn't already control.
-    function _mockUserOp(
-        address sender_
-    ) internal pure returns (PackedUserOperation memory) {
-        return
-            PackedUserOperation({
-                sender: sender_,
-                nonce: 0,
-                initCode: "",
-                callData: "",
-                accountGasLimits: bytes32(
-                    (uint256(100_000) << 128) | uint256(100_000)
-                ),
-                preVerificationGas: 21_000,
-                gasFees: bytes32(
-                    (uint256(1 gwei) << 128) | uint256(10 gwei)
-                ),
-                paymasterAndData: "",
-                signature: ""
-            });
+    function _mockUserOp(address sender_) internal pure returns (PackedUserOperation memory) {
+        return PackedUserOperation({
+            sender: sender_,
+            nonce: 0,
+            initCode: "",
+            callData: "",
+            accountGasLimits: bytes32((uint256(100_000) << 128) | uint256(100_000)),
+            preVerificationGas: 21_000,
+            gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
+            paymasterAndData: "",
+            signature: ""
+        });
     }
 
     /// @dev Build a fully-signed UserOp for `wallet` rotating from
@@ -286,11 +252,7 @@ contract QuipPaymasterInvariantHandler is Test {
         WOTSPlus.WinternitzAddress memory nextPub
     ) internal view returns (PackedUserOperation memory userOp) {
         userOp = _mockUserOp(wallet);
-        bytes memory prefix = _paymasterAndDataPrefix(
-            uint48(block.timestamp + 1 hours),
-            uint48(0),
-            nextPub
-        );
+        bytes memory prefix = _paymasterAndDataPrefix(uint48(block.timestamp + 1 hours), uint48(0), nextPub);
         // Pad with 2144 zero bytes (signature region placeholder) so the
         // binding hash hashes the right prefix length. The placeholder is
         // excluded from the hash via `[:_PAYMASTER_SIG_OFFSET]`.
@@ -298,10 +260,7 @@ contract QuipPaymasterInvariantHandler is Test {
 
         bytes32 bindingHash = _userOpBindingHash(userOp);
         bytes32 digest = _paymasterApprovalDigest(curPub_, bindingHash);
-        bytes32[67] memory sig = WOTSPlus.sign(
-            curPriv_,
-            WOTSPlus.WinternitzMessage({messageHash: digest})
-        );
+        bytes32[67] memory sig = WOTSPlus.sign(curPriv_, WOTSPlus.WinternitzMessage({messageHash: digest}));
 
         userOp.paymasterAndData = abi.encodePacked(prefix, sig);
     }
@@ -316,10 +275,7 @@ contract QuipPaymasterInvariantHandler is Test {
     function fuzzSetPqVerifier(uint256 walletIdx) external {
         walletIdx = bound(walletIdx, 0, wallets.length - 1);
         address w = wallets[walletIdx];
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _freshKeyPair();
 
         bytes32[] memory pre = _snapshotOthers(walletIdx);
 
@@ -372,10 +328,7 @@ contract QuipPaymasterInvariantHandler is Test {
         bytes32 prePriv = curPriv[w];
 
         // Fresh next-key for rotation.
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
 
         bytes32[] memory pre = _snapshotOthers(walletIdx);
 
@@ -388,22 +341,12 @@ contract QuipPaymasterInvariantHandler is Test {
             // zero-filled signature placeholder; the no-verifier branch
             // fires before `WOTSPlus.verify` runs.
             userOp = _mockUserOp(w);
-            bytes memory prefix = _paymasterAndDataPrefix(
-                uint48(block.timestamp + 1 hours),
-                uint48(0),
-                nextPub
-            );
-            userOp.paymasterAndData = abi.encodePacked(
-                prefix,
-                new bytes(2144)
-            );
+            bytes memory prefix = _paymasterAndDataPrefix(uint48(block.timestamp + 1 hours), uint48(0), nextPub);
+            userOp.paymasterAndData = abi.encodePacked(prefix, new bytes(2144));
         }
 
         vm.prank(_ENTRY_POINT);
-        try paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0) returns (
-            bytes memory,
-            uint256 vd
-        ) {
+        try paymaster.validatePaymasterUserOp(userOp, bytes32(0), 0) returns (bytes memory, uint256 vd) {
             // ERC-4337 packs validationData as
             //   [0:160)  authorizer (0 = success, 1 = SIG_VALIDATION_FAILED)
             //   [160:208) validUntil
@@ -421,12 +364,8 @@ contract QuipPaymasterInvariantHandler is Test {
                 } else {
                     callsValidateSuccess++;
                     // Postcondition: stored verifier == nextPub.
-                    WOTSPlus.WinternitzAddress memory stored = paymaster
-                        .getPqVerifier(w);
-                    if (
-                        stored.publicSeed != nextPub.publicSeed ||
-                        stored.publicKeyHash != nextPub.publicKeyHash
-                    ) {
+                    WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(w);
+                    if (stored.publicSeed != nextPub.publicSeed || stored.publicKeyHash != nextPub.publicKeyHash) {
                         successDidNotAdvanceCount++;
                     }
                     // Mirror the rotation.
@@ -452,10 +391,7 @@ contract QuipPaymasterInvariantHandler is Test {
     ///      contract MUST revert `VerifierKeyInUse`; a non-revert
     ///      increments `improperRebindSuccessCount` which the invariant
     ///      asserts is zero.
-    function fuzzAttemptRebindUsedKey(
-        uint256 walletIdx,
-        uint256 historyIdx
-    ) external {
+    function fuzzAttemptRebindUsedKey(uint256 walletIdx, uint256 historyIdx) external {
         if (everUsedPubs.length == 0) {
             revertCount++;
             return;
@@ -470,10 +406,7 @@ contract QuipPaymasterInvariantHandler is Test {
         // key, the contract just emits and returns — neither a violation
         // nor a useful test.
         WOTSPlus.WinternitzAddress memory cur = curPub[w];
-        if (
-            cur.publicSeed == hist.publicSeed &&
-            cur.publicKeyHash == hist.publicKeyHash
-        ) {
+        if (cur.publicSeed == hist.publicSeed && cur.publicKeyHash == hist.publicKeyHash) {
             return;
         }
 
@@ -493,10 +426,7 @@ contract QuipPaymasterInvariantHandler is Test {
         } catch (bytes memory reason) {
             // Verify the revert reason is the expected one. Other reverts
             // (e.g. ZeroValuePqVerifierKey) indicate a different bug.
-            if (
-                bytes4(reason) ==
-                IQuipPaymaster.VerifierKeyInUse.selector
-            ) {
+            if (bytes4(reason) == IQuipPaymaster.VerifierKeyInUse.selector) {
                 callsAttemptRebindRevert++;
             } else {
                 revertCount++;
@@ -519,15 +449,11 @@ contract QuipPaymasterInvariantHandler is Test {
         return everUsedPubs.length;
     }
 
-    function everUsedAt(
-        uint256 i
-    ) external view returns (WOTSPlus.WinternitzAddress memory) {
+    function everUsedAt(uint256 i) external view returns (WOTSPlus.WinternitzAddress memory) {
         return everUsedPubs[i];
     }
 
-    function currentVerifier(
-        address w
-    ) external view returns (WOTSPlus.WinternitzAddress memory) {
+    function currentVerifier(address w) external view returns (WOTSPlus.WinternitzAddress memory) {
         return curPub[w];
     }
 }

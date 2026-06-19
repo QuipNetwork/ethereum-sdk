@@ -20,9 +20,7 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
 
     constructor(address payable factory_) WOTSPlusImplementation(factory_) {}
 
-    function _set(
-        HarnessKeyset kind
-    ) internal view returns (Keyset.WinternitzAddressSet storage) {
+    function _set(HarnessKeyset kind) internal view returns (Keyset.WinternitzAddressSet storage) {
         Storage.Layout storage $ = Storage.layout();
         if (kind == HarnessKeyset.Transaction) return $.transactionKeys;
         if (kind == HarnessKeyset.Recovery) return $.recoveryKeys;
@@ -34,10 +32,7 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
     ///      retired `_addKeys` wallet helper. Callers that exceed `MAX_KEYS`
     ///      or supply a historically-spent key get the corresponding
     ///      `_safeAddKey` revert (`KeyAdditionFailed` / `KeyInUse`).
-    function exposed_addKeys(
-        HarnessKeyset kind,
-        WOTSPlus.WinternitzAddress[] calldata keys
-    ) external {
+    function exposed_addKeys(HarnessKeyset kind, WOTSPlus.WinternitzAddress[] calldata keys) external {
         Keyset.WinternitzAddressSet storage set = _set(kind);
         for (uint256 i = 0; i < keys.length; i++) {
             _safeAddKey(set, keys[i]);
@@ -54,10 +49,7 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
     ///      tests that target downstream behaviour and don't want to thread
     ///      a full WOTS+-authenticated rotation through setup. NOT a path
     ///      that exists on the production contract.
-    function burnKey(
-        HarnessKeyset kind,
-        WOTSPlus.WinternitzAddress calldata key
-    ) external {
+    function burnKey(HarnessKeyset kind, WOTSPlus.WinternitzAddress calldata key) external {
         _safeRemoveKey(_set(kind), key);
     }
 
@@ -69,50 +61,34 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
         _rotateKeys(_set(kind), currentKey, nextKey);
     }
 
-    function exposed_safeAddKey(
-        HarnessKeyset kind,
-        WOTSPlus.WinternitzAddress calldata key
-    ) external {
+    function exposed_safeAddKey(HarnessKeyset kind, WOTSPlus.WinternitzAddress calldata key) external {
         _safeAddKey(_set(kind), key);
     }
 
-    function exposed_safeRemoveKey(
-        HarnessKeyset kind,
-        WOTSPlus.WinternitzAddress calldata key
-    ) external {
+    function exposed_safeRemoveKey(HarnessKeyset kind, WOTSPlus.WinternitzAddress calldata key) external {
         _safeRemoveKey(_set(kind), key);
     }
 
-    function exposed_enforceContained(
-        HarnessKeyset kind,
-        WOTSPlus.WinternitzAddress calldata key
-    ) external view {
+    function exposed_enforceContained(HarnessKeyset kind, WOTSPlus.WinternitzAddress calldata key) external view {
         _enforceContained(_set(kind), key);
     }
 
-    function exposed_enforceUncontained(
-        HarnessKeyset kind,
-        WOTSPlus.WinternitzAddress calldata key
-    ) external view {
+    function exposed_enforceUncontained(HarnessKeyset kind, WOTSPlus.WinternitzAddress calldata key) external view {
         _enforceUncontained(_set(kind), key);
     }
 
-    function exposed_isKeySpent(
-        WOTSPlus.WinternitzAddress calldata key
-    ) external view returns (bool) {
+    function exposed_isKeySpent(WOTSPlus.WinternitzAddress calldata key) external view returns (bool) {
         return _isKeySpent(key);
     }
 
-    function exposed_enforceUnspentKey(
-        WOTSPlus.WinternitzAddress calldata key
-    ) external view {
+    function exposed_enforceUnspentKey(WOTSPlus.WinternitzAddress calldata key) external view {
         _enforceUnspentKey(key);
     }
 
-    function exposed_enforceDifferentKeys(
-        WOTSPlus.WinternitzAddress calldata a,
-        WOTSPlus.WinternitzAddress calldata b
-    ) external pure {
+    function exposed_enforceDifferentKeys(WOTSPlus.WinternitzAddress calldata a, WOTSPlus.WinternitzAddress calldata b)
+        external
+        pure
+    {
         _enforceDifferentKeys(a, b);
     }
 
@@ -121,17 +97,13 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
     ///      `_installInitialKeys` (which also requires keyset payloads). Routes
     ///      through `_setDisasterRecoveryKey` so the monotonic `isKeySpent` index is
     ///      marked just as it would be in production.
-    function setDisasterRecoveryKey(
-        WOTSPlus.WinternitzAddress calldata key
-    ) external {
+    function setDisasterRecoveryKey(WOTSPlus.WinternitzAddress calldata key) external {
         _setDisasterRecoveryKey(key);
     }
 
     /// @dev Test-only escape hatch: writes the ownership key directly. See
     ///      `setDisasterRecoveryKey` for rationale.
-    function setOwnershipKey(
-        WOTSPlus.WinternitzAddress calldata key
-    ) external {
+    function setOwnershipKey(WOTSPlus.WinternitzAddress calldata key) external {
         _setOwnershipKey(key);
     }
 
@@ -164,10 +136,10 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
         return v;
     }
 
-    function exposed_validateSignature(
-        ERC4337.PackedUserOperation calldata userOp,
-        bytes32 userOpHash
-    ) external returns (uint256) {
+    function exposed_validateSignature(ERC4337.PackedUserOperation calldata userOp, bytes32 userOpHash)
+        external
+        returns (uint256)
+    {
         return _validateSignature(userOp, userOpHash);
     }
 
@@ -184,16 +156,15 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
     /// @dev Exposes `_keyset` by returning the set's length — a proxy observation since
     ///      storage references cannot cross the ABI boundary. Pairing this with
     ///      `exposed_keysetContains` is sufficient to verify the correct set is selected.
-    function exposed_keysetLength(
-        Codec.KeyType kind
-    ) external view returns (uint256) {
+    function exposed_keysetLength(Codec.KeyType kind) external view returns (uint256) {
         return _keyset(kind).length();
     }
 
-    function exposed_keysetContains(
-        Codec.KeyType kind,
-        WOTSPlus.WinternitzAddress calldata key
-    ) external view returns (bool) {
+    function exposed_keysetContains(Codec.KeyType kind, WOTSPlus.WinternitzAddress calldata key)
+        external
+        view
+        returns (bool)
+    {
         return _keyset(kind).contains(key);
     }
 
@@ -209,9 +180,7 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
         _collectExecuteFee();
     }
 
-    function exposed_reinitializeAndTransferOwnership(
-        bytes calldata payload
-    ) external {
+    function exposed_reinitializeAndTransferOwnership(bytes calldata payload) external {
         _reinitializeAndTransferOwnership(payload);
     }
 
@@ -222,26 +191,14 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
         WOTSPlus.WinternitzAddress[10] calldata recoveryKeys,
         WOTSPlus.WinternitzAddress[10] calldata verificationKeys
     ) external {
-        _installInitialKeys(
-            disasterRecoveryKey,
-            ownershipKey,
-            transactionKeys,
-            recoveryKeys,
-            verificationKeys
-        );
+        _installInitialKeys(disasterRecoveryKey, ownershipKey, transactionKeys, recoveryKeys, verificationKeys);
     }
 
-    function exposed_snapshotGuardedSlots()
-        external
-        view
-        returns (bytes32[7] memory)
-    {
+    function exposed_snapshotGuardedSlots() external view returns (bytes32[7] memory) {
         return _snapshotGuardedSlots();
     }
 
-    function exposed_assertGuardedSlotsUnchanged(
-        bytes32[7] memory snapshot
-    ) external view {
+    function exposed_assertGuardedSlotsUnchanged(bytes32[7] memory snapshot) external view {
         _assertGuardedSlotsUnchanged(snapshot);
     }
 
@@ -250,9 +207,7 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
     ///      `upgradeToAndCall` round-trip. Transient storage is contract-scoped,
     ///      so the tstore set here is visible when the `this.migrate` call
     ///      re-enters this same contract.
-    function exposed_migrateInUpgradeContext(
-        bytes calldata payload
-    ) external {
+    function exposed_migrateInUpgradeContext(bytes calldata payload) external {
         uint256 slot = 0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
         assembly {
             tstore(slot, 1)

@@ -21,26 +21,15 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         bare = new WOTSPlusImplementationHarness(payable(address(factory)));
     }
 
-    function _makeKey(
-        uint256 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(seed),
-                publicKeyHash: bytes32(seed + 1000)
-            });
+    function _makeKey(uint256 seed) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: bytes32(seed), publicKeyHash: bytes32(seed + 1000)});
     }
 
-    function test_exposed_isKeySpent_returnsFalse_whenIndexEmpty()
-        public
-        view
-    {
+    function test_exposed_isKeySpent_returnsFalse_whenIndexEmpty() public view {
         assertFalse(bare.exposed_isKeySpent(_makeKey(0x01)));
     }
 
-    function test_exposed_isKeySpent_returnsTrue_whenInTransactionSet()
-        public
-    {
+    function test_exposed_isKeySpent_returnsTrue_whenInTransactionSet() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0x10);
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
         assertTrue(bare.exposed_isKeySpent(key));
@@ -52,25 +41,19 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         assertTrue(bare.exposed_isKeySpent(key));
     }
 
-    function test_exposed_isKeySpent_returnsTrue_whenInVerificationSet()
-        public
-    {
+    function test_exposed_isKeySpent_returnsTrue_whenInVerificationSet() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0x30);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
         assertTrue(bare.exposed_isKeySpent(key));
     }
 
-    function test_exposed_isKeySpent_returnsTrue_whenSetAsDisasterKey()
-        public
-    {
+    function test_exposed_isKeySpent_returnsTrue_whenSetAsDisasterKey() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0x40);
         bare.setDisasterRecoveryKey(key);
         assertTrue(bare.exposed_isKeySpent(key));
     }
 
-    function test_exposed_isKeySpent_returnsTrue_whenSetAsOwnershipKey()
-        public
-    {
+    function test_exposed_isKeySpent_returnsTrue_whenSetAsOwnershipKey() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0x50);
         bare.setOwnershipKey(key);
         assertTrue(bare.exposed_isKeySpent(key));
@@ -83,10 +66,8 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         WOTSPlus.WinternitzAddress memory stored = _makeKey(0x60);
         bare.setDisasterRecoveryKey(stored);
 
-        WOTSPlus.WinternitzAddress memory probe = WOTSPlus.WinternitzAddress({
-            publicSeed: stored.publicSeed,
-            publicKeyHash: bytes32(uint256(0x9999))
-        });
+        WOTSPlus.WinternitzAddress memory probe =
+            WOTSPlus.WinternitzAddress({publicSeed: stored.publicSeed, publicKeyHash: bytes32(uint256(0x9999))});
         assertFalse(bare.exposed_isKeySpent(probe));
     }
 
@@ -109,33 +90,24 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
     ///      check, so the burn check must not poison legitimate "is this fresh?"
     ///      probes against uninitialized slots.
     function test_exposed_isKeySpent_returnsFalse_whenZeroSeed() public view {
-        WOTSPlus.WinternitzAddress memory key = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(uint256(0xabc))
-        });
+        WOTSPlus.WinternitzAddress memory key =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(0xabc))});
         assertFalse(bare.exposed_isKeySpent(key));
     }
 
     function test_exposed_isKeySpent_returnsFalse_whenZeroHash() public view {
-        WOTSPlus.WinternitzAddress memory key = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(0xabc)),
-            publicKeyHash: bytes32(0)
-        });
+        WOTSPlus.WinternitzAddress memory key =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(0xabc)), publicKeyHash: bytes32(0)});
         assertFalse(bare.exposed_isKeySpent(key));
     }
 
     /*──────────────────────── _enforceUnspentKey ─────────────────────────*/
 
-    function test_exposed_enforceUnspentKey_passes_whenIndexEmpty()
-        public
-        view
-    {
+    function test_exposed_enforceUnspentKey_passes_whenIndexEmpty() public view {
         bare.exposed_enforceUnspentKey(_makeKey(0x70));
     }
 
-    function test_exposed_enforceUnspentKey_reverts_whenInTransactionSet()
-        public
-    {
+    function test_exposed_enforceUnspentKey_reverts_whenInTransactionSet() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0x80);
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
 
@@ -151,9 +123,7 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         bare.exposed_enforceUnspentKey(key);
     }
 
-    function test_exposed_enforceUnspentKey_reverts_whenInVerificationSet()
-        public
-    {
+    function test_exposed_enforceUnspentKey_reverts_whenInVerificationSet() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xa0);
         bare.exposed_safeAddKey(HarnessKeyset.Verification, key);
 
@@ -161,9 +131,7 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         bare.exposed_enforceUnspentKey(key);
     }
 
-    function test_exposed_enforceUnspentKey_reverts_whenSetAsDisasterKey()
-        public
-    {
+    function test_exposed_enforceUnspentKey_reverts_whenSetAsDisasterKey() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xb0);
         bare.setDisasterRecoveryKey(key);
 
@@ -171,9 +139,7 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         bare.exposed_enforceUnspentKey(key);
     }
 
-    function test_exposed_enforceUnspentKey_reverts_whenSetAsOwnershipKey()
-        public
-    {
+    function test_exposed_enforceUnspentKey_reverts_whenSetAsOwnershipKey() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xc0);
         bare.setOwnershipKey(key);
 
@@ -196,9 +162,7 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         bare.exposed_enforceUnspentKey(key);
     }
 
-    function test_exposed_safeAddKey_reverts_whenReintroducingSpentKey()
-        public
-    {
+    function test_exposed_safeAddKey_reverts_whenReintroducingSpentKey() public {
         WOTSPlus.WinternitzAddress memory key = _makeKey(0xe1);
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
         bare.burnKey(HarnessKeyset.Transaction, key);
@@ -208,9 +172,7 @@ contract WOTSPlusImplementation__isKeySpent is WOTSPlusImplementationTest {
         bare.exposed_safeAddKey(HarnessKeyset.Transaction, key);
     }
 
-    function test_exposed_safeAddKey_reverts_whenReintroducingSpentKey_crossKeyset()
-        public
-    {
+    function test_exposed_safeAddKey_reverts_whenReintroducingSpentKey_crossKeyset() public {
         // Spend a key in the Transaction set, then try to re-install it in
         // the Recovery set. Cross-keyset reuse is the most insidious form of
         // the attack and the one most likely to slip through a less-strict

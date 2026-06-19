@@ -30,15 +30,9 @@ contract WOTSPlusImplementation_LocalHeavy_Invariant is WOTSPlusImplementationIn
 
         bytes4[] memory selectors = new bytes4[](4);
         selectors[0] = WOTSPlusImplementationInvariantHandler.fuzzSaveWallet.selector;
-        selectors[1] = WOTSPlusImplementationInvariantHandler
-            .fuzzTransferOwnership
-            .selector;
-        selectors[2] = WOTSPlusImplementationInvariantHandler
-            .fuzzUpgradeToAndCall
-            .selector;
+        selectors[1] = WOTSPlusImplementationInvariantHandler.fuzzTransferOwnership.selector;
+        selectors[2] = WOTSPlusImplementationInvariantHandler.fuzzUpgradeToAndCall.selector;
         selectors[3] = WOTSPlusImplementationInvariantHandler.fuzzRecoveryUpgrade.selector;
-        targetSelector(
-            FuzzSelector({addr: address(handler), selectors: selectors})
-        );
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 }

@@ -13,10 +13,7 @@ contract QuipPaymaster_initialize is QuipPaymasterTest {
 
     function test_initialize_emitsPaymasterInitialized() public {
         QuipPaymaster freshImpl = new QuipPaymaster();
-        address proxy = _deployProxy(
-            address(freshImpl),
-            keccak256("init-test")
-        );
+        address proxy = _deployProxy(address(freshImpl), keccak256("init-test"));
 
         vm.expectEmit(true, false, false, false);
         emit IQuipPaymaster.PaymasterInitialized(ADMIN);
@@ -25,10 +22,7 @@ contract QuipPaymaster_initialize is QuipPaymasterTest {
 
     function test_initialize_revertsWhen_zeroOwner() public {
         QuipPaymaster freshImpl = new QuipPaymaster();
-        address proxy = _deployProxy(
-            address(freshImpl),
-            keccak256("zero-owner")
-        );
+        address proxy = _deployProxy(address(freshImpl), keccak256("zero-owner"));
 
         vm.expectRevert(IQuipPaymaster.ZeroAddressOwner.selector);
         QuipPaymaster(payable(proxy)).initialize(address(0));

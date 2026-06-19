@@ -28,24 +28,12 @@ contract QuipFactory_Local_Invariant is QuipFactoryInvariantBase {
         // them is a guaranteed revert that consumes budget without
         // exploring real state.
         bytes4[] memory selectors = new bytes4[](5);
-        selectors[0] = QuipFactoryInvariantHandler
-            .fuzzVetImplementation
-            .selector;
-        selectors[1] = QuipFactoryInvariantHandler
-            .fuzzDeprecateImplementation
-            .selector;
-        selectors[2] = QuipFactoryInvariantHandler
-            .fuzzUndeprecateImplementation
-            .selector;
-        selectors[3] = QuipFactoryInvariantHandler
-            .fuzzSetCreationFee
-            .selector;
-        selectors[4] = QuipFactoryInvariantHandler
-            .fuzzSetExecuteFee
-            .selector;
-        targetSelector(
-            FuzzSelector({addr: address(handler), selectors: selectors})
-        );
+        selectors[0] = QuipFactoryInvariantHandler.fuzzVetImplementation.selector;
+        selectors[1] = QuipFactoryInvariantHandler.fuzzDeprecateImplementation.selector;
+        selectors[2] = QuipFactoryInvariantHandler.fuzzUndeprecateImplementation.selector;
+        selectors[3] = QuipFactoryInvariantHandler.fuzzSetCreationFee.selector;
+        selectors[4] = QuipFactoryInvariantHandler.fuzzSetExecuteFee.selector;
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
     /// @dev Audit finding §7 — `latestWalletImpl` must always be either
@@ -60,19 +48,9 @@ contract QuipFactory_Local_Invariant is QuipFactoryInvariantBase {
         if (latest == address(0)) return;
         bytes32 ch = latest.codehash;
         uint256 idx = factory.getVettedCodeIndex(ch);
-        assertTrue(
-            idx != type(uint256).max,
-            "latest codehash not in vetted set"
-        );
-        assertEq(
-            factory.vettedWalletImpls(ch),
-            latest,
-            "latest is not the registered impl for its codehash"
-        );
-        assertFalse(
-            factory.deprecatedImpls(ch),
-            "latest impl's codehash is deprecated"
-        );
+        assertTrue(idx != type(uint256).max, "latest codehash not in vetted set");
+        assertEq(factory.vettedWalletImpls(ch), latest, "latest is not the registered impl for its codehash");
+        assertFalse(factory.deprecatedImpls(ch), "latest impl's codehash is deprecated");
     }
 
     /// @dev Audit restatement — the temporal property "a deprecated impl
@@ -88,10 +66,7 @@ contract QuipFactory_Local_Invariant is QuipFactoryInvariantBase {
         for (uint256 i = 0; i < n; i++) {
             bytes32 ch = handler.everVettedAt(i);
             if (!factory.deprecatedImpls(ch)) continue;
-            assertTrue(
-                factory.vettedWalletImpls(ch) != latest,
-                "deprecated codehash resolves to selected latest"
-            );
+            assertTrue(factory.vettedWalletImpls(ch) != latest, "deprecated codehash resolves to selected latest");
         }
     }
 
@@ -109,11 +84,7 @@ contract QuipFactory_Local_Invariant is QuipFactoryInvariantBase {
             bytes32 ch = factory.getVettedCodeAt(i);
             address impl = factory.vettedWalletImpls(ch);
             assertTrue(impl != address(0), "vetted codehash has zero impl");
-            assertEq(
-                impl.codehash,
-                ch,
-                "registered impl codehash diverged from key"
-            );
+            assertEq(impl.codehash, ch, "registered impl codehash diverged from key");
         }
     }
 
@@ -143,9 +114,7 @@ contract QuipFactory_Local_Invariant is QuipFactoryInvariantBase {
     ///      match the factory's vetted-code length at every boundary.
     function invariant_vettedCodeMonotone() public view {
         assertEq(
-            factory.getVettedCodeCount(),
-            handler.everVettedCount(),
-            "vetted code length diverged from handler mirror"
+            factory.getVettedCodeCount(), handler.everVettedCount(), "vetted code length diverged from handler mirror"
         );
     }
 }

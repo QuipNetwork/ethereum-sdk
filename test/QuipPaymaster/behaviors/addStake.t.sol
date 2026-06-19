@@ -8,12 +8,7 @@ contract QuipPaymaster_addStake is QuipPaymasterTest {
     function test_addStake_stakesWithEntryPoint() public {
         uint256 amount = 1 ether;
 
-        vm.mockCall(
-            ENTRY_POINT,
-            amount,
-            abi.encodeWithSignature("addStake(uint32)", uint32(86_400)),
-            ""
-        );
+        vm.mockCall(ENTRY_POINT, amount, abi.encodeWithSignature("addStake(uint32)", uint32(86_400)), "");
 
         vm.prank(ADMIN);
         paymaster.addStake{value: amount}(86_400);

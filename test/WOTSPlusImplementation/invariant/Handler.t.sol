@@ -118,31 +118,21 @@ contract WOTSPlusImplementationInvariantHandler is Test {
 
     /*══════════════════════════ helpers ════════════════════════════════*/
 
-    function _keyHash(
-        WOTSPlus.WinternitzAddress memory k
-    ) internal pure returns (bytes32) {
+    function _keyHash(WOTSPlus.WinternitzAddress memory k) internal pure returns (bytes32) {
         return keccak256(abi.encode(k));
     }
 
-    function _installTxnKey(
-        WOTSPlus.WinternitzAddress memory pub,
-        bytes32 priv
-    ) internal {
+    function _installTxnKey(WOTSPlus.WinternitzAddress memory pub, bytes32 priv) internal {
         txnPriv[_keyHash(pub)] = priv;
         everInstalled.push(pub);
     }
 
-    function _installRecKey(
-        WOTSPlus.WinternitzAddress memory pub,
-        bytes32 priv
-    ) internal {
+    function _installRecKey(WOTSPlus.WinternitzAddress memory pub, bytes32 priv) internal {
         recPriv[_keyHash(pub)] = priv;
         everInstalled.push(pub);
     }
 
-    function _markEverInstalled(
-        WOTSPlus.WinternitzAddress memory pub
-    ) internal {
+    function _markEverInstalled(WOTSPlus.WinternitzAddress memory pub) internal {
         everInstalled.push(pub);
     }
 
@@ -154,37 +144,24 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         delete recPriv[_keyHash(pub)];
     }
 
-    function _freshKeyPair()
-        internal
-        returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv)
-    {
+    function _freshKeyPair() internal returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) {
         seedCounter++;
-        bytes32 seed = keccak256(
-            abi.encodePacked("handler-fresh", seedCounter, address(this))
-        );
+        bytes32 seed = keccak256(abi.encodePacked("handler-fresh", seedCounter, address(this)));
         (pub, priv) = WOTSPlus.generateKeyPair(seed);
     }
 
-    function _freshKeySet10()
-        internal
-        returns (
-            WOTSPlus.WinternitzAddress[10] memory pubs,
-            bytes32[10] memory privs
-        )
-    {
+    function _freshKeySet10() internal returns (WOTSPlus.WinternitzAddress[10] memory pubs, bytes32[10] memory privs) {
         for (uint256 i = 0; i < 10; i++) {
             (pubs[i], privs[i]) = _freshKeyPair();
         }
     }
 
-    function _signWith(
-        bytes32 privateKey,
-        bytes32 messageHash
-    ) internal pure returns (WOTSPlus.WinternitzElements memory) {
-        bytes32[67] memory elements = WOTSPlus.sign(
-            privateKey,
-            WOTSPlus.WinternitzMessage({messageHash: messageHash})
-        );
+    function _signWith(bytes32 privateKey, bytes32 messageHash)
+        internal
+        pure
+        returns (WOTSPlus.WinternitzElements memory)
+    {
+        bytes32[67] memory elements = WOTSPlus.sign(privateKey, WOTSPlus.WinternitzMessage({messageHash: messageHash}));
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 
@@ -193,10 +170,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     ///      whose hash maps to a non-zero priv. Reverts (returns priv=0)
     ///      only if the handler's tracking has drifted — which is itself
     ///      a bug worth surfacing.
-    function _pickSigningKey(
-        Codec.KeyType kind,
-        uint256 seed
-    )
+    function _pickSigningKey(Codec.KeyType kind, uint256 seed)
         internal
         view
         returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv)
@@ -207,9 +181,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         uint256 start = seed % n;
         for (uint256 i = 0; i < n; i++) {
             WOTSPlus.WinternitzAddress memory cand = live[(start + i) % n];
-            bytes32 p = (kind == Codec.KeyType.Transaction)
-                ? txnPriv[_keyHash(cand)]
-                : recPriv[_keyHash(cand)];
+            bytes32 p = (kind == Codec.KeyType.Transaction) ? txnPriv[_keyHash(cand)] : recPriv[_keyHash(cand)];
             if (p != bytes32(0)) {
                 return (cand, p);
             }
@@ -221,18 +193,16 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     ///      EXCLUDING `excludeHash`. Walks indices deterministically from
     ///      `seed`. Returns empty array if the live keyset doesn't have
     ///      `n` non-excluded entries.
-    function _pickOldKeys(
-        Codec.KeyType kind,
-        uint256 n,
-        uint256 seed,
-        bytes32 excludeHash
-    ) internal view returns (WOTSPlus.WinternitzAddress[] memory) {
+    function _pickOldKeys(Codec.KeyType kind, uint256 n, uint256 seed, bytes32 excludeHash)
+        internal
+        view
+        returns (WOTSPlus.WinternitzAddress[] memory)
+    {
         WOTSPlus.WinternitzAddress[] memory live = wallet.getKeyset(kind);
         uint256 len = live.length;
         if (len < n) return new WOTSPlus.WinternitzAddress[](0);
 
-        WOTSPlus.WinternitzAddress[]
-            memory picks = new WOTSPlus.WinternitzAddress[](n);
+        WOTSPlus.WinternitzAddress[] memory picks = new WOTSPlus.WinternitzAddress[](n);
         uint256 filled;
         uint256 start = seed % len;
         for (uint256 step = 0; step < len && filled < n; step++) {
@@ -248,15 +218,9 @@ contract WOTSPlusImplementationInvariantHandler is Test {
 
     /// @dev Tx-signed `execute(target=handler, value, "")`.
     function fuzzExecute(uint256 keyIndex, uint256 valueSeed) external {
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            bytes32 priv
-        ) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
+        (WOTSPlus.WinternitzAddress memory cur, bytes32 priv) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
         if (priv == bytes32(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
 
         uint256 walletBal = address(wallet).balance;
         uint256 cap = walletBal > 1 ether ? 1 ether : walletBal;
@@ -276,18 +240,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         );
         WOTSPlus.WinternitzElements memory sig = _signWith(priv, digest);
 
-        try
-            wallet.execute(
-                Codec.encodeExecute(
-                    cur,
-                    nextPub,
-                    sig,
-                    address(this),
-                    value,
-                    ""
-                )
-            )
-        returns (bytes memory) {
+        try wallet.execute(Codec.encodeExecute(cur, nextPub, sig, address(this), value, "")) returns (bytes memory) {
             _consumeTxnKey(cur);
             _installTxnKey(nextPub, nextPriv);
             callsExecute++;
@@ -297,15 +250,9 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     }
 
     function fuzzWithdrawDepositTo(uint256 keyIndex, uint256 amount) external {
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            bytes32 priv
-        ) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
+        (WOTSPlus.WinternitzAddress memory cur, bytes32 priv) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
         if (priv == bytes32(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
 
         bytes32 digest = Codec.withdrawDepositDigest(
             address(wallet),
@@ -319,17 +266,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         );
         WOTSPlus.WinternitzElements memory sig = _signWith(priv, digest);
 
-        try
-            wallet.withdrawDepositTo(
-                Codec.encodeWithdrawDeposit(
-                    cur,
-                    nextPub,
-                    sig,
-                    address(this),
-                    amount
-                )
-            )
-        {
+        try wallet.withdrawDepositTo(Codec.encodeWithdrawDeposit(cur, nextPub, sig, address(this), amount)) {
             _consumeTxnKey(cur);
             _installTxnKey(nextPub, nextPriv);
             callsWithdraw++;
@@ -340,28 +277,15 @@ contract WOTSPlusImplementationInvariantHandler is Test {
 
     /*──────────────────────── resetKeyset family ────────────────────────*/
 
-    function fuzzResetKeysetTransaction_recoverySigned(
-        uint256 keyIndex
-    ) external {
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            bytes32 priv
-        ) = _pickSigningKey(Codec.KeyType.Recovery, keyIndex);
+    function fuzzResetKeysetTransaction_recoverySigned(uint256 keyIndex) external {
+        (WOTSPlus.WinternitzAddress memory cur, bytes32 priv) = _pickSigningKey(Codec.KeyType.Recovery, keyIndex);
         if (priv == bytes32(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
-        (
-            WOTSPlus.WinternitzAddress[10] memory newPubs,
-            bytes32[10] memory newPrivs
-        ) = _freshKeySet10();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress[10] memory newPubs, bytes32[10] memory newPrivs) = _freshKeySet10();
 
         // Snapshot keys to be evicted BEFORE the call so we can clear their
         // priv entries on success without re-querying the wallet.
-        WOTSPlus.WinternitzAddress[] memory evicted = wallet.getKeyset(
-            Codec.KeyType.Transaction
-        );
+        WOTSPlus.WinternitzAddress[] memory evicted = wallet.getKeyset(Codec.KeyType.Transaction);
 
         bytes32 digest = Codec.resetKeysetDigest(
             Codec.KeyType.Transaction,
@@ -376,24 +300,17 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         );
         WOTSPlus.WinternitzElements memory sig = _signWith(priv, digest);
 
-        try
-            wallet.resetKeyset(
-                Codec.encodeResetKeyset(
-                    Codec.KeyType.Transaction,
-                    Codec.KeyType.Recovery,
-                    cur,
-                    nextPub,
-                    sig,
-                    newPubs
-                )
-            )
-        {
+        try wallet.resetKeyset(
+            Codec.encodeResetKeyset(Codec.KeyType.Transaction, Codec.KeyType.Recovery, cur, nextPub, sig, newPubs)
+        ) {
             _consumeRecKey(cur);
             _installRecKey(nextPub, nextPriv);
-            for (uint256 i = 0; i < evicted.length; i++)
+            for (uint256 i = 0; i < evicted.length; i++) {
                 _consumeTxnKey(evicted[i]);
-            for (uint256 i = 0; i < 10; i++)
+            }
+            for (uint256 i = 0; i < 10; i++) {
                 _installTxnKey(newPubs[i], newPrivs[i]);
+            }
             callsResetTxn++;
         } catch {
             revertCount++;
@@ -401,23 +318,12 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     }
 
     function fuzzResetKeysetRecovery_txSigned(uint256 keyIndex) external {
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            bytes32 priv
-        ) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
+        (WOTSPlus.WinternitzAddress memory cur, bytes32 priv) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
         if (priv == bytes32(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
-        (
-            WOTSPlus.WinternitzAddress[10] memory newPubs,
-            bytes32[10] memory newPrivs
-        ) = _freshKeySet10();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress[10] memory newPubs, bytes32[10] memory newPrivs) = _freshKeySet10();
 
-        WOTSPlus.WinternitzAddress[] memory evicted = wallet.getKeyset(
-            Codec.KeyType.Recovery
-        );
+        WOTSPlus.WinternitzAddress[] memory evicted = wallet.getKeyset(Codec.KeyType.Recovery);
 
         bytes32 digest = Codec.resetKeysetDigest(
             Codec.KeyType.Recovery,
@@ -432,24 +338,17 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         );
         WOTSPlus.WinternitzElements memory sig = _signWith(priv, digest);
 
-        try
-            wallet.resetKeyset(
-                Codec.encodeResetKeyset(
-                    Codec.KeyType.Recovery,
-                    Codec.KeyType.Transaction,
-                    cur,
-                    nextPub,
-                    sig,
-                    newPubs
-                )
-            )
-        {
+        try wallet.resetKeyset(
+            Codec.encodeResetKeyset(Codec.KeyType.Recovery, Codec.KeyType.Transaction, cur, nextPub, sig, newPubs)
+        ) {
             _consumeTxnKey(cur);
             _installTxnKey(nextPub, nextPriv);
-            for (uint256 i = 0; i < evicted.length; i++)
+            for (uint256 i = 0; i < evicted.length; i++) {
                 _consumeRecKey(evicted[i]);
-            for (uint256 i = 0; i < 10; i++)
+            }
+            for (uint256 i = 0; i < 10; i++) {
                 _installRecKey(newPubs[i], newPrivs[i]);
+            }
             callsResetRec++;
         } catch {
             revertCount++;
@@ -457,16 +356,10 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     }
 
     function fuzzResetKeysetVerification_txSigned(uint256 keyIndex) external {
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            bytes32 priv
-        ) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
+        (WOTSPlus.WinternitzAddress memory cur, bytes32 priv) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
         if (priv == bytes32(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
-        (WOTSPlus.WinternitzAddress[10] memory newPubs, ) = _freshKeySet10();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress[10] memory newPubs,) = _freshKeySet10();
 
         bytes32 digest = Codec.resetKeysetDigest(
             Codec.KeyType.Verification,
@@ -481,23 +374,16 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         );
         WOTSPlus.WinternitzElements memory sig = _signWith(priv, digest);
 
-        try
-            wallet.resetKeyset(
-                Codec.encodeResetKeyset(
-                    Codec.KeyType.Verification,
-                    Codec.KeyType.Transaction,
-                    cur,
-                    nextPub,
-                    sig,
-                    newPubs
-                )
-            )
-        {
+        try wallet.resetKeyset(
+            Codec.encodeResetKeyset(Codec.KeyType.Verification, Codec.KeyType.Transaction, cur, nextPub, sig, newPubs)
+        ) {
             _consumeTxnKey(cur);
             _installTxnKey(nextPub, nextPriv);
             // Verification keys aren't priv-tracked, but they are burn-
             // tracked so the monotone invariant catches re-installation.
-            for (uint256 i = 0; i < 10; i++) _markEverInstalled(newPubs[i]);
+            for (uint256 i = 0; i < 10; i++) {
+                _markEverInstalled(newPubs[i]);
+            }
             callsResetVer++;
         } catch {
             revertCount++;
@@ -527,16 +413,12 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     /// @dev Build the signing material + old/new keys for a replaceKeys
     ///      variant. Returns `m.priv == 0` if no signing key is available,
     ///      `m.oldKeys.length == 0` if not enough live target keys remain.
-    function _buildReplaceMaterial(
-        ReplaceArgs memory a
-    ) internal returns (ReplaceMaterial memory m) {
+    function _buildReplaceMaterial(ReplaceArgs memory a) internal returns (ReplaceMaterial memory m) {
         (m.cur, m.priv) = _pickSigningKey(a.signingKind, a.keyIndex);
         if (m.priv == bytes32(0)) return m;
 
         uint256 n = (a.nSeed % 3) + 1; // n ∈ [1, 3]
-        bytes32 excludeHash = (a.targetKind == a.signingKind)
-            ? _keyHash(m.cur)
-            : bytes32(0);
+        bytes32 excludeHash = (a.targetKind == a.signingKind) ? _keyHash(m.cur) : bytes32(0);
         m.oldKeys = _pickOldKeys(a.targetKind, n, a.oldSeed, excludeHash);
         if (m.oldKeys.length == 0) return m;
 
@@ -573,20 +455,11 @@ contract WOTSPlusImplementationInvariantHandler is Test {
             )
         );
 
-        try
-            wallet.replaceKeys(
-                Codec.encodeReplaceKeys(
-                    a.targetKind,
-                    a.signingKind,
-                    m.oldKeys.length,
-                    m.cur,
-                    m.nextPub,
-                    sig,
-                    m.oldKeys,
-                    m.newKeys
-                )
+        try wallet.replaceKeys(
+            Codec.encodeReplaceKeys(
+                a.targetKind, a.signingKind, m.oldKeys.length, m.cur, m.nextPub, sig, m.oldKeys, m.newKeys
             )
-        {
+        ) {
             _applyReplaceSuccess(a, m);
             return 0;
         } catch {
@@ -598,10 +471,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     /// @dev Mirror replaceKeys success state-side. Signing keyset
     ///      always rotates (consume cur, install next). Target keyset
     ///      losses + gains depend on whether target matches signing.
-    function _applyReplaceSuccess(
-        ReplaceArgs memory a,
-        ReplaceMaterial memory m
-    ) internal {
+    function _applyReplaceSuccess(ReplaceArgs memory a, ReplaceMaterial memory m) internal {
         // Signing rotation.
         if (a.signingKind == Codec.KeyType.Transaction) {
             _consumeTxnKey(m.cur);
@@ -612,61 +482,61 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         }
         // Target rotation.
         for (uint256 i = 0; i < m.oldKeys.length; i++) {
-            if (a.targetKind == Codec.KeyType.Transaction)
+            if (a.targetKind == Codec.KeyType.Transaction) {
                 _consumeTxnKey(m.oldKeys[i]);
-            else if (a.targetKind == Codec.KeyType.Recovery)
+            } else if (a.targetKind == Codec.KeyType.Recovery) {
                 _consumeRecKey(m.oldKeys[i]);
+            }
             // Verification has no priv tracking; nothing to consume.
         }
         for (uint256 i = 0; i < m.newKeys.length; i++) {
-            if (a.targetKind == Codec.KeyType.Transaction)
+            if (a.targetKind == Codec.KeyType.Transaction) {
                 _installTxnKey(m.newKeys[i], m.newPrivs[i]);
-            else if (a.targetKind == Codec.KeyType.Recovery)
+            } else if (a.targetKind == Codec.KeyType.Recovery) {
                 _installRecKey(m.newKeys[i], m.newPrivs[i]);
-            else _markEverInstalled(m.newKeys[i]); // Verification
+            } else {
+                _markEverInstalled(m.newKeys[i]); // Verification
+            }
         }
     }
 
     function fuzzReplaceTxnInTxn(uint256 keyIndex, uint256 nSeed, uint256 oldSeed) external {
-        if (_doReplaceKeys(ReplaceArgs(
-            Codec.KeyType.Transaction, Codec.KeyType.Transaction,
-            keyIndex, nSeed, oldSeed
-        )) == 0) callsReplaceTxnInTxn++;
+        if (
+            _doReplaceKeys(ReplaceArgs(Codec.KeyType.Transaction, Codec.KeyType.Transaction, keyIndex, nSeed, oldSeed))
+                == 0
+        ) callsReplaceTxnInTxn++;
     }
 
     function fuzzReplaceRecInTxn(uint256 keyIndex, uint256 nSeed, uint256 oldSeed) external {
-        if (_doReplaceKeys(ReplaceArgs(
-            Codec.KeyType.Recovery, Codec.KeyType.Transaction,
-            keyIndex, nSeed, oldSeed
-        )) == 0) callsReplaceRecInTxn++;
+        if (
+            _doReplaceKeys(ReplaceArgs(Codec.KeyType.Recovery, Codec.KeyType.Transaction, keyIndex, nSeed, oldSeed))
+                == 0
+        ) callsReplaceRecInTxn++;
     }
 
     function fuzzReplaceVerInTxn(uint256 keyIndex, uint256 nSeed, uint256 oldSeed) external {
-        if (_doReplaceKeys(ReplaceArgs(
-            Codec.KeyType.Verification, Codec.KeyType.Transaction,
-            keyIndex, nSeed, oldSeed
-        )) == 0) callsReplaceVerInTxn++;
+        if (
+            _doReplaceKeys(ReplaceArgs(Codec.KeyType.Verification, Codec.KeyType.Transaction, keyIndex, nSeed, oldSeed))
+                == 0
+        ) callsReplaceVerInTxn++;
     }
 
     function fuzzReplaceTxnInRec(uint256 keyIndex, uint256 nSeed, uint256 oldSeed) external {
-        if (_doReplaceKeys(ReplaceArgs(
-            Codec.KeyType.Transaction, Codec.KeyType.Recovery,
-            keyIndex, nSeed, oldSeed
-        )) == 0) callsReplaceTxnInRec++;
+        if (
+            _doReplaceKeys(ReplaceArgs(Codec.KeyType.Transaction, Codec.KeyType.Recovery, keyIndex, nSeed, oldSeed))
+                == 0
+        ) callsReplaceTxnInRec++;
     }
 
     function fuzzReplaceRecInRec(uint256 keyIndex, uint256 nSeed, uint256 oldSeed) external {
-        if (_doReplaceKeys(ReplaceArgs(
-            Codec.KeyType.Recovery, Codec.KeyType.Recovery,
-            keyIndex, nSeed, oldSeed
-        )) == 0) callsReplaceRecInRec++;
+        if (_doReplaceKeys(ReplaceArgs(Codec.KeyType.Recovery, Codec.KeyType.Recovery, keyIndex, nSeed, oldSeed)) == 0) callsReplaceRecInRec++;
     }
 
     function fuzzReplaceVerInRec(uint256 keyIndex, uint256 nSeed, uint256 oldSeed) external {
-        if (_doReplaceKeys(ReplaceArgs(
-            Codec.KeyType.Verification, Codec.KeyType.Recovery,
-            keyIndex, nSeed, oldSeed
-        )) == 0) callsReplaceVerInRec++;
+        if (
+            _doReplaceKeys(ReplaceArgs(Codec.KeyType.Verification, Codec.KeyType.Recovery, keyIndex, nSeed, oldSeed))
+                == 0
+        ) callsReplaceVerInRec++;
     }
 
     /*──────────── disaster / ownership / upgrade fuzz ops ────────────────*/
@@ -687,7 +557,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         (b.newDis, b.newDisPriv) = _freshKeyPair();
         (b.newTxn, b.newTxnPrivs) = _freshKeySet10();
         (b.newRec, b.newRecPrivs) = _freshKeySet10();
-        (b.newVer, ) = _freshKeySet10();
+        (b.newVer,) = _freshKeySet10();
     }
 
     /// @dev Snapshot the pre-call live keyset for both Tx and Rec, store
@@ -709,15 +579,16 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     /// @dev Apply reset-bundle's state changes (disaster rotation + full
     ///      keyset replace) to handler tracking after a successful
     ///      saveWallet. `e` carries the PRE-call snapshot of evictees.
-    function _applyResetBundle(
-        ResetBundle memory b,
-        Evictees memory e
-    ) internal {
+    function _applyResetBundle(ResetBundle memory b, Evictees memory e) internal {
         disasterPub = b.newDis;
         disasterPriv = b.newDisPriv;
         _markEverInstalled(b.newDis);
-        for (uint256 i = 0; i < e.txn.length; i++) _consumeTxnKey(e.txn[i]);
-        for (uint256 i = 0; i < e.rec.length; i++) _consumeRecKey(e.rec[i]);
+        for (uint256 i = 0; i < e.txn.length; i++) {
+            _consumeTxnKey(e.txn[i]);
+        }
+        for (uint256 i = 0; i < e.rec.length; i++) {
+            _consumeRecKey(e.rec[i]);
+        }
         for (uint256 i = 0; i < 10; i++) {
             _installTxnKey(b.newTxn[i], b.newTxnPrivs[i]);
             _installRecKey(b.newRec[i], b.newRecPrivs[i]);
@@ -741,12 +612,8 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         }
     }
 
-    function _signSaveWallet(
-        ResetBundle memory b
-    ) internal view returns (bytes memory) {
-        bytes32 keysHash = keccak256(
-            abi.encode(b.newTxn, b.newRec, b.newVer)
-        );
+    function _signSaveWallet(ResetBundle memory b) internal view returns (bytes memory) {
+        bytes32 keysHash = keccak256(abi.encode(b.newTxn, b.newRec, b.newVer));
         bytes32 digest = Codec.saveWalletDigest(
             address(wallet),
             block.chainid,
@@ -756,19 +623,8 @@ contract WOTSPlusImplementationInvariantHandler is Test {
             b.newDis.publicKeyHash,
             keysHash
         );
-        WOTSPlus.WinternitzElements memory sig = _signWith(
-            disasterPriv,
-            digest
-        );
-        return
-            Codec.encodeSaveWallet(
-                disasterPub,
-                b.newDis,
-                sig,
-                b.newTxn,
-                b.newRec,
-                b.newVer
-            );
+        WOTSPlus.WinternitzElements memory sig = _signWith(disasterPriv, digest);
+        return Codec.encodeSaveWallet(disasterPub, b.newDis, sig, b.newTxn, b.newRec, b.newVer);
     }
 
     /// @dev Ownership-key-signed atomic reinit. Forces `newOwner =
@@ -777,10 +633,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     ///      slots) and the three keysets (10 each).
     function fuzzTransferOwnership() external {
         if (ownershipPriv == bytes32(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory newOwn,
-            bytes32 newOwnPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory newOwn, bytes32 newOwnPriv) = _freshKeyPair();
         ResetBundle memory b = _freshResetBundle();
         bytes memory pmd = _signTransferOwnership(newOwn, b);
         Evictees memory e = _snapshotEvictees();
@@ -795,13 +648,12 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         }
     }
 
-    function _signTransferOwnership(
-        WOTSPlus.WinternitzAddress memory newOwn,
-        ResetBundle memory b
-    ) internal view returns (bytes memory) {
-        bytes32 keysHash = keccak256(
-            abi.encode(b.newDis, b.newTxn, b.newRec, b.newVer)
-        );
+    function _signTransferOwnership(WOTSPlus.WinternitzAddress memory newOwn, ResetBundle memory b)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 keysHash = keccak256(abi.encode(b.newDis, b.newTxn, b.newRec, b.newVer));
         bytes32 digest = Codec.transferOwnershipDigest(
             address(wallet),
             block.chainid,
@@ -812,20 +664,10 @@ contract WOTSPlusImplementationInvariantHandler is Test {
             address(this),
             keysHash
         );
-        WOTSPlus.WinternitzElements memory sig = _signWith(
-            ownershipPriv,
-            digest
-        );
+        WOTSPlus.WinternitzElements memory sig = _signWith(ownershipPriv, digest);
         return
             Codec.encodeOwnershipTransfer(
-                ownershipPub,
-                newOwn,
-                sig,
-                address(this),
-                b.newDis,
-                b.newTxn,
-                b.newRec,
-                b.newVer
+                ownershipPub, newOwn, sig, address(this), b.newDis, b.newTxn, b.newRec, b.newVer
             );
     }
 
@@ -833,29 +675,15 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     ///      flag forced false — the migrator payload is 2048 zero bytes
     ///      and unused. Only the impl slot changes; keyset state
     ///      preserved. Rotates one transaction key.
-    function fuzzUpgradeToAndCall(
-        uint256 keyIndex,
-        uint256 implIndex
-    ) external {
+    function fuzzUpgradeToAndCall(uint256 keyIndex, uint256 implIndex) external {
         address newImpl = _pickDifferentImpl(implIndex);
         if (newImpl == address(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            bytes32 priv
-        ) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
+        (WOTSPlus.WinternitzAddress memory cur, bytes32 priv) = _pickSigningKey(Codec.KeyType.Transaction, keyIndex);
         if (priv == bytes32(0)) return;
 
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
 
-        bytes memory upgradeData = _buildUpgradeData(
-            newImpl,
-            cur,
-            nextPub,
-            priv
-        );
+        bytes memory upgradeData = _buildUpgradeData(newImpl, cur, nextPub, priv);
 
         try wallet.upgradeToAndCall(newImpl, upgradeData) {
             _consumeTxnKey(cur);
@@ -869,22 +697,13 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     /// @dev Recovery-signed UUPS upgrade. Like `upgradeToAndCall` but
     ///      authorized by a recovery key and with no migration support
     ///      in the codec — a simpler envelope.
-    function fuzzRecoveryUpgrade(
-        uint256 keyIndex,
-        uint256 implIndex
-    ) external {
+    function fuzzRecoveryUpgrade(uint256 keyIndex, uint256 implIndex) external {
         address newImpl = _pickDifferentImpl(implIndex);
         if (newImpl == address(0)) return;
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            bytes32 priv
-        ) = _pickSigningKey(Codec.KeyType.Recovery, keyIndex);
+        (WOTSPlus.WinternitzAddress memory cur, bytes32 priv) = _pickSigningKey(Codec.KeyType.Recovery, keyIndex);
         if (priv == bytes32(0)) return;
 
-        (
-            WOTSPlus.WinternitzAddress memory nextPub,
-            bytes32 nextPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory nextPub, bytes32 nextPriv) = _freshKeyPair();
 
         bytes32 digest = Codec.upgradeRecoveryDigest(
             address(wallet),
@@ -900,34 +719,13 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         // Verifier proves the new impl can run — fresh keypair signs a
         // verificationDigest over the new impl. Same shape as
         // `upgradeToAndCall`'s verifier.
-        (
-            WOTSPlus.WinternitzAddress memory verifierPub,
-            bytes32 verifierPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory verifierPub, bytes32 verifierPriv) = _freshKeyPair();
         bytes32 vDigest = Codec.verificationDigest(
-            address(wallet),
-            block.chainid,
-            newImpl,
-            verifierPub.publicSeed,
-            verifierPub.publicKeyHash
+            address(wallet), block.chainid, newImpl, verifierPub.publicSeed, verifierPub.publicKeyHash
         );
-        WOTSPlus.WinternitzElements memory vSig = _signWith(
-            verifierPriv,
-            vDigest
-        );
+        WOTSPlus.WinternitzElements memory vSig = _signWith(verifierPriv, vDigest);
 
-        try
-            wallet.recoveryUpgrade(
-                newImpl,
-                Codec.encodeRecoveryUpgrade(
-                    cur,
-                    nextPub,
-                    pqSig,
-                    verifierPub,
-                    vSig
-                )
-            )
-        {
+        try wallet.recoveryUpgrade(newImpl, Codec.encodeRecoveryUpgrade(cur, nextPub, pqSig, verifierPub, vSig)) {
             _consumeRecKey(cur);
             _installRecKey(nextPub, nextPriv);
             callsRecoveryUpgrade++;
@@ -938,13 +736,9 @@ contract WOTSPlusImplementationInvariantHandler is Test {
 
     /*══════════════════════ upgrade helpers ═════════════════════════════*/
 
-    function _pickDifferentImpl(
-        uint256 implIndex
-    ) internal view returns (address) {
+    function _pickDifferentImpl(uint256 implIndex) internal view returns (address) {
         if (vettedImpls.length < 2) return address(0);
-        address current = address(
-            uint160(uint256(vm.load(address(wallet), _ERC1967_IMPLEMENTATION_SLOT)))
-        );
+        address current = address(uint160(uint256(vm.load(address(wallet), _ERC1967_IMPLEMENTATION_SLOT))));
         uint256 start = implIndex % vettedImpls.length;
         for (uint256 i = 0; i < vettedImpls.length; i++) {
             address cand = vettedImpls[(start + i) % vettedImpls.length];
@@ -970,35 +764,16 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         );
         WOTSPlus.WinternitzElements memory pqSig = _signWith(priv, digest);
 
-        (
-            WOTSPlus.WinternitzAddress memory verifierPub,
-            bytes32 verifierPriv
-        ) = _freshKeyPair();
+        (WOTSPlus.WinternitzAddress memory verifierPub, bytes32 verifierPriv) = _freshKeyPair();
         bytes32 vDigest = Codec.verificationDigest(
-            address(wallet),
-            block.chainid,
-            newImpl,
-            verifierPub.publicSeed,
-            verifierPub.publicKeyHash
+            address(wallet), block.chainid, newImpl, verifierPub.publicSeed, verifierPub.publicKeyHash
         );
-        WOTSPlus.WinternitzElements memory vSig = _signWith(
-            verifierPriv,
-            vDigest
-        );
+        WOTSPlus.WinternitzElements memory vSig = _signWith(verifierPriv, vDigest);
 
         // Migrator payload: 2048 zero bytes. `shouldMigrate=false` so
         // the wallet never decodes or delegatecalls into this section.
         bytes memory dummyMigrator = new bytes(2048);
-        return
-            Codec.encodeUpgradeToAndCall(
-                cur,
-                nextPub,
-                pqSig,
-                verifierPub,
-                vSig,
-                false,
-                dummyMigrator
-            );
+        return Codec.encodeUpgradeToAndCall(cur, nextPub, pqSig, verifierPub, vSig, false, dummyMigrator);
     }
 
     /*════════════════════════ view helpers ══════════════════════════════*/
@@ -1007,29 +782,15 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         return everInstalled.length;
     }
 
-    function everInstalledAt(
-        uint256 i
-    ) external view returns (WOTSPlus.WinternitzAddress memory) {
+    function everInstalledAt(uint256 i) external view returns (WOTSPlus.WinternitzAddress memory) {
         return everInstalled[i];
     }
 
     function totalSuccessfulCalls() external view returns (uint256) {
-        return
-            callsExecute +
-            callsWithdraw +
-            callsResetTxn +
-            callsResetRec +
-            callsResetVer +
-            callsReplaceTxnInTxn +
-            callsReplaceRecInTxn +
-            callsReplaceVerInTxn +
-            callsReplaceTxnInRec +
-            callsReplaceRecInRec +
-            callsReplaceVerInRec +
-            callsSaveWallet +
-            callsTransferOwnership +
-            callsUpgradeToAndCall +
-            callsRecoveryUpgrade;
+        return callsExecute + callsWithdraw + callsResetTxn + callsResetRec + callsResetVer + callsReplaceTxnInTxn
+            + callsReplaceRecInTxn + callsReplaceVerInTxn + callsReplaceTxnInRec + callsReplaceRecInRec
+            + callsReplaceVerInRec + callsSaveWallet + callsTransferOwnership + callsUpgradeToAndCall
+            + callsRecoveryUpgrade;
     }
 
     function vettedImplsCount() external view returns (uint256) {

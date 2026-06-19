@@ -102,7 +102,8 @@ contract QuipPaymaster is
     /// @inheritdoc IPaymaster
     function validatePaymasterUserOp(
         PackedUserOperation calldata userOp,
-        bytes32 /* userOpHash */,
+        bytes32,
+        /* userOpHash */
         uint256 /* maxCost */
     ) external override returns (bytes memory context, uint256 validationData) {
         if (msg.sender != ENTRY_POINT) revert InvalidEntryPoint();

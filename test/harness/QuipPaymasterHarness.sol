@@ -14,9 +14,7 @@ contract QuipPaymasterHarness is QuipPaymaster {
         _authorizeUpgrade(newImpl);
     }
 
-    function exposed_verifyAndRotate(
-        PackedUserOperation calldata userOp
-    ) external returns (bool) {
+    function exposed_verifyAndRotate(PackedUserOperation calldata userOp) external returns (bool) {
         return _verifyAndRotate(userOp);
     }
 }

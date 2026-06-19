@@ -8,9 +8,7 @@ contract WOTSPlusImplementation_getExecuteFee is WOTSPlusImplementationTest {
         assertEq(wallet.getExecuteFee(), 0);
     }
 
-    function test_getExecuteFee_returnsCorrectValueAfterFactoryFeeChange()
-        public
-    {
+    function test_getExecuteFee_returnsCorrectValueAfterFactoryFeeChange() public {
         vm.prank(ADMIN);
         factory.setExecuteFee(EXECUTE_FEE);
 

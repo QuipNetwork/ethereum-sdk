@@ -14,8 +14,7 @@ contract WOTSPlusCodec__decodeExecute is WOTSPlusCodecTest {
 
         (
             WOTSPlus.WinternitzAddress memory cur,
-            WOTSPlus.WinternitzAddress memory nxt,
-            ,
+            WOTSPlus.WinternitzAddress memory nxt,,
             address t,
             uint256 v,
             bytes memory d
@@ -32,37 +31,26 @@ contract WOTSPlusCodec__decodeExecute is WOTSPlusCodecTest {
 
     function test_exposed_decodeExecute_decodesEmptyData() public view {
         bytes memory payload = _buildExecutePayload(10, address(0x1), 0, "");
-        (, , , , , bytes memory d) = codec.exposed_decodeExecute(payload);
+        (,,,,, bytes memory d) = codec.exposed_decodeExecute(payload);
         assertEq(d.length, 0);
     }
 
     function test_exposed_decodeExecute_decodesDynamicData() public view {
         bytes memory opdata = hex"aabbccdd11223344";
-        bytes memory payload = _buildExecutePayload(
-            10,
-            address(0x1),
-            0,
-            opdata
-        );
-        (, , , , , bytes memory d) = codec.exposed_decodeExecute(payload);
+        bytes memory payload = _buildExecutePayload(10, address(0x1), 0, opdata);
+        (,,,,, bytes memory d) = codec.exposed_decodeExecute(payload);
         assertEq(d, opdata);
     }
 
     function test_exposed_decodeExecute_revertsWhen_shortPayload() public {
         bytes memory payload = _filledBytes(2300);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                WOTSPlusCodec.MalformedPayload.selector,
-                2336,
-                2300
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(WOTSPlusCodec.MalformedPayload.selector, 2336, 2300));
         codec.exposed_decodeExecute(payload);
     }
 
     function test_exposed_decodeExecute_exactMinLength_succeeds() public view {
         bytes memory payload = _filledBytes(2336);
-        (, , , , , bytes memory d) = codec.exposed_decodeExecute(payload);
+        (,,,,, bytes memory d) = codec.exposed_decodeExecute(payload);
         assertEq(d.length, 0);
     }
 
@@ -70,17 +58,9 @@ contract WOTSPlusCodec__decodeExecute is WOTSPlusCodecTest {
     ///      reverts. Execute is variable-length (header + arbitrary `data`
     ///      tail), so only the lower bound is asserted; trailing data of any
     ///      length is valid.
-    function testFuzz_exposed_decodeExecute_revertsWhen_short(
-        uint256 len
-    ) public {
+    function testFuzz_exposed_decodeExecute_revertsWhen_short(uint256 len) public {
         len = bound(len, 0, 2335);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                WOTSPlusCodec.MalformedPayload.selector,
-                2336,
-                len
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(WOTSPlusCodec.MalformedPayload.selector, 2336, len));
         codec.exposed_decodeExecute(_filledBytes(len));
     }
 }

@@ -61,7 +61,7 @@ library ShrincsWalletStorage {
         ///      fresh (all-unused) bitmap without clearing storage. A leaf is consumable once and
         ///      in ANY order (no sequential constraint), so out-of-order transaction landing never
         ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit `leafIndex & 0xff`
-        ///      is set when leaf `leafIndex` is consumed. 
+        ///      is set when leaf `leafIndex` is consumed.
         mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits)) usedStatefulLeafBitmap;
     }
 
@@ -85,14 +85,18 @@ library ShrincsWalletStorage {
     ///      parameterSetId,erc1271ParameterSetId}` scalars share `_LEAF_STATE_SLOT`. The
     ///      `usedStatefulLeafBitmap` mapping occupies the next slot and is intentionally NOT
     ///      one of the guarded slots (see its field comment).
-    bytes32 internal constant _PQ_FACTORY_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
+    bytes32 internal constant _PQ_FACTORY_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
     bytes32 internal constant _SHRINCS_COMMITMENT_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01;
     bytes32 internal constant _ERC1271_COMMITMENT_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc02;
-    bytes32 internal constant _KEY_VERSION_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03;
-    bytes32 internal constant _NONCE_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc04;
-    bytes32 internal constant _LEAF_STATE_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc05;
+    bytes32 internal constant _KEY_VERSION_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03;
+    bytes32 internal constant _NONCE_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc04;
+    bytes32 internal constant _LEAF_STATE_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc05;
 
     /// @dev Returns the ERC-7201 namespaced storage layout.
     function layout() internal pure returns (Layout storage $) {

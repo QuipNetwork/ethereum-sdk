@@ -19,32 +19,23 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
     function setUp() public override {
         super.setUp();
 
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
         bytes memory payload = _encodeInitPayload(alicePubkey, recoveryPubkeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("replaceKeys-verif-vault"), payable(ALICE), payload);
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
+            keccak256("replaceKeys-verif-vault"), payable(ALICE), payload
+        );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
 
         // Mirror `_encodeInitPayload`'s "verify-fill" derivation so tests can
         // reference the in-set verification keys.
         for (uint256 i = 0; i < 10; i++) {
-            (WOTSPlus.WinternitzAddress memory key, ) = WOTSPlus.generateKeyPair(
-                keccak256(
-                    abi.encodePacked(
-                        alicePubkey.publicSeed,
-                        alicePubkey.publicKeyHash,
-                        "verify-fill",
-                        i
-                    )
-                )
+            (WOTSPlus.WinternitzAddress memory key,) = WOTSPlus.generateKeyPair(
+                keccak256(abi.encodePacked(alicePubkey.publicSeed, alicePubkey.publicKeyHash, "verify-fill", i))
             );
             seededVerifierKeys.push(key);
         }
@@ -55,16 +46,12 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     function test_replaceKeys_Verification_txSigned_swapsN3() public {
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeys = new WOTSPlus.WinternitzAddress[](3);
-        for (uint256 i = 0; i < 3; i++) oldKeys[i] = seededVerifierKeys[i];
-        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(
-            keccak256("vrf-tx-N3"),
-            3
-        );
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "vrf-tx-N3-next"
-        );
+        WOTSPlus.WinternitzAddress[] memory oldKeys = new WOTSPlus.WinternitzAddress[](3);
+        for (uint256 i = 0; i < 3; i++) {
+            oldKeys[i] = seededVerifierKeys[i];
+        }
+        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(keccak256("vrf-tx-N3"), 3);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("vrf-tx-N3-next");
 
         bytes memory payload = _encodeReplaceKeysPayload(
             Codec.KeyType.Verification,
@@ -80,12 +67,8 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
         harnessProxy.replaceKeys(payload);
 
         for (uint256 i = 0; i < 3; i++) {
-            assertFalse(
-                harnessProxy.isKey(Codec.KeyType.Verification, oldKeys[i])
-            );
-            assertTrue(
-                harnessProxy.isKey(Codec.KeyType.Verification, newKeys[i])
-            );
+            assertFalse(harnessProxy.isKey(Codec.KeyType.Verification, oldKeys[i]));
+            assertTrue(harnessProxy.isKey(Codec.KeyType.Verification, newKeys[i]));
         }
         assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 10);
         // Tx signing rotation committed.
@@ -98,37 +81,23 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
         bytes32 recPriv = _recoverySigningKey(alicePrivateKey, 0);
         WOTSPlus.WinternitzAddress memory currentRec = recoveryPubkeys[0];
 
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeys = new WOTSPlus.WinternitzAddress[](5);
-        for (uint256 i = 0; i < 5; i++) oldKeys[i] = seededVerifierKeys[i];
-        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(
-            keccak256("vrf-rec-all"),
-            5
-        );
-        (WOTSPlus.WinternitzAddress memory nextRec, ) = _generateKeyPair(
-            "vrf-rec-all-next"
-        );
+        WOTSPlus.WinternitzAddress[] memory oldKeys = new WOTSPlus.WinternitzAddress[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            oldKeys[i] = seededVerifierKeys[i];
+        }
+        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(keccak256("vrf-rec-all"), 5);
+        (WOTSPlus.WinternitzAddress memory nextRec,) = _generateKeyPair("vrf-rec-all-next");
 
         bytes memory payload = _encodeReplaceKeysPayload(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Recovery,
-            currentRec,
-            recPriv,
-            nextRec,
-            oldKeys,
-            newKeys
+            Codec.KeyType.Verification, Codec.KeyType.Recovery, currentRec, recPriv, nextRec, oldKeys, newKeys
         );
 
         vm.prank(ALICE);
         harnessProxy.replaceKeys(payload);
 
         for (uint256 i = 0; i < 5; i++) {
-            assertFalse(
-                harnessProxy.isKey(Codec.KeyType.Verification, oldKeys[i])
-            );
-            assertTrue(
-                harnessProxy.isKey(Codec.KeyType.Verification, newKeys[i])
-            );
+            assertFalse(harnessProxy.isKey(Codec.KeyType.Verification, oldKeys[i]));
+            assertTrue(harnessProxy.isKey(Codec.KeyType.Verification, newKeys[i]));
         }
         // Recovery rotation committed.
         assertFalse(harnessProxy.isKey(Codec.KeyType.Recovery, currentRec));
@@ -138,16 +107,10 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
     }
 
     function test_replaceKeys_Verification_txSigned_N1_boundary() public {
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeys = new WOTSPlus.WinternitzAddress[](1);
+        WOTSPlus.WinternitzAddress[] memory oldKeys = new WOTSPlus.WinternitzAddress[](1);
         oldKeys[0] = seededVerifierKeys[0];
-        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(
-            keccak256("vrf-tx-N1"),
-            1
-        );
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "vrf-tx-N1-next"
-        );
+        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(keccak256("vrf-tx-N1"), 1);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("vrf-tx-N1-next");
 
         bytes memory payload = _encodeReplaceKeysPayload(
             Codec.KeyType.Verification,
@@ -170,20 +133,12 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
     /*                          REVERTS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function test_replaceKeys_Verification_revertsWhen_oldKeyNotInVerifSet()
-        public
-    {
+    function test_replaceKeys_Verification_revertsWhen_oldKeyNotInVerifSet() public {
         // Pass an unrelated key as oldKey — not in the verification set.
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeys = new WOTSPlus.WinternitzAddress[](1);
-        (oldKeys[0], ) = _generateKeyPair("vrf-rev-missing-old");
-        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(
-            keccak256("vrf-rev-missing-new"),
-            1
-        );
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "vrf-rev-missing-next"
-        );
+        WOTSPlus.WinternitzAddress[] memory oldKeys = new WOTSPlus.WinternitzAddress[](1);
+        (oldKeys[0],) = _generateKeyPair("vrf-rev-missing-old");
+        WOTSPlus.WinternitzAddress[] memory newKeys = _freshKeys(keccak256("vrf-rev-missing-new"), 1);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("vrf-rev-missing-next");
 
         bytes memory payload = _encodeReplaceKeysPayload(
             Codec.KeyType.Verification,
@@ -204,15 +159,10 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
     /*                         HELPERS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function _freshKeys(
-        bytes32 seed,
-        uint256 n
-    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory out) {
+    function _freshKeys(bytes32 seed, uint256 n) internal pure returns (WOTSPlus.WinternitzAddress[] memory out) {
         out = new WOTSPlus.WinternitzAddress[](n);
         for (uint256 i = 0; i < n; i++) {
-            (out[i], ) = WOTSPlus.generateKeyPair(
-                keccak256(abi.encode(seed, i))
-            );
+            (out[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 
@@ -226,25 +176,9 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
         WOTSPlus.WinternitzAddress[] memory newKeys
     ) internal view returns (bytes memory) {
         bytes32 digest = _buildReplaceKeysMessageHash(
-            kind,
-            signingKind,
-            address(harnessProxy),
-            currentPq,
-            nextPq,
-            oldKeys,
-            newKeys
+            kind, signingKind, address(harnessProxy), currentPq, nextPq, oldKeys, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, digest);
-        return
-            Codec.encodeReplaceKeys(
-                kind,
-                signingKind,
-                oldKeys.length,
-                currentPq,
-                nextPq,
-                sig,
-                oldKeys,
-                newKeys
-            );
+        return Codec.encodeReplaceKeys(kind, signingKind, oldKeys.length, currentPq, nextPq, sig, oldKeys, newKeys);
     }
 }

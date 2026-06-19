@@ -24,61 +24,35 @@ contract WOTSPlusImplementation_normalOperation is WOTSPlusImplementationTest {
     }
 
     /// @dev Execute an ETH transfer using the current PQ key, rotate to next.
-    function _executeTransfer(
-        address to,
-        uint256 amount,
-        bytes32 nextSeed
-    ) internal returns (bytes32 nextPrivKey) {
+    function _executeTransfer(address to, uint256 amount, bytes32 nextSeed) internal returns (bytes32 nextPrivKey) {
         WOTSPlus.WinternitzAddress memory nextPq;
         (nextPq, nextPrivKey) = _generateKeyPair(nextSeed);
 
         uint256 fee = wallet.getExecuteFee();
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            currentPq,
-            nextPq,
-            to,
-            amount,
-            "",
-            fee
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, nextPq, to, amount, "", fee);
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(currentPq, nextPq, sig, to, amount, "")
-        );
+        wallet.execute(Codec.encodeExecute(currentPq, nextPq, sig, to, amount, ""));
 
         currentPq = nextPq;
         currentPrivKey = nextPrivKey;
     }
 
     /// @dev Execute a contract call using the current PQ key, rotate to next.
-    function _executeCall(
-        address target,
-        uint256 value,
-        bytes memory data,
-        bytes32 nextSeed
-    ) internal returns (bytes32 nextPrivKey) {
+    function _executeCall(address target, uint256 value, bytes memory data, bytes32 nextSeed)
+        internal
+        returns (bytes32 nextPrivKey)
+    {
         WOTSPlus.WinternitzAddress memory nextPq;
         (nextPq, nextPrivKey) = _generateKeyPair(nextSeed);
 
         uint256 fee = wallet.getExecuteFee();
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            currentPq,
-            nextPq,
-            target,
-            value,
-            data,
-            fee
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, nextPq, target, value, data, fee);
         WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(currentPq, nextPq, sig, target, value, data)
-        );
+        wallet.execute(Codec.encodeExecute(currentPq, nextPq, sig, target, value, data));
 
         currentPq = nextPq;
         currentPrivKey = nextPrivKey;
@@ -102,10 +76,7 @@ contract WOTSPlusImplementation_normalOperation is WOTSPlusImplementationTest {
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, currentPq));
 
         // Step 4: Execute a contract call (setValue on DummyContract)
-        bytes memory callData = abi.encodeWithSelector(
-            DummyContract.setValueNoFee.selector,
-            42
-        );
+        bytes memory callData = abi.encodeWithSelector(DummyContract.setValueNoFee.selector, 42);
         _executeCall(address(dummy), 0, callData, "lifecycle-key-2");
         assertEq(dummy.value(), 42);
 

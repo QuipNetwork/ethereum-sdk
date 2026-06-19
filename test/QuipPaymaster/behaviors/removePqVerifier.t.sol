@@ -34,9 +34,7 @@ contract QuipPaymaster_removePqVerifier is QuipPaymasterTest {
         vm.startPrank(ADMIN);
         paymaster.removePqVerifier(WALLET);
 
-        (WOTSPlus.WinternitzAddress memory newKey, ) = _generateKeyPair(
-            "new-key"
-        );
+        (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("new-key");
         paymaster.setPqVerifier(WALLET, newKey);
         vm.stopPrank();
 
@@ -98,12 +96,8 @@ contract QuipPaymaster_removePqVerifier is QuipPaymasterTest {
     ///      corruption as `PqVerifierNotRegistered` rather than silently
     ///      delete. Forces the corruption via `vm.store` because the path
     ///      isn't naturally reachable through public APIs.
-    function test_removePqVerifier_revertsWhen_storageHalfZero_seedCleared()
-        public
-    {
-        bytes32 root = keccak256(
-            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
-        );
+    function test_removePqVerifier_revertsWhen_storageHalfZero_seedCleared() public {
+        bytes32 root = keccak256(abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT));
         // root + 0 = publicSeed; clearing it leaves publicKeyHash populated.
         vm.store(address(paymaster), root, bytes32(0));
 
@@ -112,12 +106,8 @@ contract QuipPaymaster_removePqVerifier is QuipPaymasterTest {
         paymaster.removePqVerifier(WALLET);
     }
 
-    function test_removePqVerifier_revertsWhen_storageHalfZero_hashCleared()
-        public
-    {
-        bytes32 root = keccak256(
-            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
-        );
+    function test_removePqVerifier_revertsWhen_storageHalfZero_hashCleared() public {
+        bytes32 root = keccak256(abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT));
         // root + 1 = publicKeyHash; clearing it leaves publicSeed populated.
         bytes32 hashSlot = bytes32(uint256(root) + 1);
         vm.store(address(paymaster), hashSlot, bytes32(0));

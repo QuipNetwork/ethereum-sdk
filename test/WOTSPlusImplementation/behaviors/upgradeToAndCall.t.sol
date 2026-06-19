@@ -45,25 +45,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_upgradesImplementation() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "upgrade-next-pq"
-        );
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -74,27 +62,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_migratesStateWhenFlagSet() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "upgrade-next-pq"
-        );
-        (WOTSPlus.WinternitzAddress memory newMigratePq, ) = _generateKeyPair(
-            "migrate-pq"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
+        (WOTSPlus.WinternitzAddress memory newMigratePq,) = _generateKeyPair("migrate-pq");
         bytes32 migrateBase = keccak256("migrate-recovery");
-        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(
-            migrateBase,
-            10
-        );
+        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(migrateBase, 10);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "verifier",
-            true,
-            newMigratePq,
-            migrateKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", true, newMigratePq, migrateKeys
         );
 
         vm.prank(ALICE);
@@ -107,25 +81,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_skipsMigrationWhenFlagUnset() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "upgrade-next-pq"
-        );
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -141,25 +103,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         uint256 balBefore = address(wallet).balance;
         address ownerBefore = wallet.owner();
 
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "upgrade-preserve"
-        );
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-preserve");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -170,27 +120,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_migrateInvalidatesOldRecoveryKeys() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "upgrade-migrate-keys"
-        );
-        (WOTSPlus.WinternitzAddress memory newMigratePq, ) = _generateKeyPair(
-            "migrate-pq-keys"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-migrate-keys");
+        (WOTSPlus.WinternitzAddress memory newMigratePq,) = _generateKeyPair("migrate-pq-keys");
         bytes32 migrateBase = keccak256("migrate-keys-recovery");
-        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(
-            migrateBase,
-            10
-        );
+        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(migrateBase, 10);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "verifier",
-            true,
-            newMigratePq,
-            migrateKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", true, newMigratePq, migrateKeys
         );
 
         vm.prank(ALICE);
@@ -205,25 +141,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     // ── Reverts ──────────────────────────────────────────────────────
 
     function test_upgradeToAndCall_revertsWhen_callerNotOwner() public {
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
-        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
-            "revert-next-pq"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq_,) = _generateKeyPair("revert-next-pq");
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq_,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq_, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(BOB);
@@ -232,28 +156,15 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_revertsWhen_invalidSignature() public {
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         // Use a wrong signing key
-        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
-            "inv-sig-next-pq"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq_,) = _generateKeyPair("inv-sig-next-pq");
         (, bytes32 wrongKey) = _generateKeyPair("wrong-key");
-        bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            wrongKey,
-            alicePubkey,
-            nextPq_,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
-        );
+        bytes memory data =
+            _buildUpgradeData(address(newImpl), wrongKey, alicePubkey, nextPq_, "verifier", false, dummyPq, emptyKeys);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
@@ -261,13 +172,8 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_migrate_revertsWhen_calledDirectly() public {
-        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
-            "migrate-direct"
-        );
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            keccak256("migrate-r"),
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("migrate-direct");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(keccak256("migrate-r"), 10);
         bytes memory migratorPayload = _encodeInitPayload(newPq, rKeys);
 
         vm.prank(ALICE);
@@ -276,28 +182,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_migrate_revertsWhen_initialKeyIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(0)
-        });
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            keccak256("migrate-r"),
-            10
-        );
+        WOTSPlus.WinternitzAddress memory zeroPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)});
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(keccak256("migrate-r"), 10);
 
-        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
-            "zero-migrate-next-pq"
-        );
-        bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq_,
-            "verifier",
-            true,
-            zeroPq,
-            rKeys
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq_,) = _generateKeyPair("zero-migrate-next-pq");
+        bytes memory data =
+            _buildUpgradeData(address(newImpl), alicePrivateKey, alicePubkey, nextPq_, "verifier", true, zeroPq, rKeys);
 
         vm.prank(ALICE);
         vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
@@ -305,12 +196,9 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_revertsWhen_nextKeyEqualsCurrentKey() public {
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         // Use current alicePubkey as nextKey — should trigger SameKey
         bytes memory data = _buildUpgradeData(
@@ -336,62 +224,37 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     // single keys. Each of these tests stages a cross-set collision and
     // asserts `KeyInUse` before WOTS+ verify.
 
-    function _runUpgradeWithNextPq(
-        WOTSPlus.WinternitzAddress memory nextPq,
-        bytes32 verifierTag
-    ) internal returns (bytes memory data) {
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+    function _runUpgradeWithNextPq(WOTSPlus.WinternitzAddress memory nextPq, bytes32 verifierTag)
+        internal
+        returns (bytes memory data)
+    {
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
         data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            verifierTag,
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, verifierTag, false, dummyPq, emptyKeys
         );
     }
 
     function test_upgradeToAndCall_revertsWhen_nextKeyInRecoverySet() public {
-        bytes memory data = _runUpgradeWithNextPq(
-            recoveryPubkeys[2],
-            "verifier-rec"
-        );
+        bytes memory data = _runUpgradeWithNextPq(recoveryPubkeys[2], "verifier-rec");
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_nextKeyEqualsOwnershipKey()
-        public
-    {
-        bytes memory data = _runUpgradeWithNextPq(
-            ownershipPubkey,
-            "verifier-own"
-        );
+    function test_upgradeToAndCall_revertsWhen_nextKeyEqualsOwnershipKey() public {
+        bytes memory data = _runUpgradeWithNextPq(ownershipPubkey, "verifier-own");
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_nextKeyEqualsDisasterKey()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory disasterPub, ) = _generateDisasterRecoveryKey(
-            VAULT_SEED
-        );
-        bytes memory data = _runUpgradeWithNextPq(
-            disasterPub,
-            "verifier-dis"
-        );
+    function test_upgradeToAndCall_revertsWhen_nextKeyEqualsDisasterKey() public {
+        (WOTSPlus.WinternitzAddress memory disasterPub,) = _generateDisasterRecoveryKey(VAULT_SEED);
+        bytes memory data = _runUpgradeWithNextPq(disasterPub, "verifier-dis");
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
@@ -399,26 +262,14 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_revertsWhen_nextKeySeedIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32("non-empty")
-        });
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress memory zeroPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32("non-empty")});
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            zeroPq,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, zeroPq, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -427,26 +278,14 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_revertsWhen_nextKeyHashIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32("non-empty"),
-            publicKeyHash: bytes32(0)
-        });
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        WOTSPlus.WinternitzAddress memory zeroPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32("non-empty"), publicKeyHash: bytes32(0)});
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            zeroPq,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, zeroPq, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -454,31 +293,17 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_implementationNotVetted()
-        public
-    {
+    function test_upgradeToAndCall_revertsWhen_implementationNotVetted() public {
         // Deploy but do NOT vet
         WOTSPlusImplementation unvetted = new WOTSPlusImplementation(payable(address(factory)));
 
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "unvetted-next-pq"
-        );
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("unvetted-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(unvetted),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(unvetted), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -486,32 +311,18 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         wallet.upgradeToAndCall(address(unvetted), data);
     }
 
-    function test_upgradeToAndCall_revertsWhen_implementationDeprecated()
-        public
-    {
+    function test_upgradeToAndCall_revertsWhen_implementationDeprecated() public {
         // Deprecate the already-vetted newImpl
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(newImpl));
 
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "deprecated-next-pq"
-        );
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("deprecated-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
         );
 
         vm.prank(ALICE);
@@ -523,32 +334,18 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     ///      A rogue but factory-vetted impl whose `verifyUpgrade` delegatecall
     ///      SSTOREs to a guarded slot must be caught by the post-delegatecall
     ///      snapshot assert in `upgradeToAndCall`.
-    function test_upgradeToAndCall_revertsWhen_verifyDelegateCallMutatesGuardedSlot()
-        public
-    {
+    function test_upgradeToAndCall_revertsWhen_verifyDelegateCallMutatesGuardedSlot() public {
         RogueUpgradeImpl_WritesGuardedSlot rogue = new RogueUpgradeImpl_WritesGuardedSlot();
         vm.prank(ADMIN);
         factory.vetImplementation(address(rogue));
 
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "rogue-next-pq"
-        );
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("rogue-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
-            address(rogue),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq,
-            "rogue-verifier",
-            false,
-            dummyPq,
-            emptyKeys
+            address(rogue), alicePrivateKey, alicePubkey, nextPq, "rogue-verifier", false, dummyPq, emptyKeys
         );
 
         // The guard reverts with empty data (plain revert), consistent with

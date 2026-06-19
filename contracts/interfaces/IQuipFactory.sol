@@ -361,9 +361,7 @@ interface IQuipFactory {
     ///      order). Pair them via multicall to materialize a
     ///      `(vaultId → wallet)` map without `1 + N` round-trips.
     /// @param owner The classical owner address.
-    function getWallets(
-        address owner
-    ) external view returns (address[] memory);
+    function getWallets(address owner) external view returns (address[] memory);
 
     /// @notice Returns the number of vetted implementation codehashes.
     /// @return The count of entries in the vetted set.

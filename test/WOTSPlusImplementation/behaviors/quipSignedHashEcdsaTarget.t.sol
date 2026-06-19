@@ -19,27 +19,15 @@ import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementa
 ///           impossible);
 ///        4. distinct hashes produce distinct targets (sanity).
 contract WOTSPlusImplementation_quipSignedHashEcdsaTarget is WOTSPlusImplementationTest {
-    function test_quipSignedHashEcdsaTarget_matchesIndependentEip712Computation()
-        public
-        view
-    {
+    function test_quipSignedHashEcdsaTarget_matchesIndependentEip712Computation() public view {
         bytes32 hash = keccak256("erc1271-target-parity");
         bytes32 expected = _buildErc1271EcdsaTarget(address(wallet), hash);
         bytes32 actual = wallet.quipSignedHashEcdsaTarget(hash);
-        assertEq(
-            actual,
-            expected,
-            "wallet view diverged from hand-rolled EIP-712 computation"
-        );
+        assertEq(actual, expected, "wallet view diverged from hand-rolled EIP-712 computation");
     }
 
-    function testFuzz_quipSignedHashEcdsaTarget_matchesIndependentComputation(
-        bytes32 hash
-    ) public view {
-        assertEq(
-            wallet.quipSignedHashEcdsaTarget(hash),
-            _buildErc1271EcdsaTarget(address(wallet), hash)
-        );
+    function testFuzz_quipSignedHashEcdsaTarget_matchesIndependentComputation(bytes32 hash) public view {
+        assertEq(wallet.quipSignedHashEcdsaTarget(hash), _buildErc1271EcdsaTarget(address(wallet), hash));
     }
 
     function test_quipSignedHashEcdsaTarget_bindsToWalletAddress() public {
@@ -50,11 +38,7 @@ contract WOTSPlusImplementation_quipSignedHashEcdsaTarget is WOTSPlusImplementat
         // `verifyingContract` differs. Same `hash` must yield a different
         // target.
         address otherOwner = makeAddr("erc1271-other-owner");
-        (address otherAddr, , , ) = _createWallet(
-            otherOwner,
-            "erc1271-other-vault",
-            0
-        );
+        (address otherAddr,,,) = _createWallet(otherOwner, "erc1271-other-vault", 0);
         WOTSPlusImplementation otherWallet = WOTSPlusImplementation(payable(otherAddr));
         bytes32 otherWalletTarget = otherWallet.quipSignedHashEcdsaTarget(hash);
 
@@ -64,10 +48,7 @@ contract WOTSPlusImplementation_quipSignedHashEcdsaTarget is WOTSPlusImplementat
         );
         // Belt-and-suspenders: independent recomputation against the other
         // wallet's address agrees with its view.
-        assertEq(
-            otherWalletTarget,
-            _buildErc1271EcdsaTarget(address(otherWallet), hash)
-        );
+        assertEq(otherWalletTarget, _buildErc1271EcdsaTarget(address(otherWallet), hash));
     }
 
     function test_quipSignedHashEcdsaTarget_bindsToChainId() public {
@@ -77,32 +58,17 @@ contract WOTSPlusImplementation_quipSignedHashEcdsaTarget is WOTSPlusImplementat
         vm.chainId(block.chainid + 1);
         bytes32 onChainAfter = wallet.quipSignedHashEcdsaTarget(hash);
 
-        assertTrue(
-            onChainBefore != onChainAfter,
-            "ECDSA target did not change after chainId shift"
-        );
+        assertTrue(onChainBefore != onChainAfter, "ECDSA target did not change after chainId shift");
     }
 
-    function test_quipSignedHashEcdsaTarget_distinctForDistinctHashes()
-        public
-        view
-    {
+    function test_quipSignedHashEcdsaTarget_distinctForDistinctHashes() public view {
         bytes32 a = wallet.quipSignedHashEcdsaTarget(keccak256("hash-A"));
         bytes32 b = wallet.quipSignedHashEcdsaTarget(keccak256("hash-B"));
-        assertTrue(
-            a != b,
-            "distinct hashes collided to identical ECDSA targets"
-        );
+        assertTrue(a != b, "distinct hashes collided to identical ECDSA targets");
     }
 
-    function testFuzz_quipSignedHashEcdsaTarget_neverCollides(
-        bytes32 hashA,
-        bytes32 hashB
-    ) public view {
+    function testFuzz_quipSignedHashEcdsaTarget_neverCollides(bytes32 hashA, bytes32 hashB) public view {
         vm.assume(hashA != hashB);
-        assertTrue(
-            wallet.quipSignedHashEcdsaTarget(hashA) !=
-                wallet.quipSignedHashEcdsaTarget(hashB)
-        );
+        assertTrue(wallet.quipSignedHashEcdsaTarget(hashA) != wallet.quipSignedHashEcdsaTarget(hashB));
     }
 }

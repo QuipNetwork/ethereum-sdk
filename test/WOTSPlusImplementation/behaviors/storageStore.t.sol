@@ -24,13 +24,10 @@ import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorag
 contract WOTSPlusImplementation_storageStore is WOTSPlusImplementationTest {
     address constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
-    bytes32 constant _OWNER_SLOT =
-        0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
-    bytes32 constant _ERC1967_IMPLEMENTATION_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 constant _OWNER_SLOT = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
+    bytes32 constant _ERC1967_IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
-    bytes32 constant NONGUARDED_SLOT =
-        0xbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef;
+    bytes32 constant NONGUARDED_SLOT = 0xbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeefbeef;
 
     function setUp() public override {
         super.setUp();

@@ -15,57 +15,28 @@ contract WOTSPlusCodec__encodeSaveWallet is WOTSPlusCodecTest {
     }
 
     function _sampleBundle() internal pure returns (Bundle memory b) {
-        b.cur = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(1)),
-            bytes32(uint256(2))
-        );
-        b.nxt = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(3)),
-            bytes32(uint256(4))
-        );
+        b.cur = WOTSPlus.WinternitzAddress(bytes32(uint256(1)), bytes32(uint256(2)));
+        b.nxt = WOTSPlus.WinternitzAddress(bytes32(uint256(3)), bytes32(uint256(4)));
         for (uint256 i = 0; i < 67; i++) {
             b.sig.elements[i] = bytes32(uint256(100 + i));
         }
         for (uint256 i = 0; i < 10; i++) {
-            b.txn[i] = WOTSPlus.WinternitzAddress(
-                bytes32(uint256(500 + i * 2)),
-                bytes32(uint256(501 + i * 2))
-            );
-            b.rec[i] = WOTSPlus.WinternitzAddress(
-                bytes32(uint256(700 + i * 2)),
-                bytes32(uint256(701 + i * 2))
-            );
-            b.ver[i] = WOTSPlus.WinternitzAddress(
-                bytes32(uint256(900 + i * 2)),
-                bytes32(uint256(901 + i * 2))
-            );
+            b.txn[i] = WOTSPlus.WinternitzAddress(bytes32(uint256(500 + i * 2)), bytes32(uint256(501 + i * 2)));
+            b.rec[i] = WOTSPlus.WinternitzAddress(bytes32(uint256(700 + i * 2)), bytes32(uint256(701 + i * 2)));
+            b.ver[i] = WOTSPlus.WinternitzAddress(bytes32(uint256(900 + i * 2)), bytes32(uint256(901 + i * 2)));
         }
     }
 
     function test_exposed_encodeSaveWallet_producesCorrectLength() public view {
         Bundle memory b = _sampleBundle();
-        bytes memory encoded = codec.exposed_encodeSaveWallet(
-            b.cur,
-            b.nxt,
-            b.sig,
-            b.txn,
-            b.rec,
-            b.ver
-        );
+        bytes memory encoded = codec.exposed_encodeSaveWallet(b.cur, b.nxt, b.sig, b.txn, b.rec, b.ver);
         // 64 (cur) + 64 (nxt) + 2144 (sig) + 10*64 (txn) + 10*64 (rec) + 10*64 (ver) = 4192
         assertEq(encoded.length, 4192);
     }
 
     function test_exposed_encodeSaveWallet_roundtrips() public view {
         Bundle memory b = _sampleBundle();
-        bytes memory encoded = codec.exposed_encodeSaveWallet(
-            b.cur,
-            b.nxt,
-            b.sig,
-            b.txn,
-            b.rec,
-            b.ver
-        );
+        bytes memory encoded = codec.exposed_encodeSaveWallet(b.cur, b.nxt, b.sig, b.txn, b.rec, b.ver);
 
         (
             WOTSPlus.WinternitzAddress memory dCur,
@@ -95,9 +66,7 @@ contract WOTSPlusCodec__encodeSaveWallet is WOTSPlusCodecTest {
 
     /// @dev Property: encode → decode preserves every field for any seed.
     ///      Pins the 4192-byte saveWallet layout against encoder/decoder drift.
-    function testFuzz_exposed_encodeSaveWallet_roundtrips(
-        bytes32 seed
-    ) public view {
+    function testFuzz_exposed_encodeSaveWallet_roundtrips(bytes32 seed) public view {
         WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
         WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
         WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
@@ -105,14 +74,7 @@ contract WOTSPlusCodec__encodeSaveWallet is WOTSPlusCodecTest {
         WOTSPlus.WinternitzAddress[10] memory rec = _fuzzRecoveryKeys(seed);
         WOTSPlus.WinternitzAddress[10] memory ver = _fuzzVerificationKeys(seed);
 
-        bytes memory encoded = codec.exposed_encodeSaveWallet(
-            cur,
-            nxt,
-            sig,
-            txn,
-            rec,
-            ver
-        );
+        bytes memory encoded = codec.exposed_encodeSaveWallet(cur, nxt, sig, txn, rec, ver);
         assertEq(encoded.length, 4192);
 
         (

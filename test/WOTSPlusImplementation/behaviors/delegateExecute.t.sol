@@ -12,10 +12,7 @@ contract BenignDelegate {
     fallback() external payable {
         /// @solidity memory-safe-assembly
         assembly {
-            sstore(
-                0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
-                0x01
-            )
+            sstore(0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, 0x01)
         }
     }
 }
@@ -55,8 +52,7 @@ contract WOTSPlusImplementation_delegateExecute is WOTSPlusImplementationTest {
     RogueDelegate_WritesDisasterSlot internal rogueDisaster;
     RogueDelegate_WritesOwnershipSlot internal rogueOwnership;
 
-    address constant ENTRY_POINT =
-        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     function setUp() public override {
         super.setUp();
@@ -91,17 +87,13 @@ contract WOTSPlusImplementation_delegateExecute is WOTSPlusImplementationTest {
         wallet.delegateExecute(address(benign), hex"");
     }
 
-    function test_delegateExecute_revertsWhen_delegateMutatesDisasterSlot()
-        public
-    {
+    function test_delegateExecute_revertsWhen_delegateMutatesDisasterSlot() public {
         vm.prank(ENTRY_POINT);
         vm.expectRevert(); // Empty-bytes revert from the guard
         wallet.delegateExecute(address(rogueDisaster), hex"");
     }
 
-    function test_delegateExecute_revertsWhen_delegateMutatesOwnershipSlot()
-        public
-    {
+    function test_delegateExecute_revertsWhen_delegateMutatesOwnershipSlot() public {
         vm.prank(ENTRY_POINT);
         vm.expectRevert();
         wallet.delegateExecute(address(rogueOwnership), hex"");

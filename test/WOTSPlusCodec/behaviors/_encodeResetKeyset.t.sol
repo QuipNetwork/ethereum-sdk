@@ -8,67 +8,39 @@ import {WOTSPlusCodecHarness} from "../../harness/WOTSPlusCodecHarness.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__encodeResetKeyset is WOTSPlusCodecTest {
-    function test_exposed_encodeResetKeyset_producesCorrectLength()
-        public
-        view
-    {
-        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(1)),
-            bytes32(uint256(2))
-        );
-        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(3)),
-            bytes32(uint256(4))
-        );
+    function test_exposed_encodeResetKeyset_producesCorrectLength() public view {
+        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(bytes32(uint256(1)), bytes32(uint256(2)));
+        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(bytes32(uint256(3)), bytes32(uint256(4)));
         WOTSPlus.WinternitzElements memory sig;
         WOTSPlus.WinternitzAddress[10] memory newKeys;
         for (uint256 i = 0; i < 10; i++) {
-            newKeys[i] = WOTSPlus.WinternitzAddress(
-                bytes32(100 + i * 2),
-                bytes32(101 + i * 2)
-            );
+            newKeys[i] = WOTSPlus.WinternitzAddress(bytes32(100 + i * 2), bytes32(101 + i * 2));
         }
-        bytes memory encoded = codec.exposed_encodeResetKeyset(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Transaction,
-            cur,
-            nxt,
-            sig,
-            newKeys
-        );
+        bytes memory encoded =
+            codec.exposed_encodeResetKeyset(Codec.KeyType.Recovery, Codec.KeyType.Transaction, cur, nxt, sig, newKeys);
         // 32 (kind) + 32 (signingKind) + 64 (cur) + 64 (nxt) + 2144 (sig) +
         // 10 * 64 (newKeys) = 2976
         assertEq(encoded.length, 2976);
     }
 
-    function test_exposed_encodeResetKeyset_roundtrips_txSignTxTarget()
-        public
-        view
-    {
+    function test_exposed_encodeResetKeyset_roundtrips_txSignTxTarget() public view {
         _assertRoundtrip(Codec.KeyType.Transaction, Codec.KeyType.Transaction);
     }
 
-    function test_exposed_encodeResetKeyset_roundtrips_txSignRecoveryTarget()
-        public
-        view
-    {
+    function test_exposed_encodeResetKeyset_roundtrips_txSignRecoveryTarget() public view {
         _assertRoundtrip(Codec.KeyType.Recovery, Codec.KeyType.Transaction);
     }
 
-    function test_exposed_encodeResetKeyset_roundtrips_recSignVerifyTarget()
-        public
-        view
-    {
+    function test_exposed_encodeResetKeyset_roundtrips_recSignVerifyTarget() public view {
         _assertRoundtrip(Codec.KeyType.Verification, Codec.KeyType.Recovery);
     }
 
     /// @dev Property: encode → decode preserves every field for any seed,
     ///      target kind, and signing kind.
-    function testFuzz_exposed_encodeResetKeyset_roundtrips(
-        bytes32 seed,
-        uint8 kindRaw,
-        uint8 signingKindRaw
-    ) public view {
+    function testFuzz_exposed_encodeResetKeyset_roundtrips(bytes32 seed, uint8 kindRaw, uint8 signingKindRaw)
+        public
+        view
+    {
         Codec.KeyType kind = Codec.KeyType(kindRaw % 3);
         Codec.KeyType signingKind = Codec.KeyType(signingKindRaw % 3);
 
@@ -81,18 +53,10 @@ contract WOTSPlusCodec__encodeResetKeyset is WOTSPlusCodecTest {
             newKeys[i] = _fuzzWinternitzAddress(newSeed, i);
         }
 
-        bytes memory encoded = codec.exposed_encodeResetKeyset(
-            kind,
-            signingKind,
-            cur,
-            nxt,
-            sig,
-            newKeys
-        );
+        bytes memory encoded = codec.exposed_encodeResetKeyset(kind, signingKind, cur, nxt, sig, newKeys);
         assertEq(encoded.length, 2976);
 
-        WOTSPlusCodecHarness.DecodedResetKeyset memory out = codec
-            .exposed_decodeResetKeyset(encoded);
+        WOTSPlusCodecHarness.DecodedResetKeyset memory out = codec.exposed_decodeResetKeyset(encoded);
 
         assertTrue(out.kind == kind);
         assertTrue(out.signingKind == signingKind);
@@ -109,37 +73,19 @@ contract WOTSPlusCodec__encodeResetKeyset is WOTSPlusCodecTest {
         }
     }
 
-    function _assertRoundtrip(
-        Codec.KeyType kind,
-        Codec.KeyType signingKind
-    ) internal view {
-        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(1)),
-            bytes32(uint256(2))
-        );
-        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(3)),
-            bytes32(uint256(4))
-        );
+    function _assertRoundtrip(Codec.KeyType kind, Codec.KeyType signingKind) internal view {
+        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(bytes32(uint256(1)), bytes32(uint256(2)));
+        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(bytes32(uint256(3)), bytes32(uint256(4)));
         WOTSPlus.WinternitzElements memory sig;
-        for (uint256 i = 0; i < 67; i++) sig.elements[i] = bytes32(i + 200);
+        for (uint256 i = 0; i < 67; i++) {
+            sig.elements[i] = bytes32(i + 200);
+        }
         WOTSPlus.WinternitzAddress[10] memory newKeys;
         for (uint256 i = 0; i < 10; i++) {
-            newKeys[i] = WOTSPlus.WinternitzAddress(
-                bytes32(100 + i * 2),
-                bytes32(101 + i * 2)
-            );
+            newKeys[i] = WOTSPlus.WinternitzAddress(bytes32(100 + i * 2), bytes32(101 + i * 2));
         }
-        bytes memory encoded = codec.exposed_encodeResetKeyset(
-            kind,
-            signingKind,
-            cur,
-            nxt,
-            sig,
-            newKeys
-        );
-        WOTSPlusCodecHarness.DecodedResetKeyset memory out = codec
-            .exposed_decodeResetKeyset(encoded);
+        bytes memory encoded = codec.exposed_encodeResetKeyset(kind, signingKind, cur, nxt, sig, newKeys);
+        WOTSPlusCodecHarness.DecodedResetKeyset memory out = codec.exposed_decodeResetKeyset(encoded);
         assertTrue(out.kind == kind);
         assertTrue(out.signingKind == signingKind);
         for (uint256 i = 0; i < 10; i++) {

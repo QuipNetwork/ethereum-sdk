@@ -14,12 +14,7 @@ contract QuipFactory_renounceOwnership is QuipFactoryTest {
 
     function test_renounceOwnership_revertsWhen_calledByNonOwner() public {
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                ALICE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.renounceOwnership();
     }
 }

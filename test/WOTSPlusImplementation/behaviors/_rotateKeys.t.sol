@@ -22,45 +22,32 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _generateKeyPair("h-rotate");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            priv,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-rotate");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-rotate-vault"), payable(ALICE), payload);
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
+            keccak256("h-rotate-vault"), payable(ALICE), payload
+        );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
 
         bare = new WOTSPlusImplementationHarness(payable(address(factory)));
     }
 
-    function _makeKey(
-        uint256 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(seed),
-                publicKeyHash: bytes32(seed + 1000)
-            });
+    function _makeKey(uint256 seed) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: bytes32(seed), publicKeyHash: bytes32(seed + 1000)});
     }
 
-    function _makeKeys(
-        uint256 startSeed,
-        uint256 count
-    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory keys) {
+    function _makeKeys(uint256 startSeed, uint256 count)
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress[] memory keys)
+    {
         keys = new WOTSPlus.WinternitzAddress[](count);
         for (uint256 i = 0; i < count; i++) {
             keys[i] = _makeKey(startSeed + i * 2);
@@ -68,8 +55,7 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
     }
 
     function test_exposed_rotateKeys_recovery_swaps() public {
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
         WOTSPlus.WinternitzAddress memory next = _makeKey(0x7777);
 
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
@@ -79,15 +65,10 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
     }
 
     function test_exposed_rotateKeys_transaction_swaps() public {
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Transaction, 0);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Transaction, 0);
         WOTSPlus.WinternitzAddress memory next = _makeKey(0x8888);
 
-        harnessProxy.exposed_rotateKeys(
-            HarnessKeyset.Transaction,
-            current,
-            next
-        );
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Transaction, current, next);
 
         assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, current));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, next));
@@ -106,8 +87,7 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
 
     function test_exposed_rotateKeys_sizeUnchanged() public {
         uint256 sizeBefore = harnessProxy.keyCount(Codec.KeyType.Recovery);
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
         WOTSPlus.WinternitzAddress memory next = _makeKey(0x3333);
 
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
@@ -116,8 +96,7 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
     }
 
     function test_exposed_rotateKeys_emitsEvent() public {
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
         WOTSPlus.WinternitzAddress memory next = _makeKey(0x4444);
 
         vm.recordLogs();
@@ -141,8 +120,7 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
     function test_exposed_rotateKeys_succeedsAtFullCapacity() public {
         // Recovery set starts fully populated (10).
         assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), 10);
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 5);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 5);
         WOTSPlus.WinternitzAddress memory next = _makeKey(0x5555);
 
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
@@ -152,24 +130,18 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
     }
 
     function test_exposed_rotateKeys_revertsWhen_nextZeroSeed() public {
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 0);
-        WOTSPlus.WinternitzAddress memory next = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(uint256(1))
-        });
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory next =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(1))});
 
         vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
     }
 
     function test_exposed_rotateKeys_revertsWhen_nextZeroHash() public {
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 0);
-        WOTSPlus.WinternitzAddress memory next = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(0)
-        });
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory next =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(0)});
 
         vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
@@ -193,11 +165,9 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
     // set (it was a different existing entry), the pre-check reverts `KeyInUse`
     // before `set.add` runs.
     function test_exposed_rotateKeys_revertsWhen_nextAlreadyPresent() public {
-        WOTSPlus.WinternitzAddress memory current = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
         // Pick another existing key as `next` so the "already present" path triggers.
-        WOTSPlus.WinternitzAddress memory next = harnessProxy
-            .keyAt(Codec.KeyType.Recovery, 1);
+        WOTSPlus.WinternitzAddress memory next = harnessProxy.keyAt(Codec.KeyType.Recovery, 1);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);

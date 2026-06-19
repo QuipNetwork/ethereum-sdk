@@ -16,34 +16,23 @@ contract WOTSPlusImplementation__snapshotGuardedSlots is WOTSPlusImplementationT
     WOTSPlusImplementationHarness public harnessProxy;
 
     // Solady Ownable owner slot. See dependencies/solady-0.1.26/src/auth/Ownable.sol
-    bytes32 constant _OWNER_SLOT =
-        0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
+    bytes32 constant _OWNER_SLOT = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
     // Solady UUPSUpgradeable ERC-1967 implementation slot.
-    bytes32 constant _ERC1967_IMPLEMENTATION_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 constant _ERC1967_IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _generateKeyPair("h-snap");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            priv,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-snap");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-snap-vault"), payable(ALICE), payload);
+        address proxyAddr =
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-snap-vault"), payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
@@ -71,10 +60,7 @@ contract WOTSPlusImplementation__snapshotGuardedSlots is WOTSPlusImplementationT
         assertEq(snap[3], newSeed);
     }
 
-    function test_exposed_snapshotGuardedSlots_allSevenPositionsDistinct()
-        public
-        view
-    {
+    function test_exposed_snapshotGuardedSlots_allSevenPositionsDistinct() public view {
         bytes32[7] memory snap = harnessProxy.exposed_snapshotGuardedSlots();
         // Deployed wallet: owner non-zero, impl non-zero, factory non-zero,
         // disaster pair non-zero, ownership pair non-zero. All distinct.

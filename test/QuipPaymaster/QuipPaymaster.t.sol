@@ -25,12 +25,10 @@ contract QuipPaymasterTest is Test {
     address public BOB = makeAddr("bob");
     address public WALLET = address(0xdead);
 
-    address public constant ENTRY_POINT =
-        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address public constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     /// @dev Domain tag for paymaster approval digests (must match QuipPaymaster._PAYMASTER_APPROVE_TAG).
-    bytes32 internal constant _PAYMASTER_APPROVE_TAG =
-        keccak256("quip.digest.paymasterApprove");
+    bytes32 internal constant _PAYMASTER_APPROVE_TAG = keccak256("quip.digest.paymasterApprove");
 
     /// @dev Offset into `paymasterAndData` where the WOTS+ signature begins
     ///      (must match QuipPaymaster._PAYMASTER_SIG_OFFSET). Everything up to
@@ -52,23 +50,15 @@ contract QuipPaymasterTest is Test {
         vm.deal(ALICE, 100 ether);
 
         // Generate initial WOTS+ verifier keypair
-        (verifierPubkey, verifierPrivateKey) = _generateKeyPair(
-            "verifier-seed-0"
-        );
+        (verifierPubkey, verifierPrivateKey) = _generateKeyPair("verifier-seed-0");
 
         // Deploy implementation
         implementation = new QuipPaymaster();
         harnessImpl = new QuipPaymasterHarness();
 
         // Deploy proxies via CREATE3
-        paymaster = QuipPaymaster(
-            payable(
-                _deployProxy(address(implementation), keccak256("paymaster"))
-            )
-        );
-        harness = QuipPaymasterHarness(
-            payable(_deployProxy(address(harnessImpl), keccak256("harness")))
-        );
+        paymaster = QuipPaymaster(payable(_deployProxy(address(implementation), keccak256("paymaster"))));
+        harness = QuipPaymasterHarness(payable(_deployProxy(address(harnessImpl), keccak256("harness"))));
 
         // Initialize
         paymaster.initialize(ADMIN);
@@ -94,10 +84,7 @@ contract QuipPaymasterTest is Test {
     // --- Helpers ---
 
     /// @dev Deploy a minimal ERC-1967 proxy via CREATE3 (same bytecode as QuipFactory).
-    function _deployProxy(
-        address impl,
-        bytes32 salt
-    ) internal returns (address) {
+    function _deployProxy(address impl, bytes32 salt) internal returns (address) {
         bytes memory proxyInitcode = abi.encodePacked(
             hex"603d3d8160223d3973",
             impl,
@@ -109,9 +96,7 @@ contract QuipPaymasterTest is Test {
     }
 
     /// @dev Generate a WOTS+ keypair from a deterministic seed.
-    function _generateKeyPair(
-        bytes32 seed
-    )
+    function _generateKeyPair(bytes32 seed)
         internal
         pure
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
@@ -120,13 +105,8 @@ contract QuipPaymasterTest is Test {
     }
 
     /// @dev Sign a message with a WOTS+ private key.
-    function _sign(
-        bytes32 privateKey,
-        bytes32 messageHash
-    ) internal pure returns (WOTSPlus.WinternitzElements memory) {
-        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
-            messageHash: messageHash
-        });
+    function _sign(bytes32 privateKey, bytes32 messageHash) internal pure returns (WOTSPlus.WinternitzElements memory) {
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({messageHash: messageHash});
         bytes32[67] memory elements = WOTSPlus.sign(privateKey, message);
         return WOTSPlus.WinternitzElements({elements: elements});
     }
@@ -148,16 +128,15 @@ contract QuipPaymasterTest is Test {
         uint48 validAfter,
         WOTSPlus.WinternitzAddress memory nextPubkey
     ) internal pure returns (bytes memory) {
-        return
-            abi.encodePacked(
-                paymasterAddr,
-                pmVerificationGas,
-                pmPostOpGas,
-                validUntil,
-                validAfter,
-                nextPubkey.publicSeed,
-                nextPubkey.publicKeyHash
-            );
+        return abi.encodePacked(
+            paymasterAddr,
+            pmVerificationGas,
+            pmPostOpGas,
+            validUntil,
+            validAfter,
+            nextPubkey.publicSeed,
+            nextPubkey.publicKeyHash
+        );
     }
 
     /// @dev Recompute the contract's `userOpBindingHash`. Must stay in lockstep
@@ -165,22 +144,17 @@ contract QuipPaymasterTest is Test {
     ///      digest manually (e.g. with the wrong key) use this to build the
     ///      preimage; tests that mutate a field post-signing use the contract's
     ///      computation directly via the WOTS+ verify failure path.
-    function _userOpBindingHash(
-        PackedUserOperation memory userOp
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                bytes32(uint256(uint160(userOp.sender))),
-                bytes32(userOp.nonce),
-                EfficientHashLib.hash(userOp.initCode),
-                EfficientHashLib.hash(userOp.callData),
-                userOp.accountGasLimits,
-                bytes32(userOp.preVerificationGas),
-                userOp.gasFees,
-                EfficientHashLib.hash(
-                    _slice(userOp.paymasterAndData, 0, _PAYMASTER_SIG_OFFSET)
-                )
-            );
+    function _userOpBindingHash(PackedUserOperation memory userOp) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(
+            bytes32(uint256(uint160(userOp.sender))),
+            bytes32(userOp.nonce),
+            EfficientHashLib.hash(userOp.initCode),
+            EfficientHashLib.hash(userOp.callData),
+            userOp.accountGasLimits,
+            bytes32(userOp.preVerificationGas),
+            userOp.gasFees,
+            EfficientHashLib.hash(_slice(userOp.paymasterAndData, 0, _PAYMASTER_SIG_OFFSET))
+        );
     }
 
     /// @dev Build the outer digest the paymaster's WOTS+ verifier signs.
@@ -189,15 +163,14 @@ contract QuipPaymasterTest is Test {
         WOTSPlus.WinternitzAddress memory currentPubkey,
         bytes32 userOpBindingHash_
     ) internal view returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                _PAYMASTER_APPROVE_TAG,
-                bytes32(block.chainid),
-                bytes32(uint256(uint160(paymasterAddr))),
-                currentPubkey.publicSeed,
-                currentPubkey.publicKeyHash,
-                userOpBindingHash_
-            );
+        return EfficientHashLib.hash(
+            _PAYMASTER_APPROVE_TAG,
+            bytes32(block.chainid),
+            bytes32(uint256(uint160(paymasterAddr))),
+            currentPubkey.publicSeed,
+            currentPubkey.publicKeyHash,
+            userOpBindingHash_
+        );
     }
 
     /// @dev Sign a paymaster approval for `userOp` and patch the full
@@ -216,12 +189,7 @@ contract QuipPaymasterTest is Test {
         WOTSPlus.WinternitzAddress memory nextPubkey
     ) internal view returns (PackedUserOperation memory) {
         bytes memory prefix = _paymasterAndDataPrefix(
-            paymasterAddr,
-            pmVerificationGas,
-            pmPostOpGas,
-            validUntil,
-            validAfter,
-            nextPubkey
+            paymasterAddr, pmVerificationGas, pmPostOpGas, validUntil, validAfter, nextPubkey
         );
 
         // Patch the prefix into userOp.paymasterAndData so the binding hash
@@ -229,16 +197,9 @@ contract QuipPaymasterTest is Test {
         // for the sig region; that placeholder is excluded from the hash.
         userOp.paymasterAndData = abi.encodePacked(prefix, new bytes(2144));
 
-        bytes32 digest = _paymasterApprovalDigest(
-            paymasterAddr,
-            currentPubkey,
-            _userOpBindingHash(userOp)
-        );
+        bytes32 digest = _paymasterApprovalDigest(paymasterAddr, currentPubkey, _userOpBindingHash(userOp));
 
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            currentPrivateKey,
-            digest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(currentPrivateKey, digest);
 
         userOp.paymasterAndData = abi.encodePacked(prefix, sig.elements);
         return userOp;
@@ -277,40 +238,32 @@ contract QuipPaymasterTest is Test {
     }
 
     /// @dev Build a mock PackedUserOperation with the given paymasterAndData and sender.
-    function _mockUserOp(
-        bytes memory paymasterData_,
-        address sender_
-    ) internal pure returns (PackedUserOperation memory) {
-        return
-            PackedUserOperation({
-                sender: sender_,
-                nonce: 0,
-                initCode: "",
-                callData: "",
-                accountGasLimits: bytes32(
-                    (uint256(100_000) << 128) | uint256(100_000)
-                ),
-                preVerificationGas: 21_000,
-                gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
-                paymasterAndData: paymasterData_,
-                signature: ""
-            });
+    function _mockUserOp(bytes memory paymasterData_, address sender_)
+        internal
+        pure
+        returns (PackedUserOperation memory)
+    {
+        return PackedUserOperation({
+            sender: sender_,
+            nonce: 0,
+            initCode: "",
+            callData: "",
+            accountGasLimits: bytes32((uint256(100_000) << 128) | uint256(100_000)),
+            preVerificationGas: 21_000,
+            gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
+            paymasterAndData: paymasterData_,
+            signature: ""
+        });
     }
 
     /// @dev Build a mock PackedUserOperation with the default WALLET sender.
-    function _mockUserOp(
-        bytes memory paymasterData_
-    ) internal view returns (PackedUserOperation memory) {
+    function _mockUserOp(bytes memory paymasterData_) internal view returns (PackedUserOperation memory) {
         return _mockUserOp(paymasterData_, WALLET);
     }
 
     /// @dev Take a bytes slice. EfficientHashLib.hash requires bytes memory,
     ///      not a slice expression, so this exists to bridge.
-    function _slice(
-        bytes memory data,
-        uint256 start,
-        uint256 len
-    ) internal pure returns (bytes memory out) {
+    function _slice(bytes memory data, uint256 start, uint256 len) internal pure returns (bytes memory out) {
         out = new bytes(len);
         for (uint256 i = 0; i < len; i++) {
             out[i] = data[start + i];

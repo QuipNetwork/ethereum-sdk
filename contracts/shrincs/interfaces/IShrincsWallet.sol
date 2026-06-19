@@ -108,7 +108,10 @@ interface IShrincsWallet {
     /// @notice Emitted when a stateful signature is consumed (its leaf marked used).
     /// @param leaf The consumed stateful leaf index.
     /// @param keyVersion The installed-key epoch the signature was valid under.
-    event StatefulSignatureVerified(uint32 indexed leaf, uint256 indexed keyVersion);
+    event StatefulSignatureVerified(
+        uint32 indexed leaf,
+        uint256 indexed keyVersion
+    );
 
     /// @notice Emitted in place of `ExecutionSucceeded` when `execute(bytes)` is signed with
     ///         `value == 0 && data.length == 0` — a deliberate leaf consumption with no call.
@@ -119,7 +122,11 @@ interface IShrincsWallet {
     /// @param target The recipient or contract address.
     /// @param value The ETH value sent to the target.
     /// @param dataHash The keccak256 hash of the calldata.
-    event ExecutionSucceeded(address indexed target, uint256 value, bytes32 dataHash);
+    event ExecutionSucceeded(
+        address indexed target,
+        uint256 value,
+        bytes32 dataHash
+    );
 
     /// @notice Emitted when the dedicated ERC-1271 stateless verifier key is (re)installed.
     /// @param oldCommitment The previous ERC-1271 verifier commitment.
@@ -133,13 +140,19 @@ interface IShrincsWallet {
     /// @param parameterSetId The installed key's parameter set.
     /// @param keyVersion The new installed-key epoch.
     event KeyRotated(
-        bytes32 indexed previousCommitment, bytes32 indexed nextCommitment, uint8 parameterSetId, uint256 keyVersion
+        bytes32 indexed previousCommitment,
+        bytes32 indexed nextCommitment,
+        uint8 parameterSetId,
+        uint256 keyVersion
     );
 
     /// @notice Emitted when PQ state is migrated during an upgrade.
     /// @param shrincsPublicKeyCommitment The reinstalled main-key commitment.
     /// @param keyVersion The new installed-key epoch.
-    event WalletMigrated(bytes32 indexed shrincsPublicKeyCommitment, uint256 keyVersion);
+    event WalletMigrated(
+        bytes32 indexed shrincsPublicKeyCommitment,
+        uint256 keyVersion
+    );
 
     /// @notice Discriminates the reasons `_validateSignature` returns `validationData == 1`.
     /// @dev Surfaced to off-chain simulators via `UserOpValidationRejected` since ERC-4337
@@ -173,16 +186,25 @@ interface IShrincsWallet {
     /// @param payload Packed init data: `[0:32)` main commitment, `[32:64)` pkSeed, then the
     ///        ABI-encoded `(PublicKey mainBundle, uint8 parameterSetId, bytes32 erc1271Commitment,
     ///        uint8 erc1271ParameterSetId)`.
-    function initialize(address payable newOwner, bytes calldata payload) external;
+    function initialize(
+        address payable newOwner,
+        bytes calldata payload
+    ) external;
 
     /// @notice Re-installs PQ state during an upgrade. Only valid inside `upgradeToAndCall`.
     function migrate(bytes calldata payload) external;
 
     /// @notice SHRINCS-gated UUPS upgrade. Authorized by a stateful signature from the main key.
-    function upgradeToAndCall(address newImplementation, bytes calldata data) external payable;
+    function upgradeToAndCall(
+        address newImplementation,
+        bytes calldata data
+    ) external payable;
 
     /// @notice New-implementation reachability probe, delegatecalled during `upgradeToAndCall`.
-    function verifyUpgrade(address newImplementation, bytes calldata data) external view;
+    function verifyUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) external view;
 
     /// @notice Executes a single call authorized by a stateful SHRINCS signature.
     /// @param publicKey The main-key bundle (re-validated against the installed commitment).
@@ -265,13 +287,15 @@ interface IShrincsWallet {
     /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
     ///      and overridden by the wallet (stateless SHRINCS verify against the dedicated verifier
     ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an override clash.
-    function debugIsValidSignature(bytes32 hash, bytes calldata signature)
-        external
-        view
-        returns (Erc1271ValidationResult);
+    function debugIsValidSignature(
+        bytes32 hash,
+        bytes calldata signature
+    ) external view returns (Erc1271ValidationResult);
 
     /// @notice The EIP-712 typed-data target the ERC-1271 ECDSA half must sign.
-    function quipSignedHashEcdsaTarget(bytes32 hash) external view returns (bytes32);
+    function quipSignedHashEcdsaTarget(
+        bytes32 hash
+    ) external view returns (bytes32);
 
     /// @notice The classical owner (ERC-1271 ECDSA gate + factory registry).
     function owner() external view returns (address);
@@ -292,10 +316,16 @@ interface IShrincsWallet {
     function getErc1271Commitment() external view returns (bytes32);
 
     /// @notice The installed main-key parameter set.
-    function getParameterSetId() external view returns (ShrincsTypes.ParameterSetId);
+    function getParameterSetId()
+        external
+        view
+        returns (ShrincsTypes.ParameterSetId);
 
     /// @notice The installed ERC-1271 verifier-key parameter set.
-    function getErc1271ParameterSetId() external view returns (ShrincsTypes.ParameterSetId);
+    function getErc1271ParameterSetId()
+        external
+        view
+        returns (ShrincsTypes.ParameterSetId);
 
     /// @notice Whether stateful `leafIndex` has been consumed in the current key epoch.
     function isStatefulLeafUsed(uint256 leafIndex) external view returns (bool);

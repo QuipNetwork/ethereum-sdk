@@ -69,10 +69,7 @@ contract DeployDeployer is Script {
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
 
         vm.startBroadcast(privateKey);
-        address deployed = ICreateX(CREATEX).deployCreate3(
-            DEPLOYER_SALT,
-            type(Deployer).creationCode
-        );
+        address deployed = ICreateX(CREATEX).deployCreate3(DEPLOYER_SALT, type(Deployer).creationCode);
         vm.stopBroadcast();
 
         require(deployed == expectedAddr, "Deployer address mismatch");

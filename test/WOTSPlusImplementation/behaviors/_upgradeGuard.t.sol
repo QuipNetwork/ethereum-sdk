@@ -10,26 +10,18 @@ contract WOTSPlusImplementation__upgradeGuard is WOTSPlusImplementationTest {
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _generateKeyPair("h-guard");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            priv,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-guard");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-guard-vault"), payable(ALICE), payload);
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
+            keccak256("h-guard-vault"), payable(ALICE), payload
+        );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 

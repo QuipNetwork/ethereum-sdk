@@ -45,19 +45,11 @@ abstract contract QuipFactoryInvariantBase is QuipFactoryTest {
             pOriginals[i] = address(new FactoryImplStub(i + 1));
             pTwins[i] = address(new FactoryImplStub(i + 1));
             // Sanity: confirm the pre-deploy invariant the handler relies on.
-            require(
-                pOriginals[i].codehash == pTwins[i].codehash,
-                "pool twin codehash mismatch"
-            );
+            require(pOriginals[i].codehash == pTwins[i].codehash, "pool twin codehash mismatch");
             require(pOriginals[i] != pTwins[i], "pool address collision");
         }
 
-        handler.initialize(
-            factory,
-            address(walletImplementation),
-            pOriginals,
-            pTwins
-        );
+        handler.initialize(factory, address(walletImplementation), pOriginals, pTwins);
     }
 
     /// @dev Adjusts the inherited `test_setUp` to reflect post-handover

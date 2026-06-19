@@ -51,10 +51,8 @@ contract DeployImplementation is Script {
             return;
         }
 
-        bytes memory bytecode = abi.encodePacked(
-            type(WOTSPlusImplementation).creationCode,
-            abi.encode(payable(factoryAddr))
-        );
+        bytes memory bytecode =
+            abi.encodePacked(type(WOTSPlusImplementation).creationCode, abi.encode(payable(factoryAddr)));
         console.log("Bytecode size:", bytecode.length, "bytes");
 
         vm.startBroadcast(privateKey);

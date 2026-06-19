@@ -6,15 +6,7 @@ import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 
 contract QuipPaymaster_withdrawTo is QuipPaymasterTest {
     function test_withdrawTo_withdrawsFromEntryPoint() public {
-        vm.mockCall(
-            ENTRY_POINT,
-            abi.encodeWithSignature(
-                "withdrawTo(address,uint256)",
-                BOB,
-                1 ether
-            ),
-            ""
-        );
+        vm.mockCall(ENTRY_POINT, abi.encodeWithSignature("withdrawTo(address,uint256)", BOB, 1 ether), "");
 
         vm.prank(ADMIN);
         paymaster.withdrawTo(payable(BOB), 1 ether);

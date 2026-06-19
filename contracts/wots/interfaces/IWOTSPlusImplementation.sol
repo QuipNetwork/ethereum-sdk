@@ -736,5 +736,7 @@ interface IWOTSPlusImplementation {
     ///         keccak256(abi.encode(QUIP_SIGNED_HASH_TYPEHASH, hash)))`,
     ///         where `QUIP_SIGNED_HASH_TYPEHASH ==
     ///         keccak256("QuipSignedHash(bytes32 hash)")`.
-    function quipSignedHashEcdsaTarget(bytes32 hash) external view returns (bytes32);
+    function quipSignedHashEcdsaTarget(
+        bytes32 hash
+    ) external view returns (bytes32);
 }

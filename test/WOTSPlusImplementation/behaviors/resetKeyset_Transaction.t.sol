@@ -23,35 +23,24 @@ contract WOTSPlusImplementation_resetKeyset_Transaction is WOTSPlusImplementatio
     function setUp() public override {
         super.setUp();
 
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
         bytes memory payload = _encodeInitPayload(alicePubkey, recoveryPubkeys);
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("resetKeyset-tx-vault"), payable(ALICE), payload);
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
+            keccak256("resetKeyset-tx-vault"), payable(ALICE), payload
+        );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
     function test_resetKeyset_Transaction_txSigned_sameKeysetReset() public {
-        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(
-            keccak256("tx-tx-reset")
-        );
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "tx-tx-reset-next"
-        );
+        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(keccak256("tx-tx-reset"));
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("tx-tx-reset-next");
 
         bytes memory payload = _encodeResetKeysetPayload(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Transaction,
-            alicePubkey,
-            alicePrivateKey,
-            nextPq,
-            newKeys
+            Codec.KeyType.Transaction, Codec.KeyType.Transaction, alicePubkey, alicePrivateKey, nextPq, newKeys
         );
 
         // Pre: tx set holds 10 init keys (alicePubkey + 9 derived fillers).
@@ -78,20 +67,11 @@ contract WOTSPlusImplementation_resetKeyset_Transaction is WOTSPlusImplementatio
         // Cross-keyset auth: recovery key authorizes tx-set wholesale reset.
         bytes32 recPriv = _recoverySigningKey(alicePrivateKey, 0);
         WOTSPlus.WinternitzAddress memory currentRec = recoveryPubkeys[0];
-        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(
-            keccak256("tx-rec-reset")
-        );
-        (WOTSPlus.WinternitzAddress memory nextRec, ) = _generateKeyPair(
-            "tx-rec-reset-next"
-        );
+        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(keccak256("tx-rec-reset"));
+        (WOTSPlus.WinternitzAddress memory nextRec,) = _generateKeyPair("tx-rec-reset-next");
 
         bytes memory payload = _encodeResetKeysetPayload(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            currentRec,
-            recPriv,
-            nextRec,
-            newKeys
+            Codec.KeyType.Transaction, Codec.KeyType.Recovery, currentRec, recPriv, nextRec, newKeys
         );
 
         vm.prank(ALICE);
@@ -113,11 +93,9 @@ contract WOTSPlusImplementation_resetKeyset_Transaction is WOTSPlusImplementatio
     /*                         HELPERS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function _freshKeys10(
-        bytes32 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress[10] memory out) {
+    function _freshKeys10(bytes32 seed) internal pure returns (WOTSPlus.WinternitzAddress[10] memory out) {
         for (uint256 i = 0; i < 10; i++) {
-            (out[i], ) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
+            (out[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 
@@ -130,22 +108,9 @@ contract WOTSPlusImplementation_resetKeyset_Transaction is WOTSPlusImplementatio
         WOTSPlus.WinternitzAddress[10] memory newKeys
     ) internal view returns (bytes memory) {
         bytes32 digest = _buildResetKeysetMessageHash(
-            kind,
-            signingKind,
-            address(harnessProxy),
-            currentPq,
-            nextPq,
-            newKeys
+            kind, signingKind, address(harnessProxy), currentPq, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, digest);
-        return
-            Codec.encodeResetKeyset(
-                kind,
-                signingKind,
-                currentPq,
-                nextPq,
-                sig,
-                newKeys
-            );
+        return Codec.encodeResetKeyset(kind, signingKind, currentPq, nextPq, sig, newKeys);
     }
 }

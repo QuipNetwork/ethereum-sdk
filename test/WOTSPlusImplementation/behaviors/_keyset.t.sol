@@ -21,20 +21,11 @@ contract WOTSPlusImplementation__keyset is WOTSPlusImplementationTest {
         bare = new WOTSPlusImplementationHarness(payable(address(factory)));
     }
 
-    function _makeKey(
-        uint256 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(seed),
-                publicKeyHash: bytes32(seed + 1000)
-            });
+    function _makeKey(uint256 seed) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: bytes32(seed), publicKeyHash: bytes32(seed + 1000)});
     }
 
-    function _mkArr(
-        uint256 startSeed,
-        uint256 n
-    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory arr) {
+    function _mkArr(uint256 startSeed, uint256 n) internal pure returns (WOTSPlus.WinternitzAddress[] memory arr) {
         arr = new WOTSPlus.WinternitzAddress[](n);
         for (uint256 i = 0; i < n; i++) {
             arr[i] = _makeKey(startSeed + i * 2);
@@ -52,15 +43,9 @@ contract WOTSPlusImplementation__keyset is WOTSPlusImplementationTest {
         assertEq(bare.exposed_keysetLength(Codec.KeyType.Transaction), 2);
         // Members of the Transaction set register under `Transaction` but not
         // under `Recovery` or `Verification`.
-        assertTrue(
-            bare.exposed_keysetContains(Codec.KeyType.Transaction, txn[0])
-        );
-        assertFalse(
-            bare.exposed_keysetContains(Codec.KeyType.Recovery, txn[0])
-        );
-        assertFalse(
-            bare.exposed_keysetContains(Codec.KeyType.Verification, txn[0])
-        );
+        assertTrue(bare.exposed_keysetContains(Codec.KeyType.Transaction, txn[0]));
+        assertFalse(bare.exposed_keysetContains(Codec.KeyType.Recovery, txn[0]));
+        assertFalse(bare.exposed_keysetContains(Codec.KeyType.Verification, txn[0]));
     }
 
     function test_exposed_keyset_recovery_selectsRecoverySet() public {
@@ -72,15 +57,9 @@ contract WOTSPlusImplementation__keyset is WOTSPlusImplementationTest {
         bare.exposed_addKeys(HarnessKeyset.Verification, ver);
 
         assertEq(bare.exposed_keysetLength(Codec.KeyType.Recovery), 3);
-        assertTrue(
-            bare.exposed_keysetContains(Codec.KeyType.Recovery, rec[0])
-        );
-        assertFalse(
-            bare.exposed_keysetContains(Codec.KeyType.Transaction, rec[0])
-        );
-        assertFalse(
-            bare.exposed_keysetContains(Codec.KeyType.Verification, rec[0])
-        );
+        assertTrue(bare.exposed_keysetContains(Codec.KeyType.Recovery, rec[0]));
+        assertFalse(bare.exposed_keysetContains(Codec.KeyType.Transaction, rec[0]));
+        assertFalse(bare.exposed_keysetContains(Codec.KeyType.Verification, rec[0]));
     }
 
     function test_exposed_keyset_verification_selectsVerificationSet() public {
@@ -92,15 +71,9 @@ contract WOTSPlusImplementation__keyset is WOTSPlusImplementationTest {
         bare.exposed_addKeys(HarnessKeyset.Verification, ver);
 
         assertEq(bare.exposed_keysetLength(Codec.KeyType.Verification), 4);
-        assertTrue(
-            bare.exposed_keysetContains(Codec.KeyType.Verification, ver[0])
-        );
-        assertFalse(
-            bare.exposed_keysetContains(Codec.KeyType.Transaction, ver[0])
-        );
-        assertFalse(
-            bare.exposed_keysetContains(Codec.KeyType.Recovery, ver[0])
-        );
+        assertTrue(bare.exposed_keysetContains(Codec.KeyType.Verification, ver[0]));
+        assertFalse(bare.exposed_keysetContains(Codec.KeyType.Transaction, ver[0]));
+        assertFalse(bare.exposed_keysetContains(Codec.KeyType.Recovery, ver[0]));
     }
 
     function test_exposed_keyset_emptySetReportsZero() public view {

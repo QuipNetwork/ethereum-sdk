@@ -16,90 +16,54 @@ contract WOTSPlusImplementation__verifyImplementationSig is WOTSPlusImplementati
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _generateKeyPair("h-vis");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            priv,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-vis");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-vis-vault"), payable(ALICE), payload);
+        address proxyAddr =
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-vis-vault"), payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
     function test_exposed_verifyImplementationSig_happyPath() public view {
         address newImpl = address(0x9999);
-        (
-            WOTSPlus.WinternitzAddress memory verifier,
-            bytes32 verifierPriv
-        ) = _generateKeyPair("h-vis-verifier");
+        (WOTSPlus.WinternitzAddress memory verifier, bytes32 verifierPriv) = _generateKeyPair("h-vis-verifier");
 
         bytes32 digest = Codec.verificationDigest(
-            address(harnessProxy),
-            block.chainid,
-            newImpl,
-            verifier.publicSeed,
-            verifier.publicKeyHash
+            address(harnessProxy), block.chainid, newImpl, verifier.publicSeed, verifier.publicKeyHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(verifierPriv, digest);
 
         harnessProxy.exposed_verifyImplementationSig(newImpl, verifier, sig);
     }
 
-    function test_exposed_verifyImplementationSig_revertsWhen_signatureInvalid()
-        public
-    {
+    function test_exposed_verifyImplementationSig_revertsWhen_signatureInvalid() public {
         address newImpl = address(0xA1A1);
-        (
-            WOTSPlus.WinternitzAddress memory verifier,
-            bytes32 verifierPriv
-        ) = _generateKeyPair("h-vis-verifier-bad");
+        (WOTSPlus.WinternitzAddress memory verifier, bytes32 verifierPriv) = _generateKeyPair("h-vis-verifier-bad");
 
         // Sign the wrong digest so verification fails.
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPriv,
-            keccak256("wrong-digest")
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPriv, keccak256("wrong-digest"));
 
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
         harnessProxy.exposed_verifyImplementationSig(newImpl, verifier, sig);
     }
 
     // Wrong `newImpl` in the digest → digest mismatch → verification fails.
-    function test_exposed_verifyImplementationSig_revertsWhen_newImplMismatch()
-        public
-    {
+    function test_exposed_verifyImplementationSig_revertsWhen_newImplMismatch() public {
         address realImpl = address(0xB2B2);
         address wrongImpl = address(0xC3C3);
-        (
-            WOTSPlus.WinternitzAddress memory verifier,
-            bytes32 verifierPriv
-        ) = _generateKeyPair("h-vis-verifier-2");
+        (WOTSPlus.WinternitzAddress memory verifier, bytes32 verifierPriv) = _generateKeyPair("h-vis-verifier-2");
 
         // Sign digest for realImpl…
         bytes32 signedDigest = Codec.verificationDigest(
-            address(harnessProxy),
-            block.chainid,
-            realImpl,
-            verifier.publicSeed,
-            verifier.publicKeyHash
+            address(harnessProxy), block.chainid, realImpl, verifier.publicSeed, verifier.publicKeyHash
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPriv,
-            signedDigest
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPriv, signedDigest);
 
         // …but call with wrongImpl so the digest it reconstructs differs.
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);

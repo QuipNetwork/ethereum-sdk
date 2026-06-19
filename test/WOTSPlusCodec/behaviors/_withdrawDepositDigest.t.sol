@@ -12,10 +12,7 @@ contract WOTSPlusCodec__withdrawDepositDigest is WOTSPlusCodecTest {
     bytes32 constant S2 = bytes32(uint256(20));
     bytes32 constant H2 = bytes32(uint256(21));
 
-    function test_exposed_withdrawDepositDigest_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_withdrawDepositDigest_matchesManualHash() public view {
         bytes32 tag = keccak256("quip.digest.withdrawDeposit");
         address to = address(0xBEEF);
         uint256 amount = 1 ether;
@@ -30,69 +27,18 @@ contract WOTSPlusCodec__withdrawDepositDigest is WOTSPlusCodecTest {
             bytes32(uint256(uint160(to))),
             bytes32(amount)
         );
-        assertEq(
-            codec.exposed_withdrawDepositDigest(
-                W,
-                C,
-                S1,
-                H1,
-                S2,
-                H2,
-                to,
-                amount
-            ),
-            expected
-        );
+        assertEq(codec.exposed_withdrawDepositDigest(W, C, S1, H1, S2, H2, to, amount), expected);
     }
 
-    function test_exposed_withdrawDepositDigest_differsByRecipient()
-        public
-        view
-    {
-        bytes32 a = codec.exposed_withdrawDepositDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            address(0x1),
-            1 ether
-        );
-        bytes32 b = codec.exposed_withdrawDepositDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            address(0x2),
-            1 ether
-        );
+    function test_exposed_withdrawDepositDigest_differsByRecipient() public view {
+        bytes32 a = codec.exposed_withdrawDepositDigest(W, C, S1, H1, S2, H2, address(0x1), 1 ether);
+        bytes32 b = codec.exposed_withdrawDepositDigest(W, C, S1, H1, S2, H2, address(0x2), 1 ether);
         assertTrue(a != b);
     }
 
     function test_exposed_withdrawDepositDigest_differsByAmount() public view {
-        bytes32 a = codec.exposed_withdrawDepositDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            address(0x1),
-            1 ether
-        );
-        bytes32 b = codec.exposed_withdrawDepositDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            address(0x1),
-            2 ether
-        );
+        bytes32 a = codec.exposed_withdrawDepositDigest(W, C, S1, H1, S2, H2, address(0x1), 1 ether);
+        bytes32 b = codec.exposed_withdrawDepositDigest(W, C, S1, H1, S2, H2, address(0x1), 2 ether);
         assertTrue(a != b);
     }
 }

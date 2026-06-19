@@ -29,12 +29,7 @@ contract QuipFactory_transferOwnership is QuipFactoryTest {
 
     function test_transferOwnership_revertsWhen_callerNotOwner() public {
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                ALICE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.transferOwnership(ALICE);
     }
 
@@ -43,12 +38,7 @@ contract QuipFactory_transferOwnership is QuipFactoryTest {
         factory.transferOwnership(ALICE);
 
         vm.prank(BOB);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                BOB
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, BOB));
         factory.acceptOwnership();
     }
 }

@@ -15,128 +15,38 @@ contract WOTSPlusCodec__saveWalletDigest is WOTSPlusCodecTest {
 
     function test_exposed_saveWalletDigest_matchesManualHash() public view {
         bytes32 expected = EfficientHashLib.hash(
-            keccak256("quip.digest.saveWallet"),
-            bytes32(C),
-            bytes32(uint256(uint160(W))),
-            S1,
-            H1,
-            S2,
-            H2,
-            KEYS_HASH
+            keccak256("quip.digest.saveWallet"), bytes32(C), bytes32(uint256(uint160(W))), S1, H1, S2, H2, KEYS_HASH
         );
-        assertEq(
-            codec.exposed_saveWalletDigest(W, C, S1, H1, S2, H2, KEYS_HASH),
-            expected
-        );
+        assertEq(codec.exposed_saveWalletDigest(W, C, S1, H1, S2, H2, KEYS_HASH), expected);
     }
 
     function test_exposed_saveWalletDigest_differsByWallet() public view {
-        bytes32 a = codec.exposed_saveWalletDigest(
-            address(0x1),
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            KEYS_HASH
-        );
-        bytes32 b = codec.exposed_saveWalletDigest(
-            address(0x2),
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            KEYS_HASH
-        );
+        bytes32 a = codec.exposed_saveWalletDigest(address(0x1), C, S1, H1, S2, H2, KEYS_HASH);
+        bytes32 b = codec.exposed_saveWalletDigest(address(0x2), C, S1, H1, S2, H2, KEYS_HASH);
         assertTrue(a != b);
     }
 
     function test_exposed_saveWalletDigest_differsByChainId() public view {
-        bytes32 a = codec.exposed_saveWalletDigest(
-            W,
-            1,
-            S1,
-            H1,
-            S2,
-            H2,
-            KEYS_HASH
-        );
-        bytes32 b = codec.exposed_saveWalletDigest(
-            W,
-            2,
-            S1,
-            H1,
-            S2,
-            H2,
-            KEYS_HASH
-        );
+        bytes32 a = codec.exposed_saveWalletDigest(W, 1, S1, H1, S2, H2, KEYS_HASH);
+        bytes32 b = codec.exposed_saveWalletDigest(W, 2, S1, H1, S2, H2, KEYS_HASH);
         assertTrue(a != b);
     }
 
     function test_exposed_saveWalletDigest_differsByCurrentKey() public view {
-        bytes32 a = codec.exposed_saveWalletDigest(
-            W,
-            C,
-            bytes32(uint256(0x111)),
-            H1,
-            S2,
-            H2,
-            KEYS_HASH
-        );
-        bytes32 b = codec.exposed_saveWalletDigest(
-            W,
-            C,
-            bytes32(uint256(0x222)),
-            H1,
-            S2,
-            H2,
-            KEYS_HASH
-        );
+        bytes32 a = codec.exposed_saveWalletDigest(W, C, bytes32(uint256(0x111)), H1, S2, H2, KEYS_HASH);
+        bytes32 b = codec.exposed_saveWalletDigest(W, C, bytes32(uint256(0x222)), H1, S2, H2, KEYS_HASH);
         assertTrue(a != b);
     }
 
     function test_exposed_saveWalletDigest_differsByNewKey() public view {
-        bytes32 a = codec.exposed_saveWalletDigest(
-            W,
-            C,
-            S1,
-            H1,
-            bytes32(uint256(0x111)),
-            H2,
-            KEYS_HASH
-        );
-        bytes32 b = codec.exposed_saveWalletDigest(
-            W,
-            C,
-            S1,
-            H1,
-            bytes32(uint256(0x222)),
-            H2,
-            KEYS_HASH
-        );
+        bytes32 a = codec.exposed_saveWalletDigest(W, C, S1, H1, bytes32(uint256(0x111)), H2, KEYS_HASH);
+        bytes32 b = codec.exposed_saveWalletDigest(W, C, S1, H1, bytes32(uint256(0x222)), H2, KEYS_HASH);
         assertTrue(a != b);
     }
 
     function test_exposed_saveWalletDigest_differsByKeysHash() public view {
-        bytes32 a = codec.exposed_saveWalletDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            bytes32(uint256(0x111))
-        );
-        bytes32 b = codec.exposed_saveWalletDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            bytes32(uint256(0x222))
-        );
+        bytes32 a = codec.exposed_saveWalletDigest(W, C, S1, H1, S2, H2, bytes32(uint256(0x111)));
+        bytes32 b = codec.exposed_saveWalletDigest(W, C, S1, H1, S2, H2, bytes32(uint256(0x222)));
         assertTrue(a != b);
     }
 }

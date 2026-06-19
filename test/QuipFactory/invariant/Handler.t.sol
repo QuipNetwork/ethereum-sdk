@@ -150,10 +150,7 @@ contract QuipFactoryInvariantHandler is Test {
     ///      impl` swap in the contract is exercised. If `useTwin` is true
     ///      but no twin exists for the chosen codehash (e.g. the seed
     ///      impl), falls back to the currently-registered address.
-    function fuzzUndeprecateImplementation(
-        uint256 idx,
-        bool useTwin
-    ) external {
+    function fuzzUndeprecateImplementation(uint256 idx, bool useTwin) external {
         if (everVettedCodehashes.length == 0) {
             revertCount++;
             return;
@@ -215,9 +212,7 @@ contract QuipFactoryInvariantHandler is Test {
     ///      the twin's address only if its sibling was actually vetted —
     ///      passing an unvetted twin to `undeprecateImplementation` is
     ///      always a revert path and provides no additional coverage.
-    function _findTwinForCodehash(
-        bytes32 codehash
-    ) internal view returns (address) {
+    function _findTwinForCodehash(bytes32 codehash) internal view returns (address) {
         for (uint256 i = 0; i < originals.length; i++) {
             if (slotVetted[i] && originals[i].codehash == codehash) {
                 return twins[i];

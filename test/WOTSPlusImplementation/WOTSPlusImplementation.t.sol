@@ -49,9 +49,7 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
             recoveryPubkeys.push(rPubkeys[i]);
         }
 
-        (ownershipPubkey, ownershipPrivateKey) = _generateOwnershipKey(
-            VAULT_SEED
-        );
+        (ownershipPubkey, ownershipPrivateKey) = _generateOwnershipKey(VAULT_SEED);
     }
 
     function test_setUp() public view override {
@@ -85,19 +83,18 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         bytes memory data,
         uint256 fee
     ) internal view returns (bytes32) {
-        return
-            Codec.executeDigest(
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                target,
-                value,
-                keccak256(data),
-                fee
-            );
+        return Codec.executeDigest(
+            wallet_,
+            block.chainid,
+            currentPq.publicSeed,
+            currentPq.publicKeyHash,
+            nextPq.publicSeed,
+            nextPq.publicKeyHash,
+            target,
+            value,
+            keccak256(data),
+            fee
+        );
     }
 
     function _buildTransferOwnershipMessageHash(
@@ -107,17 +104,16 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         address newOwner,
         bytes32 keysHash
     ) internal view returns (bytes32) {
-        return
-            Codec.transferOwnershipDigest(
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                newOwner,
-                keysHash
-            );
+        return Codec.transferOwnershipDigest(
+            wallet_,
+            block.chainid,
+            currentPq.publicSeed,
+            currentPq.publicKeyHash,
+            nextPq.publicSeed,
+            nextPq.publicKeyHash,
+            newOwner,
+            keysHash
+        );
     }
 
     function _buildReplaceKeysMessageHash(
@@ -129,20 +125,19 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         WOTSPlus.WinternitzAddress[] memory oldKeys,
         WOTSPlus.WinternitzAddress[] memory newKeys
     ) internal view returns (bytes32) {
-        return
-            Codec.replaceKeysDigest(
-                kind,
-                signingKind,
-                oldKeys.length,
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(oldKeys)),
-                keccak256(abi.encode(newKeys))
-            );
+        return Codec.replaceKeysDigest(
+            kind,
+            signingKind,
+            oldKeys.length,
+            wallet_,
+            block.chainid,
+            currentPq.publicSeed,
+            currentPq.publicKeyHash,
+            nextPq.publicSeed,
+            nextPq.publicKeyHash,
+            keccak256(abi.encode(oldKeys)),
+            keccak256(abi.encode(newKeys))
+        );
     }
 
     function _buildResetKeysetMessageHash(
@@ -153,33 +148,25 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         WOTSPlus.WinternitzAddress memory nextPq,
         WOTSPlus.WinternitzAddress[10] memory newKeys
     ) internal view returns (bytes32) {
-        return
-            Codec.resetKeysetDigest(
-                kind,
-                signingKind,
-                wallet_,
-                block.chainid,
-                currentPq.publicSeed,
-                currentPq.publicKeyHash,
-                nextPq.publicSeed,
-                nextPq.publicKeyHash,
-                keccak256(abi.encode(newKeys))
-            );
+        return Codec.resetKeysetDigest(
+            kind,
+            signingKind,
+            wallet_,
+            block.chainid,
+            currentPq.publicSeed,
+            currentPq.publicKeyHash,
+            nextPq.publicSeed,
+            nextPq.publicKeyHash,
+            keccak256(abi.encode(newKeys))
+        );
     }
 
-    function _buildErc1271MessageHash(
-        address wallet_,
-        WOTSPlus.WinternitzAddress memory verifier,
-        bytes32 messageHash
-    ) internal view returns (bytes32) {
-        return
-            Codec.erc1271Digest(
-                wallet_,
-                block.chainid,
-                verifier.publicSeed,
-                verifier.publicKeyHash,
-                messageHash
-            );
+    function _buildErc1271MessageHash(address wallet_, WOTSPlus.WinternitzAddress memory verifier, bytes32 messageHash)
+        internal
+        view
+        returns (bytes32)
+    {
+        return Codec.erc1271Digest(wallet_, block.chainid, verifier.publicSeed, verifier.publicKeyHash, messageHash);
     }
 
     /// @dev Mirror of `WOTSPlusImplementation.quipSignedHashEcdsaTarget(hash)` computed
@@ -187,31 +174,18 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
     ///      ECDSA half of `isValidSignature` recovers against. If Solady's
     ///      `_hashTypedData` or the wallet's `_domainNameAndVersion` drift,
     ///      tests using this helper will fail and surface the divergence.
-    function _buildErc1271EcdsaTarget(
-        address wallet_,
-        bytes32 hash
-    ) internal view returns (bytes32) {
+    function _buildErc1271EcdsaTarget(address wallet_, bytes32 hash) internal view returns (bytes32) {
         bytes32 domainSeparator = keccak256(
             abi.encode(
-                keccak256(
-                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-                ),
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
                 keccak256(bytes("QuipWallet")),
                 keccak256(bytes("1")),
                 block.chainid,
                 wallet_
             )
         );
-        bytes32 structHash = keccak256(
-            abi.encode(
-                keccak256("QuipSignedHash(bytes32 hash)"),
-                hash
-            )
-        );
-        return
-            keccak256(
-                abi.encodePacked(bytes2(0x1901), domainSeparator, structHash)
-            );
+        bytes32 structHash = keccak256(abi.encode(keccak256("QuipSignedHash(bytes32 hash)"), hash));
+        return keccak256(abi.encodePacked(bytes2(0x1901), domainSeparator, structHash));
     }
 
     /// @dev Seeds the default `wallet`'s verificationKeys via `resetKeyset` —
@@ -223,55 +197,29 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
     ///      downstream calls keep working.
     /// @return keys The first `n` Winternitz pubkeys installed in the set.
     /// @return privateKeys Matching private keys for signing ERC-1271 messages.
-    function _seedVerificationKeys(
-        uint256 n
-    )
+    function _seedVerificationKeys(uint256 n)
         internal
-        returns (
-            WOTSPlus.WinternitzAddress[] memory keys,
-            bytes32[] memory privateKeys
-        )
+        returns (WOTSPlus.WinternitzAddress[] memory keys, bytes32[] memory privateKeys)
     {
         WOTSPlus.WinternitzAddress[10] memory all10;
         bytes32[10] memory priv10;
         for (uint256 i = 0; i < 10; i++) {
-            bytes32 seed = keccak256(
-                abi.encodePacked("vk-seed", alicePrivateKey, i)
-            );
+            bytes32 seed = keccak256(abi.encodePacked("vk-seed", alicePrivateKey, i));
             (all10[i], priv10[i]) = _generateKeyPair(seed);
         }
 
-        (
-            WOTSPlus.WinternitzAddress memory nextPq,
-            bytes32 nextPqKey
-        ) = _generateKeyPair(
-                keccak256(
-                    abi.encodePacked(alicePrivateKey, "vk-seed-rotate", n)
-                )
-            );
+        (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPqKey) =
+            _generateKeyPair(keccak256(abi.encodePacked(alicePrivateKey, "vk-seed-rotate", n)));
 
         bytes32 msgHash = _buildResetKeysetMessageHash(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            alicePubkey,
-            nextPq,
-            all10
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, address(wallet), alicePubkey, nextPq, all10
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
         wallet.resetKeyset(
             Codec.encodeResetKeyset(
-                Codec.KeyType.Verification,
-                Codec.KeyType.Transaction,
-                alicePubkey,
-                nextPq,
-                sig,
-                all10
+                Codec.KeyType.Verification, Codec.KeyType.Transaction, alicePubkey, nextPq, sig, all10
             )
         );
 
@@ -292,16 +240,15 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         WOTSPlus.WinternitzAddress memory currentRecoveryKey,
         WOTSPlus.WinternitzAddress memory newRecoveryKey
     ) internal view returns (bytes32) {
-        return
-            Codec.upgradeRecoveryDigest(
-                wallet_,
-                block.chainid,
-                newImplementation,
-                currentRecoveryKey.publicSeed,
-                currentRecoveryKey.publicKeyHash,
-                newRecoveryKey.publicSeed,
-                newRecoveryKey.publicKeyHash
-            );
+        return Codec.upgradeRecoveryDigest(
+            wallet_,
+            block.chainid,
+            newImplementation,
+            currentRecoveryKey.publicSeed,
+            currentRecoveryKey.publicKeyHash,
+            newRecoveryKey.publicSeed,
+            newRecoveryKey.publicKeyHash
+        );
     }
 
     /// @dev Builds the full upgrade data payload (5441 bytes) for `upgradeToAndCall`.
@@ -331,10 +278,7 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         WOTSPlus.WinternitzElements memory sig = _sign(signingKey, digest);
 
         bytes memory keyHeader = abi.encodePacked(
-            currentPqOwner.publicSeed,
-            currentPqOwner.publicKeyHash,
-            nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash
+            currentPqOwner.publicSeed, currentPqOwner.publicKeyHash, nextPqOwner.publicSeed, nextPqOwner.publicKeyHash
         );
 
         bytes memory pqSig;
@@ -342,40 +286,23 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
             pqSig = abi.encodePacked(pqSig, sig.elements[i]);
         }
 
-        bytes memory verifierData = _buildUpgradeVerifierBytes(
-            newImplementation_,
-            verifierSeed
-        );
+        bytes memory verifierData = _buildUpgradeVerifierBytes(newImplementation_, verifierSeed);
 
-        bytes memory migrateFlag = abi.encodePacked(
-            shouldMigrate ? uint8(1) : uint8(0)
-        );
+        bytes memory migrateFlag = abi.encodePacked(shouldMigrate ? uint8(1) : uint8(0));
 
-        WOTSPlus.WinternitzAddress[]
-            memory recKeys = new WOTSPlus.WinternitzAddress[](10);
+        WOTSPlus.WinternitzAddress[] memory recKeys = new WOTSPlus.WinternitzAddress[](10);
         for (uint256 i = 0; i < 10; i++) {
             if (i < migrateRecoveryKeys.length) {
                 recKeys[i] = migrateRecoveryKeys[i];
             } else {
                 recKeys[i] = WOTSPlus.WinternitzAddress({
-                    publicSeed: bytes32(uint256(i + 1)),
-                    publicKeyHash: bytes32(uint256(i + 100))
+                    publicSeed: bytes32(uint256(i + 1)), publicKeyHash: bytes32(uint256(i + 100))
                 });
             }
         }
-        bytes memory migratorPayload = _encodeInitPayload(
-            migratePqOwner,
-            recKeys
-        );
+        bytes memory migratorPayload = _encodeInitPayload(migratePqOwner, recKeys);
 
-        return
-            abi.encodePacked(
-                keyHeader,
-                pqSig,
-                verifierData,
-                migrateFlag,
-                migratorPayload
-            );
+        return abi.encodePacked(keyHeader, pqSig, verifierData, migrateFlag, migratorPayload);
     }
 
     /// @dev Builds the verifier portion of an upgrade payload: 64-byte verifier
@@ -383,27 +310,18 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
     ///      packed for `abi.encodePacked` insertion into the upgrade calldata.
     ///      Distinct from the scenario tests' `_buildVerifierData` which
     ///      returns the (vPub, vSig) tuple unpacked.
-    function _buildUpgradeVerifierBytes(
-        address newImplementation_,
-        bytes32 verifierSeed
-    ) internal view returns (bytes memory) {
-        (
-            WOTSPlus.WinternitzAddress memory vPub,
-            bytes32 vPriv
-        ) = _generateKeyPair(verifierSeed);
+    function _buildUpgradeVerifierBytes(address newImplementation_, bytes32 verifierSeed)
+        internal
+        view
+        returns (bytes memory)
+    {
+        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair(verifierSeed);
         bytes32 vHash = Codec.verificationDigest(
-            address(wallet),
-            block.chainid,
-            newImplementation_,
-            vPub.publicSeed,
-            vPub.publicKeyHash
+            address(wallet), block.chainid, newImplementation_, vPub.publicSeed, vPub.publicKeyHash
         );
         WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
 
-        bytes memory data = abi.encodePacked(
-            vPub.publicSeed,
-            vPub.publicKeyHash
-        );
+        bytes memory data = abi.encodePacked(vPub.publicSeed, vPub.publicKeyHash);
         for (uint256 i = 0; i < 67; i++) {
             data = abi.encodePacked(data, vSig.elements[i]);
         }

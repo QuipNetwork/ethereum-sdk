@@ -163,8 +163,9 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     /// @inheritdoc IQuipFactory
     function withdraw(uint256 amount) external onlyOwner {
-        if (address(this).balance < amount)
+        if (address(this).balance < amount) {
             revert InsufficientBalance(amount, address(this).balance);
+        }
         SafeTransferLib.forceSafeTransferETH(owner(), amount);
         emit Withdrawn(owner(), amount);
     }
@@ -185,8 +186,9 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         // same transaction. `execute` / `executeBatch` can't mutate `owner()`
         // (no path); `delegateExecute` / `storageStore` can't either because
         // of transient storage guards.
-        if (IWOTSPlusImplementation(msg.sender).owner() != newOwner)
+        if (IWOTSPlusImplementation(msg.sender).owner() != newOwner) {
             revert OwnerStateMismatch();
+        }
 
         walletOwner[msg.sender] = newOwner;
         // Both mutations MUST succeed: `oldOwner` came from the factory's
@@ -311,8 +313,9 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         if (to == address(0)) revert ZeroAddressOwner();
         if (vaultId == bytes32(0)) revert ZeroVaultId();
-        if (msg.value < creationFee)
+        if (msg.value < creationFee) {
             revert InsufficientCreationFee(msg.value, creationFee);
+        }
         uint256 contractValue = msg.value - creationFee;
         address contractAddr = CREATE3.deployDeterministic(
             proxyInitcode,

@@ -25,8 +25,7 @@ contract BatchTarget {
 ///      and reverts the entire batch if any call reverts.
 contract WOTSPlusImplementation_executeBatch is WOTSPlusImplementationTest {
     BatchTarget internal target;
-    address constant ENTRY_POINT =
-        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     function setUp() public override {
         super.setUp();
@@ -38,9 +37,7 @@ contract WOTSPlusImplementation_executeBatch is WOTSPlusImplementationTest {
         ERC4337.Call[] memory calls = new ERC4337.Call[](3);
         for (uint256 i = 0; i < 3; i++) {
             calls[i] = ERC4337.Call({
-                target: address(target),
-                value: 0,
-                data: abi.encodeWithSelector(BatchTarget.inc.selector)
+                target: address(target), value: 0, data: abi.encodeWithSelector(BatchTarget.inc.selector)
             });
         }
 
@@ -52,16 +49,8 @@ contract WOTSPlusImplementation_executeBatch is WOTSPlusImplementationTest {
 
     function test_executeBatch_forwardsValueToEachCall() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](2);
-        calls[0] = ERC4337.Call({
-            target: address(target),
-            value: 0.01 ether,
-            data: ""
-        });
-        calls[1] = ERC4337.Call({
-            target: address(target),
-            value: 0.02 ether,
-            data: ""
-        });
+        calls[0] = ERC4337.Call({target: address(target), value: 0.01 ether, data: ""});
+        calls[1] = ERC4337.Call({target: address(target), value: 0.02 ether, data: ""});
 
         uint256 targetBefore = address(target).balance;
         vm.prank(ENTRY_POINT);
@@ -75,11 +64,8 @@ contract WOTSPlusImplementation_executeBatch is WOTSPlusImplementationTest {
         factory.setExecuteFee(EXECUTE_FEE);
 
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
-        calls[0] = ERC4337.Call({
-            target: address(target),
-            value: 0,
-            data: abi.encodeWithSelector(BatchTarget.inc.selector)
-        });
+        calls[0] =
+            ERC4337.Call({target: address(target), value: 0, data: abi.encodeWithSelector(BatchTarget.inc.selector)});
 
         uint256 walletBefore = address(wallet).balance;
         uint256 factoryBefore = address(factory).balance;
@@ -101,11 +87,8 @@ contract WOTSPlusImplementation_executeBatch is WOTSPlusImplementationTest {
 
     function test_executeBatch_revertsWhen_callerNotEntryPoint() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
-        calls[0] = ERC4337.Call({
-            target: address(target),
-            value: 0,
-            data: abi.encodeWithSelector(BatchTarget.inc.selector)
-        });
+        calls[0] =
+            ERC4337.Call({target: address(target), value: 0, data: abi.encodeWithSelector(BatchTarget.inc.selector)});
 
         vm.prank(ALICE);
         vm.expectRevert(); // Solady Unauthorized
@@ -115,21 +98,12 @@ contract WOTSPlusImplementation_executeBatch is WOTSPlusImplementationTest {
     // Whole batch reverts when any inner call reverts — no partial state.
     function test_executeBatch_revertsWhen_anyCallReverts() public {
         ERC4337.Call[] memory calls = new ERC4337.Call[](3);
-        calls[0] = ERC4337.Call({
-            target: address(target),
-            value: 0,
-            data: abi.encodeWithSelector(BatchTarget.inc.selector)
-        });
-        calls[1] = ERC4337.Call({
-            target: address(target),
-            value: 0,
-            data: abi.encodeWithSelector(BatchTarget.bang.selector)
-        });
-        calls[2] = ERC4337.Call({
-            target: address(target),
-            value: 0,
-            data: abi.encodeWithSelector(BatchTarget.inc.selector)
-        });
+        calls[0] =
+            ERC4337.Call({target: address(target), value: 0, data: abi.encodeWithSelector(BatchTarget.inc.selector)});
+        calls[1] =
+            ERC4337.Call({target: address(target), value: 0, data: abi.encodeWithSelector(BatchTarget.bang.selector)});
+        calls[2] =
+            ERC4337.Call({target: address(target), value: 0, data: abi.encodeWithSelector(BatchTarget.inc.selector)});
 
         vm.prank(ENTRY_POINT);
         vm.expectRevert(bytes("bang"));
