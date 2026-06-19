@@ -15,26 +15,17 @@ contract WOTSPlusImplementation__collectExecuteFee is WOTSPlusImplementationTest
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _generateKeyPair("h-cef");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            priv,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-cef");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-cef-vault"), payable(ALICE), payload);
+        address proxyAddr =
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-cef-vault"), payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
@@ -63,9 +54,7 @@ contract WOTSPlusImplementation__collectExecuteFee is WOTSPlusImplementationTest
         assertEq(address(factory).balance, factoryBefore + fee);
     }
 
-    function test_exposed_collectExecuteFee_revertsWhen_walletShortFunded()
-        public
-    {
+    function test_exposed_collectExecuteFee_revertsWhen_walletShortFunded() public {
         // Fee > wallet balance: collection must revert via SafeTransferLib.
         // Factory enforces `fee <= MAX_FEE`, so we drain the wallet below MAX_FEE
         // rather than raising the fee above the wallet balance.

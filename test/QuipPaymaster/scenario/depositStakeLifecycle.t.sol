@@ -27,7 +27,7 @@ contract MockEntryPointForLifecycle {
     function withdrawTo(address payable to, uint256 amount) external {
         require(deposits[msg.sender] >= amount, "insufficient deposit");
         deposits[msg.sender] -= amount;
-        (bool ok, ) = to.call{value: amount}("");
+        (bool ok,) = to.call{value: amount}("");
         require(ok, "transfer failed");
     }
 
@@ -51,7 +51,7 @@ contract MockEntryPointForLifecycle {
         require(block.timestamp >= s.withdrawTime, "not ready");
         uint256 amount = s.amount;
         delete stakeInfo[msg.sender];
-        (bool ok, ) = to.call{value: amount}("");
+        (bool ok,) = to.call{value: amount}("");
         require(ok, "stake transfer failed");
     }
 
@@ -170,10 +170,7 @@ contract QuipPaymaster_depositStakeLifecycle is QuipPaymasterTest {
         vm.prank(ADMIN);
         paymaster.withdrawTo(RECIPIENT, remaining);
         assertEq(paymaster.getDeposit(), 0);
-        assertEq(
-            RECIPIENT.balance,
-            recipientBefore + withdrawBack + remaining
-        );
+        assertEq(RECIPIENT.balance, recipientBefore + withdrawBack + remaining);
     }
 
     // Test deposit ergonomics: additional deposits stack cumulatively.

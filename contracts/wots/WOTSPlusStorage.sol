@@ -17,9 +17,7 @@
 pragma solidity ^0.8.33;
 
 // prettier-ignore
-import {
-    EnumerableWinternitzAddressSet as Keyset
-} from "./EnumerableWinternitzAddressSet.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from "./EnumerableWinternitzAddressSet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 library WOTSPlusStorage {

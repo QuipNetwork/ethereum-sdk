@@ -32,21 +32,11 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
         targetContract(address(handler));
 
         bytes4[] memory selectors = new bytes4[](4);
-        selectors[0] = QuipPaymasterInvariantHandler
-            .fuzzSetPqVerifier
-            .selector;
-        selectors[1] = QuipPaymasterInvariantHandler
-            .fuzzRemovePqVerifier
-            .selector;
-        selectors[2] = QuipPaymasterInvariantHandler
-            .fuzzValidatePaymasterUserOp
-            .selector;
-        selectors[3] = QuipPaymasterInvariantHandler
-            .fuzzAttemptRebindUsedKey
-            .selector;
-        targetSelector(
-            FuzzSelector({addr: address(handler), selectors: selectors})
-        );
+        selectors[0] = QuipPaymasterInvariantHandler.fuzzSetPqVerifier.selector;
+        selectors[1] = QuipPaymasterInvariantHandler.fuzzRemovePqVerifier.selector;
+        selectors[2] = QuipPaymasterInvariantHandler.fuzzValidatePaymasterUserOp.selector;
+        selectors[3] = QuipPaymasterInvariantHandler.fuzzAttemptRebindUsedKey.selector;
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
     /*══════════════ counter-backed handler-side invariants ══════════════*/
@@ -57,11 +47,7 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
     ///      every non-no-op call MUST revert `VerifierKeyInUse`. A
     ///      success is recorded as a violation.
     function invariant_monotonicOccupancyHolds() public view {
-        assertEq(
-            handler.improperRebindSuccessCount(),
-            0,
-            "a used verifier hash was successfully re-bound"
-        );
+        assertEq(handler.improperRebindSuccessCount(), 0, "a used verifier hash was successfully re-bound");
     }
 
     /// @dev Audit finding — "a wallet with no registered verifier can
@@ -69,11 +55,7 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
     ///      because `validatePaymasterUserOp` is state-changing and
     ///      can't be invoked from a `view` invariant.
     function invariant_noVerifierMeansNoSponsorship() public view {
-        assertEq(
-            handler.noVerifierSponsorshipBugCount(),
-            0,
-            "validation succeeded for a wallet with no verifier"
-        );
+        assertEq(handler.noVerifierSponsorshipBugCount(), 0, "validation succeeded for a wallet with no verifier");
     }
 
     /// @dev Audit finding — "successful sponsored operations always
@@ -81,11 +63,7 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
     ///      the handler asserts the stored verifier equals the
     ///      `nextVerifier` arg; a mismatch increments the counter.
     function invariant_successAlwaysAdvancesVerifier() public view {
-        assertEq(
-            handler.successDidNotAdvanceCount(),
-            0,
-            "successful validation failed to rotate the verifier"
-        );
+        assertEq(handler.successDidNotAdvanceCount(), 0, "successful validation failed to rotate the verifier");
     }
 
     /// @dev Audit finding — "rotating one wallet's verifier can never
@@ -94,11 +72,7 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
     ///      every set/remove/validate/rebind call and re-checks
     ///      afterwards; any drift increments the counter.
     function invariant_crossWalletIsolation() public view {
-        assertEq(
-            handler.crossWalletDriftCount(),
-            0,
-            "a non-target wallet's verifier changed across a call"
-        );
+        assertEq(handler.crossWalletDriftCount(), 0, "a non-target wallet's verifier changed across a call");
     }
 
     /*══════════════════ global state invariants ═════════════════════════*/
@@ -111,17 +85,13 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
     function invariant_walletsHaveDistinctVerifiers() public view {
         uint256 n = handler.walletCount();
         for (uint256 i = 0; i < n; i++) {
-            WOTSPlus.WinternitzAddress memory vi = paymaster.getPqVerifier(
-                handler.walletAt(i)
-            );
+            WOTSPlus.WinternitzAddress memory vi = paymaster.getPqVerifier(handler.walletAt(i));
             if (vi.publicSeed == bytes32(0)) continue;
             for (uint256 j = i + 1; j < n; j++) {
-                WOTSPlus.WinternitzAddress memory vj = paymaster
-                    .getPqVerifier(handler.walletAt(j));
+                WOTSPlus.WinternitzAddress memory vj = paymaster.getPqVerifier(handler.walletAt(j));
                 if (vj.publicSeed == bytes32(0)) continue;
                 assertFalse(
-                    vi.publicSeed == vj.publicSeed &&
-                        vi.publicKeyHash == vj.publicKeyHash,
+                    vi.publicSeed == vj.publicSeed && vi.publicKeyHash == vj.publicKeyHash,
                     "two pool wallets share a verifier"
                 );
             }
@@ -136,21 +106,14 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
     function invariant_currentVerifierHashesInMirror() public view {
         uint256 n = handler.walletCount();
         for (uint256 i = 0; i < n; i++) {
-            WOTSPlus.WinternitzAddress memory v = paymaster.getPqVerifier(
-                handler.walletAt(i)
-            );
+            WOTSPlus.WinternitzAddress memory v = paymaster.getPqVerifier(handler.walletAt(i));
             if (v.publicSeed == bytes32(0)) continue;
-            bytes32 h = keccak256(
-                abi.encodePacked(v.publicSeed, v.publicKeyHash)
-            );
+            bytes32 h = keccak256(abi.encodePacked(v.publicSeed, v.publicKeyHash));
             bool found;
             uint256 m = handler.everUsedCount();
             for (uint256 j = 0; j < m; j++) {
                 WOTSPlus.WinternitzAddress memory e = handler.everUsedAt(j);
-                if (
-                    keccak256(abi.encodePacked(e.publicSeed, e.publicKeyHash)) ==
-                    h
-                ) {
+                if (keccak256(abi.encodePacked(e.publicSeed, e.publicKeyHash)) == h) {
                     found = true;
                     break;
                 }
@@ -163,10 +126,6 @@ contract QuipPaymaster_Local_Invariant is QuipPaymasterInvariantBase {
     ///      fuzz selector. A drift would indicate a broken `onlyOwner`
     ///      gate.
     function invariant_paymasterOwnerStable() public view {
-        assertEq(
-            paymaster.owner(),
-            address(handler),
-            "paymaster owner drifted"
-        );
+        assertEq(paymaster.owner(), address(handler), "paymaster owner drifted");
     }
 }

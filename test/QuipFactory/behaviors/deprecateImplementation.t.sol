@@ -14,9 +14,7 @@ contract QuipFactory_deprecateImplementation is QuipFactoryTest {
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(walletImplementation));
 
-        assertTrue(
-            factory.deprecatedImpls(address(walletImplementation).codehash)
-        );
+        assertTrue(factory.deprecatedImpls(address(walletImplementation).codehash));
     }
 
     function test_deprecateImplementation_updatesLatestWalletImpl() public {
@@ -42,13 +40,8 @@ contract QuipFactory_deprecateImplementation is QuipFactoryTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (
-                logs[i].topics[0] == IQuipFactory.ImplementationSunset.selector
-            ) {
-                assertEq(
-                    logs[i].topics[1],
-                    bytes32(uint256(uint160(address(walletImplementation))))
-                );
+            if (logs[i].topics[0] == IQuipFactory.ImplementationSunset.selector) {
+                assertEq(logs[i].topics[1], bytes32(uint256(uint160(address(walletImplementation)))));
                 found = true;
                 break;
             }
@@ -73,9 +66,7 @@ contract QuipFactory_deprecateImplementation is QuipFactoryTest {
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(walletImplementation));
 
-        assertTrue(
-            factory.deprecatedImpls(address(walletImplementation).codehash)
-        );
+        assertTrue(factory.deprecatedImpls(address(walletImplementation).codehash));
     }
 
     // ── Reverts ──────────────────────────────────────────────────────
@@ -88,12 +79,7 @@ contract QuipFactory_deprecateImplementation is QuipFactoryTest {
 
     function test_deprecateImplementation_revertsWhen_callerNotOwner() public {
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                ALICE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.deprecateImplementation(address(walletImplementation));
     }
 }

@@ -236,6 +236,7 @@ library WOTSPlusCodec {
     ///      `saveWallet` signature to a specific wallet, chain, and key-rotation pair.
     bytes32 internal constant SAVE_WALLET_TAG =
         keccak256("quip.digest.saveWallet");
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        DECODERS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -265,8 +266,9 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[10] calldata verificationKeys
         )
     {
-        if (payload.length != 2048)
+        if (payload.length != 2048) {
             revert MalformedPayload(2048, payload.length);
+        }
         assembly {
             disasterRecoveryKey := payload.offset
             ownershipKey := add(payload.offset, 64)
@@ -296,8 +298,9 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[10] calldata newVerificationKeys
         )
     {
-        if (payload.length != 4192)
+        if (payload.length != 4192) {
             revert MalformedPayload(4192, payload.length);
+        }
         assembly {
             currentDisasterKey := payload.offset
             newDisasterKey := add(payload.offset, 64)
@@ -452,7 +455,9 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzElements calldata pqSig
         )
     {
-        if (sig.length != 2272) revert MalformedPayload(2272, sig.length);
+        if (sig.length != 2272) {
+            revert MalformedPayload(2272, sig.length);
+        }
         assembly {
             currentKey := sig.offset
             nextKey := add(sig.offset, 64)
@@ -480,8 +485,9 @@ library WOTSPlusCodec {
     {
         // Variable-length: header is 2336 bytes; the trailing `data` slice may be
         // empty (length == 2336) or arbitrarily long.
-        if (payload.length < 2336)
+        if (payload.length < 2336) {
             revert MalformedPayload(2336, payload.length);
+        }
         assembly {
             currentKey := payload.offset
             nextKey := add(payload.offset, 64)
@@ -513,17 +519,15 @@ library WOTSPlusCodec {
             uint256 amount
         )
     {
-        if (payload.length != 2336)
+        if (payload.length != 2336) {
             revert MalformedPayload(2336, payload.length);
+        }
         assembly {
             currentKey := payload.offset
             nextKey := add(payload.offset, 64)
             pqSig := add(payload.offset, 128)
             // Mask the upper 96 bits — see `_ADDRESS_MASK` doc.
-            to := and(
-                calldataload(add(payload.offset, 2272)),
-                _ADDRESS_MASK
-            )
+            to := and(calldataload(add(payload.offset, 2272)), _ADDRESS_MASK)
             amount := calldataload(add(payload.offset, 2304))
         }
     }
@@ -554,8 +558,9 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[10] calldata newVerificationKeys
         )
     {
-        if (payload.length != 4288)
+        if (payload.length != 4288) {
             revert MalformedPayload(4288, payload.length);
+        }
         assembly {
             currentOwnershipKey := payload.offset
             newOwnershipKey := add(payload.offset, 64)
@@ -606,8 +611,9 @@ library WOTSPlusCodec {
         // Header (2368 bytes): kind(32) + signingKind(32) + n(32) +
         // currentKey(64) + nextKey(64) + pqSig(2144). Read `n` first so the
         // expected-length check is exact rather than a >= minimum.
-        if (payload.length < 2368)
+        if (payload.length < 2368) {
             revert MalformedPayload(2368, payload.length);
+        }
         assembly {
             n := calldataload(add(payload.offset, 64))
         }
@@ -615,8 +621,9 @@ library WOTSPlusCodec {
         // here and reverts before the length comparison runs, so we never
         // index into payload with a wrapped offset.
         uint256 expectedLen = 2368 + 2 * n * 64;
-        if (payload.length != expectedLen)
+        if (payload.length != expectedLen) {
             revert MalformedPayload(expectedLen, payload.length);
+        }
 
         uint256 raw;
         assembly {
@@ -665,8 +672,9 @@ library WOTSPlusCodec {
             WOTSPlus.WinternitzAddress[10] calldata newKeys
         )
     {
-        if (payload.length != 2976)
+        if (payload.length != 2976) {
             revert MalformedPayload(2976, payload.length);
+        }
 
         uint256 raw;
         assembly {
@@ -702,8 +710,9 @@ library WOTSPlusCodec {
             bytes calldata ecdsaSig
         )
     {
-        if (signature.length != 2273)
+        if (signature.length != 2273) {
             revert MalformedPayload(2273, signature.length);
+        }
         assembly {
             verifier := signature.offset
             pqSig := add(signature.offset, 64)
@@ -1224,7 +1233,6 @@ library WOTSPlusCodec {
                 keysHash
             );
     }
-
 
     /// @dev Returns the digest that `replaceKeys` signs over. The tag is
     ///      selected per `(signingKind, kind)` so a signature cannot be lifted

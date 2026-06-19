@@ -9,9 +9,7 @@ import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
     function test_setPqVerifier_setsVerifierKey() public {
         address wallet2 = makeAddr("wallet2");
-        (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
-            "wallet2-verifier"
-        );
+        (WOTSPlus.WinternitzAddress memory key,) = _generateKeyPair("wallet2-verifier");
 
         vm.prank(ADMIN);
         paymaster.setPqVerifier(wallet2, key);
@@ -23,9 +21,7 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
 
     function test_setPqVerifier_overwritesExistingKey() public {
         // WALLET already has a verifier from setUp — overwrite it
-        (WOTSPlus.WinternitzAddress memory newKey, ) = _generateKeyPair(
-            "overwrite-key"
-        );
+        (WOTSPlus.WinternitzAddress memory newKey,) = _generateKeyPair("overwrite-key");
 
         vm.prank(ADMIN);
         paymaster.setPqVerifier(WALLET, newKey);
@@ -37,17 +33,12 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
 
     function test_setPqVerifier_emitsPqVerifierSet() public {
         address wallet2 = makeAddr("wallet2");
-        (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
-            "wallet2-verifier"
-        );
+        (WOTSPlus.WinternitzAddress memory key,) = _generateKeyPair("wallet2-verifier");
 
         // Fresh registration: oldVerifier is the zero address-pair so
         // off-chain consumers can distinguish first-set from hot-swap.
-        WOTSPlus.WinternitzAddress memory zeroVerifier = WOTSPlus
-            .WinternitzAddress({
-                publicSeed: bytes32(0),
-                publicKeyHash: bytes32(0)
-            });
+        WOTSPlus.WinternitzAddress memory zeroVerifier =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)});
 
         vm.prank(ADMIN);
         vm.expectEmit(true, false, false, true);
@@ -61,25 +52,17 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
     ///      identify admin overrides directly from the event.
     function test_setPqVerifier_emitsPriorVerifierOnHotSwap() public {
         // WALLET already holds `verifierPubkey` from base setUp.
-        (WOTSPlus.WinternitzAddress memory replacement, ) = _generateKeyPair(
-            "hot-swap-replacement"
-        );
+        (WOTSPlus.WinternitzAddress memory replacement,) = _generateKeyPair("hot-swap-replacement");
 
         vm.prank(ADMIN);
         vm.expectEmit(true, false, false, true);
-        emit IQuipPaymaster.PqVerifierSet(
-            WALLET,
-            verifierPubkey,
-            replacement
-        );
+        emit IQuipPaymaster.PqVerifierSet(WALLET, verifierPubkey, replacement);
         paymaster.setPqVerifier(WALLET, replacement);
     }
 
     function test_setPqVerifier_revertsWhen_notOwner() public {
         address wallet2 = makeAddr("wallet2");
-        (WOTSPlus.WinternitzAddress memory key, ) = _generateKeyPair(
-            "wallet2-verifier"
-        );
+        (WOTSPlus.WinternitzAddress memory key,) = _generateKeyPair("wallet2-verifier");
 
         vm.prank(ALICE);
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -88,10 +71,8 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
 
     function test_setPqVerifier_revertsWhen_zeroPublicSeed() public {
         address wallet2 = makeAddr("wallet2");
-        WOTSPlus.WinternitzAddress memory key = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(uint256(1))
-        });
+        WOTSPlus.WinternitzAddress memory key =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(1))});
 
         vm.prank(ADMIN);
         vm.expectRevert(IQuipPaymaster.ZeroValuePqVerifierKey.selector);
@@ -100,10 +81,8 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
 
     function test_setPqVerifier_revertsWhen_zeroPublicKeyHash() public {
         address wallet2 = makeAddr("wallet2");
-        WOTSPlus.WinternitzAddress memory key = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(0)
-        });
+        WOTSPlus.WinternitzAddress memory key =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(0)});
 
         vm.prank(ADMIN);
         vm.expectRevert(IQuipPaymaster.ZeroValuePqVerifierKey.selector);
@@ -114,9 +93,7 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
     ///      second wallet must revert. WOTS+ is one-time-use — letting two
     ///      wallets back onto the same key would let a single revealed
     ///      signature burn both verifiers simultaneously.
-    function test_setPqVerifier_revertsWhen_keyAlreadyAssignedToAnotherWallet()
-        public
-    {
+    function test_setPqVerifier_revertsWhen_keyAlreadyAssignedToAnotherWallet() public {
         address wallet2 = makeAddr("wallet2-collision");
 
         // The base setUp already registered `verifierPubkey` for WALLET.
@@ -134,9 +111,7 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
     function test_setPqVerifier_overwriteKeepsPriorKeyLocked() public {
         // WALLET initially holds `verifierPubkey` (from base setUp).
         // Step 1: overwrite WALLET's verifier with a fresh key.
-        (WOTSPlus.WinternitzAddress memory replacement, ) = _generateKeyPair(
-            "wallet-replacement-key"
-        );
+        (WOTSPlus.WinternitzAddress memory replacement,) = _generateKeyPair("wallet-replacement-key");
         vm.prank(ADMIN);
         paymaster.setPqVerifier(WALLET, replacement);
 
@@ -169,11 +144,7 @@ contract QuipPaymaster_setPqVerifier is QuipPaymasterTest {
     function test_setPqVerifier_reSettingSameKeyEmitsEvent() public {
         vm.prank(ADMIN);
         vm.expectEmit(true, false, false, true);
-        emit IQuipPaymaster.PqVerifierSet(
-            WALLET,
-            verifierPubkey,
-            verifierPubkey
-        );
+        emit IQuipPaymaster.PqVerifierSet(WALLET, verifierPubkey, verifierPubkey);
         paymaster.setPqVerifier(WALLET, verifierPubkey);
     }
 }

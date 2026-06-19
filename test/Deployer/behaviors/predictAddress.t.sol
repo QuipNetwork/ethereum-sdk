@@ -23,14 +23,9 @@ contract Deployer_predictAddress is DeployerTest {
         assertEq(first, second);
     }
 
-    function test_predictAddress_returnsDifferentAddressForDifferentSalt()
-        public
-        view
-    {
+    function test_predictAddress_returnsDifferentAddressForDifferentSalt() public view {
         bytes32 salt1 = keccak256("salt-1");
         bytes32 salt2 = keccak256("salt-2");
-        assertTrue(
-            deployer.predictAddress(salt1) != deployer.predictAddress(salt2)
-        );
+        assertTrue(deployer.predictAddress(salt1) != deployer.predictAddress(salt2));
     }
 }

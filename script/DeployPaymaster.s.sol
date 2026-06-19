@@ -91,10 +91,7 @@ contract DeployPaymaster is Script {
         } else {
             console.log("\n--- Deploying proxy ---");
             bytes memory initData = abi.encodeCall(QuipPaymaster.initialize, (paymasterOwner));
-            bytes memory proxyBytecode = abi.encodePacked(
-                type(ERC1967Proxy).creationCode,
-                abi.encode(impl, initData)
-            );
+            bytes memory proxyBytecode = abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
             console.log("Proxy bytecode size:", proxyBytecode.length, "bytes");
 
             vm.startBroadcast(privateKey);

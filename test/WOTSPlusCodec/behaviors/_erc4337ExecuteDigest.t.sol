@@ -17,79 +17,20 @@ contract WOTSPlusCodec__erc4337ExecuteDigest is WOTSPlusCodecTest {
         bytes32 userOpHash = bytes32(uint256(42));
         uint256 fee = 0.01 ether;
         bytes32 expected = EfficientHashLib.hash(
-            tag,
-            bytes32(C),
-            bytes32(uint256(uint160(W))),
-            S1,
-            H1,
-            S2,
-            H2,
-            userOpHash,
-            bytes32(fee)
+            tag, bytes32(C), bytes32(uint256(uint160(W))), S1, H1, S2, H2, userOpHash, bytes32(fee)
         );
-        assertEq(
-            codec.exposed_erc4337ExecuteDigest(
-                W,
-                C,
-                S1,
-                H1,
-                S2,
-                H2,
-                userOpHash,
-                fee
-            ),
-            expected
-        );
+        assertEq(codec.exposed_erc4337ExecuteDigest(W, C, S1, H1, S2, H2, userOpHash, fee), expected);
     }
 
-    function test_exposed_erc4337ExecuteDigest_differsByUserOpHash()
-        public
-        view
-    {
-        bytes32 a = codec.exposed_erc4337ExecuteDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            bytes32(uint256(1)),
-            0
-        );
-        bytes32 b = codec.exposed_erc4337ExecuteDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            bytes32(uint256(2)),
-            0
-        );
+    function test_exposed_erc4337ExecuteDigest_differsByUserOpHash() public view {
+        bytes32 a = codec.exposed_erc4337ExecuteDigest(W, C, S1, H1, S2, H2, bytes32(uint256(1)), 0);
+        bytes32 b = codec.exposed_erc4337ExecuteDigest(W, C, S1, H1, S2, H2, bytes32(uint256(2)), 0);
         assertTrue(a != b);
     }
 
     function test_exposed_erc4337ExecuteDigest_differsByFee() public view {
-        bytes32 a = codec.exposed_erc4337ExecuteDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            bytes32(uint256(1)),
-            0
-        );
-        bytes32 b = codec.exposed_erc4337ExecuteDigest(
-            W,
-            C,
-            S1,
-            H1,
-            S2,
-            H2,
-            bytes32(uint256(1)),
-            0.01 ether
-        );
+        bytes32 a = codec.exposed_erc4337ExecuteDigest(W, C, S1, H1, S2, H2, bytes32(uint256(1)), 0);
+        bytes32 b = codec.exposed_erc4337ExecuteDigest(W, C, S1, H1, S2, H2, bytes32(uint256(1)), 0.01 ether);
         assertTrue(a != b);
     }
 }

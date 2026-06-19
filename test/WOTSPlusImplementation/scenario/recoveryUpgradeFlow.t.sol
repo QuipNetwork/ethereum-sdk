@@ -29,21 +29,12 @@ contract WOTSPlusImplementation_recoveryUpgradeFlow is WOTSPlusImplementationTes
         address impl,
         bytes32 verifierSeed
     ) internal view returns (bytes memory) {
-        (
-            WOTSPlus.WinternitzAddress memory vPub,
-            bytes32 vPriv
-        ) = _generateKeyPair(verifierSeed);
-        bytes32 vHash = Codec.verificationDigest(
-            address(wallet),
-            block.chainid,
-            impl,
-            vPub.publicSeed,
-            vPub.publicKeyHash
-        );
+        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair(verifierSeed);
+        bytes32 vHash =
+            Codec.verificationDigest(address(wallet), block.chainid, impl, vPub.publicSeed, vPub.publicKeyHash);
         WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
 
-        return
-            Codec.encodeRecoveryUpgrade(rKey, newRKey, sig, vPub, vSig);
+        return Codec.encodeRecoveryUpgrade(rKey, newRKey, sig, vPub, vSig);
     }
 
     /// @dev Emergency upgrade via recovery key → resetKeyset(Tx, signingKind=Recovery)
@@ -54,25 +45,13 @@ contract WOTSPlusImplementation_recoveryUpgradeFlow is WOTSPlusImplementationTes
         //         rotates in place so the recovery pool stays full.
         WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
         bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-        (WOTSPlus.WinternitzAddress memory newRKey, ) = _generateKeyPair(
-            "recovery-upgrade-new-rkey"
-        );
+        (WOTSPlus.WinternitzAddress memory newRKey,) = _generateKeyPair("recovery-upgrade-new-rkey");
 
-        bytes32 msgHash = _buildRecoveryUpgradeMessageHash(
-            address(wallet),
-            address(newImpl),
-            rKey,
-            newRKey
-        );
+        bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), rKey, newRKey);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
 
-        bytes memory payload = _buildRecoveryUpgradePayload(
-            rKey,
-            newRKey,
-            sig,
-            address(newImpl),
-            "recovery-upgrade-verifier"
-        );
+        bytes memory payload =
+            _buildRecoveryUpgradePayload(rKey, newRKey, sig, address(newImpl), "recovery-upgrade-verifier");
 
         uint256 txnCountBefore = wallet.keyCount(Codec.KeyType.Transaction);
         bool aliceActiveBefore = wallet.isKey(Codec.KeyType.Transaction, alicePubkey);
@@ -83,10 +62,7 @@ contract WOTSPlusImplementation_recoveryUpgradeFlow is WOTSPlusImplementationTes
 
         // Step 2: Verify post-upgrade state
         // 2a: Implementation changed
-        assertEq(
-            wallet.version(),
-            factory.getVettedCodeIndex(address(newImpl).codehash)
-        );
+        assertEq(wallet.version(), factory.getVettedCodeIndex(address(newImpl).codehash));
 
         // 2b: Transaction keys NOT rotated (critical: recoveryUpgrade doesn't rotate)
         assertEq(wallet.keyCount(Codec.KeyType.Transaction), txnCountBefore);
@@ -106,39 +82,23 @@ contract WOTSPlusImplementation_recoveryUpgradeFlow is WOTSPlusImplementationTes
         WOTSPlus.WinternitzAddress[10] memory newTx10;
         bytes32[10] memory newTx10Priv;
         for (uint256 i = 0; i < 10; i++) {
-            (newTx10[i], newTx10Priv[i]) = _generateKeyPair(
-                keccak256(abi.encodePacked("new-tx-after-recovery-upgrade", i))
-            );
+            (newTx10[i], newTx10Priv[i]) =
+                _generateKeyPair(keccak256(abi.encodePacked("new-tx-after-recovery-upgrade", i)));
         }
-        (
-            WOTSPlus.WinternitzAddress memory newRk,
-        ) = _generateKeyPair("new-rk-after-recovery-upgrade");
+        (WOTSPlus.WinternitzAddress memory newRk,) = _generateKeyPair("new-rk-after-recovery-upgrade");
 
         WOTSPlus.WinternitzAddress memory rKey1 = recoveryPubkeys[1];
         bytes32 rPrivKey1 = _recoverySigningKey(alicePrivateKey, 1);
 
         bytes32 recoverHash = _buildResetKeysetMessageHash(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            address(wallet),
-            rKey1,
-            newRk,
-            newTx10
+            Codec.KeyType.Transaction, Codec.KeyType.Recovery, address(wallet), rKey1, newRk, newTx10
         );
-        WOTSPlus.WinternitzElements memory recoverSig = _sign(
-            rPrivKey1,
-            recoverHash
-        );
+        WOTSPlus.WinternitzElements memory recoverSig = _sign(rPrivKey1, recoverHash);
 
         vm.prank(ALICE);
         wallet.resetKeyset(
             Codec.encodeResetKeyset(
-                Codec.KeyType.Transaction,
-                Codec.KeyType.Recovery,
-                rKey1,
-                newRk,
-                recoverSig,
-                newTx10
+                Codec.KeyType.Transaction, Codec.KeyType.Recovery, rKey1, newRk, recoverSig, newTx10
             )
         );
 
@@ -153,36 +113,14 @@ contract WOTSPlusImplementation_recoveryUpgradeFlow is WOTSPlusImplementationTes
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
 
         // Step 4: Resume normal operations using one of the new tx keys.
-        (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(
-            "post-recovery-upgrade-key"
-        );
+        (WOTSPlus.WinternitzAddress memory postPq,) = _generateKeyPair("post-recovery-upgrade-key");
         uint256 fee = wallet.getExecuteFee();
-        bytes32 execHash = _buildExecuteMessageHash(
-            address(wallet),
-            newTx10[0],
-            postPq,
-            BOB,
-            0.05 ether,
-            "",
-            fee
-        );
-        WOTSPlus.WinternitzElements memory execSig = _sign(
-            newTx10Priv[0],
-            execHash
-        );
+        bytes32 execHash = _buildExecuteMessageHash(address(wallet), newTx10[0], postPq, BOB, 0.05 ether, "", fee);
+        WOTSPlus.WinternitzElements memory execSig = _sign(newTx10Priv[0], execHash);
 
         uint256 bobBal = BOB.balance;
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                newTx10[0],
-                postPq,
-                execSig,
-                BOB,
-                0.05 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(newTx10[0], postPq, execSig, BOB, 0.05 ether, ""));
         assertEq(BOB.balance, bobBal + 0.05 ether);
     }
 }

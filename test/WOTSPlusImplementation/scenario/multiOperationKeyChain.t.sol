@@ -56,9 +56,7 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
 
         // ── Op B: resetKeyset(Verification, txSign) — seeds 10 ───────
-        WOTSPlus.WinternitzAddress[10] memory verifBatch = _freshKeys10(
-            "op-B-verif"
-        );
+        WOTSPlus.WinternitzAddress[10] memory verifBatch = _freshKeys10("op-B-verif");
         _opResetKeyset_TxSigned(Codec.KeyType.Verification, verifBatch, "op-B-next");
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         for (uint256 i = 0; i < 10; i++) {
@@ -73,16 +71,9 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         WOTSPlus.WinternitzAddress[] memory verifNew = new WOTSPlus.WinternitzAddress[](3);
         for (uint256 i = 0; i < 3; i++) {
             verifOld[i] = verifBatch[i];
-            (verifNew[i], ) = _generateKeyPair(
-                keccak256(abi.encode("op-C-new", i))
-            );
+            (verifNew[i],) = _generateKeyPair(keccak256(abi.encode("op-C-new", i)));
         }
-        _opReplaceKeys_TxSigned(
-            Codec.KeyType.Verification,
-            verifOld,
-            verifNew,
-            "op-C-next"
-        );
+        _opReplaceKeys_TxSigned(Codec.KeyType.Verification, verifOld, verifNew, "op-C-next");
         // Verification size still 10; rotated 3.
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         for (uint256 i = 0; i < 3; i++) {
@@ -95,16 +86,12 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         }
 
         // ── Op D: resetKeyset(Recovery, txSign) — wholesale rotate ───
-        WOTSPlus.WinternitzAddress[10] memory newRecBatch = _freshKeys10(
-            "op-D-rec"
-        );
+        WOTSPlus.WinternitzAddress[10] memory newRecBatch = _freshKeys10("op-D-rec");
         _opResetKeyset_TxSigned(Codec.KeyType.Recovery, newRecBatch, "op-D-next");
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
         // None of the original recovery keys remain.
         for (uint256 i = 0; i < 10; i++) {
-            assertFalse(
-                wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
-            );
+            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
             assertTrue(wallet.isKey(Codec.KeyType.Recovery, newRecBatch[i]));
         }
         // Tx set still at 5.
@@ -122,32 +109,17 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         WOTSPlus.WinternitzAddress[] memory recNew = new WOTSPlus.WinternitzAddress[](2);
         recOld[0] = newRecBatch[3];
         recOld[1] = newRecBatch[7];
-        (recNew[0], ) = _generateKeyPair("op-E-recNew-0");
-        (recNew[1], ) = _generateKeyPair("op-E-recNew-1");
-        (WOTSPlus.WinternitzAddress memory recNextE, ) = _generateKeyPair(
-            "op-E-recNext"
-        );
+        (recNew[0],) = _generateKeyPair("op-E-recNew-0");
+        (recNew[1],) = _generateKeyPair("op-E-recNew-1");
+        (WOTSPlus.WinternitzAddress memory recNextE,) = _generateKeyPair("op-E-recNext");
         bytes32 digestE = _buildReplaceKeysMessageHash(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Recovery,
-            address(wallet),
-            recE,
-            recNextE,
-            recOld,
-            recNew
+            Codec.KeyType.Recovery, Codec.KeyType.Recovery, address(wallet), recE, recNextE, recOld, recNew
         );
         WOTSPlus.WinternitzElements memory sigE = _sign(recPrivE, digestE);
         vm.prank(ALICE);
         wallet.replaceKeys(
             Codec.encodeReplaceKeys(
-                Codec.KeyType.Recovery,
-                Codec.KeyType.Recovery,
-                2,
-                recE,
-                recNextE,
-                sigE,
-                recOld,
-                recNew
+                Codec.KeyType.Recovery, Codec.KeyType.Recovery, 2, recE, recNextE, sigE, recOld, recNew
             )
         );
         // Recovery still at 10. recE rotated to recNextE; recOld[0..1] →
@@ -181,20 +153,9 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         bytes32 recCurPriv = _recoverySigningKey(alicePrivateKey, 0);
 
         // ── Op A: resetKeyset(Verification, recSign) ─────────────────
-        WOTSPlus.WinternitzAddress[10] memory verifBatch = _freshKeys10(
-            "rsignA-verif"
-        );
-        (WOTSPlus.WinternitzAddress memory recNextA, ) = _generateKeyPair(
-            "rsignA-recNext"
-        );
-        _resetKeysetSubmit(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Recovery,
-            recCur,
-            recCurPriv,
-            recNextA,
-            verifBatch
-        );
+        WOTSPlus.WinternitzAddress[10] memory verifBatch = _freshKeys10("rsignA-verif");
+        (WOTSPlus.WinternitzAddress memory recNextA,) = _generateKeyPair("rsignA-recNext");
+        _resetKeysetSubmit(Codec.KeyType.Verification, Codec.KeyType.Recovery, recCur, recCurPriv, recNextA, verifBatch);
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         assertFalse(wallet.isKey(Codec.KeyType.Recovery, recCur));
         assertTrue(wallet.isKey(Codec.KeyType.Recovery, recNextA));
@@ -213,33 +174,18 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         txOld[0] = aliceTxnPubkeys[1];
         txOld[1] = aliceTxnPubkeys[2];
         txOld[2] = aliceTxnPubkeys[3];
-        (txNew[0], ) = _generateKeyPair("rsignB-txNew-0");
-        (txNew[1], ) = _generateKeyPair("rsignB-txNew-1");
-        (txNew[2], ) = _generateKeyPair("rsignB-txNew-2");
-        (WOTSPlus.WinternitzAddress memory recNextB, ) = _generateKeyPair(
-            "rsignB-recNext"
-        );
+        (txNew[0],) = _generateKeyPair("rsignB-txNew-0");
+        (txNew[1],) = _generateKeyPair("rsignB-txNew-1");
+        (txNew[2],) = _generateKeyPair("rsignB-txNew-2");
+        (WOTSPlus.WinternitzAddress memory recNextB,) = _generateKeyPair("rsignB-recNext");
         bytes32 digestB = _buildReplaceKeysMessageHash(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            address(wallet),
-            recCur,
-            recNextB,
-            txOld,
-            txNew
+            Codec.KeyType.Transaction, Codec.KeyType.Recovery, address(wallet), recCur, recNextB, txOld, txNew
         );
         WOTSPlus.WinternitzElements memory sigB = _sign(recCurPriv, digestB);
         vm.prank(ALICE);
         wallet.replaceKeys(
             Codec.encodeReplaceKeys(
-                Codec.KeyType.Transaction,
-                Codec.KeyType.Recovery,
-                3,
-                recCur,
-                recNextB,
-                sigB,
-                txOld,
-                txNew
+                Codec.KeyType.Transaction, Codec.KeyType.Recovery, 3, recCur, recNextB, sigB, txOld, txNew
             )
         );
         assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
@@ -253,20 +199,9 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         recCurPriv = _derivePrivKey("rsignB-recNext");
 
         // ── Op C: resetKeyset(Transaction, recSign) ──────────────────
-        WOTSPlus.WinternitzAddress[10] memory txBatch = _freshKeys10(
-            "rsignC-tx"
-        );
-        (WOTSPlus.WinternitzAddress memory recNextC, ) = _generateKeyPair(
-            "rsignC-recNext"
-        );
-        _resetKeysetSubmit(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            recCur,
-            recCurPriv,
-            recNextC,
-            txBatch
-        );
+        WOTSPlus.WinternitzAddress[10] memory txBatch = _freshKeys10("rsignC-tx");
+        (WOTSPlus.WinternitzAddress memory recNextC,) = _generateKeyPair("rsignC-recNext");
+        _resetKeysetSubmit(Codec.KeyType.Transaction, Codec.KeyType.Recovery, recCur, recCurPriv, recNextC, txBatch);
         // Tx set is now exactly the 10 new keys.
         assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
@@ -281,30 +216,13 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
 
     /// @dev Single tx-signed execute. Consumes `curPq`, rotates to a fresh
     ///      key derived from `nextSeed`.
-    function _opExecute(
-        address to,
-        uint256 value,
-        bytes32 nextSeed
-    ) internal {
-        (
-            WOTSPlus.WinternitzAddress memory nextPq,
-            bytes32 nextPriv
-        ) = _generateKeyPair(nextSeed);
+    function _opExecute(address to, uint256 value, bytes32 nextSeed) internal {
+        (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) = _generateKeyPair(nextSeed);
         uint256 fee = wallet.getExecuteFee();
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            curPq,
-            nextPq,
-            to,
-            value,
-            "",
-            fee
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), curPq, nextPq, to, value, "", fee);
         WOTSPlus.WinternitzElements memory sig = _sign(curPqPriv, msgHash);
         vm.prank(ALICE);
-        wallet.execute{value: fee}(
-            Codec.encodeExecute(curPq, nextPq, sig, to, value, "")
-        );
+        wallet.execute{value: fee}(Codec.encodeExecute(curPq, nextPq, sig, to, value, ""));
         // Spent + rotated checks.
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, curPq));
         assertTrue(wallet.isKeySpent(curPq));
@@ -319,30 +237,12 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         WOTSPlus.WinternitzAddress[10] memory newKeys,
         bytes32 nextSeed
     ) internal {
-        (
-            WOTSPlus.WinternitzAddress memory nextPq,
-            bytes32 nextPriv
-        ) = _generateKeyPair(nextSeed);
-        bytes32 msgHash = _buildResetKeysetMessageHash(
-            kind,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            curPq,
-            nextPq,
-            newKeys
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) = _generateKeyPair(nextSeed);
+        bytes32 msgHash =
+            _buildResetKeysetMessageHash(kind, Codec.KeyType.Transaction, address(wallet), curPq, nextPq, newKeys);
         WOTSPlus.WinternitzElements memory sig = _sign(curPqPriv, msgHash);
         vm.prank(ALICE);
-        wallet.resetKeyset(
-            Codec.encodeResetKeyset(
-                kind,
-                Codec.KeyType.Transaction,
-                curPq,
-                nextPq,
-                sig,
-                newKeys
-            )
-        );
+        wallet.resetKeyset(Codec.encodeResetKeyset(kind, Codec.KeyType.Transaction, curPq, nextPq, sig, newKeys));
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, curPq));
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
         curPq = nextPq;
@@ -356,31 +256,15 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         WOTSPlus.WinternitzAddress[] memory newKeys,
         bytes32 nextSeed
     ) internal {
-        (
-            WOTSPlus.WinternitzAddress memory nextPq,
-            bytes32 nextPriv
-        ) = _generateKeyPair(nextSeed);
+        (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) = _generateKeyPair(nextSeed);
         bytes32 msgHash = _buildReplaceKeysMessageHash(
-            kind,
-            Codec.KeyType.Transaction,
-            address(wallet),
-            curPq,
-            nextPq,
-            oldKeys,
-            newKeys
+            kind, Codec.KeyType.Transaction, address(wallet), curPq, nextPq, oldKeys, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(curPqPriv, msgHash);
         vm.prank(ALICE);
         wallet.replaceKeys(
             Codec.encodeReplaceKeys(
-                kind,
-                Codec.KeyType.Transaction,
-                oldKeys.length,
-                curPq,
-                nextPq,
-                sig,
-                oldKeys,
-                newKeys
+                kind, Codec.KeyType.Transaction, oldKeys.length, curPq, nextPq, sig, oldKeys, newKeys
             )
         );
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, curPq));
@@ -399,48 +283,23 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
         WOTSPlus.WinternitzAddress memory nextPq,
         WOTSPlus.WinternitzAddress[10] memory newKeys
     ) internal {
-        bytes32 msgHash = _buildResetKeysetMessageHash(
-            kind,
-            signingKind,
-            address(wallet),
-            currentPq,
-            nextPq,
-            newKeys
-        );
+        bytes32 msgHash = _buildResetKeysetMessageHash(kind, signingKind, address(wallet), currentPq, nextPq, newKeys);
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, msgHash);
         vm.prank(ALICE);
-        wallet.resetKeyset(
-            Codec.encodeResetKeyset(
-                kind,
-                signingKind,
-                currentPq,
-                nextPq,
-                sig,
-                newKeys
-            )
-        );
+        wallet.resetKeyset(Codec.encodeResetKeyset(kind, signingKind, currentPq, nextPq, sig, newKeys));
     }
 
-    function _freshKeys10(
-        bytes32 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress[10] memory out) {
+    function _freshKeys10(bytes32 seed) internal pure returns (WOTSPlus.WinternitzAddress[10] memory out) {
         for (uint256 i = 0; i < 10; i++) {
-            (out[i], ) = WOTSPlus.generateKeyPair(
-                keccak256(abi.encode(seed, i))
-            );
+            (out[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 
     /// @dev Re-derive the private key for a `_freshKeys10(seed)[index]`
     ///      output. Mirrors the `keccak256(abi.encode(seed, index))` seed
     ///      derivation used inside `_freshKeys10`.
-    function _derivePrivKeyForFreshKeys10(
-        bytes32 seed,
-        uint256 index
-    ) internal pure returns (bytes32) {
-        (, bytes32 priv) = WOTSPlus.generateKeyPair(
-            keccak256(abi.encode(seed, index))
-        );
+    function _derivePrivKeyForFreshKeys10(bytes32 seed, uint256 index) internal pure returns (bytes32) {
+        (, bytes32 priv) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, index)));
         return priv;
     }
 

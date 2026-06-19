@@ -8,42 +8,18 @@ import {WOTSPlusCodecHarness} from "../../harness/WOTSPlusCodecHarness.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__encodeReplaceKeys is WOTSPlusCodecTest {
-    function test_exposed_encodeReplaceKeys_producesCorrectLength_N3()
-        public
-        view
-    {
-        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(1)),
-            bytes32(uint256(2))
-        );
-        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(3)),
-            bytes32(uint256(4))
-        );
+    function test_exposed_encodeReplaceKeys_producesCorrectLength_N3() public view {
+        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(bytes32(uint256(1)), bytes32(uint256(2)));
+        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(bytes32(uint256(3)), bytes32(uint256(4)));
         WOTSPlus.WinternitzElements memory sig;
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeys = new WOTSPlus.WinternitzAddress[](3);
-        WOTSPlus.WinternitzAddress[]
-            memory newKeys = new WOTSPlus.WinternitzAddress[](3);
+        WOTSPlus.WinternitzAddress[] memory oldKeys = new WOTSPlus.WinternitzAddress[](3);
+        WOTSPlus.WinternitzAddress[] memory newKeys = new WOTSPlus.WinternitzAddress[](3);
         for (uint256 i = 0; i < 3; i++) {
-            oldKeys[i] = WOTSPlus.WinternitzAddress(
-                bytes32(10 + i * 2),
-                bytes32(11 + i * 2)
-            );
-            newKeys[i] = WOTSPlus.WinternitzAddress(
-                bytes32(100 + i * 2),
-                bytes32(101 + i * 2)
-            );
+            oldKeys[i] = WOTSPlus.WinternitzAddress(bytes32(10 + i * 2), bytes32(11 + i * 2));
+            newKeys[i] = WOTSPlus.WinternitzAddress(bytes32(100 + i * 2), bytes32(101 + i * 2));
         }
         bytes memory encoded = codec.exposed_encodeReplaceKeys(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Transaction,
-            3,
-            cur,
-            nxt,
-            sig,
-            oldKeys,
-            newKeys
+            Codec.KeyType.Recovery, Codec.KeyType.Transaction, 3, cur, nxt, sig, oldKeys, newKeys
         );
         // 32 (kind) + 32 (signingKind) + 32 (n) + 64 (cur) + 64 (nxt) +
         // 2144 (sig) + 2 * 3 * 64 (arrays) = 2368 + 384 = 2752
@@ -62,10 +38,7 @@ contract WOTSPlusCodec__encodeReplaceKeys is WOTSPlusCodecTest {
         _assertRoundtrip(Codec.KeyType.Recovery, Codec.KeyType.Recovery, 10);
     }
 
-    function test_exposed_encodeReplaceKeys_roundtripsEmptyKeys()
-        public
-        view
-    {
+    function test_exposed_encodeReplaceKeys_roundtripsEmptyKeys() public view {
         // Codec accepts N=0; only the wallet rejects with EmptyKeys.
         _assertRoundtrip(Codec.KeyType.Transaction, Codec.KeyType.Transaction, 0);
     }
@@ -85,29 +58,13 @@ contract WOTSPlusCodec__encodeReplaceKeys is WOTSPlusCodecTest {
         WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
         WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
         WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
-        WOTSPlus.WinternitzAddress[] memory oldKeys = _fuzzWinternitzAddressArray(
-            keccak256(abi.encode(seed, "old")),
-            n
-        );
-        WOTSPlus.WinternitzAddress[] memory newKeys = _fuzzWinternitzAddressArray(
-            keccak256(abi.encode(seed, "new")),
-            n
-        );
+        WOTSPlus.WinternitzAddress[] memory oldKeys = _fuzzWinternitzAddressArray(keccak256(abi.encode(seed, "old")), n);
+        WOTSPlus.WinternitzAddress[] memory newKeys = _fuzzWinternitzAddressArray(keccak256(abi.encode(seed, "new")), n);
 
-        bytes memory encoded = codec.exposed_encodeReplaceKeys(
-            kind,
-            signingKind,
-            n,
-            cur,
-            nxt,
-            sig,
-            oldKeys,
-            newKeys
-        );
+        bytes memory encoded = codec.exposed_encodeReplaceKeys(kind, signingKind, n, cur, nxt, sig, oldKeys, newKeys);
         assertEq(encoded.length, 2368 + 2 * n * 64);
 
-        WOTSPlusCodecHarness.DecodedReplaceKeys memory out = codec
-            .exposed_decodeReplaceKeys(encoded);
+        WOTSPlusCodecHarness.DecodedReplaceKeys memory out = codec.exposed_decodeReplaceKeys(encoded);
 
         assertTrue(out.kind == kind);
         assertTrue(out.signingKind == signingKind);
@@ -129,47 +86,21 @@ contract WOTSPlusCodec__encodeReplaceKeys is WOTSPlusCodecTest {
         }
     }
 
-    function _assertRoundtrip(
-        Codec.KeyType kind,
-        Codec.KeyType signingKind,
-        uint256 n
-    ) internal view {
-        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(1)),
-            bytes32(uint256(2))
-        );
-        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(3)),
-            bytes32(uint256(4))
-        );
+    function _assertRoundtrip(Codec.KeyType kind, Codec.KeyType signingKind, uint256 n) internal view {
+        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(bytes32(uint256(1)), bytes32(uint256(2)));
+        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(bytes32(uint256(3)), bytes32(uint256(4)));
         WOTSPlus.WinternitzElements memory sig;
-        for (uint256 i = 0; i < 67; i++) sig.elements[i] = bytes32(i + 200);
-        WOTSPlus.WinternitzAddress[]
-            memory oldKeys = new WOTSPlus.WinternitzAddress[](n);
-        WOTSPlus.WinternitzAddress[]
-            memory newKeys = new WOTSPlus.WinternitzAddress[](n);
-        for (uint256 i = 0; i < n; i++) {
-            oldKeys[i] = WOTSPlus.WinternitzAddress(
-                bytes32(10 + i * 2),
-                bytes32(11 + i * 2)
-            );
-            newKeys[i] = WOTSPlus.WinternitzAddress(
-                bytes32(100 + i * 2),
-                bytes32(101 + i * 2)
-            );
+        for (uint256 i = 0; i < 67; i++) {
+            sig.elements[i] = bytes32(i + 200);
         }
-        bytes memory encoded = codec.exposed_encodeReplaceKeys(
-            kind,
-            signingKind,
-            n,
-            cur,
-            nxt,
-            sig,
-            oldKeys,
-            newKeys
-        );
-        WOTSPlusCodecHarness.DecodedReplaceKeys memory out = codec
-            .exposed_decodeReplaceKeys(encoded);
+        WOTSPlus.WinternitzAddress[] memory oldKeys = new WOTSPlus.WinternitzAddress[](n);
+        WOTSPlus.WinternitzAddress[] memory newKeys = new WOTSPlus.WinternitzAddress[](n);
+        for (uint256 i = 0; i < n; i++) {
+            oldKeys[i] = WOTSPlus.WinternitzAddress(bytes32(10 + i * 2), bytes32(11 + i * 2));
+            newKeys[i] = WOTSPlus.WinternitzAddress(bytes32(100 + i * 2), bytes32(101 + i * 2));
+        }
+        bytes memory encoded = codec.exposed_encodeReplaceKeys(kind, signingKind, n, cur, nxt, sig, oldKeys, newKeys);
+        WOTSPlusCodecHarness.DecodedReplaceKeys memory out = codec.exposed_decodeReplaceKeys(encoded);
         assertTrue(out.kind == kind);
         assertTrue(out.signingKind == signingKind);
         assertEq(out.n, n);

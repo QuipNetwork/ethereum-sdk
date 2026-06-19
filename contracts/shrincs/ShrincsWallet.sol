@@ -45,23 +45,29 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @dev Transient storage slot gating `migrate` to the `upgradeToAndCall` context.
     /// @notice REQUIRES EIP-1153 (TSTORE/TLOAD).
-    uint256 private constant _UPGRADE_GUARD_SLOT = uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) - 1;
+    uint256 private constant _UPGRADE_GUARD_SLOT =
+        uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) - 1;
 
     /// @dev EIP-712 type hash nesting the ERC-1271 `hash` before ECDSA recovery, binding the
     ///      classical signature to this wallet's domain (mirrors Safe's `SafeMessage`).
-    bytes32 private constant _QUIP_SIGNED_HASH_TYPEHASH = keccak256("QuipSignedHash(bytes32 hash)");
+    bytes32 private constant _QUIP_SIGNED_HASH_TYPEHASH =
+        keccak256("QuipSignedHash(bytes32 hash)");
 
     /// @dev SHRINCS storage base slots, duplicated from `ShrincsWalletStorage` as numeric
     ///      literals because inline assembly cannot reference cross-library constants or `base+N`.
     ///      Kept in lock-step with `Layout` field order (pinned by the storage-layout fixture).
-    bytes32 private constant _PQ_FACTORY_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
+    bytes32 private constant _PQ_FACTORY_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
     bytes32 private constant _SHRINCS_COMMITMENT_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01;
     bytes32 private constant _ERC1271_COMMITMENT_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc02;
-    bytes32 private constant _KEY_VERSION_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03;
-    bytes32 private constant _NONCE_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc04;
-    bytes32 private constant _LEAF_STATE_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc05;
+    bytes32 private constant _KEY_VERSION_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03;
+    bytes32 private constant _NONCE_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc04;
+    bytes32 private constant _LEAF_STATE_SLOT =
+        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc05;
 
     constructor(address payable factory_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
@@ -75,7 +81,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @dev EIP-712 domain name/version for the ERC-1271 ECDSA half. Distinct from the WOTS+
     ///      wallet's "QuipWallet" so a classical owner signature cannot cross wallet families.
-    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
+    function _domainNameAndVersion()
+        internal
+        pure
+        override
+        returns (string memory name, string memory version)
+    {
         name = "QuipShrincsWallet";
         version = "1";
     }
@@ -94,13 +105,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      By convention `userOp.signature` carries *both* SHRINCS structs — it is the ABI
     ///      encoding of `(PublicKey publicKey, StatefulSignature signature)` — so the decode
     ///      below hands back a public key alongside the signature.
-    function _validateSignature(PackedUserOperation calldata userOp, bytes32 userOpHash)
-        internal
-        override
-        returns (uint256)
-    {
+    function _validateSignature(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash
+    ) internal override returns (uint256) {
         // two reasons for check:
-        // 1. call would fail on decode (checks first 2 x bytes32 = 64 bytes) 
+        // 1. call would fail on decode (checks first 2 x bytes32 = 64 bytes)
         //    if length check didn't exist
         // 2. solidity encodes offset as one word per dynamic type at the `head` of
         //    the encoded data; two bytes32 words means two dynamic types at the `tail`
@@ -108,21 +118,29 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         //    so this validation is an indication that two dyanmic types exist and the two bytes32
         //    words contain their offset
         if (userOp.signature.length < 0x40) {
-            emit UserOpValidationRejected(UserOpValidationFailure.BadSignatureLength);
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.BadSignatureLength
+            );
             return 1;
         }
-        (ShrincsTypes.PublicKey calldata pk, ShrincsTypes.StatefulSignature calldata sig) =
-            Codec.decodeUserOpSignature(userOp.signature);
+        (
+            ShrincsTypes.PublicKey calldata pk,
+            ShrincsTypes.StatefulSignature calldata sig
+        ) = Codec.decodeUserOpSignature(userOp.signature);
 
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
         uint32 leaf = uint32(sig.authPath.length);
         if (leaf == 0 || leaf > $.maxSignatures) {
-            emit UserOpValidationRejected(UserOpValidationFailure.StatefulBudgetExhausted);
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.StatefulBudgetExhausted
+            );
             return 1;
         }
         if (_isStatefulLeafUsed($, epoch, leaf)) {
-            emit UserOpValidationRejected(UserOpValidationFailure.StaleStatefulLeaf);
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.StaleStatefulLeaf
+            );
             return 1;
         }
 
@@ -135,10 +153,18 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             Codec.ACTION_ERC4337_EXECUTE,
             Codec.erc4337PayloadHash(userOpHash, getExecuteFee())
         );
-        if (!SHRINCS.verifyStateful(
-                ShrincsTypes.ParameterSetId($.parameterSetId), $.shrincsPublicKeyCommitment, pk, ctx, sig
-            )) {
-            emit UserOpValidationRejected(UserOpValidationFailure.InvalidSignature);
+        if (
+            !SHRINCS.verifyStateful(
+                ShrincsTypes.ParameterSetId($.parameterSetId),
+                $.shrincsPublicKeyCommitment,
+                pk,
+                ctx,
+                sig
+            )
+        ) {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.InvalidSignature
+            );
             return 1;
         }
 
@@ -156,25 +182,19 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc ERC4337
-    function execute(address target, uint256 value, bytes calldata data)
-        public
-        payable
-        override
-        onlyEntryPoint
-        returns (bytes memory result)
-    {
+    function execute(
+        address target,
+        uint256 value,
+        bytes calldata data
+    ) public payable override onlyEntryPoint returns (bytes memory result) {
         _collectExecuteFee();
         result = super.execute(target, value, data);
     }
 
     /// @inheritdoc ERC4337
-    function executeBatch(Call[] calldata calls)
-        public
-        payable
-        override
-        onlyEntryPoint
-        returns (bytes[] memory results)
-    {
+    function executeBatch(
+        Call[] calldata calls
+    ) public payable override onlyEntryPoint returns (bytes[] memory results) {
         _collectExecuteFee();
         results = super.executeBatch(calls);
     }
@@ -184,7 +204,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      factory's vetted codehash set), and an arbitrary delegate could clear consumed-leaf
     ///      bits in `usedStatefulLeafBitmap` — which lives outside the guarded-slot perimeter — and
     ///      re-enable replay of one-time signatures. Batch via `executeBatch` instead.
-    function delegateExecute(address, bytes calldata) public payable override returns (bytes memory) {
+    function delegateExecute(
+        address,
+        bytes calldata
+    ) public payable override returns (bytes memory) {
         revert DelegateExecuteDisabled();
     }
 
@@ -200,12 +223,16 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IShrincsWallet
-    function initialize(address payable newOwner, bytes calldata payload) external initializer {
+    function initialize(
+        address payable newOwner,
+        bytes calldata payload
+    ) external initializer {
         if (msg.sender != FACTORY) revert InvalidFactory();
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
         (
-            bytes32 commitment,,
+            bytes32 commitment,
+            ,
             ShrincsTypes.PublicKey calldata pk,
             uint8 parameterSetId,
             bytes32 erc1271Commitment,
@@ -216,12 +243,15 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         // Validate the supplied main bundle against the supported profile and the declared
         // commitment (validParams already checks the embedded commitment recomputes).
-        ShrincsTypes.ParamsView memory p = ShrincsUtils.paramsView(ShrincsTypes.ParameterSetId(parameterSetId));
+        ShrincsTypes.ParamsView memory p = ShrincsUtils.paramsView(
+            ShrincsTypes.ParameterSetId(parameterSetId)
+        );
         if (!ShrincsUtils.validParams(p, pk)) revert CommitmentMismatch();
-        if (ShrincsUtils.publicKeyCommitment(pk) != commitment) revert CommitmentMismatch();
+        if (ShrincsUtils.publicKeyCommitment(pk) != commitment)
+            revert CommitmentMismatch();
 
-        (ShrincsTypes.StatefulPublicKey memory decoded, bool ok) =
-            ShrincsUtils.decodeStatefulPublicKey(pk.statefulPublicKey);
+        (ShrincsTypes.StatefulPublicKey memory decoded, bool ok) = ShrincsUtils
+            .decodeStatefulPublicKey(pk.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
 
         _initializeOwner(newOwner);
@@ -234,7 +264,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         $.maxSignatures = decoded.maxSignatures;
         // Epoch 0's leaf bitmap is empty by default; statefulLeavesUsed starts at 0.
 
-        emit WalletInitialized(FACTORY, newOwner, commitment, erc1271Commitment);
+        emit WalletInitialized(
+            FACTORY,
+            newOwner,
+            commitment,
+            erc1271Commitment
+        );
     }
 
     /// @inheritdoc IShrincsWallet
@@ -242,7 +277,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         if (_upgradeGuard() == 0) revert NotUpgrading();
 
         (
-            bytes32 commitment,,
+            bytes32 commitment,
+            ,
             ShrincsTypes.PublicKey calldata pk,
             uint8 parameterSetId,
             bytes32 erc1271Commitment,
@@ -251,12 +287,15 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         if (erc1271Commitment == bytes32(0)) revert ZeroErc1271Commitment();
 
-        ShrincsTypes.ParamsView memory p = ShrincsUtils.paramsView(ShrincsTypes.ParameterSetId(parameterSetId));
+        ShrincsTypes.ParamsView memory p = ShrincsUtils.paramsView(
+            ShrincsTypes.ParameterSetId(parameterSetId)
+        );
         if (!ShrincsUtils.validParams(p, pk)) revert CommitmentMismatch();
-        if (ShrincsUtils.publicKeyCommitment(pk) != commitment) revert CommitmentMismatch();
+        if (ShrincsUtils.publicKeyCommitment(pk) != commitment)
+            revert CommitmentMismatch();
 
-        (ShrincsTypes.StatefulPublicKey memory decoded, bool ok) =
-            ShrincsUtils.decodeStatefulPublicKey(pk.statefulPublicKey);
+        (ShrincsTypes.StatefulPublicKey memory decoded, bool ok) = ShrincsUtils
+            .decodeStatefulPublicKey(pk.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
 
         Storage.Layout storage $ = Storage.layout();
@@ -276,19 +315,18 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
-    function upgradeToAndCall(address newImplementation, bytes calldata data)
-        public
-        payable
-        override(IShrincsWallet, UUPSUpgradeable)
-        onlyOwner
-    {
+    function upgradeToAndCall(
+        address newImplementation,
+        bytes calldata data
+    ) public payable override(IShrincsWallet, UUPSUpgradeable) onlyOwner {
         // Vet implementation locally BEFORE any delegatecall.
         bytes32 implCodehash = newImplementation.codehash;
         IQuipFactory factory = IQuipFactory(FACTORY);
         if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max) {
             revert ImplementationNotVetted();
         }
-        if (factory.deprecatedImpls(implCodehash)) revert ImplementationDeprecated();
+        if (factory.deprecatedImpls(implCodehash))
+            revert ImplementationDeprecated();
 
         (
             ShrincsTypes.PublicKey calldata pk,
@@ -297,8 +335,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             bytes calldata migratorPayload
         ) = Codec.decodeUpgradeAuth(data);
 
-        bytes32 payloadHash =
-            Codec.upgradePayloadHash(newImplementation, shouldMigrate, EfficientHashLib.hashCalldata(migratorPayload));
+        bytes32 payloadHash = Codec.upgradePayloadHash(
+            newImplementation,
+            shouldMigrate,
+            EfficientHashLib.hashCalldata(migratorPayload)
+        );
 
         // SECURITY — CEI. The leaf advance below IS the Effect that blocks replay of this signed
         // upgrade payload by a re-entrant malicious vetted impl during the delegatecalls below.
@@ -306,7 +347,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         // verifyUpgrade is view here, but executes the NEW impl's bytecode in our storage context.
         bytes32[8] memory verifyGuard = _snapshotGuardedSlots();
-        LibCall.delegateCallContract(newImplementation, abi.encodeCall(this.verifyUpgrade, (newImplementation, data)));
+        LibCall.delegateCallContract(
+            newImplementation,
+            abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
+        );
         _assertGuardedSlotsUnchanged(verifyGuard);
 
         if (shouldMigrate) {
@@ -314,7 +358,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             assembly {
                 tstore(slot, 1)
             }
-            LibCall.delegateCallContract(newImplementation, abi.encodeCall(this.migrate, (migratorPayload)));
+            LibCall.delegateCallContract(
+                newImplementation,
+                abi.encodeCall(this.migrate, (migratorPayload))
+            );
             assembly {
                 tstore(slot, 0)
             }
@@ -333,11 +380,21 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ) external payable onlyOwner {
         uint256 fee = getExecuteFee();
         bytes32 dataHash = EfficientHashLib.hashCalldata(data);
-        bytes32 payloadHash = Codec.executePayloadHash(target, value, dataHash, fee);
+        bytes32 payloadHash = Codec.executePayloadHash(
+            target,
+            value,
+            dataHash,
+            fee
+        );
 
         // SECURITY — CEI. The leaf advance is the Effect that blocks replay; every line below is
         // an Interaction.
-        uint32 leaf = _verifyStatefulAndAdvance(publicKey, signature, Codec.ACTION_EXECUTE, payloadHash);
+        uint32 leaf = _verifyStatefulAndAdvance(
+            publicKey,
+            signature,
+            Codec.ACTION_EXECUTE,
+            payloadHash
+        );
         _collectExecuteFee();
 
         if (value == 0 && data.length == 0) {
@@ -360,7 +417,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint256 amount
     ) external payable onlyOwner {
         bytes32 payloadHash = Codec.withdrawPayloadHash(to, amount);
-        _verifyStatefulAndAdvance(publicKey, signature, Codec.ACTION_WITHDRAW, payloadHash);
+        _verifyStatefulAndAdvance(
+            publicKey,
+            signature,
+            Codec.ACTION_WITHDRAW,
+            payloadHash
+        );
         ERC4337.withdrawDepositTo(to, amount);
     }
 
@@ -375,19 +437,32 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
         Storage.Layout storage $ = Storage.layout();
-        ShrincsTypes.ParameterSetId currentParam = ShrincsTypes.ParameterSetId($.parameterSetId);
+        ShrincsTypes.ParameterSetId currentParam = ShrincsTypes.ParameterSetId(
+            $.parameterSetId
+        );
 
-        uint64 limit = ShrincsTypes.defaultParamsView(currentParam).statelessSignatureLimit;
-        if ($.statelessSignaturesUsed >= limit) revert StatelessBudgetExhausted();
+        uint64 limit = ShrincsTypes
+            .defaultParamsView(currentParam)
+            .statelessSignatureLimit;
+        if ($.statelessSignaturesUsed >= limit)
+            revert StatelessBudgetExhausted();
 
         // A genuine handover must hand the NEW owner an entirely fresh bundle (new stateless
         // recovery root), so the OLD owner retains neither spend nor break-glass authority. That
         // full replacement is authorized by the current STATELESS recovery key, verified against
         // the CURRENT commitment.
-        ShrincsTypes.RotationContext memory rctx =
-            Codec.buildRotationContext(_shrincsDomainSeparator(), $.nonce, $.keyVersion);
+        ShrincsTypes.RotationContext memory rctx = Codec.buildRotationContext(
+            _shrincsDomainSeparator(),
+            $.nonce,
+            $.keyVersion
+        );
         bytes32 nextCommitment = SHRINCS.statelessRotate(
-            currentParam, $.shrincsPublicKeyCommitment, currentPublicKey, rctx, recoverySignature, nextKey
+            currentParam,
+            $.shrincsPublicKeyCommitment,
+            currentPublicKey,
+            rctx,
+            recoverySignature,
+            nextKey
         );
         if (nextCommitment == bytes32(0)) revert InvalidSignature();
 
@@ -402,8 +477,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
 
         // statelessRotate already validated the bundle; decode only to cache the leaf budget.
-        (ShrincsTypes.StatefulPublicKey memory decoded,) =
-            ShrincsUtils.decodeStatefulPublicKey(nextKey.statefulPublicKey);
+        (ShrincsTypes.StatefulPublicKey memory decoded, ) = ShrincsUtils
+            .decodeStatefulPublicKey(nextKey.statefulPublicKey);
 
         // Install the fresh bundle AND the new classical owner together — the atomic handover.
         bytes32 prev = $.shrincsPublicKeyCommitment;
@@ -420,7 +495,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         _setOwner(newOwner);
         // Tail callback; factory pins the predicate `owner() == newOwner`.
         IQuipFactory(FACTORY).updateWalletOwner(newOwner);
-        emit KeyRotated(prev, nextCommitment, uint8(nextKey.parameterSetId), $.keyVersion);
+        emit KeyRotated(
+            prev,
+            nextCommitment,
+            uint8(nextKey.parameterSetId),
+            $.keyVersion
+        );
     }
 
     /// @inheritdoc IShrincsWallet
@@ -431,8 +511,16 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint8 newErc1271ParameterSetId
     ) external payable onlyOwner {
         if (newErc1271Commitment == bytes32(0)) revert ZeroErc1271Commitment();
-        bytes32 payloadHash = Codec.setErc1271KeyPayloadHash(newErc1271Commitment, newErc1271ParameterSetId);
-        _verifyStatefulAndAdvance(publicKey, signature, Codec.ACTION_SET_ERC1271_KEY, payloadHash);
+        bytes32 payloadHash = Codec.setErc1271KeyPayloadHash(
+            newErc1271Commitment,
+            newErc1271ParameterSetId
+        );
+        _verifyStatefulAndAdvance(
+            publicKey,
+            signature,
+            Codec.ACTION_SET_ERC1271_KEY,
+            payloadHash
+        );
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 old = $.erc1271StatelessCommitment;
@@ -447,11 +535,14 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ShrincsTypes.StatefulSignature calldata signature,
         ShrincsTypes.StatefulRotationTarget calldata nextStatefulKey
     ) external payable onlyOwner {
-        if (nextStatefulKey.statefulPublicKey.length != ShrincsTypes.STATEFUL_PUBLIC_KEY_BYTES) {
+        if (
+            nextStatefulKey.statefulPublicKey.length !=
+            ShrincsTypes.STATEFUL_PUBLIC_KEY_BYTES
+        ) {
             revert CommitmentMismatch();
         }
-        (ShrincsTypes.StatefulPublicKey memory decoded, bool ok) =
-            ShrincsUtils.decodeStatefulPublicKey(nextStatefulKey.statefulPublicKey);
+        (ShrincsTypes.StatefulPublicKey memory decoded, bool ok) = ShrincsUtils
+            .decodeStatefulPublicKey(nextStatefulKey.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
 
         // Recompute the next bundle commitment, reusing the current (verified) stateless root.
@@ -463,9 +554,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             currentPublicKey.pkSeed,
             currentPublicKey.hypertreeRoot
         );
-        bytes32 payloadHash = Codec.rotateKeyPayloadHash(nextCommitment, uint8(nextStatefulKey.parameterSetId));
+        bytes32 payloadHash = Codec.rotateKeyPayloadHash(
+            nextCommitment,
+            uint8(nextStatefulKey.parameterSetId)
+        );
 
-        _verifyStatefulAndAdvance(currentPublicKey, signature, Codec.ACTION_ROTATE_KEY, payloadHash);
+        _verifyStatefulAndAdvance(
+            currentPublicKey,
+            signature,
+            Codec.ACTION_ROTATE_KEY,
+            payloadHash
+        );
 
         Storage.Layout storage $ = Storage.layout();
         bytes32 prev = $.shrincsPublicKeyCommitment;
@@ -477,7 +576,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         }
         // New epoch ⇒ fresh (empty) leaf bitmap namespace; reset the per-epoch used counter.
         $.statefulLeavesUsed = 0;
-        emit KeyRotated(prev, nextCommitment, uint8(nextStatefulKey.parameterSetId), $.keyVersion);
+        emit KeyRotated(
+            prev,
+            nextCommitment,
+            uint8(nextStatefulKey.parameterSetId),
+            $.keyVersion
+        );
     }
 
     /// @inheritdoc IShrincsWallet
@@ -487,23 +591,36 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ShrincsTypes.RotationTarget calldata nextKey
     ) external payable onlyOwner {
         Storage.Layout storage $ = Storage.layout();
-        ShrincsTypes.ParameterSetId currentParam = ShrincsTypes.ParameterSetId($.parameterSetId);
+        ShrincsTypes.ParameterSetId currentParam = ShrincsTypes.ParameterSetId(
+            $.parameterSetId
+        );
 
-        uint64 limit = ShrincsTypes.defaultParamsView(currentParam).statelessSignatureLimit;
-        if ($.statelessSignaturesUsed >= limit) revert StatelessBudgetExhausted();
+        uint64 limit = ShrincsTypes
+            .defaultParamsView(currentParam)
+            .statelessSignatureLimit;
+        if ($.statelessSignaturesUsed >= limit)
+            revert StatelessBudgetExhausted();
 
-        ShrincsTypes.RotationContext memory ctx =
-            Codec.buildRotationContext(_shrincsDomainSeparator(), $.nonce, $.keyVersion);
+        ShrincsTypes.RotationContext memory ctx = Codec.buildRotationContext(
+            _shrincsDomainSeparator(),
+            $.nonce,
+            $.keyVersion
+        );
 
         bytes32 nextCommitment = SHRINCS.statelessRotate(
-            currentParam, $.shrincsPublicKeyCommitment, currentPublicKey, ctx, recoverySignature, nextKey
+            currentParam,
+            $.shrincsPublicKeyCommitment,
+            currentPublicKey,
+            ctx,
+            recoverySignature,
+            nextKey
         );
         if (nextCommitment == bytes32(0)) revert InvalidSignature();
 
         // statelessRotate already validated the next bundle (length + maxSignatures != 0 +
         // declared==computed commitment); decode here only to cache the leaf budget.
-        (ShrincsTypes.StatefulPublicKey memory decoded,) =
-            ShrincsUtils.decodeStatefulPublicKey(nextKey.statefulPublicKey);
+        (ShrincsTypes.StatefulPublicKey memory decoded, ) = ShrincsUtils
+            .decodeStatefulPublicKey(nextKey.statefulPublicKey);
 
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
@@ -516,7 +633,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         $.statelessSignaturesUsed = 0;
         // New epoch ⇒ fresh (empty) leaf bitmap namespace; reset the per-epoch used counter.
         $.statefulLeavesUsed = 0;
-        emit KeyRotated(prev, nextCommitment, uint8(nextKey.parameterSetId), $.keyVersion);
+        emit KeyRotated(
+            prev,
+            nextCommitment,
+            uint8(nextKey.parameterSetId),
+            $.keyVersion
+        );
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -563,24 +685,30 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @dev ERC-1271 validation: stateless SHRINCS verify against the dedicated verifier key AND
     ///      classical `owner()` ECDSA. View-safe (no leaf consumed); callers must bake a
     ///      nonce/deadline into `hash` and rotate the ERC-1271 key via `setErc1271Key`.
-    function isValidSignature(bytes32 hash, bytes calldata signature) public view override returns (bytes4) {
+    function isValidSignature(
+        bytes32 hash,
+        bytes calldata signature
+    ) public view override returns (bytes4) {
         return
-            _checkErc1271Signature(hash, signature) == Erc1271ValidationResult.Ok
+            _checkErc1271Signature(hash, signature) ==
+                Erc1271ValidationResult.Ok
                 ? bytes4(0x1626ba7e)
                 : bytes4(0xffffffff);
     }
 
     /// @inheritdoc IShrincsWallet
-    function debugIsValidSignature(bytes32 hash, bytes calldata signature)
-        external
-        view
-        returns (Erc1271ValidationResult)
-    {
+    function debugIsValidSignature(
+        bytes32 hash,
+        bytes calldata signature
+    ) external view returns (Erc1271ValidationResult) {
         return _checkErc1271Signature(hash, signature);
     }
 
     /// @inheritdoc IShrincsWallet
-    function verifyUpgrade(address newImplementation, bytes calldata data) external view {
+    function verifyUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) external view {
         // Reachability probe: re-run the stateful verify over the upgrade context as proof the
         // new impl's SHRINCS verifier is reachable in this storage context. Self-consistency,
         // not authorization (the authorization already happened in `upgradeToAndCall`).
@@ -599,25 +727,47 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             0,
             $.keyVersion,
             Codec.ACTION_UPGRADE,
-            Codec.upgradePayloadHash(newImplementation, shouldMigrate, EfficientHashLib.hashCalldata(migratorPayload))
+            Codec.upgradePayloadHash(
+                newImplementation,
+                shouldMigrate,
+                EfficientHashLib.hashCalldata(migratorPayload)
+            )
         );
-        if (!SHRINCS.verifyStateful(
-                ShrincsTypes.ParameterSetId($.parameterSetId), $.shrincsPublicKeyCommitment, pk, ctx, sig
-            )) revert InvalidSignature();
+        if (
+            !SHRINCS.verifyStateful(
+                ShrincsTypes.ParameterSetId($.parameterSetId),
+                $.shrincsPublicKeyCommitment,
+                pk,
+                ctx,
+                sig
+            )
+        ) revert InvalidSignature();
     }
 
     /// @inheritdoc IShrincsWallet
-    function quipSignedHashEcdsaTarget(bytes32 hash) public view returns (bytes32) {
-        return _hashTypedData(keccak256(abi.encode(_QUIP_SIGNED_HASH_TYPEHASH, hash)));
+    function quipSignedHashEcdsaTarget(
+        bytes32 hash
+    ) public view returns (bytes32) {
+        return
+            _hashTypedData(
+                keccak256(abi.encode(_QUIP_SIGNED_HASH_TYPEHASH, hash))
+            );
     }
 
     /// @inheritdoc IShrincsWallet
-    function owner() public view override(IShrincsWallet, Ownable) returns (address) {
+    function owner()
+        public
+        view
+        override(IShrincsWallet, Ownable)
+        returns (address)
+    {
         return Ownable.owner();
     }
 
     /// @dev Two-step handover is disabled, so no handover is ever pending.
-    function ownershipHandoverExpiresAt(address) public pure override returns (uint256) {
+    function ownershipHandoverExpiresAt(
+        address
+    ) public pure override returns (uint256) {
         return 0;
     }
 
@@ -648,17 +798,28 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
-    function getParameterSetId() external view returns (ShrincsTypes.ParameterSetId) {
+    function getParameterSetId()
+        external
+        view
+        returns (ShrincsTypes.ParameterSetId)
+    {
         return ShrincsTypes.ParameterSetId(Storage.layout().parameterSetId);
     }
 
     /// @inheritdoc IShrincsWallet
-    function getErc1271ParameterSetId() external view returns (ShrincsTypes.ParameterSetId) {
-        return ShrincsTypes.ParameterSetId(Storage.layout().erc1271ParameterSetId);
+    function getErc1271ParameterSetId()
+        external
+        view
+        returns (ShrincsTypes.ParameterSetId)
+    {
+        return
+            ShrincsTypes.ParameterSetId(Storage.layout().erc1271ParameterSetId);
     }
 
     /// @inheritdoc IShrincsWallet
-    function isStatefulLeafUsed(uint256 leafIndex) external view returns (bool) {
+    function isStatefulLeafUsed(
+        uint256 leafIndex
+    ) external view returns (bool) {
         Storage.Layout storage $ = Storage.layout();
         return _isStatefulLeafUsed($, $.keyVersion, leafIndex);
     }
@@ -696,8 +857,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function statelessSignatureLimit() external view returns (uint64) {
-        return ShrincsTypes.defaultParamsView(ShrincsTypes.ParameterSetId(Storage.layout().parameterSetId))
-        .statelessSignatureLimit;
+        return
+            ShrincsTypes
+                .defaultParamsView(
+                    ShrincsTypes.ParameterSetId(Storage.layout().parameterSetId)
+                )
+                .statelessSignatureLimit;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -718,14 +883,26 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
         leaf = uint32(signature.authPath.length);
-        if (leaf == 0 || leaf > $.maxSignatures) revert StatefulBudgetExhausted();
+        if (leaf == 0 || leaf > $.maxSignatures)
+            revert StatefulBudgetExhausted();
         if (_isStatefulLeafUsed($, epoch, leaf)) revert StaleStatefulLeaf();
 
-        ShrincsTypes.ActionContext memory ctx =
-            Codec.buildActionContext(_shrincsDomainSeparator(), 0, epoch, actionType, payloadHash);
-        if (!SHRINCS.verifyStateful(
-                ShrincsTypes.ParameterSetId($.parameterSetId), $.shrincsPublicKeyCommitment, publicKey, ctx, signature
-            )) revert InvalidSignature();
+        ShrincsTypes.ActionContext memory ctx = Codec.buildActionContext(
+            _shrincsDomainSeparator(),
+            0,
+            epoch,
+            actionType,
+            payloadHash
+        );
+        if (
+            !SHRINCS.verifyStateful(
+                ShrincsTypes.ParameterSetId($.parameterSetId),
+                $.shrincsPublicKeyCommitment,
+                publicKey,
+                ctx,
+                signature
+            )
+        ) revert InvalidSignature();
 
         _markStatefulLeafUsed($, epoch, leaf);
         unchecked {
@@ -735,41 +912,66 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @dev Returns whether stateful `leafIndex` has been consumed in the given key epoch.
-    function _isStatefulLeafUsed(Storage.Layout storage $, uint256 keyVersion_, uint256 leafIndex)
-        private
-        view
-        returns (bool)
-    {
-        return ($.usedStatefulLeafBitmap[keyVersion_][leafIndex >> 8] & (uint256(1) << (leafIndex & 0xff))) != 0;
+    function _isStatefulLeafUsed(
+        Storage.Layout storage $,
+        uint256 keyVersion_,
+        uint256 leafIndex
+    ) internal view returns (bool) {
+        return
+            ($.usedStatefulLeafBitmap[keyVersion_][leafIndex >> 8] &
+                (uint256(1) << (leafIndex & 0xff))) != 0;
     }
 
     /// @dev Marks stateful `leafIndex` consumed in the given key epoch.
-    function _markStatefulLeafUsed(Storage.Layout storage $, uint256 keyVersion_, uint256 leafIndex) private {
-        $.usedStatefulLeafBitmap[keyVersion_][leafIndex >> 8] |= uint256(1) << (leafIndex & 0xff);
+    function _markStatefulLeafUsed(
+        Storage.Layout storage $,
+        uint256 keyVersion_,
+        uint256 leafIndex
+    ) internal {
+        $.usedStatefulLeafBitmap[keyVersion_][leafIndex >> 8] |=
+            uint256(1) <<
+            (leafIndex & 0xff);
     }
 
     /// @dev Shared core for `isValidSignature` and `debugIsValidSignature`. Order: length →
     ///      ECDSA (owner) → stateless SHRINCS (dedicated verifier key).
-    function _checkErc1271Signature(bytes32 hash, bytes calldata signature)
-        internal
-        view
-        returns (Erc1271ValidationResult)
-    {
-        if (signature.length < 0x60) return Erc1271ValidationResult.BadSignatureLength;
-        (ShrincsTypes.PublicKey calldata pk, ShrincsTypes.StatelessSignature calldata sig, bytes calldata ecdsaSig) =
-            Codec.decodeErc1271Signature(signature);
+    function _checkErc1271Signature(
+        bytes32 hash,
+        bytes calldata signature
+    ) internal view returns (Erc1271ValidationResult) {
+        if (signature.length < 0x60)
+            return Erc1271ValidationResult.BadSignatureLength;
+        (
+            ShrincsTypes.PublicKey calldata pk,
+            ShrincsTypes.StatelessSignature calldata sig,
+            bytes calldata ecdsaSig
+        ) = Codec.decodeErc1271Signature(signature);
 
-        address recovered = ECDSA.tryRecoverCalldata(quipSignedHashEcdsaTarget(hash), ecdsaSig);
+        address recovered = ECDSA.tryRecoverCalldata(
+            quipSignedHashEcdsaTarget(hash),
+            ecdsaSig
+        );
         if (recovered == address(0) || recovered != owner()) {
             return Erc1271ValidationResult.InvalidEcdsaSignature;
         }
 
         Storage.Layout storage $ = Storage.layout();
-        ShrincsTypes.ActionContext memory ctx =
-            Codec.buildActionContext(_shrincsDomainSeparator(), 0, $.keyVersion, Codec.ACTION_ERC1271, hash);
-        if (!SHRINCS.verifyStateless(
-                ShrincsTypes.ParameterSetId($.erc1271ParameterSetId), $.erc1271StatelessCommitment, pk, ctx, sig
-            )) return Erc1271ValidationResult.InvalidShrincsSignature;
+        ShrincsTypes.ActionContext memory ctx = Codec.buildActionContext(
+            _shrincsDomainSeparator(),
+            0,
+            $.keyVersion,
+            Codec.ACTION_ERC1271,
+            hash
+        );
+        if (
+            !SHRINCS.verifyStateless(
+                ShrincsTypes.ParameterSetId($.erc1271ParameterSetId),
+                $.erc1271StatelessCommitment,
+                pk,
+                ctx,
+                sig
+            )
+        ) return Erc1271ValidationResult.InvalidShrincsSignature;
 
         return Erc1271ValidationResult.Ok;
     }
@@ -784,7 +986,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @dev The wallet's canonical SHRINCS signing domain: tag + chainId + this wallet.
     function _shrincsDomainSeparator() internal view returns (bytes32) {
-        return EfficientHashLib.hash(Codec.DOMAIN_TAG, bytes32(block.chainid), bytes32(uint256(uint160(address(this)))));
+        return
+            EfficientHashLib.hash(
+                Codec.DOMAIN_TAG,
+                bytes32(block.chainid),
+                bytes32(uint256(uint160(address(this))))
+            );
     }
 
     /// @dev The currently installed implementation address (ERC-1967 slot).
@@ -804,7 +1011,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @dev Snapshots the eight guarded slots: owner, ERC-1967 impl, factory, main commitment,
     ///      ERC-1271 commitment, keyVersion, nonce, packed leaf-state word.
-    function _snapshotGuardedSlots() internal view returns (bytes32[8] memory snapshot) {
+    function _snapshotGuardedSlots()
+        internal
+        view
+        returns (bytes32[8] memory snapshot)
+    {
         /// @solidity memory-safe-assembly
         assembly {
             mstore(snapshot, sload(_OWNER_SLOT))
@@ -820,7 +1031,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @dev Reverts with `GuardedSlotTampered(slotIndex)` if any guarded slot changed since the
     ///      snapshot. Index mapping documented on the error in `IShrincsWallet`.
-    function _assertGuardedSlotsUnchanged(bytes32[8] memory snapshot) internal view {
+    function _assertGuardedSlotsUnchanged(
+        bytes32[8] memory snapshot
+    ) internal view {
         bytes4 selector = GuardedSlotTampered.selector;
         /// @solidity memory-safe-assembly
         assembly {
@@ -829,20 +1042,33 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
                 mstore(0x04, idx)
                 revert(0x00, 0x24)
             }
-            if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) { revertWithIndex(selector, 0) }
-            if iszero(eq(mload(add(snapshot, 0x20)), sload(_ERC1967_IMPLEMENTATION_SLOT))) {
+            if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {
+                revertWithIndex(selector, 0)
+            }
+            if iszero(
+                eq(
+                    mload(add(snapshot, 0x20)),
+                    sload(_ERC1967_IMPLEMENTATION_SLOT)
+                )
+            ) {
                 revertWithIndex(selector, 1)
             }
             if iszero(eq(mload(add(snapshot, 0x40)), sload(_PQ_FACTORY_SLOT))) {
                 revertWithIndex(selector, 2)
             }
-            if iszero(eq(mload(add(snapshot, 0x60)), sload(_SHRINCS_COMMITMENT_SLOT))) {
+            if iszero(
+                eq(mload(add(snapshot, 0x60)), sload(_SHRINCS_COMMITMENT_SLOT))
+            ) {
                 revertWithIndex(selector, 3)
             }
-            if iszero(eq(mload(add(snapshot, 0x80)), sload(_ERC1271_COMMITMENT_SLOT))) {
+            if iszero(
+                eq(mload(add(snapshot, 0x80)), sload(_ERC1271_COMMITMENT_SLOT))
+            ) {
                 revertWithIndex(selector, 4)
             }
-            if iszero(eq(mload(add(snapshot, 0xa0)), sload(_KEY_VERSION_SLOT))) {
+            if iszero(
+                eq(mload(add(snapshot, 0xa0)), sload(_KEY_VERSION_SLOT))
+            ) {
                 revertWithIndex(selector, 5)
             }
             if iszero(eq(mload(add(snapshot, 0xc0)), sload(_NONCE_SLOT))) {

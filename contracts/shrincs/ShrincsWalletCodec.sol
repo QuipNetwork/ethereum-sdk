@@ -45,14 +45,22 @@ library ShrincsWalletCodec {
     ///      library binds `actionType` into `statefulActionMessageHash` /
     ///      `statelessActionMessageHash`, so a distinct constant per operation is the
     ///      per-operation domain tag.
-    bytes32 internal constant ACTION_ERC4337_EXECUTE = keccak256("quip.shrincs.action.erc4337Execute");
-    bytes32 internal constant ACTION_EXECUTE = keccak256("quip.shrincs.action.execute");
-    bytes32 internal constant ACTION_WITHDRAW = keccak256("quip.shrincs.action.withdrawDeposit");
-    bytes32 internal constant ACTION_UPGRADE = keccak256("quip.shrincs.action.upgrade");
-    bytes32 internal constant ACTION_TRANSFER_OWNERSHIP = keccak256("quip.shrincs.action.transferOwnership");
-    bytes32 internal constant ACTION_SET_ERC1271_KEY = keccak256("quip.shrincs.action.setErc1271Key");
-    bytes32 internal constant ACTION_ROTATE_KEY = keccak256("quip.shrincs.action.rotateKey");
-    bytes32 internal constant ACTION_ERC1271 = keccak256("quip.shrincs.action.erc1271");
+    bytes32 internal constant ACTION_ERC4337_EXECUTE =
+        keccak256("quip.shrincs.action.erc4337Execute");
+    bytes32 internal constant ACTION_EXECUTE =
+        keccak256("quip.shrincs.action.execute");
+    bytes32 internal constant ACTION_WITHDRAW =
+        keccak256("quip.shrincs.action.withdrawDeposit");
+    bytes32 internal constant ACTION_UPGRADE =
+        keccak256("quip.shrincs.action.upgrade");
+    bytes32 internal constant ACTION_TRANSFER_OWNERSHIP =
+        keccak256("quip.shrincs.action.transferOwnership");
+    bytes32 internal constant ACTION_SET_ERC1271_KEY =
+        keccak256("quip.shrincs.action.setErc1271Key");
+    bytes32 internal constant ACTION_ROTATE_KEY =
+        keccak256("quip.shrincs.action.rotateKey");
+    bytes32 internal constant ACTION_ERC1271 =
+        keccak256("quip.shrincs.action.erc1271");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       DECODERS                         */
@@ -63,7 +71,9 @@ library ShrincsWalletCodec {
     ///       bytes32 erc1271Commitment, uint8 erc1271ParameterSetId)`.
     ///      `commitment` and `pkSeed` occupy `payload[0:32]` / `[32:64]` so the factory's
     ///      opaque `QuipCreated` indexing read lands on meaningful handles.
-    function decodeInit(bytes calldata payload)
+    function decodeInit(
+        bytes calldata payload
+    )
         internal
         pure
         returns (
@@ -76,7 +86,8 @@ library ShrincsWalletCodec {
         )
     {
         // Head is six 32-byte words (one is the PublicKey tail offset).
-        if (payload.length < 0xc0) revert MalformedPayload(0xc0, payload.length);
+        if (payload.length < 0xc0)
+            revert MalformedPayload(0xc0, payload.length);
         assembly {
             let o := payload.offset
             commitment := calldataload(o)
@@ -93,10 +104,15 @@ library ShrincsWalletCodec {
     ///      StatefulSignature signature)`. Note the name collision — the outer `signature` is
     ///      ERC-4337's `userOp` field; the inner `signature` is the SHRINCS stateful signature
     ///      that travels inside it alongside the public key.
-    function decodeUserOpSignature(bytes calldata sig)
+    function decodeUserOpSignature(
+        bytes calldata sig
+    )
         internal
         pure
-        returns (ShrincsTypes.PublicKey calldata publicKey, ShrincsTypes.StatefulSignature calldata signature)
+        returns (
+            ShrincsTypes.PublicKey calldata publicKey,
+            ShrincsTypes.StatefulSignature calldata signature
+        )
     {
         if (sig.length < 0x40) revert MalformedPayload(0x40, sig.length);
         assembly {
@@ -109,7 +125,9 @@ library ShrincsWalletCodec {
     /// @dev Decodes the UUPS `upgradeToAndCall` `data` blob, the ABI encoding of
     ///      `(PublicKey publicKey, StatefulSignature signature, bool shouldMigrate,
     ///       bytes migratorPayload)`.
-    function decodeUpgradeAuth(bytes calldata data)
+    function decodeUpgradeAuth(
+        bytes calldata data
+    )
         internal
         pure
         returns (
@@ -135,7 +153,9 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the ERC-1271 `signature` blob, the ABI encoding of
     ///      `(PublicKey publicKey, StatelessSignature signature, bytes ecdsaSig)`.
-    function decodeErc1271Signature(bytes calldata sig)
+    function decodeErc1271Signature(
+        bytes calldata sig
+    )
         internal
         pure
         returns (
@@ -170,22 +190,28 @@ library ShrincsWalletCodec {
         bytes32 actionType,
         bytes32 payloadHash
     ) internal pure returns (ShrincsTypes.ActionContext memory) {
-        return ShrincsTypes.ActionContext({
-            domainSeparator: domainSeparator,
-            nonce: nonce,
-            keyVersion: keyVersion,
-            actionType: actionType,
-            payloadHash: payloadHash
-        });
+        return
+            ShrincsTypes.ActionContext({
+                domainSeparator: domainSeparator,
+                nonce: nonce,
+                keyVersion: keyVersion,
+                actionType: actionType,
+                payloadHash: payloadHash
+            });
     }
 
     /// @dev Assembles a canonical `RotationContext` for the break-glass stateless rotation.
-    function buildRotationContext(bytes32 domainSeparator, uint256 nonce, uint256 keyVersion)
-        internal
-        pure
-        returns (ShrincsTypes.RotationContext memory)
-    {
-        return ShrincsTypes.RotationContext({domainSeparator: domainSeparator, nonce: nonce, keyVersion: keyVersion});
+    function buildRotationContext(
+        bytes32 domainSeparator,
+        uint256 nonce,
+        uint256 keyVersion
+    ) internal pure returns (ShrincsTypes.RotationContext memory) {
+        return
+            ShrincsTypes.RotationContext({
+                domainSeparator: domainSeparator,
+                nonce: nonce,
+                keyVersion: keyVersion
+            });
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -194,50 +220,91 @@ library ShrincsWalletCodec {
 
     /// @dev `ActionContext.payloadHash` for the ERC-4337 execute path: binds the EntryPoint
     ///      userOpHash (which already commits to target/value/data/nonce) and the execute fee.
-    function erc4337PayloadHash(bytes32 userOpHash, uint256 fee) internal pure returns (bytes32) {
+    function erc4337PayloadHash(
+        bytes32 userOpHash,
+        uint256 fee
+    ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(userOpHash, bytes32(fee));
     }
 
     /// @dev `payloadHash` for the owner `execute` path.
-    function executePayloadHash(address target, uint256 value, bytes32 dataHash, uint256 fee)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return EfficientHashLib.hash(bytes32(uint256(uint160(target))), bytes32(value), dataHash, bytes32(fee));
+    function executePayloadHash(
+        address target,
+        uint256 value,
+        bytes32 dataHash,
+        uint256 fee
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                bytes32(uint256(uint160(target))),
+                bytes32(value),
+                dataHash,
+                bytes32(fee)
+            );
     }
 
     /// @dev `payloadHash` for the `withdrawDepositTo` path.
-    function withdrawPayloadHash(address to, uint256 amount) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(bytes32(uint256(uint160(to))), bytes32(amount));
+    function withdrawPayloadHash(
+        address to,
+        uint256 amount
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                bytes32(uint256(uint160(to))),
+                bytes32(amount)
+            );
     }
 
     /// @dev `payloadHash` for the `upgradeToAndCall` path.
-    function upgradePayloadHash(address newImplementation, bool shouldMigrate, bytes32 migratorHash)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return EfficientHashLib.hash(
-            bytes32(uint256(uint160(newImplementation))), bytes32(uint256(shouldMigrate ? 1 : 0)), migratorHash
-        );
+    function upgradePayloadHash(
+        address newImplementation,
+        bool shouldMigrate,
+        bytes32 migratorHash
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                bytes32(uint256(uint160(newImplementation))),
+                bytes32(uint256(shouldMigrate ? 1 : 0)),
+                migratorHash
+            );
     }
 
     /// @dev `payloadHash` for the `transferOwnership` (atomic handover) path. Cross-binds the new
     ///      classical owner to the incoming key bundle so the stateful owner-binding signature and
     ///      the stateless rotation signature cannot be mixed across separate handover attempts.
-    function transferOwnershipPayloadHash(address newOwner, bytes32 nextCommitment) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(bytes32(uint256(uint160(newOwner))), nextCommitment);
+    function transferOwnershipPayloadHash(
+        address newOwner,
+        bytes32 nextCommitment
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                bytes32(uint256(uint160(newOwner))),
+                nextCommitment
+            );
     }
 
     /// @dev `payloadHash` for the `setErc1271Key` path.
-    function setErc1271KeyPayloadHash(bytes32 newCommitment, uint8 newParameterSetId) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(newCommitment, bytes32(uint256(newParameterSetId)));
+    function setErc1271KeyPayloadHash(
+        bytes32 newCommitment,
+        uint8 newParameterSetId
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                newCommitment,
+                bytes32(uint256(newParameterSetId))
+            );
     }
 
     /// @dev `payloadHash` for the stateful `rotateKey` path: binds the next stateful subkey's
     ///      bundle commitment and parameter set.
-    function rotateKeyPayloadHash(bytes32 nextCommitment, uint8 nextParameterSetId) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(nextCommitment, bytes32(uint256(nextParameterSetId)));
+    function rotateKeyPayloadHash(
+        bytes32 nextCommitment,
+        uint8 nextParameterSetId
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                nextCommitment,
+                bytes32(uint256(nextParameterSetId))
+            );
     }
 }

@@ -15,9 +15,7 @@ interface IEntryPointDepositInfo {
         uint48 withdrawTime;
     }
 
-    function getDepositInfo(
-        address account
-    ) external view returns (DepositInfo memory info);
+    function getDepositInfo(address account) external view returns (DepositInfo memory info);
 }
 
 /// @title Paymaster Staking Integration Test
@@ -94,9 +92,7 @@ contract Integration_paymasterStaking is IntegrationBase {
         paymaster.deposit{value: 3 ether}();
 
         uint256 reported = paymaster.getDeposit();
-        uint256 actual = IEntryPointStake(ENTRY_POINT).balanceOf(
-            address(paymaster)
-        );
+        uint256 actual = IEntryPointStake(ENTRY_POINT).balanceOf(address(paymaster));
 
         assertEq(reported, actual);
     }
@@ -127,9 +123,8 @@ contract Integration_paymasterStaking is IntegrationBase {
         paymaster.addStake{value: 0.5 ether}(120);
         vm.stopPrank();
 
-        IEntryPointDepositInfo.DepositInfo memory info = IEntryPointDepositInfo(
-            ENTRY_POINT
-        ).getDepositInfo(address(paymaster));
+        IEntryPointDepositInfo.DepositInfo memory info =
+            IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(address(paymaster));
         assertTrue(info.staked, "must be staked");
         assertEq(info.stake, 1.5 ether, "stake must accumulate");
         assertEq(info.unstakeDelaySec, 120, "delay must extend");
@@ -146,9 +141,8 @@ contract Integration_paymasterStaking is IntegrationBase {
         paymaster.addStake{value: 0.25 ether}(60);
         vm.stopPrank();
 
-        IEntryPointDepositInfo.DepositInfo memory info = IEntryPointDepositInfo(
-            ENTRY_POINT
-        ).getDepositInfo(address(paymaster));
+        IEntryPointDepositInfo.DepositInfo memory info =
+            IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(address(paymaster));
         assertEq(info.stake, 1.25 ether);
         assertEq(info.unstakeDelaySec, 60);
         assertEq(info.withdrawTime, 0);
@@ -164,21 +158,15 @@ contract Integration_paymasterStaking is IntegrationBase {
         paymaster.addStake{value: 1 ether}(60);
         paymaster.unlockStake();
 
-        IEntryPointDepositInfo.DepositInfo memory beforeTopUp = (
-            IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(
-                address(paymaster)
-            )
-        );
+        IEntryPointDepositInfo.DepositInfo memory beforeTopUp =
+        (IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(address(paymaster)));
         assertGt(beforeTopUp.withdrawTime, 0, "unlock must arm withdrawTime");
 
         // Top up with the same delay: re-locks per v0.7 semantics.
         paymaster.addStake{value: 0.1 ether}(60);
 
-        IEntryPointDepositInfo.DepositInfo memory afterTopUp = (
-            IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(
-                address(paymaster)
-            )
-        );
+        IEntryPointDepositInfo.DepositInfo memory afterTopUp =
+        (IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(address(paymaster)));
         assertEq(afterTopUp.withdrawTime, 0, "top-up must reset withdrawTime");
         assertTrue(afterTopUp.staked, "must remain staked");
 
@@ -196,9 +184,7 @@ contract Integration_paymasterStaking is IntegrationBase {
     ///      because `withdrawStake` resets `info.unstakeDelaySec` to 0 in
     ///      v0.7. Documents that re-entry into the staking lifecycle is
     ///      unconstrained by prior delays.
-    function test_integration_reStake_afterWithdrawStake_succeedsWithFreshDelay()
-        public
-    {
+    function test_integration_reStake_afterWithdrawStake_succeedsWithFreshDelay() public {
         vm.startPrank(ADMIN);
         paymaster.addStake{value: 1 ether}(120);
         paymaster.unlockStake();
@@ -209,11 +195,8 @@ contract Integration_paymasterStaking is IntegrationBase {
         vm.prank(ADMIN);
         paymaster.withdrawStake(payable(ADMIN));
 
-        IEntryPointDepositInfo.DepositInfo memory afterDrain = (
-            IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(
-                address(paymaster)
-            )
-        );
+        IEntryPointDepositInfo.DepositInfo memory afterDrain =
+        (IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(address(paymaster)));
         assertFalse(afterDrain.staked, "withdraw must clear staked");
         assertEq(afterDrain.stake, 0);
         assertEq(afterDrain.unstakeDelaySec, 0);
@@ -225,11 +208,8 @@ contract Integration_paymasterStaking is IntegrationBase {
         vm.prank(ADMIN);
         paymaster.addStake{value: 0.5 ether}(60);
 
-        IEntryPointDepositInfo.DepositInfo memory afterRestake = (
-            IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(
-                address(paymaster)
-            )
-        );
+        IEntryPointDepositInfo.DepositInfo memory afterRestake =
+        (IEntryPointDepositInfo(ENTRY_POINT).getDepositInfo(address(paymaster)));
         assertTrue(afterRestake.staked, "must be re-staked");
         assertEq(afterRestake.stake, 0.5 ether);
         assertEq(afterRestake.unstakeDelaySec, 60);

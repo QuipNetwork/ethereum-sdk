@@ -10,30 +10,15 @@ contract QuipPaymaster_postOp is QuipPaymasterTest {
         bytes memory ctx = abi.encode(WALLET);
         vm.prank(ENTRY_POINT);
         vm.expectEmit(address(paymaster));
-        emit IQuipPaymaster.UserOpSponsored(
-            WALLET,
-            IPaymaster.PostOpMode.opSucceeded,
-            21_000,
-            10 gwei
-        );
-        paymaster.postOp(
-            IPaymaster.PostOpMode.opSucceeded,
-            ctx,
-            21_000,
-            10 gwei
-        );
+        emit IQuipPaymaster.UserOpSponsored(WALLET, IPaymaster.PostOpMode.opSucceeded, 21_000, 10 gwei);
+        paymaster.postOp(IPaymaster.PostOpMode.opSucceeded, ctx, 21_000, 10 gwei);
     }
 
     function test_postOp_emitsUserOpSponsoredOnOpReverted() public {
         bytes memory ctx = abi.encode(WALLET);
         vm.prank(ENTRY_POINT);
         vm.expectEmit(address(paymaster));
-        emit IQuipPaymaster.UserOpSponsored(
-            WALLET,
-            IPaymaster.PostOpMode.opReverted,
-            21_000,
-            10 gwei
-        );
+        emit IQuipPaymaster.UserOpSponsored(WALLET, IPaymaster.PostOpMode.opReverted, 21_000, 10 gwei);
         paymaster.postOp(IPaymaster.PostOpMode.opReverted, ctx, 21_000, 10 gwei);
     }
 
@@ -44,30 +29,15 @@ contract QuipPaymaster_postOp is QuipPaymasterTest {
         bytes memory ctx = abi.encode(WALLET);
         vm.prank(ENTRY_POINT);
         vm.expectEmit(address(paymaster));
-        emit IQuipPaymaster.UserOpSponsored(
-            WALLET,
-            IPaymaster.PostOpMode.postOpReverted,
-            21_000,
-            10 gwei
-        );
-        paymaster.postOp(
-            IPaymaster.PostOpMode.postOpReverted,
-            ctx,
-            21_000,
-            10 gwei
-        );
+        emit IQuipPaymaster.UserOpSponsored(WALLET, IPaymaster.PostOpMode.postOpReverted, 21_000, 10 gwei);
+        paymaster.postOp(IPaymaster.PostOpMode.postOpReverted, ctx, 21_000, 10 gwei);
     }
 
     function test_postOp_revertsWhen_notEntryPoint() public {
         bytes memory ctx = abi.encode(WALLET);
         vm.prank(ALICE);
         vm.expectRevert(IQuipPaymaster.InvalidEntryPoint.selector);
-        paymaster.postOp(
-            IPaymaster.PostOpMode.opSucceeded,
-            ctx,
-            21_000,
-            10 gwei
-        );
+        paymaster.postOp(IPaymaster.PostOpMode.opSucceeded, ctx, 21_000, 10 gwei);
     }
 
     /// @dev `postOp` decodes the sponsored wallet from `context`; the encoding
@@ -81,23 +51,13 @@ contract QuipPaymaster_postOp is QuipPaymasterTest {
         bytes memory shortCtx = new bytes(31); // one byte short
         vm.prank(ENTRY_POINT);
         vm.expectRevert();
-        paymaster.postOp(
-            IPaymaster.PostOpMode.opSucceeded,
-            shortCtx,
-            21_000,
-            10 gwei
-        );
+        paymaster.postOp(IPaymaster.PostOpMode.opSucceeded, shortCtx, 21_000, 10 gwei);
     }
 
     function test_postOp_revertsWhen_contextEmpty() public {
         bytes memory emptyCtx = "";
         vm.prank(ENTRY_POINT);
         vm.expectRevert();
-        paymaster.postOp(
-            IPaymaster.PostOpMode.opSucceeded,
-            emptyCtx,
-            21_000,
-            10 gwei
-        );
+        paymaster.postOp(IPaymaster.PostOpMode.opSucceeded, emptyCtx, 21_000, 10 gwei);
     }
 }

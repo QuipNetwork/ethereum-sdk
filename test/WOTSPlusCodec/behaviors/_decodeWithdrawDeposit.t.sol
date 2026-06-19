@@ -10,16 +10,11 @@ contract WOTSPlusCodec__decodeWithdrawDeposit is WOTSPlusCodecTest {
         bytes memory base = _buildAuthPrefixPayload(10);
         address to = address(0xBEEF);
         uint256 amount = 1.5 ether;
-        bytes memory payload = abi.encodePacked(
-            base,
-            bytes32(uint256(uint160(to))),
-            amount
-        );
+        bytes memory payload = abi.encodePacked(base, bytes32(uint256(uint160(to))), amount);
 
         (
             WOTSPlus.WinternitzAddress memory cur,
-            WOTSPlus.WinternitzAddress memory nxt,
-            ,
+            WOTSPlus.WinternitzAddress memory nxt,,
             address decodedTo,
             uint256 decodedAmount
         ) = codec.exposed_decodeWithdrawDeposit(payload);
@@ -32,45 +27,21 @@ contract WOTSPlusCodec__decodeWithdrawDeposit is WOTSPlusCodecTest {
         assertEq(decodedAmount, amount);
     }
 
-    function test_exposed_decodeWithdrawDeposit_revertsWhen_emptyPayload()
-        public
-    {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                WOTSPlusCodec.MalformedPayload.selector,
-                2336,
-                0
-            )
-        );
+    function test_exposed_decodeWithdrawDeposit_revertsWhen_emptyPayload() public {
+        vm.expectRevert(abi.encodeWithSelector(WOTSPlusCodec.MalformedPayload.selector, 2336, 0));
         codec.exposed_decodeWithdrawDeposit("");
     }
 
-    function test_exposed_decodeWithdrawDeposit_revertsWhen_wrongLength()
-        public
-    {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                WOTSPlusCodec.MalformedPayload.selector,
-                2336,
-                2272
-            )
-        );
+    function test_exposed_decodeWithdrawDeposit_revertsWhen_wrongLength() public {
+        vm.expectRevert(abi.encodeWithSelector(WOTSPlusCodec.MalformedPayload.selector, 2336, 2272));
         codec.exposed_decodeWithdrawDeposit(_filledBytes(2272));
     }
 
     /// @dev Property: any payload length other than 2336 reverts.
-    function testFuzz_exposed_decodeWithdrawDeposit_revertsWhen_wrongLength(
-        uint256 len
-    ) public {
+    function testFuzz_exposed_decodeWithdrawDeposit_revertsWhen_wrongLength(uint256 len) public {
         len = bound(len, 0, 5000);
         vm.assume(len != 2336);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                WOTSPlusCodec.MalformedPayload.selector,
-                2336,
-                len
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(WOTSPlusCodec.MalformedPayload.selector, 2336, len));
         codec.exposed_decodeWithdrawDeposit(_filledBytes(len));
     }
 }

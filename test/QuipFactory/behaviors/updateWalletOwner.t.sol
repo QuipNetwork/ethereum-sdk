@@ -16,11 +16,8 @@ contract QuipFactory_updateWalletOwner is QuipFactoryTest {
     ///      factory writes `vaultIdOf[wallet] = vaultId`,
     ///      `walletOwner[wallet] = owner`, and `_vaultIds[owner].add(vaultId)`
     ///      during `_deployProxy`.
-    function _deployWalletFor(
-        bytes32 seed,
-        address owner
-    ) internal returns (address wallet) {
-        (wallet, , , ) = _createWalletFull(owner, seed, 0);
+    function _deployWalletFor(bytes32 seed, address owner) internal returns (address wallet) {
+        (wallet,,,) = _createWalletFull(owner, seed, 0);
     }
 
     /// @dev Calls from any EOA / contract that wasn't deployed by this factory
@@ -34,9 +31,7 @@ contract QuipFactory_updateWalletOwner is QuipFactoryTest {
     /// @dev Even another factory's wallet can't notify THIS factory — its
     ///      vaultIdOf entry lives in the other factory's storage. Reproduced
     ///      here with a synthetic contract address: vaultIdOf lookup returns 0.
-    function test_updateWalletOwner_revertsWhen_callerIsRandomContract()
-        public
-    {
+    function test_updateWalletOwner_revertsWhen_callerIsRandomContract() public {
         address stranger = makeAddr("stranger-contract");
         vm.etch(stranger, hex"00"); // give it some code so it's not an EOA
         vm.expectRevert(IQuipFactory.OnlyWallet.selector);

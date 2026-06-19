@@ -21,33 +21,22 @@ import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorag
 contract WOTSPlusImplementation__assertGuardedSlotsUnchanged is WOTSPlusImplementationTest {
     WOTSPlusImplementationHarness public harnessProxy;
 
-    bytes32 constant _OWNER_SLOT =
-        0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
-    bytes32 constant _ERC1967_IMPLEMENTATION_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 constant _OWNER_SLOT = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
+    bytes32 constant _ERC1967_IMPLEMENTATION_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _generateKeyPair("h-agsu");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            priv,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-agsu");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-agsu-vault"), payable(ALICE), payload);
+        address proxyAddr =
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-agsu-vault"), payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
@@ -59,17 +48,10 @@ contract WOTSPlusImplementation__assertGuardedSlotsUnchanged is WOTSPlusImplemen
         harnessProxy.exposed_assertGuardedSlotsUnchanged(_snap());
     }
 
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_ownerChanged()
-        public
-    {
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_ownerChanged() public {
         bytes32[7] memory s = _snap();
         vm.store(address(harnessProxy), _OWNER_SLOT, bytes32(uint256(0xaaaa)));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(0)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(0)));
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
@@ -77,129 +59,54 @@ contract WOTSPlusImplementation__assertGuardedSlotsUnchanged is WOTSPlusImplemen
     // through-proxy would resolve to the mutated address and fail opaquely.
     // Instead, exercise this branch against a bare harness where the impl slot
     // is plain storage with no live role.
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_implChanged()
-        public
-    {
-        WOTSPlusImplementationHarness bare = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_implChanged() public {
+        WOTSPlusImplementationHarness bare = new WOTSPlusImplementationHarness(payable(address(factory)));
         bytes32[7] memory s = bare.exposed_snapshotGuardedSlots();
-        vm.store(
-            address(bare),
-            _ERC1967_IMPLEMENTATION_SLOT,
-            bytes32(uint256(0xbbbb))
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(1)
-            )
-        );
+        vm.store(address(bare), _ERC1967_IMPLEMENTATION_SLOT, bytes32(uint256(0xbbbb)));
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(1)));
         bare.exposed_assertGuardedSlotsUnchanged(s);
     }
 
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_factoryChanged()
-        public
-    {
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_factoryChanged() public {
         bytes32[7] memory s = _snap();
-        vm.store(
-            address(harnessProxy),
-            Storage._PQ_FACTORY_SLOT,
-            bytes32(uint256(0xcccc))
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(2)
-            )
-        );
+        vm.store(address(harnessProxy), Storage._PQ_FACTORY_SLOT, bytes32(uint256(0xcccc)));
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(2)));
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_disasterSeedChanged()
-        public
-    {
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_disasterSeedChanged() public {
         bytes32[7] memory s = _snap();
-        vm.store(
-            address(harnessProxy),
-            Storage._DISASTER_KEY_SEED_SLOT,
-            bytes32(uint256(0xdddd))
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(3)
-            )
-        );
+        vm.store(address(harnessProxy), Storage._DISASTER_KEY_SEED_SLOT, bytes32(uint256(0xdddd)));
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(3)));
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_disasterHashChanged()
-        public
-    {
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_disasterHashChanged() public {
         bytes32[7] memory s = _snap();
-        vm.store(
-            address(harnessProxy),
-            Storage._DISASTER_KEY_HASH_SLOT,
-            bytes32(uint256(0xeeee))
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(4)
-            )
-        );
+        vm.store(address(harnessProxy), Storage._DISASTER_KEY_HASH_SLOT, bytes32(uint256(0xeeee)));
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(4)));
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_ownershipSeedChanged()
-        public
-    {
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_ownershipSeedChanged() public {
         bytes32[7] memory s = _snap();
-        vm.store(
-            address(harnessProxy),
-            Storage._OWNERSHIP_KEY_SEED_SLOT,
-            bytes32(uint256(0xffff))
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(5)
-            )
-        );
+        vm.store(address(harnessProxy), Storage._OWNERSHIP_KEY_SEED_SLOT, bytes32(uint256(0xffff)));
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(5)));
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_ownershipHashChanged()
-        public
-    {
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_ownershipHashChanged() public {
         bytes32[7] memory s = _snap();
-        vm.store(
-            address(harnessProxy),
-            Storage._OWNERSHIP_KEY_HASH_SLOT,
-            bytes32(uint256(0x1234))
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(6)
-            )
-        );
+        vm.store(address(harnessProxy), Storage._OWNERSHIP_KEY_HASH_SLOT, bytes32(uint256(0x1234)));
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(6)));
         harnessProxy.exposed_assertGuardedSlotsUnchanged(s);
     }
 
     // Supplying a zero-filled snapshot against a live, initialised wallet
     // should revert on the very first comparison (owner ≠ 0) → index 0.
-    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_snapshotAllZero()
-        public
-    {
+    function test_exposed_assertGuardedSlotsUnchanged_revertsWhen_snapshotAllZero() public {
         bytes32[7] memory zero;
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IWOTSPlusImplementation.GuardedSlotTampered.selector,
-                uint8(0)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IWOTSPlusImplementation.GuardedSlotTampered.selector, uint8(0)));
         harnessProxy.exposed_assertGuardedSlotsUnchanged(zero);
     }
 }

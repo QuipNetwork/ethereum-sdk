@@ -58,38 +58,16 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
 
     function test_execute_transfersFunds() public {
         uint256 transferAmount = 0.5 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "transfer-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("transfer-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            transferAmount,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         uint256 bobBalBefore = BOB.balance;
         uint256 walletBalBefore = address(wallet).balance;
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                transferAmount,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, transferAmount, ""));
 
         assertEq(BOB.balance, bobBalBefore + transferAmount);
         assertEq(address(wallet).balance, walletBalBefore - transferAmount);
@@ -97,36 +75,14 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
 
     function test_execute_emitsKeyRotatedAndExecutionSucceeded() public {
         uint256 transferAmount = 0.3 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "event-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("event-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            transferAmount,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
         vm.recordLogs();
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                transferAmount,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, transferAmount, ""));
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool foundRotated = false;
@@ -167,46 +123,18 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
         vm.deal(address(replayer), 1 ether);
 
         // Deploy a fresh wallet whose owner is the malicious replayer.
-        (
-            address rWalletAddr,
-            WOTSPlus.WinternitzAddress memory rPubkey,
-            bytes32 rPrivKey,
-
-        ) = _createWallet(
-                address(replayer),
-                keccak256("reentrant"),
-                INITIAL_DEPOSIT
-            );
+        (address rWalletAddr, WOTSPlus.WinternitzAddress memory rPubkey, bytes32 rPrivKey,) =
+            _createWallet(address(replayer), keccak256("reentrant"), INITIAL_DEPOSIT);
         WOTSPlusImplementation rWallet = WOTSPlusImplementation(payable(rWalletAddr));
 
         // Build a signed payload P targeting the replayer with data =
         // attack-selector. When the wallet executes P it will call
         // replayer.attack(), which re-enters wallet.execute(P).
-        bytes memory callData = abi.encodeWithSelector(
-            ReentrantReplayer.attack.selector
-        );
-        (
-            WOTSPlus.WinternitzAddress memory rNextKey,
-
-        ) = _generateKeyPair("reentrant-next");
-        bytes32 msgHash = _buildExecuteMessageHash(
-            rWalletAddr,
-            rPubkey,
-            rNextKey,
-            address(replayer),
-            0,
-            callData,
-            0
-        );
+        bytes memory callData = abi.encodeWithSelector(ReentrantReplayer.attack.selector);
+        (WOTSPlus.WinternitzAddress memory rNextKey,) = _generateKeyPair("reentrant-next");
+        bytes32 msgHash = _buildExecuteMessageHash(rWalletAddr, rPubkey, rNextKey, address(replayer), 0, callData, 0);
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-        bytes memory payload = Codec.encodeExecute(
-            rPubkey,
-            rNextKey,
-            sig,
-            address(replayer),
-            0,
-            callData
-        );
+        bytes memory payload = Codec.encodeExecute(rPubkey, rNextKey, sig, address(replayer), 0, callData);
 
         replayer.setup(rWalletAddr, payload);
 
@@ -240,31 +168,11 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
     // re-enter `execute(P)` with the same payload and drain the wallet.
     function test_execute_revertsWhen_payloadReplayedAfterRotation() public {
         uint256 transferAmount = 0.1 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "replay-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("replay-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            transferAmount,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
-        bytes memory payload = Codec.encodeExecute(
-            alicePubkey,
-            nextPubkey,
-            sig,
-            BOB,
-            transferAmount,
-            ""
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+        bytes memory payload = Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, transferAmount, "");
 
         // First call: consumes alicePubkey, rotates to nextPubkey.
         vm.prank(ALICE);
@@ -288,23 +196,10 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
         vm.prank(ADMIN);
         factory.setExecuteFee(EXECUTE_FEE);
 
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "empty-exec-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("empty-exec-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            0,
-            "",
-            EXECUTE_FEE
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, 0, "", EXECUTE_FEE);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         uint256 walletBalBefore = address(wallet).balance;
         uint256 factoryBalBefore = address(factory).balance;
@@ -312,23 +207,21 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
 
         vm.prank(ALICE);
         vm.recordLogs();
-        wallet.execute(
-            Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0, "")
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0, ""));
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool foundRotationOnly = false;
         for (uint256 i = 0; i < logs.length; i++) {
             if (
-                logs[i].topics[0] == IWOTSPlusImplementation.KeyRotationOnly.selector &&
-                logs[i].emitter == address(wallet)
+                logs[i].topics[0] == IWOTSPlusImplementation.KeyRotationOnly.selector
+                    && logs[i].emitter == address(wallet)
             ) {
                 foundRotationOnly = true;
             }
             // ExecutionSucceeded must NOT appear for the zero/zero case.
             assertTrue(
-                logs[i].topics[0] != IWOTSPlusImplementation.ExecutionSucceeded.selector ||
-                    logs[i].emitter != address(wallet),
+                logs[i].topics[0] != IWOTSPlusImplementation.ExecutionSucceeded.selector
+                    || logs[i].emitter != address(wallet),
                 "ExecutionSucceeded must not fire for empty execute"
             );
         }
@@ -349,132 +242,52 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
         factory.setExecuteFee(EXECUTE_FEE);
 
         uint256 transferAmount = 0.3 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "fee-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("fee-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            transferAmount,
-            "",
-            EXECUTE_FEE
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, transferAmount, "", EXECUTE_FEE);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         uint256 factoryBalBefore = address(factory).balance;
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                transferAmount,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, transferAmount, ""));
 
         assertEq(address(factory).balance, factoryBalBefore + EXECUTE_FEE);
     }
 
     function test_execute_rotatesKey() public {
-        (
-            WOTSPlus.WinternitzAddress memory nextPubkey,
-            bytes32 nextPrivKey
-        ) = _generateKeyPair("rotate-next");
+        (WOTSPlus.WinternitzAddress memory nextPubkey, bytes32 nextPrivKey) = _generateKeyPair("rotate-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            0.1 ether,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0.1 ether, ""));
 
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPubkey));
 
         // Old key should no longer work
-        (WOTSPlus.WinternitzAddress memory anotherPubkey, ) = _generateKeyPair(
-            "another-next"
-        );
-        bytes32 oldMsgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            anotherPubkey,
-            BOB,
-            0.1 ether,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory oldSig = _sign(
-            alicePrivateKey,
-            oldMsgHash
-        );
+        (WOTSPlus.WinternitzAddress memory anotherPubkey,) = _generateKeyPair("another-next");
+        bytes32 oldMsgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, anotherPubkey, BOB, 0.1 ether, "", 0);
+        WOTSPlus.WinternitzElements memory oldSig = _sign(alicePrivateKey, oldMsgHash);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.UnknownKey.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                anotherPubkey,
-                oldSig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, anotherPubkey, oldSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_zeroValueTransfer() public {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "zero-val-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("zero-val-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            0,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, 0, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         uint256 walletBalBefore = address(wallet).balance;
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0, "")
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0, ""));
 
         // Balance unchanged (no fee set)
         assertEq(address(wallet).balance, walletBalBefore);
@@ -488,37 +301,17 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
         factory.setExecuteFee(EXECUTE_FEE);
 
         uint256 transferAmount = 0.3 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "self-transfer"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("self-transfer");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(wallet),
-            transferAmount,
-            "",
-            EXECUTE_FEE
+            address(wallet), alicePubkey, nextPubkey, address(wallet), transferAmount, "", EXECUTE_FEE
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         uint256 walletBalBefore = address(wallet).balance;
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(wallet),
-                transferAmount,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(wallet), transferAmount, ""));
 
         // Only the fee should be deducted (transfer to self is a no-op on balance)
         assertEq(address(wallet).balance, walletBalBefore - EXECUTE_FEE);
@@ -529,78 +322,31 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
         assertEq(factory.executeFee(), 0);
 
         uint256 walletBal = address(wallet).balance;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "entire-bal"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("entire-bal");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            walletBal,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, walletBal, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                walletBal,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, walletBal, ""));
 
         assertEq(address(wallet).balance, 0);
     }
 
     function test_execute_walletToWalletTransfer() public {
-        (address bobWalletAddr, , , ) = _createWallet(
-            BOB,
-            "bob-wallet",
-            INITIAL_DEPOSIT
-        );
+        (address bobWalletAddr,,,) = _createWallet(BOB, "bob-wallet", INITIAL_DEPOSIT);
 
         uint256 transferAmount = 0.3 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "w2w-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("w2w-next");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            bobWalletAddr,
-            transferAmount,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, bobWalletAddr, transferAmount, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         uint256 bobWalletBalBefore = bobWalletAddr.balance;
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                bobWalletAddr,
-                transferAmount,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, bobWalletAddr, transferAmount, ""));
 
         assertEq(bobWalletAddr.balance, bobWalletBalBefore + transferAmount);
     }
@@ -611,119 +357,50 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
         vm.prank(ADMIN);
         factory.setExecuteFee(EXECUTE_FEE);
 
-        bytes memory callData = abi.encodeWithSelector(
-            DummyContract.setValue.selector,
-            42
-        );
+        bytes memory callData = abi.encodeWithSelector(DummyContract.setValue.selector, 42);
         uint256 requiredEth = 0.01 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "exec-call"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("exec-call");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(dummy),
-            requiredEth,
-            callData,
-            EXECUTE_FEE
+            address(wallet), alicePubkey, nextPubkey, address(dummy), requiredEth, callData, EXECUTE_FEE
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(dummy),
-                requiredEth,
-                callData
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(dummy), requiredEth, callData));
 
         assertEq(dummy.value(), 42);
     }
 
     function test_execute_forwardsValueToTarget() public {
         uint256 forwardAmount = 0.05 ether;
-        bytes memory callData = abi.encodeWithSelector(
-            DummyContract.setValue.selector,
-            99
-        );
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "fwd-val"
-        );
+        bytes memory callData = abi.encodeWithSelector(DummyContract.setValue.selector, 99);
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("fwd-val");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(dummy),
-            forwardAmount,
-            callData,
-            0
+            address(wallet), alicePubkey, nextPubkey, address(dummy), forwardAmount, callData, 0
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         uint256 dummyBalBefore = address(dummy).balance;
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(dummy),
-                forwardAmount,
-                callData
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(dummy), forwardAmount, callData));
 
         assertEq(address(dummy).balance, dummyBalBefore + forwardAmount);
     }
 
     function test_execute_returnsCallData() public {
-        bytes memory callData = abi.encodeWithSelector(
-            DummyContract.setValueNoFee.selector,
-            77
-        );
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "ret-data"
-        );
+        bytes memory callData = abi.encodeWithSelector(DummyContract.setValueNoFee.selector, 77);
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("ret-data");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(dummy),
-            0,
-            callData,
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, address(dummy), 0, callData, 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        bytes memory result = wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(dummy),
-                0,
-                callData
-            )
-        );
+        bytes memory result =
+            wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(dummy), 0, callData));
 
         // setValueNoFee returns nothing, so result should be empty
         assertEq(result.length, 0);
@@ -731,39 +408,16 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
     }
 
     function test_execute_revertsWhen_targetReverts() public {
-        bytes memory callData = abi.encodeWithSelector(
-            DummyContract.failingFunction.selector
-        );
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "target-revert"
-        );
+        bytes memory callData = abi.encodeWithSelector(DummyContract.failingFunction.selector);
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("target-revert");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(dummy),
-            0,
-            callData,
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, address(dummy), 0, callData, 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
         vm.expectRevert(DummyContract.AlwaysFails.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(dummy),
-                0,
-                callData
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(dummy), 0, callData));
     }
 
     // ── Shared validation (reverts) ─────────────────────────────────
@@ -773,168 +427,68 @@ contract WOTSPlusImplementation_execute is WOTSPlusImplementationTest {
         factory.setExecuteFee(EXECUTE_FEE);
 
         uint256 tooMuch = address(wallet).balance + 1;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "insuff-bal"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("insuff-bal");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            tooMuch,
-            "",
-            EXECUTE_FEE
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, tooMuch, "", EXECUTE_FEE);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
         // Fee is collected successfully (balance >= fee), then the inner
         // ETH transfer of `tooMuch` to BOB reverts via SafeTransferLib.
         vm.expectRevert(SafeTransferLib.ETHTransferFailed.selector);
-        wallet.execute(
-            Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, tooMuch, "")
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, tooMuch, ""));
     }
 
     function test_execute_revertsWhen_callerNotOwner() public {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "not-owner"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("not-owner");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            0.1 ether,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_invalidSignature() public {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "invalid-sig"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("invalid-sig");
         (, bytes32 wrongPrivKey) = _generateKeyPair("wrong-key");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            BOB,
-            0.1 ether,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory badSig = _sign(
-            wrongPrivKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, BOB, 0.1 ether, "", 0);
+        WOTSPlus.WinternitzElements memory badSig = _sign(wrongPrivKey, msgHash);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                badSig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, badSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_nextKeySeedIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(uint256(1))
-        });
+        WOTSPlus.WinternitzAddress memory zeroPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(1))});
         WOTSPlus.WinternitzElements memory fakeSig;
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                zeroPq,
-                fakeSig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, zeroPq, fakeSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_nextKeyHashIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(0)
-        });
+        WOTSPlus.WinternitzAddress memory zeroPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(0)});
         WOTSPlus.WinternitzElements memory fakeSig;
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                zeroPq,
-                fakeSig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, zeroPq, fakeSig, BOB, 0.1 ether, ""));
     }
 
     function test_execute_revertsWhen_nextKeyAlreadyInUse() public {
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            alicePubkey,
-            BOB,
-            0.1 ether,
-            "",
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, alicePubkey, BOB, 0.1 ether, "", 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.SameKey.selector);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                alicePubkey,
-                sig,
-                BOB,
-                0.1 ether,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, alicePubkey, sig, BOB, 0.1 ether, ""));
     }
 }

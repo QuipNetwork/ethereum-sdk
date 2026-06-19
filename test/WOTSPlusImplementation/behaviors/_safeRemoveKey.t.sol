@@ -20,20 +20,15 @@ contract WOTSPlusImplementation__safeRemoveKey is WOTSPlusImplementationTest {
         bare = new WOTSPlusImplementationHarness(payable(address(factory)));
     }
 
-    function _makeKey(
-        uint256 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(seed),
-                publicKeyHash: bytes32(seed + 1000)
-            });
+    function _makeKey(uint256 seed) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: bytes32(seed), publicKeyHash: bytes32(seed + 1000)});
     }
 
-    function _makeKeys(
-        uint256 startSeed,
-        uint256 count
-    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory keys) {
+    function _makeKeys(uint256 startSeed, uint256 count)
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress[] memory keys)
+    {
         keys = new WOTSPlus.WinternitzAddress[](count);
         for (uint256 i = 0; i < count; i++) {
             keys[i] = _makeKey(startSeed + i * 2);

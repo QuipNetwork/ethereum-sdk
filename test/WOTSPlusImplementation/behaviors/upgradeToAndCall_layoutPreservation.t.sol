@@ -39,11 +39,9 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev `bytes32(~uint256(uint32(bytes4(keccak256("_OWNER_SLOT_NOT")))))`
-    bytes32 internal constant SOLADY_OWNER_SLOT =
-        0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
+    bytes32 internal constant SOLADY_OWNER_SLOT = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927;
     /// @dev `bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1)`
-    bytes32 internal constant ERC1967_IMPL_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant ERC1967_IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
     /// @dev ERC-7201 namespace base: "quip.storage.wallet.wotsplus".
     ///      Imported from `WOTSPlusStorage` so the keccak-derivation test
     ///      below locks the LIBRARY's literal to the namespace string. Any
@@ -51,24 +49,16 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
     ///      library's surfaces here too — the per-field tests below pass
     ///      `Storage.<NAME>_SLOT` to `vm.load`, so a wallet/library mismatch
     ///      reports as a wrong-slot read of unrelated state.
-    bytes32 internal constant WOTSPLUS_BASE =
-        Storage._WOTSPLUS_STORAGE_SLOT;
+    bytes32 internal constant WOTSPLUS_BASE = Storage._WOTSPLUS_STORAGE_SLOT;
 
     bytes32 internal constant PQ_FACTORY_SLOT = Storage._PQ_FACTORY_SLOT;
-    bytes32 internal constant DISASTER_SEED_SLOT =
-        Storage._DISASTER_KEY_SEED_SLOT;
-    bytes32 internal constant DISASTER_HASH_SLOT =
-        Storage._DISASTER_KEY_HASH_SLOT;
-    bytes32 internal constant OWNERSHIP_SEED_SLOT =
-        Storage._OWNERSHIP_KEY_SEED_SLOT;
-    bytes32 internal constant OWNERSHIP_HASH_SLOT =
-        Storage._OWNERSHIP_KEY_HASH_SLOT;
-    bytes32 internal constant TXN_KEYSET_SPACER_SLOT =
-        bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 5);
-    bytes32 internal constant REC_KEYSET_SPACER_SLOT =
-        bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 6);
-    bytes32 internal constant VRF_KEYSET_SPACER_SLOT =
-        bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 7);
+    bytes32 internal constant DISASTER_SEED_SLOT = Storage._DISASTER_KEY_SEED_SLOT;
+    bytes32 internal constant DISASTER_HASH_SLOT = Storage._DISASTER_KEY_HASH_SLOT;
+    bytes32 internal constant OWNERSHIP_SEED_SLOT = Storage._OWNERSHIP_KEY_SEED_SLOT;
+    bytes32 internal constant OWNERSHIP_HASH_SLOT = Storage._OWNERSHIP_KEY_HASH_SLOT;
+    bytes32 internal constant TXN_KEYSET_SPACER_SLOT = bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 5);
+    bytes32 internal constant REC_KEYSET_SPACER_SLOT = bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 6);
+    bytes32 internal constant VRF_KEYSET_SPACER_SLOT = bytes32(uint256(Storage._WOTSPLUS_STORAGE_SLOT) + 7);
     /// @dev Mirror of `EnumerableWinternitzAddressSet._SLOT_SEED`.
     uint32 internal constant SET_SLOT_SEED = 0x3e9f5d6a;
 
@@ -87,9 +77,8 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
     ///      `quip.storage.wallet.wotsplus` would silently relocate every
     ///      deployed wallet's storage; this catches it at compile time.
     function test_layoutLock_namespaceBaseDerivation() public pure {
-        bytes32 derived = keccak256(
-            abi.encode(uint256(keccak256("quip.storage.wallet.wotsplus")) - 1)
-        ) & ~bytes32(uint256(0xff));
+        bytes32 derived =
+            keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.wotsplus")) - 1)) & ~bytes32(uint256(0xff));
         assertEq(derived, WOTSPLUS_BASE);
     }
 
@@ -100,33 +89,15 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
     ///      asserting the value matches what we wrote at the hardcoded slot.
     function test_layoutLock_namespaceFieldOffsets() public view {
         // Factory: written by `initialize` to `FACTORY`.
-        assertEq(
-            address(uint160(uint256(vm.load(address(wallet), PQ_FACTORY_SLOT)))),
-            address(factory)
-        );
+        assertEq(address(uint160(uint256(vm.load(address(wallet), PQ_FACTORY_SLOT)))), address(factory));
         assertEq(wallet.quipFactory(), address(factory));
 
         // Disaster + ownership keys: derived from VAULT_SEED via the test base.
-        (
-            WOTSPlus.WinternitzAddress memory disasterPub,
-
-        ) = _generateDisasterRecoveryKey(VAULT_SEED);
-        assertEq(
-            vm.load(address(wallet), DISASTER_SEED_SLOT),
-            disasterPub.publicSeed
-        );
-        assertEq(
-            vm.load(address(wallet), DISASTER_HASH_SLOT),
-            disasterPub.publicKeyHash
-        );
-        assertEq(
-            vm.load(address(wallet), OWNERSHIP_SEED_SLOT),
-            ownershipPubkey.publicSeed
-        );
-        assertEq(
-            vm.load(address(wallet), OWNERSHIP_HASH_SLOT),
-            ownershipPubkey.publicKeyHash
-        );
+        (WOTSPlus.WinternitzAddress memory disasterPub,) = _generateDisasterRecoveryKey(VAULT_SEED);
+        assertEq(vm.load(address(wallet), DISASTER_SEED_SLOT), disasterPub.publicSeed);
+        assertEq(vm.load(address(wallet), DISASTER_HASH_SLOT), disasterPub.publicKeyHash);
+        assertEq(vm.load(address(wallet), OWNERSHIP_SEED_SLOT), ownershipPubkey.publicSeed);
+        assertEq(vm.load(address(wallet), OWNERSHIP_HASH_SLOT), ownershipPubkey.publicKeyHash);
 
         // Keyset spacers themselves are unused (the `_spacer` field is just a
         // slot reservation). Their *position* is what feeds rootSlot derivation.
@@ -154,10 +125,7 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
 
         // Sanity: element 0 of the txn keyset matches alicePubkey via raw load.
         assertEq(vm.load(address(wallet), txnRoot), alicePubkey.publicSeed);
-        assertEq(
-            vm.load(address(wallet), bytes32(uint256(txnRoot) + 1)),
-            alicePubkey.publicKeyHash
-        );
+        assertEq(vm.load(address(wallet), bytes32(uint256(txnRoot) + 1)), alicePubkey.publicKeyHash);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -183,11 +151,7 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
         Snapshot memory post = _snapshotAll();
 
         // Allowed deltas: impl slot, txnKey rotation. Everything else equal.
-        assertEq(
-            post.impl,
-            bytes32(uint256(uint160(address(newImpl)))),
-            "impl should advance to V2"
-        );
+        assertEq(post.impl, bytes32(uint256(uint160(address(newImpl)))), "impl should advance to V2");
         assertTrue(pre.impl != post.impl, "impl should change");
         assertEq(post.owner, pre.owner, "owner");
         assertEq(post.factory, pre.factory, "factory");
@@ -253,18 +217,9 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
         bytes32 recRoot = _expectedRootSlot(REC_KEYSET_SPACER_SLOT);
         bytes32 vrfRoot = _expectedRootSlot(VRF_KEYSET_SPACER_SLOT);
         for (uint256 i = 0; i < 20; i++) {
-            s.txnElements[i] = vm.load(
-                address(wallet),
-                bytes32(uint256(txnRoot) + i)
-            );
-            s.recElements[i] = vm.load(
-                address(wallet),
-                bytes32(uint256(recRoot) + i)
-            );
-            s.vrfElements[i] = vm.load(
-                address(wallet),
-                bytes32(uint256(vrfRoot) + i)
-            );
+            s.txnElements[i] = vm.load(address(wallet), bytes32(uint256(txnRoot) + i));
+            s.recElements[i] = vm.load(address(wallet), bytes32(uint256(recRoot) + i));
+            s.vrfElements[i] = vm.load(address(wallet), bytes32(uint256(vrfRoot) + i));
         }
         s.txnLazyLen = vm.load(address(wallet), ~txnRoot);
         s.recLazyLen = vm.load(address(wallet), ~recRoot);
@@ -273,24 +228,16 @@ contract WOTSPlusImplementation_upgradeToAndCall_layoutPreservation is WOTSPlusI
 
     /// @dev Mirrors `EnumerableWinternitzAddressSet._rootSlot`:
     ///      `keccak256(set.slot ‖ uint32(_SLOT_SEED))` — 32 + 4 = 36 bytes packed.
-    function _expectedRootSlot(
-        bytes32 spacerSlot
-    ) internal pure returns (bytes32) {
+    function _expectedRootSlot(bytes32 spacerSlot) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(spacerSlot, SET_SLOT_SEED));
     }
 
     /// @dev No-migration upgrade via the base's lifted `_buildUpgradeData`.
-    function _upgradeNoMigration()
-        internal
-        returns (WOTSPlus.WinternitzAddress memory nextPq)
-    {
-        (nextPq, ) = _generateKeyPair("layout-preservation-next");
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+    function _upgradeNoMigration() internal returns (WOTSPlus.WinternitzAddress memory nextPq) {
+        (nextPq,) = _generateKeyPair("layout-preservation-next");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         bytes memory data = _buildUpgradeData(
             address(newImpl),

@@ -25,23 +25,15 @@ contract WOTSPlusImplementation_Local_Invariant is WOTSPlusImplementationInvaria
         bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = WOTSPlusImplementationInvariantHandler.fuzzExecute.selector;
         selectors[1] = WOTSPlusImplementationInvariantHandler.fuzzWithdrawDepositTo.selector;
-        selectors[2] = WOTSPlusImplementationInvariantHandler
-            .fuzzResetKeysetTransaction_recoverySigned
-            .selector;
-        selectors[3] = WOTSPlusImplementationInvariantHandler
-            .fuzzResetKeysetRecovery_txSigned
-            .selector;
-        selectors[4] = WOTSPlusImplementationInvariantHandler
-            .fuzzResetKeysetVerification_txSigned
-            .selector;
+        selectors[2] = WOTSPlusImplementationInvariantHandler.fuzzResetKeysetTransaction_recoverySigned.selector;
+        selectors[3] = WOTSPlusImplementationInvariantHandler.fuzzResetKeysetRecovery_txSigned.selector;
+        selectors[4] = WOTSPlusImplementationInvariantHandler.fuzzResetKeysetVerification_txSigned.selector;
         selectors[5] = WOTSPlusImplementationInvariantHandler.fuzzReplaceTxnInTxn.selector;
         selectors[6] = WOTSPlusImplementationInvariantHandler.fuzzReplaceRecInTxn.selector;
         selectors[7] = WOTSPlusImplementationInvariantHandler.fuzzReplaceVerInTxn.selector;
         selectors[8] = WOTSPlusImplementationInvariantHandler.fuzzReplaceTxnInRec.selector;
         selectors[9] = WOTSPlusImplementationInvariantHandler.fuzzReplaceRecInRec.selector;
         selectors[10] = WOTSPlusImplementationInvariantHandler.fuzzReplaceVerInRec.selector;
-        targetSelector(
-            FuzzSelector({addr: address(handler), selectors: selectors})
-        );
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 }

@@ -33,18 +33,17 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         PackedUserOperation memory userOp = _mockUserOp("", sender_);
         userOp.nonce = nonce_;
         userOp.callData = callData_;
-        return
-            _signPaymasterApproval(
-                userOp,
-                address(harness),
-                _DEFAULT_PM_VERIFICATION_GAS,
-                _DEFAULT_PM_POSTOP_GAS,
-                uint48(block.timestamp + 1 hours),
-                uint48(0),
-                currentPub,
-                currentPriv,
-                nextPub
-            );
+        return _signPaymasterApproval(
+            userOp,
+            address(harness),
+            _DEFAULT_PM_VERIFICATION_GAS,
+            _DEFAULT_PM_POSTOP_GAS,
+            uint48(block.timestamp + 1 hours),
+            uint48(0),
+            currentPub,
+            currentPriv,
+            nextPub
+        );
     }
 
     /// @dev Build a userOp with an arbitrary WOTS+ signature (not necessarily
@@ -66,10 +65,7 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
             nextPub
         );
 
-        PackedUserOperation memory userOp = _mockUserOp(
-            abi.encodePacked(prefix, sig.elements),
-            sender_
-        );
+        PackedUserOperation memory userOp = _mockUserOp(abi.encodePacked(prefix, sig.elements), sender_);
         userOp.nonce = nonce_;
         userOp.callData = callData_;
         return userOp;
@@ -78,42 +74,24 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     /*──────────────────────── happy-path tests ─────────────────────────*/
 
     function test_exposed_verifyAndRotate_returnsTrueAndRotates() public {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "verifier-seed-1"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("verifier-seed-1");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertTrue(valid);
 
-        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, nextPubkey.publicSeed);
         assertEq(stored.publicKeyHash, nextPubkey.publicKeyHash);
     }
 
     function test_exposed_verifyAndRotate_emitsPqVerifierRotated() public {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "verifier-seed-1"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("verifier-seed-1");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
 
         vm.recordLogs();
         harness.exposed_verifyAndRotate(userOp);
@@ -126,60 +104,40 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
 
     /*──────────────────── zero-value / missing checks ──────────────────*/
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_zeroNextVerifierSeed()
-        public
-    {
+    function test_exposed_verifyAndRotate_returnsFalseWhen_zeroNextVerifierSeed() public {
         // nextVerifier with zero seed; signature value doesn't matter — the
         // zero-check fires before the WOTS+ verify.
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPrivateKey,
-            bytes32(0)
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPrivateKey, bytes32(0));
         PackedUserOperation memory userOp = _userOpWithRawSig(
             WALLET,
             0,
             "",
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(0),
-                publicKeyHash: verifierPubkey.publicKeyHash
-            }),
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: verifierPubkey.publicKeyHash}),
             sig
         );
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
 
-        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, verifierPubkey.publicSeed);
         assertEq(stored.publicKeyHash, verifierPubkey.publicKeyHash);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_zeroNextVerifierHash()
-        public
-    {
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPrivateKey,
-            bytes32(0)
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_zeroNextVerifierHash() public {
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPrivateKey, bytes32(0));
         PackedUserOperation memory userOp = _userOpWithRawSig(
             WALLET,
             0,
             "",
-            WOTSPlus.WinternitzAddress({
-                publicSeed: verifierPubkey.publicSeed,
-                publicKeyHash: bytes32(0)
-            }),
+            WOTSPlus.WinternitzAddress({publicSeed: verifierPubkey.publicSeed, publicKeyHash: bytes32(0)}),
             sig
         );
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
 
-        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, verifierPubkey.publicSeed);
         assertEq(stored.publicKeyHash, verifierPubkey.publicKeyHash);
     }
@@ -187,21 +145,10 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     function test_exposed_verifyAndRotate_returnsFalseWhen_noVerifier() public {
         address unregistered = makeAddr("unregistered");
 
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "verifier-seed-2"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("verifier-seed-2");
 
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPrivateKey,
-            bytes32(0)
-        );
-        PackedUserOperation memory userOp = _userOpWithRawSig(
-            unregistered,
-            0,
-            "",
-            nextPubkey,
-            sig
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPrivateKey, bytes32(0));
+        PackedUserOperation memory userOp = _userOpWithRawSig(unregistered, 0, "", nextPubkey, sig);
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
@@ -209,53 +156,29 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
 
     function test_exposed_verifyAndRotate_returnsFalseWhen_keyReuse() public {
         // next == current: caught before WOTS+ verify, so any sig works.
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPrivateKey,
-            bytes32(0)
-        );
-        PackedUserOperation memory userOp = _userOpWithRawSig(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            sig
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPrivateKey, bytes32(0));
+        PackedUserOperation memory userOp = _userOpWithRawSig(WALLET, 0, "", verifierPubkey, sig);
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
 
-        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, verifierPubkey.publicSeed);
         assertEq(stored.publicKeyHash, verifierPubkey.publicKeyHash);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_invalidSignature()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "verifier-seed-invalid"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_invalidSignature() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("verifier-seed-invalid");
 
         // Sign with a wrong key (not the installed verifier's private key).
         (, bytes32 wrongPrivateKey) = _generateKeyPair("wrong-key");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            wrongPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp = _harnessUserOp(WALLET, 0, "", verifierPubkey, wrongPrivateKey, nextPubkey);
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
 
-        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = harness.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, verifierPubkey.publicSeed);
         assertEq(stored.publicKeyHash, verifierPubkey.publicKeyHash);
     }
@@ -268,35 +191,22 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     // field" recommendation, now applied to the complete envelope.
     ──────────────────────────────────────────────────────────────────────*/
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_senderMismatch()
-        public
-    {
+    function test_exposed_verifyAndRotate_returnsFalseWhen_senderMismatch() public {
         // Register a second wallet with a DIFFERENT verifier — the global
         // `verifierKeyUsed` check forbids two wallets from sharing a verifier,
         // so we use distinct keys. The sender-binding property is still
         // exercised: the paymaster rebuilds the digest from sender=WALLET_B,
         // and that digest no longer matches the signature WALLET signed.
         address WALLET_B = makeAddr("wallet-b-binding");
-        (
-            WOTSPlus.WinternitzAddress memory verifierBPubkey,
-
-        ) = _generateKeyPair("verifier-seed-b");
+        (WOTSPlus.WinternitzAddress memory verifierBPubkey,) = _generateKeyPair("verifier-seed-b");
         vm.prank(ADMIN);
         harness.setPqVerifier(WALLET_B, verifierBPubkey);
 
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "sender-binding-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("sender-binding-next");
 
         // Sign for sender=WALLET...
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // ...but submit as sender=WALLET_B.
         userOp.sender = WALLET_B;
 
@@ -304,129 +214,65 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         assertFalse(valid);
 
         // Neither wallet's verifier rotated.
-        assertEq(
-            harness.getPqVerifier(WALLET).publicSeed,
-            verifierPubkey.publicSeed
-        );
-        assertEq(
-            harness.getPqVerifier(WALLET_B).publicSeed,
-            verifierBPubkey.publicSeed
-        );
+        assertEq(harness.getPqVerifier(WALLET).publicSeed, verifierPubkey.publicSeed);
+        assertEq(harness.getPqVerifier(WALLET_B).publicSeed, verifierBPubkey.publicSeed);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_nonceMismatch()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "nonce-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_nonceMismatch() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("nonce-binding-next");
 
         // Sign for nonce=7, submit with nonce=8.
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            7,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 7, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         userOp.nonce = 8;
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
 
-        assertEq(
-            harness.getPqVerifier(WALLET).publicSeed,
-            verifierPubkey.publicSeed
-        );
+        assertEq(harness.getPqVerifier(WALLET).publicSeed, verifierPubkey.publicSeed);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_callDataMismatch()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "calldata-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_callDataMismatch() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("calldata-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            hex"a1a1a1a1",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, hex"a1a1a1a1", verifierPubkey, verifierPrivateKey, nextPubkey);
         userOp.callData = hex"b2b2b2b2";
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
 
-        assertEq(
-            harness.getPqVerifier(WALLET).publicSeed,
-            verifierPubkey.publicSeed
-        );
+        assertEq(harness.getPqVerifier(WALLET).publicSeed, verifierPubkey.publicSeed);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_initCodeMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "initcode-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_initCodeMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("initcode-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         userOp.initCode = hex"deadbeef";
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_accountGasLimitsMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "accgas-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_accountGasLimitsMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("accgas-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // Inflate verificationGasLimit (the upper 16 bytes).
-        userOp.accountGasLimits = bytes32(
-            (uint256(999_999) << 128) | uint256(100_000)
-        );
+        userOp.accountGasLimits = bytes32((uint256(999_999) << 128) | uint256(100_000));
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_preVerificationGasMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "pvg-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_preVerificationGasMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("pvg-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // preVerificationGas amplification is the most concrete cost-extraction
         // vector — it's claimed in full by the bundler regardless of usage.
         userOp.preVerificationGas = 9_999_999;
@@ -435,45 +281,23 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_gasFeesMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "gasfees-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_gasFeesMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("gasfees-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // Inflate maxPriorityFeePerGas (upper 16 bytes), the extracted portion.
-        userOp.gasFees = bytes32(
-            (uint256(1_000 gwei) << 128) | uint256(10 gwei)
-        );
+        userOp.gasFees = bytes32((uint256(1_000 gwei) << 128) | uint256(10 gwei));
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_validUntilMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "validuntil-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_validUntilMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("validuntil-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // validUntil lives at paymasterAndData[52:58] (uint48). Overwrite
         // those bytes with a different value; the binding hash sees the new
         // bytes via paymasterAndData[:128].
@@ -482,10 +306,10 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         assembly {
             // pmd: 32 bytes length, then data. Offset 52 → data ptr + 52.
             let dataPtr := add(pmd, 0x20)
-            mstore(add(dataPtr, 52), or(
-                and(mload(add(dataPtr, 52)), not(shl(208, 0xffffffffffff))),
-                shl(208, shr(208, newValidUntil))
-            ))
+            mstore(
+                add(dataPtr, 52),
+                or(and(mload(add(dataPtr, 52)), not(shl(208, 0xffffffffffff))), shl(208, shr(208, newValidUntil)))
+            )
         }
         userOp.paymasterAndData = pmd;
 
@@ -493,30 +317,20 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_validAfterMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "validafter-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_validAfterMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("validafter-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // validAfter at paymasterAndData[58:64].
         bytes memory pmd = userOp.paymasterAndData;
         bytes6 newValidAfter = bytes6(uint48(block.timestamp + 1 hours));
         assembly {
             let dataPtr := add(pmd, 0x20)
-            mstore(add(dataPtr, 58), or(
-                and(mload(add(dataPtr, 58)), not(shl(208, 0xffffffffffff))),
-                shl(208, shr(208, newValidAfter))
-            ))
+            mstore(
+                add(dataPtr, 58),
+                or(and(mload(add(dataPtr, 58)), not(shl(208, 0xffffffffffff))), shl(208, shr(208, newValidAfter)))
+            )
         }
         userOp.paymasterAndData = pmd;
 
@@ -524,30 +338,20 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_paymasterVerificationGasLimitMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "pmvgas-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_paymasterVerificationGasLimitMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("pmvgas-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // paymasterVerificationGasLimit at paymasterAndData[20:36] (uint128).
         bytes memory pmd = userOp.paymasterAndData;
         bytes16 newLimit = bytes16(uint128(999_999));
         assembly {
             let dataPtr := add(pmd, 0x20)
-            mstore(add(dataPtr, 20), or(
-                and(mload(add(dataPtr, 20)), not(shl(128, sub(shl(128, 1), 1)))),
-                shl(128, shr(128, newLimit))
-            ))
+            mstore(
+                add(dataPtr, 20),
+                or(and(mload(add(dataPtr, 20)), not(shl(128, sub(shl(128, 1), 1)))), shl(128, shr(128, newLimit)))
+            )
         }
         userOp.paymasterAndData = pmd;
 
@@ -555,30 +359,20 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_paymasterPostOpGasLimitMutated()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "pmopgas-binding-next"
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_paymasterPostOpGasLimitMutated() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("pmopgas-binding-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
         // paymasterPostOpGasLimit at paymasterAndData[36:52] (uint128).
         bytes memory pmd = userOp.paymasterAndData;
         bytes16 newLimit = bytes16(uint128(999_999));
         assembly {
             let dataPtr := add(pmd, 0x20)
-            mstore(add(dataPtr, 36), or(
-                and(mload(add(dataPtr, 36)), not(shl(128, sub(shl(128, 1), 1)))),
-                shl(128, shr(128, newLimit))
-            ))
+            mstore(
+                add(dataPtr, 36),
+                or(and(mload(add(dataPtr, 36)), not(shl(128, sub(shl(128, 1), 1)))), shl(128, shr(128, newLimit)))
+            )
         }
         userOp.paymasterAndData = pmd;
 
@@ -593,22 +387,11 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     ///      observer stream even though state is preserved. Exercise via the
     ///      invalid-sig branch; the other failure branches all share the
     ///      same "no emit + no rotate" contract.
-    function test_exposed_verifyAndRotate_noEventEmittedWhen_invalidSignature()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "no-event-next"
-        );
+    function test_exposed_verifyAndRotate_noEventEmittedWhen_invalidSignature() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("no-event-next");
         (, bytes32 wrongPrivateKey) = _generateKeyPair("no-event-wrong");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            wrongPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp = _harnessUserOp(WALLET, 0, "", verifierPubkey, wrongPrivateKey, nextPubkey);
 
         vm.recordLogs();
         bool valid = harness.exposed_verifyAndRotate(userOp);
@@ -618,26 +401,14 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         bytes32 rotated = IQuipPaymaster.PqVerifierRotated.selector;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length > 0) {
-                assertTrue(
-                    logs[i].topics[0] != rotated,
-                    "PqVerifierRotated emitted on failure path"
-                );
+                assertTrue(logs[i].topics[0] != rotated, "PqVerifierRotated emitted on failure path");
             }
         }
     }
 
     function test_exposed_verifyAndRotate_noEventEmittedWhen_keyReuse() public {
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPrivateKey,
-            bytes32(0)
-        );
-        PackedUserOperation memory userOp = _userOpWithRawSig(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            sig
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPrivateKey, bytes32(0));
+        PackedUserOperation memory userOp = _userOpWithRawSig(WALLET, 0, "", verifierPubkey, sig);
 
         vm.recordLogs();
         bool valid = harness.exposed_verifyAndRotate(userOp);
@@ -647,10 +418,7 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
         bytes32 rotated = IQuipPaymaster.PqVerifierRotated.selector;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length > 0) {
-                assertTrue(
-                    logs[i].topics[0] != rotated,
-                    "PqVerifierRotated emitted on failure path"
-                );
+                assertTrue(logs[i].topics[0] != rotated, "PqVerifierRotated emitted on failure path");
             }
         }
     }
@@ -661,46 +429,30 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     ///      touching state, emitting the typed `NextVerifierKeyInUse` reason.
     ///      Locks down the runtime side of the same invariant `setPqVerifier`
     ///      enforces at admin time.
-    function test_exposed_verifyAndRotate_returnsFalseWhen_nextKeyInUseElsewhere()
-        public
-    {
+    function test_exposed_verifyAndRotate_returnsFalseWhen_nextKeyInUseElsewhere() public {
         // Register a second wallet with its own verifier so its hash is
         // present in the global occupancy index.
         address WALLET_B = makeAddr("wallet-b-collision");
-        (
-            WOTSPlus.WinternitzAddress memory walletBVerifier,
-
-        ) = _generateKeyPair("verifier-seed-b-collision");
+        (WOTSPlus.WinternitzAddress memory walletBVerifier,) = _generateKeyPair("verifier-seed-b-collision");
         vm.prank(ADMIN);
         harness.setPqVerifier(WALLET_B, walletBVerifier);
 
         // WALLET tries to rotate its own verifier to WALLET_B's verifier.
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            walletBVerifier
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, walletBVerifier);
 
         vm.expectEmit(address(harness));
         emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET,
-            IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
+            WALLET, IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
         );
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
 
         // Neither wallet's verifier rotated; index still has both entries.
-        WOTSPlus.WinternitzAddress memory storedA = harness.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory storedA = harness.getPqVerifier(WALLET);
         assertEq(storedA.publicSeed, verifierPubkey.publicSeed);
         assertEq(storedA.publicKeyHash, verifierPubkey.publicKeyHash);
-        WOTSPlus.WinternitzAddress memory storedB = harness.getPqVerifier(
-            WALLET_B
-        );
+        WOTSPlus.WinternitzAddress memory storedB = harness.getPqVerifier(WALLET_B);
         assertEq(storedB.publicSeed, walletBVerifier.publicSeed);
         assertEq(storedB.publicKeyHash, walletBVerifier.publicKeyHash);
     }
@@ -712,21 +464,11 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     ///      it to be re-bound elsewhere would let an observer of the original
     ///      rotation forge sigs against the rebind target. This is the most
     ///      load-bearing test of the monotonic-index invariant.
-    function test_exposed_verifyAndRotate_spentKeyStaysLockedAfterRotation()
-        public
-    {
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "spent-key-locked-next"
-        );
+    function test_exposed_verifyAndRotate_spentKeyStaysLockedAfterRotation() public {
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("spent-key-locked-next");
 
-        PackedUserOperation memory userOp = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            nextPubkey
-        );
+        PackedUserOperation memory userOp =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, nextPubkey);
 
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertTrue(valid);
@@ -753,68 +495,36 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     ///      verify against garbage. The `||` check (mirroring
     ///      `setPqVerifier`'s zero invariant) is what makes this happen;
     ///      `&&` would slip through and continue to digest construction.
-    function test_exposed_verifyAndRotate_returnsFalseWhen_storageHalfZero_seedCleared()
-        public
-    {
-        bytes32 root = keccak256(
-            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_storageHalfZero_seedCleared() public {
+        bytes32 root = keccak256(abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT));
         vm.store(address(harness), root, bytes32(0));
 
         // Build any well-formed paymasterData (digest/sig don't matter — we
         // expect rejection BEFORE WOTS+ verify).
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "half-zero-seed-cleared-next"
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPrivateKey,
-            bytes32(0)
-        );
-        PackedUserOperation memory userOp = _userOpWithRawSig(
-            WALLET,
-            0,
-            "",
-            nextPubkey,
-            sig
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("half-zero-seed-cleared-next");
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPrivateKey, bytes32(0));
+        PackedUserOperation memory userOp = _userOpWithRawSig(WALLET, 0, "", nextPubkey, sig);
 
         vm.expectEmit(address(harness));
         emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET,
-            IQuipPaymaster.PaymasterValidationFailure.NoVerifierRegistered
+            WALLET, IQuipPaymaster.PaymasterValidationFailure.NoVerifierRegistered
         );
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
     }
 
-    function test_exposed_verifyAndRotate_returnsFalseWhen_storageHalfZero_hashCleared()
-        public
-    {
-        bytes32 root = keccak256(
-            abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT)
-        );
+    function test_exposed_verifyAndRotate_returnsFalseWhen_storageHalfZero_hashCleared() public {
+        bytes32 root = keccak256(abi.encode(WALLET, _PAYMASTER_STORAGE_SLOT));
         bytes32 hashSlot = bytes32(uint256(root) + 1);
         vm.store(address(harness), hashSlot, bytes32(0));
 
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "half-zero-hash-cleared-next"
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            verifierPrivateKey,
-            bytes32(0)
-        );
-        PackedUserOperation memory userOp = _userOpWithRawSig(
-            WALLET,
-            0,
-            "",
-            nextPubkey,
-            sig
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("half-zero-hash-cleared-next");
+        WOTSPlus.WinternitzElements memory sig = _sign(verifierPrivateKey, bytes32(0));
+        PackedUserOperation memory userOp = _userOpWithRawSig(WALLET, 0, "", nextPubkey, sig);
 
         vm.expectEmit(address(harness));
         emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET,
-            IQuipPaymaster.PaymasterValidationFailure.NoVerifierRegistered
+            WALLET, IQuipPaymaster.PaymasterValidationFailure.NoVerifierRegistered
         );
         bool valid = harness.exposed_verifyAndRotate(userOp);
         assertFalse(valid);
@@ -826,63 +536,34 @@ contract QuipPaymaster__verifyAndRotate is QuipPaymasterTest {
     ///      Combined with the test above, this proves the post-rotation lock
     ///      protects every entry path: admin set, wallet self-rebind, and
     ///      cross-wallet rotation.
-    function test_exposed_verifyAndRotate_revertsWhen_nextEqualsSpentKey()
-        public
-    {
+    function test_exposed_verifyAndRotate_revertsWhen_nextEqualsSpentKey() public {
         // Wallet B starts with its own verifier and rotates once.
         address WALLET_B = makeAddr("wallet-b-spent");
-        (
-            WOTSPlus.WinternitzAddress memory bCurr,
-            bytes32 bCurrPriv
-        ) = _generateKeyPair("wallet-b-curr");
+        (WOTSPlus.WinternitzAddress memory bCurr, bytes32 bCurrPriv) = _generateKeyPair("wallet-b-curr");
         vm.prank(ADMIN);
         harness.setPqVerifier(WALLET_B, bCurr);
 
-        (WOTSPlus.WinternitzAddress memory bNext, ) = _generateKeyPair(
-            "wallet-b-next"
-        );
-        PackedUserOperation memory bOp = _harnessUserOp(
-            WALLET_B,
-            0,
-            "",
-            bCurr,
-            bCurrPriv,
-            bNext
-        );
+        (WOTSPlus.WinternitzAddress memory bNext,) = _generateKeyPair("wallet-b-next");
+        PackedUserOperation memory bOp = _harnessUserOp(WALLET_B, 0, "", bCurr, bCurrPriv, bNext);
         assertTrue(harness.exposed_verifyAndRotate(bOp));
 
         // Wallet A now tries to rotate to wallet B's NEW (now-current) key —
         // also blocked, but via the standard "key registered for B" path.
-        PackedUserOperation memory aOpToBNext = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            bNext
-        );
+        PackedUserOperation memory aOpToBNext = _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, bNext);
         vm.expectEmit(address(harness));
         emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET,
-            IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
+            WALLET, IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
         );
         assertFalse(harness.exposed_verifyAndRotate(aOpToBNext));
 
         // Now the more pointed case: wallet A tries to rotate to wallet B's
         // SPENT old key. This is the regression test for "spent keys must
         // stay locked even after the wallet that spent them rotated away."
-        PackedUserOperation memory aOpToBSpent = _harnessUserOp(
-            WALLET,
-            0,
-            "",
-            verifierPubkey,
-            verifierPrivateKey,
-            bCurr
-        );
+        PackedUserOperation memory aOpToBSpent =
+            _harnessUserOp(WALLET, 0, "", verifierPubkey, verifierPrivateKey, bCurr);
         vm.expectEmit(address(harness));
         emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET,
-            IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
+            WALLET, IQuipPaymaster.PaymasterValidationFailure.NextVerifierKeyInUse
         );
         assertFalse(harness.exposed_verifyAndRotate(aOpToBSpent));
     }

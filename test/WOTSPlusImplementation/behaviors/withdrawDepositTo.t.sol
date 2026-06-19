@@ -23,9 +23,7 @@ contract WOTSPlusImplementation_withdrawDepositTo is WOTSPlusImplementationTest 
         wallet.withdrawDepositTo(BOB, 1 ether);
     }
 
-    function test_withdrawDepositTo_revertsWhen_classicalPathCalledByNonOwner()
-        public
-    {
+    function test_withdrawDepositTo_revertsWhen_classicalPathCalledByNonOwner() public {
         vm.prank(BOB);
         vm.expectRevert(IWOTSPlusImplementation.ClassicalWithdrawDisabled.selector);
         wallet.withdrawDepositTo(BOB, 1 ether);
@@ -34,19 +32,9 @@ contract WOTSPlusImplementation_withdrawDepositTo is WOTSPlusImplementationTest 
     // ── WOTS path: reverts ───────────────────────────────────────────
 
     function test_withdrawDepositTo_revertsWhen_callerNotOwner() public {
-        (
-            WOTSPlus.WinternitzAddress memory nextKey,
-
-        ) = _generateKeyPair("not-owner-next");
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            nextKey,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
-        );
+        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("not-owner-next");
+        bytes memory payload =
+            _signWithdraw(alicePubkey, alicePrivateKey, nextKey, BOB, 0.1 ether, address(wallet), block.chainid);
 
         vm.prank(BOB);
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
@@ -54,130 +42,67 @@ contract WOTSPlusImplementation_withdrawDepositTo is WOTSPlusImplementationTest 
     }
 
     function test_withdrawDepositTo_revertsWhen_invalidSignature() public {
-        (
-            WOTSPlus.WinternitzAddress memory nextKey,
-
-        ) = _generateKeyPair("invalid-sig-next");
+        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("invalid-sig-next");
         (, bytes32 wrongPriv) = _generateKeyPair("wrong-key");
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            wrongPriv,
-            nextKey,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
-        );
+        bytes memory payload =
+            _signWithdraw(alicePubkey, wrongPriv, nextKey, BOB, 0.1 ether, address(wallet), block.chainid);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
         wallet.withdrawDepositTo(payload);
     }
 
-    function test_withdrawDepositTo_revertsWhen_currentKeyNotInTransactionSet()
-        public
-    {
+    function test_withdrawDepositTo_revertsWhen_currentKeyNotInTransactionSet() public {
         // Stranger key: not a member of any keyset. Sign with its matching
         // private key so WOTS+ verify is not reached — `_enforceContained`
         // catches the membership failure first.
-        (
-            WOTSPlus.WinternitzAddress memory stranger,
-            bytes32 strangerPriv
-        ) = _generateKeyPair("stranger");
-        (
-            WOTSPlus.WinternitzAddress memory nextKey,
+        (WOTSPlus.WinternitzAddress memory stranger, bytes32 strangerPriv) = _generateKeyPair("stranger");
+        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("stranger-next");
 
-        ) = _generateKeyPair("stranger-next");
-
-        bytes memory payload = _signWithdraw(
-            stranger,
-            strangerPriv,
-            nextKey,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
-        );
+        bytes memory payload =
+            _signWithdraw(stranger, strangerPriv, nextKey, BOB, 0.1 ether, address(wallet), block.chainid);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.UnknownKey.selector);
         wallet.withdrawDepositTo(payload);
     }
 
-    function test_withdrawDepositTo_revertsWhen_nextKeyAlreadyInTransactionKeyset()
-        public
-    {
+    function test_withdrawDepositTo_revertsWhen_nextKeyAlreadyInTransactionKeyset() public {
         // aliceTxnPubkeys[1] is still in the active transaction keyset. Auth
         // rotation removes alicePubkey then tries to add the duplicate; the
         // global uniqueness check inside `_safeAddKey` rejects it.
         WOTSPlus.WinternitzAddress memory dup = aliceTxnPubkeys[1];
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            dup,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
-        );
+        bytes memory payload =
+            _signWithdraw(alicePubkey, alicePrivateKey, dup, BOB, 0.1 ether, address(wallet), block.chainid);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         wallet.withdrawDepositTo(payload);
     }
 
-    function test_withdrawDepositTo_revertsWhen_nextKeyAlreadyInRecoveryKeyset()
-        public
-    {
+    function test_withdrawDepositTo_revertsWhen_nextKeyAlreadyInRecoveryKeyset() public {
         WOTSPlus.WinternitzAddress memory dup = recoveryPubkeys[0];
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            dup,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
-        );
+        bytes memory payload =
+            _signWithdraw(alicePubkey, alicePrivateKey, dup, BOB, 0.1 ether, address(wallet), block.chainid);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         wallet.withdrawDepositTo(payload);
     }
 
-    function test_withdrawDepositTo_revertsWhen_nextKeyEqualsDisasterRecoveryKey()
-        public
-    {
-        (
-            WOTSPlus.WinternitzAddress memory disasterKey,
-
-        ) = _generateDisasterRecoveryKey(VAULT_SEED);
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            disasterKey,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
-        );
+    function test_withdrawDepositTo_revertsWhen_nextKeyEqualsDisasterRecoveryKey() public {
+        (WOTSPlus.WinternitzAddress memory disasterKey,) = _generateDisasterRecoveryKey(VAULT_SEED);
+        bytes memory payload =
+            _signWithdraw(alicePubkey, alicePrivateKey, disasterKey, BOB, 0.1 ether, address(wallet), block.chainid);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         wallet.withdrawDepositTo(payload);
     }
 
-    function test_withdrawDepositTo_revertsWhen_nextKeyEqualsOwnershipKey()
-        public
-    {
+    function test_withdrawDepositTo_revertsWhen_nextKeyEqualsOwnershipKey() public {
         bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            ownershipPubkey,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
+            alicePubkey, alicePrivateKey, ownershipPubkey, BOB, 0.1 ether, address(wallet), block.chainid
         );
 
         vm.prank(ALICE);
@@ -186,15 +111,8 @@ contract WOTSPlusImplementation_withdrawDepositTo is WOTSPlusImplementationTest 
     }
 
     function test_withdrawDepositTo_revertsWhen_currentEqualsNext() public {
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            alicePubkey,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid
-        );
+        bytes memory payload =
+            _signWithdraw(alicePubkey, alicePrivateKey, alicePubkey, BOB, 0.1 ether, address(wallet), block.chainid);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.SameKey.selector);
@@ -205,23 +123,11 @@ contract WOTSPlusImplementation_withdrawDepositTo is WOTSPlusImplementationTest 
     ///      replayed on the same wallet running on chainId Y. The wallet
     ///      computes its digest with `block.chainid`, so the message hash
     ///      mismatches the signed one and WOTS+ verify fails.
-    function test_withdrawDepositTo_revertsWhen_signedForDifferentChain()
-        public
-    {
-        (
-            WOTSPlus.WinternitzAddress memory nextKey,
+    function test_withdrawDepositTo_revertsWhen_signedForDifferentChain() public {
+        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("xchain-next");
 
-        ) = _generateKeyPair("xchain-next");
-
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            nextKey,
-            BOB,
-            0.1 ether,
-            address(wallet),
-            block.chainid + 1
-        );
+        bytes memory payload =
+            _signWithdraw(alicePubkey, alicePrivateKey, nextKey, BOB, 0.1 ether, address(wallet), block.chainid + 1);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
@@ -231,23 +137,11 @@ contract WOTSPlusImplementation_withdrawDepositTo is WOTSPlusImplementationTest 
     /// @dev Cross-wallet binding: a signature signed against one wallet
     ///      address cannot be replayed against a different wallet, even
     ///      with otherwise identical parameters.
-    function test_withdrawDepositTo_revertsWhen_signedForDifferentWallet()
-        public
-    {
-        (
-            WOTSPlus.WinternitzAddress memory nextKey,
+    function test_withdrawDepositTo_revertsWhen_signedForDifferentWallet() public {
+        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("xwallet-next");
 
-        ) = _generateKeyPair("xwallet-next");
-
-        bytes memory payload = _signWithdraw(
-            alicePubkey,
-            alicePrivateKey,
-            nextKey,
-            BOB,
-            0.1 ether,
-            address(0xdead),
-            block.chainid
-        );
+        bytes memory payload =
+            _signWithdraw(alicePubkey, alicePrivateKey, nextKey, BOB, 0.1 ether, address(0xdead), block.chainid);
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
@@ -280,7 +174,6 @@ contract WOTSPlusImplementation_withdrawDepositTo is WOTSPlusImplementationTest 
             amount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, digest);
-        return
-            Codec.encodeWithdrawDeposit(currentKey, nextKey, sig, to, amount);
+        return Codec.encodeWithdrawDeposit(currentKey, nextKey, sig, to, amount);
     }
 }

@@ -24,26 +24,15 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
         factory.vetImplementation(address(newImpl));
     }
 
-    function _buildVerifierData(
-        address impl,
-        bytes32 verifierSeed
-    )
+    function _buildVerifierData(address impl, bytes32 verifierSeed)
         internal
         view
-        returns (
-            WOTSPlus.WinternitzAddress memory vPub,
-            WOTSPlus.WinternitzElements memory vSig
-        )
+        returns (WOTSPlus.WinternitzAddress memory vPub, WOTSPlus.WinternitzElements memory vSig)
     {
         bytes32 vPriv;
         (vPub, vPriv) = _generateKeyPair(verifierSeed);
-        bytes32 vHash = Codec.verificationDigest(
-            address(wallet),
-            block.chainid,
-            impl,
-            vPub.publicSeed,
-            vPub.publicKeyHash
-        );
+        bytes32 vHash =
+            Codec.verificationDigest(address(wallet), block.chainid, impl, vPub.publicSeed, vPub.publicKeyHash);
         vSig = _sign(vPriv, vHash);
     }
 
@@ -52,9 +41,7 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
         WOTSPlus.WinternitzAddress memory migratePq,
         WOTSPlus.WinternitzAddress[] memory migrateRecoveryKeys
     ) internal {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "upgrade-next-pq"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
 
         // Auth signature
         bytes32 digest = Codec.upgradeDigest(
@@ -66,32 +53,16 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
             nextPq.publicSeed,
             nextPq.publicKeyHash
         );
-        WOTSPlus.WinternitzElements memory pqSig = _sign(
-            currentPrivKey,
-            digest
-        );
+        WOTSPlus.WinternitzElements memory pqSig = _sign(currentPrivKey, digest);
 
         // Verifier
-        (
-            WOTSPlus.WinternitzAddress memory vPub,
-            WOTSPlus.WinternitzElements memory vSig
-        ) = _buildVerifierData(impl, "migrate-verifier");
+        (WOTSPlus.WinternitzAddress memory vPub, WOTSPlus.WinternitzElements memory vSig) =
+            _buildVerifierData(impl, "migrate-verifier");
 
         // Migrator payload (704 bytes init layout)
-        bytes memory migratorPayload = _encodeInitPayload(
-            migratePq,
-            migrateRecoveryKeys
-        );
+        bytes memory migratorPayload = _encodeInitPayload(migratePq, migrateRecoveryKeys);
 
-        bytes memory data = Codec.encodeUpgradeToAndCall(
-            currentPq,
-            nextPq,
-            pqSig,
-            vPub,
-            vSig,
-            true,
-            migratorPayload
-        );
+        bytes memory data = Codec.encodeUpgradeToAndCall(currentPq, nextPq, pqSig, vPub, vSig, true, migratorPayload);
 
         vm.prank(ALICE);
         wallet.upgradeToAndCall(impl, data);
@@ -104,44 +75,22 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
 
         // Step 1: Execute a transfer before upgrading (wallet is operational)
         {
-            (
-                WOTSPlus.WinternitzAddress memory nextPq,
-                bytes32 nextPriv
-            ) = _generateKeyPair("pre-upgrade-key");
+            (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) = _generateKeyPair("pre-upgrade-key");
             uint256 fee = wallet.getExecuteFee();
-            bytes32 msgHash = _buildExecuteMessageHash(
-                address(wallet),
-                currentPq,
-                nextPq,
-                BOB,
-                0.1 ether,
-                "",
-                fee
-            );
-            WOTSPlus.WinternitzElements memory sig = _sign(
-                currentPrivKey,
-                msgHash
-            );
+            bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, nextPq, BOB, 0.1 ether, "", fee);
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
             vm.prank(ALICE);
-            wallet.execute(
-                Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.1 ether, "")
-            );
+            wallet.execute(Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.1 ether, ""));
 
             currentPq = nextPq;
             currentPrivKey = nextPriv;
         }
 
         // Step 2: Prepare migration state
-        (
-            WOTSPlus.WinternitzAddress memory migratePq,
-            bytes32 migratePriv
-        ) = _generateKeyPair("migrate-pq");
+        (WOTSPlus.WinternitzAddress memory migratePq, bytes32 migratePriv) = _generateKeyPair("migrate-pq");
         bytes32 migrateRecBase = keccak256("migrate-recovery-base");
-        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(
-            migrateRecBase,
-            10
-        );
+        WOTSPlus.WinternitzAddress[] memory migrateKeys = _generateRecoveryKeys(migrateRecBase, 10);
 
         uint256 balBefore = address(wallet).balance;
 
@@ -150,10 +99,7 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
 
         // Step 4: Verify state after migration
         // 4a: Implementation changed
-        assertEq(
-            wallet.version(),
-            factory.getVettedCodeIndex(address(newImpl).codehash)
-        );
+        assertEq(wallet.version(), factory.getVettedCodeIndex(address(newImpl).codehash));
 
         // 4b: pqOwner is the migrate payload's key (migrate overwrites the auth rotation)
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, migratePq));
@@ -177,29 +123,14 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
         currentPq = migratePq;
         currentPrivKey = migratePriv;
 
-        (WOTSPlus.WinternitzAddress memory postPq, ) = _generateKeyPair(
-            "post-migrate-key"
-        );
+        (WOTSPlus.WinternitzAddress memory postPq,) = _generateKeyPair("post-migrate-key");
         uint256 fee = wallet.getExecuteFee();
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            currentPq,
-            postPq,
-            BOB,
-            0.05 ether,
-            "",
-            fee
-        );
-        WOTSPlus.WinternitzElements memory postSig = _sign(
-            currentPrivKey,
-            msgHash
-        );
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, postPq, BOB, 0.05 ether, "", fee);
+        WOTSPlus.WinternitzElements memory postSig = _sign(currentPrivKey, msgHash);
 
         uint256 bobBal = BOB.balance;
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(currentPq, postPq, postSig, BOB, 0.05 ether, "")
-        );
+        wallet.execute(Codec.encodeExecute(currentPq, postPq, postSig, BOB, 0.05 ether, ""));
         assertEq(BOB.balance, bobBal + 0.05 ether);
     }
 }

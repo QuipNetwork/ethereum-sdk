@@ -41,10 +41,7 @@ abstract contract QuipPaymasterInvariantBase is QuipPaymasterTest {
         // `verifierPubkey`. Slots 1..N-1 are fresh addresses needing
         // first-time registration before the campaign starts.
         address[] memory poolWallets = new address[](WALLET_POOL_SIZE);
-        WOTSPlus.WinternitzAddress[]
-            memory initialPubs = new WOTSPlus.WinternitzAddress[](
-                WALLET_POOL_SIZE
-            );
+        WOTSPlus.WinternitzAddress[] memory initialPubs = new WOTSPlus.WinternitzAddress[](WALLET_POOL_SIZE);
         bytes32[] memory initialPrivs = new bytes32[](WALLET_POOL_SIZE);
 
         poolWallets[0] = WALLET;
@@ -52,12 +49,8 @@ abstract contract QuipPaymasterInvariantBase is QuipPaymasterTest {
         initialPrivs[0] = verifierPrivateKey;
 
         for (uint256 i = 1; i < WALLET_POOL_SIZE; i++) {
-            poolWallets[i] = makeAddr(
-                string.concat("paymaster-wallet-", _u2s(i))
-            );
-            (initialPubs[i], initialPrivs[i]) = _generateKeyPair(
-                keccak256(abi.encodePacked("paymaster-init-key", i))
-            );
+            poolWallets[i] = makeAddr(string.concat("paymaster-wallet-", _u2s(i)));
+            (initialPubs[i], initialPrivs[i]) = _generateKeyPair(keccak256(abi.encodePacked("paymaster-init-key", i)));
         }
 
         // Pre-register the remaining wallets BEFORE transferring
@@ -71,10 +64,7 @@ abstract contract QuipPaymasterInvariantBase is QuipPaymasterTest {
 
         handler.initialize(
             QuipPaymasterInvariantHandler.InitParams({
-                paymaster: paymaster,
-                wallets: poolWallets,
-                initialPubs: initialPubs,
-                initialPrivs: initialPrivs
+                paymaster: paymaster, wallets: poolWallets, initialPubs: initialPubs, initialPrivs: initialPrivs
             })
         );
     }

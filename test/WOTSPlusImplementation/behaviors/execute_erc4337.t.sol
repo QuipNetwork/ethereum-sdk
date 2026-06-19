@@ -30,8 +30,7 @@ contract ExecuteTarget {
 contract WOTSPlusImplementation_execute_erc4337 is WOTSPlusImplementationTest {
     ExecuteTarget internal target;
 
-    address constant ENTRY_POINT =
-        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     function setUp() public override {
         super.setUp();
@@ -52,10 +51,7 @@ contract WOTSPlusImplementation_execute_erc4337 is WOTSPlusImplementationTest {
     }
 
     function test_execute_erc4337_forwardsCallAndReturnsData() public {
-        bytes memory payload = abi.encodeWithSelector(
-            ExecuteTarget.echo.selector,
-            bytes("hello")
-        );
+        bytes memory payload = abi.encodeWithSelector(ExecuteTarget.echo.selector, bytes("hello"));
         vm.prank(ENTRY_POINT);
         bytes memory ret = wallet.execute(address(target), 0, payload);
 
@@ -85,9 +81,7 @@ contract WOTSPlusImplementation_execute_erc4337 is WOTSPlusImplementationTest {
     }
 
     function test_execute_erc4337_revertsWhen_targetReverts() public {
-        bytes memory payload = abi.encodeWithSelector(
-            ExecuteTarget.reverts.selector
-        );
+        bytes memory payload = abi.encodeWithSelector(ExecuteTarget.reverts.selector);
         vm.prank(ENTRY_POINT);
         vm.expectRevert(bytes("nope"));
         wallet.execute(address(target), 0, payload);

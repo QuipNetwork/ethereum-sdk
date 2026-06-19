@@ -16,44 +16,25 @@ contract WOTSPlusImplementation__enforceDifferentKeys is WOTSPlusImplementationT
         bare = new WOTSPlusImplementationHarness(payable(address(factory)));
     }
 
-    function _key(
-        bytes32 seed,
-        bytes32 hash
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: seed,
-                publicKeyHash: hash
-            });
+    function _key(bytes32 seed, bytes32 hash) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: seed, publicKeyHash: hash});
     }
 
-    function test_exposed_enforceDifferentKeys_passes_whenSeedDiffers()
-        public
-        view
-    {
+    function test_exposed_enforceDifferentKeys_passes_whenSeedDiffers() public view {
         bare.exposed_enforceDifferentKeys(
-            _key(bytes32(uint256(1)), bytes32(uint256(100))),
-            _key(bytes32(uint256(2)), bytes32(uint256(100)))
+            _key(bytes32(uint256(1)), bytes32(uint256(100))), _key(bytes32(uint256(2)), bytes32(uint256(100)))
         );
     }
 
-    function test_exposed_enforceDifferentKeys_passes_whenHashDiffers()
-        public
-        view
-    {
+    function test_exposed_enforceDifferentKeys_passes_whenHashDiffers() public view {
         bare.exposed_enforceDifferentKeys(
-            _key(bytes32(uint256(1)), bytes32(uint256(100))),
-            _key(bytes32(uint256(1)), bytes32(uint256(200)))
+            _key(bytes32(uint256(1)), bytes32(uint256(100))), _key(bytes32(uint256(1)), bytes32(uint256(200)))
         );
     }
 
-    function test_exposed_enforceDifferentKeys_passes_whenBothDiffer()
-        public
-        view
-    {
+    function test_exposed_enforceDifferentKeys_passes_whenBothDiffer() public view {
         bare.exposed_enforceDifferentKeys(
-            _key(bytes32(uint256(1)), bytes32(uint256(100))),
-            _key(bytes32(uint256(2)), bytes32(uint256(200)))
+            _key(bytes32(uint256(1)), bytes32(uint256(100))), _key(bytes32(uint256(2)), bytes32(uint256(200)))
         );
     }
 
@@ -67,13 +48,8 @@ contract WOTSPlusImplementation__enforceDifferentKeys is WOTSPlusImplementationT
         bare.exposed_enforceDifferentKeys(zero, zero);
     }
 
-    function test_exposed_enforceDifferentKeys_revertsWhen_keysIdentical()
-        public
-    {
-        WOTSPlus.WinternitzAddress memory k = _key(
-            bytes32(uint256(0xaa)),
-            bytes32(uint256(0xbb))
-        );
+    function test_exposed_enforceDifferentKeys_revertsWhen_keysIdentical() public {
+        WOTSPlus.WinternitzAddress memory k = _key(bytes32(uint256(0xaa)), bytes32(uint256(0xbb)));
         vm.expectRevert(IWOTSPlusImplementation.SameKey.selector);
         bare.exposed_enforceDifferentKeys(k, k);
     }

@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.33;
+
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsWalletCodec as Codec} from "../../contracts/shrincs/ShrincsWalletCodec.sol";
+
+/// @dev Exposes the `ShrincsWalletCodec` library across an external boundary so its calldata
+///      decoders, context builders, and payload-hash builders can be unit-tested.
+contract ShrincsWalletCodecHarness {
+    /* ─────────────────────────────── DECODERS ─────────────────────────────── */
+
+    function exposed_decodeInit(bytes calldata payload)
+        external
+        pure
+        returns (
+            bytes32 commitment,
+            bytes32 pkSeed,
+            ShrincsTypes.PublicKey memory mainBundle,
+            uint8 parameterSetId,
+            bytes32 erc1271Commitment,
+            uint8 erc1271ParameterSetId
+        )
+    {
+        (bytes32 _c, bytes32 _ps, ShrincsTypes.PublicKey calldata _mb, uint8 _pid, bytes32 _ec, uint8 _epid) =
+            Codec.decodeInit(payload);
+        commitment = _c;
+        pkSeed = _ps;
+        mainBundle = _mb;
+        parameterSetId = _pid;
+        erc1271Commitment = _ec;
+        erc1271ParameterSetId = _epid;
+    }
+
+    function exposed_decodeUserOpSignature(bytes calldata sig)
+        external
+        pure
+        returns (ShrincsTypes.PublicKey memory publicKey, ShrincsTypes.StatefulSignature memory signature)
+    {
+        (ShrincsTypes.PublicKey calldata _pk, ShrincsTypes.StatefulSignature calldata _sig) =
+            Codec.decodeUserOpSignature(sig);
+        publicKey = _pk;
+        signature = _sig;
+    }
+
+    function exposed_decodeUpgradeAuth(bytes calldata data)
+        external
+        pure
+        returns (
+            ShrincsTypes.PublicKey memory publicKey,
+            ShrincsTypes.StatefulSignature memory signature,
+            bool shouldMigrate,
+            bytes memory migratorPayload
+        )
+    {
+        (
+            ShrincsTypes.PublicKey calldata _pk,
+            ShrincsTypes.StatefulSignature calldata _sig,
+            bool _m,
+            bytes calldata _p
+        ) = Codec.decodeUpgradeAuth(data);
+        publicKey = _pk;
+        signature = _sig;
+        shouldMigrate = _m;
+        migratorPayload = _p;
+    }
+
+    function exposed_decodeErc1271Signature(bytes calldata sig)
+        external
+        pure
+        returns (
+            ShrincsTypes.PublicKey memory publicKey,
+            ShrincsTypes.StatelessSignature memory signature,
+            bytes memory ecdsaSig
+        )
+    {
+        (ShrincsTypes.PublicKey calldata _pk, ShrincsTypes.StatelessSignature calldata _sig, bytes calldata _e) =
+            Codec.decodeErc1271Signature(sig);
+        publicKey = _pk;
+        signature = _sig;
+        ecdsaSig = _e;
+    }
+
+    /* ────────────────────────── CONTEXT BUILDERS ───────────────────────────── */
+
+    function exposed_buildActionContext(
+        bytes32 domainSeparator,
+        uint256 nonce,
+        uint256 keyVersion,
+        bytes32 actionType,
+        bytes32 payloadHash
+    ) external pure returns (ShrincsTypes.ActionContext memory) {
+        return Codec.buildActionContext(domainSeparator, nonce, keyVersion, actionType, payloadHash);
+    }
+
+    function exposed_buildRotationContext(bytes32 domainSeparator, uint256 nonce, uint256 keyVersion)
+        external
+        pure
+        returns (ShrincsTypes.RotationContext memory)
+    {
+        return Codec.buildRotationContext(domainSeparator, nonce, keyVersion);
+    }
+
+    /* ─────────────────────────── PAYLOAD HASHES ────────────────────────────── */
+
+    function exposed_erc4337PayloadHash(bytes32 userOpHash, uint256 fee) external pure returns (bytes32) {
+        return Codec.erc4337PayloadHash(userOpHash, fee);
+    }
+
+    function exposed_executePayloadHash(address target, uint256 value, bytes32 dataHash, uint256 fee)
+        external
+        pure
+        returns (bytes32)
+    {
+        return Codec.executePayloadHash(target, value, dataHash, fee);
+    }
+
+    function exposed_withdrawPayloadHash(address to, uint256 amount) external pure returns (bytes32) {
+        return Codec.withdrawPayloadHash(to, amount);
+    }
+
+    function exposed_upgradePayloadHash(address newImplementation, bool shouldMigrate, bytes32 migratorHash)
+        external
+        pure
+        returns (bytes32)
+    {
+        return Codec.upgradePayloadHash(newImplementation, shouldMigrate, migratorHash);
+    }
+
+    function exposed_transferOwnershipPayloadHash(address newOwner, bytes32 nextCommitment)
+        external
+        pure
+        returns (bytes32)
+    {
+        return Codec.transferOwnershipPayloadHash(newOwner, nextCommitment);
+    }
+
+    function exposed_setErc1271KeyPayloadHash(bytes32 newCommitment, uint8 newParameterSetId)
+        external
+        pure
+        returns (bytes32)
+    {
+        return Codec.setErc1271KeyPayloadHash(newCommitment, newParameterSetId);
+    }
+
+    function exposed_rotateKeyPayloadHash(bytes32 nextCommitment, uint8 nextParameterSetId)
+        external
+        pure
+        returns (bytes32)
+    {
+        return Codec.rotateKeyPayloadHash(nextCommitment, nextParameterSetId);
+    }
+}

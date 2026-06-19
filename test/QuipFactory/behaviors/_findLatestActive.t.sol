@@ -44,9 +44,7 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
         assertEq(harness.exposed_findLatestActive(), address(impl2));
     }
 
-    function test_exposed_findLatestActive_returnsZeroWhenAllDeprecated()
-        public
-    {
+    function test_exposed_findLatestActive_returnsZeroWhenAllDeprecated() public {
         WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
@@ -90,9 +88,7 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
     // Pattern: [active, deprecated, active]. Backward scan returns the rightmost
     // active entry without examining earlier entries — guards against a bug
     // where the loop over-shoots the first active hit.
-    function test_exposed_findLatestActive_returnsFirstActiveFromRight()
-        public
-    {
+    function test_exposed_findLatestActive_returnsFirstActiveFromRight() public {
         WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
         WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(harness)));
         WOTSPlusImplementation impl3 = new WOTSPlusImplementation(payable(address(harness)));

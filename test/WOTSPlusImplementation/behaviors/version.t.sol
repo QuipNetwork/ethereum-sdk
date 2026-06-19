@@ -25,12 +25,8 @@ contract WOTSPlusImplementation_version is WOTSPlusImplementationTest {
         assertEq(wallet.version(), 1);
     }
 
-    function _buildUpgradePayload(
-        address newImpl
-    ) internal view returns (bytes memory) {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "version-next-pq"
-        );
+    function _buildUpgradePayload(address newImpl) internal view returns (bytes memory) {
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("version-next-pq");
 
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
@@ -43,43 +39,22 @@ contract WOTSPlusImplementation_version is WOTSPlusImplementationTest {
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
 
-        (
-            WOTSPlus.WinternitzAddress memory vPub,
-            bytes32 vPriv
-        ) = _generateKeyPair("version-verifier");
-        bytes32 vHash = Codec.verificationDigest(
-            address(wallet),
-            block.chainid,
-            newImpl,
-            vPub.publicSeed,
-            vPub.publicKeyHash
-        );
+        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair("version-verifier");
+        bytes32 vHash =
+            Codec.verificationDigest(address(wallet), block.chainid, newImpl, vPub.publicSeed, vPub.publicKeyHash);
         WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
 
         // Dummy 960-byte init-layout migrator payload (unused when shouldMigrate=false).
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory dummyKeys = new WOTSPlus.WinternitzAddress[](10);
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory dummyKeys = new WOTSPlus.WinternitzAddress[](10);
         for (uint256 i = 0; i < 10; i++) {
             dummyKeys[i] = WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(uint256(i + 1)),
-                publicKeyHash: bytes32(uint256(i + 100))
+                publicSeed: bytes32(uint256(i + 1)), publicKeyHash: bytes32(uint256(i + 100))
             });
         }
         bytes memory migratorPayload = _encodeInitPayload(dummyPq, dummyKeys);
 
-        return
-            Codec.encodeUpgradeToAndCall(
-                alicePubkey,
-                nextPq,
-                sig,
-                vPub,
-                vSig,
-                false,
-                migratorPayload
-            );
+        return Codec.encodeUpgradeToAndCall(alicePubkey, nextPq, sig, vPub, vSig, false, migratorPayload);
     }
 }

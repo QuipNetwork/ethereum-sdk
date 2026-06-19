@@ -22,48 +22,38 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
-        (
-            WOTSPlus.WinternitzAddress memory pub,
-            bytes32 priv
-        ) = _generateKeyPair("h-mig");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            priv,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-mig");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-mig-vault"), payable(ALICE), payload);
+        address proxyAddr =
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-mig-vault"), payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
-    function _mkKey(
-        uint256 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(seed),
-                publicKeyHash: bytes32(seed + 1000)
-            });
+    function _mkKey(uint256 seed) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: bytes32(seed), publicKeyHash: bytes32(seed + 1000)});
     }
 
     function _validMigratorPayload() internal pure returns (bytes memory) {
         WOTSPlus.WinternitzAddress[10] memory txn;
         WOTSPlus.WinternitzAddress[10] memory rec;
         WOTSPlus.WinternitzAddress[10] memory ver;
-        for (uint256 i; i < 10; i++) txn[i] = _mkKey(0x1000 + i * 2);
-        for (uint256 i; i < 10; i++) rec[i] = _mkKey(0x2000 + i * 2);
-        for (uint256 i; i < 10; i++) ver[i] = _mkKey(0x2800 + i * 2);
-        return
-            Codec.encodeInit(_mkKey(0x3000), _mkKey(0x4000), txn, rec, ver);
+        for (uint256 i; i < 10; i++) {
+            txn[i] = _mkKey(0x1000 + i * 2);
+        }
+        for (uint256 i; i < 10; i++) {
+            rec[i] = _mkKey(0x2000 + i * 2);
+        }
+        for (uint256 i; i < 10; i++) {
+            ver[i] = _mkKey(0x2800 + i * 2);
+        }
+        return Codec.encodeInit(_mkKey(0x3000), _mkKey(0x4000), txn, rec, ver);
     }
 
     /*──────────────────────────── happy path ────────────────────────────*/
@@ -105,9 +95,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
 
     /*──────────────────────────── reverts ────────────────────────────*/
 
-    function test_migrate_revertsWhen_calledDirectlyOutsideUpgradeContext()
-        public
-    {
+    function test_migrate_revertsWhen_calledDirectlyOutsideUpgradeContext() public {
         bytes memory payload = _validMigratorPayload();
         vm.expectRevert(IWOTSPlusImplementation.NotUpgrading.selector);
         harnessProxy.migrate(payload);
@@ -120,13 +108,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0x5000);
         txn[3] = txn[0]; // collision
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0x7000),
-            _mkKey(0x8000),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0x7000), _mkKey(0x8000), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -139,13 +121,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0x9000);
         rec[7] = rec[0]; // collision
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0xb000),
-            _mkKey(0xc000),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0xb000), _mkKey(0xc000), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -158,13 +134,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0x9100);
         ver[5] = ver[1]; // collision within verification batch
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0xb100),
-            _mkKey(0xc100),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0xb100), _mkKey(0xc100), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -176,17 +146,8 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory rec,
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0xd000);
-        txn[2] = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(0)
-        });
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0xf000),
-            _mkKey(0x1100),
-            txn,
-            rec,
-            ver
-        );
+        txn[2] = WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)});
+        bytes memory payload = Codec.encodeInit(_mkKey(0xf000), _mkKey(0x1100), txn, rec, ver);
 
         vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -199,10 +160,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0x1200);
         bytes memory payload = Codec.encodeInit(
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(0),
-                publicKeyHash: bytes32(0)
-            }),
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)}),
             // _freshKeyArrays(0x1200) reserves 0x1200..0x1412; pick ownership
             // outside that range to avoid a verification-loop KeyInUse.
             _mkKey(0x1500),
@@ -225,10 +183,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             // _freshKeyArrays(0x1500) reserves 0x1500..0x1712; pick disaster
             // outside that range.
             _mkKey(0x1800),
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(0),
-                publicKeyHash: bytes32(0)
-            }),
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)}),
             txn,
             rec,
             ver
@@ -244,9 +199,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
 
     /// @dev Build 10 txn + 10 rec + 10 ver keys deterministically from `base`
     ///      so the caller can mutate one entry to stage a cross-set collision.
-    function _freshKeyArrays(
-        uint256 base
-    )
+    function _freshKeyArrays(uint256 base)
         internal
         pure
         returns (
@@ -255,9 +208,15 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         )
     {
-        for (uint256 i = 0; i < 10; i++) txn[i] = _mkKey(base + i * 2);
-        for (uint256 i = 0; i < 10; i++) rec[i] = _mkKey(base + 0x100 + i * 2);
-        for (uint256 i = 0; i < 10; i++) ver[i] = _mkKey(base + 0x200 + i * 2);
+        for (uint256 i = 0; i < 10; i++) {
+            txn[i] = _mkKey(base + i * 2);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            rec[i] = _mkKey(base + 0x100 + i * 2);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            ver[i] = _mkKey(base + 0x200 + i * 2);
+        }
     }
 
     // A recovery key collides with a transaction key. The txn loop installs
@@ -270,13 +229,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0x2000);
         rec[3] = txn[1];
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0x2900),
-            _mkKey(0x2a00),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0x2900), _mkKey(0x2a00), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -292,13 +245,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0x2100);
         ver[4] = txn[2];
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0x2920),
-            _mkKey(0x2a20),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0x2920), _mkKey(0x2a20), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -313,13 +260,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
             WOTSPlus.WinternitzAddress[10] memory ver
         ) = _freshKeyArrays(0x2200);
         ver[6] = rec[3];
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0x2940),
-            _mkKey(0x2a40),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0x2940), _mkKey(0x2a40), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -335,13 +276,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
         ) = _freshKeyArrays(0x3000);
         WOTSPlus.WinternitzAddress memory disaster = _mkKey(0x3900);
         txn[2] = disaster;
-        bytes memory payload = Codec.encodeInit(
-            disaster,
-            _mkKey(0x3a00),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(disaster, _mkKey(0x3a00), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -357,13 +292,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
         ) = _freshKeyArrays(0x4000);
         WOTSPlus.WinternitzAddress memory ownership = _mkKey(0x4a00);
         txn[4] = ownership;
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0x4900),
-            ownership,
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0x4900), ownership, txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -379,13 +308,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
         ) = _freshKeyArrays(0x5000);
         WOTSPlus.WinternitzAddress memory disaster = _mkKey(0x5900);
         rec[6] = disaster;
-        bytes memory payload = Codec.encodeInit(
-            disaster,
-            _mkKey(0x5a00),
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(disaster, _mkKey(0x5a00), txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);
@@ -400,13 +323,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
         ) = _freshKeyArrays(0x6000);
         WOTSPlus.WinternitzAddress memory ownership = _mkKey(0x6a00);
         rec[2] = ownership;
-        bytes memory payload = Codec.encodeInit(
-            _mkKey(0x6900),
-            ownership,
-            txn,
-            rec,
-            ver
-        );
+        bytes memory payload = Codec.encodeInit(_mkKey(0x6900), ownership, txn, rec, ver);
 
         vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
         harnessProxy.exposed_migrateInUpgradeContext(payload);

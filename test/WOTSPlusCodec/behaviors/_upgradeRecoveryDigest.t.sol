@@ -16,108 +16,32 @@ contract WOTSPlusCodec__upgradeRecoveryDigest is WOTSPlusCodecTest {
     bytes32 constant S2 = bytes32(uint256(20));
     bytes32 constant H2 = bytes32(uint256(21));
 
-    function test_exposed_upgradeRecoveryDigest_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_upgradeRecoveryDigest_matchesManualHash() public view {
         bytes32 tag = keccak256("quip.digest.upgradeRecovery");
         address impl = address(0xDEAD);
         bytes32 expected = EfficientHashLib.hash(
-            tag,
-            bytes32(C),
-            bytes32(uint256(uint160(W))),
-            bytes32(uint256(uint160(impl))),
-            RS1,
-            RH1,
-            RS2,
-            RH2
+            tag, bytes32(C), bytes32(uint256(uint160(W))), bytes32(uint256(uint160(impl))), RS1, RH1, RS2, RH2
         );
-        assertEq(
-            codec.exposed_upgradeRecoveryDigest(
-                W,
-                C,
-                impl,
-                RS1,
-                RH1,
-                RS2,
-                RH2
-            ),
-            expected
-        );
+        assertEq(codec.exposed_upgradeRecoveryDigest(W, C, impl, RS1, RH1, RS2, RH2), expected);
     }
 
-    function test_exposed_upgradeRecoveryDigest_differsByImplementation()
-        public
-        view
-    {
-        bytes32 a = codec.exposed_upgradeRecoveryDigest(
-            W,
-            C,
-            address(0x1),
-            RS1,
-            RH1,
-            RS2,
-            RH2
-        );
+    function test_exposed_upgradeRecoveryDigest_differsByImplementation() public view {
+        bytes32 a = codec.exposed_upgradeRecoveryDigest(W, C, address(0x1), RS1, RH1, RS2, RH2);
+        bytes32 b = codec.exposed_upgradeRecoveryDigest(W, C, address(0x2), RS1, RH1, RS2, RH2);
+        assertTrue(a != b);
+    }
+
+    function test_exposed_upgradeRecoveryDigest_differsByNewRecoveryKey() public view {
+        bytes32 a = codec.exposed_upgradeRecoveryDigest(W, C, address(0xDEAD), RS1, RH1, RS2, RH2);
         bytes32 b = codec.exposed_upgradeRecoveryDigest(
-            W,
-            C,
-            address(0x2),
-            RS1,
-            RH1,
-            RS2,
-            RH2
+            W, C, address(0xDEAD), RS1, RH1, bytes32(uint256(99)), bytes32(uint256(100))
         );
         assertTrue(a != b);
     }
 
-    function test_exposed_upgradeRecoveryDigest_differsByNewRecoveryKey()
-        public
-        view
-    {
-        bytes32 a = codec.exposed_upgradeRecoveryDigest(
-            W,
-            C,
-            address(0xDEAD),
-            RS1,
-            RH1,
-            RS2,
-            RH2
-        );
-        bytes32 b = codec.exposed_upgradeRecoveryDigest(
-            W,
-            C,
-            address(0xDEAD),
-            RS1,
-            RH1,
-            bytes32(uint256(99)),
-            bytes32(uint256(100))
-        );
-        assertTrue(a != b);
-    }
-
-    function test_exposed_upgradeRecoveryDigest_differsFromUpgradeDigest()
-        public
-        view
-    {
-        bytes32 a = codec.exposed_upgradeRecoveryDigest(
-            W,
-            C,
-            address(0xDEAD),
-            RS1,
-            RH1,
-            RS2,
-            RH2
-        );
-        bytes32 b = codec.exposed_upgradeDigest(
-            W,
-            C,
-            address(0xDEAD),
-            S1,
-            H1,
-            S2,
-            H2
-        );
+    function test_exposed_upgradeRecoveryDigest_differsFromUpgradeDigest() public view {
+        bytes32 a = codec.exposed_upgradeRecoveryDigest(W, C, address(0xDEAD), RS1, RH1, RS2, RH2);
+        bytes32 b = codec.exposed_upgradeDigest(W, C, address(0xDEAD), S1, H1, S2, H2);
         assertTrue(a != b);
     }
 }

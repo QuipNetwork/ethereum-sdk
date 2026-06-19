@@ -52,29 +52,16 @@ abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
     ///      handler's prank. Returns the encoded payload bytes (unused
     ///      but kept for symmetry with `_buildInitPayloadForCreate`).
     function _buildAndDeployWallet() internal returns (bytes memory) {
-        (
-            WOTSPlus.WinternitzAddress[10] memory txnPubs,
-            bytes32[10] memory txnPrivs
-        ) = _generateTransactionKeys(INVARIANT_VAULT_SEED);
+        (WOTSPlus.WinternitzAddress[10] memory txnPubs, bytes32[10] memory txnPrivs) =
+            _generateTransactionKeys(INVARIANT_VAULT_SEED);
 
-        WOTSPlus.WinternitzAddress[] memory recArr = _generateRecoveryKeys(
-            txnPrivs[0],
-            10
-        );
+        WOTSPlus.WinternitzAddress[] memory recArr = _generateRecoveryKeys(txnPrivs[0], 10);
 
-        bytes memory payload = _buildInitPayloadForCreate(
-            INVARIANT_VAULT_SEED,
-            txnPubs,
-            recArr
-        );
+        bytes memory payload = _buildInitPayloadForCreate(INVARIANT_VAULT_SEED, txnPubs, recArr);
 
         vm.prank(address(handler));
-        address walletAddr = factory.deployLatestWalletProxy{
-            value: INVARIANT_INITIAL_DEPOSIT
-        }(
-            keccak256(abi.encodePacked(INVARIANT_VAULT_SEED)),
-            payable(address(handler)),
-            payload
+        address walletAddr = factory.deployLatestWalletProxy{value: INVARIANT_INITIAL_DEPOSIT}(
+            keccak256(abi.encodePacked(INVARIANT_VAULT_SEED)), payable(address(handler)), payload
         );
         wallet = WOTSPlusImplementation(payable(walletAddr));
         return payload;
@@ -86,15 +73,10 @@ abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
     ///      stack within Solidity's local-variable budget; reconstructing
     ///      the material here is cheaper than carrying ~80 stack slots.
     function _initializeHandler() internal {
-        (
-            WOTSPlus.WinternitzAddress[10] memory txnPubs,
-            bytes32[10] memory txnPrivs
-        ) = _generateTransactionKeys(INVARIANT_VAULT_SEED);
+        (WOTSPlus.WinternitzAddress[10] memory txnPubs, bytes32[10] memory txnPrivs) =
+            _generateTransactionKeys(INVARIANT_VAULT_SEED);
 
-        WOTSPlus.WinternitzAddress[] memory recArr = _generateRecoveryKeys(
-            txnPrivs[0],
-            10
-        );
+        WOTSPlus.WinternitzAddress[] memory recArr = _generateRecoveryKeys(txnPrivs[0], 10);
         WOTSPlus.WinternitzAddress[10] memory recPubs;
         bytes32[10] memory recPrivs;
         for (uint256 i = 0; i < 10; i++) {
@@ -102,17 +84,12 @@ abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
             recPrivs[i] = _recoverySigningKey(txnPrivs[0], i);
         }
 
-        (WOTSPlus.WinternitzAddress[10] memory verPubs, ) =
-            _generateVerificationKeys(INVARIANT_VAULT_SEED);
+        (WOTSPlus.WinternitzAddress[10] memory verPubs,) = _generateVerificationKeys(INVARIANT_VAULT_SEED);
 
-        (
-            WOTSPlus.WinternitzAddress memory disasterPub,
-            bytes32 disasterPriv
-        ) = _generateDisasterRecoveryKey(INVARIANT_VAULT_SEED);
-        (
-            WOTSPlus.WinternitzAddress memory ownershipPub,
-            bytes32 ownershipPriv
-        ) = _generateOwnershipKey(INVARIANT_VAULT_SEED);
+        (WOTSPlus.WinternitzAddress memory disasterPub, bytes32 disasterPriv) =
+            _generateDisasterRecoveryKey(INVARIANT_VAULT_SEED);
+        (WOTSPlus.WinternitzAddress memory ownershipPub, bytes32 ownershipPriv) =
+            _generateOwnershipKey(INVARIANT_VAULT_SEED);
 
         address[] memory impls = new address[](2);
         impls[0] = _currentImpl();
@@ -169,35 +146,17 @@ abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
     /// @dev INVARIANTS.md §5 — every signed primitive must preserve the
     ///      always-10 size of every keyset.
     function invariant_keysetSizesAlwaysTen() public view {
-        assertEq(
-            wallet.keyCount(Codec.KeyType.Transaction),
-            10,
-            "Transaction keyset broke always-10"
-        );
-        assertEq(
-            wallet.keyCount(Codec.KeyType.Recovery),
-            10,
-            "Recovery keyset broke always-10"
-        );
-        assertEq(
-            wallet.keyCount(Codec.KeyType.Verification),
-            10,
-            "Verification keyset broke always-10"
-        );
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10, "Transaction keyset broke always-10");
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10, "Recovery keyset broke always-10");
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10, "Verification keyset broke always-10");
     }
 
     /// @dev INVARIANTS.md §5 — no key may appear in more than one keyset
     ///      simultaneously. Pairwise check across all three keysets.
     function invariant_noKeyAppearsInTwoKeysets() public view {
-        WOTSPlus.WinternitzAddress[] memory txn = wallet.getKeyset(
-            Codec.KeyType.Transaction
-        );
-        WOTSPlus.WinternitzAddress[] memory rec = wallet.getKeyset(
-            Codec.KeyType.Recovery
-        );
-        WOTSPlus.WinternitzAddress[] memory ver = wallet.getKeyset(
-            Codec.KeyType.Verification
-        );
+        WOTSPlus.WinternitzAddress[] memory txn = wallet.getKeyset(Codec.KeyType.Transaction);
+        WOTSPlus.WinternitzAddress[] memory rec = wallet.getKeyset(Codec.KeyType.Recovery);
+        WOTSPlus.WinternitzAddress[] memory ver = wallet.getKeyset(Codec.KeyType.Verification);
         _assertDisjoint(txn, rec, "txn-rec");
         _assertDisjoint(txn, ver, "txn-ver");
         _assertDisjoint(rec, ver, "rec-ver");
@@ -213,10 +172,7 @@ abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
         uint256 total = handler.everInstalledCount();
         for (uint256 i = 0; i < total; i++) {
             WOTSPlus.WinternitzAddress memory k = handler.everInstalledAt(i);
-            assertTrue(
-                wallet.isKeySpent(k),
-                "burn-set dropped a historical key"
-            );
+            assertTrue(wallet.isKeySpent(k), "burn-set dropped a historical key");
         }
     }
 
@@ -300,29 +256,16 @@ abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
         }
     }
 
-    function _assertAllNonZero(
-        WOTSPlus.WinternitzAddress[] memory keys
-    ) internal pure {
+    function _assertAllNonZero(WOTSPlus.WinternitzAddress[] memory keys) internal pure {
         for (uint256 i = 0; i < keys.length; i++) {
-            assertTrue(
-                keys[i].publicSeed != bytes32(0),
-                "key publicSeed is zero"
-            );
-            assertTrue(
-                keys[i].publicKeyHash != bytes32(0),
-                "key publicKeyHash is zero"
-            );
+            assertTrue(keys[i].publicSeed != bytes32(0), "key publicSeed is zero");
+            assertTrue(keys[i].publicKeyHash != bytes32(0), "key publicKeyHash is zero");
         }
     }
 
-    function _assertAllInBurnSet(
-        WOTSPlus.WinternitzAddress[] memory keys
-    ) internal view {
+    function _assertAllInBurnSet(WOTSPlus.WinternitzAddress[] memory keys) internal view {
         for (uint256 i = 0; i < keys.length; i++) {
-            assertTrue(
-                wallet.isKeySpent(keys[i]),
-                "live key not in burn set"
-            );
+            assertTrue(wallet.isKeySpent(keys[i]), "live key not in burn set");
         }
     }
 }

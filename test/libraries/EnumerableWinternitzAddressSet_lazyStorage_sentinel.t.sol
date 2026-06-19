@@ -21,9 +21,7 @@ contract _LazyStorageSentinelHarness {
     // the suite fails at the very first lazy-phase assertion.
     EnumerableWinternitzAddressSet.WinternitzAddressSet private s;
 
-    function add(
-        WOTSPlus.WinternitzAddress memory addr
-    ) external returns (bool) {
+    function add(WOTSPlus.WinternitzAddress memory addr) external returns (bool) {
         return s.add(addr);
     }
 
@@ -84,25 +82,17 @@ contract EnumerableWinternitzAddressSet_lazyStorage_sentinel is Test {
     /// @dev Distinct non-zero seed/hash per index. `add()` reverts on
     ///      zero-valued fields, so deterministic non-zero values are
     ///      required to drive the lazy-phase paths.
-    function _addr(
-        uint256 i
-    ) internal pure returns (WOTSPlus.WinternitzAddress memory) {
-        return
-            WOTSPlus.WinternitzAddress({
-                publicSeed: keccak256(abi.encode("lazy-seed", i)),
-                publicKeyHash: keccak256(abi.encode("lazy-hash", i))
-            });
+    function _addr(uint256 i) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({
+            publicSeed: keccak256(abi.encode("lazy-seed", i)), publicKeyHash: keccak256(abi.encode("lazy-hash", i))
+        });
     }
 
     /// @dev Read storage slot `rootSlot + offset` directly. The library's
     ///      lazy-phase assembly addresses elements via plain integer
     ///      addition on `rootSlot`; this helper mirrors that pattern.
     function _loadOffset(uint256 offset) internal view returns (bytes32) {
-        return
-            vm.load(
-                address(harness),
-                bytes32(uint256(harness.rootSlot()) + offset)
-            );
+        return vm.load(address(harness), bytes32(uint256(harness.rootSlot()) + offset));
     }
 
     /// @dev Read the lazy-length sentinel slot at `not(rootSlot)` — i.e. the
@@ -149,9 +139,7 @@ contract EnumerableWinternitzAddressSet_lazyStorage_sentinel is Test {
     /// @dev While lazy (≤ 3 elements), the `not(rootSlot)` slot must read
     ///      zero. `length()` branches on this — non-zero ⇒ eager-phase
     ///      lookup path.
-    function test_lazyPhase_lazyLengthSentinelIsZeroForOneToThreeElements()
-        public
-    {
+    function test_lazyPhase_lazyLengthSentinelIsZeroForOneToThreeElements() public {
         harness.add(_addr(0));
         assertEq(_loadLazyLengthSlot(), bytes32(0), "1 elem: still lazy");
         harness.add(_addr(1));
@@ -168,18 +156,10 @@ contract EnumerableWinternitzAddressSet_lazyStorage_sentinel is Test {
         harness.add(_addr(0));
         harness.add(_addr(1));
         harness.add(_addr(2));
-        assertEq(
-            _loadLazyLengthSlot(),
-            bytes32(0),
-            "precondition: still lazy after 3 adds"
-        );
+        assertEq(_loadLazyLengthSlot(), bytes32(0), "precondition: still lazy after 3 adds");
         harness.add(_addr(3));
         // 9 = (4 << 1) | 1 — see library line 274.
-        assertEq(
-            _loadLazyLengthSlot(),
-            bytes32(uint256(9)),
-            "4 elems: (count << 1) | eager-flag"
-        );
+        assertEq(_loadLazyLengthSlot(), bytes32(uint256(9)), "4 elems: (count << 1) | eager-flag");
         // Element 3 must land at slots 6/7 — the next stride step.
         WOTSPlus.WinternitzAddress memory a3 = _addr(3);
         assertEq(_loadOffset(6), a3.publicSeed, "elem 3 publicSeed slot");

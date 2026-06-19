@@ -17,9 +17,7 @@ import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces
 ///      MalformedPayload)` event is what keeps that gate honest.
 ///
 ///      Covers `_PAYMASTER_AND_DATA_LEN = 2272`.
-contract QuipPaymaster_validatePaymasterUserOp_lengthGate is
-    QuipPaymasterTest
-{
+contract QuipPaymaster_validatePaymasterUserOp_lengthGate is QuipPaymasterTest {
     uint256 private constant _PAYMASTER_AND_DATA_LEN = 2272;
 
     /// @dev Drive `validatePaymasterUserOp` with `paymasterAndData` of the
@@ -45,8 +43,7 @@ contract QuipPaymaster_validatePaymasterUserOp_lengthGate is
 
         vm.recordLogs();
         vm.prank(ENTRY_POINT);
-        (bytes memory context, uint256 validationData) = paymaster
-            .validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
+        (bytes memory context, uint256 validationData) = paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
 
         assertEq(context.length, 0, "context must be empty on length reject");
         assertEq(validationData, 1, "validationData must be SIG_VALIDATION_FAILED");
@@ -82,57 +79,43 @@ contract QuipPaymaster_validatePaymasterUserOp_lengthGate is
 
     /// One under the data offset (52 bytes header). Decoder would still
     /// fail OOB if the gate were removed.
-    function test_validatePaymasterUserOp_revertsWhen_lengthBelowDataOffset()
-        public
-    {
+    function test_validatePaymasterUserOp_revertsWhen_lengthBelowDataOffset() public {
         _assertRejectsLength(51);
     }
 
     /// Exactly the data offset (no verifier, no sig). Decoder would slice
     /// an empty `paymasterData` and start reading garbage uint48s.
-    function test_validatePaymasterUserOp_revertsWhen_lengthAtDataOffset()
-        public
-    {
+    function test_validatePaymasterUserOp_revertsWhen_lengthAtDataOffset() public {
         _assertRejectsLength(52);
     }
 
     /// One under the sig offset (verifier present, no signature). This is
     /// the most dangerous case — the structure looks almost right.
-    function test_validatePaymasterUserOp_revertsWhen_lengthBelowSigOffset()
-        public
-    {
+    function test_validatePaymasterUserOp_revertsWhen_lengthBelowSigOffset() public {
         _assertRejectsLength(127);
     }
 
     /// Exactly the sig offset (verifier present, zero-length sig). The
     /// WOTS+ verify would OOB without the gate.
-    function test_validatePaymasterUserOp_revertsWhen_lengthAtSigOffset()
-        public
-    {
+    function test_validatePaymasterUserOp_revertsWhen_lengthAtSigOffset() public {
         _assertRejectsLength(128);
     }
 
     /// One byte under the canonical layout — the closest realistic
     /// "almost-valid" payload.
-    function test_validatePaymasterUserOp_revertsWhen_lengthOneByteShort()
-        public
-    {
+    function test_validatePaymasterUserOp_revertsWhen_lengthOneByteShort() public {
         _assertRejectsLength(_PAYMASTER_AND_DATA_LEN - 1);
     }
 
     /// One byte over — surplus bytes must be rejected, not silently
     /// truncated.
-    function test_validatePaymasterUserOp_revertsWhen_lengthOneByteLong()
-        public
-    {
+    function test_validatePaymasterUserOp_revertsWhen_lengthOneByteLong() public {
         _assertRejectsLength(_PAYMASTER_AND_DATA_LEN + 1);
     }
 
     /// Fuzz across the full forbidden range below the canonical length.
     /// Every value < `_PAYMASTER_AND_DATA_LEN` must hit the gate.
-    function testFuzz_validatePaymasterUserOp_rejectsAnyShorterLength(
-        uint16 raw
-    ) public {
+    function testFuzz_validatePaymasterUserOp_rejectsAnyShorterLength(uint16 raw) public {
         uint256 len = uint256(raw) % _PAYMASTER_AND_DATA_LEN;
         _assertRejectsLength(len);
     }

@@ -53,10 +53,7 @@ contract DeployQuipFactory is Script {
             return;
         }
 
-        bytes memory bytecode = abi.encodePacked(
-            type(QuipFactory).creationCode,
-            abi.encode(factoryOwner, maxFee)
-        );
+        bytes memory bytecode = abi.encodePacked(type(QuipFactory).creationCode, abi.encode(factoryOwner, maxFee));
         console.log("Bytecode size:", bytecode.length, "bytes");
 
         vm.startBroadcast(privateKey);

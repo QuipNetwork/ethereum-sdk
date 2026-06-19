@@ -29,9 +29,7 @@ contract WOTSPlusImplementation_ownershipHandoverDisabled is WOTSPlusImplementat
         wallet.completeOwnershipHandover(BOB);
     }
 
-    function test_classicalCompleteOwnershipHandover_revertsForNonOwner()
-        public
-    {
+    function test_classicalCompleteOwnershipHandover_revertsForNonOwner() public {
         // Reverts the same way for non-owner callers — the disable predicate
         // sits BEFORE Solady's onlyOwner gate.
         vm.expectRevert(IWOTSPlusImplementation.OwnershipHandoverDisabled.selector);

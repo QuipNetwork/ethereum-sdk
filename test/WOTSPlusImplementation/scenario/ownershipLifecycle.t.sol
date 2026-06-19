@@ -25,29 +25,17 @@ contract WOTSPlusImplementation_ownershipLifecycle is WOTSPlusImplementationTest
         WOTSPlus.WinternitzAddress[10] newVer;
     }
 
-    function _deriveOwnershipKeys(
-        bytes32 seedPrefix
-    ) internal view returns (OwnershipPayloadCtx memory ctx) {
-        (ctx.nextOwnership, ) = _generateKeyPair(
-            keccak256(abi.encodePacked(seedPrefix, "-new-ownership"))
-        );
-        (ctx.newDisaster, ) = _generateKeyPair(
-            keccak256(abi.encodePacked(seedPrefix, "-new-disaster"))
-        );
+    function _deriveOwnershipKeys(bytes32 seedPrefix) internal view returns (OwnershipPayloadCtx memory ctx) {
+        (ctx.nextOwnership,) = _generateKeyPair(keccak256(abi.encodePacked(seedPrefix, "-new-ownership")));
+        (ctx.newDisaster,) = _generateKeyPair(keccak256(abi.encodePacked(seedPrefix, "-new-disaster")));
         for (uint256 i = 0; i < 10; i++) {
-            (ctx.newTxn[i], ctx.newTxnPrivs[i]) = _generateKeyPair(
-                keccak256(abi.encodePacked(seedPrefix, "-txn", i))
-            );
+            (ctx.newTxn[i], ctx.newTxnPrivs[i]) = _generateKeyPair(keccak256(abi.encodePacked(seedPrefix, "-txn", i)));
         }
         for (uint256 i = 0; i < 10; i++) {
-            (ctx.newRec[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked(seedPrefix, "-rec", i))
-            );
+            (ctx.newRec[i],) = _generateKeyPair(keccak256(abi.encodePacked(seedPrefix, "-rec", i)));
         }
         for (uint256 i = 0; i < 10; i++) {
-            (ctx.newVer[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked(seedPrefix, "-ver", i))
-            );
+            (ctx.newVer[i],) = _generateKeyPair(keccak256(abi.encodePacked(seedPrefix, "-ver", i)));
         }
     }
 
@@ -57,31 +45,13 @@ contract WOTSPlusImplementation_ownershipLifecycle is WOTSPlusImplementationTest
         WOTSPlus.WinternitzAddress memory curOwnership,
         bytes32 curOwnershipPriv
     ) internal view returns (bytes memory) {
-        bytes32 keysHash = keccak256(
-            abi.encode(ctx.newDisaster, ctx.newTxn, ctx.newRec, ctx.newVer)
+        bytes32 keysHash = keccak256(abi.encode(ctx.newDisaster, ctx.newTxn, ctx.newRec, ctx.newVer));
+        bytes32 msgHash =
+            _buildTransferOwnershipMessageHash(address(wallet), curOwnership, ctx.nextOwnership, newOwner, keysHash);
+        WOTSPlus.WinternitzElements memory sig = _sign(curOwnershipPriv, msgHash);
+        return Codec.encodeOwnershipTransfer(
+            curOwnership, ctx.nextOwnership, sig, newOwner, ctx.newDisaster, ctx.newTxn, ctx.newRec, ctx.newVer
         );
-        bytes32 msgHash = _buildTransferOwnershipMessageHash(
-            address(wallet),
-            curOwnership,
-            ctx.nextOwnership,
-            newOwner,
-            keysHash
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            curOwnershipPriv,
-            msgHash
-        );
-        return
-            Codec.encodeOwnershipTransfer(
-                curOwnership,
-                ctx.nextOwnership,
-                sig,
-                newOwner,
-                ctx.newDisaster,
-                ctx.newTxn,
-                ctx.newRec,
-                ctx.newVer
-            );
     }
 
     /// @dev Full ownership lifecycle: operate → transfer → new owner operates.
@@ -91,29 +61,13 @@ contract WOTSPlusImplementation_ownershipLifecycle is WOTSPlusImplementationTest
 
         // Step 1: ALICE operates the wallet normally
         {
-            (
-                WOTSPlus.WinternitzAddress memory nextPq,
-                bytes32 nextPriv
-            ) = _generateKeyPair("pre-transfer-key");
+            (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) = _generateKeyPair("pre-transfer-key");
             uint256 fee = wallet.getExecuteFee();
-            bytes32 msgHash = _buildExecuteMessageHash(
-                address(wallet),
-                currentPq,
-                nextPq,
-                BOB,
-                0.05 ether,
-                "",
-                fee
-            );
-            WOTSPlus.WinternitzElements memory sig = _sign(
-                currentPrivKey,
-                msgHash
-            );
+            bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, nextPq, BOB, 0.05 ether, "", fee);
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
             vm.prank(ALICE);
-            wallet.execute(
-                Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.05 ether, "")
-            );
+            wallet.execute(Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.05 ether, ""));
 
             currentPq = nextPq;
             currentPrivKey = nextPriv;
@@ -121,16 +75,9 @@ contract WOTSPlusImplementation_ownershipLifecycle is WOTSPlusImplementationTest
 
         // Step 2: ALICE directly transfers ownership to BOB via transferOwnership(bytes).
         //   Full re-init semantics — the new owner gets a fresh batch of PQ keys.
-        OwnershipPayloadCtx memory directCtx = _deriveOwnershipKeys(
-            "lifecycle-direct"
-        );
+        OwnershipPayloadCtx memory directCtx = _deriveOwnershipKeys("lifecycle-direct");
         {
-            bytes memory payload = _encodeOwnershipPayload(
-                directCtx,
-                BOB,
-                ownershipPubkey,
-                ownershipPrivateKey
-            );
+            bytes memory payload = _encodeOwnershipPayload(directCtx, BOB, ownershipPubkey, ownershipPrivateKey);
             vm.prank(ALICE);
             wallet.transferOwnership(payload);
         }
@@ -142,56 +89,26 @@ contract WOTSPlusImplementation_ownershipLifecycle is WOTSPlusImplementationTest
         {
             currentPq = directCtx.newTxn[0];
             currentPrivKey = directCtx.newTxnPrivs[0];
-            (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-                "bob-exec-key"
-            );
+            (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("bob-exec-key");
             uint256 fee = wallet.getExecuteFee();
-            bytes32 msgHash = _buildExecuteMessageHash(
-                address(wallet),
-                currentPq,
-                nextPq,
-                BOB,
-                0.01 ether,
-                "",
-                fee
-            );
-            WOTSPlus.WinternitzElements memory sig = _sign(
-                currentPrivKey,
-                msgHash
-            );
+            bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, nextPq, BOB, 0.01 ether, "", fee);
+            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
 
             uint256 bobBal = BOB.balance;
             vm.prank(BOB);
-            wallet.execute(
-                Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.01 ether, "")
-            );
+            wallet.execute(Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.01 ether, ""));
             assertEq(BOB.balance, bobBal + 0.01 ether);
         }
 
         // Step 5: ALICE is locked out — cannot call owner-gated functions
         {
-            (WOTSPlus.WinternitzAddress memory dummyPq, ) = _generateKeyPair(
-                "alice-locked-out"
-            );
+            (WOTSPlus.WinternitzAddress memory dummyPq,) = _generateKeyPair("alice-locked-out");
             // Use a dummy signature; we expect Unauthorized before sig check
-            WOTSPlus.WinternitzElements memory dummySig = _sign(
-                currentPrivKey,
-                bytes32(0)
-            );
+            WOTSPlus.WinternitzElements memory dummySig = _sign(currentPrivKey, bytes32(0));
 
             vm.prank(ALICE);
             vm.expectRevert(SoladyOwnable.Unauthorized.selector);
-            wallet.execute(
-                Codec.encodeExecute(
-                    alicePubkey,
-                    dummyPq,
-                    dummySig,
-                    BOB,
-                    0,
-                    ""
-                )
-            );
+            wallet.execute(Codec.encodeExecute(alicePubkey, dummyPq, dummySig, BOB, 0, ""));
         }
     }
-
 }

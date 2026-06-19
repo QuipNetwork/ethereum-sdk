@@ -5,58 +5,29 @@ import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__encodeRecoveryUpgrade is WOTSPlusCodecTest {
-    function test_exposed_encodeRecoveryUpgrade_producesCorrectLength()
-        public
-        view
-    {
-        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(1)),
-            bytes32(uint256(2))
-        );
-        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(3)),
-            bytes32(uint256(4))
-        );
-        WOTSPlus.WinternitzAddress memory verifier = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(5)),
-            bytes32(uint256(6))
-        );
+    function test_exposed_encodeRecoveryUpgrade_producesCorrectLength() public view {
+        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(bytes32(uint256(1)), bytes32(uint256(2)));
+        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(bytes32(uint256(3)), bytes32(uint256(4)));
+        WOTSPlus.WinternitzAddress memory verifier =
+            WOTSPlus.WinternitzAddress(bytes32(uint256(5)), bytes32(uint256(6)));
         WOTSPlus.WinternitzElements memory pqSig;
         WOTSPlus.WinternitzElements memory verifySig;
-        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(
-            cur,
-            nxt,
-            pqSig,
-            verifier,
-            verifySig
-        );
+        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(cur, nxt, pqSig, verifier, verifySig);
         assertEq(encoded.length, 4480);
     }
 
     function test_exposed_encodeRecoveryUpgrade_roundtripsAuth() public view {
-        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(10)),
-            bytes32(uint256(11))
-        );
-        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(12)),
-            bytes32(uint256(13))
-        );
+        WOTSPlus.WinternitzAddress memory cur = WOTSPlus.WinternitzAddress(bytes32(uint256(10)), bytes32(uint256(11)));
+        WOTSPlus.WinternitzAddress memory nxt = WOTSPlus.WinternitzAddress(bytes32(uint256(12)), bytes32(uint256(13)));
         WOTSPlus.WinternitzElements memory pqSig;
-        for (uint256 i = 0; i < 67; i++) pqSig.elements[i] = bytes32(i + 200);
-        WOTSPlus.WinternitzAddress memory verifier = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(20)),
-            bytes32(uint256(21))
-        );
+        for (uint256 i = 0; i < 67; i++) {
+            pqSig.elements[i] = bytes32(i + 200);
+        }
+        WOTSPlus.WinternitzAddress memory verifier =
+            WOTSPlus.WinternitzAddress(bytes32(uint256(20)), bytes32(uint256(21)));
         WOTSPlus.WinternitzElements memory verifySig;
 
-        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(
-            cur,
-            nxt,
-            pqSig,
-            verifier,
-            verifySig
-        );
+        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(cur, nxt, pqSig, verifier, verifySig);
         (
             WOTSPlus.WinternitzAddress memory dCur,
             WOTSPlus.WinternitzAddress memory dNxt,
@@ -72,31 +43,19 @@ contract WOTSPlusCodec__encodeRecoveryUpgrade is WOTSPlusCodecTest {
         }
     }
 
-    function test_exposed_encodeRecoveryUpgrade_roundtripsVerification()
-        public
-        view
-    {
+    function test_exposed_encodeRecoveryUpgrade_roundtripsVerification() public view {
         WOTSPlus.WinternitzAddress memory zero;
         WOTSPlus.WinternitzElements memory pqSig;
-        WOTSPlus.WinternitzAddress memory verifier = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(77)),
-            bytes32(uint256(78))
-        );
+        WOTSPlus.WinternitzAddress memory verifier =
+            WOTSPlus.WinternitzAddress(bytes32(uint256(77)), bytes32(uint256(78)));
         WOTSPlus.WinternitzElements memory verifySig;
-        for (uint256 i = 0; i < 67; i++)
+        for (uint256 i = 0; i < 67; i++) {
             verifySig.elements[i] = bytes32(i + 900);
+        }
 
-        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(
-            zero,
-            zero,
-            pqSig,
-            verifier,
-            verifySig
-        );
-        (
-            WOTSPlus.WinternitzAddress memory dVerifier,
-            WOTSPlus.WinternitzElements memory dVerifySig
-        ) = codec.exposed_decodeRecoveryUpgradeVerification(encoded);
+        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(zero, zero, pqSig, verifier, verifySig);
+        (WOTSPlus.WinternitzAddress memory dVerifier, WOTSPlus.WinternitzElements memory dVerifySig) =
+            codec.exposed_decodeRecoveryUpgradeVerification(encoded);
 
         assertEq(dVerifier.publicSeed, verifier.publicSeed);
         assertEq(dVerifier.publicKeyHash, verifier.publicKeyHash);
@@ -110,22 +69,14 @@ contract WOTSPlusCodec__encodeRecoveryUpgrade is WOTSPlusCodecTest {
     ///      The auth and verification decoders share the same payload but
     ///      consume different offsets, so we verify both decoders see the
     ///      same encoder output.
-    function testFuzz_exposed_encodeRecoveryUpgrade_roundtrips(
-        bytes32 seed
-    ) public view {
+    function testFuzz_exposed_encodeRecoveryUpgrade_roundtrips(bytes32 seed) public view {
         WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
         WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
         WOTSPlus.WinternitzElements memory pqSig = _fuzzWinternitzElements(seed);
         WOTSPlus.WinternitzAddress memory verifier = _fuzzWinternitzAddress(seed, 2);
         WOTSPlus.WinternitzElements memory verifySig = _fuzzWinternitzElementsAlt(seed);
 
-        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(
-            cur,
-            nxt,
-            pqSig,
-            verifier,
-            verifySig
-        );
+        bytes memory encoded = codec.exposed_encodeRecoveryUpgrade(cur, nxt, pqSig, verifier, verifySig);
         assertEq(encoded.length, 4480);
 
         (
@@ -142,10 +93,8 @@ contract WOTSPlusCodec__encodeRecoveryUpgrade is WOTSPlusCodecTest {
             assertEq(dPqSig.elements[i], pqSig.elements[i]);
         }
 
-        (
-            WOTSPlus.WinternitzAddress memory dVerifier,
-            WOTSPlus.WinternitzElements memory dVerifySig
-        ) = codec.exposed_decodeRecoveryUpgradeVerification(encoded);
+        (WOTSPlus.WinternitzAddress memory dVerifier, WOTSPlus.WinternitzElements memory dVerifySig) =
+            codec.exposed_decodeRecoveryUpgradeVerification(encoded);
 
         assertEq(dVerifier.publicSeed, verifier.publicSeed);
         assertEq(dVerifier.publicKeyHash, verifier.publicKeyHash);

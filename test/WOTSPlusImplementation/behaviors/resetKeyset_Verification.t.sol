@@ -17,17 +17,15 @@ contract WOTSPlusImplementation_resetKeyset_Verification is WOTSPlusImplementati
     function setUp() public override {
         super.setUp();
 
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
         bytes memory payload = _encodeInitPayload(alicePubkey, recoveryPubkeys);
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("resetKeyset-verif-vault"), payable(ALICE), payload);
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
+            keccak256("resetKeyset-verif-vault"), payable(ALICE), payload
+        );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
@@ -35,20 +33,11 @@ contract WOTSPlusImplementation_resetKeyset_Verification is WOTSPlusImplementati
         // Pre: verification keyset is full at init under the always-10 invariant.
         assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 10);
 
-        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(
-            keccak256("verif-tx-seed")
-        );
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "verif-tx-seed-next"
-        );
+        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(keccak256("verif-tx-seed"));
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("verif-tx-seed-next");
 
         bytes memory payload = _encodeResetKeysetPayload(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            alicePubkey,
-            alicePrivateKey,
-            nextPq,
-            newKeys
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, alicePubkey, alicePrivateKey, nextPq, newKeys
         );
 
         vm.prank(ALICE);
@@ -57,34 +46,21 @@ contract WOTSPlusImplementation_resetKeyset_Verification is WOTSPlusImplementati
         // Post: verification holds exactly the 10 newKeys.
         assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 10);
         for (uint256 i = 0; i < 10; i++) {
-            assertTrue(
-                harnessProxy.isKey(Codec.KeyType.Verification, newKeys[i])
-            );
+            assertTrue(harnessProxy.isKey(Codec.KeyType.Verification, newKeys[i]));
         }
         // Tx signing rotation committed.
         assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, alicePubkey));
         assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, nextPq));
     }
 
-    function test_resetKeyset_Verification_recoverySigned_wholesaleReplaces()
-        public
-    {
+    function test_resetKeyset_Verification_recoverySigned_wholesaleReplaces() public {
         bytes32 recPriv = _recoverySigningKey(alicePrivateKey, 0);
         WOTSPlus.WinternitzAddress memory currentRec = recoveryPubkeys[0];
-        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(
-            keccak256("verif-rec-seed")
-        );
-        (WOTSPlus.WinternitzAddress memory nextRec, ) = _generateKeyPair(
-            "verif-rec-seed-next"
-        );
+        WOTSPlus.WinternitzAddress[10] memory newKeys = _freshKeys10(keccak256("verif-rec-seed"));
+        (WOTSPlus.WinternitzAddress memory nextRec,) = _generateKeyPair("verif-rec-seed-next");
 
         bytes memory payload = _encodeResetKeysetPayload(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Recovery,
-            currentRec,
-            recPriv,
-            nextRec,
-            newKeys
+            Codec.KeyType.Verification, Codec.KeyType.Recovery, currentRec, recPriv, nextRec, newKeys
         );
 
         vm.prank(ALICE);
@@ -98,19 +74,10 @@ contract WOTSPlusImplementation_resetKeyset_Verification is WOTSPlusImplementati
 
     function test_resetKeyset_Verification_canRebuildAfterFirstSeed() public {
         // First seed via tx-signed reset.
-        WOTSPlus.WinternitzAddress[10] memory firstKeys = _freshKeys10(
-            keccak256("verif-rebuild-first")
-        );
-        (WOTSPlus.WinternitzAddress memory firstNext, ) = _generateKeyPair(
-            "verif-rebuild-first-next"
-        );
+        WOTSPlus.WinternitzAddress[10] memory firstKeys = _freshKeys10(keccak256("verif-rebuild-first"));
+        (WOTSPlus.WinternitzAddress memory firstNext,) = _generateKeyPair("verif-rebuild-first-next");
         bytes memory firstPayload = _encodeResetKeysetPayload(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            alicePubkey,
-            alicePrivateKey,
-            firstNext,
-            firstKeys
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, alicePubkey, alicePrivateKey, firstNext, firstKeys
         );
         vm.prank(ALICE);
         harnessProxy.resetKeyset(firstPayload);
@@ -119,31 +86,18 @@ contract WOTSPlusImplementation_resetKeyset_Verification is WOTSPlusImplementati
         // Re-derive private key for firstNext from the same seed used by
         // _generateKeyPair.
         (, bytes32 firstNextPriv) = _generateKeyPair("verif-rebuild-first-next");
-        WOTSPlus.WinternitzAddress[10] memory secondKeys = _freshKeys10(
-            keccak256("verif-rebuild-second")
-        );
-        (WOTSPlus.WinternitzAddress memory secondNext, ) = _generateKeyPair(
-            "verif-rebuild-second-next"
-        );
+        WOTSPlus.WinternitzAddress[10] memory secondKeys = _freshKeys10(keccak256("verif-rebuild-second"));
+        (WOTSPlus.WinternitzAddress memory secondNext,) = _generateKeyPair("verif-rebuild-second-next");
         bytes memory secondPayload = _encodeResetKeysetPayload(
-            Codec.KeyType.Verification,
-            Codec.KeyType.Transaction,
-            firstNext,
-            firstNextPriv,
-            secondNext,
-            secondKeys
+            Codec.KeyType.Verification, Codec.KeyType.Transaction, firstNext, firstNextPriv, secondNext, secondKeys
         );
         vm.prank(ALICE);
         harnessProxy.resetKeyset(secondPayload);
 
         assertEq(harnessProxy.keyCount(Codec.KeyType.Verification), 10);
         for (uint256 i = 0; i < 10; i++) {
-            assertFalse(
-                harnessProxy.isKey(Codec.KeyType.Verification, firstKeys[i])
-            );
-            assertTrue(
-                harnessProxy.isKey(Codec.KeyType.Verification, secondKeys[i])
-            );
+            assertFalse(harnessProxy.isKey(Codec.KeyType.Verification, firstKeys[i]));
+            assertTrue(harnessProxy.isKey(Codec.KeyType.Verification, secondKeys[i]));
         }
     }
 
@@ -151,11 +105,9 @@ contract WOTSPlusImplementation_resetKeyset_Verification is WOTSPlusImplementati
     /*                         HELPERS                              */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function _freshKeys10(
-        bytes32 seed
-    ) internal pure returns (WOTSPlus.WinternitzAddress[10] memory out) {
+    function _freshKeys10(bytes32 seed) internal pure returns (WOTSPlus.WinternitzAddress[10] memory out) {
         for (uint256 i = 0; i < 10; i++) {
-            (out[i], ) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
+            (out[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 
@@ -168,22 +120,9 @@ contract WOTSPlusImplementation_resetKeyset_Verification is WOTSPlusImplementati
         WOTSPlus.WinternitzAddress[10] memory newKeys
     ) internal view returns (bytes memory) {
         bytes32 digest = _buildResetKeysetMessageHash(
-            kind,
-            signingKind,
-            address(harnessProxy),
-            currentPq,
-            nextPq,
-            newKeys
+            kind, signingKind, address(harnessProxy), currentPq, nextPq, newKeys
         );
         WOTSPlus.WinternitzElements memory sig = _sign(currentPriv, digest);
-        return
-            Codec.encodeResetKeyset(
-                kind,
-                signingKind,
-                currentPq,
-                nextPq,
-                sig,
-                newKeys
-            );
+        return Codec.encodeResetKeyset(kind, signingKind, currentPq, nextPq, sig, newKeys);
     }
 }

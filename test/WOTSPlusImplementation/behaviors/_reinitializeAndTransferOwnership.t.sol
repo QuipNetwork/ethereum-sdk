@@ -37,26 +37,20 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
 
     function setUp() public override {
         super.setUp();
-        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(
-            payable(address(factory))
-        );
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(harnessImpl));
 
         (pqOwner, pqOwnerPriv) = _generateKeyPair("h-rein");
         (ownershipPub, ownershipPriv) = _legacyOwnershipKey(pqOwner);
-        (disasterPub, ) = _legacyDisasterKey(pqOwner);
+        (disasterPub,) = _legacyDisasterKey(pqOwner);
 
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pqOwnerPriv,
-            10
-        );
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(pqOwnerPriv, 10);
         bytes memory payload = _encodeInitPayload(pqOwner, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{
-            value: INITIAL_DEPOSIT
-        }(keccak256("h-rein-vault"), payable(ALICE), payload);
+        address proxyAddr =
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-rein-vault"), payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
 
         NEW_OWNER = makeAddr("newOwner");
@@ -64,58 +58,41 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
 
     /*────────────────────────── derivation helpers ──────────────────────────*/
 
-    function _legacyOwnershipKey(
-        WOTSPlus.WinternitzAddress memory pq
-    )
+    function _legacyOwnershipKey(WOTSPlus.WinternitzAddress memory pq)
         internal
         pure
         returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv)
     {
-        bytes32 seed = keccak256(
-            abi.encodePacked(pq.publicSeed, pq.publicKeyHash, "ownership-legacy")
-        );
+        bytes32 seed = keccak256(abi.encodePacked(pq.publicSeed, pq.publicKeyHash, "ownership-legacy"));
         (pub, priv) = WOTSPlus.generateKeyPair(seed);
     }
 
-    function _legacyDisasterKey(
-        WOTSPlus.WinternitzAddress memory pq
-    )
+    function _legacyDisasterKey(WOTSPlus.WinternitzAddress memory pq)
         internal
         pure
         returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv)
     {
-        bytes32 seed = keccak256(
-            abi.encodePacked(pq.publicSeed, pq.publicKeyHash, "disaster-legacy")
-        );
+        bytes32 seed = keccak256(abi.encodePacked(pq.publicSeed, pq.publicKeyHash, "disaster-legacy"));
         (pub, priv) = WOTSPlus.generateKeyPair(seed);
     }
 
     function _freshCtx() internal view returns (Ctx memory c) {
         c.newOwner = NEW_OWNER;
-        (c.newOwnership, ) = _generateKeyPair("h-rein-newown");
-        (c.newDisaster, ) = _generateKeyPair("h-rein-newdisaster");
+        (c.newOwnership,) = _generateKeyPair("h-rein-newown");
+        (c.newDisaster,) = _generateKeyPair("h-rein-newdisaster");
         for (uint256 i; i < 10; i++) {
-            (c.newTxn[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked("h-rein-newtxn", i))
-            );
+            (c.newTxn[i],) = _generateKeyPair(keccak256(abi.encodePacked("h-rein-newtxn", i)));
         }
         for (uint256 i; i < 10; i++) {
-            (c.newRec[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked("h-rein-newrec", i))
-            );
+            (c.newRec[i],) = _generateKeyPair(keccak256(abi.encodePacked("h-rein-newrec", i)));
         }
         for (uint256 i; i < 10; i++) {
-            (c.newVer[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked("h-rein-newver", i))
-            );
+            (c.newVer[i],) = _generateKeyPair(keccak256(abi.encodePacked("h-rein-newver", i)));
         }
     }
 
     function _keysHash(Ctx memory c) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                abi.encode(c.newDisaster, c.newTxn, c.newRec, c.newVer)
-            );
+        return EfficientHashLib.hash(abi.encode(c.newDisaster, c.newTxn, c.newRec, c.newVer));
     }
 
     function _digest(
@@ -124,17 +101,16 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         WOTSPlus.WinternitzAddress memory newOwnership
     ) internal view returns (bytes32) {
         bytes32 kh = _keysHash(c);
-        return
-            Codec.transferOwnershipDigest(
-                address(harnessProxy),
-                block.chainid,
-                current.publicSeed,
-                current.publicKeyHash,
-                newOwnership.publicSeed,
-                newOwnership.publicKeyHash,
-                c.newOwner,
-                kh
-            );
+        return Codec.transferOwnershipDigest(
+            address(harnessProxy),
+            block.chainid,
+            current.publicSeed,
+            current.publicKeyHash,
+            newOwnership.publicSeed,
+            newOwnership.publicKeyHash,
+            c.newOwner,
+            kh
+        );
     }
 
     function _encodeWithSig(
@@ -142,22 +118,12 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         WOTSPlus.WinternitzAddress memory current,
         WOTSPlus.WinternitzElements memory sig
     ) internal pure returns (bytes memory) {
-        return
-            Codec.encodeOwnershipTransfer(
-                current,
-                c.newOwnership,
-                sig,
-                c.newOwner,
-                c.newDisaster,
-                c.newTxn,
-                c.newRec,
-                c.newVer
-            );
+        return Codec.encodeOwnershipTransfer(
+            current, c.newOwnership, sig, c.newOwner, c.newDisaster, c.newTxn, c.newRec, c.newVer
+        );
     }
 
-    function _encodeTransfer(
-        Ctx memory c
-    ) internal view returns (bytes memory) {
+    function _encodeTransfer(Ctx memory c) internal view returns (bytes memory) {
         bytes32 d = _digest(c, ownershipPub, c.newOwnership);
         WOTSPlus.WinternitzElements memory sig = _sign(ownershipPriv, d);
         return _encodeWithSig(c, ownershipPub, sig);
@@ -165,9 +131,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
 
     /*──────────────────────────── happy paths ────────────────────────────*/
 
-    function test_exposed_reinitializeAndTransferOwnership_transferFlow()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_transferFlow() public {
         Ctx memory c = _freshCtx();
         bytes memory payload = _encodeTransfer(c);
 
@@ -183,9 +147,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         assertTrue(harnessProxy.isKey(Codec.KeyType.Verification, c.newVer[0]));
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_emitsEvent()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_emitsEvent() public {
         Ctx memory c = _freshCtx();
         bytes memory payload = _encodeTransfer(c);
 
@@ -207,9 +169,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
 
     /*──────────────────────────── reverts ────────────────────────────*/
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_zeroAddressOwner()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_zeroAddressOwner() public {
         Ctx memory c = _freshCtx();
         c.newOwner = address(0);
         bytes memory payload = _encodeTransfer(c);
@@ -219,14 +179,9 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_currentOwnershipKeyMismatch()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_currentOwnershipKeyMismatch() public {
         Ctx memory c = _freshCtx();
-        (
-            WOTSPlus.WinternitzAddress memory stray,
-            bytes32 strayPriv
-        ) = _generateKeyPair("h-rein-stray");
+        (WOTSPlus.WinternitzAddress memory stray, bytes32 strayPriv) = _generateKeyPair("h-rein-stray");
 
         // Sign a valid digest for `stray` (so we exercise only the mismatch gate).
         bytes32 d = _digest(c, stray, c.newOwnership);
@@ -238,14 +193,9 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newOwnershipKeyZero()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newOwnershipKeyZero() public {
         Ctx memory c = _freshCtx();
-        c.newOwnership = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(0)
-        });
+        c.newOwnership = WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)});
         bytes memory payload = _encodeTransfer(c);
 
         vm.expectRevert(IWOTSPlusImplementation.UnknownOwnershipKey.selector);
@@ -253,9 +203,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newOwnershipEqualsCurrent()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newOwnershipEqualsCurrent() public {
         Ctx memory c = _freshCtx();
         c.newOwnership = ownershipPub;
         bytes memory payload = _encodeTransfer(c);
@@ -265,14 +213,9 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newDisasterKeyZero()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_newDisasterKeyZero() public {
         Ctx memory c = _freshCtx();
-        c.newDisaster = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(0)
-        });
+        c.newDisaster = WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)});
         bytes memory payload = _encodeTransfer(c);
 
         vm.expectRevert(IWOTSPlusImplementation.UnknownDisasterRecoveryKey.selector);
@@ -280,15 +223,10 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_signatureInvalid()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_signatureInvalid() public {
         Ctx memory c = _freshCtx();
         // Sign the wrong digest so verification fails.
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            ownershipPriv,
-            keccak256("not-the-digest")
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(ownershipPriv, keccak256("not-the-digest"));
         bytes memory payload = _encodeWithSig(c, ownershipPub, sig);
 
         vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
@@ -296,9 +234,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_txnKeyDuplicate()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_txnKeyDuplicate() public {
         Ctx memory c = _freshCtx();
         c.newTxn[3] = c.newTxn[0]; // collide two transaction-key entries
         bytes memory payload = _encodeTransfer(c);
@@ -308,9 +244,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
 
-    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_recoveryKeyDuplicate()
-        public
-    {
+    function test_exposed_reinitializeAndTransferOwnership_revertsWhen_recoveryKeyDuplicate() public {
         Ctx memory c = _freshCtx();
         c.newRec[5] = c.newRec[0]; // collide two recovery-key entries
         bytes memory payload = _encodeTransfer(c);
@@ -319,5 +253,4 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         vm.prank(ALICE);
         harnessProxy.exposed_reinitializeAndTransferOwnership(payload);
     }
-
 }

@@ -9,7 +9,7 @@ contract QuipFactory_receive is QuipFactoryTest {
         uint256 sendAmount = 1 ether;
 
         vm.prank(ALICE);
-        (bool success, ) = address(factory).call{value: sendAmount}("");
+        (bool success,) = address(factory).call{value: sendAmount}("");
         assertTrue(success);
 
         assertEq(address(factory).balance, balanceBefore + sendAmount);
@@ -19,7 +19,7 @@ contract QuipFactory_receive is QuipFactoryTest {
         uint256 balanceBefore = address(factory).balance;
 
         vm.prank(ALICE);
-        (bool success, ) = address(factory).call{value: 0}("");
+        (bool success,) = address(factory).call{value: 0}("");
         assertTrue(success);
 
         assertEq(address(factory).balance, balanceBefore);

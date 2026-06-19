@@ -28,19 +28,11 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
     function setUp() public override {
         super.setUp();
         (disasterPub, disasterPriv) = _generateDisasterRecoveryKey(VAULT_SEED);
-        (nextDisasterPub, nextDisasterPriv) = _generateKeyPair(
-            keccak256(abi.encodePacked(VAULT_SEED, "next-disaster"))
-        );
+        (nextDisasterPub, nextDisasterPriv) = _generateKeyPair(keccak256(abi.encodePacked(VAULT_SEED, "next-disaster")));
         for (uint256 i = 0; i < 10; i++) {
-            (freshTxn[i], freshTxnPrivs[i]) = _generateKeyPair(
-                keccak256(abi.encodePacked(VAULT_SEED, "fresh-txn", i))
-            );
-            (freshRec[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked(VAULT_SEED, "fresh-rec", i))
-            );
-            (freshVer[i], ) = _generateKeyPair(
-                keccak256(abi.encodePacked(VAULT_SEED, "fresh-ver", i))
-            );
+            (freshTxn[i], freshTxnPrivs[i]) = _generateKeyPair(keccak256(abi.encodePacked(VAULT_SEED, "fresh-txn", i)));
+            (freshRec[i],) = _generateKeyPair(keccak256(abi.encodePacked(VAULT_SEED, "fresh-rec", i)));
+            (freshVer[i],) = _generateKeyPair(keccak256(abi.encodePacked(VAULT_SEED, "fresh-ver", i)));
         }
     }
 
@@ -56,15 +48,7 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
             keysHash
         );
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
-        return
-            Codec.encodeSaveWallet(
-                disasterPub,
-                nextDisasterPub,
-                sig,
-                freshTxn,
-                freshRec,
-                freshVer
-            );
+        return Codec.encodeSaveWallet(disasterPub, nextDisasterPub, sig, freshTxn, freshRec, freshVer);
     }
 
     /// @dev Precondition: original PQ keysets populated as set up by factory.
@@ -97,13 +81,9 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
         assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
         assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
         for (uint256 i = 0; i < 10; i++) {
-            assertFalse(
-                wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i])
-            );
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i]));
             assertTrue(wallet.isKey(Codec.KeyType.Transaction, freshTxn[i]));
-            assertFalse(
-                wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i])
-            );
+            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
             assertTrue(wallet.isKey(Codec.KeyType.Recovery, freshRec[i]));
             assertTrue(wallet.isKey(Codec.KeyType.Verification, freshVer[i]));
         }
@@ -122,37 +102,14 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
 
         // Step 4: Resume operation with one of the freshly installed txn keys.
         {
-            (
-                WOTSPlus.WinternitzAddress memory nextPq,
-
-            ) = _generateKeyPair("disaster-recovery-post-exec");
+            (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("disaster-recovery-post-exec");
             uint256 fee = wallet.getExecuteFee();
-            bytes32 execHash = _buildExecuteMessageHash(
-                address(wallet),
-                freshTxn[0],
-                nextPq,
-                BOB,
-                0.05 ether,
-                "",
-                fee
-            );
-            WOTSPlus.WinternitzElements memory execSig = _sign(
-                freshTxnPrivs[0],
-                execHash
-            );
+            bytes32 execHash = _buildExecuteMessageHash(address(wallet), freshTxn[0], nextPq, BOB, 0.05 ether, "", fee);
+            WOTSPlus.WinternitzElements memory execSig = _sign(freshTxnPrivs[0], execHash);
 
             uint256 bobBal = BOB.balance;
             vm.prank(ALICE);
-            wallet.execute(
-                Codec.encodeExecute(
-                    freshTxn[0],
-                    nextPq,
-                    execSig,
-                    BOB,
-                    0.05 ether,
-                    ""
-                )
-            );
+            wallet.execute(Codec.encodeExecute(freshTxn[0], nextPq, execSig, BOB, 0.05 ether, ""));
             assertEq(BOB.balance, bobBal + 0.05 ether);
             assertFalse(wallet.isKey(Codec.KeyType.Transaction, freshTxn[0]));
             assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
@@ -166,13 +123,9 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
             bytes32 freshRecPriv = _freshRecoveryPriv(0);
             WOTSPlus.WinternitzAddress[10] memory postRecoveryTx10;
             for (uint256 i = 0; i < 10; i++) {
-                (postRecoveryTx10[i], ) = _generateKeyPair(
-                    keccak256(abi.encodePacked("disaster-post-recovery-tx", i))
-                );
+                (postRecoveryTx10[i],) = _generateKeyPair(keccak256(abi.encodePacked("disaster-post-recovery-tx", i)));
             }
-            (
-                WOTSPlus.WinternitzAddress memory postRecoveryRk,
-            ) = _generateKeyPair("disaster-post-recovery-rk");
+            (WOTSPlus.WinternitzAddress memory postRecoveryRk,) = _generateKeyPair("disaster-post-recovery-rk");
 
             bytes32 recHash = _buildResetKeysetMessageHash(
                 Codec.KeyType.Transaction,
@@ -182,10 +135,7 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
                 postRecoveryRk,
                 postRecoveryTx10
             );
-            WOTSPlus.WinternitzElements memory recSig = _sign(
-                freshRecPriv,
-                recHash
-            );
+            WOTSPlus.WinternitzElements memory recSig = _sign(freshRecPriv, recHash);
 
             vm.prank(ALICE);
             wallet.resetKeyset(
@@ -202,9 +152,7 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
             // resetKeyset clears the txn set and installs the 10 fresh keys.
             assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
             for (uint256 i = 0; i < 10; i++) {
-                assertTrue(
-                    wallet.isKey(Codec.KeyType.Transaction, postRecoveryTx10[i])
-                );
+                assertTrue(wallet.isKey(Codec.KeyType.Transaction, postRecoveryTx10[i]));
             }
             // Consumed recovery key rotated in-place: original gone, replacement
             // installed, pool size preserved at 10.
@@ -216,9 +164,7 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
 
     /// @dev Mirrors the per-index derivation used by the setUp loop.
     function _freshRecoveryPriv(uint256 i) internal view returns (bytes32) {
-        (, bytes32 priv) = WOTSPlus.generateKeyPair(
-            keccak256(abi.encodePacked(VAULT_SEED, "fresh-rec", i))
-        );
+        (, bytes32 priv) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(VAULT_SEED, "fresh-rec", i)));
         return priv;
     }
 }

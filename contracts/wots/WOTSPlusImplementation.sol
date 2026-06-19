@@ -30,12 +30,14 @@ import {IQuipFactory} from "../interfaces/IQuipFactory.sol";
 import {WOTSPlusCodec as Codec} from "./WOTSPlusCodec.sol";
 import {WOTSPlusStorage as Storage} from "./WOTSPlusStorage.sol";
 // prettier-ignore
-import {
-    EnumerableWinternitzAddressSet as Keyset
-} from "./EnumerableWinternitzAddressSet.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from "./EnumerableWinternitzAddressSet.sol";
 
 /// @title WOTSPlusImplementation
-contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializable {
+contract WOTSPlusImplementation is
+    IWOTSPlusImplementation,
+    ERC4337,
+    Initializable
+{
     using Keyset for Keyset.WinternitzAddressSet;
 
     /// @dev Per-keyset capacity bound. Every keyset (`transactionKeys`,
@@ -158,9 +160,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
             );
             return 1;
         }
-        // Global uniqueness check: `_safeAddKey` would revert on  but ERC-4337 
-        /// validation must report failure via `validationData == 1` rather than revert. 
-        /// Catching the collision here keeps the EntryPoint's nonce / refund accounting 
+        // Global uniqueness check: `_safeAddKey` would revert on  but ERC-4337
+        /// validation must report failure via `validationData == 1` rather than revert.
+        /// Catching the collision here keeps the EntryPoint's nonce / refund accounting
         /// clean.
         if (_isKeySpent(nextKey)) {
             emit UserOpValidationRejected(
@@ -414,14 +416,21 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
-    ) public payable override(IWOTSPlusImplementation, UUPSUpgradeable) onlyOwner {
+    )
+        public
+        payable
+        override(IWOTSPlusImplementation, UUPSUpgradeable)
+        onlyOwner
+    {
         // Vet implementation locally BEFORE any delegatecall.
         bytes32 implCodehash = newImplementation.codehash;
         IQuipFactory factory = IQuipFactory(FACTORY);
-        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
+        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max) {
             revert ImplementationNotVetted();
-        if (factory.deprecatedImpls(implCodehash))
+        }
+        if (factory.deprecatedImpls(implCodehash)) {
             revert ImplementationDeprecated();
+        }
 
         (
             WOTSPlus.WinternitzAddress calldata currentKey,
@@ -641,7 +650,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
         if (
             newDisasterKey.publicSeed == bytes32(0) ||
             newDisasterKey.publicKeyHash == bytes32(0)
-        ) revert UnknownDisasterRecoveryKey();
+        ) {
+            revert UnknownDisasterRecoveryKey();
+        }
         _enforceUnspentKey(newDisasterKey);
 
         bytes32 keysHash = EfficientHashLib.hash(
@@ -663,7 +674,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
                 WOTSPlus.WinternitzMessage({messageHash: digest}),
                 pqSig
             )
-        ) revert InvalidSignature();
+        ) {
+            revert InvalidSignature();
+        }
 
         // Consume the disaster key first, then reset all three keysets.
         _setDisasterRecoveryKey(newDisasterKey);
@@ -694,7 +707,7 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
     ///      signature from `signingKind` (tx or recovery). Codec asserts
     ///      payload structural integrity: `payload.length == 2368 + 2*n*64`
     ///      and `oldKeys.length == newKeys.length == n`. The function
-    ///      re-asserts the array lengths as belt-and-suspenders. 
+    ///      re-asserts the array lengths as belt-and-suspenders.
     ///      *********************************************************
     ///      IF CODEC IS EDITED, THEN TRAILING BYTES MAY BE ADDED TO THE
     ///      PAYLOAD
@@ -711,13 +724,15 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
             WOTSPlus.WinternitzAddress[] calldata newKeys
         ) = Codec.decodeReplaceKeys(payload);
 
-        // Re-assertion so future codec refactor that drops 
+        // Re-assertion so future codec refactor that drops
         // the check fails loudly here.
-        if (oldKeys.length != n || newKeys.length != n)
+        if (oldKeys.length != n || newKeys.length != n) {
             revert MalformedPayload();
+        }
 
-        if (signingKind == Codec.KeyType.Verification)
+        if (signingKind == Codec.KeyType.Verification) {
             revert InvalidSigningKeyset();
+        }
         if (n == 0) revert EmptyKeys();
 
         // SECURITY — CEI. The signing rotation IS the Effect that prevents
@@ -791,8 +806,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
             WOTSPlus.WinternitzAddress[10] calldata newKeys
         ) = Codec.decodeResetKeyset(payload);
 
-        if (signingKind == Codec.KeyType.Verification)
+        if (signingKind == Codec.KeyType.Verification) {
             revert InvalidSigningKeyset();
+        }
 
         // SECURITY — CEI. The signing rotation IS the Effect that prevents
         // signed-payload replay: `_verifyAndRotate` removes `currentKey` from
@@ -842,10 +858,12 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
         // Vet implementation locally BEFORE any delegatecall.
         bytes32 implCodehash = newImplementation.codehash;
         IQuipFactory factory = IQuipFactory(FACTORY);
-        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max)
+        if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max) {
             revert ImplementationNotVetted();
-        if (factory.deprecatedImpls(implCodehash))
+        }
+        if (factory.deprecatedImpls(implCodehash)) {
             revert ImplementationDeprecated();
+        }
         (
             WOTSPlus.WinternitzAddress calldata currentRecoveryKey,
             WOTSPlus.WinternitzAddress calldata newRecoveryKey,
@@ -1217,7 +1235,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
                 WOTSPlus.WinternitzMessage({messageHash: digest}),
                 pqSig
             )
-        ) revert InvalidSignature();
+        ) {
+            revert InvalidSignature();
+        }
         _rotateKeys(set, currentKey, nextKey);
     }
 
@@ -1300,8 +1320,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
     function _isKeySpent(
         WOTSPlus.WinternitzAddress memory key
     ) internal view returns (bool) {
-        if (key.publicSeed == bytes32(0) || key.publicKeyHash == bytes32(0))
+        if (key.publicSeed == bytes32(0) || key.publicKeyHash == bytes32(0)) {
             return false;
+        }
         return Storage.layout().isKeySpent[_keyHash(key)];
     }
 
@@ -1319,18 +1340,14 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
     ///      Called by every install path (`_safeAddKey`, `_setOwnershipKey`,
     ///      `_setDisasterRecoveryKey`). Never paired with a clearing operation —
     ///      removal from a live slot does NOT remove the burn flag.
-    function _markKeySpent(
-        WOTSPlus.WinternitzAddress memory key
-    ) internal {
+    function _markKeySpent(WOTSPlus.WinternitzAddress memory key) internal {
         Storage.layout().isKeySpent[_keyHash(key)] = true;
     }
 
     /// @dev Writes `key` to the wallet's ownership slot AND burns it in the
     ///      monotonic index. Single chokepoint for ownershipKey assignment so
     ///      no install site can forget to mark the key spent.
-    function _setOwnershipKey(
-        WOTSPlus.WinternitzAddress memory key
-    ) internal {
+    function _setOwnershipKey(WOTSPlus.WinternitzAddress memory key) internal {
         Storage.layout().ownershipKey = key;
         _markKeySpent(key);
     }
@@ -1355,8 +1372,11 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
         WOTSPlus.WinternitzAddress memory a,
         WOTSPlus.WinternitzAddress memory b
     ) internal pure {
-        if (a.publicSeed == b.publicSeed && a.publicKeyHash == b.publicKeyHash)
+        if (
+            a.publicSeed == b.publicSeed && a.publicKeyHash == b.publicKeyHash
+        ) {
             revert SameKey();
+        }
     }
 
     /// @dev Wraps `set.add(key, MAX_KEYS)` with a global uniqueness pre-check, a
@@ -1431,7 +1451,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
                 WOTSPlus.WinternitzMessage({messageHash: digest}),
                 verifySig
             )
-        ) revert InvalidSignature();
+        ) {
+            revert InvalidSignature();
+        }
     }
 
     /// @dev Collects the current execute fee from the wallet balance. Shared
@@ -1486,7 +1508,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
         if (
             newOwnershipKey.publicSeed == bytes32(0) ||
             newOwnershipKey.publicKeyHash == bytes32(0)
-        ) revert UnknownOwnershipKey();
+        ) {
+            revert UnknownOwnershipKey();
+        }
         // Auth rotation must be to a fresh key, and the two new singles must
         // be distinct (otherwise the trailing single-key uniqueness checks
         // would still catch it but only after WOTS+ verify).
@@ -1496,7 +1520,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
         if (
             newDisasterKey.publicSeed == bytes32(0) ||
             newDisasterKey.publicKeyHash == bytes32(0)
-        ) revert UnknownDisasterRecoveryKey();
+        ) {
+            revert UnknownDisasterRecoveryKey();
+        }
 
         bytes32 keysHash = EfficientHashLib.hash(
             abi.encode(
@@ -1523,7 +1549,9 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
                 WOTSPlus.WinternitzMessage({messageHash: digest}),
                 pqSig
             )
-        ) revert InvalidSignature();
+        ) {
+            revert InvalidSignature();
+        }
 
         // Rotate ownership key, replace disaster key, wipe keysets, reinstall fresh ones.
         // Each single-key assignment is preceded by `_enforceUnspentKey` so the new
@@ -1616,17 +1644,24 @@ contract WOTSPlusImplementation is IWOTSPlusImplementation, ERC4337, Initializab
         if (
             $.disasterRecoveryKey.publicSeed == bytes32(0) ||
             $.disasterRecoveryKey.publicKeyHash == bytes32(0)
-        ) revert UnknownDisasterRecoveryKey();
+        ) {
+            revert UnknownDisasterRecoveryKey();
+        }
         if (
             $.ownershipKey.publicSeed == bytes32(0) ||
             $.ownershipKey.publicKeyHash == bytes32(0)
-        ) revert UnknownOwnershipKey();
-        if ($.transactionKeys.length() != MAX_KEYS)
+        ) {
+            revert UnknownOwnershipKey();
+        }
+        if ($.transactionKeys.length() != MAX_KEYS) {
             revert IncorrectTransactionKeyAmount();
-        if ($.recoveryKeys.length() != MAX_KEYS)
+        }
+        if ($.recoveryKeys.length() != MAX_KEYS) {
             revert IncorrectRecoveryKeyAmount();
-        if ($.verificationKeys.length() != MAX_KEYS)
+        }
+        if ($.verificationKeys.length() != MAX_KEYS) {
             revert IncorrectVerificationKeyAmount();
+        }
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

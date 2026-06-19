@@ -13,11 +13,7 @@ contract WOTSPlusCodec__encodeUserOpSignature is WOTSPlusCodecTest {
             WOTSPlus.WinternitzElements memory sig
         ) = codec.exposed_decodeUserOpSignature(payload);
 
-        bytes memory encoded = codec.exposed_encodeUserOpSignature(
-            cur,
-            nxt,
-            sig
-        );
+        bytes memory encoded = codec.exposed_encodeUserOpSignature(cur, nxt, sig);
 
         (
             WOTSPlus.WinternitzAddress memory cur2,
@@ -33,38 +29,25 @@ contract WOTSPlusCodec__encodeUserOpSignature is WOTSPlusCodecTest {
         }
     }
 
-    function test_exposed_encodeUserOpSignature_producesCorrectLength()
-        public
-        view
-    {
+    function test_exposed_encodeUserOpSignature_producesCorrectLength() public view {
         bytes memory payload = _buildAuthPrefixPayload(77);
         (
             WOTSPlus.WinternitzAddress memory cur,
             WOTSPlus.WinternitzAddress memory nxt,
             WOTSPlus.WinternitzElements memory sig
         ) = codec.exposed_decodeUserOpSignature(payload);
-        bytes memory encoded = codec.exposed_encodeUserOpSignature(
-            cur,
-            nxt,
-            sig
-        );
+        bytes memory encoded = codec.exposed_encodeUserOpSignature(cur, nxt, sig);
         assertEq(encoded.length, 2272);
     }
 
     /// @dev Property: encode → decode preserves every field for any seed.
     ///      Pins the 2272-byte UserOp signature layout against drift.
-    function testFuzz_exposed_encodeUserOpSignature_roundtrips(
-        bytes32 seed
-    ) public view {
+    function testFuzz_exposed_encodeUserOpSignature_roundtrips(bytes32 seed) public view {
         WOTSPlus.WinternitzAddress memory cur = _fuzzWinternitzAddress(seed, 0);
         WOTSPlus.WinternitzAddress memory nxt = _fuzzWinternitzAddress(seed, 1);
         WOTSPlus.WinternitzElements memory sig = _fuzzWinternitzElements(seed);
 
-        bytes memory encoded = codec.exposed_encodeUserOpSignature(
-            cur,
-            nxt,
-            sig
-        );
+        bytes memory encoded = codec.exposed_encodeUserOpSignature(cur, nxt, sig);
         assertEq(encoded.length, 2272);
 
         (

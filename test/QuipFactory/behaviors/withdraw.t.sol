@@ -16,23 +16,13 @@ contract QuipFactory_withdraw is QuipFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 vaultId = keccak256("Fee Vault");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 privateKey
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            privateKey,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(
-            vaultId,
-            payable(ALICE),
-            payload
-        );
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(vaultId, payable(ALICE), payload);
     }
 
     function test_setUp() public view override {
@@ -97,25 +87,14 @@ contract QuipFactory_withdraw is QuipFactoryTest {
 
     function test_withdraw_revertsWhen_callerNotAdmin() public {
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                ALICE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.withdraw(CREATION_FEE);
     }
 
     function test_withdraw_revertsWhen_insufficientBalance() public {
         uint256 bal = address(factory).balance;
         vm.prank(ADMIN);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IQuipFactory.InsufficientBalance.selector,
-                1000 ether,
-                bal
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IQuipFactory.InsufficientBalance.selector, 1000 ether, bal));
         factory.withdraw(1000 ether);
     }
 }

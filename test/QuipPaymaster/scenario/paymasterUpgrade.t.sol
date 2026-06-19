@@ -43,10 +43,7 @@ contract QuipPaymaster_paymasterUpgrade is QuipPaymasterTest {
         paymaster.deposit{value: 3 ether}();
         assertEq(paymaster.getDeposit(), 3 ether);
 
-        (
-            WOTSPlus.WinternitzAddress memory afterFirst,
-            bytes32 afterFirstPriv
-        ) = _generateKeyPair("pmu-after-first");
+        (WOTSPlus.WinternitzAddress memory afterFirst, bytes32 afterFirstPriv) = _generateKeyPair("pmu-after-first");
         {
             bytes memory data1 = _buildPaymasterAndData(
                 WALLET,
@@ -59,22 +56,13 @@ contract QuipPaymaster_paymasterUpgrade is QuipPaymasterTest {
                 afterFirst
             );
             vm.prank(ENTRY_POINT);
-            paymaster.validatePaymasterUserOp(
-                _mockUserOp(data1),
-                bytes32(0),
-                0
-            );
+            paymaster.validatePaymasterUserOp(_mockUserOp(data1), bytes32(0), 0);
         }
-        assertEq(
-            paymaster.getPqVerifier(WALLET).publicSeed,
-            afterFirst.publicSeed
-        );
+        assertEq(paymaster.getPqVerifier(WALLET).publicSeed, afterFirst.publicSeed);
 
         // Snapshot observable pre-upgrade state.
         address ownerPre = paymaster.owner();
-        WOTSPlus.WinternitzAddress memory verifierPre = paymaster.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory verifierPre = paymaster.getPqVerifier(WALLET);
         uint256 depositPre = paymaster.getDeposit();
 
         // ── Step 2: Deploy a fresh implementation and upgrade ─────────
@@ -84,45 +72,22 @@ contract QuipPaymaster_paymasterUpgrade is QuipPaymasterTest {
 
         // ── Step 3: State survived the upgrade ────────────────────────
         assertEq(paymaster.owner(), ownerPre);
-        assertEq(
-            paymaster.getPqVerifier(WALLET).publicSeed,
-            verifierPre.publicSeed
-        );
-        assertEq(
-            paymaster.getPqVerifier(WALLET).publicKeyHash,
-            verifierPre.publicKeyHash
-        );
+        assertEq(paymaster.getPqVerifier(WALLET).publicSeed, verifierPre.publicSeed);
+        assertEq(paymaster.getPqVerifier(WALLET).publicKeyHash, verifierPre.publicKeyHash);
         assertEq(paymaster.getDeposit(), depositPre);
 
         // ── Step 4: Validation continues working post-upgrade ─────────
         //   Rotate once more using the current verifier (= afterFirst).
-        (
-            WOTSPlus.WinternitzAddress memory afterUpgrade,
-
-        ) = _generateKeyPair("pmu-after-upgrade");
+        (WOTSPlus.WinternitzAddress memory afterUpgrade,) = _generateKeyPair("pmu-after-upgrade");
         bytes memory data2 = _buildPaymasterAndData(
-            WALLET,
-            0,
-            "",
-            uint48(block.timestamp + 1 hours),
-            uint48(0),
-            afterFirst,
-            afterFirstPriv,
-            afterUpgrade
+            WALLET, 0, "", uint48(block.timestamp + 1 hours), uint48(0), afterFirst, afterFirstPriv, afterUpgrade
         );
         vm.prank(ENTRY_POINT);
-        (, uint256 validationData) = paymaster.validatePaymasterUserOp(
-            _mockUserOp(data2),
-            bytes32(0),
-            0
-        );
+        (, uint256 validationData) = paymaster.validatePaymasterUserOp(_mockUserOp(data2), bytes32(0), 0);
 
         // Authorizer == 0 signals validation success.
         assertEq(uint160(validationData), 0);
-        assertEq(
-            paymaster.getPqVerifier(WALLET).publicSeed,
-            afterUpgrade.publicSeed
-        );
+        assertEq(paymaster.getPqVerifier(WALLET).publicSeed, afterUpgrade.publicSeed);
     }
 
     /// @dev Non-owner cannot upgrade even if they've just come off a successful
@@ -139,9 +104,6 @@ contract QuipPaymaster_paymasterUpgrade is QuipPaymasterTest {
 
         // Owner, verifier, and deposit are all intact.
         assertEq(paymaster.owner(), ADMIN);
-        assertEq(
-            paymaster.getPqVerifier(WALLET).publicSeed,
-            verifierPubkey.publicSeed
-        );
+        assertEq(paymaster.getPqVerifier(WALLET).publicSeed, verifierPubkey.publicSeed);
     }
 }

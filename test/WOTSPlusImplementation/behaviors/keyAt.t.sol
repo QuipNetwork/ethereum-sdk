@@ -11,15 +11,12 @@ contract WOTSPlusImplementation_keyAt is WOTSPlusImplementationTest {
     function test_keyAt_transactionReturnsMemberOfInitialKeys() public view {
         uint256 count = wallet.keyCount(Codec.KeyType.Transaction);
         for (uint256 i = 0; i < count; i++) {
-            WOTSPlus.WinternitzAddress memory key = wallet.keyAt(
-                Codec.KeyType.Transaction,
-                i
-            );
+            WOTSPlus.WinternitzAddress memory key = wallet.keyAt(Codec.KeyType.Transaction, i);
             bool matched;
             for (uint256 j = 0; j < aliceTxnPubkeys.length; j++) {
                 if (
-                    aliceTxnPubkeys[j].publicSeed == key.publicSeed &&
-                    aliceTxnPubkeys[j].publicKeyHash == key.publicKeyHash
+                    aliceTxnPubkeys[j].publicSeed == key.publicSeed
+                        && aliceTxnPubkeys[j].publicKeyHash == key.publicKeyHash
                 ) {
                     matched = true;
                     break;
@@ -38,15 +35,12 @@ contract WOTSPlusImplementation_keyAt is WOTSPlusImplementationTest {
     function test_keyAt_recoveryReturnsMemberOfRegisteredKeys() public view {
         uint256 count = wallet.keyCount(Codec.KeyType.Recovery);
         for (uint256 i = 0; i < count; i++) {
-            WOTSPlus.WinternitzAddress memory key = wallet.keyAt(
-                Codec.KeyType.Recovery,
-                i
-            );
+            WOTSPlus.WinternitzAddress memory key = wallet.keyAt(Codec.KeyType.Recovery, i);
             bool matched;
             for (uint256 j = 0; j < recoveryPubkeys.length; j++) {
                 if (
-                    recoveryPubkeys[j].publicSeed == key.publicSeed &&
-                    recoveryPubkeys[j].publicKeyHash == key.publicKeyHash
+                    recoveryPubkeys[j].publicSeed == key.publicSeed
+                        && recoveryPubkeys[j].publicKeyHash == key.publicKeyHash
                 ) {
                     matched = true;
                     break;
@@ -63,23 +57,15 @@ contract WOTSPlusImplementation_keyAt is WOTSPlusImplementationTest {
     }
 
     function test_keyAt_verificationReturnsCorrectPair() public {
-        (WOTSPlus.WinternitzAddress[] memory seeded, ) = _seedVerificationKeys(
-            3
-        );
+        (WOTSPlus.WinternitzAddress[] memory seeded,) = _seedVerificationKeys(3);
 
         for (uint256 i = 0; i < 3; i++) {
-            WOTSPlus.WinternitzAddress memory key = wallet.keyAt(
-                Codec.KeyType.Verification,
-                i
-            );
+            WOTSPlus.WinternitzAddress memory key = wallet.keyAt(Codec.KeyType.Verification, i);
             // The set does not guarantee order, but the key at each index must
             // be a member of the seeded batch.
             bool matched;
             for (uint256 j = 0; j < 3; j++) {
-                if (
-                    seeded[j].publicSeed == key.publicSeed &&
-                    seeded[j].publicKeyHash == key.publicKeyHash
-                ) {
+                if (seeded[j].publicSeed == key.publicSeed && seeded[j].publicKeyHash == key.publicKeyHash) {
                     matched = true;
                     break;
                 }
@@ -96,10 +82,7 @@ contract WOTSPlusImplementation_keyAt is WOTSPlusImplementationTest {
     }
 
     function test_keyAt_verificationReturnsAtInit() public view {
-        WOTSPlus.WinternitzAddress memory key = wallet.keyAt(
-            Codec.KeyType.Verification,
-            0
-        );
+        WOTSPlus.WinternitzAddress memory key = wallet.keyAt(Codec.KeyType.Verification, 0);
         assertTrue(key.publicSeed != bytes32(0));
         assertTrue(key.publicKeyHash != bytes32(0));
     }

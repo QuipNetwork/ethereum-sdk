@@ -30,9 +30,7 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
 
     /// @dev When the only impl is reactivated and `latestWalletImpl` is
     ///      currently zero, undeprecate restores it.
-    function test_undeprecateImplementation_restoresLatestWhenNoneActive()
-        public
-    {
+    function test_undeprecateImplementation_restoresLatestWhenNoneActive() public {
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(walletImplementation));
         assertEq(factory.latestWalletImpl(), address(0));
@@ -45,9 +43,7 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
     /// @dev The bug the in-place `vetImplementation` re-vet missed: deprecate
     ///      the highest-index entry, then undeprecate it. `latestWalletImpl`
     ///      must restore to that entry, not stay at the lower-index fallback.
-    function test_undeprecateImplementation_restoresLatestForLastIndexEntry()
-        public
-    {
+    function test_undeprecateImplementation_restoresLatestForLastIndexEntry() public {
         WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(impl2));
@@ -65,9 +61,7 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
     /// @dev Mirror of the original `reVetDoesNotChangeLatestWhenOneActive`
     ///      coverage: undeprecating a lower-index entry must NOT displace the
     ///      higher-index entry that is already the latest.
-    function test_undeprecateImplementation_doesNotChangeLatestForMiddleIndexEntry()
-        public
-    {
+    function test_undeprecateImplementation_doesNotChangeLatestForMiddleIndexEntry() public {
         WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(impl2));
@@ -90,9 +84,7 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
     ///      fresh address — `EXTCODEHASH` is `keccak256(runtime_code)`, so
     ///      identical bytes at a different address yield the same codehash by
     ///      definition.
-    function test_undeprecateImplementation_rebindsAddressForSameCodehash()
-        public
-    {
+    function test_undeprecateImplementation_rebindsAddressForSameCodehash() public {
         bytes32 codehash = address(walletImplementation).codehash;
 
         vm.prank(ADMIN);
@@ -109,9 +101,7 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
         assertEq(factory.vettedWalletImpls(codehash), redeploy);
     }
 
-    function test_undeprecateImplementation_emitsImplementationUndeprecated()
-        public
-    {
+    function test_undeprecateImplementation_emitsImplementationUndeprecated() public {
         bytes32 codehash = address(walletImplementation).codehash;
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(walletImplementation));
@@ -123,14 +113,8 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (
-                logs[i].topics[0] ==
-                IQuipFactory.ImplementationUndeprecated.selector
-            ) {
-                assertEq(
-                    logs[i].topics[1],
-                    bytes32(uint256(uint160(address(walletImplementation))))
-                );
+            if (logs[i].topics[0] == IQuipFactory.ImplementationUndeprecated.selector) {
+                assertEq(logs[i].topics[1], bytes32(uint256(uint160(address(walletImplementation)))));
                 // codehash is now indexed → topics[2].
                 assertEq(logs[i].topics[2], codehash);
                 found = true;
@@ -157,19 +141,12 @@ contract QuipFactory_undeprecateImplementation is QuipFactoryTest {
         factory.undeprecateImplementation(address(walletImplementation));
     }
 
-    function test_undeprecateImplementation_revertsWhen_callerNotOwner()
-        public
-    {
+    function test_undeprecateImplementation_revertsWhen_callerNotOwner() public {
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(walletImplementation));
 
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                ALICE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.undeprecateImplementation(address(walletImplementation));
     }
 }

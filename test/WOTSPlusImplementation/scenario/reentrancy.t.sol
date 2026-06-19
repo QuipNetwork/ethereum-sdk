@@ -42,8 +42,9 @@ contract ReentrantReceiver {
             callbackSender = msg.sender;
 
             try target.execute(bytes("")) {
-                // Should not reach here — leave selector zero so test fails.
-            } catch (bytes memory err) {
+            // Should not reach here — leave selector zero so test fails.
+            }
+            catch (bytes memory err) {
                 innerRevertSelector = _firstSelector(err);
             }
         }
@@ -68,8 +69,9 @@ contract ReentrantTarget {
             callbackSender = msg.sender;
 
             try wallet.execute(bytes("")) {
-                // Should not reach here — leave selector zero so test fails.
-            } catch (bytes memory err) {
+            // Should not reach here — leave selector zero so test fails.
+            }
+            catch (bytes memory err) {
                 innerRevertSelector = _firstSelector(err);
             }
         }
@@ -95,8 +97,9 @@ contract CrossFunctionReentrant {
             attacked = true;
             ERC4337.Call[] memory calls = new ERC4337.Call[](0);
             try wallet.executeBatch(calls) {
-                // Should not reach here.
-            } catch (bytes memory err) {
+            // Should not reach here.
+            }
+            catch (bytes memory err) {
                 innerRevertSelector = _firstSelector(err);
             }
         }
@@ -123,8 +126,9 @@ contract ReentrantBatchTarget {
             callbackSender = msg.sender;
             ERC4337.Call[] memory calls = new ERC4337.Call[](0);
             try wallet.executeBatch(calls) {
-                // Should not reach here.
-            } catch (bytes memory err) {
+            // Should not reach here.
+            }
+            catch (bytes memory err) {
                 innerRevertSelector = _firstSelector(err);
             }
         }
@@ -139,7 +143,7 @@ contract ReentrantBatchTarget {
 ///      call is stashed in `receive()` to keep the mock self-funding.
 contract MockEntryPointForReentrancy {
     function withdrawTo(address payable to, uint256 amount) external {
-        (bool ok, ) = to.call{value: amount}("");
+        (bool ok,) = to.call{value: amount}("");
         require(ok, "transfer failed");
     }
 
@@ -173,8 +177,9 @@ contract ReentrantWithdrawReplayer {
         if (!attacked) {
             attacked = true;
             try wallet.withdrawDepositTo(payload) {
-                // Should not reach here.
-            } catch (bytes memory err) {
+            // Should not reach here.
+            }
+            catch (bytes memory err) {
                 innerRevertSelector = _firstSelector(err);
             }
         }
@@ -189,8 +194,7 @@ contract ReentrantWithdrawReplayer {
 ///      this file complements it by covering the auth-gate defense across
 ///      the wallet's other reentrancy-exposed surfaces.
 contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
-    address constant ENTRY_POINT_ADDR =
-        0x0000000071727De22E5E9d8BAf0edAc6f37da032;
+    address constant ENTRY_POINT_ADDR = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
     /// @dev Same-function reentrancy via the contract-call path. The callback
     ///      is invoked AS the wallet, so the re-entered `execute(bytes)`'s
@@ -199,44 +203,19 @@ contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
         ReentrantTarget attacker = new ReentrantTarget(wallet);
 
         bytes memory callData = abi.encodeWithSignature("trigger()");
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "reentrant-exec"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("reentrant-exec");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(attacker),
-            0,
-            callData,
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, address(attacker), 0, callData, 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(attacker),
-                0,
-                callData
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(attacker), 0, callData));
 
         assertTrue(attacker.attacked(), "callback was not triggered");
         // Pin the "why": the callback's caller is the wallet, so the
         // re-entered `execute(bytes)` hits `onlyOwner` and reverts.
-        assertEq(
-            attacker.callbackSender(),
-            address(wallet),
-            "callback msg.sender was not the wallet"
-        );
+        assertEq(attacker.callbackSender(), address(wallet), "callback msg.sender was not the wallet");
         assertEq(
             attacker.innerRevertSelector(),
             SoladyOwnable.Unauthorized.selector,
@@ -252,42 +231,18 @@ contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
         ReentrantReceiver attacker = new ReentrantReceiver(wallet);
 
         uint256 transferAmount = 0.1 ether;
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "reentrant-transfer"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("reentrant-transfer");
 
         bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(attacker),
-            transferAmount,
-            "",
-            0
+            address(wallet), alicePubkey, nextPubkey, address(attacker), transferAmount, "", 0
         );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(attacker),
-                transferAmount,
-                ""
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(attacker), transferAmount, ""));
 
         assertTrue(attacker.attacked(), "callback was not triggered");
-        assertEq(
-            attacker.callbackSender(),
-            address(wallet),
-            "callback msg.sender was not the wallet"
-        );
+        assertEq(attacker.callbackSender(), address(wallet), "callback msg.sender was not the wallet");
         assertEq(
             attacker.innerRevertSelector(),
             SoladyOwnable.Unauthorized.selector,
@@ -310,35 +265,14 @@ contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
         CrossFunctionReentrant attacker = new CrossFunctionReentrant(wallet);
 
         bytes memory callData = abi.encodeWithSignature("trigger()");
-        (WOTSPlus.WinternitzAddress memory nextPubkey, ) = _generateKeyPair(
-            "cross-fn-reentrant"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPubkey,) = _generateKeyPair("cross-fn-reentrant");
 
-        bytes32 msgHash = _buildExecuteMessageHash(
-            address(wallet),
-            alicePubkey,
-            nextPubkey,
-            address(attacker),
-            0,
-            callData,
-            0
-        );
-        WOTSPlus.WinternitzElements memory sig = _sign(
-            alicePrivateKey,
-            msgHash
-        );
+        bytes32 msgHash =
+            _buildExecuteMessageHash(address(wallet), alicePubkey, nextPubkey, address(attacker), 0, callData, 0);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
 
         vm.prank(ALICE);
-        wallet.execute(
-            Codec.encodeExecute(
-                alicePubkey,
-                nextPubkey,
-                sig,
-                address(attacker),
-                0,
-                callData
-            )
-        );
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPubkey, sig, address(attacker), 0, callData));
 
         assertTrue(attacker.attacked(), "callback was not triggered");
         assertEq(
@@ -361,20 +295,14 @@ contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
 
         ERC4337.Call[] memory calls = new ERC4337.Call[](1);
         calls[0] = ERC4337.Call({
-            target: address(attacker),
-            value: 0,
-            data: abi.encodeWithSelector(ReentrantBatchTarget.trigger.selector)
+            target: address(attacker), value: 0, data: abi.encodeWithSelector(ReentrantBatchTarget.trigger.selector)
         });
 
         vm.prank(ENTRY_POINT_ADDR);
         wallet.executeBatch(calls);
 
         assertTrue(attacker.attacked(), "callback was not triggered");
-        assertEq(
-            attacker.callbackSender(),
-            address(wallet),
-            "callback msg.sender was not the wallet"
-        );
+        assertEq(attacker.callbackSender(), address(wallet), "callback msg.sender was not the wallet");
         assertEq(
             attacker.innerRevertSelector(),
             SoladyOwnable.Unauthorized.selector,
@@ -409,23 +337,13 @@ contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
         // replayer needs ETH to fund its own wallet's initial deposit.
         ReentrantWithdrawReplayer replayer = new ReentrantWithdrawReplayer();
         vm.deal(address(replayer), 1 ether);
-        (
-            address rWalletAddr,
-            WOTSPlus.WinternitzAddress memory rPubkey,
-            bytes32 rPrivKey,
-
-        ) = _createWallet(
-                address(replayer),
-                keccak256("reentrant-withdraw"),
-                INITIAL_DEPOSIT
-            );
+        (address rWalletAddr, WOTSPlus.WinternitzAddress memory rPubkey, bytes32 rPrivKey,) =
+            _createWallet(address(replayer), keccak256("reentrant-withdraw"), INITIAL_DEPOSIT);
 
         // Build the signed withdraw payload. `to` is the replayer so the
         // EntryPoint's `withdrawTo` triggers `receive()` on the same
         // contract that's about to attempt the inner replay.
-        (WOTSPlus.WinternitzAddress memory rNextKey, ) = _generateKeyPair(
-            "reentrant-withdraw-next"
-        );
+        (WOTSPlus.WinternitzAddress memory rNextKey,) = _generateKeyPair("reentrant-withdraw-next");
         uint256 amount = 0.05 ether;
         bytes32 digest = Codec.withdrawDepositDigest(
             rWalletAddr,
@@ -438,13 +356,7 @@ contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
             amount
         );
         WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, digest);
-        bytes memory payload = Codec.encodeWithdrawDeposit(
-            rPubkey,
-            rNextKey,
-            sig,
-            address(replayer),
-            amount
-        );
+        bytes memory payload = Codec.encodeWithdrawDeposit(rPubkey, rNextKey, sig, address(replayer), amount);
 
         replayer.setup(payable(rWalletAddr), payload);
 
@@ -471,17 +383,7 @@ contract WOTSPlusImplementation_reentrancy is WOTSPlusImplementationTest {
         // Outer call's effects landed: replayer received the funds and the
         // wallet's auth key rotated to rNextKey.
         assertEq(address(replayer).balance, amount);
-        assertTrue(
-            WOTSPlusImplementation(payable(rWalletAddr)).isKey(
-                Codec.KeyType.Transaction,
-                rNextKey
-            )
-        );
-        assertFalse(
-            WOTSPlusImplementation(payable(rWalletAddr)).isKey(
-                Codec.KeyType.Transaction,
-                rPubkey
-            )
-        );
+        assertTrue(WOTSPlusImplementation(payable(rWalletAddr)).isKey(Codec.KeyType.Transaction, rNextKey));
+        assertFalse(WOTSPlusImplementation(payable(rWalletAddr)).isKey(Codec.KeyType.Transaction, rPubkey));
     }
 }

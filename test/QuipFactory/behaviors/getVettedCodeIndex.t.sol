@@ -11,27 +11,16 @@ contract QuipFactory_getVettedCodeIndex is QuipFactoryTest {
         assertEq(factory.getVettedCodeIndex(codehash), 0);
     }
 
-    function test_getVettedCodeIndex_returnsCorrectIndexForMultipleImpls()
-        public
-    {
+    function test_getVettedCodeIndex_returnsCorrectIndexForMultipleImpls() public {
         WOTSPlusImplementation secondImpl = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(secondImpl));
 
-        assertEq(
-            factory.getVettedCodeIndex(address(walletImplementation).codehash),
-            0
-        );
+        assertEq(factory.getVettedCodeIndex(address(walletImplementation).codehash), 0);
         assertEq(factory.getVettedCodeIndex(address(secondImpl).codehash), 1);
     }
 
-    function test_getVettedCodeIndex_returnsNotFoundForUnknownCodehash()
-        public
-        view
-    {
-        assertEq(
-            factory.getVettedCodeIndex(bytes32(uint256(0xdead))),
-            type(uint256).max
-        );
+    function test_getVettedCodeIndex_returnsNotFoundForUnknownCodehash() public view {
+        assertEq(factory.getVettedCodeIndex(bytes32(uint256(0xdead))), type(uint256).max);
     }
 }

@@ -20,25 +20,15 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 vaultId = keccak256("Vault 1");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 privateKey
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            privateKey,
-            10
-        );
+        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
         uint256 factoryBalBefore = address(factory).balance;
 
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(
-            vaultId,
-            payable(ALICE),
-            payload
-        );
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(vaultId, payable(ALICE), payload);
 
         assertEq(address(factory).balance, factoryBalBefore + CREATION_FEE);
     }
@@ -61,12 +51,7 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
 
     function test_setCreationFee_revertsWhen_callerNotAdmin() public {
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                ALICE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
         factory.setCreationFee(CREATION_FEE);
     }
 
@@ -91,13 +76,7 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
         uint256 maxFee = factory.MAX_FEE();
         uint256 excessFee = maxFee + 1;
         vm.prank(ADMIN);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IQuipFactory.FeeExceedsMax.selector,
-                excessFee,
-                maxFee
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(IQuipFactory.FeeExceedsMax.selector, excessFee, maxFee));
         factory.setCreationFee(excessFee);
     }
 }

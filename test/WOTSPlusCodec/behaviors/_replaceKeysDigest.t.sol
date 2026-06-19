@@ -18,27 +18,14 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
     bytes32 constant NEW_HASH = bytes32(uint256(0xC2));
 
     function _expected(bytes32 tag) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                tag,
-                bytes32(CHAIN_ID),
-                bytes32(uint256(uint160(WALLET))),
-                bytes32(N),
-                S1,
-                H1,
-                S2,
-                H2,
-                OLD_HASH,
-                NEW_HASH
-            );
+        return EfficientHashLib.hash(
+            tag, bytes32(CHAIN_ID), bytes32(uint256(uint160(WALLET))), bytes32(N), S1, H1, S2, H2, OLD_HASH, NEW_HASH
+        );
     }
 
     /*──────── per-combo tag selection matches manual hash ────────*/
 
-    function test_exposed_replaceKeysDigest_txSign_txTarget_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_txSign_txTarget_matchesManualHash() public view {
         assertEq(
             codec.exposed_replaceKeysDigest(
                 Codec.KeyType.Transaction,
@@ -57,10 +44,7 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
         );
     }
 
-    function test_exposed_replaceKeysDigest_txSign_recoveryTarget_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_txSign_recoveryTarget_matchesManualHash() public view {
         assertEq(
             codec.exposed_replaceKeysDigest(
                 Codec.KeyType.Recovery,
@@ -79,10 +63,7 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
         );
     }
 
-    function test_exposed_replaceKeysDigest_txSign_verifyTarget_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_txSign_verifyTarget_matchesManualHash() public view {
         assertEq(
             codec.exposed_replaceKeysDigest(
                 Codec.KeyType.Verification,
@@ -101,10 +82,7 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
         );
     }
 
-    function test_exposed_replaceKeysDigest_recSign_txTarget_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_recSign_txTarget_matchesManualHash() public view {
         assertEq(
             codec.exposed_replaceKeysDigest(
                 Codec.KeyType.Transaction,
@@ -123,32 +101,16 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
         );
     }
 
-    function test_exposed_replaceKeysDigest_recSign_recoveryTarget_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_recSign_recoveryTarget_matchesManualHash() public view {
         assertEq(
             codec.exposed_replaceKeysDigest(
-                Codec.KeyType.Recovery,
-                Codec.KeyType.Recovery,
-                N,
-                WALLET,
-                CHAIN_ID,
-                S1,
-                H1,
-                S2,
-                H2,
-                OLD_HASH,
-                NEW_HASH
+                Codec.KeyType.Recovery, Codec.KeyType.Recovery, N, WALLET, CHAIN_ID, S1, H1, S2, H2, OLD_HASH, NEW_HASH
             ),
             _expected(keccak256("quip.digest.replaceKeys.recoverySign.recovery"))
         );
     }
 
-    function test_exposed_replaceKeysDigest_recSign_verifyTarget_matchesManualHash()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_recSign_verifyTarget_matchesManualHash() public view {
         assertEq(
             codec.exposed_replaceKeysDigest(
                 Codec.KeyType.Verification,
@@ -170,16 +132,8 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
     /*──────────────── input-sensitivity / distinctness ────────────────*/
 
     function test_exposed_replaceKeysDigest_deterministic() public view {
-        bytes32 d1 = _digest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3
-        );
-        bytes32 d2 = _digest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3
-        );
+        bytes32 d1 = _digest(Codec.KeyType.Transaction, Codec.KeyType.Recovery, 3);
+        bytes32 d2 = _digest(Codec.KeyType.Transaction, Codec.KeyType.Recovery, 3);
         assertEq(d1, d2);
     }
 
@@ -206,54 +160,24 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
     }
 
     function test_exposed_replaceKeysDigest_changesOnKindChange() public view {
-        bytes32 d1 = _digest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3
-        );
-        bytes32 d2 = _digest(
-            Codec.KeyType.Recovery,
-            Codec.KeyType.Recovery,
-            3
-        );
+        bytes32 d1 = _digest(Codec.KeyType.Transaction, Codec.KeyType.Recovery, 3);
+        bytes32 d2 = _digest(Codec.KeyType.Recovery, Codec.KeyType.Recovery, 3);
         assertTrue(d1 != d2);
     }
 
-    function test_exposed_replaceKeysDigest_changesOnSigningKindChange()
-        public
-        view
-    {
-        bytes32 d1 = _digest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3
-        );
-        bytes32 d2 = _digest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Transaction,
-            3
-        );
+    function test_exposed_replaceKeysDigest_changesOnSigningKindChange() public view {
+        bytes32 d1 = _digest(Codec.KeyType.Transaction, Codec.KeyType.Recovery, 3);
+        bytes32 d2 = _digest(Codec.KeyType.Transaction, Codec.KeyType.Transaction, 3);
         assertTrue(d1 != d2);
     }
 
     function test_exposed_replaceKeysDigest_changesOnNChange() public view {
-        bytes32 d1 = _digest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3
-        );
-        bytes32 d2 = _digest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            4
-        );
+        bytes32 d1 = _digest(Codec.KeyType.Transaction, Codec.KeyType.Recovery, 3);
+        bytes32 d2 = _digest(Codec.KeyType.Transaction, Codec.KeyType.Recovery, 4);
         assertTrue(d1 != d2);
     }
 
-    function test_exposed_replaceKeysDigest_changesOnWalletChange()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_changesOnWalletChange() public view {
         bytes32 d1 = codec.exposed_replaceKeysDigest(
             Codec.KeyType.Transaction,
             Codec.KeyType.Recovery,
@@ -283,10 +207,7 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
         assertTrue(d1 != d2);
     }
 
-    function test_exposed_replaceKeysDigest_changesOnChainIdChange()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_changesOnChainIdChange() public view {
         bytes32 d1 = codec.exposed_replaceKeysDigest(
             Codec.KeyType.Transaction,
             Codec.KeyType.Recovery,
@@ -316,10 +237,7 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
         assertTrue(d1 != d2);
     }
 
-    function test_exposed_replaceKeysDigest_changesOnKeysHashChange()
-        public
-        view
-    {
+    function test_exposed_replaceKeysDigest_changesOnKeysHashChange() public view {
         bytes32 d1 = codec.exposed_replaceKeysDigest(
             Codec.KeyType.Transaction,
             Codec.KeyType.Recovery,
@@ -364,24 +282,19 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
         assertTrue(dOld != dNew);
     }
 
-    function _digest(
-        Codec.KeyType kind,
-        Codec.KeyType signingKind,
-        uint256 n
-    ) internal view returns (bytes32) {
-        return
-            codec.exposed_replaceKeysDigest(
-                kind,
-                signingKind,
-                n,
-                WALLET,
-                CHAIN_ID,
-                bytes32(uint256(0xA1)),
-                bytes32(uint256(0xA2)),
-                bytes32(uint256(0xB1)),
-                bytes32(uint256(0xB2)),
-                bytes32(uint256(0xC1)),
-                bytes32(uint256(0xC2))
-            );
+    function _digest(Codec.KeyType kind, Codec.KeyType signingKind, uint256 n) internal view returns (bytes32) {
+        return codec.exposed_replaceKeysDigest(
+            kind,
+            signingKind,
+            n,
+            WALLET,
+            CHAIN_ID,
+            bytes32(uint256(0xA1)),
+            bytes32(uint256(0xA2)),
+            bytes32(uint256(0xB1)),
+            bytes32(uint256(0xB2)),
+            bytes32(uint256(0xC1)),
+            bytes32(uint256(0xC2))
+        );
     }
 }

@@ -9,9 +9,7 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus
 contract WOTSPlusImplementation_getAllKeys is WOTSPlusImplementationTest {
     function test_getAllKeys_returnsFullState() public {
         // Seed two verification keys so all three keysets are non-empty.
-        (
-            WOTSPlus.WinternitzAddress[] memory verificationSeeded,
-        ) = _seedVerificationKeys(2);
+        (WOTSPlus.WinternitzAddress[] memory verificationSeeded,) = _seedVerificationKeys(2);
 
         IWOTSPlusImplementation.AllKeys memory snap = wallet.getAllKeys();
 
@@ -24,37 +22,19 @@ contract WOTSPlusImplementation_getAllKeys is WOTSPlusImplementationTest {
         assertEq(snap.ownershipKey.publicKeyHash, ok.publicKeyHash);
 
         // Keyset lengths match keyCount.
-        assertEq(
-            snap.transactionKeys.length,
-            wallet.keyCount(Codec.KeyType.Transaction)
-        );
-        assertEq(
-            snap.recoveryKeys.length,
-            wallet.keyCount(Codec.KeyType.Recovery)
-        );
-        assertEq(
-            snap.verificationKeys.length,
-            wallet.keyCount(Codec.KeyType.Verification)
-        );
+        assertEq(snap.transactionKeys.length, wallet.keyCount(Codec.KeyType.Transaction));
+        assertEq(snap.recoveryKeys.length, wallet.keyCount(Codec.KeyType.Recovery));
+        assertEq(snap.verificationKeys.length, wallet.keyCount(Codec.KeyType.Verification));
 
         // Each entry must be a member of the corresponding keyset.
         for (uint256 i = 0; i < snap.transactionKeys.length; i++) {
-            assertTrue(
-                wallet.isKey(Codec.KeyType.Transaction, snap.transactionKeys[i])
-            );
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, snap.transactionKeys[i]));
         }
         for (uint256 i = 0; i < snap.recoveryKeys.length; i++) {
-            assertTrue(
-                wallet.isKey(Codec.KeyType.Recovery, snap.recoveryKeys[i])
-            );
+            assertTrue(wallet.isKey(Codec.KeyType.Recovery, snap.recoveryKeys[i]));
         }
         for (uint256 i = 0; i < snap.verificationKeys.length; i++) {
-            assertTrue(
-                wallet.isKey(
-                    Codec.KeyType.Verification,
-                    snap.verificationKeys[i]
-                )
-            );
+            assertTrue(wallet.isKey(Codec.KeyType.Verification, snap.verificationKeys[i]));
         }
 
         // `_seedVerificationKeys` always installs MAX_KEYS=10 via resetKeyset
