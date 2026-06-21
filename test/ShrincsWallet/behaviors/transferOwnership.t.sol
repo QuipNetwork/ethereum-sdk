@@ -42,15 +42,6 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         wallet.transferOwnership(_pk(), ownerSig, recoverySig, nextKey, address(0));
     }
 
-    function test_transferOwnership_revertsWhen_statelessBudgetExhausted() public {
-        wallet.harness_setStatelessUsed(uint64(wallet.statelessSignatureLimit()));
-        ShrincsTypes.StatefulSignature memory ownerSig;
-        ShrincsTypes.StatelessSignature memory recoverySig;
-        vm.prank(OWNER);
-        vm.expectRevert(IShrincsWallet.StatelessBudgetExhausted.selector);
-        wallet.transferOwnership(_pk(), ownerSig, recoverySig, _nextKey(), NEW_OWNER);
-    }
-
     function test_transferOwnership_revertsWhen_invalidRecoverySignature() public {
         // Stateless budget available, but an empty recovery signature makes `statelessRotate`
         // return the zero commitment, surfaced as InvalidSignature.
@@ -75,7 +66,6 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "fresh bundle installed for the new owner");
         assertEq(factory.lastOwnerUpdate(address(wallet)), NEW_OWNER, "factory registry synced");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
-        assertEq(wallet.statelessSignaturesUsed(), 0, "counters reset for the new owner");
     }
 
     function test_transferOwnership_crossBindingMismatch() public {

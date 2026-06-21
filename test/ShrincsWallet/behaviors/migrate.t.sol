@@ -12,17 +12,14 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 ///      driven via the harness helper `harness_migrateInUpgradeContext`.
 contract ShrincsWallet_migrate is ShrincsWalletTest {
     function test_migrate_reinstallsAndResets() public {
-        // Dirty the per-epoch counters first, so the reset is observable.
+        // Dirty the per-epoch counter first, so the reset is observable.
         wallet.harness_markLeafUsed(1);
-        wallet.harness_setStatelessUsed(3);
         assertEq(wallet.statefulLeavesUsed(), 1);
-        assertEq(wallet.statelessSignaturesUsed(), 3);
 
         wallet.harness_migrateInUpgradeContext(_validInitPayload());
 
         assertEq(wallet.keyVersion(), 1, "keyVersion bumped");
         assertEq(wallet.statefulLeavesUsed(), 0, "leaves-used reset");
-        assertEq(wallet.statelessSignaturesUsed(), 0, "stateless-used reset");
         assertEq(
             wallet.getShrincsPublicKeyCommitment(), _bytes32(".mainKey.publicKeyCommitment"), "commitment reinstalled"
         );

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for the wallet's view getters.
@@ -32,7 +31,6 @@ contract ShrincsWallet_views is ShrincsWalletTest {
     function test_epochCountersStartZero() public view {
         assertEq(wallet.keyVersion(), 0);
         assertEq(wallet.actionNonce(), 0);
-        assertEq(wallet.statelessSignaturesUsed(), 0);
         assertEq(wallet.statefulLeavesUsed(), 0);
     }
 
@@ -49,13 +47,6 @@ contract ShrincsWallet_views is ShrincsWalletTest {
         wallet.harness_markLeafUsed(1);
         assertTrue(wallet.isStatefulLeafUsed(1));
         assertFalse(wallet.isStatefulLeafUsed(2));
-    }
-
-    function test_statelessSignatureLimit_matchesProfile() public view {
-        assertEq(
-            wallet.statelessSignatureLimit(),
-            ShrincsTypes.defaultParamsView(ShrincsTypes.ParameterSetId(0)).statelessSignatureLimit
-        );
     }
 
     function test_ownershipHandoverExpiresAt_alwaysZero() public view {
