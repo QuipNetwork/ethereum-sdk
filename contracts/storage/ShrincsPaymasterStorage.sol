@@ -19,19 +19,34 @@ pragma solidity ^0.8.33;
 library ShrincsPaymasterStorage {
     /// @custom:storage-location erc7201:quip.storage.paymaster.shrincs
     struct Layout {
-        /// @dev Per-wallet SHRINCS verifier-key bundle commitment for gas-sponsorship
-        ///      authorization. A separate key from the wallet's own signing key; registered
-        ///      by the paymaster owner via `setShrincsVerifier`.
-        mapping(address wallet => bytes32 commitment) shrincsCommitment;
-        /// @dev Per-wallet parameter set for the verifier key (stored as uint8).
-        mapping(address wallet => uint8 parameterSetId) shrincsParameterSetId;
-        /// @dev Per-wallet next expected stateful leaf index (MonotonicIndex anti-replay).
-        ///      Advanced during `validatePaymasterUserOp`; fresh keys start at 1.
-        mapping(address wallet => uint32 nextLeaf) nextStatefulLeafIndex;
-        /// @dev Per-wallet verifier-key epoch, bumped whenever the owner rotates the
-        ///      registered key. Bound into the canonical action context so signatures from a
-        ///      prior verifier epoch cannot be replayed.
-        mapping(address wallet => uint256 epoch) keyVersion;
+        /// @dev The single global SHRINCS verifier-key bundle commitment that authorizes gas
+        ///      sponsorship. The paymaster operator (the sponsor) holds one stateful key and signs
+        ///      every userOp it is willing to sponsor; the binding hash commits to `userOp.sender`,
+        ///      so a signature minted for one wallet cannot be replayed against another. Zero means
+        ///      the paymaster is unconfigured. Registered/rotated by the owner via
+        ///      `setShrincsVerifier`.
+        bytes32 shrincsCommitment;
+        /// @dev Parameter set for the verifier key (stored as uint8). Packs with the two uint32s
+        ///      below into a single slot.
+        uint8 shrincsParameterSetId;
+        /// @dev Leaf budget cached from the registered key so the paymaster can reject signatures
+        ///      past the budget and expose `remainingStatefulSignatures()`.
+        uint32 maxSignatures;
+        /// @dev Count of stateful leaves consumed in the current epoch. Backs
+        ///      `remainingStatefulSignatures()`; reset to 0 on every `setShrincsVerifier`. NOT the
+        ///      anti-replay mechanism — that is `usedStatefulLeafBitmap` below.
+        uint32 statefulLeavesUsed;
+        /// @dev Global verifier-key epoch. The initial key (set at `initialize`) is epoch 0; every
+        ///      `setShrincsVerifier` rotation bumps it. Bound into the canonical action context and
+        ///      used to namespace the leaf bitmap so a rotation starts from a fresh (all-unused)
+        ///      namespace. MONOTONIC — only ever increments, so a rotated key can never reuse a
+        ///      namespace that already has consumed leaves.
+        uint256 keyVersion;
+        /// @dev Stateful-leaf anti-replay, namespaced by `keyVersion`. A leaf is consumable once and
+        ///      in ANY order (no sequential constraint), so out-of-order userOp landing never
+        ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit `leafIndex & 0xff`
+        ///      is set when leaf `leafIndex` is consumed.
+        mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits)) usedStatefulLeafBitmap;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.paymaster.shrincs")) - 1))
