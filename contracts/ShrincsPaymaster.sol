@@ -312,7 +312,7 @@ contract ShrincsPaymaster is
         Storage.Layout storage $,
         uint256 keyVersion_,
         uint256 leafIndex
-    ) private view returns (bool) {
+    ) internal view returns (bool) {
         return
             ($.usedStatefulLeafBitmap[keyVersion_][leafIndex >> 8] &
                 (uint256(1) << (leafIndex & 0xff))) != 0;
@@ -323,7 +323,7 @@ contract ShrincsPaymaster is
         Storage.Layout storage $,
         uint256 keyVersion_,
         uint256 leafIndex
-    ) private {
+    ) internal {
         $.usedStatefulLeafBitmap[keyVersion_][leafIndex >> 8] |=
             uint256(1) <<
             (leafIndex & 0xff);

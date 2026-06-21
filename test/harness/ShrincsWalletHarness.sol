@@ -11,19 +11,18 @@ contract ShrincsWalletHarness is ShrincsWallet {
     constructor(address payable factory_) ShrincsWallet(factory_) {}
 
     /// @dev Wraps the internal ERC-4337 `_validateSignature` for direct unit testing.
-    function exposed_validateSignature(PackedUserOperation calldata userOp, bytes32 userOpHash)
-        external
-        returns (uint256)
-    {
+    function exposed_validateSignature(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash
+    ) external returns (uint256) {
         return _validateSignature(userOp, userOpHash);
     }
 
     /// @dev Wraps the internal ERC-1271 check, returning the discriminated failure branch.
-    function exposed_checkErc1271Signature(bytes32 hash, bytes calldata signature)
-        external
-        view
-        returns (Erc1271ValidationResult)
-    {
+    function exposed_checkErc1271Signature(
+        bytes32 hash,
+        bytes calldata signature
+    ) external view returns (Erc1271ValidationResult) {
         return _checkErc1271Signature(hash, signature);
     }
 
@@ -33,7 +32,11 @@ contract ShrincsWalletHarness is ShrincsWallet {
     }
 
     /// @dev Wraps the eight-slot guard snapshot.
-    function exposed_snapshotGuardedSlots() external view returns (bytes32[8] memory) {
+    function exposed_snapshotGuardedSlots()
+        external
+        view
+        returns (bytes32[8] memory)
+    {
         return _snapshotGuardedSlots();
     }
 
@@ -68,12 +71,18 @@ contract ShrincsWalletHarness is ShrincsWallet {
 
     /// @dev Wraps the internal `_markStatefulLeafUsed` for direct unit testing against an explicit
     ///      key epoch (no counter bump — that is the caller's responsibility in production).
-    function exposed_markStatefulLeafUsed(uint256 keyVersion_, uint256 leafIndex) external {
+    function exposed_markStatefulLeafUsed(
+        uint256 keyVersion_,
+        uint256 leafIndex
+    ) external {
         _markStatefulLeafUsed(Storage.layout(), keyVersion_, leafIndex);
     }
 
     /// @dev Wraps the internal `_isStatefulLeafUsed` read for a specific key epoch.
-    function exposed_isStatefulLeafUsed(uint256 keyVersion_, uint256 leafIndex) external view returns (bool) {
+    function exposed_isStatefulLeafUsed(
+        uint256 keyVersion_,
+        uint256 leafIndex
+    ) external view returns (bool) {
         return _isStatefulLeafUsed(Storage.layout(), keyVersion_, leafIndex);
     }
 
@@ -85,12 +94,20 @@ contract ShrincsWalletHarness is ShrincsWallet {
         bytes32 actionType,
         bytes32 payloadHash
     ) external returns (uint32) {
-        return _verifyStatefulAndAdvance(publicKey, signature, actionType, payloadHash);
+        return
+            _verifyStatefulAndAdvance(
+                publicKey,
+                signature,
+                actionType,
+                payloadHash
+            );
     }
 
     /// @dev Wraps the guarded-slot tamper check so each of the eight slots can be mutated and the
     ///      `GuardedSlotTampered(index)` revert asserted.
-    function exposed_assertGuardedSlotsUnchanged(bytes32[8] memory snapshot) external view {
+    function exposed_assertGuardedSlotsUnchanged(
+        bytes32[8] memory snapshot
+    ) external view {
         _assertGuardedSlotsUnchanged(snapshot);
     }
 
@@ -116,11 +133,20 @@ contract ShrincsWalletHarness is ShrincsWallet {
         Storage.layout().maxSignatures = maxSignaturesValue;
     }
 
+    /// @dev Wraps the owner-initialization guard. The wallet does NOT override it directly — it
+    ///      inherits `_guardInitializeOwner() => true` from Solady's `ERC4337` base, which blocks
+    ///      double-initialization (`_initializeOwner` reverts `AlreadyInitialized`). This pins that
+    ///      inherited behavior.
+    function exposed_guardInitializeOwner() external pure returns (bool) {
+        return _guardInitializeOwner();
+    }
+
     /// @dev Drives `migrate` inside the transient upgrade-guard context (mirrors the production
     ///      `upgradeToAndCall` gating) so the success path and `NotUpgrading` guard are testable
     ///      without a full UUPS round-trip.
     function harness_migrateInUpgradeContext(bytes calldata payload) external {
-        uint256 slot = uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) - 1;
+        uint256 slot = uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) -
+            1;
         assembly {
             tstore(slot, 1)
         }
