@@ -7,8 +7,9 @@ import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWall
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for stateful `rotateKey`. The input-validation reverts (target length /
-///      zero maxSignatures), leaf guards, and `InvalidSignature`, and the regenerated-vector success path (new stateful subkey, reused stateless
-///      root, `keyVersion++`, nonce unchanged) are all exercised.
+///      zero maxSignatures), leaf guards, and `InvalidSignature`, plus the regenerated-vector
+///      success path (new stateful subkey, reused stateless root, `keyVersion++`, nonce unchanged)
+///      are all exercised.
 contract ShrincsWallet_rotateKey is ShrincsWalletTest {
     function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
         return _parsePublicKey(".mainKey");
