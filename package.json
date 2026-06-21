@@ -2,11 +2,15 @@
   "name": "@quip.network/ethereum-sdk",
   "version": "0.2.0-beta.2",
   "type": "module",
+  "browser": {
+    "./dist/src/v1/shrincs/wasm/loader.node.js": "./dist/src/v1/shrincs/wasm/loader.browser.js"
+  },
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
-    "dist/**/*.json"
+    "dist/**/*.json",
+    "dist/**/*.wasm"
   ],
   "exports": {
     "./v1": {
@@ -57,6 +61,10 @@
       "import": "./dist/src/v1/wotsCodec.js",
       "types": "./dist/src/v1/wotsCodec.d.ts"
     },
+    "./v1/shrincs": {
+      "import": "./dist/src/v1/shrincs/index.js",
+      "types": "./dist/src/v1/shrincs/index.d.ts"
+    },
     "./v0": {
       "import": "./dist/src/v0/index.js",
       "types": "./dist/src/v0/index.d.ts"
@@ -73,7 +81,10 @@
   "scripts": {
     "clean": "rimraf dist out cache_forge",
     "copy-abi": "node scripts/copy-abi.js",
-    "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json",
+    "copy-wasm": "node scripts/copy-wasm.js",
+    "gen-wasm-inline": "node scripts/gen-wasm-inline.mjs",
+    "build": "forge build && npm run copy-abi && npm run gen-wasm-inline && tsc -p tsconfig.build.json && npm run copy-wasm",
+    "smoke:fe": "node scripts/fe-smoke.mjs",
     "prepack": "npm run build",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
     "lint:sol": "solhint 'contracts/**/*.sol'",
