@@ -53,9 +53,6 @@ interface IShrincsWallet {
     /// @notice Thrown when a stateful signature's leaf index is zero or exceeds the installed
     ///         key's `maxSignatures` budget (the key must be rotated via `rotateKey`).
     error StatefulBudgetExhausted();
-    /// @notice Thrown when the stateless break-glass budget (`statelessSignatureLimit`)
-    ///         for the current key epoch is exhausted.
-    error StatelessBudgetExhausted();
 
     /// @notice Thrown when `renounceOwnership` is called (always reverts).
     error RenounceDisabled();
@@ -344,10 +341,4 @@ interface IShrincsWallet {
 
     /// @notice The SHRINCS action/rotation nonce (distinct from the EntryPoint nonce).
     function actionNonce() external view returns (uint256);
-
-    /// @notice Break-glass stateless rotations consumed under the current key epoch.
-    function statelessSignaturesUsed() external view returns (uint64);
-
-    /// @notice The profile's stateless signature limit for the current key epoch.
-    function statelessSignatureLimit() external view returns (uint64);
 }

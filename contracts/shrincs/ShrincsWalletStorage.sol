@@ -48,13 +48,10 @@ library ShrincsWalletStorage {
         ///        - maxSignatures: cached from the installed stateful bundle so the wallet can
         ///          reject signatures past the leaf budget and expose
         ///          `remainingStatefulSignatures()`.
-        ///        - statelessSignaturesUsed: break-glass stateless-rotation usage counter,
-        ///          bounded by the profile's `statelessSignatureLimit`.
         ///        - parameterSetId / erc1271ParameterSetId: the resolved
         ///          `ShrincsTypes.ParameterSetId` for each installed key, stored as uint8.
         uint32 statefulLeavesUsed;
         uint32 maxSignatures;
-        uint64 statelessSignaturesUsed;
         uint8 parameterSetId;
         uint8 erc1271ParameterSetId;
         /// @dev Stateful-leaf anti-replay, namespaced by `keyVersion` so a rotation starts from a
@@ -81,8 +78,8 @@ library ShrincsWalletStorage {
     ///      `Layout` above; `test/fixtures/ShrincsWallet.storageLayout.json` pins each field's
     ///      slot offset and fails the suite on any drift. A namespace rename above must
     ///      regenerate every literal below together — they aren't independently meaningful.
-    ///      The packed `{statefulLeavesUsed,maxSignatures,statelessSignaturesUsed,
-    ///      parameterSetId,erc1271ParameterSetId}` scalars share `_LEAF_STATE_SLOT`. The
+    ///      The packed `{statefulLeavesUsed,maxSignatures,parameterSetId,
+    ///      erc1271ParameterSetId}` scalars share `_LEAF_STATE_SLOT`. The
     ///      `usedStatefulLeafBitmap` mapping occupies the next slot and is intentionally NOT
     ///      one of the guarded slots (see its field comment).
     bytes32 internal constant _PQ_FACTORY_SLOT =

@@ -7,8 +7,8 @@ import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWall
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for break-glass `recoverWallet` (stateless full-bundle rotation, same owner).
-///      Access control, stateless-budget exhaustion, and the `InvalidSignature` (statelessRotate
-///      returns zero) branch and the regenerated-vector success path are all exercised.
+///      Access control, the `InvalidSignature` (statelessRotate returns zero) branch, and the
+///      regenerated-vector success path are all exercised.
 contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
         return _parsePublicKey(".mainKey");
@@ -24,14 +24,6 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
         wallet.recoverWallet(_pk(), recoverySig, nextKey);
-    }
-
-    function test_recoverWallet_revertsWhen_statelessBudgetExhausted() public {
-        wallet.harness_setStatelessUsed(uint64(wallet.statelessSignatureLimit()));
-        ShrincsTypes.StatelessSignature memory recoverySig;
-        vm.prank(OWNER);
-        vm.expectRevert(IShrincsWallet.StatelessBudgetExhausted.selector);
-        wallet.recoverWallet(_pk(), recoverySig, _nextKey());
     }
 
     function test_recoverWallet_revertsWhen_invalidRecoverySignature() public {
@@ -51,6 +43,5 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         assertEq(wallet.owner(), OWNER, "owner unchanged on recovery");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
         assertEq(wallet.actionNonce(), nonceBefore + 1, "stateless path advances the action nonce");
-        assertEq(wallet.statelessSignaturesUsed(), 0, "counters reset");
     }
 }

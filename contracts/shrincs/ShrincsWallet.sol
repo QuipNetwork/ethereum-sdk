@@ -309,7 +309,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         }
         // New epoch ⇒ fresh (empty) leaf bitmap namespace; reset the per-epoch used counter.
         $.statefulLeavesUsed = 0;
-        $.statelessSignaturesUsed = 0;
 
         emit WalletMigrated(commitment, $.keyVersion);
     }
@@ -441,12 +440,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             $.parameterSetId
         );
 
-        uint64 limit = ShrincsTypes
-            .defaultParamsView(currentParam)
-            .statelessSignatureLimit;
-        if ($.statelessSignaturesUsed >= limit)
-            revert StatelessBudgetExhausted();
-
         // A genuine handover must hand the NEW owner an entirely fresh bundle (new stateless
         // recovery root), so the OLD owner retains neither spend nor break-glass authority. That
         // full replacement is authorized by the current STATELESS recovery key, verified against
@@ -489,7 +482,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             $.nonce += 1;
             $.keyVersion += 1;
         }
-        $.statelessSignaturesUsed = 0;
         // New epoch ⇒ fresh (empty) leaf bitmap namespace; reset the per-epoch used counter.
         $.statefulLeavesUsed = 0;
         _setOwner(newOwner);
@@ -595,12 +587,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             $.parameterSetId
         );
 
-        uint64 limit = ShrincsTypes
-            .defaultParamsView(currentParam)
-            .statelessSignatureLimit;
-        if ($.statelessSignaturesUsed >= limit)
-            revert StatelessBudgetExhausted();
-
         ShrincsTypes.RotationContext memory ctx = Codec.buildRotationContext(
             _shrincsDomainSeparator(),
             $.nonce,
@@ -630,7 +616,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             $.nonce += 1;
             $.keyVersion += 1;
         }
-        $.statelessSignaturesUsed = 0;
         // New epoch ⇒ fresh (empty) leaf bitmap namespace; reset the per-epoch used counter.
         $.statefulLeavesUsed = 0;
         emit KeyRotated(
@@ -848,21 +833,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @inheritdoc IShrincsWallet
     function actionNonce() external view returns (uint256) {
         return Storage.layout().nonce;
-    }
-
-    /// @inheritdoc IShrincsWallet
-    function statelessSignaturesUsed() external view returns (uint64) {
-        return Storage.layout().statelessSignaturesUsed;
-    }
-
-    /// @inheritdoc IShrincsWallet
-    function statelessSignatureLimit() external view returns (uint64) {
-        return
-            ShrincsTypes
-                .defaultParamsView(
-                    ShrincsTypes.ParameterSetId(Storage.layout().parameterSetId)
-                )
-                .statelessSignatureLimit;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

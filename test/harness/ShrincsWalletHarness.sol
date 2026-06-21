@@ -125,10 +125,6 @@ contract ShrincsWalletHarness is ShrincsWallet {
         Storage.layout().nonce = nonce_;
     }
 
-    function harness_setStatelessUsed(uint64 used) external {
-        Storage.layout().statelessSignaturesUsed = used;
-    }
-
     function harness_setMaxSignatures(uint32 maxSignaturesValue) external {
         Storage.layout().maxSignatures = maxSignaturesValue;
     }
