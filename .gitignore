@@ -17,6 +17,8 @@ dist/
 # Generated SDK files
 src/v1/abi/
 src/v1/bytecode.json
+# Base64-inlined SHRINCS wasm (generated from the vendored .wasm at build time)
+src/v1/shrincs/wasm/web/inline.ts
 .DS_Store
 
 pwCrack.ts
