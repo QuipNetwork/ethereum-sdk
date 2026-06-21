@@ -48,6 +48,9 @@ contract PredictAddresses is Script {
         _predict(deployerAddr, "WOTSPlusImplementation (impl)", keccak256("QUIP:WOTSPlusImplementation:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
+        _predict(deployerAddr, "ShrincsWallet (impl)", keccak256("QUIP:ShrincsWallet:V1.0"));
+        _predict(deployerAddr, "ShrincsPaymaster (impl)", keccak256("QUIP:ShrincsPaymaster:Impl:V1.0"));
+        _predict(deployerAddr, "ShrincsPaymaster (proxy)", keccak256("QUIP:ShrincsPaymaster:Proxy:V1.0"));
     }
 
     function _predict(address deployer, string memory name, bytes32 salt) internal pure {
