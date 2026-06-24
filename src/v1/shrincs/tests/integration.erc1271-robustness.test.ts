@@ -179,5 +179,7 @@ describe("ShrincsWallet.isValidSignature never-revert robustness", () => {
       owner: DEFAULT_ACCOUNT,
     });
     expect(await wallet.client.isValidSignature(hash, blob)).toBe(true);
-  });
+    // Real SHRINCS keygen + signErc1271 (SPHINCS+) runs well past jest's 5s
+    // default; the other suites keep this cost in beforeAll, this test doesn't.
+  }, 30_000);
 });

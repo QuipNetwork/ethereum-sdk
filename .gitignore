@@ -11,6 +11,9 @@ bun.lock
 /cache_forge
 /dependencies
 
+# Containerised runner caches (HOME, solc, npm, known_hosts) — see ./run
+/.run
+
 *.tmp.json
 dist/
 

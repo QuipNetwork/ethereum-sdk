@@ -1,0 +1,13 @@
+# The build context only needs the Containerfile; the repo itself is
+# bind-mounted at runtime by ./run, not copied into the image. Keep heavy,
+# host-specific trees out of the context so `./run build` stays fast.
+node_modules
+dependencies
+out
+cache
+cache_forge
+artifacts
+dist
+broadcast
+.git
+.run
