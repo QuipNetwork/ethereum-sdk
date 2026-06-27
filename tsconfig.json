@@ -7,24 +7,11 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "outDir": "dist",
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "rootDir": ".",
-    "baseUrl": ".",
-    "paths": {
-      "*": ["node_modules/*", "typechain-types/*"]
-    },
-    "types": ["node", "hardhat", "mocha", "chai", "jest"]
+    "types": ["node"]
   },
   "include": [
-    "index.ts",
-    "src/**/*",
-    "typechain-types/**/*",
-    "scripts/**/*",
-    "test/**/*",
-    "hardhat.config.ts"
-  ],
-  "exclude": ["node_modules", "dist"]
+    "hardhat.config.cts",
+    "test/**/*.ts",
+    "scripts/**/*"
+  ]
 }

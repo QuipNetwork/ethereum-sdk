@@ -6,20 +6,17 @@ bun.lock
 /cache
 /artifacts
 
-# TypeChain files
-/typechain
-/typechain-types
-
-# solidity-coverage files
-/coverage
-/coverage.json
-
-# Hardhat Ignition default
-ignition/
-
+# Foundry files
+/out
+/cache_forge
+/dependencies
 
 *.tmp.json
 dist/
+
+# Generated SDK files
+src/abi/
+src/bytecode.json
 .DS_Store
 
 pwCrack.ts
