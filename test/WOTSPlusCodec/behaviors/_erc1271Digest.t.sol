@@ -13,34 +13,14 @@ contract WOTSPlusCodec__erc1271Digest is WOTSPlusCodecTest {
 
     function test_exposed_erc1271Digest_matchesManualHash() public view {
         bytes32 expected = EfficientHashLib.hash(
-            keccak256("quip.digest.erc1271"),
-            bytes32(C),
-            bytes32(uint256(uint160(W))),
-            VSEED,
-            VHASH,
-            MSG
+            keccak256("quip.digest.erc1271"), bytes32(C), bytes32(uint256(uint160(W))), VSEED, VHASH, MSG
         );
-        assertEq(
-            codec.exposed_erc1271Digest(W, C, VSEED, VHASH, MSG),
-            expected
-        );
+        assertEq(codec.exposed_erc1271Digest(W, C, VSEED, VHASH, MSG), expected);
     }
 
     function test_exposed_erc1271Digest_differsByWallet() public view {
-        bytes32 a = codec.exposed_erc1271Digest(
-            address(0x1),
-            C,
-            VSEED,
-            VHASH,
-            MSG
-        );
-        bytes32 b = codec.exposed_erc1271Digest(
-            address(0x2),
-            C,
-            VSEED,
-            VHASH,
-            MSG
-        );
+        bytes32 a = codec.exposed_erc1271Digest(address(0x1), C, VSEED, VHASH, MSG);
+        bytes32 b = codec.exposed_erc1271Digest(address(0x2), C, VSEED, VHASH, MSG);
         assertTrue(a != b);
     }
 
@@ -51,38 +31,14 @@ contract WOTSPlusCodec__erc1271Digest is WOTSPlusCodecTest {
     }
 
     function test_exposed_erc1271Digest_differsByVerifier() public view {
-        bytes32 a = codec.exposed_erc1271Digest(
-            W,
-            C,
-            bytes32(uint256(0x111)),
-            VHASH,
-            MSG
-        );
-        bytes32 b = codec.exposed_erc1271Digest(
-            W,
-            C,
-            bytes32(uint256(0x222)),
-            VHASH,
-            MSG
-        );
+        bytes32 a = codec.exposed_erc1271Digest(W, C, bytes32(uint256(0x111)), VHASH, MSG);
+        bytes32 b = codec.exposed_erc1271Digest(W, C, bytes32(uint256(0x222)), VHASH, MSG);
         assertTrue(a != b);
     }
 
     function test_exposed_erc1271Digest_differsByMessage() public view {
-        bytes32 a = codec.exposed_erc1271Digest(
-            W,
-            C,
-            VSEED,
-            VHASH,
-            bytes32(uint256(0x111))
-        );
-        bytes32 b = codec.exposed_erc1271Digest(
-            W,
-            C,
-            VSEED,
-            VHASH,
-            bytes32(uint256(0x222))
-        );
+        bytes32 a = codec.exposed_erc1271Digest(W, C, VSEED, VHASH, bytes32(uint256(0x111)));
+        bytes32 b = codec.exposed_erc1271Digest(W, C, VSEED, VHASH, bytes32(uint256(0x222)));
         assertTrue(a != b);
     }
 }

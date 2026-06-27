@@ -11,9 +11,7 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
     /// @dev Verifier key rotates on each validated UserOp
     function test_simulation_verifierRotatesOnValidation() public {
         // Generate next verifier key
-        (WOTSPlus.WinternitzAddress memory nextVerifier, ) = _generateKeyPair(
-            "next-verifier-1"
-        );
+        (WOTSPlus.WinternitzAddress memory nextVerifier,) = _generateKeyPair("next-verifier-1");
 
         // Build paymasterAndData with valid signature
         bytes memory paymasterAndData = _buildPaymasterAndData(
@@ -29,12 +27,8 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
 
         // Call validatePaymasterUserOp as EntryPoint
         vm.prank(ENTRY_POINT);
-        (bytes memory context, uint256 validationData) = paymaster
-            .validatePaymasterUserOp(
-                _mockUserOp(paymasterAndData),
-                bytes32(0),
-                0
-            );
+        (bytes memory context, uint256 validationData) =
+            paymaster.validatePaymasterUserOp(_mockUserOp(paymasterAndData), bytes32(0), 0);
 
         // Validation should succeed (authorizer address = 0 means success)
         assertEq(uint160(validationData), 0);
@@ -43,9 +37,7 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
         assertEq(context, abi.encode(WALLET));
 
         // Verifier should have rotated
-        WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, nextVerifier.publicSeed);
         assertEq(stored.publicKeyHash, nextVerifier.publicKeyHash);
     }
@@ -53,63 +45,32 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
     /// @dev Sequential validations each rotate the verifier key
     function test_simulation_sequentialValidationsRotateKeys() public {
         // First validation: rotate from initial to next1
-        (
-            WOTSPlus.WinternitzAddress memory next1,
-            bytes32 next1PrivKey
-        ) = _generateKeyPair("seq-verifier-1");
+        (WOTSPlus.WinternitzAddress memory next1, bytes32 next1PrivKey) = _generateKeyPair("seq-verifier-1");
 
         bytes memory paymasterAndData1 = _buildPaymasterAndData(
-            WALLET,
-            0,
-            "",
-            uint48(block.timestamp + 1 hours),
-            uint48(0),
-            verifierPubkey,
-            verifierPrivateKey,
-            next1
+            WALLET, 0, "", uint48(block.timestamp + 1 hours), uint48(0), verifierPubkey, verifierPrivateKey, next1
         );
 
         vm.prank(ENTRY_POINT);
-        paymaster.validatePaymasterUserOp(
-            _mockUserOp(paymasterAndData1),
-            bytes32(0),
-            0
-        );
+        paymaster.validatePaymasterUserOp(_mockUserOp(paymasterAndData1), bytes32(0), 0);
 
         // Verify first rotation
-        WOTSPlus.WinternitzAddress memory stored1 = paymaster.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored1 = paymaster.getPqVerifier(WALLET);
         assertEq(stored1.publicSeed, next1.publicSeed);
         assertEq(stored1.publicKeyHash, next1.publicKeyHash);
 
         // Second validation: rotate from next1 to next2
-        (WOTSPlus.WinternitzAddress memory next2, ) = _generateKeyPair(
-            "seq-verifier-2"
-        );
+        (WOTSPlus.WinternitzAddress memory next2,) = _generateKeyPair("seq-verifier-2");
 
         bytes memory paymasterAndData2 = _buildPaymasterAndData(
-            WALLET,
-            0,
-            "",
-            uint48(block.timestamp + 1 hours),
-            uint48(0),
-            next1,
-            next1PrivKey,
-            next2
+            WALLET, 0, "", uint48(block.timestamp + 1 hours), uint48(0), next1, next1PrivKey, next2
         );
 
         vm.prank(ENTRY_POINT);
-        paymaster.validatePaymasterUserOp(
-            _mockUserOp(paymasterAndData2),
-            bytes32(0),
-            0
-        );
+        paymaster.validatePaymasterUserOp(_mockUserOp(paymasterAndData2), bytes32(0), 0);
 
         // Verify second rotation
-        WOTSPlus.WinternitzAddress memory stored2 = paymaster.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored2 = paymaster.getPqVerifier(WALLET);
         assertEq(stored2.publicSeed, next2.publicSeed);
         assertEq(stored2.publicKeyHash, next2.publicKeyHash);
 
@@ -121,30 +82,17 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
     ///      The paymaster still rotates the key (signature was valid), but the EntryPoint
     ///      will reject the UserOp based on the expiry window.
     function test_simulation_expiredOpStillRotatesKey() public {
-        (WOTSPlus.WinternitzAddress memory nextVerifier, ) = _generateKeyPair(
-            "expired-verifier"
-        );
+        (WOTSPlus.WinternitzAddress memory nextVerifier,) = _generateKeyPair("expired-verifier");
 
         // Set validUntil to a past timestamp
         uint48 expiredUntil = uint48(block.timestamp - 1);
 
         bytes memory paymasterAndData = _buildPaymasterAndData(
-            WALLET,
-            0,
-            "",
-            expiredUntil,
-            uint48(0),
-            verifierPubkey,
-            verifierPrivateKey,
-            nextVerifier
+            WALLET, 0, "", expiredUntil, uint48(0), verifierPubkey, verifierPrivateKey, nextVerifier
         );
 
         vm.prank(ENTRY_POINT);
-        (, uint256 validationData) = paymaster.validatePaymasterUserOp(
-            _mockUserOp(paymasterAndData),
-            bytes32(0),
-            0
-        );
+        (, uint256 validationData) = paymaster.validatePaymasterUserOp(_mockUserOp(paymasterAndData), bytes32(0), 0);
 
         // Authorizer is 0 (signature valid) but validUntil is past, so EntryPoint rejects
         uint160 authorizer = uint160(validationData);
@@ -155,9 +103,7 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
         assertEq(returnedValidUntil, expiredUntil);
 
         // Key still rotated because the WOTS+ signature was valid
-        WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, nextVerifier.publicSeed);
         assertEq(stored.publicKeyHash, nextVerifier.publicKeyHash);
     }
@@ -167,9 +113,7 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
     ///      still rotate — the window check is the EntryPoint's concern, not the
     ///      paymaster's.
     function test_simulation_futureValidAfter() public {
-        (WOTSPlus.WinternitzAddress memory nextVerifier, ) = _generateKeyPair(
-            "future-verifier"
-        );
+        (WOTSPlus.WinternitzAddress memory nextVerifier,) = _generateKeyPair("future-verifier");
 
         uint48 futureAfter = uint48(block.timestamp + 1 hours);
 
@@ -185,11 +129,7 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
         );
 
         vm.prank(ENTRY_POINT);
-        (, uint256 validationData) = paymaster.validatePaymasterUserOp(
-            _mockUserOp(paymasterAndData),
-            bytes32(0),
-            0
-        );
+        (, uint256 validationData) = paymaster.validatePaymasterUserOp(_mockUserOp(paymasterAndData), bytes32(0), 0);
 
         // Authorizer is 0 (valid signature)
         uint160 authorizer = uint160(validationData);
@@ -200,9 +140,7 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
         assertEq(returnedValidAfter, futureAfter);
 
         // Key rotated despite the op being not-yet-valid — WOTS+ is one-time-use.
-        WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory stored = paymaster.getPqVerifier(WALLET);
         assertEq(stored.publicSeed, nextVerifier.publicSeed);
         assertEq(stored.publicKeyHash, nextVerifier.publicKeyHash);
     }
@@ -212,62 +150,34 @@ contract QuipPaymaster_sponsoredOperation is QuipPaymasterTest {
         address WALLET_B = address(0xbeef);
 
         // Register a separate verifier for WALLET_B
-        (
-            WOTSPlus.WinternitzAddress memory verifierB,
-            bytes32 verifierBPrivKey
-        ) = _generateKeyPair("wallet-b-verifier-0");
+        (WOTSPlus.WinternitzAddress memory verifierB, bytes32 verifierBPrivKey) =
+            _generateKeyPair("wallet-b-verifier-0");
         vm.prank(ADMIN);
         paymaster.setPqVerifier(WALLET_B, verifierB);
 
         // Rotate WALLET's verifier
-        (WOTSPlus.WinternitzAddress memory nextA, ) = _generateKeyPair(
-            "wallet-a-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextA,) = _generateKeyPair("wallet-a-next");
         bytes memory dataA = _buildPaymasterAndData(
-            WALLET,
-            0,
-            "",
-            uint48(block.timestamp + 1 hours),
-            uint48(0),
-            verifierPubkey,
-            verifierPrivateKey,
-            nextA
+            WALLET, 0, "", uint48(block.timestamp + 1 hours), uint48(0), verifierPubkey, verifierPrivateKey, nextA
         );
 
         vm.prank(ENTRY_POINT);
         paymaster.validatePaymasterUserOp(_mockUserOp(dataA), bytes32(0), 0);
 
         // Rotate WALLET_B's verifier
-        (WOTSPlus.WinternitzAddress memory nextB, ) = _generateKeyPair(
-            "wallet-b-next"
-        );
+        (WOTSPlus.WinternitzAddress memory nextB,) = _generateKeyPair("wallet-b-next");
         bytes memory dataB = _buildPaymasterAndData(
-            WALLET_B,
-            0,
-            "",
-            uint48(block.timestamp + 1 hours),
-            uint48(0),
-            verifierB,
-            verifierBPrivKey,
-            nextB
+            WALLET_B, 0, "", uint48(block.timestamp + 1 hours), uint48(0), verifierB, verifierBPrivKey, nextB
         );
 
         vm.prank(ENTRY_POINT);
-        paymaster.validatePaymasterUserOp(
-            _mockUserOp(dataB, WALLET_B),
-            bytes32(0),
-            0
-        );
+        paymaster.validatePaymasterUserOp(_mockUserOp(dataB, WALLET_B), bytes32(0), 0);
 
         // Both wallets have independent verifier state
-        WOTSPlus.WinternitzAddress memory storedA = paymaster.getPqVerifier(
-            WALLET
-        );
+        WOTSPlus.WinternitzAddress memory storedA = paymaster.getPqVerifier(WALLET);
         assertEq(storedA.publicSeed, nextA.publicSeed);
 
-        WOTSPlus.WinternitzAddress memory storedB = paymaster.getPqVerifier(
-            WALLET_B
-        );
+        WOTSPlus.WinternitzAddress memory storedB = paymaster.getPqVerifier(WALLET_B);
         assertEq(storedB.publicSeed, nextB.publicSeed);
 
         // Original keys differ from current

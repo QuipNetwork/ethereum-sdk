@@ -4,18 +4,18 @@ pragma solidity ^0.8.33;
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {Deployer} from "../contracts/Deployer.sol";
-import {QuipWallet} from "../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../contracts/wots/WOTSPlusImplementation.sol";
 
 /**
  * @title DeployImplementation
- * @dev Deploys a QuipWallet implementation via CREATE3 through the Deployer contract.
+ * @dev Deploys a WOTSPlusImplementation implementation via CREATE3 through the Deployer contract.
  *
  *      IMPORTANT: This script must be run with FOUNDRY_PROFILE=deploy so that the
  *      WOTSPlus library is linked at the correct CREATE3 address (configured in
  *      foundry.toml [profile.deploy] libraries). Without this, the bytecode will
  *      contain unlinked library references and the deployment will fail.
  *
- *      type(QuipWallet).creationCode is linked at compile time via the profile's
+ *      type(WOTSPlusImplementation).creationCode is linked at compile time via the profile's
  *      libraries config. The resulting bytecode is deployed through the Deployer's
  *      CREATE3 for a deterministic address.
  *
@@ -26,7 +26,7 @@ import {QuipWallet} from "../contracts/QuipWallet.sol";
  * Environment:
  *   PRIVATE_KEY - Operations wallet private key
  *   DEPLOYER_ADDRESS - Deployer contract address
- *   FACTORY_ADDRESS - QuipFactory contract address (QuipWallet constructor arg)
+ *   FACTORY_ADDRESS - QuipFactory contract address (WOTSPlusImplementation constructor arg)
  */
 contract DeployImplementation is Script {
     function run() external {
@@ -39,7 +39,7 @@ contract DeployImplementation is Script {
 
         Deployer deployer = Deployer(deployerAddr);
 
-        bytes32 salt = keccak256(abi.encodePacked("QUIP:QuipWallet:V1"));
+        bytes32 salt = keccak256(abi.encodePacked("QUIP:WOTSPlusImplementation:V1.1"));
         address expectedAddress = CREATE3.predictDeterministicAddress(salt, deployerAddr);
 
         console.log("Deployer:", deployerAddr);
@@ -51,10 +51,8 @@ contract DeployImplementation is Script {
             return;
         }
 
-        bytes memory bytecode = abi.encodePacked(
-            type(QuipWallet).creationCode,
-            abi.encode(payable(factoryAddr))
-        );
+        bytes memory bytecode =
+            abi.encodePacked(type(WOTSPlusImplementation).creationCode, abi.encode(payable(factoryAddr)));
         console.log("Bytecode size:", bytecode.length, "bytes");
 
         vm.startBroadcast(privateKey);

@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipFactoryHarness} from "../../harness/QuipFactoryHarness.sol";
-import {QuipWallet} from "../../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 
 contract QuipFactory__findLatestActive is QuipFactoryTest {
     QuipFactoryHarness public harness;
@@ -18,9 +18,9 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
     }
 
     function test_exposed_findLatestActive_returnsLatestVetted() public {
-        QuipWallet impl1 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl2 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl3 = new QuipWallet(payable(address(harness)));
+        WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl3 = new WOTSPlusImplementation(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
         harness.vetImplementation(address(impl2));
@@ -31,9 +31,9 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
     }
 
     function test_exposed_findLatestActive_skipsDeprecated() public {
-        QuipWallet impl1 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl2 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl3 = new QuipWallet(payable(address(harness)));
+        WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl3 = new WOTSPlusImplementation(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
         harness.vetImplementation(address(impl2));
@@ -44,10 +44,8 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
         assertEq(harness.exposed_findLatestActive(), address(impl2));
     }
 
-    function test_exposed_findLatestActive_returnsZeroWhenAllDeprecated()
-        public
-    {
-        QuipWallet impl1 = new QuipWallet(payable(address(harness)));
+    function test_exposed_findLatestActive_returnsZeroWhenAllDeprecated() public {
+        WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
         harness.deprecateImplementation(address(impl1));
@@ -57,7 +55,7 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
     }
 
     function test_exposed_findLatestActive_returnsUndeprecatedImpl() public {
-        QuipWallet impl1 = new QuipWallet(payable(address(harness)));
+        WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
         harness.deprecateImplementation(address(impl1));
@@ -73,9 +71,9 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
     // skip — this case pins the loop-continues invariant when the latest N
     // entries are all deprecated.
     function test_exposed_findLatestActive_skipsMultipleDeprecated() public {
-        QuipWallet impl1 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl2 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl3 = new QuipWallet(payable(address(harness)));
+        WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl3 = new WOTSPlusImplementation(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
         harness.vetImplementation(address(impl2));
@@ -90,12 +88,10 @@ contract QuipFactory__findLatestActive is QuipFactoryTest {
     // Pattern: [active, deprecated, active]. Backward scan returns the rightmost
     // active entry without examining earlier entries — guards against a bug
     // where the loop over-shoots the first active hit.
-    function test_exposed_findLatestActive_returnsFirstActiveFromRight()
-        public
-    {
-        QuipWallet impl1 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl2 = new QuipWallet(payable(address(harness)));
-        QuipWallet impl3 = new QuipWallet(payable(address(harness)));
+    function test_exposed_findLatestActive_returnsFirstActiveFromRight() public {
+        WOTSPlusImplementation impl1 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(harness)));
+        WOTSPlusImplementation impl3 = new WOTSPlusImplementation(payable(address(harness)));
         vm.startPrank(ADMIN);
         harness.vetImplementation(address(impl1));
         harness.vetImplementation(address(impl2));

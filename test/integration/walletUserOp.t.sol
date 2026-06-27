@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 
-import {IQuipWallet} from "../../contracts/interfaces/IQuipWallet.sol";
+import {IWOTSPlusImplementation} from "../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
 
 import {IntegrationBase, IEntryPoint, IEntryPointExt, PackedUserOperation} from "./IntegrationBase.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
@@ -20,16 +20,10 @@ contract Integration_walletUserOp is IntegrationBase {
 
     /// @dev Full UserOp submission via handleOps: execute ETH transfer, verify key rotation.
     function test_integration_handleOps_fullUserOp() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "integration-next-key"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("integration-next-key");
 
         uint256 transferAmount = 0.1 ether;
-        PackedUserOperation memory userOp = _buildUserOp(
-            BOB,
-            transferAmount,
-            ""
-        );
+        PackedUserOperation memory userOp = _buildUserOp(BOB, transferAmount, "");
         _signUserOp(userOp, alicePrivateKey, alicePubkey, nextPq);
 
         uint256 bobBalBefore = BOB.balance;
@@ -48,16 +42,10 @@ contract Integration_walletUserOp is IntegrationBase {
     /// @dev Key rotation happens during validation, before execution.
     ///      If execution reverts, the key should still be rotated.
     function test_integration_handleOps_rotatesKeyOnFailedExecution() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "integration-fail-key"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("integration-fail-key");
 
         uint256 excessiveAmount = 1000 ether;
-        PackedUserOperation memory userOp = _buildUserOp(
-            BOB,
-            excessiveAmount,
-            ""
-        );
+        PackedUserOperation memory userOp = _buildUserOp(BOB, excessiveAmount, "");
         _signUserOp(userOp, alicePrivateKey, alicePubkey, nextPq);
 
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
@@ -72,9 +60,7 @@ contract Integration_walletUserOp is IntegrationBase {
     ///      Proves the v0.7 signature-failure error string still matches what the
     ///      wallet's `_validateSignature` returns (validationData = 1).
     function test_integration_handleOps_revertsWhen_walletSigTampered() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "integration-badsig-key"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("integration-badsig-key");
 
         PackedUserOperation memory userOp = _buildUserOp(BOB, 0.01 ether, "");
         _signUserOp(userOp, alicePrivateKey, alicePubkey, nextPq);
@@ -88,13 +74,7 @@ contract Integration_walletUserOp is IntegrationBase {
 
         PackedUserOperation[] memory ops = new PackedUserOperation[](1);
         ops[0] = userOp;
-        vm.expectRevert(
-            abi.encodeWithSignature(
-                "FailedOp(uint256,string)",
-                uint256(0),
-                "AA24 signature error"
-            )
-        );
+        vm.expectRevert(abi.encodeWithSignature("FailedOp(uint256,string)", uint256(0), "AA24 signature error"));
         IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
     }
 
@@ -102,13 +82,8 @@ contract Integration_walletUserOp is IntegrationBase {
     ///      op2 (signed by op1's nextKey) validates. Also confirms `BENEFICIARY`
     ///      receives the gas refund from both submissions.
     function test_integration_handleOps_chainedRotation() public {
-        (
-            WOTSPlus.WinternitzAddress memory k1,
-            bytes32 k1Priv
-        ) = _generateKeyPair("integration-chain-k1");
-        (WOTSPlus.WinternitzAddress memory k2, ) = _generateKeyPair(
-            "integration-chain-k2"
-        );
+        (WOTSPlus.WinternitzAddress memory k1, bytes32 k1Priv) = _generateKeyPair("integration-chain-k1");
+        (WOTSPlus.WinternitzAddress memory k2,) = _generateKeyPair("integration-chain-k2");
 
         // --- op1: alicePubkey -> k1 ---
         PackedUserOperation memory op1 = _buildUserOp(BOB, 0.01 ether, "");
@@ -119,11 +94,7 @@ contract Integration_walletUserOp is IntegrationBase {
 
         uint256 beneficiaryBefore = BENEFICIARY.balance;
         IEntryPoint(ENTRY_POINT).handleOps(ops1, BENEFICIARY);
-        assertGt(
-            BENEFICIARY.balance,
-            beneficiaryBefore,
-            "beneficiary must receive gas refund for op1"
-        );
+        assertGt(BENEFICIARY.balance, beneficiaryBefore, "beneficiary must receive gas refund for op1");
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, k1));
         assertFalse(wallet.isKey(Codec.KeyType.Transaction, alicePubkey));
 
@@ -144,9 +115,7 @@ contract Integration_walletUserOp is IntegrationBase {
     ///      the nonce advanced *and* the signing key was rotated out of the set.
     ///      Proves one-time-key semantics at the EntryPoint level.
     function test_integration_handleOps_revertsWhen_replay() public {
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "integration-replay-key"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("integration-replay-key");
 
         PackedUserOperation memory userOp = _buildUserOp(BOB, 0.01 ether, "");
         _signUserOp(userOp, alicePrivateKey, alicePubkey, nextPq);
@@ -157,13 +126,7 @@ contract Integration_walletUserOp is IntegrationBase {
 
         // Second submission of the exact same op. The EntryPoint's nonce
         // manager enforces monotonic nonces; nonce 0 is already consumed.
-        vm.expectRevert(
-            abi.encodeWithSignature(
-                "FailedOp(uint256,string)",
-                uint256(0),
-                "AA25 invalid account nonce"
-            )
-        );
+        vm.expectRevert(abi.encodeWithSignature("FailedOp(uint256,string)", uint256(0), "AA25 invalid account nonce"));
         IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
     }
 
@@ -175,16 +138,10 @@ contract Integration_walletUserOp is IntegrationBase {
         uint256 fee = wallet.getExecuteFee();
         assertEq(fee, 0.002 ether);
 
-        (WOTSPlus.WinternitzAddress memory nextPq, ) = _generateKeyPair(
-            "integration-fee-key"
-        );
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("integration-fee-key");
 
         uint256 transferAmount = 0.01 ether;
-        PackedUserOperation memory userOp = _buildUserOp(
-            BOB,
-            transferAmount,
-            ""
-        );
+        PackedUserOperation memory userOp = _buildUserOp(BOB, transferAmount, "");
         _signUserOp(userOp, alicePrivateKey, alicePubkey, nextPq);
 
         uint256 walletBalBefore = address(wallet).balance;
@@ -195,9 +152,6 @@ contract Integration_walletUserOp is IntegrationBase {
         IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
 
         assertEq(address(factory).balance, factoryBalBefore + fee);
-        assertEq(
-            address(wallet).balance,
-            walletBalBefore - transferAmount - fee
-        );
+        assertEq(address(wallet).balance, walletBalBefore - transferAmount - fee);
     }
 }

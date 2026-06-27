@@ -1,85 +1,148 @@
 # Deployments
 
-## V1 Contracts (CREATE2)
+## v1.1 — canonical addresses (CREATE3 via the v1 Deployer)
 
-All V1 contracts share the same addresses on every deployed chain. Deterministic deployment
-via CREATE2 through the Deployer contract with salt `keccak256("QUIP")`.
+All v1.1 contracts share the same addresses on every chain where the v1
+Deployer is bootstrapped. Live on Base Sepolia as of 2026-06-03; other
+CREATE3 chains require a v1.1 deploy to materialize. Computed before any
+deploy is broadcast — run `make predict-addresses` to see them locally
+with no env vars and no RPC.
 
-Compiler: solc 0.8.28+commit.7893614a, EVM paris, optimizer disabled, bytecodeHash=none.
+| Contract | Address |
+|---|---|
+| Deployer (v1, reused) | `0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1` |
+| WOTSPlus | `0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723` |
+| QuipFactory | `0xd175378EC511e56BbffcC802375C6ad7d892c083` |
+| QuipWallet (impl) | `0xDe0Eb22871dC0F51B0C625c9a4ff9e8D1ac96d64` |
+| QuipPaymaster (impl) | `0x557453653005e6F35EA3265733f3F1c4643A1627` |
+| QuipPaymaster (proxy, canonical) | `0xC4209cD353CF7B1dbBf6F6B4d08bC5461aC7E145` |
 
-### Addresses
+> The QuipPaymaster proxy is the user-facing paymaster address; the impl
+> behind it is intentionally inert (`_disableInitializers()` runs in its
+> constructor).
+>
+> The Deployer keeps its v1 salt — bumping the contract-host's address
+> would break the cross-chain pin without a corresponding redeploy
+> everywhere. Only the downstream contracts roll forward.
 
-| Contract | Address | Chains |
-|----------|---------|--------|
-| Deployer | `0xF768b4E4A314C9119587b8Cd35a89bDC228290b5` | Ethereum, Base, Optimism, Degen |
-| WOTSPlus | `0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991` | Ethereum, Base, Optimism, Degen |
-| QuipFactory | `0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99` | Ethereum, Base, Optimism, Degen |
+### Salts
 
-### Chains
+| Contract | Salt preimage |
+|---|---|
+| Deployer (via CreateX, unchanged) | `QUIP:Deployer:V1` |
+| WOTSPlus | `QUIP:WOTSPlus:V1.1` |
+| QuipFactory | `QUIP:QuipFactory:V1.1` |
+| QuipWallet impl | `QUIP:QuipWallet:V1.1` |
+| QuipPaymaster impl | `QUIP:QuipPaymaster:Impl:V1.1` |
+| QuipPaymaster proxy | `QUIP:QuipPaymaster:Proxy:V1.1` |
 
-| Chain | Chain ID | Deployer Method |
-|-------|----------|-----------------|
-| Ethereum | 1 | CREATE at nonce=1 (Deployer), CREATE2 (WOTSPlus, QuipFactory) |
-| Base | 8453 | Same |
-| Optimism | 10 | Same |
-| Degen | 666666666 | Same |
+### Deployer bootstrap
 
-### Ethereum Mainnet Transactions
+The Deployer is the only contract not deployed via solady CREATE3 — it
+*hosts* solady CREATE3, so it can't deploy itself. Instead it's deployed
+via **CreateX** at `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`, which is
+itself pre-deployed on every chain via Nick's-method presigned tx.
 
-| Contract | Block | Tx Hash |
-|----------|-------|---------|
-| WOTSPlus | 22228373 | `0xb3e6c01c55091f04d3ea9c4a656d3a3038f24cd892439b61e20a3054f892b8a4` |
-| QuipFactory | 22228374 | `0x5830a69f7bf7049193a6145306058aaea29249a2da2fdc246d3aaa0011a156eb` |
+CreateX salt mode: the raw salt `keccak256("QUIP:Deployer:V1")` has its
+first 20 bytes as random hash output (neither `msg.sender` nor
+`address(0)`), so CreateX's guard hits the "other" branch:
+`guardedSalt = keccak256(abi.encode(salt))`. This means:
+- **Unguarded**: any funded wallet can broadcast `DeployDeployer.s.sol`.
+  No fresh-EOA / nonce-1 ritual.
+- **Cross-chain identical**: the guarded salt is deterministic from the
+  preimage, so CreateX deploys the Deployer at the same address on every
+  chain that has CreateX.
 
-### Deployment Parameters
+Once the Deployer exists on a chain, every other Quip contract uses it
+to deploy via solady CREATE3.
 
-- **Deployer**: deployed via `CREATE` at `nonce=1` from a one-time wallet
-- **Salt**: `keccak256("QUIP")` = `0xd9fb07cc22ea59a9164c9fbaf3b898b3e6c5190454c06259cf5c99c889dc63f4`
-- **QuipFactory constructor**: `(initialOwner=0x4971905B8741BdBe1Ba008f73C28c82DE9D95df9, wotsLibrary=0x1Ad02...)`
-- **Linked library**: WOTSPlus at `0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991`
+### Library linking
 
----
-
-## V2 Deployment Workflow (CREATE3)
-
-Future deployments use CREATE3 through the Deployer. CREATE3 addresses depend only on
-the Deployer address and salt (not on bytecode), making them predictable before deployment.
-
-### Per-Contract Salts
-
-Each contract uses a versioned salt: `keccak256("QUIP:<ContractName>:V1")`.
-
-| Contract | Salt Preimage |
-|----------|---------------|
-| WOTSPlus | `QUIP:WOTSPlus:V1` |
-| QuipFactory | `QUIP:QuipFactory:V1` |
-| QuipWallet | `QUIP:QuipWallet:V1` |
-
-### Library Linking
-
-QuipWallet depends on the WOTSPlus external library. Since CREATE3 addresses are known
-before deployment, the WOTSPlus address can be configured ahead of time.
-
-Forge links libraries at compile time via `foundry.toml`:
+`QuipWallet` and `QuipFactory` both call into the `WOTSPlus` library at
+runtime — their compiled bytecode contains a placeholder that must be
+replaced with WOTSPlus's address before deploy. Foundry handles this via
+the `[profile.deploy]` profile in `foundry.toml`:
 
 ```toml
 [profile.deploy]
 libraries = [
-    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus:<WOTS_ADDRESS>"
+    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus:0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723"
 ]
 ```
 
-The `[profile.deploy]` profile is used for deployment scripts (`FOUNDRY_PROFILE=deploy`).
-The default profile is left untouched so `forge test` can auto-deploy libraries.
+Every script that touches `QuipWallet` or `QuipFactory` bytecode runs
+under `FOUNDRY_PROFILE=deploy`. The Makefile per-chain targets set this
+automatically.
 
-### Steps
+### Deployment workflow
 
 ```
-1. Predict addresses     forge script script/PredictAddresses.s.sol
-2. Configure linking     paste WOTSPlus address into foundry.toml [profile.deploy]
-3. Release bytecodes     make release
-4. Deploy Deployer       make deploy-deployer
-5. Deploy infra          make deploy-all          (WOTSPlus + QuipFactory)
-6. Deploy implementation make deploy-impl         (QuipWallet via CREATE3)
-7. Vet implementation    make vet-impl            (register on QuipFactory)
+1. Predict addresses     make predict-addresses
+                         # No env / RPC needed. Prints all canonical addresses.
+
+2. Bootstrap Deployer    make deploy-deployer-<chain>
+                         # CreateX-based; any funded wallet works.
+                         # Skip if Deployer already at canonical address.
+
+3. Deploy infra          make deploy-all-<chain>
+                         # WOTSPlus + QuipFactory + QuipPaymaster (impl + proxy).
+                         # Requires FACTORY_OWNER, MAX_FEE, PAYMASTER_OWNER in .env.
+
+4. Deploy wallet impl    make deploy-impl-<chain>
+                         # Per-release flow, runs under FOUNDRY_PROFILE=deploy.
+
+5. Vet wallet impl       IMPLEMENTATION=0x... make vet-impl-<chain>
+                         # Factory owner whitelists the new impl.
 ```
+
+`<chain>` is currently `base-sepolia`; see Makefile for the full list of
+per-chain targets.
+
+### Required environment variables
+
+Put these in a project-local `.env` (Makefile auto-loads it). All
+addresses below are examples — substitute your actual operator wallets.
+
+```bash
+# Chain RPC + Etherscan
+API_URL_BASE_SEPOLIA=https://base-sepolia.g.alchemy.com/v2/<key>
+ETHERSCAN_API_KEY=<your-etherscan-v2-key>      # works across all chains
+
+# Wallet — one key for every step. The Makefile auto-loads .env, so
+# `make deploy-all-base-sepolia` etc. pick this up without any further
+# arguments. Forge derives the EOA address internally; no separate
+# "deployer EOA" var is required.
+PRIVATE_KEY=0x...
+
+# Deploy-time owners / params
+DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1
+FACTORY_OWNER=0x...                            # controls vetImplementation
+MAX_FEE=1000000000000000                       # wallet creation fee (wei)
+PAYMASTER_OWNER=0x...                          # controls paymaster
+
+# Per-release (only for deploy-impl-* / vet-impl-*)
+FACTORY_ADDRESS=0xd175378EC511e56BbffcC802375C6ad7d892c083
+IMPLEMENTATION=0x...                           # filled in after deploy-impl
+```
+
+---
+
+## v0.1.x — historical (CREATE2 via custom DeployDeployer at nonce=1)
+
+`@quip.network/ethereum-sdk@0.1.7` and earlier (now vendored at `/v0`).
+Deployer was bootstrapped via plain CREATE at nonce 1 from a fresh EOA;
+downstream contracts used `keccak256("QUIP")` as the salt with no
+per-contract versioning.
+
+| Contract | Address |
+|---|---|
+| Deployer (v0) | `0xF768b4E4A314C9119587b8Cd35a89bDC228290b5` |
+| WOTSPlus (v0) | `0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991` |
+| QuipFactory (v0) | `0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99` |
+
+Salt: `keccak256("QUIP")` = `0xd9fb07cc22ea59a9164c9fbaf3b898b3e6c5190454c06259cf5c99c889dc63f4`.
+Live on Ethereum, Base, Optimism, Degen as of `0.1.7`.
+
+The corresponding committed release bytecode lives under
+`deployments/bytecode-v0-historical/` (archived; not consumed by any v1
+script).

@@ -53,9 +53,15 @@ contract QuipPaymaster is
     ///      [0:20) paymaster address, [20:36) verificationGasLimit, [36:52) postOpGasLimit.
     uint256 private constant _PAYMASTER_DATA_OFFSET = 52;
 
+    /// @dev Offset into `paymasterAndData` where the WOTS+ signature begins.
+    ///      Everything before this offset is bound into the userOp binding hash;
+    ///      the signature itself is necessarily excluded to break the circular
+    ///      dependency between the signature and what it commits to.
+    ///      Layout: 52 (header) + 6 (validUntil) + 6 (validAfter) + 64 (next verifier) = 128.
+    uint256 private constant _PAYMASTER_SIG_OFFSET = 128;
+
     /// @dev Total expected `userOp.paymasterAndData` length in bytes:
-    ///      52-byte EIP-mandated header + 6 (validUntil) + 6 (validAfter)
-    ///      + 64 (next verifier) + 2144 (WOTS+ signature: 67 × 32) = 2272.
+    ///      128-byte bindable prefix + 2144 (WOTS+ signature: 67 × 32) = 2272.
     uint256 private constant _PAYMASTER_AND_DATA_LEN = 2272;
 
     /// @dev Domain tag for paymaster approval digests (WOTS+ domain-tagged, not EIP-712).
@@ -96,7 +102,8 @@ contract QuipPaymaster is
     /// @inheritdoc IPaymaster
     function validatePaymasterUserOp(
         PackedUserOperation calldata userOp,
-        bytes32 /* userOpHash */,
+        bytes32,
+        /* userOpHash */
         uint256 /* maxCost */
     ) external override returns (bytes memory context, uint256 validationData) {
         if (msg.sender != ENTRY_POINT) revert InvalidEntryPoint();
@@ -119,17 +126,10 @@ contract QuipPaymaster is
         // [6:12)    validAfter (uint48)
         // [12:76)   nextVerifier (WinternitzAddress: 32 bytes publicSeed + 32 bytes publicKeyHash)
         // [76:2220) WOTS+ signature (67 × 32 = 2144 bytes)
+        if (!_verifyAndRotate(userOp)) return ("", 1);
+
         bytes calldata paymasterData = userOp
             .paymasterAndData[_PAYMASTER_DATA_OFFSET:];
-
-        if (
-            !_verifyAndRotate(
-                userOp.sender,
-                userOp.nonce,
-                userOp.callData,
-                paymasterData
-            )
-        ) return ("", 1);
 
         // Pack validationData: [0:160) authorizer=0, [160:208) validUntil, [208:256) validAfter.
         uint48 validUntil = uint48(bytes6(paymasterData[:6]));
@@ -281,18 +281,39 @@ contract QuipPaymaster is
     ///      one-time signature scheme — the signing key is effectively compromised once
     ///      the signature is revealed on-chain.
     ///
-    ///      The digest is built from constituent UserOp fields (sender, nonce, callData).
-    /// @param sender The wallet address (userOp.sender).
-    /// @param nonce The UserOp nonce.
-    /// @param callData_ The UserOp callData.
-    /// @param paymasterData The paymaster data slice starting after the 52-byte header.
+    ///      The signed digest binds a `userOpBindingHash` that covers the same field
+    ///      set as ERC-4337's `userOpHash` but with `paymasterAndData` truncated to
+    ///      `[:_PAYMASTER_SIG_OFFSET]` — i.e. everything except the WOTS+ signature
+    ///      region itself. That truncation is necessary because the signature lives
+    ///      inside `paymasterAndData`, so binding the full hash would be circular.
+    ///      Backend signers MUST replicate this hash construction off-chain.
+    ///
+    ///      CALLER MUST: ensure `userOp.paymasterAndData.length ==
+    ///      `_PAYMASTER_AND_DATA_LEN` before invoking this function. The
+    ///      assembly below reads from fixed calldata offsets (`+12` for the
+    ///      next verifier, `+76` for the pqSig) inside the
+    ///      `paymasterData = paymasterAndData[_PAYMASTER_DATA_OFFSET:]`
+    ///      slice without internal bounds checks. If a future caller fails
+    ///      to enforce the length precondition, those reads silently walk
+    ///      past the calldata end, returning either zero or attacker-
+    ///      controlled garbage from neighbouring calldata. The single
+    ///      enforced caller today is
+    ///      `validatePaymasterUserOp` — the length gate lives at the early-
+    ///      return at the top of that function. Do NOT add a new caller
+    ///      without replicating that gate.
+    /// @param userOp The full PackedUserOperation. `paymasterAndData` must be the
+    ///        complete `_PAYMASTER_AND_DATA_LEN`-byte layout (length-checked by the caller).
     /// @return valid True if the signature is valid and key rotation succeeded.
     function _verifyAndRotate(
-        address sender,
-        uint256 nonce,
-        bytes calldata callData_,
-        bytes calldata paymasterData
+        PackedUserOperation calldata userOp
     ) internal returns (bool valid) {
+        bytes calldata paymasterData = userOp
+            .paymasterAndData[_PAYMASTER_DATA_OFFSET:];
+
+        // Offsets `+12` (validUntil 6B + validAfter 6B) and `+76`
+        // (verifier 64B starts at 12) are valid ONLY because the caller has
+        // already gated on `paymasterAndData.length`. See the CALLER MUST
+        // block in the NatSpec above.
         WOTSPlus.WinternitzAddress calldata nextVerifier;
         WOTSPlus.WinternitzElements calldata pqSig;
         assembly {
@@ -306,7 +327,7 @@ contract QuipPaymaster is
             nextVerifier.publicKeyHash == bytes32(0)
         ) {
             emit PaymasterValidationRejected(
-                sender,
+                userOp.sender,
                 PaymasterValidationFailure.ZeroNextVerifier
             );
             return false;
@@ -314,14 +335,14 @@ contract QuipPaymaster is
 
         WOTSPlus.WinternitzAddress storage currentVerifier = Storage
             .layout()
-            .verifiers[sender];
+            .verifiers[userOp.sender];
 
         if (
             currentVerifier.publicSeed == bytes32(0) ||
             currentVerifier.publicKeyHash == bytes32(0)
         ) {
             emit PaymasterValidationRejected(
-                sender,
+                userOp.sender,
                 PaymasterValidationFailure.NoVerifierRegistered
             );
             return false;
@@ -333,7 +354,7 @@ contract QuipPaymaster is
             nextVerifier.publicKeyHash == currentVerifier.publicKeyHash
         ) {
             emit PaymasterValidationRejected(
-                sender,
+                userOp.sender,
                 PaymasterValidationFailure.NextEqualsCurrent
             );
             return false;
@@ -355,29 +376,25 @@ contract QuipPaymaster is
             ]
         ) {
             emit PaymasterValidationRejected(
-                sender,
+                userOp.sender,
                 PaymasterValidationFailure.NextVerifierKeyInUse
             );
             return false;
         }
 
-        // Build domain-tagged digest from constituent UserOp fields.
-        // Using an intermediate opCommitment avoids exceeding EfficientHashLib's 8-arg limit.
-        bytes32 opCommitment = EfficientHashLib.hash(
-            bytes32(uint256(uint160(sender))),
-            bytes32(nonce),
-            EfficientHashLib.hashCalldata(callData_)
-        );
-
+        // currentVerifier is bound explicitly because it lives in paymaster
+        // storage, not in the userOp. chainId + paymaster address are bound
+        // explicitly even though the latter is also present in paymasterAndData
+        // — defensive layering against any future refactor of the inner hash.
+        // Extracted to a helper to keep the local stack within solc's bounds
+        // (the userOpBindingHash subhash alone consumes 8 slots).
         bytes32 digest = EfficientHashLib.hash(
             _PAYMASTER_APPROVE_TAG,
             bytes32(block.chainid),
             bytes32(uint256(uint160(address(this)))),
             currentVerifier.publicSeed,
             currentVerifier.publicKeyHash,
-            nextVerifier.publicSeed,
-            nextVerifier.publicKeyHash,
-            opCommitment
+            _userOpBindingHash(userOp)
         );
 
         if (
@@ -388,21 +405,21 @@ contract QuipPaymaster is
             )
         ) {
             emit PaymasterValidationRejected(
-                sender,
+                userOp.sender,
                 PaymasterValidationFailure.InvalidSignature
             );
             return false;
         }
 
         // Emit before rotating so currentVerifier fields are still the old values.
-        emit PqVerifierRotated(sender, currentVerifier, nextVerifier);
+        emit PqVerifierRotated(userOp.sender, currentVerifier, nextVerifier);
 
         // Rotate verifier and spend the new hash in the occupancy index. The
         // `currentVerifier` hash is deliberately NOT cleared: it just produced
         // a WOTS+ signature on-chain, which reveals key-chain material that
         // would let an observer forge sigs against any future re-binding of
         // the same public key. The index is monotonic — see `setPqVerifier`.
-        Storage.layout().verifiers[sender] = nextVerifier;
+        Storage.layout().verifiers[userOp.sender] = nextVerifier;
         Storage.layout().verifierKeyUsed[
             _verifierHash(nextVerifier.publicSeed, nextVerifier.publicKeyHash)
         ] = true;
@@ -418,6 +435,30 @@ contract QuipPaymaster is
         bytes32 publicKeyHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(publicSeed, publicKeyHash);
+    }
+
+    /// @dev userOpBindingHash mirrors the field set of ERC-4337's userOpHash with
+    ///      paymasterAndData truncated before the WOTS+ signature region. nextVerifier,
+    ///      validUntil, validAfter, and the paymaster's own gas limits are all bound
+    ///      transitively via the paymasterAndData[:_PAYMASTER_SIG_OFFSET] hash.
+    ///      Extracted from `_verifyAndRotate` into its own frame to keep the
+    ///      caller's local stack within solc's bounds.
+    function _userOpBindingHash(
+        PackedUserOperation calldata userOp
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                bytes32(uint256(uint160(userOp.sender))),
+                bytes32(userOp.nonce),
+                EfficientHashLib.hashCalldata(userOp.initCode),
+                EfficientHashLib.hashCalldata(userOp.callData),
+                userOp.accountGasLimits,
+                bytes32(userOp.preVerificationGas),
+                userOp.gasFees,
+                EfficientHashLib.hashCalldata(
+                    userOp.paymasterAndData[:_PAYMASTER_SIG_OFFSET]
+                )
+            );
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

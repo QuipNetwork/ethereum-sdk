@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
-import {QuipWallet} from "../../../contracts/QuipWallet.sol";
+import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 
 contract QuipFactory_getVettedCodeIndex is QuipFactoryTest {
@@ -11,27 +11,16 @@ contract QuipFactory_getVettedCodeIndex is QuipFactoryTest {
         assertEq(factory.getVettedCodeIndex(codehash), 0);
     }
 
-    function test_getVettedCodeIndex_returnsCorrectIndexForMultipleImpls()
-        public
-    {
-        QuipWallet secondImpl = new QuipWallet(payable(address(factory)));
+    function test_getVettedCodeIndex_returnsCorrectIndexForMultipleImpls() public {
+        WOTSPlusImplementation secondImpl = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);
         factory.vetImplementation(address(secondImpl));
 
-        assertEq(
-            factory.getVettedCodeIndex(address(walletImplementation).codehash),
-            0
-        );
+        assertEq(factory.getVettedCodeIndex(address(walletImplementation).codehash), 0);
         assertEq(factory.getVettedCodeIndex(address(secondImpl).codehash), 1);
     }
 
-    function test_getVettedCodeIndex_returnsNotFoundForUnknownCodehash()
-        public
-        view
-    {
-        assertEq(
-            factory.getVettedCodeIndex(bytes32(uint256(0xdead))),
-            type(uint256).max
-        );
+    function test_getVettedCodeIndex_returnsNotFoundForUnknownCodehash() public view {
+        assertEq(factory.getVettedCodeIndex(bytes32(uint256(0xdead))), type(uint256).max);
     }
 }

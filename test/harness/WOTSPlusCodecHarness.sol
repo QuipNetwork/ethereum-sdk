@@ -3,38 +3,37 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 
 contract WOTSPlusCodecHarness {
     // --- Decoders ---
 
-    function exposed_decodeInit(
-        bytes calldata payload
-    )
+    function exposed_decodeInit(bytes calldata payload)
         external
         pure
         returns (
             WOTSPlus.WinternitzAddress memory disasterRecoveryKey,
             WOTSPlus.WinternitzAddress memory ownershipKey,
-            WOTSPlus.WinternitzAddress[5] memory transactionKeys,
-            WOTSPlus.WinternitzAddress[10] memory recoveryKeys
+            WOTSPlus.WinternitzAddress[10] memory transactionKeys,
+            WOTSPlus.WinternitzAddress[10] memory recoveryKeys,
+            WOTSPlus.WinternitzAddress[10] memory verificationKeys
         )
     {
         (
             WOTSPlus.WinternitzAddress calldata _dk,
             WOTSPlus.WinternitzAddress calldata _ok,
-            WOTSPlus.WinternitzAddress[5] calldata _txn,
-            WOTSPlus.WinternitzAddress[10] calldata _keys
+            WOTSPlus.WinternitzAddress[10] calldata _txn,
+            WOTSPlus.WinternitzAddress[10] calldata _rec,
+            WOTSPlus.WinternitzAddress[10] calldata _ver
         ) = Codec.decodeInit(payload);
         disasterRecoveryKey = _dk;
         ownershipKey = _ok;
         transactionKeys = _txn;
-        recoveryKeys = _keys;
+        recoveryKeys = _rec;
+        verificationKeys = _ver;
     }
 
-    function exposed_decodeUpgradeAuth(
-        bytes calldata data
-    )
+    function exposed_decodeUpgradeAuth(bytes calldata data)
         external
         pure
         returns (
@@ -53,35 +52,28 @@ contract WOTSPlusCodecHarness {
         pqSig = _sig;
     }
 
-    function exposed_decodeUpgradeVerification(
-        bytes calldata data
-    )
+    function exposed_decodeUpgradeVerification(bytes calldata data)
         external
         pure
-        returns (
-            WOTSPlus.WinternitzAddress memory verifier,
-            WOTSPlus.WinternitzElements memory verifySig
-        )
+        returns (WOTSPlus.WinternitzAddress memory verifier, WOTSPlus.WinternitzElements memory verifySig)
     {
-        (
-            WOTSPlus.WinternitzAddress calldata _v,
-            WOTSPlus.WinternitzElements calldata _sig
-        ) = Codec.decodeUpgradeVerification(data);
+        (WOTSPlus.WinternitzAddress calldata _v, WOTSPlus.WinternitzElements calldata _sig) =
+            Codec.decodeUpgradeVerification(data);
         verifier = _v;
         verifySig = _sig;
     }
 
-    function exposed_decodeUpgradeMigration(
-        bytes calldata data
-    ) external pure returns (bool shouldMigrate, bytes memory migratorPayload) {
+    function exposed_decodeUpgradeMigration(bytes calldata data)
+        external
+        pure
+        returns (bool shouldMigrate, bytes memory migratorPayload)
+    {
         (bool _m, bytes calldata _p) = Codec.decodeUpgradeMigration(data);
         shouldMigrate = _m;
         migratorPayload = _p;
     }
 
-    function exposed_decodeExecute(
-        bytes calldata payload
-    )
+    function exposed_decodeExecute(bytes calldata payload)
         external
         pure
         returns (
@@ -109,60 +101,6 @@ contract WOTSPlusCodecHarness {
         data = _d;
     }
 
-    function exposed_decodeRecoverWallet(
-        bytes calldata payload
-    )
-        external
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress memory recoveryKey,
-            WOTSPlus.WinternitzAddress memory newRecoveryKey,
-            WOTSPlus.WinternitzAddress memory newTransactionKey,
-            WOTSPlus.WinternitzElements memory pqSig
-        )
-    {
-        (
-            WOTSPlus.WinternitzAddress calldata _rk,
-            WOTSPlus.WinternitzAddress calldata _newRk,
-            WOTSPlus.WinternitzAddress calldata _pq,
-            WOTSPlus.WinternitzElements calldata _sig
-        ) = Codec.decodeRecoverWallet(payload);
-        recoveryKey = _rk;
-        newRecoveryKey = _newRk;
-        newTransactionKey = _pq;
-        pqSig = _sig;
-    }
-
-    function exposed_decodeKeyManagement(
-        bytes calldata payload
-    )
-        external
-        pure
-        returns (
-            Codec.KeyType kind,
-            WOTSPlus.WinternitzAddress memory currentKey,
-            WOTSPlus.WinternitzAddress memory nextKey,
-            WOTSPlus.WinternitzElements memory pqSig,
-            WOTSPlus.WinternitzAddress[] memory newKeys
-        )
-    {
-        (
-            Codec.KeyType _k,
-            WOTSPlus.WinternitzAddress calldata _c,
-            WOTSPlus.WinternitzAddress calldata _n,
-            WOTSPlus.WinternitzElements calldata _sig,
-            WOTSPlus.WinternitzAddress[] calldata _keys
-        ) = Codec.decodeKeyManagement(payload);
-        kind = _k;
-        currentKey = _c;
-        nextKey = _n;
-        pqSig = _sig;
-        newKeys = new WOTSPlus.WinternitzAddress[](_keys.length);
-        for (uint256 i = 0; i < _keys.length; i++) {
-            newKeys[i] = _keys[i];
-        }
-    }
-
     // --- Encoders ---
 
     function exposed_encodeExecute(
@@ -173,73 +111,10 @@ contract WOTSPlusCodecHarness {
         uint256 value,
         bytes memory data
     ) external pure returns (bytes memory) {
-        return
-            Codec.encodeExecute(
-                currentKey,
-                nextKey,
-                pqSig,
-                target,
-                value,
-                data
-            );
-    }
-
-    function exposed_encodeRecoverWallet(
-        WOTSPlus.WinternitzAddress memory recoveryKey,
-        WOTSPlus.WinternitzAddress memory newRecoveryKey,
-        WOTSPlus.WinternitzAddress memory newTransactionKey,
-        WOTSPlus.WinternitzElements memory pqSig
-    ) external pure returns (bytes memory) {
-        return
-            Codec.encodeRecoverWallet(
-                recoveryKey,
-                newRecoveryKey,
-                newTransactionKey,
-                pqSig
-            );
-    }
-
-    function exposed_encodeKeyManagement(
-        Codec.KeyType kind,
-        WOTSPlus.WinternitzAddress memory currentKey,
-        WOTSPlus.WinternitzAddress memory nextKey,
-        WOTSPlus.WinternitzElements memory pqSig,
-        WOTSPlus.WinternitzAddress[] memory newKeys
-    ) external pure returns (bytes memory) {
-        return
-            Codec.encodeKeyManagement(
-                kind,
-                currentKey,
-                nextKey,
-                pqSig,
-                newKeys
-            );
+        return Codec.encodeExecute(currentKey, nextKey, pqSig, target, value, data);
     }
 
     // --- Hashers ---
-
-    function exposed_recoverWalletDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 recoverySeed,
-        bytes32 recoveryHash,
-        bytes32 newRecoverySeed,
-        bytes32 newRecoveryHash,
-        bytes32 newTransactionSeed,
-        bytes32 newTransactionHash
-    ) external pure returns (bytes32) {
-        return
-            Codec.recoverWalletDigest(
-                wallet,
-                chainId,
-                recoverySeed,
-                recoveryHash,
-                newRecoverySeed,
-                newRecoveryHash,
-                newTransactionSeed,
-                newTransactionHash
-            );
-    }
 
     function exposed_executeDigest(
         address wallet,
@@ -253,42 +128,7 @@ contract WOTSPlusCodecHarness {
         bytes32 opdataHash,
         uint256 fee
     ) external pure returns (bytes32) {
-        return
-            Codec.executeDigest(
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                target,
-                value,
-                opdataHash,
-                fee
-            );
-    }
-
-    function exposed_keysetDigest(
-        Codec.KeyType kind,
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        bytes32 keysHash
-    ) external pure returns (bytes32) {
-        return
-            Codec.keysetDigest(
-                kind,
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                keysHash
-            );
+        return Codec.executeDigest(wallet, chainId, s1, h1, s2, h2, target, value, opdataHash, fee);
     }
 
     function exposed_upgradeDigest(
@@ -300,16 +140,7 @@ contract WOTSPlusCodecHarness {
         bytes32 s2,
         bytes32 h2
     ) external pure returns (bytes32) {
-        return
-            Codec.upgradeDigest(
-                wallet,
-                chainId,
-                newImplementation,
-                s1,
-                h1,
-                s2,
-                h2
-            );
+        return Codec.upgradeDigest(wallet, chainId, newImplementation, s1, h1, s2, h2);
     }
 
     function exposed_verificationDigest(
@@ -319,14 +150,7 @@ contract WOTSPlusCodecHarness {
         bytes32 s1,
         bytes32 h1
     ) external pure returns (bytes32) {
-        return
-            Codec.verificationDigest(
-                wallet,
-                chainId,
-                newImplementation,
-                s1,
-                h1
-            );
+        return Codec.verificationDigest(wallet, chainId, newImplementation, s1, h1);
     }
 
     function exposed_upgradeRecoveryDigest(
@@ -338,16 +162,9 @@ contract WOTSPlusCodecHarness {
         bytes32 newSeed,
         bytes32 newHash
     ) external pure returns (bytes32) {
-        return
-            Codec.upgradeRecoveryDigest(
-                wallet,
-                chainId,
-                newImplementation,
-                currentSeed,
-                currentHash,
-                newSeed,
-                newHash
-            );
+        return Codec.upgradeRecoveryDigest(
+            wallet, chainId, newImplementation, currentSeed, currentHash, newSeed, newHash
+        );
     }
 
     function exposed_withdrawDepositDigest(
@@ -360,17 +177,7 @@ contract WOTSPlusCodecHarness {
         address to,
         uint256 amount
     ) external pure returns (bytes32) {
-        return
-            Codec.withdrawDepositDigest(
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                to,
-                amount
-            );
+        return Codec.withdrawDepositDigest(wallet, chainId, s1, h1, s2, h2, to, amount);
     }
 
     function exposed_erc4337ExecuteDigest(
@@ -383,24 +190,12 @@ contract WOTSPlusCodecHarness {
         bytes32 userOpHash,
         uint256 fee
     ) external pure returns (bytes32) {
-        return
-            Codec.erc4337ExecuteDigest(
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                userOpHash,
-                fee
-            );
+        return Codec.erc4337ExecuteDigest(wallet, chainId, s1, h1, s2, h2, userOpHash, fee);
     }
 
     // --- Decoders (additional) ---
 
-    function exposed_decodeUserOpSignature(
-        bytes calldata sig
-    )
+    function exposed_decodeUserOpSignature(bytes calldata sig)
         external
         pure
         returns (
@@ -419,9 +214,7 @@ contract WOTSPlusCodecHarness {
         pqSig = _sig;
     }
 
-    function exposed_decodeWithdrawDeposit(
-        bytes calldata payload
-    )
+    function exposed_decodeWithdrawDeposit(bytes calldata payload)
         external
         pure
         returns (
@@ -456,9 +249,7 @@ contract WOTSPlusCodecHarness {
         return Codec.encodeUserOpSignature(currentKey, nextKey, pqSig);
     }
 
-    function exposed_decodeOwnershipTransfer(
-        bytes calldata payload
-    )
+    function exposed_decodeOwnershipTransfer(bytes calldata payload)
         external
         pure
         returns (
@@ -467,24 +258,17 @@ contract WOTSPlusCodecHarness {
             WOTSPlus.WinternitzElements memory pqSig,
             address newOwner,
             WOTSPlus.WinternitzAddress memory newDisasterKey,
-            WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-            WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+            WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+            WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
         )
     {
-        (currentOwnershipKey, newOwnershipKey, pqSig) = _decodeOwnershipAuth(
-            payload
-        );
-        (
-            newOwner,
-            newDisasterKey,
-            newTransactionKeys,
-            newRecoveryKeys
-        ) = _decodeOwnershipTail(payload);
+        (currentOwnershipKey, newOwnershipKey, pqSig) = _decodeOwnershipAuth(payload);
+        (newOwner, newDisasterKey, newTransactionKeys, newRecoveryKeys, newVerificationKeys) =
+            _decodeOwnershipTail(payload);
     }
 
-    function _decodeOwnershipAuth(
-        bytes calldata payload
-    )
+    function _decodeOwnershipAuth(bytes calldata payload)
         private
         pure
         returns (
@@ -496,37 +280,31 @@ contract WOTSPlusCodecHarness {
         (
             WOTSPlus.WinternitzAddress calldata c,
             WOTSPlus.WinternitzAddress calldata n,
-            WOTSPlus.WinternitzElements calldata s,
-            ,
-            ,
-            ,
-
+            WOTSPlus.WinternitzElements calldata s,,,,,
         ) = Codec.decodeOwnershipTransfer(payload);
         return (c, n, s);
     }
 
-    function _decodeOwnershipTail(
-        bytes calldata payload
-    )
+    function _decodeOwnershipTail(bytes calldata payload)
         private
         pure
         returns (
             address,
             WOTSPlus.WinternitzAddress memory,
-            WOTSPlus.WinternitzAddress[5] memory,
+            WOTSPlus.WinternitzAddress[10] memory,
+            WOTSPlus.WinternitzAddress[10] memory,
             WOTSPlus.WinternitzAddress[10] memory
         )
     {
         (
-            ,
-            ,
-            ,
+            ,,,
             address owner_,
             WOTSPlus.WinternitzAddress calldata dk,
-            WOTSPlus.WinternitzAddress[5] calldata txn,
-            WOTSPlus.WinternitzAddress[10] calldata rec
+            WOTSPlus.WinternitzAddress[10] calldata txn,
+            WOTSPlus.WinternitzAddress[10] calldata rec,
+            WOTSPlus.WinternitzAddress[10] calldata ver
         ) = Codec.decodeOwnershipTransfer(payload);
-        return (owner_, dk, txn, rec);
+        return (owner_, dk, txn, rec, ver);
     }
 
     function exposed_encodeOwnershipTransfer(
@@ -535,19 +313,20 @@ contract WOTSPlusCodecHarness {
         WOTSPlus.WinternitzElements memory pqSig,
         address newOwner,
         WOTSPlus.WinternitzAddress memory newDisasterKey,
-        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
     ) external pure returns (bytes memory) {
-        return
-            Codec.encodeOwnershipTransfer(
-                currentOwnershipKey,
-                newOwnershipKey,
-                pqSig,
-                newOwner,
-                newDisasterKey,
-                newTransactionKeys,
-                newRecoveryKeys
-            );
+        return Codec.encodeOwnershipTransfer(
+            currentOwnershipKey,
+            newOwnershipKey,
+            pqSig,
+            newOwner,
+            newDisasterKey,
+            newTransactionKeys,
+            newRecoveryKeys,
+            newVerificationKeys
+        );
     }
 
     function exposed_transferOwnershipDigest(
@@ -560,74 +339,40 @@ contract WOTSPlusCodecHarness {
         address newOwner,
         bytes32 keysHash
     ) external pure returns (bytes32) {
-        return
-            Codec.transferOwnershipDigest(
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                newOwner,
-                keysHash
-            );
-    }
-
-    function exposed_completeOwnershipHandoverDigest(
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        address pendingOwner,
-        bytes32 keysHash
-    ) external pure returns (bytes32) {
-        return
-            Codec.completeOwnershipHandoverDigest(
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                pendingOwner,
-                keysHash
-            );
+        return Codec.transferOwnershipDigest(wallet, chainId, s1, h1, s2, h2, newOwner, keysHash);
     }
 
     // --- Decoders (recovery upgrade / save / replace / erc1271) ---
 
-    function exposed_decodeSaveWallet(
-        bytes calldata payload
-    )
+    function exposed_decodeSaveWallet(bytes calldata payload)
         external
         pure
         returns (
             WOTSPlus.WinternitzAddress memory currentDisasterKey,
             WOTSPlus.WinternitzAddress memory newDisasterKey,
             WOTSPlus.WinternitzElements memory pqSig,
-            WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-            WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+            WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+            WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+            WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
         )
     {
         (
             WOTSPlus.WinternitzAddress calldata _c,
             WOTSPlus.WinternitzAddress calldata _n,
             WOTSPlus.WinternitzElements calldata _sig,
-            WOTSPlus.WinternitzAddress[5] calldata _txn,
-            WOTSPlus.WinternitzAddress[10] calldata _rec
+            WOTSPlus.WinternitzAddress[10] calldata _txn,
+            WOTSPlus.WinternitzAddress[10] calldata _rec,
+            WOTSPlus.WinternitzAddress[10] calldata _ver
         ) = Codec.decodeSaveWallet(payload);
         currentDisasterKey = _c;
         newDisasterKey = _n;
         pqSig = _sig;
         newTransactionKeys = _txn;
         newRecoveryKeys = _rec;
+        newVerificationKeys = _ver;
     }
 
-    function exposed_decodeRecoveryUpgradeAuth(
-        bytes calldata data
-    )
+    function exposed_decodeRecoveryUpgradeAuth(bytes calldata data)
         external
         pure
         returns (
@@ -646,57 +391,18 @@ contract WOTSPlusCodecHarness {
         pqSig = _sig;
     }
 
-    function exposed_decodeRecoveryUpgradeVerification(
-        bytes calldata data
-    )
+    function exposed_decodeRecoveryUpgradeVerification(bytes calldata data)
         external
         pure
-        returns (
-            WOTSPlus.WinternitzAddress memory verifier,
-            WOTSPlus.WinternitzElements memory verifySig
-        )
+        returns (WOTSPlus.WinternitzAddress memory verifier, WOTSPlus.WinternitzElements memory verifySig)
     {
-        (
-            WOTSPlus.WinternitzAddress calldata _v,
-            WOTSPlus.WinternitzElements calldata _sig
-        ) = Codec.decodeRecoveryUpgradeVerification(data);
+        (WOTSPlus.WinternitzAddress calldata _v, WOTSPlus.WinternitzElements calldata _sig) =
+            Codec.decodeRecoveryUpgradeVerification(data);
         verifier = _v;
         verifySig = _sig;
     }
 
-    function exposed_decodeReplaceKeyAt(
-        bytes calldata payload
-    )
-        external
-        pure
-        returns (
-            Codec.KeyType kind,
-            WOTSPlus.WinternitzAddress memory currentKey,
-            WOTSPlus.WinternitzAddress memory nextKey,
-            WOTSPlus.WinternitzElements memory pqSig,
-            uint256 index,
-            WOTSPlus.WinternitzAddress memory newKey
-        )
-    {
-        (
-            Codec.KeyType _k,
-            WOTSPlus.WinternitzAddress calldata _c,
-            WOTSPlus.WinternitzAddress calldata _n,
-            WOTSPlus.WinternitzElements calldata _sig,
-            uint256 _i,
-            WOTSPlus.WinternitzAddress calldata _nk
-        ) = Codec.decodeReplaceKeyAt(payload);
-        kind = _k;
-        currentKey = _c;
-        nextKey = _n;
-        pqSig = _sig;
-        index = _i;
-        newKey = _nk;
-    }
-
-    function exposed_decodeErc1271Signature(
-        bytes calldata signature
-    )
+    function exposed_decodeErc1271Signature(bytes calldata signature)
         external
         pure
         returns (
@@ -705,11 +411,8 @@ contract WOTSPlusCodecHarness {
             bytes memory ecdsaSig
         )
     {
-        (
-            WOTSPlus.WinternitzAddress calldata _v,
-            WOTSPlus.WinternitzElements calldata _sig,
-            bytes calldata _e
-        ) = Codec.decodeErc1271Signature(signature);
+        (WOTSPlus.WinternitzAddress calldata _v, WOTSPlus.WinternitzElements calldata _sig, bytes calldata _e) =
+            Codec.decodeErc1271Signature(signature);
         verifier = _v;
         pqSig = _sig;
         ecdsaSig = _e;
@@ -721,32 +424,23 @@ contract WOTSPlusCodecHarness {
         WOTSPlus.WinternitzAddress memory currentDisasterKey,
         WOTSPlus.WinternitzAddress memory newDisasterKey,
         WOTSPlus.WinternitzElements memory pqSig,
-        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
     ) external pure returns (bytes memory) {
-        return
-            Codec.encodeSaveWallet(
-                currentDisasterKey,
-                newDisasterKey,
-                pqSig,
-                newTransactionKeys,
-                newRecoveryKeys
-            );
+        return Codec.encodeSaveWallet(
+            currentDisasterKey, newDisasterKey, pqSig, newTransactionKeys, newRecoveryKeys, newVerificationKeys
+        );
     }
 
     function exposed_encodeInit(
         WOTSPlus.WinternitzAddress memory disasterRecoveryKey,
         WOTSPlus.WinternitzAddress memory ownershipKey,
-        WOTSPlus.WinternitzAddress[5] memory transactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory recoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory transactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory recoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory verificationKeys
     ) external pure returns (bytes memory) {
-        return
-            Codec.encodeInit(
-                disasterRecoveryKey,
-                ownershipKey,
-                transactionKeys,
-                recoveryKeys
-            );
+        return Codec.encodeInit(disasterRecoveryKey, ownershipKey, transactionKeys, recoveryKeys, verificationKeys);
     }
 
     function exposed_encodeWithdrawDeposit(
@@ -756,33 +450,7 @@ contract WOTSPlusCodecHarness {
         address to,
         uint256 amount
     ) external pure returns (bytes memory) {
-        return
-            Codec.encodeWithdrawDeposit(
-                currentKey,
-                nextKey,
-                pqSig,
-                to,
-                amount
-            );
-    }
-
-    function exposed_encodeReplaceKeyAt(
-        Codec.KeyType kind,
-        WOTSPlus.WinternitzAddress memory currentKey,
-        WOTSPlus.WinternitzAddress memory nextKey,
-        WOTSPlus.WinternitzElements memory pqSig,
-        uint256 index,
-        WOTSPlus.WinternitzAddress memory newKey
-    ) external pure returns (bytes memory) {
-        return
-            Codec.encodeReplaceKeyAt(
-                kind,
-                currentKey,
-                nextKey,
-                pqSig,
-                index,
-                newKey
-            );
+        return Codec.encodeWithdrawDeposit(currentKey, nextKey, pqSig, to, amount);
     }
 
     function exposed_encodeErc1271Signature(
@@ -800,14 +468,7 @@ contract WOTSPlusCodecHarness {
         WOTSPlus.WinternitzAddress memory verifier,
         WOTSPlus.WinternitzElements memory verifySig
     ) external pure returns (bytes memory) {
-        return
-            Codec.encodeRecoveryUpgrade(
-                currentRecoveryKey,
-                newRecoveryKey,
-                pqSig,
-                verifier,
-                verifySig
-            );
+        return Codec.encodeRecoveryUpgrade(currentRecoveryKey, newRecoveryKey, pqSig, verifier, verifySig);
     }
 
     function exposed_encodeUpgradeToAndCall(
@@ -819,46 +480,12 @@ contract WOTSPlusCodecHarness {
         bool shouldMigrate,
         bytes memory migratorPayload
     ) external pure returns (bytes memory) {
-        return
-            Codec.encodeUpgradeToAndCall(
-                currentKey,
-                nextKey,
-                pqSig,
-                verifier,
-                verifySig,
-                shouldMigrate,
-                migratorPayload
-            );
+        return Codec.encodeUpgradeToAndCall(
+            currentKey, nextKey, pqSig, verifier, verifySig, shouldMigrate, migratorPayload
+        );
     }
 
-    // --- Hashers (replace / erc1271 / saveWallet) ---
-
-    function exposed_replaceKeyAtDigest(
-        Codec.KeyType kind,
-        address wallet,
-        uint256 chainId,
-        bytes32 s1,
-        bytes32 h1,
-        bytes32 s2,
-        bytes32 h2,
-        uint256 index,
-        bytes32 newSeed,
-        bytes32 newHash
-    ) external pure returns (bytes32) {
-        return
-            Codec.replaceKeyAtDigest(
-                kind,
-                wallet,
-                chainId,
-                s1,
-                h1,
-                s2,
-                h2,
-                index,
-                newSeed,
-                newHash
-            );
-    }
+    // --- Hashers (erc1271 / saveWallet) ---
 
     function exposed_erc1271Digest(
         address wallet,
@@ -867,14 +494,7 @@ contract WOTSPlusCodecHarness {
         bytes32 verifierHash,
         bytes32 messageHash
     ) external pure returns (bytes32) {
-        return
-            Codec.erc1271Digest(
-                wallet,
-                chainId,
-                verifierSeed,
-                verifierHash,
-                messageHash
-            );
+        return Codec.erc1271Digest(wallet, chainId, verifierSeed, verifierHash, messageHash);
     }
 
     function exposed_saveWalletDigest(
@@ -886,36 +506,152 @@ contract WOTSPlusCodecHarness {
         bytes32 newHash,
         bytes32 keysHash
     ) external pure returns (bytes32) {
-        return
-            Codec.saveWalletDigest(
-                wallet,
-                chainId,
-                currentSeed,
-                currentHash,
-                newSeed,
-                newHash,
-                keysHash
-            );
+        return Codec.saveWalletDigest(wallet, chainId, currentSeed, currentHash, newSeed, newHash, keysHash);
     }
 
     function exposed_saveWalletKeysHash(
-        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
     ) external pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                abi.encode(newTransactionKeys, newRecoveryKeys)
-            );
+        return EfficientHashLib.hash(abi.encode(newTransactionKeys, newRecoveryKeys, newVerificationKeys));
     }
 
     function exposed_ownershipTransferKeysHash(
         WOTSPlus.WinternitzAddress memory newDisasterKey,
-        WOTSPlus.WinternitzAddress[5] memory newTransactionKeys,
-        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys
+        WOTSPlus.WinternitzAddress[10] memory newTransactionKeys,
+        WOTSPlus.WinternitzAddress[10] memory newRecoveryKeys,
+        WOTSPlus.WinternitzAddress[10] memory newVerificationKeys
     ) external pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                abi.encode(newDisasterKey, newTransactionKeys, newRecoveryKeys)
-            );
+        return EfficientHashLib.hash(
+            abi.encode(newDisasterKey, newTransactionKeys, newRecoveryKeys, newVerificationKeys)
+        );
+    }
+
+    // --- replaceKeys ---
+
+    /// @dev The 8-value return tuple from `Codec.decodeReplaceKeys` would
+    ///      blow the stack budget if surfaced directly. Bundled into a struct
+    ///      so callers receive one memory pointer.
+    struct DecodedReplaceKeys {
+        Codec.KeyType kind;
+        Codec.KeyType signingKind;
+        uint256 n;
+        WOTSPlus.WinternitzAddress currentKey;
+        WOTSPlus.WinternitzAddress nextKey;
+        WOTSPlus.WinternitzElements pqSig;
+        WOTSPlus.WinternitzAddress[] oldKeys;
+        WOTSPlus.WinternitzAddress[] newKeys;
+    }
+
+    function exposed_decodeReplaceKeys(bytes calldata payload) external pure returns (DecodedReplaceKeys memory out) {
+        (
+            Codec.KeyType _k,
+            Codec.KeyType _sk,
+            uint256 _n,
+            WOTSPlus.WinternitzAddress calldata _c,
+            WOTSPlus.WinternitzAddress calldata _nx,
+            WOTSPlus.WinternitzElements calldata _sig,
+            WOTSPlus.WinternitzAddress[] calldata _old,
+            WOTSPlus.WinternitzAddress[] calldata _new
+        ) = Codec.decodeReplaceKeys(payload);
+        out.kind = _k;
+        out.signingKind = _sk;
+        out.n = _n;
+        out.currentKey = _c;
+        out.nextKey = _nx;
+        out.pqSig = _sig;
+        out.oldKeys = new WOTSPlus.WinternitzAddress[](_old.length);
+        out.newKeys = new WOTSPlus.WinternitzAddress[](_new.length);
+        for (uint256 i = 0; i < _old.length; i++) {
+            out.oldKeys[i] = _old[i];
+        }
+        for (uint256 i = 0; i < _new.length; i++) {
+            out.newKeys[i] = _new[i];
+        }
+    }
+
+    function exposed_encodeReplaceKeys(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        uint256 n,
+        WOTSPlus.WinternitzAddress memory currentKey,
+        WOTSPlus.WinternitzAddress memory nextKey,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress[] memory oldKeys,
+        WOTSPlus.WinternitzAddress[] memory newKeys
+    ) external pure returns (bytes memory) {
+        return Codec.encodeReplaceKeys(kind, signingKind, n, currentKey, nextKey, pqSig, oldKeys, newKeys);
+    }
+
+    function exposed_replaceKeysDigest(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        uint256 n,
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        bytes32 oldKeysHash,
+        bytes32 newKeysHash
+    ) external pure returns (bytes32) {
+        return Codec.replaceKeysDigest(kind, signingKind, n, wallet, chainId, s1, h1, s2, h2, oldKeysHash, newKeysHash);
+    }
+
+    /// @dev Bundles the decodeResetKeyset return into a single struct to keep
+    ///      the harness ABI boundary stable across stack-pressure rebuilds.
+    struct DecodedResetKeyset {
+        Codec.KeyType kind;
+        Codec.KeyType signingKind;
+        WOTSPlus.WinternitzAddress currentKey;
+        WOTSPlus.WinternitzAddress nextKey;
+        WOTSPlus.WinternitzElements pqSig;
+        WOTSPlus.WinternitzAddress[10] newKeys;
+    }
+
+    function exposed_decodeResetKeyset(bytes calldata payload) external pure returns (DecodedResetKeyset memory out) {
+        (
+            Codec.KeyType _k,
+            Codec.KeyType _sk,
+            WOTSPlus.WinternitzAddress calldata _c,
+            WOTSPlus.WinternitzAddress calldata _nx,
+            WOTSPlus.WinternitzElements calldata _sig,
+            WOTSPlus.WinternitzAddress[10] calldata _new
+        ) = Codec.decodeResetKeyset(payload);
+        out.kind = _k;
+        out.signingKind = _sk;
+        out.currentKey = _c;
+        out.nextKey = _nx;
+        out.pqSig = _sig;
+        for (uint256 i = 0; i < 10; i++) {
+            out.newKeys[i] = _new[i];
+        }
+    }
+
+    function exposed_encodeResetKeyset(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        WOTSPlus.WinternitzAddress memory currentKey,
+        WOTSPlus.WinternitzAddress memory nextKey,
+        WOTSPlus.WinternitzElements memory pqSig,
+        WOTSPlus.WinternitzAddress[10] memory newKeys
+    ) external pure returns (bytes memory) {
+        return Codec.encodeResetKeyset(kind, signingKind, currentKey, nextKey, pqSig, newKeys);
+    }
+
+    function exposed_resetKeysetDigest(
+        Codec.KeyType kind,
+        Codec.KeyType signingKind,
+        address wallet,
+        uint256 chainId,
+        bytes32 s1,
+        bytes32 h1,
+        bytes32 s2,
+        bytes32 h2,
+        bytes32 newKeysHash
+    ) external pure returns (bytes32) {
+        return Codec.resetKeysetDigest(kind, signingKind, wallet, chainId, s1, h1, s2, h2, newKeysHash);
     }
 }

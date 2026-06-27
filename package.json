@@ -1,79 +1,100 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.2.0-beta.1",
+  "version": "0.2.0-beta.3",
   "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "typings": "dist/index.d.ts",
+  "browser": {
+    "./dist/src/v1/shrincs/wasm/loader.node.js": "./dist/src/v1/shrincs/wasm/loader.browser.js"
+  },
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
-    "dist/**/*.json"
+    "dist/**/*.json",
+    "dist/**/*.wasm"
   ],
   "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+    "./v1": {
+      "import": "./dist/src/v1/index.js",
+      "types": "./dist/src/v1/index.d.ts"
     },
-    "./addresses": {
-      "import": "./dist/src/addresses.js",
-      "types": "./dist/src/addresses.d.ts"
+    "./v1/addresses": {
+      "import": "./dist/src/v1/addresses.js",
+      "types": "./dist/src/v1/addresses.d.ts"
     },
-    "./abi": {
-      "import": "./dist/src/abi/index.js",
-      "types": "./dist/src/abi/index.d.ts"
+    "./v1/abi": {
+      "import": "./dist/src/v1/abi/index.js",
+      "types": "./dist/src/v1/abi/index.d.ts"
     },
-    "./signer": {
-      "import": "./dist/src/signer.js",
-      "types": "./dist/src/signer.d.ts"
+    "./v1/signer": {
+      "import": "./dist/src/v1/signer.js",
+      "types": "./dist/src/v1/signer.d.ts"
     },
-    "./walletClient": {
-      "import": "./dist/src/walletClient.js",
-      "types": "./dist/src/walletClient.d.ts"
+    "./v1/walletClient": {
+      "import": "./dist/src/v1/walletClient.js",
+      "types": "./dist/src/v1/walletClient.d.ts"
     },
-    "./factoryClient": {
-      "import": "./dist/src/factoryClient.js",
-      "types": "./dist/src/factoryClient.d.ts"
+    "./v1/factoryClient": {
+      "import": "./dist/src/v1/factoryClient.js",
+      "types": "./dist/src/v1/factoryClient.d.ts"
     },
-    "./paymaster": {
-      "import": "./dist/src/paymasterClient.js",
-      "types": "./dist/src/paymasterClient.d.ts"
+    "./v1/paymaster": {
+      "import": "./dist/src/v1/paymasterClient.js",
+      "types": "./dist/src/v1/paymasterClient.d.ts"
     },
-    "./errors": {
-      "import": "./dist/src/errors.js",
-      "types": "./dist/src/errors.d.ts"
+    "./v1/errors": {
+      "import": "./dist/src/v1/errors.js",
+      "types": "./dist/src/v1/errors.d.ts"
     },
-    "./events": {
-      "import": "./dist/src/events.js",
-      "types": "./dist/src/events.d.ts"
+    "./v1/events": {
+      "import": "./dist/src/v1/events.js",
+      "types": "./dist/src/v1/events.d.ts"
     },
-    "./userOp": {
-      "import": "./dist/src/userOp.js",
-      "types": "./dist/src/userOp.d.ts"
+    "./v1/userOp": {
+      "import": "./dist/src/v1/userOp.js",
+      "types": "./dist/src/v1/userOp.d.ts"
     },
-    "./gas": {
-      "import": "./dist/src/gas.js",
-      "types": "./dist/src/gas.d.ts"
+    "./v1/gas": {
+      "import": "./dist/src/v1/gas.js",
+      "types": "./dist/src/v1/gas.d.ts"
     },
-    "./wotsCodec": {
-      "import": "./dist/src/wotsCodec.js",
-      "types": "./dist/src/wotsCodec.d.ts"
+    "./v1/wotsCodec": {
+      "import": "./dist/src/v1/wotsCodec.js",
+      "types": "./dist/src/v1/wotsCodec.d.ts"
+    },
+    "./v1/shrincs": {
+      "import": "./dist/src/v1/shrincs/index.js",
+      "types": "./dist/src/v1/shrincs/index.d.ts"
+    },
+    "./v0": {
+      "import": "./dist/src/v0/index.js",
+      "types": "./dist/src/v0/index.d.ts"
+    }
+  },
+  "peerDependencies": {
+    "ethers": "^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ethers": {
+      "optional": true
     }
   },
   "scripts": {
     "clean": "rimraf dist out cache_forge",
     "copy-abi": "node scripts/copy-abi.js",
-    "copy-assets": "copyfiles -u 1 \"src/**/*.json\" dist",
-    "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json && npm run copy-assets",
-    "prepare": "npm run build",
+    "copy-wasm": "node scripts/copy-wasm.js",
+    "gen-wasm-inline": "node scripts/gen-wasm-inline.mjs",
+    "build": "forge build && npm run copy-abi && npm run gen-wasm-inline && tsc -p tsconfig.build.json && npm run copy-wasm",
+    "smoke:fe": "node scripts/fe-smoke.mjs",
+    "prepack": "npm run build",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
     "lint:sol": "solhint 'contracts/**/*.sol'",
     "test": "forge test",
-    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathIgnorePatterns /node_modules/ integration",
+    "test:smoke": "forge build && node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern integration.smoke",
+    "test:all": "forge build && node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
     "smoke:tarball": "bash scripts/smoke-tarball.sh",
     "smoke:fork": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern smoke.fork",
+    "setup": "forge soldeer install && npm install",
     "release": "forge build && npx tsx scripts/release.ts"
   },
   "devDependencies": {
@@ -92,6 +113,7 @@
     "copyfiles": "^2.4.1",
     "dotenv": "^16.4.7",
     "ecpair": "^3.0.0",
+    "ethers": "^6.0.0",
     "hardhat": "^2.22.19",
     "hardhat-deploy": "^0.14.0",
     "jest": "^29.7.0",

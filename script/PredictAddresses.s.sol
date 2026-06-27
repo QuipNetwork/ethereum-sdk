@@ -6,31 +6,54 @@ import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 
 /**
  * @title PredictAddresses
- * @dev Computes CREATE3 addresses for all contracts without deploying anything.
- *      Mirrors Solady's CREATE3.predictDeterministicAddress(salt, deployer).
+ * @dev Pure-view script: prints the CREATE3 address every Quip contract will
+ *      land at on any chain — no env vars required.
  *
- *      CREATE3 addresses depend only on the Deployer address and salt,
- *      not on bytecode. This means addresses are known before deployment.
+ *      The Deployer address itself is derived from CreateX + the
+ *      `DEPLOYER_SALT`, matching how `DeployDeployer.s.sol` bootstraps it.
+ *      All downstream addresses (WOTSPlus, QuipFactory, WOTSPlusImplementation impl,
+ *      QuipPaymaster impl + proxy) are derived through that Deployer +
+ *      their respective salts via solady's CREATE3.
+ *
+ *      Override path: if you want predictions against a Deployer deployed
+ *      with a non-canonical salt (e.g. an old v0 instance), set
+ *      `DEPLOYER_ADDRESS` in the environment and the script uses that
+ *      instead of recomputing.
  *
  * Usage:
- *   DEPLOYER_ADDRESS=0x... forge script script/PredictAddresses.s.sol
- *
- * Environment:
- *   DEPLOYER_ADDRESS - Deployer contract address (or predicted address)
+ *   forge script script/PredictAddresses.s.sol
+ *   DEPLOYER_ADDRESS=0x... forge script script/PredictAddresses.s.sol  # override
  */
 contract PredictAddresses is Script {
+    address internal constant CREATEX = 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed;
+    bytes32 internal constant DEPLOYER_SALT = keccak256("QUIP:Deployer:V1");
+
     function run() external view {
-        address deployerAddr = vm.envAddress("DEPLOYER_ADDRESS");
-        console.log("Deployer:", deployerAddr);
+        address deployerAddr;
+        try vm.envAddress("DEPLOYER_ADDRESS") returns (address override_) {
+            deployerAddr = override_;
+            console.log("Deployer (env override):  ", deployerAddr);
+        } catch {
+            // CreateX uses the same proxy initcode as solady's CREATE3,
+            // so we can predict the Deployer's address purely off-chain
+            // via solady's predictor with `deployer = CreateX`.
+            bytes32 guardedSalt = keccak256(abi.encode(DEPLOYER_SALT));
+            deployerAddr = CREATE3.predictDeterministicAddress(guardedSalt, CREATEX);
+            console.log("Deployer (canonical):     ", deployerAddr);
+        }
         console.log("");
 
-        _predict(deployerAddr, "WOTSPlus");
-        _predict(deployerAddr, "QuipFactory");
-        _predict(deployerAddr, "QuipWallet");
+        _predict(deployerAddr, "WOTSPlus", keccak256("QUIP:WOTSPlus:V1.1"));
+        _predict(deployerAddr, "QuipFactory", keccak256("QUIP:QuipFactory:V1.1"));
+        _predict(deployerAddr, "WOTSPlusImplementation (impl)", keccak256("QUIP:WOTSPlusImplementation:V1.1"));
+        _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
+        _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
+        _predict(deployerAddr, "ShrincsWallet (impl)", keccak256("QUIP:ShrincsWallet:V1.0"));
+        _predict(deployerAddr, "ShrincsPaymaster (impl)", keccak256("QUIP:ShrincsPaymaster:Impl:V1.0"));
+        _predict(deployerAddr, "ShrincsPaymaster (proxy)", keccak256("QUIP:ShrincsPaymaster:Proxy:V1.0"));
     }
 
-    function _predict(address deployer, string memory name) internal pure {
-        bytes32 salt = keccak256(abi.encodePacked("QUIP:", name, ":V1"));
+    function _predict(address deployer, string memory name, bytes32 salt) internal pure {
         address predicted = CREATE3.predictDeterministicAddress(salt, deployer);
         console.log(string.concat(name, ":"), predicted);
     }

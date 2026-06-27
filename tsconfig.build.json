@@ -14,11 +14,13 @@
     "sourceMap": true,
     "rootDir": ".",
     "baseUrl": ".",
+    "paths": {
+      "ethers": ["node_modules/ethers"]
+    },
     "types": ["node"]
   },
   "include": [
-    "index.ts",
     "src/**/*"
   ],
-  "exclude": ["node_modules", "dist", "hardhat.config.cts", "scripts/**/*", "test/**/*", "src/**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "hardhat.config.cts", "scripts/**/*", "test/**/*", "src/**/*.test.ts", "src/**/tests/**"]
 }

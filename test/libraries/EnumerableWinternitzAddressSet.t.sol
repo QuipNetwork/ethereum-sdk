@@ -5,7 +5,7 @@ import {Test} from "forge-std-1.14.0/Test.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {LibPRNG} from "solady-0.1.26/src/utils/LibPRNG.sol";
 import {LibSort} from "solady-0.1.26/src/utils/LibSort.sol";
-import {EnumerableWinternitzAddressSet} from "contracts/libraries/EnumerableWinternitzAddressSet.sol";
+import {EnumerableWinternitzAddressSet} from "contracts/wots/EnumerableWinternitzAddressSet.sol";
 
 /// @dev Harness that exposes library functions as external calls for revert testing.
 contract SetHarness {
@@ -14,28 +14,19 @@ contract SetHarness {
     EnumerableWinternitzAddressSet.WinternitzAddressSet private s;
     EnumerableWinternitzAddressSet.WinternitzAddressSet private s2;
 
-    function add(
-        WOTSPlus.WinternitzAddress memory addr
-    ) external returns (bool) {
+    function add(WOTSPlus.WinternitzAddress memory addr) external returns (bool) {
         return s.add(addr);
     }
 
-    function addCapped(
-        WOTSPlus.WinternitzAddress memory addr,
-        uint256 cap
-    ) external returns (bool) {
+    function addCapped(WOTSPlus.WinternitzAddress memory addr, uint256 cap) external returns (bool) {
         return s.add(addr, cap);
     }
 
-    function remove(
-        WOTSPlus.WinternitzAddress memory addr
-    ) external returns (bool) {
+    function remove(WOTSPlus.WinternitzAddress memory addr) external returns (bool) {
         return s.remove(addr);
     }
 
-    function contains(
-        WOTSPlus.WinternitzAddress memory addr
-    ) external view returns (bool) {
+    function contains(WOTSPlus.WinternitzAddress memory addr) external view returns (bool) {
         return s.contains(addr);
     }
 
@@ -43,17 +34,11 @@ contract SetHarness {
         return s.length();
     }
 
-    function at(
-        uint256 i
-    ) external view returns (WOTSPlus.WinternitzAddress memory) {
+    function at(uint256 i) external view returns (WOTSPlus.WinternitzAddress memory) {
         return s.at(i);
     }
 
-    function values()
-        external
-        view
-        returns (WOTSPlus.WinternitzAddress[] memory)
-    {
+    function values() external view returns (WOTSPlus.WinternitzAddress[] memory) {
         return s.values();
     }
 
@@ -63,15 +48,11 @@ contract SetHarness {
 
     // --- Second set for collision testing ---
 
-    function add2(
-        WOTSPlus.WinternitzAddress memory addr
-    ) external returns (bool) {
+    function add2(WOTSPlus.WinternitzAddress memory addr) external returns (bool) {
         return s2.add(addr);
     }
 
-    function contains2(
-        WOTSPlus.WinternitzAddress memory addr
-    ) external view returns (bool) {
+    function contains2(WOTSPlus.WinternitzAddress memory addr) external view returns (bool) {
         return s2.contains(addr);
     }
 
@@ -90,38 +71,15 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
     SetHarness private h;
 
-    WOTSPlus.WinternitzAddress A1 =
-        WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0xaa)),
-            bytes32(uint256(0xbb))
-        );
-    WOTSPlus.WinternitzAddress A2 =
-        WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0xcc)),
-            bytes32(uint256(0xdd))
-        );
-    WOTSPlus.WinternitzAddress A3 =
-        WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0xee)),
-            bytes32(uint256(0xff))
-        );
-    WOTSPlus.WinternitzAddress A4 =
-        WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0x11)),
-            bytes32(uint256(0x22))
-        );
-    WOTSPlus.WinternitzAddress A5 =
-        WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0x33)),
-            bytes32(uint256(0x44))
-        );
+    WOTSPlus.WinternitzAddress A1 = WOTSPlus.WinternitzAddress(bytes32(uint256(0xaa)), bytes32(uint256(0xbb)));
+    WOTSPlus.WinternitzAddress A2 = WOTSPlus.WinternitzAddress(bytes32(uint256(0xcc)), bytes32(uint256(0xdd)));
+    WOTSPlus.WinternitzAddress A3 = WOTSPlus.WinternitzAddress(bytes32(uint256(0xee)), bytes32(uint256(0xff)));
+    WOTSPlus.WinternitzAddress A4 = WOTSPlus.WinternitzAddress(bytes32(uint256(0x11)), bytes32(uint256(0x22)));
+    WOTSPlus.WinternitzAddress A5 = WOTSPlus.WinternitzAddress(bytes32(uint256(0x33)), bytes32(uint256(0x44)));
 
-    WOTSPlus.WinternitzAddress ZERO_SEED =
-        WOTSPlus.WinternitzAddress(bytes32(0), bytes32(uint256(0xbb)));
-    WOTSPlus.WinternitzAddress ZERO_HASH =
-        WOTSPlus.WinternitzAddress(bytes32(uint256(0xaa)), bytes32(0));
-    WOTSPlus.WinternitzAddress ZERO_BOTH =
-        WOTSPlus.WinternitzAddress(bytes32(0), bytes32(0));
+    WOTSPlus.WinternitzAddress ZERO_SEED = WOTSPlus.WinternitzAddress(bytes32(0), bytes32(uint256(0xbb)));
+    WOTSPlus.WinternitzAddress ZERO_HASH = WOTSPlus.WinternitzAddress(bytes32(uint256(0xaa)), bytes32(0));
+    WOTSPlus.WinternitzAddress ZERO_BOTH = WOTSPlus.WinternitzAddress(bytes32(0), bytes32(0));
 
     function setUp() public {
         h = new SetHarness();
@@ -222,10 +180,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_add_sameSeedDifferentHash_lazy() public {
-        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(
-            A1.publicSeed,
-            A2.publicKeyHash
-        );
+        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A1.publicSeed, A2.publicKeyHash);
         assertTrue(h.add(A1));
         assertTrue(h.add(a));
         assertEq(h.length(), 2);
@@ -234,10 +189,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_add_differentSeedSameHash_lazy() public {
-        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(
-            A2.publicSeed,
-            A1.publicKeyHash
-        );
+        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A2.publicSeed, A1.publicKeyHash);
         assertTrue(h.add(A1));
         assertTrue(h.add(a));
         assertEq(h.length(), 2);
@@ -246,10 +198,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_add_sameSeedDifferentHash_eager() public {
-        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(
-            A1.publicSeed,
-            A2.publicKeyHash
-        );
+        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A1.publicSeed, A2.publicKeyHash);
         h.add(A1);
         h.add(A2);
         h.add(A3);
@@ -261,23 +210,17 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_add_revertsWhen_zeroSeed() public {
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.ZeroValueWinternitzAddress.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.ZeroValueWinternitzAddress.selector);
         h.add(ZERO_SEED);
     }
 
     function test_add_revertsWhen_zeroHash() public {
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.ZeroValueWinternitzAddress.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.ZeroValueWinternitzAddress.selector);
         h.add(ZERO_HASH);
     }
 
     function test_add_revertsWhen_bothZero() public {
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.ZeroValueWinternitzAddress.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.ZeroValueWinternitzAddress.selector);
         h.add(ZERO_BOTH);
     }
 
@@ -285,9 +228,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
         assertTrue(h.addCapped(A1, 3));
         assertTrue(h.addCapped(A2, 3));
         assertTrue(h.addCapped(A3, 3));
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.ExceedsCapacity.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.ExceedsCapacity.selector);
         h.addCapped(A4, 3);
     }
 
@@ -324,19 +265,13 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_contains_sameSeedDifferentHash() public {
-        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(
-            A1.publicSeed,
-            A2.publicKeyHash
-        );
+        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A1.publicSeed, A2.publicKeyHash);
         h.add(A1);
         assertFalse(h.contains(a));
     }
 
     function test_contains_differentSeedSameHash() public {
-        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(
-            A2.publicSeed,
-            A1.publicKeyHash
-        );
+        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A2.publicSeed, A1.publicKeyHash);
         h.add(A1);
         assertFalse(h.contains(a));
     }
@@ -543,22 +478,14 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
     function test_remove_eager_swapPreservesBothSlots() public {
         // Use distinctive values to detect cross-slot corruption.
-        WOTSPlus.WinternitzAddress memory aA = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0xAAAA)),
-            bytes32(uint256(0xBBBB))
-        );
-        WOTSPlus.WinternitzAddress memory aB = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0xCCCC)),
-            bytes32(uint256(0xDDDD))
-        );
-        WOTSPlus.WinternitzAddress memory aC = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0xEEEE)),
-            bytes32(uint256(0xFFFF))
-        );
-        WOTSPlus.WinternitzAddress memory aD = WOTSPlus.WinternitzAddress(
-            bytes32(uint256(0x1111)),
-            bytes32(uint256(0x2222))
-        );
+        WOTSPlus.WinternitzAddress memory aA =
+            WOTSPlus.WinternitzAddress(bytes32(uint256(0xAAAA)), bytes32(uint256(0xBBBB)));
+        WOTSPlus.WinternitzAddress memory aB =
+            WOTSPlus.WinternitzAddress(bytes32(uint256(0xCCCC)), bytes32(uint256(0xDDDD)));
+        WOTSPlus.WinternitzAddress memory aC =
+            WOTSPlus.WinternitzAddress(bytes32(uint256(0xEEEE)), bytes32(uint256(0xFFFF)));
+        WOTSPlus.WinternitzAddress memory aD =
+            WOTSPlus.WinternitzAddress(bytes32(uint256(0x1111)), bytes32(uint256(0x2222)));
 
         h.add(aA);
         h.add(aB);
@@ -569,11 +496,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
         h.remove(aA);
         WOTSPlus.WinternitzAddress memory r0 = h.at(0);
         assertEq(r0.publicSeed, aD.publicSeed, "seed not swapped correctly");
-        assertEq(
-            r0.publicKeyHash,
-            aD.publicKeyHash,
-            "hash not swapped correctly"
-        );
+        assertEq(r0.publicKeyHash, aD.publicKeyHash, "hash not swapped correctly");
         // aB and aC remain in place.
         WOTSPlus.WinternitzAddress memory r1 = h.at(1);
         assertEq(r1.publicSeed, aB.publicSeed);
@@ -609,17 +532,13 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_at_revertsWhen_outOfBounds_empty() public {
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.IndexOutOfBounds.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.IndexOutOfBounds.selector);
         h.at(0);
     }
 
     function test_at_revertsWhen_outOfBounds_lazy() public {
         h.add(A1);
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.IndexOutOfBounds.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.IndexOutOfBounds.selector);
         h.at(1);
     }
 
@@ -628,17 +547,13 @@ contract EnumerableWinternitzAddressSetTest is Test {
         h.add(A2);
         h.add(A3);
         h.add(A4);
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.IndexOutOfBounds.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.IndexOutOfBounds.selector);
         h.at(4);
     }
 
     function test_at_revertsWhen_outOfBounds_large() public {
         h.add(A1);
-        vm.expectRevert(
-            EnumerableWinternitzAddressSet.IndexOutOfBounds.selector
-        );
+        vm.expectRevert(EnumerableWinternitzAddressSet.IndexOutOfBounds.selector);
         h.at(type(uint256).max);
     }
 
@@ -854,12 +769,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
         for (uint256 i; i < size; ++i) {
             // Distinct seed per iteration → no add() collisions.
             hashes[i] = bytes32(prng.next() | 1); // non-zero hash
-            h.add(
-                WOTSPlus.WinternitzAddress(
-                    bytes32(uint256(i) + 1),
-                    hashes[i]
-                )
-            );
+            h.add(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i]));
         }
         assertEq(h.length(), size, "all distinct adds landed (lazy)");
 
@@ -869,12 +779,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
         for (uint256 i; i < size; ++i) {
             assertFalse(
-                h.contains(
-                    WOTSPlus.WinternitzAddress(
-                        bytes32(uint256(i) + 1),
-                        hashes[i]
-                    )
-                ),
+                h.contains(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i])),
                 "stale residue after lazy-phase clear"
             );
         }
@@ -892,12 +797,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
         bytes32[] memory hashes = new bytes32[](size);
         for (uint256 i; i < size; ++i) {
             hashes[i] = bytes32(prng.next() | 1);
-            h.add(
-                WOTSPlus.WinternitzAddress(
-                    bytes32(uint256(i) + 1),
-                    hashes[i]
-                )
-            );
+            h.add(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i]));
         }
         assertEq(h.length(), size, "all distinct adds landed (eager)");
 
@@ -907,12 +807,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
         for (uint256 i; i < size; ++i) {
             assertFalse(
-                h.contains(
-                    WOTSPlus.WinternitzAddress(
-                        bytes32(uint256(i) + 1),
-                        hashes[i]
-                    )
-                ),
+                h.contains(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i])),
                 "stale residue after eager-phase clear"
             );
         }
@@ -937,12 +832,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
             {
                 uint256 seedAnchor = uint256(0xfeed01);
                 uint256 hashAnchor = uint256(0xfeed02);
-                h.add(
-                    WOTSPlus.WinternitzAddress(
-                        bytes32(seedAnchor),
-                        bytes32(hashAnchor)
-                    )
-                );
+                h.add(WOTSPlus.WinternitzAddress(bytes32(seedAnchor), bytes32(hashAnchor)));
                 _addToPacked(ref, (seedAnchor << 128) | hashAnchor);
             }
 
@@ -951,8 +841,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
                 uint256 seed = (prng.next() & mask) + 1;
                 uint256 hash_ = (prng.next() & mask) + 1;
                 uint256 packed = (seed << 128) | hash_;
-                WOTSPlus.WinternitzAddress memory addr = WOTSPlus
-                    .WinternitzAddress(bytes32(seed), bytes32(hash_));
+                WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_));
 
                 if (prng.next() % 2 == 0) {
                     h.add(addr);
@@ -977,12 +866,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
             for (uint256 i; i < ref.length; ++i) {
                 uint256 p = ref[i];
                 assertFalse(
-                    h.contains(
-                        WOTSPlus.WinternitzAddress(
-                            bytes32(p >> 128),
-                            bytes32(p & type(uint128).max)
-                        )
-                    ),
+                    h.contains(WOTSPlus.WinternitzAddress(bytes32(p >> 128), bytes32(p & type(uint128).max))),
                     "stale residue after clear"
                 );
             }
@@ -1005,12 +889,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
         // First batch — distinct seeds in range [1, firstSize].
         for (uint256 i; i < firstSize; ++i) {
-            h.add(
-                WOTSPlus.WinternitzAddress(
-                    bytes32(uint256(i) + 1),
-                    bytes32(prng.next() | 1)
-                )
-            );
+            h.add(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), bytes32(prng.next() | 1)));
         }
         assertEq(h.length(), firstSize, "first batch landed");
         h.clear();
@@ -1022,24 +901,14 @@ contract EnumerableWinternitzAddressSetTest is Test {
         bytes32[] memory secondHashes = new bytes32[](secondSize);
         for (uint256 i; i < secondSize; ++i) {
             secondHashes[i] = bytes32(prng.next() | 1);
-            bool added = h.add(
-                WOTSPlus.WinternitzAddress(
-                    bytes32(uint256(i) + 1),
-                    secondHashes[i]
-                )
-            );
+            bool added = h.add(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), secondHashes[i]));
             assertTrue(added, "post-clear add must succeed (no stale residue)");
         }
 
         assertEq(h.length(), secondSize, "length after reuse");
         for (uint256 i; i < secondSize; ++i) {
             assertTrue(
-                h.contains(
-                    WOTSPlus.WinternitzAddress(
-                        bytes32(uint256(i) + 1),
-                        secondHashes[i]
-                    )
-                ),
+                h.contains(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), secondHashes[i])),
                 "missing post-clear addition"
             );
         }
@@ -1051,10 +920,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
     function test_fuzz_addContainsRemove(bytes32 seed, bytes32 hash_) public {
         vm.assume(seed != bytes32(0) && hash_ != bytes32(0));
-        WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(
-            seed,
-            hash_
-        );
+        WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(seed, hash_);
         assertTrue(h.add(addr));
         assertTrue(h.contains(addr));
         assertEq(h.length(), 1);
@@ -1080,17 +946,8 @@ contract EnumerableWinternitzAddressSetTest is Test {
                 uint256 hash_ = (prng.next() & mask) + 1;
                 uint256 packed = (seed << 128) | hash_;
                 additions[i] = packed;
-                h.add(
-                    WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_))
-                );
-                assertTrue(
-                    h.contains(
-                        WOTSPlus.WinternitzAddress(
-                            bytes32(seed),
-                            bytes32(hash_)
-                        )
-                    )
-                );
+                h.add(WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_)));
+                assertTrue(h.contains(WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_))));
             }
             additions.sort();
             additions.uniquifySorted();
@@ -1110,17 +967,8 @@ contract EnumerableWinternitzAddressSetTest is Test {
                 uint256 hash_ = (prng.next() & mask) + 1;
                 uint256 packed = (seed << 128) | hash_;
                 removals[i] = packed;
-                h.remove(
-                    WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_))
-                );
-                assertFalse(
-                    h.contains(
-                        WOTSPlus.WinternitzAddress(
-                            bytes32(seed),
-                            bytes32(hash_)
-                        )
-                    )
-                );
+                h.remove(WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_)));
+                assertFalse(h.contains(WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_))));
             }
             removals.sort();
             removals.uniquifySorted();
@@ -1151,8 +999,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
                 uint256 seed = (prng.next() & mask) + 1;
                 uint256 hash_ = (prng.next() & mask) + 1;
                 uint256 packed = (seed << 128) | hash_;
-                WOTSPlus.WinternitzAddress memory addr = WOTSPlus
-                    .WinternitzAddress(bytes32(seed), bytes32(hash_));
+                WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_));
 
                 if (prng.next() % 2 == 0) {
                     h.add(addr);
@@ -1182,14 +1029,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
             // Verify contains for all reference elements.
             for (uint256 i; i < ref.length; ++i) {
                 uint256 p = ref[i];
-                assertTrue(
-                    h.contains(
-                        WOTSPlus.WinternitzAddress(
-                            bytes32(p >> 128),
-                            bytes32(p & type(uint128).max)
-                        )
-                    )
-                );
+                assertTrue(h.contains(WOTSPlus.WinternitzAddress(bytes32(p >> 128), bytes32(p & type(uint128).max))));
             }
         }
     }
@@ -1198,37 +1038,24 @@ contract EnumerableWinternitzAddressSetTest is Test {
     function test_tenElements_addRemoveChurn() public {
         // Add 10 elements.
         for (uint256 i = 1; i <= 10; ++i) {
-            assertTrue(
-                h.add(WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100)))
-            );
+            assertTrue(h.add(WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100))));
         }
         assertEq(h.length(), 10);
 
         // Verify all present.
         for (uint256 i = 1; i <= 10; ++i) {
-            assertTrue(
-                h.contains(
-                    WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100))
-                )
-            );
+            assertTrue(h.contains(WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100))));
         }
 
         // Remove odd-indexed elements (1, 3, 5, 7, 9).
         for (uint256 i = 1; i <= 10; i += 2) {
-            assertTrue(
-                h.remove(
-                    WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100))
-                )
-            );
+            assertTrue(h.remove(WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100))));
         }
         assertEq(h.length(), 5);
 
         // Verify only evens remain.
         for (uint256 i = 1; i <= 10; ++i) {
-            WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(
-                bytes32(i),
-                bytes32(i + 100)
-            );
+            WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100));
             if (i % 2 == 0) {
                 assertTrue(h.contains(addr));
             } else {
@@ -1238,9 +1065,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
         // Re-add removed elements.
         for (uint256 i = 1; i <= 10; i += 2) {
-            assertTrue(
-                h.add(WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100)))
-            );
+            assertTrue(h.add(WOTSPlus.WinternitzAddress(bytes32(i), bytes32(i + 100))));
         }
         assertEq(h.length(), 10);
 
@@ -1259,21 +1084,15 @@ contract EnumerableWinternitzAddressSetTest is Test {
     /*                     FUZZ: HELPERS                             */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    function _packValues(
-        WOTSPlus.WinternitzAddress[] memory vals
-    ) internal pure returns (uint256[] memory packed) {
+    function _packValues(WOTSPlus.WinternitzAddress[] memory vals) internal pure returns (uint256[] memory packed) {
         packed = new uint256[](vals.length);
         for (uint256 i; i < vals.length; ++i) {
-            packed[i] =
-                (uint256(vals[i].publicSeed) << 128) |
-                uint256(vals[i].publicKeyHash);
+            packed[i] = (uint256(vals[i].publicSeed) << 128) | uint256(vals[i].publicKeyHash);
         }
     }
 
     /// @dev Allocate a reference array with capacity for up to 512 packed elements.
-    function _makePackedArray(
-        uint256 size
-    ) internal pure returns (uint256[] memory result) {
+    function _makePackedArray(uint256 size) internal pure returns (uint256[] memory result) {
         /// @solidity memory-safe-assembly
         assembly {
             result := mload(0x40)
@@ -1327,10 +1146,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     /// @dev Sort both arrays and assert equality.
-    function _checkSortedEq(
-        uint256[] memory a,
-        uint256[] memory b
-    ) internal pure {
+    function _checkSortedEq(uint256[] memory a, uint256[] memory b) internal pure {
         // Clone `b` to avoid mutating the reference.
         uint256[] memory bCopy = new uint256[](b.length);
         for (uint256 i; i < b.length; ++i) {
@@ -1345,16 +1161,8 @@ contract EnumerableWinternitzAddressSetTest is Test {
         WOTSPlus.WinternitzAddress[] memory vals = h.values();
         for (uint256 i; i < vals.length; ++i) {
             WOTSPlus.WinternitzAddress memory r = h.at(i);
-            assertEq(
-                r.publicSeed,
-                vals[i].publicSeed,
-                "values/at seed mismatch"
-            );
-            assertEq(
-                r.publicKeyHash,
-                vals[i].publicKeyHash,
-                "values/at hash mismatch"
-            );
+            assertEq(r.publicSeed, vals[i].publicSeed, "values/at seed mismatch");
+            assertEq(r.publicKeyHash, vals[i].publicKeyHash, "values/at hash mismatch");
         }
     }
 
@@ -1379,11 +1187,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
         h.add(A5);
         WOTSPlus.WinternitzAddress memory r = h.at(0);
         assertEq(r.publicSeed, A5.publicSeed, "seed should be A5");
-        assertEq(
-            r.publicKeyHash,
-            A5.publicKeyHash,
-            "hash should be A5, not ghost data"
-        );
+        assertEq(r.publicKeyHash, A5.publicKeyHash, "hash should be A5, not ghost data");
         assertEq(h.length(), 1);
 
         // Only A5 should exist.

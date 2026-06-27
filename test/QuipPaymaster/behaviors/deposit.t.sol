@@ -12,12 +12,7 @@ contract QuipPaymaster_deposit is QuipPaymasterTest {
         vm.prank(ADMIN);
 
         // Mock the depositTo call on EntryPoint
-        vm.mockCall(
-            ENTRY_POINT,
-            amount,
-            abi.encodeWithSignature("depositTo(address)", address(paymaster)),
-            ""
-        );
+        vm.mockCall(ENTRY_POINT, amount, abi.encodeWithSignature("depositTo(address)", address(paymaster)), "");
 
         paymaster.deposit{value: amount}();
     }
@@ -25,12 +20,7 @@ contract QuipPaymaster_deposit is QuipPaymasterTest {
     function test_deposit_anyoneCanDeposit() public {
         uint256 amount = 0.5 ether;
 
-        vm.mockCall(
-            ENTRY_POINT,
-            amount,
-            abi.encodeWithSignature("depositTo(address)", address(paymaster)),
-            ""
-        );
+        vm.mockCall(ENTRY_POINT, amount, abi.encodeWithSignature("depositTo(address)", address(paymaster)), "");
 
         vm.prank(ALICE);
         paymaster.deposit{value: amount}();

@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.33;
+
+import {WOTSPlusCodec as Codec} from "../../../contracts/wots/WOTSPlusCodec.sol";
+import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
+import {WOTSPlusImplementationHarness, HarnessKeyset} from "../../harness/WOTSPlusImplementationHarness.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/wots/EnumerableWinternitzAddressSet.sol";
+import {Vm} from "forge-std-1.14.0/Vm.sol";
+
+/// @dev Behaviour tests for the `_rotateKeys(set, current, next)` primitive.
+///      `_rotateKeys` calls `_safeRemoveKey(current)` then `_safeAddKey(next)` and
+///      emits `KeyRotated`. The safe wrappers revert with `KeyRemovalFailed` /
+///      `KeyAdditionFailed` if the underlying library call returns false — silent
+///      under-rotation in a one-time-signature scheme would be catastrophic.
+///      Library-level reverts (e.g. `ZeroValueWinternitzAddress` on `add`) still
+///      bubble through.
+contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
+    WOTSPlusImplementationHarness public harnessProxy;
+    WOTSPlusImplementationHarness public bare;
+
+    function setUp() public override {
+        super.setUp();
+        WOTSPlusImplementationHarness harnessImpl = new WOTSPlusImplementationHarness(payable(address(factory)));
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(harnessImpl));
+
+        (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) = _generateKeyPair("h-rotate");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(priv, 10);
+        bytes memory payload = _encodeInitPayload(pub, rKeys);
+
+        vm.prank(ALICE);
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
+            keccak256("h-rotate-vault"), payable(ALICE), payload
+        );
+        harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
+
+        bare = new WOTSPlusImplementationHarness(payable(address(factory)));
+    }
+
+    function _makeKey(uint256 seed) internal pure returns (WOTSPlus.WinternitzAddress memory) {
+        return WOTSPlus.WinternitzAddress({publicSeed: bytes32(seed), publicKeyHash: bytes32(seed + 1000)});
+    }
+
+    function _makeKeys(uint256 startSeed, uint256 count)
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress[] memory keys)
+    {
+        keys = new WOTSPlus.WinternitzAddress[](count);
+        for (uint256 i = 0; i < count; i++) {
+            keys[i] = _makeKey(startSeed + i * 2);
+        }
+    }
+
+    function test_exposed_rotateKeys_recovery_swaps() public {
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory next = _makeKey(0x7777);
+
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
+
+        assertFalse(harnessProxy.isKey(Codec.KeyType.Recovery, current));
+        assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, next));
+    }
+
+    function test_exposed_rotateKeys_transaction_swaps() public {
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Transaction, 0);
+        WOTSPlus.WinternitzAddress memory next = _makeKey(0x8888);
+
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Transaction, current, next);
+
+        assertFalse(harnessProxy.isKey(Codec.KeyType.Transaction, current));
+        assertTrue(harnessProxy.isKey(Codec.KeyType.Transaction, next));
+    }
+
+    function test_exposed_rotateKeys_verification_swaps() public {
+        WOTSPlus.WinternitzAddress[] memory seed = _makeKeys(0x1000, 1);
+        bare.exposed_addKeys(HarnessKeyset.Verification, seed);
+
+        WOTSPlus.WinternitzAddress memory next = _makeKey(0x9999);
+        bare.exposed_rotateKeys(HarnessKeyset.Verification, seed[0], next);
+
+        assertFalse(bare.isKey(Codec.KeyType.Verification, seed[0]));
+        assertTrue(bare.isKey(Codec.KeyType.Verification, next));
+    }
+
+    function test_exposed_rotateKeys_sizeUnchanged() public {
+        uint256 sizeBefore = harnessProxy.keyCount(Codec.KeyType.Recovery);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory next = _makeKey(0x3333);
+
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
+
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), sizeBefore);
+    }
+
+    function test_exposed_rotateKeys_emitsEvent() public {
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory next = _makeKey(0x4444);
+
+        vm.recordLogs();
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        bytes32 expected = IWOTSPlusImplementation.KeyRotated.selector;
+        bool found;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics.length > 0 && logs[i].topics[0] == expected) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "KeyRotated not emitted");
+    }
+
+    // remove-then-add preserves size, so rotating while the set is at capacity
+    // (10/10) must not trip ExceedsCapacity even though `_rotateKeys` uses the
+    // uncapped `add`.
+    function test_exposed_rotateKeys_succeedsAtFullCapacity() public {
+        // Recovery set starts fully populated (10).
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), 10);
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 5);
+        WOTSPlus.WinternitzAddress memory next = _makeKey(0x5555);
+
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
+
+        assertEq(harnessProxy.keyCount(Codec.KeyType.Recovery), 10);
+        assertTrue(harnessProxy.isKey(Codec.KeyType.Recovery, next));
+    }
+
+    function test_exposed_rotateKeys_revertsWhen_nextZeroSeed() public {
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory next =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(1))});
+
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
+    }
+
+    function test_exposed_rotateKeys_revertsWhen_nextZeroHash() public {
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        WOTSPlus.WinternitzAddress memory next =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(0)});
+
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
+    }
+
+    // The safe wrappers revert when the underlying op returns false. Callers are
+    // expected to gate via `_enforceContained` / `_enforceUncontained` (or
+    // `_clearKeys`-then-add) — these tests assert that if a caller skips the
+    // gate and the primitive's preconditions are violated, we revert hard
+    // rather than silently under-rotate.
+    function test_exposed_rotateKeys_revertsWhen_currentAbsent() public {
+        WOTSPlus.WinternitzAddress memory stray = _makeKey(0x6666);
+        WOTSPlus.WinternitzAddress memory next = _makeKey(0x6667);
+
+        vm.expectRevert(IWOTSPlusImplementation.KeyRemovalFailed.selector);
+        bare.exposed_rotateKeys(HarnessKeyset.Verification, stray, next);
+    }
+
+    // After the safe-remove of `current`, `_safeAddKey(next)` runs the global
+    // `_enforceUnspentKey(next)` pre-check. With `next` still in the recovery
+    // set (it was a different existing entry), the pre-check reverts `KeyInUse`
+    // before `set.add` runs.
+    function test_exposed_rotateKeys_revertsWhen_nextAlreadyPresent() public {
+        WOTSPlus.WinternitzAddress memory current = harnessProxy.keyAt(Codec.KeyType.Recovery, 0);
+        // Pick another existing key as `next` so the "already present" path triggers.
+        WOTSPlus.WinternitzAddress memory next = harnessProxy.keyAt(Codec.KeyType.Recovery, 1);
+
+        vm.expectRevert(IWOTSPlusImplementation.KeyInUse.selector);
+        harnessProxy.exposed_rotateKeys(HarnessKeyset.Recovery, current, next);
+    }
+}

@@ -1,8 +1,23 @@
 .PHONY: build test clean format lint lint-fix snapshot gas install update release \
        deploy-deployer deploy-wotsplus deploy-factory deploy-all \
        deploy-impl vet-impl predict-addresses \
+       predict-base-sepolia deploy-deployer-base-sepolia deploy-all-base-sepolia \
+       deploy-impl-base-sepolia vet-impl-base-sepolia \
        fund-deployer drain-deployer balance \
        storage-layout-snapshot storage-layout-check
+
+# ── Auto-load .env ────────────────────────────────────────────────
+# Loads KEY=VALUE pairs from .env into Make's variable space and exports
+# them so child processes (forge, npx, …) see them. Values must be
+# unquoted (Make doesn't do shell-style parsing) — e.g.
+#   PRIVATE_KEY=0xab12…
+#   API_URL_BASE_SEPOLIA=https://base-sepolia.g.alchemy.com/v2/…
+# A missing .env is silently ignored — the unscoped `make build`,
+# `make test`, etc. don't need any of these.
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
 
 # ── Build & Test ──────────────────────────────────────────────────
 
@@ -38,8 +53,8 @@ gas:
 	forge test --gas-report
 
 # ── Storage Layout ────────────────────────────────────────────────
-# Snapshot the QuipWallet ERC-7201 namespace layout (`WOTSPlusStorage.Layout`)
-# via the test-only probe contract `QuipWalletLayoutProbe`. ERC-7201 namespaced
+# Snapshot the WOTSPlusImplementation ERC-7201 namespace layout (`WOTSPlusStorage.Layout`)
+# via the test-only probe contract `WOTSPlusImplementationLayoutProbe`. ERC-7201 namespaced
 # storage is invisible to `forge inspect storageLayout` directly because it
 # isn't a top-level state variable; the probe wraps the struct as a public
 # state var so solc emits the full per-field slot/offset/type breakdown.
@@ -51,18 +66,18 @@ gas:
 # Usage:
 #   make storage-layout-snapshot  # regenerate fixture (after intentional change)
 #   make storage-layout-check     # CI gate; fails on drift
-STORAGE_LAYOUT_FIXTURE := test/fixtures/QuipWallet.storageLayout.json
+STORAGE_LAYOUT_FIXTURE := test/fixtures/WOTSPlusImplementation.storageLayout.json
 STORAGE_LAYOUT_NORMALIZE := walk(if type == "object" and has("astId") then del(.astId) else . end) \
 	| walk(if type == "string" then gsub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage") else . end) \
 	| .types |= with_entries(.key |= sub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage"))
 
 storage-layout-snapshot:
-	forge inspect QuipWalletLayoutProbe storageLayout --json \
+	forge inspect WOTSPlusImplementationLayoutProbe storageLayout --json \
 		| jq '$(STORAGE_LAYOUT_NORMALIZE)' > $(STORAGE_LAYOUT_FIXTURE)
 	@echo "✅ Wrote $(STORAGE_LAYOUT_FIXTURE)"
 
 storage-layout-check:
-	@forge inspect QuipWalletLayoutProbe storageLayout --json \
+	@forge inspect WOTSPlusImplementationLayoutProbe storageLayout --json \
 		| jq '$(STORAGE_LAYOUT_NORMALIZE)' \
 		| diff -u $(STORAGE_LAYOUT_FIXTURE) - \
 		|| (echo ""; echo "❌ Storage layout drift detected."; \
@@ -93,16 +108,16 @@ sdk:
 # ── Deploy (requires PRIVATE_KEY, RPC_URL env vars) ──────────────
 
 deploy-deployer:
-	forge script script/DeployDeployer.s.sol --rpc-url $(RPC_URL) --private-key $(DEPLOYER_PRIVATE_KEY) --broadcast
+	forge script script/DeployDeployer.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-wotsplus:
 	forge script script/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-factory:
-	forge script script/DeployQuipFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	FOUNDRY_PROFILE=deploy forge script script/DeployQuipFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-all:
-	forge script script/DeployAll.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify
+	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify
 
 deploy-impl:
 	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
@@ -112,6 +127,48 @@ vet-impl:
 
 predict-addresses:
 	forge script script/PredictAddresses.s.sol
+
+# ── Per-chain deploy convenience targets ──────────────────────────
+# Each target maps to a [rpc_endpoints] alias in foundry.toml and reads
+# its env vars from .env. Required keys:
+#   PRIVATE_KEY             operator wallet (signs every broadcast — bootstrap,
+#                           infra deploy, impl deploy, vetting)
+#   DEPLOYER_ADDRESS        bootstrapped Deployer contract address (e.g. the
+#                           canonical 0xA1A3990E… when bootstrapped via CreateX)
+#   FACTORY_OWNER           QuipFactory initial owner (deploy-all-* only)
+#   MAX_FEE                 QuipFactory creation fee in wei (deploy-all-* only)
+#   PAYMASTER_OWNER         QuipPaymaster proxy initial owner (deploy-all-* only)
+#   FACTORY_ADDRESS         existing QuipFactory address (deploy-impl-*, vet-impl-*)
+#   IMPLEMENTATION          WOTSPlusImplementation impl address (vet-impl-* only)
+#   API_URL_BASE_SEPOLIA    https://… RPC endpoint
+#   ETHERSCAN_API_KEY       Etherscan v2 key (used for --verify)
+
+predict-base-sepolia:
+	forge script script/PredictAddresses.s.sol --rpc-url base_sepolia
+
+deploy-deployer-base-sepolia:
+	forge script script/DeployDeployer.s.sol \
+	  --rpc-url base_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-all-base-sepolia:
+	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
+	  --rpc-url base_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-impl-base-sepolia:
+	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol \
+	  --rpc-url base_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+vet-impl-base-sepolia:
+	forge script script/VetImplementation.s.sol \
+	  --rpc-url base_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast
 
 # ── Utility Scripts ───────────────────────────────────────────────
 

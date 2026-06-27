@@ -1,84 +1,78 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {Script, console} from "forge-std-1.14.0/Script.sol";
+import {console} from "forge-std-1.14.0/Script.sol";
 import {Deployer} from "../contracts/Deployer.sol";
+import {DeployWotsBase} from "./DeployWotsBase.sol";
+import {DeployShrincsBase} from "./DeployShrincsBase.sol";
+import {IVettingFactory} from "./DeployHelpers.sol";
 
 /**
  * @title DeployAll
- * @dev Orchestrates deployment of WOTSPlus and QuipFactory via existing Deployer contract.
- *      The Deployer contract must already exist (deployed separately via DeployDeployer.s.sol).
+ * @dev Full Quip deployment through the existing Deployer (CREATE3): the shared
+ *      WOTSPlus library + QuipFactory, BOTH wallet families (WOTSPlusImplementation
+ *      and ShrincsWallet, each vetted), and BOTH paymasters (QuipPaymaster and
+ *      ShrincsPaymaster). Idempotent — re-runs skip already-deployed/vetted
+ *      contracts.
+ *
+ *      VETTING ORDER: the Shrincs impl is vetted first and the WOTS+ impl LAST, so
+ *      `latestWalletImpl == WOTSPlusImplementation` on completion — the WOTS+ SDK's
+ *      `createWallet` (which uses `deployLatestWalletProxy`) keeps working, and the
+ *      Shrincs SDK reaches its impl via `deploySpecificWalletProxy` regardless. To
+ *      instead make Shrincs the default `latest`, swap the two `*ImplAndVet` calls
+ *      below (a deliberate policy change — WOTS+ `createWallet` would then revert).
+ *
+ *      MUST run with `FOUNDRY_PROFILE=deploy` (QuipFactory + WOTSPlusImplementation
+ *      link the WOTSPlus library). PRIVATE_KEY must be the QuipFactory owner.
  *
  * Usage:
- *   forge script script/DeployAll.s.sol --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --verify
+ *   FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
+ *       --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --verify
  *
  * Environment:
- *   PRIVATE_KEY - Operations wallet private key
- *   DEPLOYER_ADDRESS - Deployer contract address
+ *   PRIVATE_KEY      DEPLOYER_ADDRESS  FACTORY_OWNER  MAX_FEE  PAYMASTER_OWNER
+ *   SHRINCS_PAYMASTER_OWNER  SHRINCS_VERIFIER_COMMITMENT
+ *   SHRINCS_VERIFIER_MAX_SIGNATURES  [SHRINCS_VERIFIER_PARAM_SET_ID=0]
  */
-contract DeployAll is Script {
+contract DeployAll is DeployWotsBase, DeployShrincsBase {
     function run() external {
+        uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployerAddr = vm.envAddress("DEPLOYER_ADDRESS");
-        uint256 privateKey = vm.envUint("PRIVATE_KEY");
+        address factoryOwner = vm.envAddress("FACTORY_OWNER");
+        uint256 maxFee = vm.envUint("MAX_FEE");
+        address paymasterOwner = vm.envAddress("PAYMASTER_OWNER");
 
-        console.log("=== Quip Network Full Deployment ===");
-        console.log("Deployer contract:", deployerAddr);
-        require(deployerAddr.code.length > 0, "Deployer contract not found. Run DeployDeployer.s.sol first.");
+        _requireExists(deployerAddr, "Deployer");
+        require(factoryOwner != address(0), "FACTORY_OWNER must be non-zero");
+        require(maxFee != 0, "MAX_FEE must be non-zero");
+        require(paymasterOwner != address(0), "PAYMASTER_OWNER must be non-zero");
 
         Deployer deployer = Deployer(deployerAddr);
+        ShrincsVerifier memory verifier = _shrincsVerifierFromEnv();
 
-        // --- Deploy WOTSPlus ---
-        console.log("\n--- WOTSPlus ---");
-        (bytes memory wotsBytecode, bytes32 wotsSalt, address wotsExpected) = _loadRelease("WOTSPlus.sol");
+        console.log("=== DeployAll (WOTS+ and Shrincs) ===");
+        console.log("Deployer:", deployerAddr);
 
-        address wotsAddr;
-        if (wotsExpected.code.length > 0) {
-            console.log("WOTSPlus already deployed at:", wotsExpected);
-            wotsAddr = wotsExpected;
-        } else {
-            vm.startBroadcast(privateKey);
-            wotsAddr = deployer.deploy(wotsBytecode, wotsSalt);
-            vm.stopBroadcast();
-            console.log("WOTSPlus deployed at:", wotsAddr);
-        }
+        // 1. Shared infra: WOTSPlus library + QuipFactory.
+        console.log("-- shared infra --");
+        _deployWotsPlusLib(deployer, pk);
+        address factory = _deployFactory(deployer, pk, factoryOwner, maxFee);
 
-        // --- Deploy QuipFactory ---
-        console.log("\n--- QuipFactory ---");
-        (bytes memory factoryBytecode, bytes32 factorySalt, address factoryExpected) = _loadRelease("QuipFactory.sol");
+        // 2. Shrincs family (vetted FIRST so it is not `latest`).
+        console.log("-- shrincs --");
+        _deployShrincsImplAndVet(deployer, pk, factory);
+        _deployShrincsPaymaster(deployer, pk, verifier);
 
-        address factoryAddr;
-        if (factoryExpected.code.length > 0) {
-            console.log("QuipFactory already deployed at:", factoryExpected);
-            factoryAddr = factoryExpected;
-        } else {
-            vm.startBroadcast(privateKey);
-            factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
-            vm.stopBroadcast();
-            console.log("QuipFactory deployed at:", factoryAddr);
-        }
+        // 3. WOTS+ family (impl vetted LAST -> latestWalletImpl == WOTSPlusImplementation).
+        console.log("-- wots+ --");
+        address wotsImpl = _deployWotsImplAndVet(deployer, pk, factory);
+        _deployQuipPaymaster(deployer, pk, paymasterOwner);
 
-        // --- Summary ---
-        console.log("\n=== Deployment Summary ===");
-        console.log("Deployer:    ", deployerAddr);
-        console.log("WOTSPlus:    ", wotsAddr);
-        console.log("QuipFactory: ", factoryAddr);
-    }
+        address latest = IVettingFactory(factory).latestWalletImpl();
+        require(latest == wotsImpl, "latestWalletImpl is not WOTSPlusImplementation");
 
-    function _loadRelease(string memory contractDir)
-        internal
-        view
-        returns (bytes memory bytecode, bytes32 salt, address expectedAddr)
-    {
-        string memory latestJson = vm.readFile(
-            string.concat("deployments/bytecode/", contractDir, "/latest.json")
-        );
-        string memory releaseFile = vm.parseJsonString(latestJson, ".file");
-        string memory releaseJson = vm.readFile(
-            string.concat("deployments/bytecode/", contractDir, "/", releaseFile)
-        );
-
-        bytecode = vm.parseJsonBytes(releaseJson, ".creationBytecode");
-        salt = vm.parseJsonBytes32(releaseJson, ".salt");
-        expectedAddr = vm.parseJsonAddress(releaseJson, ".address");
+        console.log("=== Done ===");
+        console.log("QuipFactory:     ", factory);
+        console.log("latestWalletImpl:", latest, "(WOTSPlusImplementation)");
     }
 }
