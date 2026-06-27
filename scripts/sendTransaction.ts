@@ -1,10 +1,4 @@
 import { ethers } from "ethers";
-import { spawnSync } from "child_process";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 interface TransactionData {
   from: string;
@@ -76,7 +70,8 @@ async function sendTransaction(txData: string): Promise<void> {
         } catch (e) {}
       }
       // Call printTxReceipt.ts with the transaction hash and RPC URL
-      const receiptResult = spawnSync('npx', ['ts-node', path.join(__dirname, 'printTxReceipt.ts'), txResponse.hash, rpcUrl], { stdio: 'inherit' });
+      const { spawnSync } = require('child_process');
+      const receiptResult = spawnSync('npx', ['ts-node', require('path').join(__dirname, 'printTxReceipt.ts'), txResponse.hash, rpcUrl], { stdio: 'inherit' });
       if (receiptResult.error) {
         console.error('Failed to print transaction receipt:', receiptResult.error);
       }

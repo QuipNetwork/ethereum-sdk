@@ -14,48 +14,41 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { ethers } from "ethers";
 import {
-  type Address,
-  type Hex,
-  type Hash,
-  type PublicClient,
-  type WalletClient,
-  type TransactionReceipt,
-  type EIP1193Provider,
-  createPublicClient,
-  createWalletClient,
-  custom,
-  encodeAbiParameters,
-  encodePacked,
-  hexToBytes,
-  toHex,
-  zeroAddress,
-  parseEventLogs,
-} from "viem";
-
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { quipWalletAbi } from "./abi/QuipWallet.js";
+  QuipWallet__factory,
+  QuipFactory__factory,
+  QuipFactory,
+  QuipWallet,
+} from "../typechain-types";
 import {
-  getVaultAddress,
-  getNetworkAddresses,
-  CHAIN_IDS,
-} from "./addresses.js";
+  computeVaultAddress,
+  QUIP_FACTORY_ADDRESS,
+  WOTS_PLUS_ADDRESS,
+} from "./addresses";
 
 import { WOTSPlus } from "@quip.network/hashsigs";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { randomBytes } from "@noble/ciphers/webcrypto";
-import { equalBytes } from "@noble/ciphers/utils";
 
-// Re-export ABIs
-export { deployerAbi } from "./abi/Deployer.js";
-export { quipFactoryAbi } from "./abi/QuipFactory.js";
-export { quipWalletAbi } from "./abi/QuipWallet.js";
+// Add explicit exports for contract interfaces and events
+// For whatever reason, typechain-types/index.ts does not do these
+// exports for us.
+export * from "../typechain-types/contracts/Deployer";
+export {
+  QuipFactory,
+  QuipCreatedEvent,
+} from "../typechain-types/contracts/QuipFactory";
+export {
+  QuipWallet,
+  pqTransferEvent,
+} from "../typechain-types/contracts/QuipWallet";
 
-export * from "./addresses.js";
-export * as WotsCodec from "./wotsCodec.js";
-export * from "./constants.js";
+// The existing exports
+export * from "../typechain-types";
+export * from "./addresses";
+export * from "./constants";
 
-// TODO: SUPPORTED_NETWORKS and NetworkType may be unused — CHAIN_IDS in addresses.ts is canonical. Verify against frontend before removing.
 export const SUPPORTED_NETWORKS = {
   SEPOLIA: "sepolia",
   SEPOLIA_OPTIMISM: "sepolia_optimism",
@@ -63,7 +56,6 @@ export const SUPPORTED_NETWORKS = {
   MAINNET: "mainnet",
   BASE: "base",
   OPTIMISM: "optimism",
-  MIDL_TESTNET: "midl",
 } as const;
 
 export type NetworkType =
@@ -105,7 +97,7 @@ export class QuipSigner {
     const privateSeed = Uint8Array.from([...this.quantumSecret, ...vaultId]);
     const keypair = this.wots.generateKeyPair(privateSeed, publicSeed);
     const returnedSeed = keypair.publicKey.slice(0, 32);
-    if (!equalBytes(publicSeed, returnedSeed)) {
+    if (!Buffer.from(publicSeed).equals(Buffer.from(returnedSeed))) {
       throw new Error("Invalid public seed returned: " + returnedSeed);
     }
     return {
@@ -127,556 +119,251 @@ export class QuipSigner {
   }
 }
 
-/**
- * Convert a WinternitzPublicKey (Uint8Array) to the hex tuple format expected by contract calls.
- */
-function pubkeyToHex(pk: WinternitzPublicKey): {
-  publicSeed: Hex;
-  publicKeyHash: Hex;
-} {
-  return {
-    publicSeed: toHex(pk.publicSeed),
-    publicKeyHash: toHex(pk.publicKeyHash),
-  };
-}
-
-/**
- * Convert WOTS+ signature (Uint8Array[]) to hex tuple for contract calls.
- * The ABI expects bytes32[67], so we cast to the fixed-length tuple type.
- */
-type Bytes32Tuple67 = readonly [
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-  Hex, Hex, Hex, Hex, Hex, Hex, Hex,
-];
-
-function sigToHex(sig: Uint8Array[]): Bytes32Tuple67 {
-  return sig.map((el) => toHex(el, { size: 32 })) as unknown as Bytes32Tuple67;
-}
-
 export class QuipWalletClient {
-  private publicClient: PublicClient;
-  private walletClient: WalletClient;
-  private walletAddress: Address;
-  private account: Address;
+  private wallet: QuipWallet;
   private quipSigner: QuipSigner;
   private vaultId: Uint8Array;
-  private chainId: number;
 
-  constructor(
-    quipSigner: QuipSigner,
-    vaultId: Uint8Array,
-    walletAddress: Address,
-    publicClient: PublicClient,
-    walletClient: WalletClient,
-    account: Address,
-    chainId: number
-  ) {
-    this.walletAddress = walletAddress;
+  constructor(quipSigner: QuipSigner, vaultId: Uint8Array, wallet: QuipWallet) {
+    this.wallet = wallet;
     this.vaultId = vaultId;
     this.quipSigner = quipSigner;
-    this.publicClient = publicClient;
-    this.walletClient = walletClient;
-    this.account = account;
-    this.chainId = chainId;
   }
 
   async getPqOwner() {
-    const [publicSeed, publicKeyHash] =
-      await this.publicClient.readContract({
-        address: this.walletAddress,
-        abi: quipWalletAbi,
-        functionName: "pqOwner",
-      });
-    return { publicSeed, publicKeyHash };
+    return await this.wallet.pqOwner();
   }
 
-  async getAddress(): Promise<Address> {
-    return this.walletAddress;
+  async getAddress() {
+    return this.wallet.getAddress();
   }
 
   async getTransferFee(): Promise<bigint> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "getTransferFee",
-    });
+    return await this.wallet.getTransferFee();
   }
 
   async getExecuteFee(): Promise<bigint> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "getExecuteFee",
-    });
+    return await this.wallet.getExecuteFee();
   }
 
   async transferWithWinternitz(
-    to: Address,
+    to: ethers.AddressLike,
     value: bigint,
     options: { gasLimit?: bigint } = {}
-  ): Promise<TransactionReceipt> {
+  ) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
-    const currentPqOwner = await this.getPqOwner();
-    const publicSeed = hexToBytes(currentPqOwner.publicSeed);
+    const currentPqOwner = await this.wallet.pqOwner();
+    const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
     const transferFee = await this.getTransferFee();
 
-    const packedMessageData = encodePacked(
-      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
+    // TODO: Make a function that does this?
+    const packedMessageData = ethers.solidityPacked(
+      ["bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
       [
-        BigInt(this.chainId),
-        this.walletAddress,
         currentPqOwner.publicSeed,
         currentPqOwner.publicKeyHash,
-        toHex(nextPqOwner.publicKey.publicSeed),
-        toHex(nextPqOwner.publicKey.publicKeyHash),
+        nextPqOwner.publicKey.publicSeed,
+        nextPqOwner.publicKey.publicKeyHash,
         to,
         value,
       ]
     );
 
-    const messageHash = keccak_256(hexToBytes(packedMessageData));
-    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
+    // FIXME: these are stupid in hindsight.
+    const message = {
+      messageHash: keccak_256(ethers.getBytes(packedMessageData)),
+    };
+    const pqSig = {
+      elements: this.quipSigner.sign(
+        message.messageHash,
+        this.vaultId,
+        publicSeed
+      ),
+    };
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "transferWithWinternitz",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        to,
-        value,
-      ],
+    let gasLimit: bigint;
+    if (options.gasLimit) {
+      gasLimit = options.gasLimit;
+    }
+
+    // Use provided gas limit or the estimated one (or none if estimation failed)
+    const txopts = {
       value: transferFee,
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+      ...(gasLimit! && { gasLimit }),
+    };
 
-    return await this.publicClient.waitForTransactionReceipt({ hash });
+    const tx = await this.wallet.transferWithWinternitz(
+      nextPqOwner.publicKey,
+      pqSig,
+      to,
+      value,
+      txopts
+    );
+    return await tx.wait();
   }
 
   async executeWithWinternitz(
-    target: Address,
-    opdata: Hex,
+    target: ethers.AddressLike,
+    opdata: Uint8Array,
     options: {
       gasLimit?: bigint;
       value?: bigint;
     } = {}
-  ): Promise<TransactionReceipt> {
-    const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
-    const currentPqOwner = await this.getPqOwner();
-    const publicSeed = hexToBytes(currentPqOwner.publicSeed);
-    const executeFee =
-      (await this.getExecuteFee()) + (options.value ?? 0n);
-
-    const packedMessageData = encodePacked(
-      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
-      [
-        BigInt(this.chainId),
-        this.walletAddress,
-        currentPqOwner.publicSeed,
-        currentPqOwner.publicKeyHash,
-        toHex(nextPqOwner.publicKey.publicSeed),
-        toHex(nextPqOwner.publicKey.publicKeyHash),
-        target,
-        opdata,
-      ]
-    );
-
-    const messageHash = keccak_256(hexToBytes(packedMessageData));
-    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
-
-    let gas: bigint;
-    if (options.gasLimit) {
-      gas = options.gasLimit;
-    } else {
-      try {
-        const estimatedGas = await this.publicClient.estimateContractGas({
-          address: this.walletAddress,
-          abi: quipWalletAbi,
-          functionName: "executeWithWinternitz",
-          args: [
-            pubkeyToHex(nextPqOwner.publicKey),
-            { elements: sigToHex(pqSig) },
-            target,
-            opdata,
-          ],
-          value: executeFee,
-          account: this.account,
-        });
-        gas = (estimatedGas * 120n) / 100n; // 20% buffer
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Gas estimation failed for executeWithWinternitz on ${target}: ${message}`);
-      }
-    }
-
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "executeWithWinternitz",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        target,
-        opdata,
-      ],
-      value: executeFee,
-      account: this.account,
-      gas,
-    });
-
-    return await this.publicClient.waitForTransactionReceipt({ hash });
-  }
-
-  async changePqOwner(
-    options: { gasLimit?: bigint } = {}
-  ): Promise<TransactionReceipt> {
-    const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
-    const currentPqOwner = await this.getPqOwner();
-    const publicSeed = hexToBytes(currentPqOwner.publicSeed);
-
-    const packedMessageData = encodePacked(
-      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32"],
-      [
-        BigInt(this.chainId),
-        this.walletAddress,
-        currentPqOwner.publicSeed,
-        currentPqOwner.publicKeyHash,
-        toHex(nextPqOwner.publicKey.publicSeed),
-        toHex(nextPqOwner.publicKey.publicKeyHash),
-      ]
-    );
-
-    const messageHash = keccak_256(hexToBytes(packedMessageData));
-    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
-
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "changePqOwner",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
-
-    return await this.publicClient.waitForTransactionReceipt({ hash });
-  }
-
-  async recoverWallet(
-    recoveryPublicSeed: Uint8Array,
-    options: { gasLimit?: bigint } = {}
-  ): Promise<TransactionReceipt> {
-    const recoveryKeyPair = this.quipSigner.recoverKeyPair(this.vaultId, recoveryPublicSeed);
-    const newPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
-
-    const packedMessageData = encodePacked(
-      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32"],
-      [
-        BigInt(this.chainId),
-        this.walletAddress,
-        toHex(recoveryKeyPair.publicKey.publicSeed),
-        toHex(recoveryKeyPair.publicKey.publicKeyHash),
-        toHex(newPqOwner.publicKey.publicSeed),
-        toHex(newPqOwner.publicKey.publicKeyHash),
-      ]
-    );
-
-    const messageHash = keccak_256(hexToBytes(packedMessageData));
-    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, recoveryPublicSeed);
-
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "recoverWallet",
-      args: [
-        pubkeyToHex(recoveryKeyPair.publicKey),
-        pubkeyToHex(newPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
-
-    return await this.publicClient.waitForTransactionReceipt({ hash });
-  }
-
-  private async signRecoveryKeysMessage(
-    newRecoveryKeys: WinternitzPublicKey[]
   ) {
     const nextPqOwner = this.quipSigner.generateKeyPair(this.vaultId);
-    const currentPqOwner = await this.getPqOwner();
-    const publicSeed = hexToBytes(currentPqOwner.publicSeed);
-    const recoveryKeysHex = newRecoveryKeys.map((pk) => pubkeyToHex(pk));
+    const currentPqOwner = await this.wallet.pqOwner();
+    const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
+    const executeFee = await this.getExecuteFee() + (options.value ?? 0n);
 
-    // Replicate Solidity's keccak256(abi.encode(newRecoveryKeys))
-    const keysEncoded = encodeAbiParameters(
+    const packedMessageData = ethers.solidityPacked(
+      ["bytes32", "bytes32", "bytes32", "bytes32", "address", "bytes"],
       [
-        {
-          type: "tuple[]",
-          components: [
-            { type: "bytes32", name: "publicSeed" },
-            { type: "bytes32", name: "publicKeyHash" },
-          ],
-        },
-      ],
-      [recoveryKeysHex]
-    );
-    const keysHash = toHex(keccak_256(hexToBytes(keysEncoded)));
-
-    const packedMessageData = encodePacked(
-      ["uint256", "address", "bytes32", "bytes32", "bytes32", "bytes32", "bytes32"],
-      [
-        BigInt(this.chainId),
-        this.walletAddress,
         currentPqOwner.publicSeed,
         currentPqOwner.publicKeyHash,
-        toHex(nextPqOwner.publicKey.publicSeed),
-        toHex(nextPqOwner.publicKey.publicKeyHash),
-        keysHash as Hex,
+        nextPqOwner.publicKey.publicSeed,
+        nextPqOwner.publicKey.publicKeyHash,
+        target,
+        opdata,
       ]
     );
 
-    const messageHash = keccak_256(hexToBytes(packedMessageData));
-    const pqSig = this.quipSigner.sign(messageHash, this.vaultId, publicSeed);
+    const message = {
+      messageHash: keccak_256(ethers.getBytes(packedMessageData)),
+    };
+    const pqSig = {
+      elements: this.quipSigner.sign(
+        message.messageHash,
+        this.vaultId,
+        publicSeed
+      ),
+    };
 
-    return { nextPqOwner, pqSig, recoveryKeysHex };
-  }
+    let gasLimit: bigint;
+    try {
+      // Try to estimate gas
+      const estimatedGas = await this.wallet.executeWithWinternitz.estimateGas(
+        nextPqOwner.publicKey,
+        pqSig,
+        target,
+        opdata,
+        { value: executeFee }
+      );
+      gasLimit = (estimatedGas * 120n) / 100n; // 20% buffer
+    } catch (error: any) {
+      // Log detailed error information
+      console.error("Gas estimation failed:");
+      console.error("Target:", target);
+      console.error("Operation data length:", opdata.length);
+      console.error("Execute fee:", executeFee.toString());
 
-  async addRecoveryKeys(
-    newRecoveryKeys: WinternitzPublicKey[],
-    options: { gasLimit?: bigint } = {}
-  ): Promise<TransactionReceipt> {
-    const { nextPqOwner, pqSig, recoveryKeysHex } =
-      await this.signRecoveryKeysMessage(newRecoveryKeys);
+      if (error.transaction) {
+        // Log the transaction that would have been sent
+        console.error("Failed transaction:", {
+          to: error.transaction.to,
+          from: error.transaction.from,
+          data: error.transaction.data?.slice(0, 66) + "...", // First 32 bytes + '...'
+        });
+      }
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "addRecoveryKeys",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        recoveryKeysHex,
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+      // If there's a specific revert reason, it might be in error.reason
+      if (error.reason) {
+        console.error("Revert reason:", error.reason);
+      }
 
-    return await this.publicClient.waitForTransactionReceipt({ hash });
-  }
+      // Print error with more context, but we don't throw here because
+      // some wallets like Safe can't estimate gas properly.
+      console.error(`Gas estimation failed: ${error.message || error}`);
+    }
 
-  async replenishRecoveryKeys(
-    newRecoveryKeys: WinternitzPublicKey[],
-    options: { gasLimit?: bigint } = {}
-  ): Promise<TransactionReceipt> {
-    const { nextPqOwner, pqSig, recoveryKeysHex } =
-      await this.signRecoveryKeysMessage(newRecoveryKeys);
+    if (options.gasLimit) {
+      gasLimit = options.gasLimit;
+    }
 
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "replenishRecoveryKeys",
-      args: [
-        pubkeyToHex(nextPqOwner.publicKey),
-        { elements: sigToHex(pqSig) },
-        recoveryKeysHex,
-      ],
-      account: this.account,
-      ...(options.gasLimit && { gas: options.gasLimit }),
-    });
+    // Use provided gas limit or the estimated one (or none if estimation failed)
+    const txopts = {
+      value: executeFee,
+      ...(gasLimit! && { gasLimit }),
+    };
 
-    return await this.publicClient.waitForTransactionReceipt({ hash });
-  }
-
-  async getRecoveryKeyCount(): Promise<bigint> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "getRecoveryKeyCount",
-    });
-  }
-
-  async getRecoveryKeyHashAt(index: bigint): Promise<Hex> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "getRecoveryKeyHashAt",
-      args: [index],
-    });
-  }
-
-  async isRecoveryKey(keyHash: Hex): Promise<boolean> {
-    return await this.publicClient.readContract({
-      address: this.walletAddress,
-      abi: quipWalletAbi,
-      functionName: "isRecoveryKey",
-      args: [keyHash],
-    });
+    const tx = await this.wallet.executeWithWinternitz(
+      nextPqOwner.publicKey,
+      pqSig,
+      target,
+      opdata,
+      txopts
+    );
+    return await tx.wait();
   }
 }
 
 export class QuipClient {
-  private publicClient: PublicClient;
-  private walletClient: WalletClient;
-  private account?: Address;
-  private factoryAddress?: Address;
-  private chainId?: number;
+  private provider: ethers.Provider;
+  private signer?: ethers.Signer;
+  private factory?: QuipFactory;
   private initializationPromise: Promise<void>;
 
-  /**
-   * Create a QuipClient instance
-   * Works with any EIP-1193 compatible provider
-   *
-   * @param provider - An EIP-1193 compatible provider
-   */
-  constructor(provider: EIP1193Provider) {
-    const transport = custom(provider);
-    this.publicClient = createPublicClient({ transport });
-    this.walletClient = createWalletClient({ transport });
+  constructor(signer: ethers.Eip1193Provider) {
+    this.provider = new ethers.BrowserProvider(signer);
     this.initializationPromise = this.initialize();
   }
 
-  /**
-   * Factory method for creating QuipClient instances
-   * Provides a cleaner async initialization pattern
-   */
-  static async create(
-    provider: EIP1193Provider
-  ): Promise<QuipClient> {
-    const client = new QuipClient(provider);
-    await client.initializationPromise;
-    return client;
-  }
-
   private async initialize() {
-    await this.detectNetwork();
-    await this.setAccount();
+    await this.setSigner();
     await this.setQuipFactory();
   }
 
-  private async setAccount() {
-    const [address] = await this.walletClient.getAddresses();
-    this.account = address;
-  }
-
-  private async detectNetwork() {
-    this.chainId = await this.publicClient.getChainId();
+  private async setSigner() {
+    if (this.provider instanceof ethers.BrowserProvider) {
+      this.signer = await this.provider.getSigner();
+    }
   }
 
   private async setQuipFactory() {
-    const addresses = getNetworkAddresses(this.chainId);
-    this.factoryAddress = addresses.QuipFactory;
-  }
-
-  /**
-   * Get the current chain ID
-   */
-  getChainId(): number {
-    if (!this.chainId) {
-      throw new Error(
-        "Client not initialized. Call await client.initializationPromise first."
-      );
-    }
-    return this.chainId;
-  }
-
-  /**
-   * Check if connected to MIDL network
-   */
-  isMidlNetwork(): boolean {
-    return this.chainId === CHAIN_IDS.MIDL_TESTNET;
-  }
-
-  /**
-   * Get the connected wallet's owner address
-   */
-  async getOwnerAddress(): Promise<Address> {
-    await this.initializationPromise;
-    if (!this.account) {
-      throw new Error("No account available. Connect a wallet first.");
-    }
-    return this.account;
+    this.factory = QuipFactory__factory.connect(
+      QUIP_FACTORY_ADDRESS,
+      this.signer!
+    );
   }
 
   async getCreationFee(): Promise<bigint> {
     await this.initializationPromise;
-    return await this.publicClient.readContract({
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "creationFee",
-    });
+    return await this.factory!.creationFee();
   }
 
   async createWallet(
     vaultId: Uint8Array,
-    quipSigner: QuipSigner,
-    recoveryKeys: WinternitzPublicKey[] = []
+    quipSigner: QuipSigner
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
 
-    const vaultIdHex = toHex(vaultId) as Hex;
+    // Bind vaultId to signer
+    const userWalletAddress = await this.signer!.getAddress();
     const creationFee = await this.getCreationFee();
 
     // Check if wallet already exists
-    const existingWalletAddress = await this.publicClient.readContract({
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "quips",
-      args: [this.account!, vaultIdHex],
-    });
-
-    if (existingWalletAddress !== zeroAddress) {
-      throw new Error(`Wallet already exists for vault ID ${vaultIdHex}`);
+    const existingWalletAddress = await this.factory!.quips(
+      userWalletAddress,
+      vaultId
+    );
+    if (existingWalletAddress !== ethers.ZeroAddress) {
+      throw new Error(`Wallet already exists for vault ID ${vaultId}`);
     }
 
     const pqKeyPair = quipSigner.generateKeyPair(vaultId);
-    const recoveryKeysHex = recoveryKeys.map((pk) => pubkeyToHex(pk));
-
-    const hash = await this.walletClient.writeContract({
-      chain: null,
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "depositToWinternitz",
-      args: [vaultIdHex, this.account!, pubkeyToHex(pqKeyPair.publicKey), recoveryKeysHex],
-      value: creationFee,
-      account: this.account!,
-    });
-
-    const receipt = await this.publicClient.waitForTransactionReceipt({
-      hash,
-    });
-
-    const logs = parseEventLogs({
-      abi: quipFactoryAbi,
-      logs: receipt.logs,
-      eventName: "QuipCreated",
-    });
-    const newWalletAddress = logs[0].args.quip;
-
-    return new QuipWalletClient(
-      quipSigner,
+    const tx = await this.factory!.depositToWinternitz(
       vaultId,
-      newWalletAddress,
-      this.publicClient,
-      this.walletClient,
-      this.account!,
-      this.chainId!
+      userWalletAddress,
+      pqKeyPair.publicKey,
+      { value: creationFee }
     );
+    const receipt = await tx.wait();
+    const event = receipt!.logs[0]; // QuipCreated is the first and only event
+    const newWalletAddress = ethers.getAddress(`0x${event.data.slice(-40)}`);
+    const newWalletContract = await QuipWallet__factory.connect(
+      newWalletAddress,
+      this.signer!
+    );
+    return new QuipWalletClient(quipSigner, vaultId, newWalletContract);
   }
 
   async getVault(
@@ -684,140 +371,77 @@ export class QuipClient {
     quipSigner: QuipSigner
   ): Promise<QuipWalletClient> {
     await this.initializationPromise;
-
-    const vaultIdHex = toHex(vaultId) as Hex;
-    const walletAddress = await this.publicClient.readContract({
-      address: this.factoryAddress!,
-      abi: quipFactoryAbi,
-      functionName: "quips",
-      args: [this.account!, vaultIdHex],
-    });
-
-    if (walletAddress === zeroAddress) {
-      throw new Error(`No wallet found for vault ID ${vaultIdHex}`);
-    }
-
-    const client = new QuipWalletClient(
-      quipSigner,
-      vaultId,
-      walletAddress,
-      this.publicClient,
-      this.walletClient,
-      this.account!,
-      this.chainId!
+    const walletAddress = await this.factory!.quips(
+      await this.signer!.getAddress(),
+      vaultId
     );
-
+    if (walletAddress === ethers.ZeroAddress) {
+      throw new Error(`No wallet found for vault ID ${vaultId}`);
+    }
+    const walletContract = await QuipWallet__factory.connect(
+      walletAddress,
+      this.signer!
+    );
+    const client = new QuipWalletClient(quipSigner, vaultId, walletContract);
     // Check if we have the right signer
     const curPqOwner = await client.getPqOwner();
-    const curSeed = hexToBytes(curPqOwner.publicSeed);
-    const curPubKeyHash = hexToBytes(curPqOwner.publicKeyHash);
+    const curSeed = Buffer.from(curPqOwner.publicSeed.replace("0x", ""), "hex");
+    const curPubKeyHash = Buffer.from(
+      curPqOwner.publicKeyHash.replace("0x", ""),
+      "hex"
+    );
     const keypair = quipSigner.recoverKeyPair(vaultId, curSeed);
-    if (!equalBytes(keypair.publicKey.publicKeyHash, curPubKeyHash)) {
+    if (
+      !Buffer.from(keypair.publicKey.publicKeyHash).equals(
+        Buffer.from(curPubKeyHash)
+      )
+    ) {
       throw new Error("Invalid signer for this wallet");
     }
     return client;
   }
 
-  async getVaultAddress(vaultId: Uint8Array): Promise<Address> {
+  async getVaultAddress(vaultId: Uint8Array): Promise<string> {
     await this.initializationPromise;
-    return getVaultAddress(toHex(vaultId), this.chainId);
+
+    const quipFactoryAddress = await this.factory!.getAddress();
+    const signerAddress = await this.signer!.getAddress();
+    const wotsLibraryAddress = await this.factory!.wotsLibrary();
+
+    return computeVaultAddress(
+      signerAddress,
+      vaultId,
+      wotsLibraryAddress,
+      quipFactoryAddress
+    );
   }
 
-  async getVaults(): Promise<Map<string, Address>> {
+  async getVaults(): Promise<Map<string, string>> {
     await this.initializationPromise;
-    if (!this.account) {
-      throw new Error("No account available. Connect a wallet first.");
+    if (!this.signer) {
+      throw new Error("No signer available. Connect a wallet first.");
     }
 
-    const vaultMap = new Map<string, Address>();
-    const batchSize = 50;
-    let offset = 0;
+    const signerAddress = await this.signer.getAddress();
+    const vaultMap = new Map<string, string>();
 
-    while (true) {
-      // Batch-read vaultIds
-      const vaultIdCalls = Array.from({ length: batchSize }, (_, i) => ({
-        address: this.factoryAddress!,
-        abi: quipFactoryAbi,
-        functionName: "vaultIds" as const,
-        args: [this.account!, BigInt(offset + i)] as const,
-      }));
-
-      let vaultIdResults: { status: "success" | "failure"; result?: Hex }[];
-      try {
-        vaultIdResults = (await this.publicClient.multicall({
-          contracts: vaultIdCalls,
-          allowFailure: true,
-        })) as { status: "success" | "failure"; result?: Hex }[];
-      } catch {
-        // Multicall3 not available — fall back to sequential reads
-        return this.getVaultsSequential();
-      }
-
-      const validVaultIds: Hex[] = [];
-      for (const r of vaultIdResults) {
-        if (r.status === "success" && r.result) {
-          validVaultIds.push(r.result);
-        } else {
-          break; // past end of array
-        }
-      }
-
-      if (validVaultIds.length === 0) break;
-
-      // Batch-read quips addresses for all valid vault IDs
-      const quipsCalls = validVaultIds.map((vaultId) => ({
-        address: this.factoryAddress!,
-        abi: quipFactoryAbi,
-        functionName: "quips" as const,
-        args: [this.account!, vaultId] as const,
-      }));
-
-      const quipsResults = (await this.publicClient.multicall({
-        contracts: quipsCalls,
-        allowFailure: true,
-      })) as { status: "success" | "failure"; result?: Address }[];
-
-      for (let i = 0; i < validVaultIds.length; i++) {
-        const r = quipsResults[i];
-        if (r.status === "success" && r.result && r.result !== zeroAddress) {
-          vaultMap.set(validVaultIds[i], r.result);
-        }
-      }
-
-      if (validVaultIds.length < batchSize) break;
-      offset += batchSize;
-    }
-
-    return vaultMap;
-  }
-
-  /**
-   * Sequential fallback for chains without Multicall3 (e.g. MIDL testnet).
-   */
-  private async getVaultsSequential(): Promise<Map<string, Address>> {
-    const vaultMap = new Map<string, Address>();
+    // Start from index 0 and keep trying until we hit an error
     let index = 0;
     while (true) {
       try {
-        const vaultId = await this.publicClient.readContract({
-          address: this.factoryAddress!,
-          abi: quipFactoryAbi,
-          functionName: "vaultIds",
-          args: [this.account!, BigInt(index)],
-        });
-        const walletAddress = await this.publicClient.readContract({
-          address: this.factoryAddress!,
-          abi: quipFactoryAbi,
-          functionName: "quips",
-          args: [this.account!, vaultId],
-        });
-        if (walletAddress === zeroAddress) break;
-        vaultMap.set(vaultId, walletAddress);
+        const vaultId = await this.factory!.vaultIds(signerAddress, index);
+        const walletAddress = await this.factory!.quips(signerAddress, vaultId);
+        if (walletAddress === ethers.ZeroAddress) {
+          throw new Error(`Invalid contract state for vault ID ${vaultId}`);
+        }
+        vaultMap.set(ethers.hexlify(vaultId), walletAddress);
         index++;
-      } catch {
+      } catch (error) {
+        // We've reached the end of the array
         break;
       }
     }
+
     return vaultMap;
   }
 }
