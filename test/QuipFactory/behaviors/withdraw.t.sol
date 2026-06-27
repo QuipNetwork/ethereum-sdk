@@ -5,6 +5,7 @@ import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
+import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 contract QuipFactory_withdraw is QuipFactoryTest {
     function setUp() public override {
@@ -15,15 +16,22 @@ contract QuipFactory_withdraw is QuipFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 vaultId = keccak256("Fee Vault");
-        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
+        (
+            WOTSPlus.WinternitzAddress memory pubkey,
+            bytes32 privateKey
+        ) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
+            privateKey,
+            10
+        );
+
+        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        factory.depositToWinternitz{value: INITIAL_DEPOSIT + CREATION_FEE}(
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(
             vaultId,
             payable(ALICE),
-            pubkey,
-            rKeys
+            payload
         );
     }
 
@@ -44,16 +52,70 @@ contract QuipFactory_withdraw is QuipFactoryTest {
         assertEq(ADMIN.balance, adminBalBefore + factoryBal);
     }
 
+    // ── Additional coverage ─────────────────────────────────────────
+
+    function test_withdraw_partialAmount() public {
+        uint256 factoryBal = address(factory).balance;
+        uint256 half = factoryBal / 2;
+        uint256 adminBalBefore = ADMIN.balance;
+
+        vm.prank(ADMIN);
+        factory.withdraw(half);
+
+        assertEq(address(factory).balance, factoryBal - half);
+        assertEq(ADMIN.balance, adminBalBefore + half);
+    }
+
+    function test_withdraw_zeroAmount() public {
+        uint256 factoryBal = address(factory).balance;
+        uint256 adminBalBefore = ADMIN.balance;
+
+        vm.prank(ADMIN);
+        factory.withdraw(0);
+
+        assertEq(address(factory).balance, factoryBal);
+        assertEq(ADMIN.balance, adminBalBefore);
+    }
+
+    function test_withdraw_emitsWithdrawnEvent() public {
+        uint256 factoryBal = address(factory).balance;
+
+        vm.prank(ADMIN);
+        vm.recordLogs();
+        factory.withdraw(factoryBal);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found = false;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("Withdrawn(address,uint256)")) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, "Withdrawn event not emitted");
+    }
+
     function test_withdraw_revertsWhen_callerNotAdmin() public {
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Ownable.OwnableUnauthorizedAccount.selector,
+                ALICE
+            )
+        );
         factory.withdraw(CREATION_FEE);
     }
 
     function test_withdraw_revertsWhen_insufficientBalance() public {
         uint256 bal = address(factory).balance;
         vm.prank(ADMIN);
-        vm.expectRevert(abi.encodeWithSelector(IQuipFactory.InsufficientBalance.selector, 1000 ether, bal));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IQuipFactory.InsufficientBalance.selector,
+                1000 ether,
+                bal
+            )
+        );
         factory.withdraw(1000 ether);
     }
 }

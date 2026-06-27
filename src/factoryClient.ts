@@ -1,0 +1,584 @@
+// Copyright (C) 2025 quip.network
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import {
+  type Address,
+  type Hex,
+  type PublicClient,
+  type WalletClient,
+  type EIP1193Provider,
+  type TransactionReceipt,
+  createPublicClient,
+  createWalletClient,
+  custom,
+  zeroAddress,
+  parseEventLogs,
+} from "viem";
+
+import { quipFactoryAbi } from "./abi/QuipFactory.js";
+import {
+  getVaultAddress,
+  getNetworkAddresses,
+  CHAIN_IDS,
+} from "./addresses.js";
+import { QuipSigner } from "./signer.js";
+import { QuipWalletClient } from "./walletClient.js";
+import { withDecodedError } from "./internal/decodeError.js";
+import { tryMulticall } from "./internal/multicall.js";
+import {
+  type TxOptions,
+  type ContractCallParams,
+  prepareTx,
+} from "./gas.js";
+import {
+  WalletNotInitializedError,
+  WalletAlreadyExistsError,
+  NoVaultFoundError,
+  InvalidSignerError,
+  NotConnectedError,
+  PartialMulticallResultError,
+} from "./errors.js";
+import {
+  type WinternitzAddress,
+  encodeInit,
+  TRANSACTION_KEY_INIT_AMOUNT,
+  RECOVERY_KEY_AMOUNT,
+} from "./wotsCodec.js";
+
+/// Aggregated factory state — one multicall round-trip's worth of view
+/// reads. Useful for an admin dashboard or pre-flight overview.
+export interface FactoryState {
+  owner: Address;
+  pendingOwner: Address;
+  creationFee: bigint;
+  executeFee: bigint;
+  maxFee: bigint;
+  latestWalletImpl: Address;
+  vettedCodeCount: bigint;
+}
+
+export class QuipClient {
+  private publicClient: PublicClient;
+  private walletClient: WalletClient;
+  private account?: Address;
+  private factoryAddress?: Address;
+  private chainId?: number;
+  private initializationPromise: Promise<void>;
+
+  /**
+   * Create a QuipClient instance
+   * Works with any EIP-1193 compatible provider
+   *
+   * @param provider - An EIP-1193 compatible provider
+   */
+  constructor(provider: EIP1193Provider) {
+    const transport = custom(provider);
+    this.publicClient = createPublicClient({ transport });
+    this.walletClient = createWalletClient({ transport });
+    this.initializationPromise = this.initialize();
+  }
+
+  /**
+   * Factory method for creating QuipClient instances
+   * Provides a cleaner async initialization pattern
+   */
+  static async create(
+    provider: EIP1193Provider
+  ): Promise<QuipClient> {
+    const client = new QuipClient(provider);
+    await client.initializationPromise;
+    return client;
+  }
+
+  private async initialize() {
+    await this.detectNetwork();
+    await this.setAccount();
+    await this.setQuipFactory();
+  }
+
+  private async setAccount() {
+    const [address] = await this.walletClient.getAddresses();
+    this.account = address;
+  }
+
+  private async detectNetwork() {
+    this.chainId = await this.publicClient.getChainId();
+  }
+
+  private async setQuipFactory() {
+    const addresses = getNetworkAddresses(this.chainId);
+    this.factoryAddress = addresses.QuipFactory;
+  }
+
+  /**
+   * Get the current chain ID
+   */
+  getChainId(): number {
+    if (!this.chainId) {
+      throw new WalletNotInitializedError();
+    }
+    return this.chainId;
+  }
+
+  /**
+   * Check if connected to MIDL network
+   */
+  isMidlNetwork(): boolean {
+    return this.chainId === CHAIN_IDS.MIDL_TESTNET;
+  }
+
+  /**
+   * Get the connected wallet's owner address
+   */
+  async getOwnerAddress(): Promise<Address> {
+    await this.initializationPromise;
+    if (!this.account) {
+      throw new NotConnectedError();
+    }
+    return this.account;
+  }
+
+  async getCreationFee(): Promise<bigint> {
+    await this.initializationPromise;
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "creationFee",
+      })
+    );
+  }
+
+  /// Deploy a new QuipWallet via `deployLatestWalletProxy`. The SDK
+  /// generates every key for `vaultId` under `quipSigner`: one disaster
+  /// recovery key, one ownership key, five transaction keys, ten recovery
+  /// keys. Caller-supplied key material is intentionally NOT accepted —
+  /// every `publicSeed` is recoverable later from on-chain state plus
+  /// `quipSigner.recoverKeyPair(vaultId, publicSeed)`, so the user's only
+  /// off-chain backup obligation is the `quantumSecret` itself.
+  async createWallet(
+    vaultId: Hex,
+    quipSigner: QuipSigner,
+    opts: TxOptions = {}
+  ): Promise<QuipWalletClient> {
+    return this.deployWallet(
+      vaultId,
+      quipSigner,
+      {
+        functionName: "deployLatestWalletProxy",
+        argsExceptInitPayload: () => [vaultId, this.account!] as const,
+      },
+      opts
+    );
+  }
+
+  /// Deploy a new QuipWallet against the implementation at a specific
+  /// index in the factory's vetted set (via `deploySpecificWalletProxy`).
+  /// Use this when the caller explicitly wants an older, still-vetted
+  /// implementation rather than the latest. Same key-generation policy
+  /// as `createWallet`.
+  async createWalletWithImplementation(
+    vaultId: Hex,
+    quipSigner: QuipSigner,
+    index: bigint,
+    opts: TxOptions = {}
+  ): Promise<QuipWalletClient> {
+    return this.deployWallet(
+      vaultId,
+      quipSigner,
+      {
+        functionName: "deploySpecificWalletProxy",
+        argsExceptInitPayload: () => [vaultId, index, this.account!] as const,
+      },
+      opts
+    );
+  }
+
+  /// Shared write pipeline behind every wallet-deployment factory method:
+  /// generates the wallet's initial key material, packs the init payload,
+  /// preflights / sends / waits, decodes `QuipCreated` from the receipt,
+  /// and returns a bound `QuipWalletClient`.
+  private async deployWallet(
+    vaultId: Hex,
+    quipSigner: QuipSigner,
+    spec: {
+      functionName: "deployLatestWalletProxy" | "deploySpecificWalletProxy";
+      argsExceptInitPayload: () => readonly unknown[];
+    },
+    opts: TxOptions
+  ): Promise<QuipWalletClient> {
+    await this.initializationPromise;
+
+    const creationFee = await this.getCreationFee();
+
+    const existingWalletAddress = await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "quips",
+        args: [this.account!, vaultId],
+      })
+    );
+
+    if (existingWalletAddress !== zeroAddress) {
+      throw new WalletAlreadyExistsError(vaultId);
+    }
+
+    const disaster = quipSigner.generateKeyPair(vaultId).publicKey;
+    const ownership = quipSigner.generateKeyPair(vaultId).publicKey;
+    const transactionKeys: WinternitzAddress[] = Array.from(
+      { length: TRANSACTION_KEY_INIT_AMOUNT },
+      () => quipSigner.generateKeyPair(vaultId).publicKey
+    );
+    const recoveryKeys: WinternitzAddress[] = Array.from(
+      { length: RECOVERY_KEY_AMOUNT },
+      () => quipSigner.generateKeyPair(vaultId).publicKey
+    );
+
+    const initPayload = encodeInit(
+      disaster,
+      ownership,
+      transactionKeys,
+      recoveryKeys
+    );
+
+    const contractCall: ContractCallParams = {
+      address: this.factoryAddress!,
+      abi: quipFactoryAbi,
+      functionName: spec.functionName,
+      args: [...spec.argsExceptInitPayload(), initPayload],
+      value: creationFee,
+      account: this.account!,
+    };
+    const prepared = await prepareTx({
+      publicClient: this.publicClient,
+      contractParams: contractCall,
+      totalValue: creationFee,
+      opts,
+    });
+
+    const hash = await withDecodedError(
+      this.walletClient.writeContract({
+        chain: null,
+        ...contractCall,
+        gas: prepared.gas,
+        ...prepared.fees,
+        ...(prepared.nonce !== undefined && { nonce: prepared.nonce }),
+      } as Parameters<WalletClient["writeContract"]>[0])
+    );
+
+    const receipt: TransactionReceipt =
+      await this.publicClient.waitForTransactionReceipt({ hash });
+
+    const logs = parseEventLogs({
+      abi: quipFactoryAbi,
+      logs: receipt.logs,
+      eventName: "QuipCreated",
+    });
+    const newWalletAddress = logs[0].args.quip;
+
+    return new QuipWalletClient(
+      quipSigner,
+      vaultId,
+      newWalletAddress,
+      this.publicClient,
+      this.walletClient,
+      this.account!,
+      this.chainId!
+    );
+  }
+
+  /// Resolve an existing wallet by `vaultId` and return a `QuipWalletClient`
+  /// bound to it.
+  ///
+  /// **Signer check is head-key-only.** Before returning, this method
+  /// regenerates the keypair for `keyAt(Transaction, 0)` under `quipSigner`
+  /// and asserts the `publicKeyHash` matches — throwing `InvalidSignerError`
+  /// on mismatch. This proves the signer can produce *one specific* key
+  /// (whichever entry currently sits at index 0 of the transaction keyset),
+  /// not that it owns every key in the wallet.
+  ///
+  /// Why this is loose:
+  ///   - `EnumerableSet` swap-pop rotation means the head slot can hold any
+  ///     surviving keyset entry, not a stable "primary".
+  ///   - A wallet operated concurrently by multiple signers (rare, but legal)
+  ///     can have a head whose private key only one of them controls — the
+  ///     other still gets `InvalidSignerError` here, even though both are
+  ///     valid co-signers.
+  ///   - A signer that recovered from `quantumSecret` alone — without
+  ///     having seen prior rotations — passes this check as long as it can
+  ///     reproduce whatever public seed is at index 0 today.
+  ///
+  /// Callers needing stronger guarantees should call `getKeyset(Transaction)`
+  /// after construction and verify every entry against `quipSigner` directly.
+  /// See `SDK_README.md` → "What the SDK does NOT guarantee".
+  async getVault(
+    vaultId: Hex,
+    quipSigner: QuipSigner
+  ): Promise<QuipWalletClient> {
+    await this.initializationPromise;
+
+    const walletAddress = await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "quips",
+        args: [this.account!, vaultId],
+      })
+    );
+
+    if (walletAddress === zeroAddress) {
+      throw new NoVaultFoundError(vaultId);
+    }
+
+    const client = new QuipWalletClient(
+      quipSigner,
+      vaultId,
+      walletAddress,
+      this.publicClient,
+      this.walletClient,
+      this.account!,
+      this.chainId!
+    );
+
+    const headKey = await client.getHeadTransactionKey();
+    const keypair = quipSigner.recoverKeyPair(vaultId, headKey.publicSeed);
+    if (keypair.publicKey.publicKeyHash !== headKey.publicKeyHash) {
+      throw new InvalidSignerError();
+    }
+    return client;
+  }
+
+  async getVaultAddress(vaultId: Hex): Promise<Address> {
+    await this.initializationPromise;
+    return getVaultAddress(vaultId, this.chainId);
+  }
+
+  async getVaults(): Promise<Map<string, Address>> {
+    await this.initializationPromise;
+    if (!this.account) {
+      throw new NotConnectedError();
+    }
+
+    const vaultMap = new Map<string, Address>();
+    const batchSize = 50;
+    let offset = 0;
+
+    while (true) {
+      const vaultIdCalls = Array.from({ length: batchSize }, (_, i) => ({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "vaultIds" as const,
+        args: [this.account!, BigInt(offset + i)] as const,
+      }));
+
+      const vaultIdResults = await tryMulticall(
+        this.publicClient,
+        vaultIdCalls,
+        { chainId: this.chainId }
+      );
+
+      const validVaultIds: Hex[] = [];
+      for (const r of vaultIdResults) {
+        if (r.status === "success") {
+          validVaultIds.push(r.result as Hex);
+        } else {
+          break; // past end of array
+        }
+      }
+
+      if (validVaultIds.length === 0) break;
+
+      const quipsCalls = validVaultIds.map((vaultId) => ({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "quips" as const,
+        args: [this.account!, vaultId] as const,
+      }));
+
+      const quipsResults = await tryMulticall(
+        this.publicClient,
+        quipsCalls,
+        { chainId: this.chainId }
+      );
+
+      for (let i = 0; i < validVaultIds.length; i++) {
+        const r = quipsResults[i];
+        if (
+          r.status === "success" &&
+          (r.result as Address) !== zeroAddress
+        ) {
+          vaultMap.set(validVaultIds[i], r.result as Address);
+        }
+      }
+
+      if (validVaultIds.length < batchSize) break;
+      offset += batchSize;
+    }
+
+    return vaultMap;
+  }
+
+  /// Number of entries in the factory's vetted-codehash set (active +
+  /// deprecated). Indices are insertion-order; pair with `getVettedCodeAt`
+  /// to enumerate.
+  async getVettedCodeCount(): Promise<bigint> {
+    await this.initializationPromise;
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "getVettedCodeCount",
+      })
+    );
+  }
+
+  /// Codehash at `index` in the vetted set (insertion order). The index is
+  /// the same one consumed by `deploySpecificWalletProxy` /
+  /// `createWalletWithImplementation`.
+  async getVettedCodeAt(index: bigint): Promise<Hex> {
+    await this.initializationPromise;
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "getVettedCodeAt",
+        args: [index],
+      })
+    );
+  }
+
+  /// Index of `codehash` in the vetted set, or `type(uint256).max` when
+  /// not vetted.
+  async getVettedCodeIndex(codehash: Hex): Promise<bigint> {
+    await this.initializationPromise;
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "getVettedCodeIndex",
+        args: [codehash],
+      })
+    );
+  }
+
+  /// Implementation address currently bound to `codehash`, or
+  /// `address(0)` when the codehash is not vetted. The binding can be
+  /// re-pointed by `undeprecateImplementation` so the result is the
+  /// most-recent address registered against this codehash, not
+  /// necessarily the original `vetImplementation` caller's address.
+  async getImplementationByCodehash(codehash: Hex): Promise<Address> {
+    await this.initializationPromise;
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "vettedWalletImpls",
+        args: [codehash],
+      })
+    );
+  }
+
+  /// `true` when the supplied codehash is currently deprecated (still
+  /// vetted, but `deployLatestWalletProxy` skips it and a wallet
+  /// targeting it via `upgradeToAndCall` reverts with
+  /// `ImplementationDeprecated`).
+  async isCodeDeprecated(codehash: Hex): Promise<boolean> {
+    await this.initializationPromise;
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "deprecatedImpls",
+        args: [codehash],
+      })
+    );
+  }
+
+  /// Most-recently-vetted active implementation address. Used as the
+  /// target by `deployLatestWalletProxy`.
+  async latestWalletImpl(): Promise<Address> {
+    await this.initializationPromise;
+    return await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress!,
+        abi: quipFactoryAbi,
+        functionName: "latestWalletImpl",
+      })
+    );
+  }
+
+  /// Per-chain `QuipPaymaster` address as registered in
+  /// `NETWORK_ADDRESSES`. Returns `address(0)` for chains where the
+  /// paymaster has not been deployed yet — callers using the sponsored
+  /// flow should treat zero as "no paymaster available on this chain".
+  getPaymasterAddress(): Address {
+    if (this.chainId === undefined) {
+      throw new WalletNotInitializedError();
+    }
+    return getNetworkAddresses(this.chainId).QuipPaymaster;
+  }
+
+  /// Snapshot of factory-level fees, ownership, and vetted impl pointer in
+  /// a single multicall round-trip.
+  async getFactoryState(): Promise<FactoryState> {
+    await this.initializationPromise;
+    const calls = [
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "owner" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "pendingOwner" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "creationFee" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "executeFee" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "latestWalletImpl" as const },
+      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "getVettedCodeCount" as const },
+    ];
+
+    const results = await tryMulticall(this.publicClient, calls, {
+      chainId: this.chainId,
+    });
+
+    const labels = [
+      "owner",
+      "pendingOwner",
+      "creationFee",
+      "executeFee",
+      "MAX_FEE",
+      "latestWalletImpl",
+      "getVettedCodeCount",
+    ] as const;
+
+    const failures: { label: string; error: Error }[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === "failure") {
+        failures.push({ label: labels[i], error: r.error });
+      }
+    }
+    if (failures.length > 0) {
+      throw new PartialMulticallResultError(failures);
+    }
+
+    return {
+      owner: (results[0] as { status: "success"; result: Address }).result,
+      pendingOwner: (results[1] as { status: "success"; result: Address }).result,
+      creationFee: (results[2] as { status: "success"; result: bigint }).result,
+      executeFee: (results[3] as { status: "success"; result: bigint }).result,
+      maxFee: (results[4] as { status: "success"; result: bigint }).result,
+      latestWalletImpl: (results[5] as { status: "success"; result: Address }).result,
+      vettedCodeCount: (results[6] as { status: "success"; result: bigint }).result,
+    };
+  }
+}

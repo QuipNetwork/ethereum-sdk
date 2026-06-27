@@ -1,0 +1,267 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.33;
+
+import {IQuipWallet} from "../../../contracts/interfaces/IQuipWallet.sol";
+
+import {QuipWalletTest} from "../QuipWallet.t.sol";
+import {QuipWallet} from "../../../contracts/QuipWallet.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/WOTSPlusCodec.sol";
+
+contract QuipWallet_isValidSignature is QuipWalletTest {
+    bytes4 internal constant MAGIC = 0x1626ba7e;
+    bytes4 internal constant FAIL = 0xffffffff;
+
+    /// @dev ECDSA-sign `hash` with the given private key; returns a 65-byte (r ++ s ++ v) packed sig.
+    function _ecdsaSign(
+        uint256 privKey,
+        bytes32 hash
+    ) internal pure returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privKey, hash);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function test_isValidSignature_returnsMagicValueOnValidSig() public {
+        (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory priv
+        ) = _seedVerificationKeys(3);
+
+        bytes32 msgHash = keccak256("erc1271-valid");
+        bytes32 digest = _buildErc1271MessageHash(
+            address(wallet),
+            keys[1],
+            msgHash
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(priv[1], digest);
+        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+
+        bytes memory encoded = Codec.encodeErc1271Signature(
+            keys[1],
+            sig,
+            ecdsa
+        );
+        assertEq(wallet.isValidSignature(msgHash, encoded), MAGIC);
+    }
+
+    function test_isValidSignature_doesNotMutateSet() public {
+        (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory priv
+        ) = _seedVerificationKeys(3);
+
+        uint256 before = wallet.keyCount(Codec.KeyType.Verification);
+        bytes32 msgHash = keccak256("erc1271-nomutate");
+        bytes32 digest = _buildErc1271MessageHash(
+            address(wallet),
+            keys[0],
+            msgHash
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
+        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+
+        wallet.isValidSignature(
+            msgHash,
+            Codec.encodeErc1271Signature(keys[0], sig, ecdsa)
+        );
+        wallet.isValidSignature(
+            msgHash,
+            Codec.encodeErc1271Signature(keys[0], sig, ecdsa)
+        );
+
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), before);
+        assertTrue(wallet.isKey(Codec.KeyType.Verification, keys[0]));
+    }
+
+    function test_isValidSignature_returnsFailureOnVerifierNotInSet() public {
+        _seedVerificationKeys(2);
+        (
+            WOTSPlus.WinternitzAddress memory outsider,
+            bytes32 outsiderKey
+        ) = _generateKeyPair("erc1271-outsider");
+
+        bytes32 msgHash = keccak256("erc1271-outsider-msg");
+        bytes32 digest = _buildErc1271MessageHash(
+            address(wallet),
+            outsider,
+            msgHash
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(outsiderKey, digest);
+        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+
+        assertEq(
+            wallet.isValidSignature(
+                msgHash,
+                Codec.encodeErc1271Signature(outsider, sig, ecdsa)
+            ),
+            FAIL
+        );
+    }
+
+    function test_isValidSignature_returnsFailureOnBadWotsSignature() public {
+        (WOTSPlus.WinternitzAddress[] memory keys, ) = _seedVerificationKeys(2);
+
+        // Sign with a different WOTS+ private key to produce a structurally valid but invalid sig.
+        (, bytes32 wrongKey) = _generateKeyPair("erc1271-wrong-key");
+        bytes32 msgHash = keccak256("erc1271-bad-sig");
+        WOTSPlus.WinternitzElements memory bad = _sign(wrongKey, msgHash);
+        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+
+        assertEq(
+            wallet.isValidSignature(
+                msgHash,
+                Codec.encodeErc1271Signature(keys[0], bad, ecdsa)
+            ),
+            FAIL
+        );
+    }
+
+    function test_isValidSignature_returnsFailureOnWrongMessageHash() public {
+        (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory priv
+        ) = _seedVerificationKeys(2);
+
+        bytes32 digest = _buildErc1271MessageHash(
+            address(wallet),
+            keys[0],
+            keccak256("hash-A")
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
+        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, keccak256("hash-B"));
+
+        assertEq(
+            wallet.isValidSignature(
+                keccak256("hash-B"),
+                Codec.encodeErc1271Signature(keys[0], sig, ecdsa)
+            ),
+            FAIL
+        );
+    }
+
+    function test_isValidSignature_isBoundToWallet() public {
+        (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory priv
+        ) = _seedVerificationKeys(2);
+
+        bytes32 msgHash = keccak256("hash-bound");
+        // Sign a WOTS+ digest bound to a different wallet address.
+        bytes32 digest = _buildErc1271MessageHash(
+            address(0xdeadbeef),
+            keys[0],
+            msgHash
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
+        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, msgHash);
+
+        assertEq(
+            wallet.isValidSignature(
+                msgHash,
+                Codec.encodeErc1271Signature(keys[0], sig, ecdsa)
+            ),
+            FAIL
+        );
+    }
+
+    /// @dev ECDSA half signed by a wallet that is not the classical owner must fail.
+    function test_isValidSignature_returnsFailureOnEcdsaFromNonOwner() public {
+        (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory priv
+        ) = _seedVerificationKeys(2);
+
+        (, uint256 notOwnerKey) = makeAddrAndKey("not-the-owner");
+        bytes32 msgHash = keccak256("erc1271-non-owner-ecdsa");
+        bytes32 digest = _buildErc1271MessageHash(
+            address(wallet),
+            keys[0],
+            msgHash
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
+        bytes memory ecdsa = _ecdsaSign(notOwnerKey, msgHash);
+
+        assertEq(
+            wallet.isValidSignature(
+                msgHash,
+                Codec.encodeErc1271Signature(keys[0], sig, ecdsa)
+            ),
+            FAIL
+        );
+    }
+
+    /// @dev ECDSA half over a different hash than the one the caller passes must fail.
+    function test_isValidSignature_returnsFailureOnEcdsaWrongHash() public {
+        (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory priv
+        ) = _seedVerificationKeys(2);
+
+        bytes32 msgHash = keccak256("erc1271-ecdsa-wrong-hash");
+        bytes32 digest = _buildErc1271MessageHash(
+            address(wallet),
+            keys[0],
+            msgHash
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
+        // ECDSA signs a different hash; caller passes `msgHash`.
+        bytes memory ecdsa = _ecdsaSign(
+            ALICE_KEY,
+            keccak256("not-the-actual-hash")
+        );
+
+        assertEq(
+            wallet.isValidSignature(
+                msgHash,
+                Codec.encodeErc1271Signature(keys[0], sig, ecdsa)
+            ),
+            FAIL
+        );
+    }
+
+    /// @dev ECDSA half with structurally malformed bytes (non-recoverable) must fail.
+    function test_isValidSignature_returnsFailureOnMalformedEcdsa() public {
+        (
+            WOTSPlus.WinternitzAddress[] memory keys,
+            bytes32[] memory priv
+        ) = _seedVerificationKeys(2);
+
+        bytes32 msgHash = keccak256("erc1271-malformed-ecdsa");
+        bytes32 digest = _buildErc1271MessageHash(
+            address(wallet),
+            keys[0],
+            msgHash
+        );
+        WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
+        // 65-byte ECDSA sig with v = 0 (invalid — valid v is 27 or 28).
+        bytes memory ecdsa = abi.encodePacked(
+            bytes32(0),
+            bytes32(0),
+            uint8(0)
+        );
+
+        assertEq(
+            wallet.isValidSignature(
+                msgHash,
+                Codec.encodeErc1271Signature(keys[0], sig, ecdsa)
+            ),
+            FAIL
+        );
+    }
+
+    function test_isValidSignature_returnsFailureOnWrongLength() public {
+        _seedVerificationKeys(1);
+        bytes32 msgHash = keccak256("erc1271-len");
+
+        assertEq(wallet.isValidSignature(msgHash, bytes("")), FAIL);
+        assertEq(wallet.isValidSignature(msgHash, new bytes(100)), FAIL);
+        assertEq(wallet.isValidSignature(msgHash, new bytes(2208)), FAIL);
+        assertEq(wallet.isValidSignature(msgHash, new bytes(2272)), FAIL);
+        assertEq(wallet.isValidSignature(msgHash, new bytes(2274)), FAIL);
+    }
+
+    function test_isValidSignature_emptySetRejectsAll() public view {
+        bytes memory anySig = new bytes(2273);
+        assertEq(wallet.isValidSignature(keccak256("x"), anySig), FAIL);
+    }
+}

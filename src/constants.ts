@@ -20,9 +20,16 @@ export const WOTSPLUS_GAS_ESTIMATE = 850_000;
 // TODO: Verify DEFAULT_CONFIRMATIONS is still used — may be consumed by frontend
 export const DEFAULT_CONFIRMATIONS = 1;
 
-// TODO: Verify ERRORS are still accurate against current contract — may be consumed by frontend
-export const ERRORS = {
-  INVALID_NETWORK: "Invalid network specified",
-  INSUFFICIENT_BALANCE: "Insufficient balance",
-  UNAUTHORIZED: "Unauthorized operation",
-} as const;
+/// Conservative default gas budgets for the ERC-4337 wallet validation +
+/// execute path. Real values should come from state-override estimation in
+/// `QuipWalletClient.prepareExecuteUserOp`; these are the fallback when the
+/// caller skips estimation.
+export const DEFAULT_VERIFICATION_GAS_LIMIT: bigint = 1_500_000n;
+export const DEFAULT_CALL_GAS_LIMIT: bigint = 500_000n;
+export const DEFAULT_PRE_VERIFICATION_GAS: bigint = 80_000n;
+
+/// Default gas budgets for the paymaster validation + postOp paths. These
+/// are conservative — the paymaster operator can override either based on
+/// operational data.
+export const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT: bigint = 1_500_000n;
+export const DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT: bigint = 100_000n;

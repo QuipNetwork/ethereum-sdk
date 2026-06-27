@@ -28,6 +28,7 @@ const CONTRACTS = [
   { name: "Deployer", path: "Deployer.sol/Deployer.json" },
   { name: "QuipFactory", path: "QuipFactory.sol/QuipFactory.json" },
   { name: "QuipWallet", path: "QuipWallet.sol/QuipWallet.json" },
+  { name: "QuipPaymaster", path: "QuipPaymaster.sol/QuipPaymaster.json" },
 ];
 
 mkdirSync(ABI_DIR, { recursive: true });

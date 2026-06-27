@@ -20,5 +20,6 @@ module.exports = {
       },
     ],
   },
-  transformIgnorePatterns: ["node_modules/(?!viem/)"],
+  forceExit: true,
+  transformIgnorePatterns: ["node_modules/(?!(viem|@viem)/)"],
 };

@@ -19,9 +19,9 @@ import {
   type Hex,
   getCreate2Address,
   getCreateAddress,
-  toHex,
 } from "viem";
 import addresses from "./addresses.json" with { type: "json" };
+import { UnsupportedNetworkError } from "./errors.js";
 
 /**
  * Network-specific contract address configuration
@@ -30,7 +30,25 @@ export interface NetworkAddresses {
   Deployer: Address;
   WOTSPlus: Address;
   QuipFactory: Address;
+  /// ERC-4337 v0.7 EntryPoint. The canonical address
+  /// `0x0000000071727De22E5E9d8BAf0edAc6f37da032` is the same across every
+  /// chain where v0.7 is deployed — it's a CREATE2 deployment with a
+  /// fixed salt. Per-chain entry exists so alternative deployments (e.g.
+  /// MIDL, app-specific bundlers) can override.
+  EntryPoint: Address;
+  /// Per-chain QuipPaymaster deployment. Zero address indicates no
+  /// paymaster is deployed on this chain — `QuipPaymasterClient` rejects
+  /// construction against a zero address. Populated once the paymaster
+  /// is deployed per-chain (Phase 7 release prep).
+  QuipPaymaster: Address;
 }
+
+/// Canonical ERC-4337 v0.7 EntryPoint address. Same on every mainnet /
+/// L2 where v0.7 has been deployed (CREATE2 with fixed salt). Override
+/// per-chain in `NETWORK_ADDRESSES` for chains with non-canonical
+/// deployments.
+export const CANONICAL_ENTRYPOINT_V07: Address =
+  "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
 
 /**
  * Chain IDs for supported networks
@@ -45,6 +63,19 @@ export const CHAIN_IDS = {
   OPTIMISM_SEPOLIA: 11155420,
 } as const;
 
+/// Chains that share the deterministic CREATE2 deployment addresses captured
+/// under the `default` entry of `NETWORK_ADDRESSES`. Any chainId not in this
+/// list AND not explicitly registered in `NETWORK_ADDRESSES` is rejected by
+/// `getNetworkAddresses` with `UnsupportedNetworkError`.
+const SHARED_DEPLOYMENT_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
+  CHAIN_IDS.ETHEREUM_MAINNET,
+  CHAIN_IDS.SEPOLIA,
+  CHAIN_IDS.BASE,
+  CHAIN_IDS.BASE_SEPOLIA,
+  CHAIN_IDS.OPTIMISM,
+  CHAIN_IDS.OPTIMISM_SEPOLIA,
+]);
+
 /**
  * Network-specific address registry
  * Maps chain IDs to their deployed contract addresses
@@ -55,6 +86,8 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     Deployer: addresses.Deployer as Address,
     WOTSPlus: addresses.WOTSPlus as Address,
     QuipFactory: addresses.QuipFactory as Address,
+    EntryPoint: CANONICAL_ENTRYPOINT_V07,
+    QuipPaymaster: "0x0000000000000000000000000000000000000000",
   },
   // MIDL Testnet (Chain ID 777) - different deployment mechanism
   // These addresses will be populated after MIDL deployment
@@ -62,21 +95,41 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
     Deployer: "0x0000000000000000000000000000000000000000",
     WOTSPlus: "0x0000000000000000000000000000000000000000",
     QuipFactory: "0x0000000000000000000000000000000000000000",
+    EntryPoint: CANONICAL_ENTRYPOINT_V07,
+    QuipPaymaster: "0x0000000000000000000000000000000000000000",
   },
 };
 
 /**
- * Get contract addresses for a specific network by chain ID
- * Falls back to default addresses for standard EVM chains
+ * Get contract addresses for a specific network by chain ID.
+ *
+ * Resolution order:
+ *   1. `chainId === undefined` → returns the `default` entry (back-compat
+ *      for callers that operate before the chain is detected, e.g.
+ *      `getVaultAddress(vaultId)` with no chainId).
+ *   2. `chainId` registered in `NETWORK_ADDRESSES` (e.g. MIDL) → that entry.
+ *   3. `chainId` in `SHARED_DEPLOYMENT_CHAIN_IDS` → the `default` entry
+ *      (mainnet / sepolia / base / op / their L2 testnets all share
+ *      CREATE2-deterministic deployment addresses).
+ *   4. Otherwise → throws `UnsupportedNetworkError`. This is the difference
+ *      from the prior silent fall-through, which would have returned the
+ *      mainnet addresses for any chainId outside the supported set.
  *
  * @param chainId - The chain ID of the network (e.g., 777 for MIDL testnet)
  * @returns NetworkAddresses for the specified chain
+ * @throws UnsupportedNetworkError when `chainId` is provided and unsupported.
  */
 export function getNetworkAddresses(chainId?: number): NetworkAddresses {
-  if (chainId && chainId in NETWORK_ADDRESSES) {
+  if (chainId === undefined) {
+    return NETWORK_ADDRESSES.default;
+  }
+  if (chainId in NETWORK_ADDRESSES) {
     return NETWORK_ADDRESSES[chainId];
   }
-  return NETWORK_ADDRESSES.default;
+  if (SHARED_DEPLOYMENT_CHAIN_IDS.has(chainId)) {
+    return NETWORK_ADDRESSES.default;
+  }
+  throw new UnsupportedNetworkError(chainId);
 }
 
 /**
@@ -103,10 +156,7 @@ const PROXY_INITCODE_HASH: Hex =
  * @param chainId - Optional chain ID for network-specific factory resolution
  * @returns The address where the vault contract would be deployed
  */
-export function getVaultAddress(
-  vaultId: Hex | Uint8Array,
-  chainId?: number
-): Address {
+export function getVaultAddress(vaultId: Hex, chainId?: number): Address {
   const factory = getNetworkAddresses(chainId).QuipFactory;
   return computeVaultAddress(factory, vaultId);
 }
@@ -120,19 +170,12 @@ export function getVaultAddress(
  */
 export function computeVaultAddress(
   factoryAddress: Address,
-  vaultId: Hex | Uint8Array
+  vaultId: Hex
 ): Address {
-  const salt: Hex =
-    vaultId instanceof Uint8Array
-      ? toHex(vaultId)
-      : vaultId.startsWith("0x")
-        ? (vaultId as Hex)
-        : (`0x${vaultId}` as Hex);
-
   // CREATE3 Step 1: Proxy address via CREATE2 (fixed proxy bytecode)
   const proxyAddress = getCreate2Address({
     from: factoryAddress,
-    salt,
+    salt: vaultId,
     bytecodeHash: PROXY_INITCODE_HASH,
   });
 

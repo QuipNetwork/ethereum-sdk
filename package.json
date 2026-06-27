@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.1.7",
+  "version": "0.2.0-beta.1",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -18,12 +18,48 @@
       "types": "./dist/index.d.ts"
     },
     "./addresses": {
-      "import": "./dist/addresses.js",
-      "types": "./dist/addresses.d.ts"
+      "import": "./dist/src/addresses.js",
+      "types": "./dist/src/addresses.d.ts"
     },
     "./abi": {
       "import": "./dist/src/abi/index.js",
       "types": "./dist/src/abi/index.d.ts"
+    },
+    "./signer": {
+      "import": "./dist/src/signer.js",
+      "types": "./dist/src/signer.d.ts"
+    },
+    "./walletClient": {
+      "import": "./dist/src/walletClient.js",
+      "types": "./dist/src/walletClient.d.ts"
+    },
+    "./factoryClient": {
+      "import": "./dist/src/factoryClient.js",
+      "types": "./dist/src/factoryClient.d.ts"
+    },
+    "./paymaster": {
+      "import": "./dist/src/paymasterClient.js",
+      "types": "./dist/src/paymasterClient.d.ts"
+    },
+    "./errors": {
+      "import": "./dist/src/errors.js",
+      "types": "./dist/src/errors.d.ts"
+    },
+    "./events": {
+      "import": "./dist/src/events.js",
+      "types": "./dist/src/events.d.ts"
+    },
+    "./userOp": {
+      "import": "./dist/src/userOp.js",
+      "types": "./dist/src/userOp.d.ts"
+    },
+    "./gas": {
+      "import": "./dist/src/gas.js",
+      "types": "./dist/src/gas.d.ts"
+    },
+    "./wotsCodec": {
+      "import": "./dist/src/wotsCodec.js",
+      "types": "./dist/src/wotsCodec.d.ts"
     }
   },
   "scripts": {
@@ -33,8 +69,11 @@
     "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json && npm run copy-assets",
     "prepare": "npm run build",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
+    "lint:sol": "solhint 'contracts/**/*.sol'",
     "test": "forge test",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
+    "smoke:tarball": "bash scripts/smoke-tarball.sh",
+    "smoke:fork": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern smoke.fork",
     "release": "forge build && npx tsx scripts/release.ts"
   },
   "devDependencies": {
@@ -48,6 +87,7 @@
     "@midl/node": "file:../midl-js/packages/node",
     "@midl/react": "file:../midl-js/packages/react",
     "@types/jest": "^29.5.14",
+    "@viem/anvil": "^0.0.10",
     "bitcoinjs-lib": "^7.0.0",
     "copyfiles": "^2.4.1",
     "dotenv": "^16.4.7",
@@ -58,12 +98,13 @@
     "prettier": "^2.8.8",
     "prettier-plugin-solidity": "^1.1.3",
     "rimraf": "^5.0.5",
+    "solhint": "^6.2.1",
     "ts-jest": "^29.3.2"
   },
   "dependencies": {
-    "viem": "^2.21.0",
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
-    "@quip.network/hashsigs": "^0.1.0"
+    "@quip.network/hashsigs": "^0.1.0",
+    "viem": "^2.21.0"
   }
 }
