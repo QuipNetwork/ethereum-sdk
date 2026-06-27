@@ -14,26 +14,31 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.33;
+pragma solidity ^0.8.28;
 
-import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
-import {IDeployer} from "./interfaces/IDeployer.sol";
+// Deployer allows us to deploy contracts with consistent addresses across EVM chains
+// using create2
+contract Deployer {
+    event Deploy(address addr);
 
-/// @title Deployer
-/// @notice Deploys contracts with consistent addresses across EVM chains using CREATE3.
-contract Deployer is IDeployer {
-    /// @inheritdoc IDeployer
     function deploy(
         bytes memory bytecode,
-        bytes32 salt
+        uint256 salt
     ) public returns (address) {
-        address contractAddr = CREATE3.deployDeterministic(bytecode, salt);
+        address contractAddr;
+        assembly {
+            // code starts after the first 32 bytes...
+            // https://ethereum-blockchain-developer.com/110-upgrade-smart-contracts/12-metamorphosis-create2/
+            let code := add(0x20, bytecode)
+            let codeSize := mload(bytecode)
+            contractAddr := create2(callvalue(), code, codeSize, salt)
+
+            // revert on failure
+            if iszero(extcodesize(contractAddr)) {
+                revert(0, 0)
+            }
+        }
         emit Deploy(contractAddr);
         return contractAddr;
-    }
-
-    /// @inheritdoc IDeployer
-    function predictAddress(bytes32 salt) public view returns (address) {
-        return CREATE3.predictDeterministicAddress(salt);
     }
 }

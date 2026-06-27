@@ -14,24 +14,21 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.33;
+pragma solidity ^0.8.28;
 
 contract DummyContract {
-    error InsufficientEth();
-    error AlwaysFails();
-
     uint256 public value;
 
-    function setValue(uint256 value_) external payable {
-        if (msg.value < 0.01 ether) revert InsufficientEth();
-        value = value_;
+    function setValue(uint256 _value) external payable {
+        require(msg.value >= 0.01 ether, "Need at least 0.01 ETH");
+        value = _value;
     }
 
-    function setValueNoFee(uint256 value_) external {
-        value = value_;
+    function setValueNoFee(uint256 _value) external {
+        value = _value;
     }
 
     function failingFunction() external pure {
-        revert AlwaysFails();
+        require(false, "Function always fails");
     }
 }
