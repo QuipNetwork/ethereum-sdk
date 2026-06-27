@@ -15,6 +15,10 @@ interface IQuipWallet {
     error InsufficientBalance(uint256 requested, uint256 available);
     error RenounceDisabled();
 
+    error RecoveryKeyNotFound();
+    error IncorrectRecoveryKeyAmount();
+    error RecoveryKeyLimitExceeded();
+
     /// @notice Emitted when a post-quantum authenticated transfer or execution occurs.
     /// @param amount The ETH value transferred.
     /// @param when The block timestamp of the transfer.
@@ -29,10 +33,18 @@ interface IQuipWallet {
         address to
     );
 
-    /// @notice Initializes the wallet with its first Winternitz public key.
+    event pqRecovery(WOTSPlus.WinternitzAddress recoveryKey, WOTSPlus.WinternitzAddress newPqOwner);
+    event RecoveryKeysReplenished(WOTSPlus.WinternitzAddress nextPqOwner);
+    event RecoveryKeysAdded(WOTSPlus.WinternitzAddress nextPqOwner, uint256 count);
+
+    /// @notice Initializes the wallet with its first Winternitz public key and recovery keys.
     /// @dev Can only be called once, by the owner or the factory. Uses OpenZeppelin's `initializer` modifier.
     /// @param newPqOwner The Winternitz public key to set as the initial post-quantum owner.
-    function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) external;
+    /// @param recoveryKeys The initial set of recovery keys (must be exactly 10).
+    function initialize(
+        WOTSPlus.WinternitzAddress calldata newPqOwner,
+        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
+    ) external;
 
     /// @notice Rotates the post-quantum owner key to a new Winternitz public key.
     /// @dev Only callable by the classical owner. The signature must be valid over the
@@ -92,4 +104,43 @@ interface IQuipWallet {
     /// @return publicSeed The public seed of the Winternitz address.
     /// @return publicKeyHash The public key hash of the Winternitz address.
     function pqOwner() external view returns (bytes32 publicSeed, bytes32 publicKeyHash);
+
+    /// @notice Recovers the wallet using a pre-registered recovery key.
+    /// @param recoveryKey The recovery key to use (must be in the set).
+    /// @param newPqOwner The new post-quantum owner key to set.
+    /// @param pqSig The Winternitz signature from the recovery key.
+    function recoverWallet(
+        WOTSPlus.WinternitzAddress calldata recoveryKey,
+        WOTSPlus.WinternitzAddress calldata newPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig
+    ) external;
+
+    /// @notice Adds new recovery keys to the existing set.
+    /// @param nextPqOwner The new post-quantum owner key after rotation.
+    /// @param pqSig The Winternitz signature from the current pqOwner.
+    /// @param newRecoveryKeys The recovery keys to add.
+    function addRecoveryKeys(
+        WOTSPlus.WinternitzAddress calldata nextPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig,
+        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
+    ) external;
+
+    /// @notice Clears existing recovery keys and adds new ones.
+    /// @param nextPqOwner The new post-quantum owner key after rotation.
+    /// @param pqSig The Winternitz signature from the current pqOwner.
+    /// @param newRecoveryKeys The new recovery keys to set.
+    function replenishRecoveryKeys(
+        WOTSPlus.WinternitzAddress calldata nextPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig,
+        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
+    ) external;
+
+    /// @notice Returns the number of recovery keys in the set.
+    function getRecoveryKeyCount() external view returns (uint256);
+
+    /// @notice Returns the recovery key hash at a given index.
+    function getRecoveryKeyHashAt(uint256 index) external view returns (bytes32);
+
+    /// @notice Returns whether a key hash is a registered recovery key.
+    function isRecoveryKey(bytes32 keyHash) external view returns (bool);
 }

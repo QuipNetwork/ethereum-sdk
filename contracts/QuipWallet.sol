@@ -21,15 +21,21 @@ import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
+import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 import {Initializable} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/utils/Initializable.sol";
 import "./interfaces/IQuipWallet.sol";
 import "./interfaces/IQuipFactory.sol";
 
 contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
+    using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
+
     /// @inheritdoc IQuipWallet
     address payable public quipFactory;
     /// @inheritdoc IQuipWallet
     WOTSPlus.WinternitzAddress public pqOwner;
+
+    uint256 public constant MAX_RECOVERY_KEYS = 10;
+    EnumerableSetLib.Bytes32Set internal _recoveryKeyHashes;
 
     receive() external payable {}
 
@@ -44,10 +50,15 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
     }
 
     /// @inheritdoc IQuipWallet
-    function initialize(WOTSPlus.WinternitzAddress calldata newPqOwner) public initializer {
+    function initialize(
+        WOTSPlus.WinternitzAddress calldata newPqOwner,
+        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
+    ) public initializer {
         if (msg.sender != owner() && msg.sender != quipFactory) revert UnauthorizedInitializer();
         if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
+        if (recoveryKeys.length != MAX_RECOVERY_KEYS) revert IncorrectRecoveryKeyAmount();
         pqOwner = newPqOwner;
+        _addRecoveryKeys(recoveryKeys);
     }
 
     /// @inheritdoc IQuipWallet
@@ -147,6 +158,140 @@ contract QuipWallet is IQuipWallet, Ownable2Step, Initializable {
 
         // Reverts from `target` are bubbled up directly.
         return LibCall.callContract(target, forwardValue, opdata);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function recoverWallet(
+        WOTSPlus.WinternitzAddress calldata recoveryKey,
+        WOTSPlus.WinternitzAddress calldata newPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig
+    ) public onlyOwner {
+        bytes32 keyHash = keccak256(abi.encode(recoveryKey.publicSeed, recoveryKey.publicKeyHash));
+        if (!_recoveryKeyHashes.contains(keyHash)) revert RecoveryKeyNotFound();
+
+        if (newPqOwner.publicSeed == bytes32(0) || newPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
+
+        bytes32 msgHash = keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                recoveryKey.publicSeed,
+                recoveryKey.publicKeyHash,
+                newPqOwner.publicSeed,
+                newPqOwner.publicKeyHash
+            )
+        );
+
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: msgHash
+        });
+
+        if (!WOTSPlus.verify(recoveryKey, message, pqSig)) revert InvalidSignature();
+
+        _recoveryKeyHashes.remove(keyHash);
+        pqOwner = newPqOwner;
+
+        emit pqRecovery(recoveryKey, newPqOwner);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function addRecoveryKeys(
+        WOTSPlus.WinternitzAddress calldata nextPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig,
+        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
+    ) public onlyOwner {
+        if (nextPqOwner.publicSeed == bytes32(0) || nextPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
+
+        bytes32 msgHash = keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                nextPqOwner.publicSeed,
+                nextPqOwner.publicKeyHash,
+                keccak256(abi.encode(newRecoveryKeys))
+            )
+        );
+
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: msgHash
+        });
+
+        if (!WOTSPlus.verify(pqOwner, message, pqSig)) revert InvalidSignature();
+
+        _addRecoveryKeys(newRecoveryKeys);
+
+        pqOwner = nextPqOwner;
+
+        emit RecoveryKeysAdded(nextPqOwner, newRecoveryKeys.length);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function replenishRecoveryKeys(
+        WOTSPlus.WinternitzAddress calldata nextPqOwner,
+        WOTSPlus.WinternitzElements calldata pqSig,
+        WOTSPlus.WinternitzAddress[] calldata newRecoveryKeys
+    ) public onlyOwner {
+        if (nextPqOwner.publicSeed == bytes32(0) || nextPqOwner.publicKeyHash == bytes32(0)) revert InvalidPqOwner();
+        if (newRecoveryKeys.length > MAX_RECOVERY_KEYS) revert RecoveryKeyLimitExceeded();
+
+        bytes32 msgHash = keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                nextPqOwner.publicSeed,
+                nextPqOwner.publicKeyHash,
+                keccak256(abi.encode(newRecoveryKeys))
+            )
+        );
+
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: msgHash
+        });
+
+        if (!WOTSPlus.verify(pqOwner, message, pqSig)) revert InvalidSignature();
+
+        uint256 clearLen = _recoveryKeyHashes.length();
+        for (uint256 i = 0; i < clearLen; ++i) {
+            _recoveryKeyHashes.remove(_recoveryKeyHashes.at(0));
+        }
+
+        _addRecoveryKeys(newRecoveryKeys);
+
+        pqOwner = nextPqOwner;
+
+        emit RecoveryKeysReplenished(nextPqOwner);
+    }
+
+    /// @dev Validates and adds recovery keys to the set. Reverts if any key has zero fields
+    ///      or if the set would exceed `MAX_RECOVERY_KEYS`.
+    function _addRecoveryKeys(WOTSPlus.WinternitzAddress[] calldata keys) internal {
+        uint256 len = keys.length;
+        for (uint256 i = 0; i < len; ++i) {
+            if (keys[i].publicSeed == bytes32(0) || keys[i].publicKeyHash == bytes32(0)) {
+                revert InvalidPqOwner();
+            }
+            bytes32 keyHash = keccak256(abi.encode(keys[i].publicSeed, keys[i].publicKeyHash));
+            _recoveryKeyHashes.add(keyHash, MAX_RECOVERY_KEYS);
+        }
+    }
+
+    /// @inheritdoc IQuipWallet
+    function getRecoveryKeyCount() public view returns (uint256) {
+        return _recoveryKeyHashes.length();
+    }
+
+    /// @inheritdoc IQuipWallet
+    function getRecoveryKeyHashAt(uint256 index) public view returns (bytes32) {
+        return _recoveryKeyHashes.at(index);
+    }
+
+    /// @inheritdoc IQuipWallet
+    function isRecoveryKey(bytes32 keyHash) public view returns (bool) {
+        return _recoveryKeyHashes.contains(keyHash);
     }
 
     /// @inheritdoc IQuipWallet

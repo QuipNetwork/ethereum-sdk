@@ -29,7 +29,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     address public immutable wotsLibrary;
 
     /// @inheritdoc IQuipFactory
-    uint256 public constant MAX_FEE = 0.1 ether;
+    uint256 public immutable MAX_FEE;
 
     /// @inheritdoc IQuipFactory
     uint256 public creationFee = 0;
@@ -48,15 +48,17 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     fallback() external payable {}
 
-    constructor(address payable initialOwner, address _wotsLibrary) payable Ownable(initialOwner) {
+    constructor(address payable initialOwner, address _wotsLibrary, uint256 _maxFee) payable Ownable(initialOwner) {
         wotsLibrary = _wotsLibrary;
+        MAX_FEE = _maxFee;
     }
 
     /// @inheritdoc IQuipFactory
     function depositToWinternitz(
         bytes32 vaultId,
         address payable to,
-        WOTSPlus.WinternitzAddress calldata pqTo
+        WOTSPlus.WinternitzAddress calldata pqTo,
+        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
     ) public payable returns (address) {
         address contractAddr;
 
@@ -70,7 +72,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         contractAddr = CREATE3.deployDeterministic(quipWalletCode, vaultId);
 
-        QuipWallet(payable(contractAddr)).initialize(pqTo);
+        QuipWallet(payable(contractAddr)).initialize(pqTo, recoveryKeys);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         quips[to][vaultId] = contractAddr;
         vaultIds[to].push(vaultId);

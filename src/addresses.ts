@@ -17,15 +17,11 @@
 import {
   type Address,
   type Hex,
-  getAddress,
-  concat,
-  encodeAbiParameters,
-  encodePacked,
-  keccak256,
+  getCreate2Address,
+  getCreateAddress,
   toHex,
 } from "viem";
 import addresses from "./addresses.json" with { type: "json" };
-import bytecodeData from "./bytecode.json" with { type: "json" };
 
 /**
  * Network-specific contract address configuration
@@ -95,76 +91,51 @@ export const DEPLOYER_ADDRESS = NETWORK_ADDRESSES.default.Deployer;
 export const WOTS_PLUS_ADDRESS = NETWORK_ADDRESSES.default.WOTSPlus;
 export const QUIP_FACTORY_ADDRESS = NETWORK_ADDRESSES.default.QuipFactory;
 
+// Solady CREATE3 proxy initcode hash: keccak256(0x67363d3d37363d34f03d5260086018f3)
+const PROXY_INITCODE_HASH: Hex =
+  "0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f";
+
 /**
- * getVaultAddress computes the deterministic address of a Quip Vault
- * based on the owner and vault ID using the public factory and library addresses.
+ * Compute the deterministic CREATE3 address of a Quip Vault.
+ * The address depends only on (factory, vaultId).
  *
- * This uses CREATE2 to calculate the same address that would be
- * deployed by the QuipFactory.
- *
- * @param initialOwnerAddress - The Ethereum address of the initial vault owner
- * @param vaultId - The unique identifier for this vault as a hex string
- * @param chainId - Optional chain ID for network-specific address resolution
- * @returns The Ethereum address where the vault contract would be deployed
+ * @param vaultId - The vault identifier (used as CREATE3 salt)
+ * @param chainId - Optional chain ID for network-specific factory resolution
+ * @returns The address where the vault contract would be deployed
  */
 export function getVaultAddress(
-  initialOwnerAddress: Address,
-  vaultId: Hex,
+  vaultId: Hex | Uint8Array,
   chainId?: number
 ): Address {
-  const addrs = getNetworkAddresses(chainId);
-  return computeVaultAddress(
-    initialOwnerAddress,
-    vaultId,
-    addrs.WOTSPlus,
-    addrs.QuipFactory
-  );
+  const factory = getNetworkAddresses(chainId).QuipFactory;
+  return computeVaultAddress(factory, vaultId);
 }
 
 /**
- * computeVaultAddress allows calculating a vault address with custom contract addresses
- * @param initialOwnerAddress - The Ethereum address of the initial vault owner
- * @param vaultId - The unique identifier for this vault
- * @param wotsLibraryAddress - The address of the WOTSPlus library contract
- * @param quipFactoryAddress - The address of the QuipFactory contract
- * @returns The Ethereum address where the vault contract would be deployed
+ * Compute a CREATE3 vault address with an explicit factory address.
+ *
+ * @param factoryAddress - The QuipFactory contract address
+ * @param vaultId - The vault identifier (used as CREATE3 salt)
+ * @returns The address where the vault contract would be deployed
  */
 export function computeVaultAddress(
-  initialOwnerAddress: string,
-  vaultId: string | Uint8Array,
-  wotsLibraryAddress: string,
-  quipFactoryAddress: string
+  factoryAddress: Address,
+  vaultId: Hex | Uint8Array
 ): Address {
-  const owner = getAddress(initialOwnerAddress);
-  const factory = getAddress(quipFactoryAddress);
-
-  // Ensure vaultId is properly formatted as bytes32
-  const vaultIdHex: Hex =
+  const salt: Hex =
     vaultId instanceof Uint8Array
       ? toHex(vaultId)
       : vaultId.startsWith("0x")
         ? (vaultId as Hex)
         : (`0x${vaultId}` as Hex);
 
-  // Create the initialization code exactly as in the contract
-  const creationCode = concat([
-    quipWalletCreationCode,
-    encodeAbiParameters(
-      [{ type: "address" }, { type: "address" }],
-      [factory, owner]
-    ),
-  ]);
+  // CREATE3 Step 1: Proxy address via CREATE2 (fixed proxy bytecode)
+  const proxyAddress = getCreate2Address({
+    from: factoryAddress,
+    salt,
+    bytecodeHash: PROXY_INITCODE_HASH,
+  });
 
-  // Compute the CREATE2 address using the same formula as in the contract
-  const hash = keccak256(
-    encodePacked(
-      ["bytes1", "address", "bytes32", "bytes32"],
-      ["0xff", factory, vaultIdHex, keccak256(creationCode)]
-    )
-  );
-
-  // Convert the last 20 bytes of the hash to an address
-  return getAddress(`0x${hash.slice(-40)}`);
+  // CREATE3 Step 2: Final address via CREATE (proxy nonce = 1)
+  return getCreateAddress({ from: proxyAddress, nonce: 1n });
 }
-
-const quipWalletCreationCode: Hex = bytecodeData.quipWalletCreationCode as Hex;

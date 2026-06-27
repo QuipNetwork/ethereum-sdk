@@ -9,7 +9,8 @@ import {Vm} from "forge-std-1.14.0/Vm.sol";
 contract QuipFactory_depositToWinternitz is QuipFactoryTest {
     function test_depositToWinternitz_deploysWallet() public {
         bytes32 vaultId = keccak256("Vault ID 1");
-        (WOTSPlus.WinternitzAddress memory pubkey,) = _generateKeyPair("seed1");
+        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
         address expectedAddr = _computeWalletAddress(vaultId, ALICE);
 
@@ -17,7 +18,8 @@ contract QuipFactory_depositToWinternitz is QuipFactoryTest {
         address walletAddr = factory.depositToWinternitz(
             vaultId,
             payable(ALICE),
-            pubkey
+            pubkey,
+            rKeys
         );
 
         assertEq(walletAddr, expectedAddr);
@@ -30,17 +32,20 @@ contract QuipFactory_depositToWinternitz is QuipFactoryTest {
         QuipWallet wallet = QuipWallet(payable(walletAddr));
         assertEq(wallet.owner(), ALICE);
         assertEq(address(wallet.quipFactory()), address(factory));
+        assertEq(wallet.getRecoveryKeyCount(), 10);
     }
 
     function test_depositToWinternitz_deploysWalletWithBalance() public {
         bytes32 vaultId = keccak256("Vault ID 1");
-        (WOTSPlus.WinternitzAddress memory pubkey,) = _generateKeyPair("seed1");
+        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
         vm.prank(ALICE);
         address walletAddr = factory.depositToWinternitz{value: INITIAL_DEPOSIT}(
             vaultId,
             payable(ALICE),
-            pubkey
+            pubkey,
+            rKeys
         );
 
         assertEq(walletAddr.balance, INITIAL_DEPOSIT);
@@ -54,7 +59,8 @@ contract QuipFactory_depositToWinternitz is QuipFactoryTest {
 
     function test_depositToWinternitz_emitsQuipCreatedEvent() public {
         bytes32 vaultId = keccak256("Vault ID 1");
-        (WOTSPlus.WinternitzAddress memory pubkey,) = _generateKeyPair("seed1");
+        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
         address expectedAddr = _computeWalletAddress(vaultId, ALICE);
 
@@ -63,7 +69,8 @@ contract QuipFactory_depositToWinternitz is QuipFactoryTest {
         factory.depositToWinternitz{value: INITIAL_DEPOSIT}(
             vaultId,
             payable(ALICE),
-            pubkey
+            pubkey,
+            rKeys
         );
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -81,12 +88,14 @@ contract QuipFactory_depositToWinternitz is QuipFactoryTest {
     function test_depositToWinternitz_tracksVaultIds() public {
         bytes32 vaultId1 = keccak256("Vault 1");
         bytes32 vaultId2 = keccak256("Vault 2");
-        (WOTSPlus.WinternitzAddress memory pubkey1,) = _generateKeyPair("seed1");
-        (WOTSPlus.WinternitzAddress memory pubkey2,) = _generateKeyPair("seed2");
+        (WOTSPlus.WinternitzAddress memory pubkey1, bytes32 privateKey1) = _generateKeyPair("seed1");
+        (WOTSPlus.WinternitzAddress memory pubkey2, bytes32 privateKey2) = _generateKeyPair("seed2");
+        WOTSPlus.WinternitzAddress[] memory rKeys1 = _generateRecoveryKeys(privateKey1, 10);
+        WOTSPlus.WinternitzAddress[] memory rKeys2 = _generateRecoveryKeys(privateKey2, 10);
 
         vm.startPrank(ALICE);
-        factory.depositToWinternitz(vaultId1, payable(ALICE), pubkey1);
-        factory.depositToWinternitz(vaultId2, payable(ALICE), pubkey2);
+        factory.depositToWinternitz(vaultId1, payable(ALICE), pubkey1, rKeys1);
+        factory.depositToWinternitz(vaultId2, payable(ALICE), pubkey2, rKeys2);
         vm.stopPrank();
 
         assertEq(factory.vaultIds(ALICE, 0), vaultId1);

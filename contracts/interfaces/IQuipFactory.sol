@@ -36,7 +36,8 @@ interface IQuipFactory {
     function depositToWinternitz(
         bytes32 vaultId,
         address payable to,
-        WOTSPlus.WinternitzAddress calldata pqTo
+        WOTSPlus.WinternitzAddress calldata pqTo,
+        WOTSPlus.WinternitzAddress[] calldata recoveryKeys
     ) external payable returns (address);
 
     /// @notice Sets the fee charged when creating a new QuipWallet.
