@@ -438,14 +438,11 @@ contract WOTSPlusImplementation is
             WOTSPlus.WinternitzElements calldata pqSig
         ) = Codec.decodeUpgradeAuth(data);
 
-        bytes32 digest = Codec.upgradeDigest(
-            address(this),
-            block.chainid,
+        bytes32 digest = _upgradeDigest(
             newImplementation,
-            currentKey.publicSeed,
-            currentKey.publicKeyHash,
-            nextKey.publicSeed,
-            nextKey.publicKeyHash
+            data,
+            currentKey,
+            nextKey
         );
 
         Storage.Layout storage $ = Storage.layout();
@@ -1408,6 +1405,31 @@ contract WOTSPlusImplementation is
         WOTSPlus.WinternitzAddress memory key
     ) internal {
         if (!set.remove(key)) revert KeyRemovalFailed();
+    }
+
+    /// @dev Computes the WOTS+ digest for `upgradeToAndCall`, binding the
+    ///      migration flag and migrator payload hash so the auth signature
+    ///      cannot be separated from the migration intent.
+    function _upgradeDigest(
+        address newImplementation,
+        bytes calldata data,
+        WOTSPlus.WinternitzAddress calldata currentKey,
+        WOTSPlus.WinternitzAddress calldata nextKey
+    ) private view returns (bytes32) {
+        (bool shouldMigrate, bytes calldata migratorPayload) = Codec
+            .decodeUpgradeMigration(data);
+        return
+            Codec.upgradeDigest(
+                address(this),
+                block.chainid,
+                newImplementation,
+                currentKey.publicSeed,
+                currentKey.publicKeyHash,
+                nextKey.publicSeed,
+                nextKey.publicKeyHash,
+                shouldMigrate,
+                keccak256(migratorPayload)
+            );
     }
 
     /// @dev Verifies a WOTS+ signature over the verification digest for an upgrade.

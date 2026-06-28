@@ -138,9 +138,22 @@ contract WOTSPlusCodecHarness {
         bytes32 s1,
         bytes32 h1,
         bytes32 s2,
-        bytes32 h2
+        bytes32 h2,
+        bool shouldMigrate,
+        bytes32 migratorPayloadHash
     ) external pure returns (bytes32) {
-        return Codec.upgradeDigest(wallet, chainId, newImplementation, s1, h1, s2, h2);
+        return
+            Codec.upgradeDigest(
+                wallet,
+                chainId,
+                newImplementation,
+                s1,
+                h1,
+                s2,
+                h2,
+                shouldMigrate,
+                migratorPayloadHash
+            );
     }
 
     function exposed_verificationDigest(

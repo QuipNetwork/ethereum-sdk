@@ -1274,7 +1274,9 @@ export function upgradeDigest(
   s1: Hex,
   h1: Hex,
   s2: Hex,
-  h2: Hex
+  h2: Hex,
+  shouldMigrate: boolean,
+  migratorPayloadHash: Hex
 ): Hex {
   return keccak256(
     concat([
@@ -1286,6 +1288,8 @@ export function upgradeDigest(
       h1,
       s2,
       h2,
+      bigintToBytes32(shouldMigrate ? 1n : 0n),
+      migratorPayloadHash,
     ])
   );
 }

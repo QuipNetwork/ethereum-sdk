@@ -251,10 +251,47 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         );
     }
 
-    /// @dev Builds the full upgrade data payload (5441 bytes) for `upgradeToAndCall`.
+    function _buildUpgradeMigratorPayload(
+        WOTSPlus.WinternitzAddress memory migratePqOwner,
+        WOTSPlus.WinternitzAddress[] memory migrateRecoveryKeys
+    ) internal pure returns (bytes memory) {
+        WOTSPlus.WinternitzAddress[]
+            memory recKeys = new WOTSPlus.WinternitzAddress[](10);
+        for (uint256 i = 0; i < 10; i++) {
+            if (i < migrateRecoveryKeys.length) {
+                recKeys[i] = migrateRecoveryKeys[i];
+            } else {
+                recKeys[i] = WOTSPlus.WinternitzAddress({
+                    publicSeed: bytes32(uint256(i + 1)), publicKeyHash: bytes32(uint256(i + 100))
+                });
+            }
+        }
+        return _encodeInitPayload(migratePqOwner, recKeys);
+    }
+
+    function _buildUpgradeVerifierData(
+        address newImplementation_,
+        bytes32 verifierSeed
+    )
+        internal
+        view
+        returns (
+            WOTSPlus.WinternitzAddress memory vPub,
+            WOTSPlus.WinternitzElements memory vSig
+        )
+    {
+        bytes32 vPriv;
+        (vPub, vPriv) = _generateKeyPair(verifierSeed);
+        bytes32 vHash = Codec.verificationDigest(
+            address(wallet), block.chainid, newImplementation_, vPub.publicSeed, vPub.publicKeyHash
+        );
+        vSig = _sign(vPriv, vHash);
+    }
+
+    /// @dev Builds the full upgrade data payload (6529 bytes) for `upgradeToAndCall`.
     ///      Layout: [0:64) currentKey, [64:128) nextKey, [128:2272) pqSig,
     ///              [2272:2336) verifier, [2336:4480) verifySig,
-    ///              [4480] shouldMigrate, [4481:5441) migratorPayload.
+    ///              [4480] shouldMigrate, [4481:6529) migratorPayload.
     function _buildUpgradeData(
         address newImplementation_,
         bytes32 signingKey,
@@ -265,66 +302,38 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         WOTSPlus.WinternitzAddress memory migratePqOwner,
         WOTSPlus.WinternitzAddress[] memory migrateRecoveryKeys
     ) internal view returns (bytes memory) {
+        bytes memory migratorPayload = shouldMigrate
+            ? _buildUpgradeMigratorPayload(migratePqOwner, migrateRecoveryKeys)
+            : new bytes(2048);
+
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
             block.chainid,
-            address(newImplementation_),
+            newImplementation_,
             currentPqOwner.publicSeed,
             currentPqOwner.publicKeyHash,
             nextPqOwner.publicSeed,
-            nextPqOwner.publicKeyHash
+            nextPqOwner.publicKeyHash,
+            shouldMigrate,
+            keccak256(migratorPayload)
         );
 
-        WOTSPlus.WinternitzElements memory sig = _sign(signingKey, digest);
+        WOTSPlus.WinternitzElements memory pqSig = _sign(signingKey, digest);
 
-        bytes memory keyHeader = abi.encodePacked(
-            currentPqOwner.publicSeed, currentPqOwner.publicKeyHash, nextPqOwner.publicSeed, nextPqOwner.publicKeyHash
-        );
+        (
+            WOTSPlus.WinternitzAddress memory vPub,
+            WOTSPlus.WinternitzElements memory vSig
+        ) = _buildUpgradeVerifierData(newImplementation_, verifierSeed);
 
-        bytes memory pqSig;
-        for (uint256 i = 0; i < 67; i++) {
-            pqSig = abi.encodePacked(pqSig, sig.elements[i]);
-        }
-
-        bytes memory verifierData = _buildUpgradeVerifierBytes(newImplementation_, verifierSeed);
-
-        bytes memory migrateFlag = abi.encodePacked(shouldMigrate ? uint8(1) : uint8(0));
-
-        WOTSPlus.WinternitzAddress[] memory recKeys = new WOTSPlus.WinternitzAddress[](10);
-        for (uint256 i = 0; i < 10; i++) {
-            if (i < migrateRecoveryKeys.length) {
-                recKeys[i] = migrateRecoveryKeys[i];
-            } else {
-                recKeys[i] = WOTSPlus.WinternitzAddress({
-                    publicSeed: bytes32(uint256(i + 1)), publicKeyHash: bytes32(uint256(i + 100))
-                });
-            }
-        }
-        bytes memory migratorPayload = _encodeInitPayload(migratePqOwner, recKeys);
-
-        return abi.encodePacked(keyHeader, pqSig, verifierData, migrateFlag, migratorPayload);
-    }
-
-    /// @dev Builds the verifier portion of an upgrade payload: 64-byte verifier
-    ///      pubkey + 2144-byte WOTS+ signature over the verification digest,
-    ///      packed for `abi.encodePacked` insertion into the upgrade calldata.
-    ///      Distinct from the scenario tests' `_buildVerifierData` which
-    ///      returns the (vPub, vSig) tuple unpacked.
-    function _buildUpgradeVerifierBytes(address newImplementation_, bytes32 verifierSeed)
-        internal
-        view
-        returns (bytes memory)
-    {
-        (WOTSPlus.WinternitzAddress memory vPub, bytes32 vPriv) = _generateKeyPair(verifierSeed);
-        bytes32 vHash = Codec.verificationDigest(
-            address(wallet), block.chainid, newImplementation_, vPub.publicSeed, vPub.publicKeyHash
-        );
-        WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
-
-        bytes memory data = abi.encodePacked(vPub.publicSeed, vPub.publicKeyHash);
-        for (uint256 i = 0; i < 67; i++) {
-            data = abi.encodePacked(data, vSig.elements[i]);
-        }
-        return data;
+        return
+            Codec.encodeUpgradeToAndCall(
+                currentPqOwner,
+                nextPqOwner,
+                pqSig,
+                vPub,
+                vSig,
+                shouldMigrate,
+                migratorPayload
+            );
     }
 }

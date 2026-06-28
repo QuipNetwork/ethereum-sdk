@@ -21,6 +21,7 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  keccak256,
   size,
   toHex,
   getAddress,
@@ -474,11 +475,20 @@ describe("digest parity (live Solidity)", () => {
   });
 
   test("upgradeDigest matches Solidity", async () => {
-    const tsDigest = upgradeDigest(WALLET, CHAIN_ID, IMPL, S1, H1, S2, H2);
-    const solDigest = await callHarness("exposed_upgradeDigest", [
-      WALLET, CHAIN_ID, IMPL, S1, H1, S2, H2,
-    ]);
-    expect(tsDigest).toBe(solDigest);
+    const cases: Array<{ shouldMigrate: boolean; payload: Hex }> = [
+      { shouldMigrate: false, payload: "0x" },
+      { shouldMigrate: true, payload: "0xdeadbeef" },
+    ];
+    for (const { shouldMigrate, payload } of cases) {
+      const payloadHash = keccak256(payload);
+      const tsDigest = upgradeDigest(
+        WALLET, CHAIN_ID, IMPL, S1, H1, S2, H2, shouldMigrate, payloadHash,
+      );
+      const solDigest = await callHarness("exposed_upgradeDigest", [
+        WALLET, CHAIN_ID, IMPL, S1, H1, S2, H2, shouldMigrate, payloadHash,
+      ]);
+      expect(tsDigest).toBe(solDigest);
+    }
   });
 
   test("verificationDigest matches Solidity", async () => {

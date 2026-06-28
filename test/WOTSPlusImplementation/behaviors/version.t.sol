@@ -28,6 +28,9 @@ contract WOTSPlusImplementation_version is WOTSPlusImplementationTest {
     function _buildUpgradePayload(address newImpl) internal view returns (bytes memory) {
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("version-next-pq");
 
+        // No migration: migrator slot is zero-filled (2048 bytes).
+        bytes memory migratorPayload = new bytes(2048);
+
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
             block.chainid,
@@ -35,7 +38,9 @@ contract WOTSPlusImplementation_version is WOTSPlusImplementationTest {
             alicePubkey.publicSeed,
             alicePubkey.publicKeyHash,
             nextPq.publicSeed,
-            nextPq.publicKeyHash
+            nextPq.publicKeyHash,
+            false,
+            keccak256(migratorPayload)
         );
         WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, digest);
 
@@ -44,17 +49,15 @@ contract WOTSPlusImplementation_version is WOTSPlusImplementationTest {
             Codec.verificationDigest(address(wallet), block.chainid, newImpl, vPub.publicSeed, vPub.publicKeyHash);
         WOTSPlus.WinternitzElements memory vSig = _sign(vPriv, vHash);
 
-        // Dummy 960-byte init-layout migrator payload (unused when shouldMigrate=false).
-        WOTSPlus.WinternitzAddress memory dummyPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
-        WOTSPlus.WinternitzAddress[] memory dummyKeys = new WOTSPlus.WinternitzAddress[](10);
-        for (uint256 i = 0; i < 10; i++) {
-            dummyKeys[i] = WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(uint256(i + 1)), publicKeyHash: bytes32(uint256(i + 100))
-            });
-        }
-        bytes memory migratorPayload = _encodeInitPayload(dummyPq, dummyKeys);
-
-        return Codec.encodeUpgradeToAndCall(alicePubkey, nextPq, sig, vPub, vSig, false, migratorPayload);
+        return
+            Codec.encodeUpgradeToAndCall(
+                alicePubkey,
+                nextPq,
+                sig,
+                vPub,
+                vSig,
+                false,
+                migratorPayload
+            );
     }
 }
