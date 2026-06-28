@@ -22,6 +22,7 @@ import {
   type TransactionReceipt,
   decodeFunctionResult,
   encodeFunctionData,
+  keccak256,
   size,
   zeroAddress,
   zeroHash,
@@ -1401,6 +1402,8 @@ export class WOTSPlusImplementationClient {
     await this.assertProviderBinding({ account: true });
     const { keyOpts, txOpts } = splitWriteOpts(opts);
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
+    const migratorPayload = options.migrationPayload ?? "0x";
+    const shouldMigrate = migratorPayload !== "0x";
     const digest = upgradeDigest(
       this.walletAddress,
       BigInt(this.chainId),
@@ -1408,11 +1411,11 @@ export class WOTSPlusImplementationClient {
       currentKey.publicSeed,
       currentKey.publicKeyHash,
       nextKey.publicSeed,
-      nextKey.publicKeyHash
+      nextKey.publicKeyHash,
+      shouldMigrate,
+      keccak256(migratorPayload)
     );
     const pqSig = await this.signWith(currentKey.publicSeed, digest);
-    const shouldMigrate =
-      options.migrationPayload !== undefined && options.migrationPayload !== "0x";
     const payload = encodeUpgradeToAndCall(
       currentKey,
       nextKey,
@@ -1420,7 +1423,7 @@ export class WOTSPlusImplementationClient {
       verifier,
       verifySig,
       shouldMigrate,
-      options.migrationPayload ?? "0x"
+      migratorPayload
     );
 
     const contractCall: ContractCallParams = {

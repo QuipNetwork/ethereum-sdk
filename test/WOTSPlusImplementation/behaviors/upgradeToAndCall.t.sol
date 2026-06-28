@@ -195,7 +195,7 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         data[4480] = 0x01;
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
@@ -225,7 +225,7 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         data[4481] = bytes1(uint8(data[4481]) ^ 0xff);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
