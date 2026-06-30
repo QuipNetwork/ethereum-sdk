@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 console.log("  - v1 barrel...");
 const barrel = await import("@quip.network/ethereum-sdk/v1");
 assert(typeof barrel.QuipSigner === "function", "QuipSigner missing from v1 barrel");
-assert(typeof barrel.QuipWalletClient === "function", "QuipWalletClient missing");
+assert(typeof barrel.WOTSPlusImplementationClient === "function", "WOTSPlusImplementationClient missing");
 assert(typeof barrel.QuipClient === "function", "QuipClient missing");
 assert(typeof barrel.QuipPaymasterClient === "function", "QuipPaymasterClient missing");
 assert(typeof barrel.WotsCodec === "object", "WotsCodec namespace missing");

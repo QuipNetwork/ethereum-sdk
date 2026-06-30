@@ -230,8 +230,13 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_migrate_revertsWhen_calledDirectly() public {
-        (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("migrate-direct");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(keccak256("migrate-r"), 10);
+        (WOTSPlus.WinternitzAddress memory newPq, ) = _generateKeyPair(
+            "migrate-direct"
+        );
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
+            keccak256("migrate-r"),
+            10
+        );
         bytes memory migratorPayload = _encodeInitPayload(newPq, rKeys);
 
         vm.prank(ALICE);

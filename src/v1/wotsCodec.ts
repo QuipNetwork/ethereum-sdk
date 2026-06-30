@@ -1267,6 +1267,8 @@ export function withdrawDepositDigest(
   );
 }
 
+/// `migratorPayloadHash` is `keccak256(migratorPayload)` over the full
+/// 2048-byte on-wire slot (zero-filled when `shouldMigrate` is false).
 export function upgradeDigest(
   wallet: Address,
   chainId: bigint,

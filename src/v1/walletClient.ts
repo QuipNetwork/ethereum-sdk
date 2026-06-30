@@ -69,6 +69,7 @@ import {
   type WinternitzElements,
   KeyType,
   MAX_KEYS,
+  INIT_PAYLOAD_SIZE,
   computeUserOpHash,
   decodePaymasterAndData,
   decodeUserOpSignature,
@@ -1389,7 +1390,9 @@ export class WOTSPlusImplementationClient {
   /// recoveryKeys[10] + verificationKeys[10]) to trigger `migrate(...)`
   /// against the new implementation. Leave undefined (or pass `"0x"`)
   /// for a no-migration upgrade; the SDK zero-fills the trailing 2048
-  /// bytes the contract requires for layout symmetry.
+  /// bytes the contract requires for layout symmetry. The pqSig digest
+  /// commits to `shouldMigrate` and `keccak256(migratorPayload)` so the
+  /// migration tail cannot be tampered post-sign.
   async upgradeWallet(
     newImplementation: Address,
     verifier: WinternitzAddress,
@@ -1404,6 +1407,15 @@ export class WOTSPlusImplementationClient {
     const { currentKey, nextKey } = await this.pickTransactionKeyPair(keyOpts);
     const migratorPayload = options.migrationPayload ?? "0x";
     const shouldMigrate = migratorPayload !== "0x";
+    // The on-wire migrator slot is always INIT_PAYLOAD_SIZE bytes; when not
+    // migrating it is zero-filled (matching encodeUpgradeToAndCall). The pqSig
+    // digest commits to keccak256 of that full slot, so hash the zero-filled
+    // bytes here rather than the empty "0x" — otherwise the contract, which
+    // hashes data[4481:6529], recomputes a different digest and reverts with
+    // InvalidSignature on the no-migration branch.
+    const migratorBytes: Hex = shouldMigrate
+      ? migratorPayload
+      : (`0x${"00".repeat(INIT_PAYLOAD_SIZE)}` as Hex);
     const digest = upgradeDigest(
       this.walletAddress,
       BigInt(this.chainId),
@@ -1413,7 +1425,7 @@ export class WOTSPlusImplementationClient {
       nextKey.publicSeed,
       nextKey.publicKeyHash,
       shouldMigrate,
-      keccak256(migratorPayload)
+      keccak256(migratorBytes)
     );
     const pqSig = await this.signWith(currentKey.publicSeed, digest);
     const payload = encodeUpgradeToAndCall(
@@ -1423,7 +1435,7 @@ export class WOTSPlusImplementationClient {
       verifier,
       verifySig,
       shouldMigrate,
-      migratorPayload
+      migratorBytes
     );
 
     const contractCall: ContractCallParams = {

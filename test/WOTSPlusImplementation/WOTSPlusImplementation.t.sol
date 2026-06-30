@@ -262,7 +262,8 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
                 recKeys[i] = migrateRecoveryKeys[i];
             } else {
                 recKeys[i] = WOTSPlus.WinternitzAddress({
-                    publicSeed: bytes32(uint256(i + 1)), publicKeyHash: bytes32(uint256(i + 100))
+                    publicSeed: bytes32(uint256(i + 1)),
+                    publicKeyHash: bytes32(uint256(i + 100))
                 });
             }
         }
@@ -283,7 +284,11 @@ contract WOTSPlusImplementationTest is QuipFactoryTest {
         bytes32 vPriv;
         (vPub, vPriv) = _generateKeyPair(verifierSeed);
         bytes32 vHash = Codec.verificationDigest(
-            address(wallet), block.chainid, newImplementation_, vPub.publicSeed, vPub.publicKeyHash
+            address(wallet),
+            block.chainid,
+            newImplementation_,
+            vPub.publicSeed,
+            vPub.publicKeyHash
         );
         vSig = _sign(vPriv, vHash);
     }

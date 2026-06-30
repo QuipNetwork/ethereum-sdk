@@ -61,11 +61,16 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
             true,
             keccak256(migratorPayload)
         );
-        WOTSPlus.WinternitzElements memory pqSig = _sign(currentPrivKey, digest);
+        WOTSPlus.WinternitzElements memory pqSig = _sign(
+            currentPrivKey,
+            digest
+        );
 
         // Verifier
-        (WOTSPlus.WinternitzAddress memory vPub, WOTSPlus.WinternitzElements memory vSig) =
-            _buildVerifierData(impl, "migrate-verifier");
+        (
+            WOTSPlus.WinternitzAddress memory vPub,
+            WOTSPlus.WinternitzElements memory vSig
+        ) = _buildVerifierData(impl, "migrate-verifier");
 
         bytes memory data = Codec.encodeUpgradeToAndCall(
             currentPq,
