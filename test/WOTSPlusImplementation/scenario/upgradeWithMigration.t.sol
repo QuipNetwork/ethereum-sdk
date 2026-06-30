@@ -49,12 +49,6 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
             migrateRecoveryKeys
         );
 
-        // Migrator payload (2048 bytes init layout)
-        bytes memory migratorPayload = _encodeInitPayload(
-            migratePq,
-            migrateRecoveryKeys
-        );
-
         // Auth signature
         bytes32 digest = Codec.upgradeDigest(
             address(wallet),
@@ -71,7 +65,6 @@ contract WOTSPlusImplementation_upgradeWithMigration is WOTSPlusImplementationTe
             currentPrivKey,
             digest
         );
-        WOTSPlus.WinternitzElements memory pqSig = _sign(currentPrivKey, digest);
 
         // Verifier
         (

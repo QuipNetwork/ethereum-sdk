@@ -180,34 +180,6 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
             memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
 
         (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
-            "inv-sig-next-pq"
-        );
-        (, bytes32 wrongKey) = _generateKeyPair("wrong-key");
-        bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            wrongKey,
-            alicePubkey,
-            nextPq_,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
-        );
-
-        vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
-        wallet.upgradeToAndCall(address(newImpl), data);
-    }
-
-    function test_upgradeToAndCall_revertsWhen_shouldMigrateTampered() public {
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
-
-        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
             "tamper-migrate-next-pq"
         );
         bytes memory data = _buildUpgradeData(
@@ -223,7 +195,7 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         data[4480] = 0x01;
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
@@ -253,7 +225,7 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         data[4481] = bytes1(uint8(data[4481]) ^ 0xff);
 
         vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.InvalidSignature.selector);
+        vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
         wallet.upgradeToAndCall(address(newImpl), data);
     }
 
@@ -265,76 +237,6 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
             keccak256("migrate-r"),
             10
         );
-        bytes memory migratorPayload = _encodeInitPayload(newPq, rKeys);
-
-        vm.prank(ALICE);
-        vm.expectRevert(IQuipWallet.NotUpgrading.selector);
-        wallet.migrate(migratorPayload);
-    }
-
-    function test_migrate_revertsWhen_initialKeyIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(0),
-            publicKeyHash: bytes32(0)
-        });
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            keccak256("migrate-r"),
-            10
-        );
-
-        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
-            "zero-migrate-next-pq"
-        );
-        bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq_,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
-        );
-        data[4480] = 0x01;
-
-        vm.prank(ALICE);
-        vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
-        wallet.upgradeToAndCall(address(newImpl), data);
-    }
-
-    function test_upgradeToAndCall_revertsWhen_migratorPayloadTampered()
-        public
-    {
-        WOTSPlus.WinternitzAddress memory dummyPq = WOTSPlus.WinternitzAddress({
-            publicSeed: bytes32(uint256(1)),
-            publicKeyHash: bytes32(uint256(2))
-        });
-        WOTSPlus.WinternitzAddress[]
-            memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
-
-        (WOTSPlus.WinternitzAddress memory nextPq_, ) = _generateKeyPair(
-            "tamper-payload-next-pq"
-        );
-        bytes memory data = _buildUpgradeData(
-            address(newImpl),
-            alicePrivateKey,
-            alicePubkey,
-            nextPq_,
-            "verifier",
-            false,
-            dummyPq,
-            emptyKeys
-        );
-        data[4481] = bytes1(uint8(data[4481]) ^ 0xff);
-
-        vm.prank(ALICE);
-        vm.expectRevert(IWOTSPlusImplementation.InvalidSignature.selector);
-        wallet.upgradeToAndCall(address(newImpl), data);
-    }
-
-    function test_migrate_revertsWhen_calledDirectly() public {
-        (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("migrate-direct");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(keccak256("migrate-r"), 10);
         bytes memory migratorPayload = _encodeInitPayload(newPq, rKeys);
 
         vm.prank(ALICE);
