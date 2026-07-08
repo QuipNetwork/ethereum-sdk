@@ -3,6 +3,8 @@
        deploy-impl vet-impl predict-addresses \
        predict-base-sepolia deploy-deployer-base-sepolia deploy-all-base-sepolia \
        deploy-impl-base-sepolia vet-impl-base-sepolia \
+       predict-op-sepolia deploy-deployer-op-sepolia deploy-all-op-sepolia \
+       deploy-impl-op-sepolia vet-impl-op-sepolia \
        fund-deployer drain-deployer balance \
        storage-layout-snapshot storage-layout-check
 
@@ -167,6 +169,33 @@ deploy-impl-base-sepolia:
 vet-impl-base-sepolia:
 	forge script script/VetImplementation.s.sol \
 	  --rpc-url base_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast
+
+predict-op-sepolia:
+	forge script script/PredictAddresses.s.sol --rpc-url op_sepolia
+
+deploy-deployer-op-sepolia:
+	forge script script/DeployDeployer.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-all-op-sepolia:
+	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-impl-op-sepolia:
+	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+vet-impl-op-sepolia:
+	forge script script/VetImplementation.s.sol \
+	  --rpc-url op_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast
 
