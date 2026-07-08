@@ -18,7 +18,8 @@
 import { keccak_256 } from "@noble/hashes/sha3";
 import { type Hex, hexToBytes, toHex } from "viem";
 
-import { PARAMETER_SET_ID } from "./constants.js";
+import { PARAMETER_SET_ID, parameterSetIdToEnum } from "./constants.js";
+import { publicKeyCommitment } from "./shrincsCodec.js";
 import { ShrincsKeyDerivationSelfTestError } from "./errors.js";
 import {
   type ActionContext,
@@ -64,6 +65,34 @@ export interface ShrincsKeygenOptions {
   parameterSetId?: string;
 }
 
+export interface DeriveKeyPairParams {
+  statefulVaultId: Hex;
+  statelessVaultId: Hex;
+  maxSignatures: number;
+  parameterSetId?: string;
+}
+
+function graftHybridPublicKey(
+  parameterSetId: string,
+  statefulInner: WasmShrincsKeypair,
+  statelessInner: WasmShrincsKeypair
+): ShrincsPublicKey {
+  const stateful = statefulInner.publicKey();
+  const stateless = statelessInner.publicKey();
+  return {
+    parameterSetId,
+    statefulPublicKey: stateful.statefulPublicKey,
+    pkSeed: stateless.pkSeed,
+    hypertreeRoot: stateless.hypertreeRoot,
+    publicKeyCommitment: publicKeyCommitment({
+      parameterSetId: parameterSetIdToEnum(parameterSetId),
+      statefulPublicKey: stateful.statefulPublicKey,
+      pkSeed: stateless.pkSeed,
+      hypertreeRoot: stateless.hypertreeRoot,
+    }),
+  };
+}
+
 /// A live SHRINCS keypair handle. Wraps the WASM signing key and exposes the
 /// canonical signing surface the wallet/paymaster clients need.
 ///
@@ -79,17 +108,23 @@ export class ShrincsKeyPair {
   readonly parameterSetId: string;
 
   private readonly wasm: ShrincsWasmModule;
-  private readonly inner: WasmShrincsKeypair;
+  private readonly statefulInner: WasmShrincsKeypair;
+  private readonly statelessInner: WasmShrincsKeypair;
 
   constructor(
     wasm: ShrincsWasmModule,
-    inner: WasmShrincsKeypair,
-    parameterSetId: string
+    statefulInner: WasmShrincsKeypair,
+    parameterSetId: string,
+    statelessInner: WasmShrincsKeypair = statefulInner
   ) {
     this.wasm = wasm;
-    this.inner = inner;
+    this.statefulInner = statefulInner;
+    this.statelessInner = statelessInner;
     this.parameterSetId = parameterSetId;
-    this.publicKey = inner.publicKey();
+    this.publicKey =
+      statelessInner === statefulInner
+        ? statefulInner.publicKey()
+        : graftHybridPublicKey(parameterSetId, statefulInner, statelessInner);
   }
 
   /// The installed-key commitment (the on-chain identity of this bundle).
@@ -184,11 +219,11 @@ export class ShrincsKeyPair {
   /// Deterministically sign a raw 32-byte message at `leaf`
   /// (`authPath.length === leaf`). Does not advance any internal counter.
   signStatefulRawAt(messageHex: Hex, leaf: number): StatefulSignature {
-    return this.inner.signStatefulRawAt(messageHex, leaf);
+    return this.statefulInner.signStatefulRawAt(messageHex, leaf);
   }
 
   signStatelessRaw(messageHex: Hex): StatelessSignature {
-    return this.inner.signStatelessRaw(messageHex);
+    return this.statelessInner.signStatelessRaw(messageHex);
   }
 
   // ── verification helpers (self-test / debugging) ───────────────────────────
@@ -262,6 +297,31 @@ export class ShrincsSigner {
   /// the self-test before returning.
   recoverKeyPair(vaultId: Hex, opts: ShrincsKeygenOptions): ShrincsKeyPair {
     return this.keygenFromSeedHex(this.deriveSeedHex(vaultId), opts);
+  }
+
+  deriveKeyPair(params: DeriveKeyPairParams): ShrincsKeyPair {
+    const parameterSetId = params.parameterSetId ?? PARAMETER_SET_ID;
+    const statefulInner = this.wasm.shrincsKeygen(
+      parameterSetId,
+      this.deriveSeedHex(params.statefulVaultId),
+      params.maxSignatures
+    );
+    const statelessInner =
+      params.statelessVaultId === params.statefulVaultId
+        ? statefulInner
+        : this.wasm.shrincsKeygen(
+            parameterSetId,
+            this.deriveSeedHex(params.statelessVaultId),
+            params.maxSignatures
+          );
+    const pair = new ShrincsKeyPair(
+      this.wasm,
+      statefulInner,
+      parameterSetId,
+      statelessInner
+    );
+    this.runSelfTest(pair);
+    return pair;
   }
 
   /// Low-level keygen from explicit seed material. Used for recovering keys whose

@@ -26,8 +26,11 @@ export * as ShrincsCodec from "./shrincsCodec.js";
 
 // Core SDK classes
 export { ShrincsSigner, ShrincsKeyPair } from "./shrincsSigner.js";
-export type { ShrincsKeygenOptions } from "./shrincsSigner.js";
-export { ShrincsWalletClient } from "./shrincsWalletClient.js";
+export type {
+  ShrincsKeygenOptions,
+  DeriveKeyPairParams,
+} from "./shrincsSigner.js";
+export { ShrincsWalletClient, fetchShrincsWalletState } from "./shrincsWalletClient.js";
 export type {
   ShrincsWalletState,
   ShrincsTxKeyOptions,

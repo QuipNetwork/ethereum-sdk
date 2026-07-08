@@ -45,8 +45,11 @@ import {
 import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { encodeInitPayload } from "./shrincsCodec.js";
-import { type ShrincsSigner } from "./shrincsSigner.js";
-import { ShrincsWalletClient } from "./shrincsWalletClient.js";
+import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
+import {
+  ShrincsWalletClient,
+  fetchShrincsWalletState,
+} from "./shrincsWalletClient.js";
 
 /// Generate a CSPRNG-backed 32-byte vaultId — the default for `createShrincsWallet`
 /// when the caller omits one. The factory's vaultId namespace is GLOBAL (the
@@ -262,6 +265,47 @@ export class ShrincsFactoryClient {
       );
     }
     return client;
+  }
+
+  async getWalletState(vaultId: Hex): Promise<{
+    keyVersion: number;
+    shrincsPublicKeyCommitment: Hex;
+    maxSignatures: number;
+    parameterSetId: ParameterSetId;
+  } | null> {
+    const walletAddress = await this.getShrincsWalletAddress(vaultId);
+    if (walletAddress === zeroAddress) return null;
+    const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
+    return {
+      keyVersion: Number(state.keyVersion),
+      shrincsPublicKeyCommitment: state.shrincsPublicKeyCommitment,
+      maxSignatures: state.maxSignatures,
+      parameterSetId: state.parameterSetId as ParameterSetId,
+    };
+  }
+
+  async openShrincsWallet(params: {
+    vaultId: Hex;
+    keypair: ShrincsKeyPair;
+  }): Promise<ShrincsWalletClient | null> {
+    const walletAddress = await this.getShrincsWalletAddress(params.vaultId);
+    if (walletAddress === zeroAddress) return null;
+    const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
+    if (
+      params.keypair.publicKeyCommitment.toLowerCase() !==
+      state.shrincsPublicKeyCommitment.toLowerCase()
+    ) {
+      return null;
+    }
+    return new ShrincsWalletClient({
+      walletAddress,
+      publicClient: this.publicClient,
+      walletClient: this.walletClient,
+      keypair: params.keypair,
+      vaultId: params.vaultId,
+      chainId: this.chainId,
+      account: this.account,
+    });
   }
 
   /// The factory-registered wallet address for `vaultId` (`zeroAddress` if none).

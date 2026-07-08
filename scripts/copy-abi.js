@@ -54,6 +54,35 @@ for (const contract of CONTRACTS) {
   barrelLines.push(`export { ${exportName} } from "./${contract.name}.js";`);
 }
 
+// The ERC-4337 v0.7 EntryPoint is an external canonical contract, not built by
+// forge, so its ABI is sourced from the committed test fixture (which also holds
+// the deployedBytecode the integration tests setCode) rather than from out/.
+const entryPointFixturePath = join(
+  ROOT,
+  "src",
+  "v1",
+  "tests",
+  "fixtures",
+  "entrypoint-v0.7.json"
+);
+const entryPointFixture = JSON.parse(
+  readFileSync(entryPointFixturePath, "utf-8")
+);
+if (!Array.isArray(entryPointFixture.abi)) {
+  throw new Error(
+    `${entryPointFixturePath} is missing an "abi" array; cannot generate EntryPointV07.ts`
+  );
+}
+const entryPointTs = `export const entryPointV07Abi = ${JSON.stringify(
+  entryPointFixture.abi,
+  null,
+  2
+)} as const;\n`;
+const entryPointOut = join(ABI_DIR, "EntryPointV07.ts");
+writeFileSync(entryPointOut, entryPointTs);
+console.log(`Wrote ${entryPointOut} (${entryPointFixture.abi.length} entries)`);
+barrelLines.push(`export { entryPointV07Abi } from "./EntryPointV07.js";`);
+
 // Write barrel re-export
 const barrelPath = join(ABI_DIR, "index.ts");
 writeFileSync(barrelPath, barrelLines.join("\n") + "\n");

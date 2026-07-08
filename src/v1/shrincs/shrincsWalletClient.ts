@@ -122,10 +122,60 @@ export interface ShrincsWalletClientParams {
   walletAddress: Address;
   publicClient: PublicClient;
   walletClient: WalletClient;
-  signer: ShrincsSigner;
+  signer?: ShrincsSigner;
+  keypair?: ShrincsKeyPair;
   vaultId: Hex;
   chainId: number;
   account: Address;
+}
+
+export async function fetchShrincsWalletState(
+  publicClient: PublicClient,
+  walletAddress: Address
+): Promise<ShrincsWalletState> {
+  const fns = [
+    "owner",
+    "version",
+    "getExecuteFee",
+    "getShrincsPublicKeyCommitment",
+    "getErc1271Commitment",
+    "getParameterSetId",
+    "getErc1271ParameterSetId",
+    "keyVersion",
+    "actionNonce",
+    "maxSignatures",
+    "statefulLeavesUsed",
+    "remainingStatefulSignatures",
+  ] as const;
+  const results = await tryMulticall(
+    publicClient,
+    fns.map((functionName) => ({
+      address: walletAddress,
+      abi: shrincsWalletAbi,
+      functionName,
+    }))
+  );
+  const get = (i: number) => {
+    const r = results[i];
+    if (!r || r.status !== "success") {
+      throw new Error(`Failed to read ${fns[i]} from ${walletAddress}`);
+    }
+    return r.result as never;
+  };
+  return {
+    owner: get(0),
+    version: BigInt(get(1)),
+    executeFee: BigInt(get(2)),
+    shrincsPublicKeyCommitment: get(3),
+    erc1271Commitment: get(4),
+    parameterSetId: Number(get(5)),
+    erc1271ParameterSetId: Number(get(6)),
+    keyVersion: BigInt(get(7)),
+    actionNonce: BigInt(get(8)),
+    maxSignatures: Number(get(9)),
+    statefulLeavesUsed: Number(get(10)),
+    remainingStatefulSignatures: Number(get(11)),
+  };
 }
 
 /// Per-wallet read + write client for a `ShrincsWallet`. Mirrors the WOTS+
@@ -140,13 +190,15 @@ export class ShrincsWalletClient {
 
   private readonly publicClient: PublicClient;
   private readonly walletClient: WalletClient;
-  private readonly signer: ShrincsSigner;
+  private readonly signer?: ShrincsSigner;
+  private readonly keypair?: ShrincsKeyPair;
 
   constructor(params: ShrincsWalletClientParams) {
     this.walletAddress = params.walletAddress;
     this.publicClient = params.publicClient;
     this.walletClient = params.walletClient;
     this.signer = params.signer;
+    this.keypair = params.keypair;
     this.vaultId = params.vaultId;
     this.chainId = params.chainId;
     this.account = params.account;
@@ -156,49 +208,7 @@ export class ShrincsWalletClient {
 
   /// Atomic snapshot of wallet state via Multicall3 (sequential fallback).
   async getWalletState(): Promise<ShrincsWalletState> {
-    const fns = [
-      "owner",
-      "version",
-      "getExecuteFee",
-      "getShrincsPublicKeyCommitment",
-      "getErc1271Commitment",
-      "getParameterSetId",
-      "getErc1271ParameterSetId",
-      "keyVersion",
-      "actionNonce",
-      "maxSignatures",
-      "statefulLeavesUsed",
-      "remainingStatefulSignatures",
-    ] as const;
-    const results = await tryMulticall(
-      this.publicClient,
-      fns.map((functionName) => ({
-        address: this.walletAddress,
-        abi: shrincsWalletAbi,
-        functionName,
-      }))
-    );
-    const get = (i: number) => {
-      const r = results[i];
-      if (!r || r.status !== "success") {
-        throw new Error(`Failed to read ${fns[i]} from ${this.walletAddress}`);
-      }
-      return r.result as never;
-    };
-    return {
-      owner: get(0),
-      version: BigInt(get(1)),
-      executeFee: BigInt(get(2)),
-      shrincsPublicKeyCommitment: get(3),
-      erc1271Commitment: get(4),
-      parameterSetId: Number(get(5)),
-      erc1271ParameterSetId: Number(get(6)),
-      keyVersion: BigInt(get(7)),
-      actionNonce: BigInt(get(8)),
-      maxSignatures: Number(get(9)),
-      statefulLeavesUsed: Number(get(10)),
-      remainingStatefulSignatures: Number(get(11)),
-    };
+    return fetchShrincsWalletState(this.publicClient, this.walletAddress);
   }
 
   async isStatefulLeafUsed(leaf: number): Promise<boolean> {
@@ -331,6 +341,10 @@ export class ShrincsWalletClient {
     maxSignatures: number,
     installedCommitment: Hex
   ): ShrincsKeyPair {
+    if (this.keypair) return this.keypair;
+    if (!this.signer) {
+      throw new Error("ShrincsWalletClient has no signer or keypair to sign with");
+    }
     const keypair = this.signer.recoverKeyPair(this.vaultId, { maxSignatures });
     if (
       keypair.publicKeyCommitment.toLowerCase() !==

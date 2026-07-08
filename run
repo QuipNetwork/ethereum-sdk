@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# Containerised dev runner for ethereum-sdk. The host has no forge/anvil/node;
+# this drives them inside a podman container (see Containerfile) against the
+# bind-mounted repo, so artifacts (out/, dependencies/) land back on the host.
+#
+#   ./run build              Build the toolchain image.
+#   ./run setup              Fetch Solidity deps (forge soldeer install).
+#   ./run test [args]        Run the hermetic forge (Solidity) suite. [headline]
+#   ./run test-unit          Run the jest TS unit suite (no chain).
+#   ./run test-integration   Run the jest anvil-backed integration suite.
+#   ./run test-all           Full hermetic suite: forge + every jest test.
+#   ./run test-forge-fork    Live-RPC forge integration suite (needs .env).
+#   ./run forge <args>       Pass arbitrary args to forge.
+#   ./run npm <args>         Pass arbitrary args to npm.
+#   ./run shell              Interactive shell inside the container.
+#
+# The hermetic commands skip the live-testnet fork tests (the test/integration/
+# forge tree, which reads API_URL_BASE_SEPOLIA, and the jest *.fork test, which
+# reads FORK_RPC_URL) so they pass offline. Provide a .env (auto-forwarded) and
+# use ./run test-forge-fork / FORK_RPC_URL=... to run those.
+#
+# The private @quip.network/hashsigs-solidity soldeer dep is fetched over SSH;
+# the host ~/.ssh is mounted read-only and id_rsa (override: QUIP_SSH_KEY) is
+# used for git@gitlab.com.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE="${ETHEREUM_SDK_IMAGE:-localhost/ethereum-sdk-forge:local}"
+CACHE_DIR="$REPO/.run/home"
+SSH_DIR="${QUIP_SSH_DIR:-$HOME/.ssh}"
+SSH_KEY="${QUIP_SSH_KEY:-id_rsa}"
+
+die() { echo "✗ $*" >&2; exit 1; }
+
+command -v podman >/dev/null 2>&1 || die "podman not found on host."
+
+# ── podman run wrapper ────────────────────────────────────────────
+# Default rootless UID mapping makes container-root == host-user, so files
+# written under /work and /cache come back owned by the host user. SSH keys
+# (owned by the host user) are likewise readable as root inside.
+container() {
+  local interactive="$1"; shift
+  local tty_flags=()
+  if [ "$interactive" = "tty" ]; then
+    tty_flags=(-it)
+  elif [ -t 1 ]; then
+    tty_flags=(-t)
+  fi
+
+  mkdir -p "$CACHE_DIR"
+
+  local ssh_mount=()
+  if [ -d "$SSH_DIR" ]; then
+    ssh_mount=(-v "$SSH_DIR:/ssh:ro")
+  fi
+
+  # Forward .env (RPC URLs, keys) when present so live-RPC tests can run.
+  local env_file=()
+  if [ -f "$REPO/.env" ]; then
+    env_file=(--env-file "$REPO/.env")
+  fi
+
+  podman run --rm "${tty_flags[@]}" \
+    -v "$REPO:/work" \
+    -v "$CACHE_DIR:/cache" \
+    "${ssh_mount[@]}" \
+    "${env_file[@]}" \
+    -w /work \
+    -e HOME=/cache \
+    -e FORK_RPC_URL="${FORK_RPC_URL:-}" \
+    -e GIT_SSH_COMMAND="ssh -i /ssh/$SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/cache/known_hosts" \
+    "$IMAGE" bash -c "$*"
+}
+
+ensure_image() {
+  podman image exists "$IMAGE" 2>/dev/null \
+    || die "Image $IMAGE not found. Run: ./run build"
+}
+
+# forge build + the JS codegen jest depends on (generated ABIs + inlined wasm).
+# src/v1/abi/ and the browser inline.ts are gitignored build outputs that the
+# TS suite imports, so they must exist before any jest run.
+PREPARE_JS='forge build && npm run copy-abi && npm run gen-wasm-inline'
+
+JEST='node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs'
+
+# The forge integration tree forks a live testnet (API_URL_BASE_SEPOLIA) in
+# setUp; exclude it from hermetic runs. ./run test-forge-fork runs it with .env.
+FORGE_FORK_GLOB='test/integration/*'
+
+check_node_modules() {
+  [ -d "$REPO/node_modules/jest" ] || die \
+    "node_modules looks unpopulated (no jest). Populate it on the host first;\n  a fresh 'npm install' fails here because the @midl/* file: devDeps point at\n  a sibling repo that isn't present. The test suite doesn't need them."
+}
+
+cmd="${1:-help}"; shift || true
+
+case "$cmd" in
+  build)
+    podman build -t "$IMAGE" -f "$REPO/Containerfile" "$REPO"
+    echo "✓ Built $IMAGE"
+    ;;
+
+  setup)
+    ensure_image
+    container batch 'forge soldeer install'
+    echo "✓ Solidity deps installed into ./dependencies"
+    ;;
+
+  test)
+    ensure_image
+    container batch "forge test --no-match-path '$FORGE_FORK_GLOB' $*"
+    ;;
+
+  test-forge-fork)
+    ensure_image
+    [ -f "$REPO/.env" ] || die ".env required for fork tests (needs API_URL_BASE_SEPOLIA)."
+    container batch "forge test --match-path '$FORGE_FORK_GLOB' $*"
+    ;;
+
+  test-unit)
+    ensure_image; check_node_modules
+    container batch "$PREPARE_JS && $JEST --testPathIgnorePatterns /node_modules/ integration"
+    ;;
+
+  test-integration)
+    ensure_image; check_node_modules
+    container batch "$PREPARE_JS && $JEST --testPathPattern integration"
+    ;;
+
+  test-all)
+    ensure_image; check_node_modules
+    container batch "$PREPARE_JS && forge test --no-match-path '$FORGE_FORK_GLOB' && $JEST"
+    ;;
+
+  forge)
+    ensure_image
+    container batch "forge $*"
+    ;;
+
+  npm)
+    ensure_image
+    container batch "npm $*"
+    ;;
+
+  exec)
+    ensure_image
+    container batch "$*"
+    ;;
+
+  shell)
+    ensure_image
+    container tty "${*:-bash}"
+    ;;
+
+  help|--help|-h)
+    # Print the leading comment block (skip the shebang), stripping '# '.
+    sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '/^set -euo/d; s/^#\{1,\} \{0,1\}//; s/^#$//'
+    ;;
+
+  *)
+    die "Unknown command: $cmd (try ./run help)"
+    ;;
+esac
