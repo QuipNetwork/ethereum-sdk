@@ -32,8 +32,8 @@ fail_on_revert = false
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
-  "@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", branch = "shrincs-audited-2" }
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
+"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "0490e1020befeacbc2705386965b993f48198958" }
 
 # Deploy profile: links WOTSPlus at its CREATE3 address for WOTSPlusImplementation compilation.
 # Usage: FOUNDRY_PROFILE=deploy forge script ...
