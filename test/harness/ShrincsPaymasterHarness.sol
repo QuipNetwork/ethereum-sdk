@@ -31,12 +31,10 @@ contract ShrincsPaymasterHarness is ShrincsPaymaster {
     ///      `setShrincsVerifier` (no epoch bump). NOT a production function.
     function harness_install(
         bytes32 commitment,
-        uint8 parameterSetId,
         uint32 maxSignaturesValue
     ) external {
         Storage.Layout storage $ = Storage.layout();
         $.shrincsCommitment = commitment;
-        $.shrincsParameterSetId = parameterSetId;
         $.maxSignatures = maxSignaturesValue;
     }
 

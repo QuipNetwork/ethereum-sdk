@@ -16,19 +16,19 @@ contract ShrincsWalletCodecHarness {
             bytes32 commitment,
             bytes32 pkSeed,
             ShrincsTypes.PublicKey memory mainBundle,
-            uint8 parameterSetId,
+            uint32 hashSuite,
             bytes32 erc1271Commitment,
-            uint8 erc1271ParameterSetId
+            uint32 erc1271HashSuite
         )
     {
-        (bytes32 _c, bytes32 _ps, ShrincsTypes.PublicKey calldata _mb, uint8 _pid, bytes32 _ec, uint8 _epid) =
+        (bytes32 _c, bytes32 _ps, ShrincsTypes.PublicKey calldata _mb, uint32 _hs, bytes32 _ec, uint32 _ehs) =
             Codec.decodeInit(payload);
         commitment = _c;
         pkSeed = _ps;
         mainBundle = _mb;
-        parameterSetId = _pid;
+        hashSuite = _hs;
         erc1271Commitment = _ec;
-        erc1271ParameterSetId = _epid;
+        erc1271HashSuite = _ehs;
     }
 
     function exposed_decodeUserOpSignature(bytes calldata sig)
@@ -134,19 +134,15 @@ contract ShrincsWalletCodecHarness {
         return Codec.transferOwnershipPayloadHash(newOwner, nextCommitment);
     }
 
-    function exposed_setErc1271KeyPayloadHash(bytes32 newCommitment, uint8 newParameterSetId)
+    function exposed_setErc1271KeyPayloadHash(bytes32 newCommitment, uint32 newHashSuite)
         external
         pure
         returns (bytes32)
     {
-        return Codec.setErc1271KeyPayloadHash(newCommitment, newParameterSetId);
+        return Codec.setErc1271KeyPayloadHash(newCommitment, newHashSuite);
     }
 
-    function exposed_rotateKeyPayloadHash(bytes32 nextCommitment, uint8 nextParameterSetId)
-        external
-        pure
-        returns (bytes32)
-    {
-        return Codec.rotateKeyPayloadHash(nextCommitment, nextParameterSetId);
+    function exposed_rotateKeyPayloadHash(bytes32 nextCommitment) external pure returns (bytes32) {
+        return Codec.rotateKeyPayloadHash(nextCommitment);
     }
 }

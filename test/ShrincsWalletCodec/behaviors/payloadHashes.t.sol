@@ -76,10 +76,7 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
 
     function test_rotateKeyPayloadHash() public view {
         bytes32 nextCommitment = keccak256("rotate-next");
-        assertEq(
-            codec.exposed_rotateKeyPayloadHash(nextCommitment, 0),
-            EfficientHashLib.hash(nextCommitment, bytes32(uint256(0)))
-        );
+        assertEq(codec.exposed_rotateKeyPayloadHash(nextCommitment), EfficientHashLib.hash(nextCommitment));
     }
 
     function test_domainAndActionTags() public pure {
@@ -133,18 +130,15 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
         );
     }
 
-    function testFuzz_setErc1271KeyPayloadHash(bytes32 newCommitment, uint8 paramId) public view {
+    function testFuzz_setErc1271KeyPayloadHash(bytes32 newCommitment, uint32 hashSuite) public view {
         assertEq(
-            codec.exposed_setErc1271KeyPayloadHash(newCommitment, paramId),
-            EfficientHashLib.hash(newCommitment, bytes32(uint256(paramId)))
+            codec.exposed_setErc1271KeyPayloadHash(newCommitment, hashSuite),
+            EfficientHashLib.hash(newCommitment, bytes32(uint256(hashSuite)))
         );
     }
 
-    function testFuzz_rotateKeyPayloadHash(bytes32 nextCommitment, uint8 paramId) public view {
-        assertEq(
-            codec.exposed_rotateKeyPayloadHash(nextCommitment, paramId),
-            EfficientHashLib.hash(nextCommitment, bytes32(uint256(paramId)))
-        );
+    function testFuzz_rotateKeyPayloadHash(bytes32 nextCommitment) public view {
+        assertEq(codec.exposed_rotateKeyPayloadHash(nextCommitment), EfficientHashLib.hash(nextCommitment));
     }
 
     /// @dev Distinct fee ⇒ distinct execute payload hash (the fee field is genuinely bound, not

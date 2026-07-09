@@ -5,10 +5,9 @@ import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/Shri
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
-/// @dev Behavior tests for ERC-1271 `isValidSignature` / `debugIsValidSignature` /
-///      `_checkErc1271Signature`. The length, ECDSA, and stateless-failure branches are testable
-///      now (the ECDSA half is owner-controlled), and the full `Ok` path is exercised by the
-///      regenerated stateless ERC-1271 vector.
+/// @dev Behavior tests for ERC-1271 `isValidSignature` / `debugIsValidSignature`. The length,
+///      ECDSA, and stateless-failure branches plus the full `Ok` path (a live-signed stateless
+///      ERC-1271 signature) are all exercised. The ECDSA half is owner-controlled.
 contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
     bytes4 internal constant MAGIC = 0x1626ba7e;
     bytes4 internal constant FAIL = 0xffffffff;
@@ -23,11 +22,6 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         return abi.encode(pk, sig, ecdsaSig);
     }
 
-    function _ownerSig(bytes32 hash) internal view returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(OWNER_PK, wallet.quipSignedHashEcdsaTarget(hash));
-        return abi.encodePacked(r, s, v);
-    }
-
     function test_isValidSignature_revertsWhen_badLength() public view {
         assertEq(wallet.isValidSignature(HASH, hex"1234"), FAIL);
         assertEq(
@@ -39,8 +33,8 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
     function test_isValidSignature_revertsWhen_invalidEcdsa() public {
         (, uint256 wrongPk) = makeAddrAndKey("wrongSigner");
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongPk, wallet.quipSignedHashEcdsaTarget(HASH));
-        bytes memory blob =
-            _blob(_parsePublicKey(".erc1271Key"), _parseStatelessSignature(""), abi.encodePacked(r, s, v));
+        ShrincsTypes.StatelessSignature memory emptySig;
+        bytes memory blob = _blob(erc1271Pk, emptySig, abi.encodePacked(r, s, v));
 
         assertEq(wallet.isValidSignature(HASH, blob), FAIL);
         assertEq(
@@ -51,7 +45,8 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
 
     function test_isValidSignature_revertsWhen_invalidShrincs() public {
         // Owner ECDSA is valid, but the (empty) stateless signature fails SHRINCS verification.
-        bytes memory blob = _blob(_parsePublicKey(".erc1271Key"), _parseStatelessSignature(""), _ownerSig(HASH));
+        ShrincsTypes.StatelessSignature memory emptySig;
+        bytes memory blob = _blob(erc1271Pk, emptySig, _ownerEcdsa(HASH));
 
         assertEq(wallet.isValidSignature(HASH, blob), FAIL);
         assertEq(
@@ -60,11 +55,10 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         );
     }
 
-    function test_isValidSignature_ok() public view {
-        bytes32 hash = _bytes32(".cases.erc1271.hash");
-        ShrincsTypes.StatelessSignature memory sig = _parseStatelessSignature(".cases.erc1271.signature");
-        bytes memory blob = _blob(_parsePublicKey(".erc1271Key"), sig, _ownerSig(hash));
-        assertEq(wallet.isValidSignature(hash, blob), MAGIC);
-        assertEq(uint8(wallet.debugIsValidSignature(hash, blob)), uint8(IShrincsWallet.Erc1271ValidationResult.Ok));
+    function test_isValidSignature_ok() public {
+        ShrincsTypes.StatelessSignature memory sig = _signErc1271(HASH);
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
+        assertEq(wallet.isValidSignature(HASH, blob), MAGIC);
+        assertEq(uint8(wallet.debugIsValidSignature(HASH, blob)), uint8(IShrincsWallet.Erc1271ValidationResult.Ok));
     }
 }

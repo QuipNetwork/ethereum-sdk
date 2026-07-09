@@ -45,9 +45,7 @@ contract ShrincsWalletHarness is ShrincsWallet {
     function harness_install(
         address owner_,
         bytes32 commitment,
-        uint8 parameterSetId,
         bytes32 erc1271Commitment,
-        uint8 erc1271ParameterSetId,
         uint32 maxSignaturesValue
     ) external {
         _initializeOwner(owner_);
@@ -55,8 +53,6 @@ contract ShrincsWalletHarness is ShrincsWallet {
         $.quipFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
-        $.parameterSetId = parameterSetId;
-        $.erc1271ParameterSetId = erc1271ParameterSetId;
         $.maxSignatures = maxSignaturesValue;
     }
 

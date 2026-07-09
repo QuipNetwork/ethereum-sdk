@@ -11,7 +11,7 @@ contract ShrincsE2E_rejections is ShrincsE2EBase {
     /// @dev Corrupting `userOp.signature` (which is excluded from `userOpHash`, so the paymaster path
     ///      stays consistent) makes the wallet's PQ verification fail → `AA24`.
     function test_e2e_invalidWalletSig_AA24() public {
-        PackedUserOperation memory op = _op("sponsoredEthTransfer");
+        PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
         // Flip a byte deep inside the wallet signature blob (past the ABI header).
         op.signature[op.signature.length - 1] ^= bytes1(0x01);
         _handleExpectRevert(op, _failedOp(0, "AA24 signature error"));
@@ -21,27 +21,29 @@ contract ShrincsE2E_rejections is ShrincsE2EBase {
     ///      returns `("",1)`; the wallet sig is valid, so the failure is isolated to the paymaster →
     ///      `AA34`.
     function test_e2e_badPaymasterSig_AA34() public {
-        _handleExpectRevert(
-            _op("badPaymasterContext"),
-            _failedOp(0, "AA34 signature error")
-        );
+        // The paymaster signed a flipped binding hash; the wallet signature stays valid.
+        PackedUserOperation memory op =
+            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, 0, 0, false, 0, 0, true);
+        _assertLiveHash(op);
+        _handleExpectRevert(op, _failedOp(0, "AA34 signature error"));
     }
 
     /// @dev `validAfter` far in the future → the paymaster validates but the EntryPoint rejects the
     ///      time range as not-yet-due (`AA32`). The bound is an absolute timestamp baked into the
     ///      signed prefix, so the result is fork-time-independent.
     function test_e2e_windowNotDue_AA32() public {
-        _handleExpectRevert(
-            _op("windowNotDue"),
-            _failedOp(0, "AA32 paymaster expired or not due")
+        // validAfter far in the future (year ~2096), validUntil unbounded.
+        PackedUserOperation memory op = _buildSponsoredOp(
+            RECIPIENT, 0.1 ether, "", 0, 1, 1, type(uint48).max, uint48(4_000_000_000), false, 0, 0, false
         );
+        _handleExpectRevert(op, _failedOp(0, "AA32 paymaster expired or not due"));
     }
 
     /// @dev `validUntil` already elapsed → `AA32`.
     function test_e2e_windowExpired_AA32() public {
-        _handleExpectRevert(
-            _op("windowExpired"),
-            _failedOp(0, "AA32 paymaster expired or not due")
-        );
+        // validUntil already elapsed.
+        PackedUserOperation memory op =
+            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, uint48(1), 0, false, 0, 0, false);
+        _handleExpectRevert(op, _failedOp(0, "AA32 paymaster expired or not due"));
     }
 }

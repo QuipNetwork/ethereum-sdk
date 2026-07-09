@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol";
 import {MockShrincsFactory} from "../../mocks/MockShrincsFactory.sol";
@@ -16,11 +17,11 @@ interface IEntryPointExt is IEntryPoint {
 }
 
 /// @title ShrincsWallet + ShrincsPaymaster e2e base
-/// @dev Forks Base Sepolia for the real ERC-4337 v0.7 EntryPoint, overrides `block.chainid` to 31337
-///      (so the live `getUserOpHash` and both SHRINCS domain separators reproduce the values the
-///      vectors were signed under), and `vm.etch`es the wallet + paymaster harnesses at their fixed
-///      vector addresses. The paymaster is funded + staked so it can sponsor; the wallet holds ETH so
-///      `execute` can transfer. Each assembled op is cross-checked against the live `getUserOpHash`.
+/// @dev Forks Base Sepolia for the real ERC-4337 v0.7 EntryPoint, overrides `block.chainid` to
+///      31337 (a stable signing domain), and `vm.etch`es the wallet + paymaster harnesses at the
+///      assembler's fixed addresses, installed with the in-test generated keys. The paymaster is
+///      funded + staked so it can sponsor; the wallet holds ETH so `execute` can transfer. Each
+///      assembled op is cross-checked against the live `getUserOpHash` before submission.
 abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     string internal constant BASE_SEPOLIA_RPC_ENV = "API_URL_BASE_SEPOLIA";
 
@@ -34,12 +35,12 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     MockCallTarget internal callTarget;
 
     function setUp() public virtual override {
-        super.setUp(); // reads the vectors file
+        super.setUp(); // generates the wallet + verifier keys
         vm.createSelectFork(vm.envString(BASE_SEPOLIA_RPC_ENV));
-        // Pin chainid to the value the vectors bind (the live EntryPoint reads block.chainid).
+        // Pin chainid to the assembler's signing domain (the live EntryPoint reads block.chainid).
         vm.chainId(CHAIN_ID);
 
-        // ── Place the wallet at its fixed vector address ──
+        // ── Place the wallet at its fixed address ──
         factory = new MockShrincsFactory(); // executeFee defaults to 0
         ShrincsWalletHarness walletImpl = new ShrincsWalletHarness(
             payable(address(factory))
@@ -48,23 +49,17 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
         wallet = ShrincsWalletHarness(payable(WALLET));
         wallet.harness_install(
             WALLET_OWNER,
-            _bytes32(".walletKey.publicKeyCommitment"),
-            uint8(vm.parseJsonUint(vectors, ".walletKey.parameterSetId")),
-            _bytes32(".walletKey.publicKeyCommitment"), // erc1271 unused in e2e; reuse main
-            uint8(vm.parseJsonUint(vectors, ".walletKey.parameterSetId")),
+            walletCommitment,
+            walletCommitment, // erc1271 unused in e2e; reuse main
             MAX_SIG
         );
 
-        // ── Place the paymaster at its fixed vector address ──
+        // ── Place the paymaster at its fixed address ──
         ShrincsPaymasterHarness pmImpl = new ShrincsPaymasterHarness();
         vm.etch(PAYMASTER, address(pmImpl).code);
         paymaster = ShrincsPaymasterHarness(payable(PAYMASTER));
         paymaster.harness_setOwner(ADMIN);
-        paymaster.harness_install(
-            _bytes32(".verifierKey.publicKeyCommitment"),
-            uint8(vm.parseJsonUint(vectors, ".verifierKey.parameterSetId")),
-            MAX_SIG
-        );
+        paymaster.harness_install(verifierCommitment, MAX_SIG);
 
         // ── Fund: wallet holds ETH to transfer; paymaster deposits + stakes to sponsor ──
         vm.deal(WALLET, 10 ether);
@@ -76,7 +71,7 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
         vm.prank(ADMIN);
         paymaster.addStake{value: 1 ether}(1 days);
 
-        // Callee for the contract-call case, at the fixed vector address.
+        // Callee for the contract-call case, at the fixed address.
         MockCallTarget targetImpl = new MockCallTarget();
         vm.etch(CALL_TARGET, address(targetImpl).code);
         callTarget = MockCallTarget(payable(CALL_TARGET));
@@ -86,17 +81,24 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     /*                      HELPERS                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Assemble case `name` AND assert it reproduces the live EntryPoint's userOpHash (the
-    ///      decisive check that the pre-generated wallet signature will validate on-chain).
-    function _op(
-        string memory name
-    ) internal view returns (PackedUserOperation memory op) {
-        op = _assembleOp(name);
+    /// @dev Asserts the op's mirrored userOpHash matches the live EntryPoint's (the decisive check
+    ///      that the wallet signature computed over the mirror will validate on-chain).
+    function _assertLiveHash(PackedUserOperation memory op) internal view {
         assertEq(
             IEntryPointExt(ENTRY_POINT).getUserOpHash(op),
-            _vectorUserOpHash(name),
-            string.concat(name, ": live getUserOpHash != vector userOpHash")
+            _computeUserOpHash(op),
+            "live getUserOpHash != mirrored userOpHash"
         );
+    }
+
+    /// @dev Builds the default sponsored op AND cross-checks it against the live EntryPoint hash.
+    function _checkedSponsoredOp(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
+        internal
+        view
+        returns (PackedUserOperation memory op)
+    {
+        op = _sponsoredOp(target, value, data, nonce, leaf);
+        _assertLiveHash(op);
     }
 
     function _handle(PackedUserOperation memory op) internal {

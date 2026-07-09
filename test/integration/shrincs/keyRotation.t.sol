@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
 import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 
 /// @dev e2e key-rotation: rotating the paymaster's global verifier (owner-only) bumps its epoch and
@@ -10,12 +11,8 @@ import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 contract ShrincsE2E_keyRotation is ShrincsE2EBase {
     function _rotateToVerifier2() internal {
         vm.prank(ADMIN);
-        paymaster.setShrincsVerifier(
-            _bytes32(".verifierKey2.publicKeyCommitment"),
-            uint8(vm.parseJsonUint(vectors, ".verifierKey2.parameterSetId")),
-            MAX_SIG
-        );
-        (, , uint256 keyVersion, , ) = paymaster.getShrincsVerifier();
+        paymaster.setShrincsVerifier(verifierCommitment2, ShrincsTypes.HASH_SUITE_KECCAK_256, MAX_SIG);
+        (,, uint256 keyVersion,,) = paymaster.getShrincsVerifier();
         assertEq(keyVersion, 1, "paymaster epoch bumped to 1");
     }
 
@@ -24,7 +21,11 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
         _rotateToVerifier2();
 
         uint256 pmDepositBefore = _deposit(PAYMASTER);
-        _handle(_op("paymasterRotationNewKey")); // signed with verifierKey2, paymaster keyVersion 1
+        // Signed with verifierKey2 under paymaster keyVersion 1.
+        PackedUserOperation memory op =
+            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, 0, 0, true, 1, 0, false);
+        _assertLiveHash(op);
+        _handle(op);
 
         assertLt(_deposit(PAYMASTER), pmDepositBefore, "paymaster paid gas");
         assertTrue(paymaster.isStatefulLeafUsed(1), "epoch-1 leaf 1 consumed");
@@ -34,9 +35,9 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
     ///      key fails `matchesExpectedPublicKeyCommitment` inside `verifyStateful` → `AA34`.
     function test_e2e_paymasterRotation_oldKeyRejected() public {
         _rotateToVerifier2();
-        // sponsoredEthTransfer's paymaster blob is the OLD verifierKey, signed under epoch 0.
+        // The paymaster blob is the OLD verifierKey, signed under epoch 0.
         _handleExpectRevert(
-            _op("sponsoredEthTransfer"),
+            _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1),
             _failedOp(0, "AA34 signature error")
         );
     }
@@ -44,7 +45,7 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
     /// @dev A leaf consumed pre-rotation reads unused post-rotation — the new epoch is a fresh
     ///      namespace (consume-once is per-epoch, not global).
     function test_e2e_paymasterRotation_freshLeafNamespace() public {
-        _handle(_op("sponsoredEthTransfer")); // consumes epoch-0 paymaster leaf 1
+        _handle(_checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1)); // consumes epoch-0 paymaster leaf 1
         assertTrue(paymaster.isStatefulLeafUsed(1), "epoch-0 leaf 1 used");
 
         _rotateToVerifier2();
@@ -59,18 +60,18 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
     ///      wallet signature is bound to the prior key/epoch — is then rejected by the account →
     ///      `AA24` (the EntryPoint nonce is untouched by the direct `rotateKey` call).
     function test_e2e_walletRotation_oldEpochSigRejected() public {
-        bytes32 nextCommitment = _bytes32(
-            ".cases.walletRotateKey.nextCommitment"
+        // Build the pre-rotation sponsorship FIRST (bound to the old key/epoch 0).
+        PackedUserOperation memory preRotation = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
+
+        (ShrincsTypes.StatefulRotationTarget memory target, bytes32 nextCommitment) =
+            _walletStatefulRotationTarget("e2e-wallet-rotate-next");
+        // rotateKeyPayloadHash = keccak256(nextCommitment).
+        ShrincsTypes.StatefulSignature memory rotateSig = _signWalletAction(
+            keccak256("quip.shrincs.action.rotateKey"), keccak256(abi.encodePacked(nextCommitment)), 5, 0
         );
 
         vm.prank(WALLET_OWNER);
-        wallet.rotateKey(
-            _parsePublicKey(".walletKey"),
-            _parseStatefulSignature(".cases.walletRotateKey.signature"),
-            _parseStatefulRotationTarget(
-                ".cases.walletRotateKey.nextStatefulKey"
-            )
-        );
+        wallet.rotateKey(walletPk, rotateSig, target);
 
         // A successful rotateKey proves the leaf-5 signature verified (else it reverts); the new
         // commitment confirms the rotation landed. The consumed leaf lived in epoch 0, so it is
@@ -82,9 +83,6 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
         );
 
         // The pre-rotation sponsorship (wallet sig under the old key/epoch) no longer validates.
-        _handleExpectRevert(
-            _op("sponsoredEthTransfer"),
-            _failedOp(0, "AA24 signature error")
-        );
+        _handleExpectRevert(preRotation, _failedOp(0, "AA24 signature error"));
     }
 }

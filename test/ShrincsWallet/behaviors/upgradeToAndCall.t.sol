@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
@@ -103,7 +104,7 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
     }
 
     function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
-        return _parsePublicKey(".mainKey");
+        return _mainPk();
     }
 
     function _data(ShrincsTypes.StatefulSignature memory sig) internal view returns (bytes memory) {
@@ -121,8 +122,18 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
         _vet(impl);
     }
 
+    /// @dev Signs the UPGRADE context binding (impl 0xBEEF, shouldMigrate, migrator) at leaf 1.
+    function _signUpgrade(bool shouldMigrate, bytes memory migrator)
+        internal
+        view
+        returns (ShrincsTypes.StatefulSignature memory)
+    {
+        bytes32 payloadHash = Codec.upgradePayloadHash(address(0xBEEF), shouldMigrate, keccak256(migrator));
+        return _signStatefulAction(Codec.ACTION_UPGRADE, payloadHash, 1);
+    }
+
     function _upgradeSig() internal view returns (ShrincsTypes.StatefulSignature memory) {
-        return _parseStatefulSignature(".cases.upgrade.signature");
+        return _signUpgrade(false, "");
     }
 
     /* ───────────────────────────── access / vetting ───────────────────────────── */
@@ -166,19 +177,21 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
 
     function test_upgrade_revertsWhen_leafAlreadyUsed() public {
         address impl = _installSignedImpl(address(new MockUpgradeImpl()).code);
-        wallet.harness_markLeafUsed(1); // the UPGRADE vector is leaf 1
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), false, bytes(""));
+        wallet.harness_markLeafUsed(1); // the UPGRADE signature is leaf 1
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), _upgradeSig(), false, bytes("")));
+        wallet.upgradeToAndCall(impl, data);
     }
 
     /* ───────────────────────── signature cross-binding ───────────────────────── */
 
     function test_upgrade_revertsWhen_invalidSignature() public {
         _vet(address(newImpl));
+        bytes memory data = _data(_wrongContextStatefulSig());
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.upgradeToAndCall(address(newImpl), _data(_wrongContextStatefulSig()));
+        wallet.upgradeToAndCall(address(newImpl), data);
     }
 
     /// @dev The UPGRADE signature binds `newImplementation = 0xBEEF`; presenting it for a different
@@ -186,60 +199,67 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
     function test_upgrade_revertsWhen_implementationNotBound() public {
         MockUpgradeImpl other = new MockUpgradeImpl();
         _vet(address(other));
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), false, bytes(""));
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.upgradeToAndCall(address(other), abi.encode(_pk(), _upgradeSig(), false, bytes("")));
+        wallet.upgradeToAndCall(address(other), data);
     }
 
     /// @dev The signature binds `shouldMigrate = false`; flipping the flag changes the payload hash.
     function test_upgrade_revertsWhen_migrateFlagNotBound() public {
         address impl = _installSignedImpl(address(new MockUpgradeImpl()).code);
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), true, bytes(""));
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), _upgradeSig(), true, bytes("")));
+        wallet.upgradeToAndCall(impl, data);
     }
 
     /// @dev The signature binds an EMPTY migrator payload; a non-empty one changes the payload hash.
     function test_upgrade_revertsWhen_migratorPayloadNotBound() public {
         address impl = _installSignedImpl(address(new MockUpgradeImpl()).code);
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), false, bytes(hex"dead"));
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), _upgradeSig(), false, bytes(hex"dead")));
+        wallet.upgradeToAndCall(impl, data);
     }
 
     /* ──────────────────────── probe + proxiableUUID defenses ──────────────────────── */
 
     function test_upgrade_guardedSlotTampered() public {
         address impl = _installSignedImpl(address(new MockTamperImpl()).code);
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), false, bytes(""));
         // The verify-probe delegatecall mutates the guarded nonce slot (index 6) ⇒ revert.
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.GuardedSlotTampered.selector, 6));
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), _upgradeSig(), false, bytes("")));
+        wallet.upgradeToAndCall(impl, data);
     }
 
     function test_upgrade_revertsWhen_verifyUpgradeProbeReverts() public {
         address impl = _installSignedImpl(address(new MockRevertingProbeImpl()).code);
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), false, bytes(""));
         vm.prank(OWNER);
         vm.expectRevert(MockRevertingProbeImpl.ProbeReverted.selector);
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), _upgradeSig(), false, bytes("")));
+        wallet.upgradeToAndCall(impl, data);
     }
 
     function test_upgrade_revertsWhen_proxiableUuidMismatch() public {
         address impl = _installSignedImpl(address(new MockBadUuidImpl()).code);
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), false, bytes(""));
         vm.prank(OWNER);
         vm.expectRevert(UUPSUpgradeable.UpgradeFailed.selector);
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), _upgradeSig(), false, bytes("")));
+        wallet.upgradeToAndCall(impl, data);
     }
 
     /* ───────────────────────────── success paths ───────────────────────────── */
 
     function test_upgrade_succeedsNoMigrate() public {
         address impl = _installSignedImpl(address(new MockUpgradeImpl()).code);
+        bytes memory data = abi.encode(_pk(), _upgradeSig(), false, bytes(""));
 
         vm.expectEmit(true, false, false, false, address(wallet));
         emit Upgraded(impl);
         vm.prank(OWNER);
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), _upgradeSig(), false, bytes("")));
+        wallet.upgradeToAndCall(impl, data);
 
         assertEq(address(uint160(uint256(vm.load(WALLET, IMPL_SLOT)))), impl, "ERC-1967 implementation slot updated");
         assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
@@ -248,13 +268,14 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
 
     function test_upgrade_succeedsWithMigrate() public {
         address impl = _installSignedImpl(address(new MockMigrateImpl()).code);
-        ShrincsTypes.StatefulSignature memory sig = _parseStatefulSignature(".cases.upgradeMigrate.signature");
+        ShrincsTypes.StatefulSignature memory sig = _signUpgrade(true, "");
         assertEq(wallet.keyVersion(), 0, "epoch starts at 0");
 
+        bytes memory data = abi.encode(_pk(), sig, true, bytes(""));
         vm.expectEmit(true, false, false, false, address(wallet));
         emit Upgraded(impl);
         vm.prank(OWNER);
-        wallet.upgradeToAndCall(impl, abi.encode(_pk(), sig, true, bytes("")));
+        wallet.upgradeToAndCall(impl, data);
 
         // `migrate` ran inside the transient upgrade guard (it requires the flag) and bumped the epoch.
         assertEq(wallet.keyVersion(), 1, "migrate executed during the upgrade");

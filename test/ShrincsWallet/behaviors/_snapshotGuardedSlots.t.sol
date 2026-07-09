@@ -32,8 +32,8 @@ contract ShrincsWallet__snapshotGuardedSlots is ShrincsWalletTest {
         // The installed wallet has a non-zero owner, factory, and main commitment.
         bytes32[8] memory snapshot = wallet.exposed_snapshotGuardedSlots();
         assertEq(snapshot[0], bytes32(uint256(uint160(OWNER))), "slot 0 = owner");
-        assertEq(snapshot[3], _bytes32(".mainKey.publicKeyCommitment"), "slot 3 = main commitment");
-        assertEq(snapshot[4], _bytes32(".erc1271Key.publicKeyCommitment"), "slot 4 = erc1271 commitment");
+        assertEq(snapshot[3], mainCommitment, "slot 3 = main commitment");
+        assertEq(snapshot[4], erc1271Commitment, "slot 4 = erc1271 commitment");
     }
 
     function test_snapshotGuardedSlots_tracksMutation() public {
