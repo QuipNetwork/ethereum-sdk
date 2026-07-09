@@ -392,6 +392,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
         _collectExecuteFee();
 
+        // only reason this path exists is because the caller made 
+        // an error (empty data) and the leaf must be consumed either way
         if (value == 0 && data.length == 0) {
             emit LeafConsumedOnly(leaf);
             return;
