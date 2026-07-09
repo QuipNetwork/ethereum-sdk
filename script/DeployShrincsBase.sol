@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
 import {Deployer} from "../contracts/Deployer.sol";
 import {ShrincsPaymaster} from "../contracts/ShrincsPaymaster.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
 import {ShrincsWallet} from "../contracts/shrincs/ShrincsWallet.sol";
 import {DeployHelpers} from "./DeployHelpers.sol";
 
@@ -28,17 +29,20 @@ abstract contract DeployShrincsBase is DeployHelpers {
     struct ShrincsVerifier {
         address paymasterOwner;
         bytes32 commitment;
-        uint8 parameterSetId;
+        uint32 hashSuite;
         uint32 maxSignatures;
     }
 
     /// Read the ShrincsPaymaster verifier-key config from the environment.
-    /// `SHRINCS_VERIFIER_PARAM_SET_ID` defaults to 0 (the only shipped set).
+    /// `SHRINCS_VERIFIER_HASH_SUITE` defaults to `HASH_SUITE_KECCAK_256` (the only
+    /// suite the on-chain library verifies).
     function _shrincsVerifierFromEnv() internal view returns (ShrincsVerifier memory v) {
         v = ShrincsVerifier({
             paymasterOwner: vm.envAddress("SHRINCS_PAYMASTER_OWNER"),
             commitment: vm.envBytes32("SHRINCS_VERIFIER_COMMITMENT"),
-            parameterSetId: uint8(vm.envOr("SHRINCS_VERIFIER_PARAM_SET_ID", uint256(0))),
+            hashSuite: uint32(
+                vm.envOr("SHRINCS_VERIFIER_HASH_SUITE", uint256(ShrincsTypes.HASH_SUITE_KECCAK_256))
+            ),
             maxSignatures: uint32(vm.envUint("SHRINCS_VERIFIER_MAX_SIGNATURES"))
         });
     }
@@ -65,7 +69,7 @@ abstract contract DeployShrincsBase is DeployHelpers {
         address impl =
             _create3(deployer, pk, type(ShrincsPaymaster).creationCode, SHRINCS_PAYMASTER_IMPL_SALT, "ShrincsPaymaster impl");
         bytes memory initData = abi.encodeCall(
-            ShrincsPaymaster.initialize, (v.paymasterOwner, v.commitment, v.parameterSetId, v.maxSignatures)
+            ShrincsPaymaster.initialize, (v.paymasterOwner, v.commitment, v.hashSuite, v.maxSignatures)
         );
         bytes memory proxyCode = abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
         proxy = _create3(deployer, pk, proxyCode, SHRINCS_PAYMASTER_PROXY_SALT, "ShrincsPaymaster proxy");

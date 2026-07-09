@@ -43,6 +43,10 @@ interface IShrincsWallet {
     error CommitmentMismatch();
     /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
     error ZeroErc1271Commitment();
+    /// @notice Thrown when an install payload declares a hash suite other than
+    ///         `ShrincsTypes.HASH_SUITE_KECCAK_256` (the only suite this implementation
+    ///         verifies; the SHRINCS library binds it into every canonical message hash).
+    error UnsupportedHashSuite();
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
@@ -134,12 +138,10 @@ interface IShrincsWallet {
     ///         stateless break-glass `recoverWallet`).
     /// @param previousCommitment The rotated-out main-key commitment.
     /// @param nextCommitment The installed main-key commitment.
-    /// @param parameterSetId The installed key's parameter set.
     /// @param keyVersion The new installed-key epoch.
     event KeyRotated(
         bytes32 indexed previousCommitment,
         bytes32 indexed nextCommitment,
-        uint8 parameterSetId,
         uint256 keyVersion
     );
 
@@ -181,8 +183,8 @@ interface IShrincsWallet {
     /// @notice Initializes the wallet. Called once by the factory.
     /// @param newOwner The classical owner (ERC-1271 ECDSA gate + factory registry only).
     /// @param payload Packed init data: `[0:32)` main commitment, `[32:64)` pkSeed, then the
-    ///        ABI-encoded `(PublicKey mainBundle, uint8 parameterSetId, bytes32 erc1271Commitment,
-    ///        uint8 erc1271ParameterSetId)`.
+    ///        ABI-encoded `(PublicKey mainBundle, uint32 hashSuite, bytes32 erc1271Commitment,
+    ///        uint32 erc1271HashSuite)`.
     function initialize(
         address payable newOwner,
         bytes calldata payload
@@ -251,7 +253,7 @@ interface IShrincsWallet {
         ShrincsTypes.PublicKey calldata publicKey,
         ShrincsTypes.StatefulSignature calldata signature,
         bytes32 newErc1271Commitment,
-        uint8 newErc1271ParameterSetId
+        uint32 newErc1271HashSuite
     ) external payable;
 
     /// @notice Routine stateful rotation of the main key's stateful subkey (reusing the
@@ -312,17 +314,15 @@ interface IShrincsWallet {
     /// @notice The installed ERC-1271 verifier-key commitment.
     function getErc1271Commitment() external view returns (bytes32);
 
-    /// @notice The installed main-key parameter set.
-    function getParameterSetId()
-        external
-        view
-        returns (ShrincsTypes.ParameterSetId);
+    /// @notice The `ShrincsTypes.HASH_SUITE_*` id the installed main key was validated against.
+    ///         Always `HASH_SUITE_KECCAK_256`: the id is not stored — install/rotate paths
+    ///         reject every other suite.
+    function getHashSuite() external view returns (uint32);
 
-    /// @notice The installed ERC-1271 verifier-key parameter set.
-    function getErc1271ParameterSetId()
-        external
-        view
-        returns (ShrincsTypes.ParameterSetId);
+    /// @notice The `ShrincsTypes.HASH_SUITE_*` id the installed ERC-1271 verifier key was
+    ///         validated against. Always `HASH_SUITE_KECCAK_256`: the id is not stored —
+    ///         install/rotate paths reject every other suite.
+    function getErc1271HashSuite() external view returns (uint32);
 
     /// @notice Whether stateful `leafIndex` has been consumed in the current key epoch.
     function isStatefulLeafUsed(uint256 leafIndex) external view returns (bool);

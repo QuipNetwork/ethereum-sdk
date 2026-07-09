@@ -67,8 +67,8 @@ library ShrincsWalletCodec {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Decodes the factory-supplied init payload, the ABI encoding of
-    ///      `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle, uint8 parameterSetId,
-    ///       bytes32 erc1271Commitment, uint8 erc1271ParameterSetId)`.
+    ///      `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle, uint32 hashSuite,
+    ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
     ///      `commitment` and `pkSeed` occupy `payload[0:32]` / `[32:64]` so the factory's
     ///      opaque `QuipCreated` indexing read lands on meaningful handles.
     function decodeInit(
@@ -80,9 +80,9 @@ library ShrincsWalletCodec {
             bytes32 commitment,
             bytes32 pkSeed,
             ShrincsTypes.PublicKey calldata mainBundle,
-            uint8 parameterSetId,
+            uint32 hashSuite,
             bytes32 erc1271Commitment,
-            uint8 erc1271ParameterSetId
+            uint32 erc1271HashSuite
         )
     {
         // Head is six 32-byte words (one is the PublicKey tail offset).
@@ -93,9 +93,9 @@ library ShrincsWalletCodec {
             commitment := calldataload(o)
             pkSeed := calldataload(add(o, 0x20))
             mainBundle := add(o, calldataload(add(o, 0x40)))
-            parameterSetId := and(calldataload(add(o, 0x60)), 0xff)
+            hashSuite := and(calldataload(add(o, 0x60)), 0xffffffff)
             erc1271Commitment := calldataload(add(o, 0x80))
-            erc1271ParameterSetId := and(calldataload(add(o, 0xa0)), 0xff)
+            erc1271HashSuite := and(calldataload(add(o, 0xa0)), 0xffffffff)
         }
     }
 
@@ -286,25 +286,20 @@ library ShrincsWalletCodec {
     /// @dev `payloadHash` for the `setErc1271Key` path.
     function setErc1271KeyPayloadHash(
         bytes32 newCommitment,
-        uint8 newParameterSetId
+        uint32 newHashSuite
     ) internal pure returns (bytes32) {
         return
             EfficientHashLib.hash(
                 newCommitment,
-                bytes32(uint256(newParameterSetId))
+                bytes32(uint256(newHashSuite))
             );
     }
 
     /// @dev `payloadHash` for the stateful `rotateKey` path: binds the next stateful subkey's
-    ///      bundle commitment and parameter set.
+    ///      bundle commitment.
     function rotateKeyPayloadHash(
-        bytes32 nextCommitment,
-        uint8 nextParameterSetId
+        bytes32 nextCommitment
     ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                nextCommitment,
-                bytes32(uint256(nextParameterSetId))
-            );
+        return EfficientHashLib.hash(nextCommitment);
     }
 }

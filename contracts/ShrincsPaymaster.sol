@@ -99,11 +99,13 @@ contract ShrincsPaymaster is
     function initialize(
         address owner_,
         bytes32 commitment,
-        uint8 parameterSetId,
+        uint32 hashSuite,
         uint32 maxSignatures
     ) external initializer {
         if (owner_ == address(0)) revert ZeroAddressOwner();
         if (commitment == bytes32(0)) revert ZeroCommitment();
+        if (hashSuite != ShrincsTypes.HASH_SUITE_KECCAK_256)
+            revert UnsupportedHashSuite();
         if (maxSignatures == 0) revert ZeroMaxSignatures();
 
         _initializeOwner(owner_);
@@ -112,14 +114,13 @@ contract ShrincsPaymaster is
         // The initial verifier occupies epoch 0; the paymaster always has a verifier from here on.
         // statefulLeavesUsed and the leaf bitmap start empty by default.
         $.shrincsCommitment = commitment;
-        $.shrincsParameterSetId = parameterSetId;
         $.maxSignatures = maxSignatures;
 
         emit PaymasterInitialized(owner_);
         emit ShrincsVerifierSet(
             bytes32(0),
             commitment,
-            parameterSetId,
+            hashSuite,
             maxSignatures,
             0
         );
@@ -177,10 +178,12 @@ contract ShrincsPaymaster is
     /// @inheritdoc IShrincsPaymaster
     function setShrincsVerifier(
         bytes32 commitment,
-        uint8 parameterSetId,
+        uint32 hashSuite,
         uint32 maxSignatures
     ) external onlyOwner {
         if (commitment == bytes32(0)) revert ZeroCommitment();
+        if (hashSuite != ShrincsTypes.HASH_SUITE_KECCAK_256)
+            revert UnsupportedHashSuite();
         if (maxSignatures == 0) revert ZeroMaxSignatures();
 
         Storage.Layout storage $ = Storage.layout();
@@ -190,7 +193,6 @@ contract ShrincsPaymaster is
         uint256 nextEpoch = $.keyVersion + 1;
 
         $.shrincsCommitment = commitment;
-        $.shrincsParameterSetId = parameterSetId;
         $.maxSignatures = maxSignatures;
         $.statefulLeavesUsed = 0;
         $.keyVersion = nextEpoch;
@@ -198,7 +200,7 @@ contract ShrincsPaymaster is
         emit ShrincsVerifierSet(
             previous,
             commitment,
-            parameterSetId,
+            hashSuite,
             maxSignatures,
             nextEpoch
         );
@@ -282,15 +284,7 @@ contract ShrincsPaymaster is
             payloadHash: _userOpBindingHash(userOp)
         });
 
-        if (
-            !SHRINCS.verifyStateful(
-                ShrincsTypes.ParameterSetId($.shrincsParameterSetId),
-                commitment,
-                pk,
-                ctx,
-                sig
-            )
-        ) {
+        if (!SHRINCS.verifyStateful(commitment, pk, ctx, sig)) {
             emit PaymasterValidationRejected(
                 userOp.sender,
                 PaymasterValidationFailure.InvalidSignature
@@ -371,16 +365,18 @@ contract ShrincsPaymaster is
         view
         returns (
             bytes32 commitment,
-            ShrincsTypes.ParameterSetId parameterSetId,
+            uint32 hashSuite,
             uint256 keyVersion,
             uint32 maxSignatures,
             uint32 statefulLeavesUsed
         )
     {
         Storage.Layout storage $ = Storage.layout();
+        // The hash suite is not stored: registration rejects anything but
+        // HASH_SUITE_KECCAK_256, so the installed suite is always the constant.
         return (
             $.shrincsCommitment,
-            ShrincsTypes.ParameterSetId($.shrincsParameterSetId),
+            ShrincsTypes.HASH_SUITE_KECCAK_256,
             $.keyVersion,
             $.maxSignatures,
             $.statefulLeavesUsed
