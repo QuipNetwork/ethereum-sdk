@@ -2,83 +2,141 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { type Address, type Hex, sliceHex, toHex } from "viem";
 
-import { type Hex, toHex } from "viem";
-
-import { ShrincsSigner } from "../shrincsSigner.js";
+import { decodeUserOpSignature, buildActionContext, domainSeparator } from "../shrincsCodec.js";
+import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
   type PackedUserOperation,
   PAYMASTER_DOMAIN_TAG,
   ACTION_PAYMASTER_APPROVE,
   packPaymasterHeader,
   paymasterBindingHash,
+  signPaymasterUserOp,
 } from "../userOp.js";
-import { buildActionContext, domainSeparator } from "../shrincsCodec.js";
 
-const v = JSON.parse(
-  readFileSync(
-    resolve(process.cwd(), "test/test_vectors/shrincs_paymaster_sphincs_256s_keccak.json"),
-    "utf8"
-  )
-) as any;
-
+const PAYMASTER = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
+const SENDER = "0x00000000000000000000000000000000000A11cE" as Address;
+const CHAIN_ID = 31337n;
+const MAX_SIG = 8;
 const seed = (s: string) => toHex(new TextEncoder().encode(s));
 
-function header64(): Hex {
+let verifier: ShrincsKeyPair;
+
+beforeAll(async () => {
+  const signer = await ShrincsSigner.create(new TextEncoder().encode("any"));
+  verifier = signer.keygenFromSeedHex(seed("shrincs paymaster verifier seed"), {
+    maxSignatures: MAX_SIG,
+  });
+});
+
+function header64(validUntil = 0, validAfter = 0): Hex {
   return packPaymasterHeader({
-    paymaster: v.paymaster,
-    verificationGasLimit: BigInt(v.userOp.verificationGasLimit),
-    postOpGasLimit: BigInt(v.userOp.postOpGasLimit),
-    validUntil: v.userOp.validUntil,
-    validAfter: v.userOp.validAfter,
+    paymaster: PAYMASTER,
+    verificationGasLimit: 100_000n,
+    postOpGasLimit: 50_000n,
+    validUntil,
+    validAfter,
   });
 }
 
-function userOpFor(nonce: number, paymasterAndData: Hex): PackedUserOperation {
+function userOpFor(nonce: bigint, paymasterAndData: Hex): PackedUserOperation {
   return {
-    sender: v.userOp.sender,
-    nonce: BigInt(nonce),
-    initCode: v.userOp.initCode,
-    callData: v.userOp.callData,
-    accountGasLimits: v.userOp.accountGasLimits,
-    preVerificationGas: BigInt(v.userOp.preVerificationGas),
-    gasFees: v.userOp.gasFees,
+    sender: SENDER,
+    nonce,
+    initCode: "0x",
+    callData: "0x",
+    accountGasLimits: toHex((100_000n << 128n) | 100_000n, { size: 32 }),
+    preVerificationGas: 21_000n,
+    gasFees: toHex((1_000_000_000n << 128n) | 10_000_000_000n, { size: 32 }),
     paymasterAndData,
     signature: "0x",
   };
 }
 
 describe("shrincs paymaster userOp", () => {
-  it("reproduces the sponsorship binding hash for each sponsor case", () => {
-    const h = header64();
-    for (const idx of Object.keys(v.cases.sponsor)) {
-      const c = v.cases.sponsor[idx];
-      const userOp = userOpFor(c.nonce, h);
-      expect(paymasterBindingHash(userOp, h)).toBe(c.bindingHash);
-    }
+  it("packPaymasterHeader lays out the 64-byte prefix", () => {
+    const h = header64(7, 3);
+    expect((h.length - 2) / 2).toBe(64);
+    expect(sliceHex(h, 0, 20).toLowerCase()).toBe(PAYMASTER.toLowerCase());
+    expect(BigInt(sliceHex(h, 20, 36))).toBe(100_000n); // verificationGasLimit
+    expect(BigInt(sliceHex(h, 36, 52))).toBe(50_000n); // postOpGasLimit
+    expect(BigInt(sliceHex(h, 52, 58))).toBe(7n); // validUntil
+    expect(BigInt(sliceHex(h, 58, 64))).toBe(3n); // validAfter
   });
 
-  it("reproduces the canonical message and signature at the pinned leaf", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("any"));
-    const verifier = signer.keygenFromSeedHex(seed("shrincs paymaster verifier seed"), {
-      maxSignatures: 8,
-    });
-    expect(verifier.publicKeyCommitment).toBe(v.verifierKey.publicKeyCommitment);
-
+  it("binding hash binds the op fields and header — and ONLY the 64-byte prefix", () => {
     const h = header64();
-    for (const idx of Object.keys(v.cases.sponsor)) {
-      const c = v.cases.sponsor[idx];
-      const userOp = userOpFor(c.nonce, h);
-      const ctx = buildActionContext({
-        domainSeparator: domainSeparator(v.chainId, v.paymaster, PAYMASTER_DOMAIN_TAG),
-        keyVersion: BigInt(c.keyVersion),
+    const base = paymasterBindingHash(userOpFor(0n, h), h);
+    // Deterministic; sensitive to nonce, sender-carried fields, and the header.
+    expect(paymasterBindingHash(userOpFor(0n, h), h)).toBe(base);
+    expect(paymasterBindingHash(userOpFor(1n, h), h)).not.toBe(base);
+    expect(paymasterBindingHash(userOpFor(0n, h), header64(1, 0))).not.toBe(base);
+    // The blob appended past the prefix is deliberately NOT bound: the binding
+    // is computed from the header alone, so an op carrying any blob at [64:)
+    // has the same binding hash (this is the circularity break).
+    const withBlob = userOpFor(0n, (h + "deadbeef") as Hex);
+    expect(paymasterBindingHash(withBlob, h)).toBe(base);
+  });
+
+  it("signPaymasterUserOp emits header ‖ blob that verifies against the canonical context", () => {
+    const leaf = 2;
+    const op = userOpFor(5n, header64());
+    const paymasterAndData = signPaymasterUserOp({
+      keypair: verifier,
+      userOp: op,
+      paymaster: PAYMASTER,
+      chainId: CHAIN_ID,
+      keyVersion: 0n,
+      verificationGasLimit: 100_000n,
+      postOpGasLimit: 50_000n,
+      leaf,
+    });
+
+    // Prefix is the exact signed header.
+    expect(sliceHex(paymasterAndData, 0, 64)).toBe(header64());
+
+    // Blob decodes to the verifier key + a leaf-shaped stateful signature.
+    const blob = sliceHex(paymasterAndData, 64);
+    const { publicKey, signature } = decodeUserOpSignature(blob);
+    expect(publicKey).toEqual(verifier.publicKey);
+    expect(signature.authPath.length).toBe(leaf);
+
+    // The signature verifies over the canonical sponsorship message.
+    const message = verifier.statefulActionMessageHash(
+      buildActionContext({
+        domainSeparator: domainSeparator(CHAIN_ID, PAYMASTER, PAYMASTER_DOMAIN_TAG),
+        keyVersion: 0n,
         actionType: ACTION_PAYMASTER_APPROVE,
-        payloadHash: paymasterBindingHash(userOp, h),
-      });
-      expect(verifier.statefulActionMessageHash(ctx)).toBe(c.message);
-      expect(verifier.signStatefulRawAt(c.message, c.leaf)).toEqual(c.signature);
-    }
+        payloadHash: paymasterBindingHash(op, header64()),
+      })
+    );
+    expect(verifier.verifyStatefulRaw(message, signature)).toBe(true);
+
+    // Deterministic for fixed inputs; different nonce => different signature.
+    expect(
+      signPaymasterUserOp({
+        keypair: verifier,
+        userOp: op,
+        paymaster: PAYMASTER,
+        chainId: CHAIN_ID,
+        keyVersion: 0n,
+        verificationGasLimit: 100_000n,
+        postOpGasLimit: 50_000n,
+        leaf,
+      })
+    ).toBe(paymasterAndData);
+    expect(
+      signPaymasterUserOp({
+        keypair: verifier,
+        userOp: userOpFor(6n, header64()),
+        paymaster: PAYMASTER,
+        chainId: CHAIN_ID,
+        keyVersion: 0n,
+        verificationGasLimit: 100_000n,
+        postOpGasLimit: 50_000n,
+        leaf,
+      })
+    ).not.toBe(paymasterAndData);
   });
 });

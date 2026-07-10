@@ -29,10 +29,7 @@ import {
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { tryMulticall } from "../internal/multicall.js";
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
-import {
-  ParameterSetId,
-  parameterSetIdToEnum,
-} from "./constants.js";
+import { HASH_SUITE_KECCAK_256 } from "./constants.js";
 import {
   CommitmentMismatchError,
   Erc1271ValidationResult,
@@ -82,8 +79,8 @@ export interface ShrincsWalletState {
   executeFee: bigint;
   shrincsPublicKeyCommitment: Hex;
   erc1271Commitment: Hex;
-  parameterSetId: number;
-  erc1271ParameterSetId: number;
+  hashSuite: number;
+  erc1271HashSuite: number;
   keyVersion: bigint;
   actionNonce: bigint;
   maxSignatures: number;
@@ -139,8 +136,8 @@ export async function fetchShrincsWalletState(
     "getExecuteFee",
     "getShrincsPublicKeyCommitment",
     "getErc1271Commitment",
-    "getParameterSetId",
-    "getErc1271ParameterSetId",
+    "getHashSuite",
+    "getErc1271HashSuite",
     "keyVersion",
     "actionNonce",
     "maxSignatures",
@@ -168,8 +165,8 @@ export async function fetchShrincsWalletState(
     executeFee: BigInt(get(2)),
     shrincsPublicKeyCommitment: get(3),
     erc1271Commitment: get(4),
-    parameterSetId: Number(get(5)),
-    erc1271ParameterSetId: Number(get(6)),
+    hashSuite: Number(get(5)),
+    erc1271HashSuite: Number(get(6)),
     keyVersion: BigInt(get(7)),
     actionNonce: BigInt(get(8)),
     maxSignatures: Number(get(9)),
@@ -486,7 +483,7 @@ export class ShrincsWalletClient {
   /// Install a dedicated ERC-1271 stateless verifier key (authorized by a
   /// stateful signature from the main key).
   async setErc1271Key(
-    params: { newCommitment: Hex; newParameterSetId?: ParameterSetId },
+    params: { newCommitment: Hex; newHashSuite?: number },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
     if (
@@ -495,19 +492,19 @@ export class ShrincsWalletClient {
     ) {
       throw new ZeroErc1271CommitmentError();
     }
-    const paramSet = params.newParameterSetId ?? ParameterSetId.Sphincs256sKeccakQ20;
+    const hashSuite = params.newHashSuite ?? HASH_SUITE_KECCAK_256;
     const { keypair, state, leaf, domainSeparator: ds } =
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
       keyVersion: state.keyVersion,
       actionType: ACTION_SET_ERC1271_KEY,
-      payloadHash: setErc1271KeyPayloadHash(params.newCommitment, paramSet),
+      payloadHash: setErc1271KeyPayloadHash(params.newCommitment, hashSuite),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     return this.submit(
       "setErc1271Key",
-      [publicKeyToAbi(keypair.publicKey), signature, params.newCommitment, paramSet],
+      [publicKeyToAbi(keypair.publicKey), signature, params.newCommitment, hashSuite],
       state.executeFee,
       opts
     );
@@ -517,14 +514,12 @@ export class ShrincsWalletClient {
   /// recovery root. `nextStatefulPublicKey` is the fresh stateful key's encoded
   /// 68-byte public key (from a freshly keygen'd bundle under a new vaultId).
   async rotateKey(
-    params: { nextStatefulPublicKey: Hex; nextParameterSetId?: ParameterSetId },
+    params: { nextStatefulPublicKey: Hex },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    const paramSet = params.nextParameterSetId ?? ParameterSetId.Sphincs256sKeccakQ20;
     const { keypair, state, leaf, domainSeparator: ds } =
       await this.prepareStatefulOp(opts);
     const nextStatefulKey = buildStatefulRotationTarget({
-      parameterSetId: keypair.parameterSetId,
       nextStatefulPublicKey: params.nextStatefulPublicKey,
       currentPkSeed: keypair.publicKey.pkSeed,
       currentHypertreeRoot: keypair.publicKey.hypertreeRoot,
@@ -533,7 +528,7 @@ export class ShrincsWalletClient {
       domainSeparator: ds,
       keyVersion: state.keyVersion,
       actionType: ACTION_ROTATE_KEY,
-      payloadHash: rotateKeyPayloadHash(nextStatefulKey.publicKeyCommitment, paramSet),
+      payloadHash: rotateKeyPayloadHash(nextStatefulKey.publicKeyCommitment),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     return this.submit(
@@ -542,7 +537,6 @@ export class ShrincsWalletClient {
         publicKeyToAbi(keypair.publicKey),
         signature,
         {
-          parameterSetId: parameterSetIdToEnum(nextStatefulKey.parameterSetId),
           statefulPublicKey: nextStatefulKey.statefulPublicKey,
           publicKeyCommitment: nextStatefulKey.publicKeyCommitment,
         },

@@ -24,12 +24,9 @@ import { type Hex } from "viem";
 // `ShrincsTypes` structs (`dependencies/@quip.network-hashsigs-solidity-0.1.0`).
 
 /// SHRINCS long-lived public key bundle (stateful subkey + stateless root).
-///
-/// `parameterSetId` is the WASM string id (e.g. `"sphincs-256s-keccak-q20"`).
-/// The codec maps it to the on-chain `ParameterSetId` enum (uint8) when
-/// ABI-encoding; see `parameterSetIdToEnum` in `constants.ts`.
+/// The hash suite (keccak-256) is fixed by the library and baked into every
+/// canonical message hash, so the bundle carries no suite/parameter-set field.
 export interface ShrincsPublicKey {
-  parameterSetId: string;
   /// 68 bytes: stateful pkSeed (32) ‖ stateful root (32) ‖ maxSignatures (4 BE).
   statefulPublicKey: Hex;
   /// keccak256 over the full bundle; the on-chain installed-key identity.
@@ -103,14 +100,12 @@ export interface RotationContext {
 /// Incoming stateful-only subkey for `rotateKey` (reuses the current stateless
 /// root, so it carries no pkSeed/hypertreeRoot).
 export interface StatefulRotationTarget {
-  parameterSetId: string;
   statefulPublicKey: Hex;
   publicKeyCommitment: Hex;
 }
 
 /// Incoming full key bundle for `recoverWallet` / `transferOwnership`.
 export interface RotationTarget {
-  parameterSetId: string;
   statefulPublicKey: Hex;
   publicKeyCommitment: Hex;
   pkSeed: Hex;

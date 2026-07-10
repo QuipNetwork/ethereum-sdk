@@ -41,7 +41,7 @@ import { entryPointV07Abi } from "../../abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
-import { ParameterSetId, parameterSetIdToEnum } from "../constants.js";
+import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import { Erc1271ValidationResult, StaleStatefulLeafError } from "../errors.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
 import {
@@ -232,7 +232,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       owner: stack.account.address,
       commitment: verifierKey.publicKeyCommitment,
       maxSignatures: MAX_SIGS,
-      parameterSetId: parameterSetIdToEnum(verifierKey.parameterSetId),
+      hashSuite: HASH_SUITE_KECCAK_256,
     });
 
     const pmClient = new ShrincsPaymasterClient({

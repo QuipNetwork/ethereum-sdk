@@ -29,11 +29,7 @@ import {
 } from "viem";
 
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
-import {
-  ParameterSetId,
-  parameterSetEnumToId,
-  parameterSetIdToEnum,
-} from "./constants.js";
+import { HASH_SUITE_KECCAK_256 } from "./constants.js";
 import {
   type ActionContext,
   type RotationContext,
@@ -45,8 +41,6 @@ import {
 } from "./types.js";
 
 // Mirrors `ShrincsWalletCodec.sol` + `ShrincsWallet._shrincsDomainSeparator`.
-// Every constant/hash here is cross-checked against the committed
-// `test/test_vectors/shrincs_*.json` fixtures.
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                      DOMAIN / TAGS                          */
@@ -109,11 +103,10 @@ export function domainSeparator(
 }
 
 /// Bundle commitment as the contract/keygen computes it:
-/// `keccak256("shrincs-public-key" ‖ packedParamSet ‖ statefulPublicKey ‖ pkSeed ‖ hypertreeRoot)`.
+/// `keccak256("shrincs-public-key" ‖ statefulPublicKey ‖ pkSeed ‖ hypertreeRoot)`.
 /// Used to derive the `publicKeyCommitment` of a rotation target whose stateless
 /// half is reused (e.g. `rotateKey`).
 export function publicKeyCommitment(parts: {
-  parameterSetId: ParameterSetId;
   statefulPublicKey: Hex;
   pkSeed: Hex;
   hypertreeRoot: Hex;
@@ -121,7 +114,6 @@ export function publicKeyCommitment(parts: {
   return keccak256(
     concat([
       toHex(toBytes("shrincs-public-key")),
-      toHex(parts.parameterSetId, { size: 1 }),
       parts.statefulPublicKey,
       parts.pkSeed,
       parts.hypertreeRoot,
@@ -164,13 +156,11 @@ export const transferOwnershipPayloadHash = (
 
 export const setErc1271KeyPayloadHash = (
   newCommitment: Hex,
-  newParameterSetId: ParameterSetId
-): Hex => hashWords(newCommitment, word(newParameterSetId));
+  newHashSuite: number = HASH_SUITE_KECCAK_256
+): Hex => hashWords(newCommitment, word(newHashSuite));
 
-export const rotateKeyPayloadHash = (
-  nextCommitment: Hex,
-  nextParameterSetId: ParameterSetId
-): Hex => hashWords(nextCommitment, word(nextParameterSetId));
+export const rotateKeyPayloadHash = (nextCommitment: Hex): Hex =>
+  hashWords(nextCommitment);
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    CONTEXT BUILDERS                         */
@@ -241,13 +231,11 @@ const PUBLIC_KEY_TUPLE = findStructTuple("struct ShrincsTypes.PublicKey");
 const STATEFUL_SIGNATURE_TUPLE = findStructTuple("struct ShrincsTypes.StatefulSignature");
 const STATELESS_SIGNATURE_TUPLE = findStructTuple("struct ShrincsTypes.StatelessSignature");
 
-/// On-chain `PublicKey` carries the parameter set as a uint8 enum, while the
-/// SDK/WASM shape uses the string id. These converters bridge the two. The
-/// `publicKeyToAbi` form is what the wallet client passes as the direct struct
-/// argument to the owner-path functions (`execute`, `rotateKey`, …).
+/// The on-chain `PublicKey` struct now matches the SDK/WASM shape field-for-field
+/// (no parameter-set discriminator). These converters survive as explicit
+/// projections so decoded tuples come back as plain `ShrincsPublicKey` objects.
 export function publicKeyToAbi(pk: ShrincsPublicKey) {
   return {
-    parameterSetId: parameterSetIdToEnum(pk.parameterSetId),
     statefulPublicKey: pk.statefulPublicKey,
     publicKeyCommitment: pk.publicKeyCommitment,
     pkSeed: pk.pkSeed,
@@ -256,14 +244,12 @@ export function publicKeyToAbi(pk: ShrincsPublicKey) {
 }
 
 function publicKeyFromAbi(t: {
-  parameterSetId: number;
   statefulPublicKey: Hex;
   publicKeyCommitment: Hex;
   pkSeed: Hex;
   hypertreeRoot: Hex;
 }): ShrincsPublicKey {
   return {
-    parameterSetId: parameterSetEnumToId(t.parameterSetId),
     statefulPublicKey: t.statefulPublicKey,
     publicKeyCommitment: t.publicKeyCommitment,
     pkSeed: t.pkSeed,
@@ -275,12 +261,15 @@ function publicKeyFromAbi(t: {
 /*                    BLOB ENCODE / DECODE                     */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-/// Factory init payload: `[0:32]commitment ‖ [32:64]pkSeed ‖ abi(PublicKey,
-/// uint8 parameterSetId, bytes32 erc1271Commitment, uint8 erc1271ParameterSetId)`.
+/// Factory init payload: `abi.encode(bytes32 commitment, bytes32 pkSeed,
+/// PublicKey, uint32 hashSuite, bytes32 erc1271Commitment, uint32
+/// erc1271HashSuite)`. Both suites default to keccak-256 — the only suite the
+/// wallet accepts.
 export function encodeInitPayload(params: {
   mainBundle: ShrincsPublicKey;
   erc1271Commitment: Hex;
-  erc1271ParameterSetId: ParameterSetId;
+  hashSuite?: number;
+  erc1271HashSuite?: number;
 }): Hex {
   const commitment = params.mainBundle.publicKeyCommitment;
   const pkSeed = params.mainBundle.pkSeed;
@@ -289,17 +278,17 @@ export function encodeInitPayload(params: {
       { name: "commitment", type: "bytes32" },
       { name: "pkSeed", type: "bytes32" },
       PUBLIC_KEY_TUPLE,
-      { name: "parameterSetId", type: "uint8" },
+      { name: "hashSuite", type: "uint32" },
       { name: "erc1271Commitment", type: "bytes32" },
-      { name: "erc1271ParameterSetId", type: "uint8" },
+      { name: "erc1271HashSuite", type: "uint32" },
     ],
     [
       commitment,
       pkSeed,
       publicKeyToAbi(params.mainBundle),
-      parameterSetIdToEnum(params.mainBundle.parameterSetId),
+      params.hashSuite ?? HASH_SUITE_KECCAK_256,
       params.erc1271Commitment,
-      params.erc1271ParameterSetId,
+      params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
     ]
   );
 }
@@ -374,17 +363,13 @@ export function encodeErc1271Signature(params: {
 /// public key, reusing the current bundle's stateless half. `publicKeyCommitment`
 /// is derived to match the on-chain commitment formula.
 export function buildStatefulRotationTarget(params: {
-  parameterSetId: string;
   nextStatefulPublicKey: Hex;
   currentPkSeed: Hex;
   currentHypertreeRoot: Hex;
 }): StatefulRotationTarget {
-  const enumId = parameterSetIdToEnum(params.parameterSetId);
   return {
-    parameterSetId: params.parameterSetId,
     statefulPublicKey: params.nextStatefulPublicKey,
     publicKeyCommitment: publicKeyCommitment({
-      parameterSetId: enumId,
       statefulPublicKey: params.nextStatefulPublicKey,
       pkSeed: params.currentPkSeed,
       hypertreeRoot: params.currentHypertreeRoot,
@@ -396,7 +381,6 @@ export function buildStatefulRotationTarget(params: {
 /// transferOwnership).
 export function toRotationTarget(pk: ShrincsPublicKey): RotationTarget {
   return {
-    parameterSetId: pk.parameterSetId,
     statefulPublicKey: pk.statefulPublicKey,
     publicKeyCommitment: pk.publicKeyCommitment,
     pkSeed: pk.pkSeed,

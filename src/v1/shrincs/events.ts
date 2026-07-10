@@ -123,7 +123,6 @@ export function parseErc1271KeySet(src: LogSource): Erc1271KeySetEvent[] {
 export interface KeyRotatedEvent {
   previousCommitment: Hex;
   nextCommitment: Hex;
-  parameterSetId: number;
   keyVersion: bigint;
 }
 
@@ -131,7 +130,6 @@ export function parseKeyRotated(src: LogSource): KeyRotatedEvent[] {
   return walletLogs(src, "KeyRotated").map((l: any) => ({
     previousCommitment: l.args.previousCommitment,
     nextCommitment: l.args.nextCommitment,
-    parameterSetId: Number(l.args.parameterSetId),
     keyVersion: l.args.keyVersion,
   }));
 }
@@ -177,7 +175,7 @@ export function parsePaymasterInitialized(
 export interface ShrincsVerifierSetEvent {
   previousCommitment: Hex;
   newCommitment: Hex;
-  parameterSetId: number;
+  hashSuite: number;
   maxSignatures: number;
   keyVersion: bigint;
 }
@@ -186,7 +184,7 @@ export function parseShrincsVerifierSet(src: LogSource): ShrincsVerifierSetEvent
   return paymasterLogs(src, "ShrincsVerifierSet").map((l: any) => ({
     previousCommitment: l.args.previousCommitment,
     newCommitment: l.args.newCommitment,
-    parameterSetId: Number(l.args.parameterSetId),
+    hashSuite: Number(l.args.hashSuite),
     maxSignatures: Number(l.args.maxSignatures),
     keyVersion: l.args.keyVersion,
   }));

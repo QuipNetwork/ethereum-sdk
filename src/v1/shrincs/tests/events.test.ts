@@ -142,17 +142,14 @@ describe("shrincs event parsers", () => {
       const log = makeLog(shrincsWalletAbi as Abi, ADDR_A, "KeyRotated", {
         previousCommitment: B32(0x30),
         nextCommitment: B32(0x40),
-        parameterSetId: 0,
         keyVersion: 7n,
       });
       const [out] = parseKeyRotated([log]);
       expect(out).toEqual({
         previousCommitment: B32(0x30),
         nextCommitment: B32(0x40),
-        parameterSetId: 0,
         keyVersion: 7n,
       });
-      expect(typeof out.parameterSetId).toBe("number");
       expect(typeof out.keyVersion).toBe("bigint");
     });
 
@@ -218,7 +215,7 @@ describe("shrincs event parsers", () => {
         {
           previousCommitment: B32(0x60),
           newCommitment: B32(0x70),
-          parameterSetId: 0,
+          hashSuite: 1,
           maxSignatures: 8,
           keyVersion: 1n,
         }
@@ -227,7 +224,7 @@ describe("shrincs event parsers", () => {
       expect(out).toEqual({
         previousCommitment: B32(0x60),
         newCommitment: B32(0x70),
-        parameterSetId: 0,
+        hashSuite: 1,
         maxSignatures: 8,
         keyVersion: 1n,
       });

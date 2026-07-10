@@ -186,6 +186,19 @@ export class ZeroMaxSignaturesError extends QuipError {
   }
 }
 
+/// A declared hash suite other than `HASH_SUITE_KECCAK_256` was supplied at
+/// install/rotate time (wallet initialize/migrate/setErc1271Key, paymaster
+/// initialize/setShrincsVerifier).
+export class UnsupportedHashSuiteError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UNSUPPORTED_HASH_SUITE",
+      "Hash suite is not HASH_SUITE_KECCAK_256 — the only suite the contracts accept",
+      opts
+    );
+  }
+}
+
 /// The chosen stateful leaf has already been consumed in the current key epoch.
 export class StaleStatefulLeafError extends QuipError {
   readonly leaf?: number;

@@ -25,7 +25,7 @@ import {
 
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { shrincsPaymasterAbi } from "./abi/ShrincsPaymaster.js";
-import { ParameterSetId } from "./constants.js";
+import { HASH_SUITE_KECCAK_256 } from "./constants.js";
 import { StatefulBudgetExhaustedError, VerifierMismatchError } from "./errors.js";
 import { prepareTx, type TxOptions } from "./gas.js";
 import { withDecodedError } from "./internal/decodeError.js";
@@ -41,7 +41,7 @@ import {
 
 export interface ShrincsVerifierState {
   commitment: Hex;
-  parameterSetId: number;
+  hashSuite: number;
   keyVersion: bigint;
   maxSignatures: number;
   statefulLeavesUsed: number;
@@ -84,7 +84,7 @@ export class ShrincsPaymasterClient {
   /*  ── reads ───────────────────────────────────────────────────────────  */
 
   async getShrincsVerifier(): Promise<ShrincsVerifierState> {
-    const [commitment, parameterSetId, keyVersion, maxSignatures, statefulLeavesUsed] =
+    const [commitment, hashSuite, keyVersion, maxSignatures, statefulLeavesUsed] =
       (await withDecodedError(
         this.publicClient.readContract({
           address: this.paymasterAddress,
@@ -94,7 +94,7 @@ export class ShrincsPaymasterClient {
       )) as [Hex, number, bigint, number, number];
     return {
       commitment,
-      parameterSetId: Number(parameterSetId),
+      hashSuite: Number(hashSuite),
       keyVersion: BigInt(keyVersion),
       maxSignatures: Number(maxSignatures),
       statefulLeavesUsed: Number(statefulLeavesUsed),
@@ -200,14 +200,14 @@ export class ShrincsPaymasterClient {
 
   /// Rotate the global sponsorship verifier key (owner-only; bumps the epoch).
   async setShrincsVerifier(
-    params: { commitment: Hex; parameterSetId?: ParameterSetId; maxSignatures: number },
+    params: { commitment: Hex; hashSuite?: number; maxSignatures: number },
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
     return this.submit(
       "setShrincsVerifier",
       [
         params.commitment,
-        params.parameterSetId ?? ParameterSetId.Sphincs256sKeccakQ20,
+        params.hashSuite ?? HASH_SUITE_KECCAK_256,
         params.maxSignatures,
       ],
       0n,

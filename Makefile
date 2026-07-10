@@ -105,7 +105,7 @@ copy-abi:
 	node scripts/copy-abi.js
 
 sdk:
-	forge build && npm run copy-abi && tsc -p tsconfig.build.json && npm run copy-assets
+	forge build && npm run copy-abi && npm run gen-wasm-inline && tsc -p tsconfig.build.json && npm run copy-wasm
 
 # ── Deploy (requires PRIVATE_KEY, RPC_URL env vars) ──────────────
 

@@ -25,61 +25,53 @@ export interface WasmShrincsKeypair {
   exportSigningKey(): unknown;
 }
 
-/// The subset of the `hashsigs-rs` WASM surface the SDK consumes.
+/// The subset of the `hashsigs-rs` WASM surface the SDK consumes. The hash
+/// suite (keccak-256) is baked into every canonical message hash by the
+/// library, so no function takes a parameter-set/suite argument.
 export interface ShrincsWasmModule {
-  supported_parameter_sets(): string[];
   shrincsKeygen(
-    parameterSetId: string,
     seedHex: string,
     maxStatefulSignatures: number
   ): WasmShrincsKeypair;
   shrincsStatefulActionMessageHash(
-    parameterSetId: string,
     expectedPublicKeyCommitmentHex: string,
     context: ActionContext
   ): string;
   shrincsStatelessActionMessageHash(
-    parameterSetId: string,
     expectedPublicKeyCommitmentHex: string,
     context: ActionContext
   ): string;
   shrincsStatefulRotationMessageHash(
-    parameterSetId: string,
     expectedPublicKeyCommitmentHex: string,
     currentPublicKey: ShrincsPublicKey,
     context: RotationContext,
     nextKey: StatefulRotationTarget
   ): string;
   shrincsFullRotationMessageHash(
-    parameterSetId: string,
     expectedPublicKeyCommitmentHex: string,
     currentPublicKey: ShrincsPublicKey,
     context: RotationContext,
     nextKey: RotationTarget
   ): string;
-  shrincs_verify_stateful_raw(
-    parameterSetId: string,
+  shrincsVerifyStatefulRaw(
     expectedPublicKeyCommitmentHex: string,
     publicKey: ShrincsPublicKey,
     messageHex: string,
     signature: StatefulSignature
   ): boolean;
-  shrincs_verify_stateful_action(
-    parameterSetId: string,
+  shrincsVerifyStatefulAction(
     expectedPublicKeyCommitmentHex: string,
     publicKey: ShrincsPublicKey,
     context: ActionContext,
     signature: StatefulSignature
   ): boolean;
-  shrincs_verify_stateless_raw(
-    parameterSetId: string,
+  shrincsVerifyStatelessRaw(
     expectedPublicKeyCommitmentHex: string,
     publicKey: ShrincsPublicKey,
     messageHex: string,
     signature: StatelessSignature
   ): boolean;
-  shrincs_verify_stateless_action(
-    parameterSetId: string,
+  shrincsVerifyStatelessAction(
     expectedPublicKeyCommitmentHex: string,
     publicKey: ShrincsPublicKey,
     context: ActionContext,

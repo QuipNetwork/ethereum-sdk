@@ -45,7 +45,7 @@ import { entryPointV07Abi } from "../../../abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../../addresses.js";
 import { deployErc1967Proxy } from "../../../tests/utils/anvilFixture.js";
 import { shrincsPaymasterAbi } from "../../abi/ShrincsPaymaster.js";
-import { ParameterSetId } from "../../constants.js";
+import { HASH_SUITE_KECCAK_256 } from "../../constants.js";
 import { ShrincsFactoryClient } from "../../shrincsFactoryClient.js";
 import { ShrincsSigner } from "../../shrincsSigner.js";
 import { type ShrincsWalletClient } from "../../shrincsWalletClient.js";
@@ -338,7 +338,7 @@ export async function initializePaymaster(
     owner: Address;
     commitment: Hex;
     maxSignatures: number;
-    parameterSetId?: ParameterSetId;
+    hashSuite?: number;
   }
 ): Promise<void> {
   const hash = await stack.walletClient.writeContract({
@@ -349,7 +349,7 @@ export async function initializePaymaster(
     args: [
       params.owner,
       params.commitment,
-      params.parameterSetId ?? ParameterSetId.Sphincs256sKeccakQ20,
+      params.hashSuite ?? HASH_SUITE_KECCAK_256,
       params.maxSignatures,
     ],
     account: stack.account,

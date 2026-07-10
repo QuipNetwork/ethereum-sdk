@@ -15,42 +15,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/// The only SHRINCS profile shipped today. This is the WASM string id consumed
-/// by `shrincsKeygen` / the message-hash / verify entry points.
-export const PARAMETER_SET_ID = "sphincs-256s-keccak-q20" as const;
-
-/// On-chain `ShrincsTypes.ParameterSetId` enum (uint8). Mirror of the Solidity
-/// enum; used when ABI-encoding the `PublicKey`/rotation-target structs.
-export enum ParameterSetId {
-  Sphincs256sKeccakQ20 = 0,
-  Unsupported = 1,
-}
-
-const ID_BY_ENUM: Record<number, string> = {
-  [ParameterSetId.Sphincs256sKeccakQ20]: PARAMETER_SET_ID,
-};
-
-const ENUM_BY_ID: Record<string, ParameterSetId> = {
-  [PARAMETER_SET_ID]: ParameterSetId.Sphincs256sKeccakQ20,
-};
-
-/// Map the WASM string parameter-set id to the on-chain enum value.
-export function parameterSetIdToEnum(parameterSetId: string): ParameterSetId {
-  const e = ENUM_BY_ID[parameterSetId];
-  if (e === undefined) {
-    throw new Error(`Unsupported SHRINCS parameter set: ${parameterSetId}`);
-  }
-  return e;
-}
-
-/// Map the on-chain enum value back to the WASM string id.
-export function parameterSetEnumToId(parameterSetId: number): string {
-  const id = ID_BY_ENUM[parameterSetId];
-  if (id === undefined) {
-    throw new Error(`Unsupported SHRINCS parameter-set enum: ${parameterSetId}`);
-  }
-  return id;
-}
+/// On-chain `ShrincsTypes` hash-suite ids (uint32). The library hardcodes
+/// keccak-256 into every canonical message hash; the id is a client-agreement
+/// check carried in install payloads, not a dispatch choice.
+export const HASH_SUITE_KECCAK_256 = 1;
+export const HASH_SUITE_UNSUPPORTED = 2;
 
 /// WOTS-C chains revealed per stateful signature for the production profile.
 /// (Structural cross-check for decoded signatures.)

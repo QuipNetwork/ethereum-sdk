@@ -177,245 +177,198 @@ function takeFromExternrefTable0(idx) {
     return value;
 }
 /**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} public_key
- * @param {any} context
- * @param {any} signature
- * @returns {boolean}
- */
-module.exports.shrincs_verify_stateless_action = function(parameter_set_id, expected_public_key_commitment_hex, public_key, context, signature) {
-    const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.shrincs_verify_stateless_action(ptr0, len0, ptr1, len1, public_key, context, signature);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
-};
-
-/**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} public_key
- * @param {string} message_hex
- * @param {any} signature
- * @returns {boolean}
- */
-module.exports.shrincs_verify_stateless_raw = function(parameter_set_id, expected_public_key_commitment_hex, public_key, message_hex, signature) {
-    const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(message_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.shrincs_verify_stateless_raw(ptr0, len0, ptr1, len1, public_key, ptr2, len2, signature);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
-};
-
-function getArrayJsValueFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    const mem = getDataViewMemory0();
-    const result = [];
-    for (let i = ptr; i < ptr + 4 * len; i += 4) {
-        result.push(wasm.__wbindgen_export_4.get(mem.getUint32(i, true)));
-    }
-    wasm.__externref_drop_slice(ptr, len);
-    return result;
-}
-/**
- * @returns {string[]}
- */
-module.exports.supported_parameter_sets = function() {
-    const ret = wasm.supported_parameter_sets();
-    var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
-    wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-    return v1;
-};
-
-/**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} current_public_key
- * @param {any} context
- * @param {any} next_key
- * @returns {string}
- */
-module.exports.shrincsStatefulRotationMessageHash = function(parameter_set_id, expected_public_key_commitment_hex, current_public_key, context, next_key) {
-    let deferred4_0;
-    let deferred4_1;
-    try {
-        const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.shrincsStatefulRotationMessageHash(ptr0, len0, ptr1, len1, current_public_key, context, next_key);
-        var ptr3 = ret[0];
-        var len3 = ret[1];
-        if (ret[3]) {
-            ptr3 = 0; len3 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred4_0 = ptr3;
-        deferred4_1 = len3;
-        return getStringFromWasm0(ptr3, len3);
-    } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
-    }
-};
-
-/**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} context
- * @returns {string}
- */
-module.exports.shrincsStatefulActionMessageHash = function(parameter_set_id, expected_public_key_commitment_hex, context) {
-    let deferred4_0;
-    let deferred4_1;
-    try {
-        const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.shrincsStatefulActionMessageHash(ptr0, len0, ptr1, len1, context);
-        var ptr3 = ret[0];
-        var len3 = ret[1];
-        if (ret[3]) {
-            ptr3 = 0; len3 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred4_0 = ptr3;
-        deferred4_1 = len3;
-        return getStringFromWasm0(ptr3, len3);
-    } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
-    }
-};
-
-/**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} public_key
- * @param {any} context
- * @param {any} signature
- * @returns {boolean}
- */
-module.exports.shrincs_verify_stateful_action = function(parameter_set_id, expected_public_key_commitment_hex, public_key, context, signature) {
-    const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.shrincs_verify_stateful_action(ptr0, len0, ptr1, len1, public_key, context, signature);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
-};
-
-/**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} current_public_key
- * @param {any} context
- * @param {any} next_key
- * @returns {string}
- */
-module.exports.shrincsFullRotationMessageHash = function(parameter_set_id, expected_public_key_commitment_hex, current_public_key, context, next_key) {
-    let deferred4_0;
-    let deferred4_1;
-    try {
-        const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.shrincsFullRotationMessageHash(ptr0, len0, ptr1, len1, current_public_key, context, next_key);
-        var ptr3 = ret[0];
-        var len3 = ret[1];
-        if (ret[3]) {
-            ptr3 = 0; len3 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred4_0 = ptr3;
-        deferred4_1 = len3;
-        return getStringFromWasm0(ptr3, len3);
-    } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
-    }
-};
-
-/**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} public_key
- * @param {string} message_hex
- * @param {any} signature
- * @returns {boolean}
- */
-module.exports.shrincs_verify_stateful_raw = function(parameter_set_id, expected_public_key_commitment_hex, public_key, message_hex, signature) {
-    const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(message_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ret = wasm.shrincs_verify_stateful_raw(ptr0, len0, ptr1, len1, public_key, ptr2, len2, signature);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return ret[0] !== 0;
-};
-
-/**
- * @param {string} parameter_set_id
- * @param {string} expected_public_key_commitment_hex
- * @param {any} context
- * @returns {string}
- */
-module.exports.shrincsStatelessActionMessageHash = function(parameter_set_id, expected_public_key_commitment_hex, context) {
-    let deferred4_0;
-    let deferred4_1;
-    try {
-        const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.shrincsStatelessActionMessageHash(ptr0, len0, ptr1, len1, context);
-        var ptr3 = ret[0];
-        var len3 = ret[1];
-        if (ret[3]) {
-            ptr3 = 0; len3 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred4_0 = ptr3;
-        deferred4_1 = len3;
-        return getStringFromWasm0(ptr3, len3);
-    } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
-    }
-};
-
-/**
- * @param {string} parameter_set_id
  * @param {string} seed_hex
  * @param {number} max_stateful_signatures
  * @returns {WasmShrincsKeypair}
  */
-module.exports.shrincsKeygen = function(parameter_set_id, seed_hex, max_stateful_signatures) {
-    const ptr0 = passStringToWasm0(parameter_set_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+module.exports.shrincsKeygen = function(seed_hex, max_stateful_signatures) {
+    const ptr0 = passStringToWasm0(seed_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(seed_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.shrincsKeygen(ptr0, len0, ptr1, len1, max_stateful_signatures);
+    const ret = wasm.shrincsKeygen(ptr0, len0, max_stateful_signatures);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
     return WasmShrincsKeypair.__wrap(ret[0]);
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ShrincsPublicKey} public_key
+ * @param {ActionContext} context
+ * @param {StatelessSignature} signature
+ * @returns {boolean}
+ */
+module.exports.shrincsVerifyStatelessAction = function(expected_public_key_commitment_hex, public_key, context, signature) {
+    const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.shrincsVerifyStatelessAction(ptr0, len0, public_key, context, signature);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ShrincsPublicKey} public_key
+ * @param {string} message_hex
+ * @param {StatefulSignature} signature
+ * @returns {boolean}
+ */
+module.exports.shrincsVerifyStatefulRaw = function(expected_public_key_commitment_hex, public_key, message_hex, signature) {
+    const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(message_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.shrincsVerifyStatefulRaw(ptr0, len0, public_key, ptr1, len1, signature);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ShrincsPublicKey} current_public_key
+ * @param {RotationContext} context
+ * @param {RotationTarget} next_key
+ * @returns {string}
+ */
+module.exports.shrincsFullRotationMessageHash = function(expected_public_key_commitment_hex, current_public_key, context, next_key) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.shrincsFullRotationMessageHash(ptr0, len0, current_public_key, context, next_key);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ShrincsPublicKey} current_public_key
+ * @param {RotationContext} context
+ * @param {StatefulRotationTarget} next_key
+ * @returns {string}
+ */
+module.exports.shrincsStatefulRotationMessageHash = function(expected_public_key_commitment_hex, current_public_key, context, next_key) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.shrincsStatefulRotationMessageHash(ptr0, len0, current_public_key, context, next_key);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ActionContext} context
+ * @returns {string}
+ */
+module.exports.shrincsStatefulActionMessageHash = function(expected_public_key_commitment_hex, context) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.shrincsStatefulActionMessageHash(ptr0, len0, context);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ActionContext} context
+ * @returns {string}
+ */
+module.exports.shrincsStatelessActionMessageHash = function(expected_public_key_commitment_hex, context) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.shrincsStatelessActionMessageHash(ptr0, len0, context);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ShrincsPublicKey} public_key
+ * @param {ActionContext} context
+ * @param {StatefulSignature} signature
+ * @returns {boolean}
+ */
+module.exports.shrincsVerifyStatefulAction = function(expected_public_key_commitment_hex, public_key, context, signature) {
+    const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.shrincsVerifyStatefulAction(ptr0, len0, public_key, context, signature);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
+};
+
+/**
+ * @param {string} expected_public_key_commitment_hex
+ * @param {ShrincsPublicKey} public_key
+ * @param {string} message_hex
+ * @param {StatelessSignature} signature
+ * @returns {boolean}
+ */
+module.exports.shrincsVerifyStatelessRaw = function(expected_public_key_commitment_hex, public_key, message_hex, signature) {
+    const ptr0 = passStringToWasm0(expected_public_key_commitment_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(message_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.shrincsVerifyStatelessRaw(ptr0, len0, public_key, ptr1, len1, signature);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] !== 0;
 };
 
 function _assertClass(instance, klass) {
@@ -1004,9 +957,9 @@ class WasmShrincsAccount {
         wasm.__wbg_wasmshrincsaccount_free(ptr, 0);
     }
     /**
-     * @param {any} current_public_key
-     * @param {any} recovery_signature
-     * @param {any} next_key
+     * @param {ShrincsPublicKey} current_public_key
+     * @param {StatelessSignature} recovery_signature
+     * @param {RotationTarget} next_key
      * @returns {boolean}
      */
     rotateFullKey(current_public_key, recovery_signature, next_key) {
@@ -1028,9 +981,9 @@ class WasmShrincsAccount {
         }
     }
     /**
-     * @param {any} current_public_key
-     * @param {any} recovery_signature
-     * @param {any} next_key
+     * @param {ShrincsPublicKey} current_public_key
+     * @param {StatelessSignature} recovery_signature
+     * @param {StatefulRotationTarget} next_key
      * @returns {boolean}
      */
     rotateToFreshKey(current_public_key, recovery_signature, next_key) {
@@ -1041,10 +994,10 @@ class WasmShrincsAccount {
         return ret[0] !== 0;
     }
     /**
-     * @param {any} public_key
+     * @param {ShrincsPublicKey} public_key
      * @param {string} action_type_hex
      * @param {string} payload_hash_hex
-     * @param {any} signature
+     * @param {StatefulSignature} signature
      * @returns {boolean}
      */
     verifyStatefulAction(public_key, action_type_hex, payload_hash_hex, signature) {
@@ -1059,10 +1012,10 @@ class WasmShrincsAccount {
         return ret[0] !== 0;
     }
     /**
-     * @param {any} public_key
+     * @param {ShrincsPublicKey} public_key
      * @param {string} action_type_hex
      * @param {string} payload_hash_hex
-     * @param {any} signature
+     * @param {StatelessSignature} signature
      * @returns {boolean}
      */
     verifyStatelessAction(public_key, action_type_hex, payload_hash_hex, signature) {
@@ -1134,7 +1087,7 @@ class WasmShrincsAccount {
         return this;
     }
     /**
-     * @returns {any}
+     * @returns {ShrincsAccountSnapshot}
      */
     snapshot() {
         const ret = wasm.wasmshrincsaccount_snapshot(this.__wbg_ptr);
@@ -1172,7 +1125,7 @@ class WasmShrincsKeypair {
         wasm.__wbg_wasmshrincskeypair_free(ptr, 0);
     }
     /**
-     * @returns {any}
+     * @returns {ShrincsPublicKey}
      */
     publicKey() {
         const ret = wasm.wasmshrincskeypair_publicKey(this.__wbg_ptr);
@@ -1183,7 +1136,7 @@ class WasmShrincsKeypair {
     }
     /**
      * @param {string} message_hex
-     * @returns {any}
+     * @returns {StatefulSignature}
      */
     signStatefulRaw(message_hex) {
         const ptr0 = passStringToWasm0(message_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1195,7 +1148,7 @@ class WasmShrincsKeypair {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
-     * @returns {any}
+     * @returns {ShrincsExportedSigningKey}
      */
     exportSigningKey() {
         const ret = wasm.wasmshrincskeypair_exportSigningKey(this.__wbg_ptr);
@@ -1206,7 +1159,7 @@ class WasmShrincsKeypair {
     }
     /**
      * @param {string} message_hex
-     * @returns {any}
+     * @returns {StatelessSignature}
      */
     signStatelessRaw(message_hex) {
         const ptr0 = passStringToWasm0(message_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1227,7 +1180,7 @@ class WasmShrincsKeypair {
      * which leaf is burned.
      * @param {string} message_hex
      * @param {number} leaf
-     * @returns {any}
+     * @returns {StatefulSignature}
      */
     signStatefulRawAt(message_hex, leaf) {
         const ptr0 = passStringToWasm0(message_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
