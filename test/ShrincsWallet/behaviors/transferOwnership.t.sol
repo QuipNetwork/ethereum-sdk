@@ -62,7 +62,8 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_fullHandover() public {
         ShrincsTypes.RotationTarget memory nextKey = _nextKey();
         bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
-        ShrincsTypes.StatelessSignature memory recoverySig = _signFullRotation(nextKey);
+        ShrincsTypes.StatelessSignature memory recoverySig =
+            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
         ShrincsTypes.StatefulSignature memory ownerSig = _ownerBindingSig(NEW_OWNER, nextCommitment);
 
         vm.prank(OWNER);
@@ -78,11 +79,28 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         // signature's `(newOwner, nextCommitment)` payload fails verification.
         ShrincsTypes.RotationTarget memory nextKey = _nextKey();
         bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
-        ShrincsTypes.StatelessSignature memory recoverySig = _signFullRotation(nextKey);
+        ShrincsTypes.StatelessSignature memory recoverySig =
+            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
         ShrincsTypes.StatefulSignature memory ownerSig = _ownerBindingSig(NEW_OWNER, nextCommitment);
 
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, makeAddr("wrongOwner"));
+    }
+
+    /// @dev The recovery→handover direction: a recovery signature signed for `recoverWallet`
+    ///      must NOT serve as the recovery half of a handover bundle — rejected by the tagged
+    ///      rotation domain (independently of the owner-binding signature, which is also valid
+    ///      here to isolate what is being tested).
+    function test_transferOwnership_revertsWhen_signatureSignedForRecoverWallet() public {
+        ShrincsTypes.RotationTarget memory nextKey = _nextKey();
+        bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
+        ShrincsTypes.StatelessSignature memory recoverySig =
+            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        ShrincsTypes.StatefulSignature memory ownerSig = _ownerBindingSig(NEW_OWNER, nextCommitment);
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER);
     }
 }

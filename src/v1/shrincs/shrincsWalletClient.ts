@@ -47,6 +47,8 @@ import {
   ACTION_TRANSFER_OWNERSHIP,
   ACTION_UPGRADE,
   ACTION_WITHDRAW,
+  ROTATION_DOMAIN_RECOVER_WALLET,
+  ROTATION_DOMAIN_TRANSFER_OWNERSHIP,
   buildActionContext,
   buildRotationContext,
   buildStatefulRotationTarget,
@@ -57,6 +59,7 @@ import {
   executePayloadHash,
   publicKeyToAbi,
   rotateKeyPayloadHash,
+  rotationDomainSeparator,
   setErc1271KeyPayloadHash,
   toRotationTarget,
   transferOwnershipPayloadHash,
@@ -609,8 +612,13 @@ export class ShrincsWalletClient {
     });
     const ownerBindingSignature = keypair.signStatefulActionAt(ownerCtx, leaf);
 
+    // Handover-tagged rotation domain — this signature can never double as a
+    // `recoverWallet` input (see `rotationDomainSeparator`).
     const rctx = buildRotationContext({
-      domainSeparator: ds,
+      domainSeparator: rotationDomainSeparator(
+        ds,
+        ROTATION_DOMAIN_TRANSFER_OWNERSHIP
+      ),
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
     });
@@ -644,7 +652,10 @@ export class ShrincsWalletClient {
     );
     const rotationTarget: RotationTarget = toRotationTarget(params.nextKey);
     const rctx = buildRotationContext({
-      domainSeparator: domainSeparator(this.chainId, this.walletAddress),
+      domainSeparator: rotationDomainSeparator(
+        domainSeparator(this.chainId, this.walletAddress),
+        ROTATION_DOMAIN_RECOVER_WALLET
+      ),
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
     });

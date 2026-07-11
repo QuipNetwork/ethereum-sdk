@@ -62,6 +62,17 @@ library ShrincsWalletCodec {
     bytes32 internal constant ACTION_ERC1271 =
         keccak256("quip.shrincs.action.erc1271");
 
+    /// @dev Per-path tags folded into `RotationContext.domainSeparator` (see
+    ///      `rotationDomainSeparator`). `RotationContext` carries no action discriminator, so
+    ///      without these a recovery signature produced for a `transferOwnership` bundle would
+    ///      double as a complete `recoverWallet` input — the submitter could drop the stateful
+    ///      owner-binding signature and downgrade a signed handover into a plain rotation.
+    ///      Distinct tags make the two stateless-rotation paths mutually invalid.
+    bytes32 internal constant ROTATION_DOMAIN_RECOVER_WALLET =
+        keccak256("quip.shrincs.rotation.recoverWallet");
+    bytes32 internal constant ROTATION_DOMAIN_TRANSFER_OWNERSHIP =
+        keccak256("quip.shrincs.rotation.transferOwnership");
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       DECODERS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -200,7 +211,18 @@ library ShrincsWalletCodec {
             });
     }
 
-    /// @dev Assembles a canonical `RotationContext` for the break-glass stateless rotation.
+    /// @dev Derives the `RotationContext.domainSeparator` for one stateless-rotation path by
+    ///      folding a per-path `ROTATION_DOMAIN_*` tag into the wallet's base signing domain.
+    ///      The result is opaque to the SHRINCS library — the tag rides inside the separator.
+    function rotationDomainSeparator(
+        bytes32 base,
+        bytes32 tag
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(base, tag);
+    }
+
+    /// @dev Assembles a canonical `RotationContext` for a stateless rotation; `domainSeparator`
+    ///      must already be path-tagged via `rotationDomainSeparator`.
     function buildRotationContext(
         bytes32 domainSeparator,
         uint256 nonce,

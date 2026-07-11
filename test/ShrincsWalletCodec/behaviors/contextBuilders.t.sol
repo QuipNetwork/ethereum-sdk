@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletCodecTest} from "../ShrincsWalletCodec.t.sol";
 
 contract ShrincsWalletCodec_contextBuilders is ShrincsWalletCodecTest {
@@ -25,5 +26,17 @@ contract ShrincsWalletCodec_contextBuilders is ShrincsWalletCodecTest {
         assertEq(ctx.domainSeparator, dom);
         assertEq(ctx.nonce, 3);
         assertEq(ctx.keyVersion, 4);
+    }
+
+    function test_rotationDomainSeparator_foldsTagIntoBase() public view {
+        bytes32 base = keccak256("base");
+        bytes32 tag = keccak256("tag");
+        assertEq(codec.exposed_rotationDomainSeparator(base, tag), keccak256(abi.encodePacked(base, tag)));
+    }
+
+    function test_rotationDomainTags_distinctPerPath() public pure {
+        assertEq(Codec.ROTATION_DOMAIN_RECOVER_WALLET, keccak256("quip.shrincs.rotation.recoverWallet"));
+        assertEq(Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP, keccak256("quip.shrincs.rotation.transferOwnership"));
+        assertTrue(Codec.ROTATION_DOMAIN_RECOVER_WALLET != Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
     }
 }

@@ -100,6 +100,10 @@ contract ShrincsWalletCodecHarness {
         return Codec.buildRotationContext(domainSeparator, nonce, keyVersion);
     }
 
+    function exposed_rotationDomainSeparator(bytes32 base, bytes32 tag) external pure returns (bytes32) {
+        return Codec.rotationDomainSeparator(base, tag);
+    }
+
     /* ─────────────────────────── PAYLOAD HASHES ────────────────────────────── */
 
     function exposed_erc4337PayloadHash(bytes32 userOpHash, uint256 fee) external pure returns (bytes32) {

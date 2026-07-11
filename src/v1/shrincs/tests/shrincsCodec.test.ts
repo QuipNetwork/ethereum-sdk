@@ -5,9 +5,11 @@
 import {
   type Address,
   type Hex,
+  concat,
   decodeAbiParameters,
   keccak256,
   sliceHex,
+  toBytes,
   toHex,
 } from "viem";
 
@@ -83,6 +85,31 @@ describe("shrincsCodec", () => {
     expect(
       Codec.domainSeparator(CHAIN_ID, WALLET, keccak256(toHex("other-tag")))
     ).not.toBe(base);
+  });
+
+  it("rotation domain separator folds a distinct per-path tag into the base", () => {
+    const base = Codec.domainSeparator(CHAIN_ID, WALLET);
+    const recover = Codec.rotationDomainSeparator(
+      base,
+      Codec.ROTATION_DOMAIN_RECOVER_WALLET
+    );
+    const handover = Codec.rotationDomainSeparator(
+      base,
+      Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP
+    );
+    // Mirrors `EfficientHashLib.hash(base, tag)` on-chain.
+    expect(recover).toBe(
+      keccak256(concat([base, Codec.ROTATION_DOMAIN_RECOVER_WALLET]))
+    );
+    // The two paths must never share a rotation domain (handover→recovery downgrade).
+    expect(recover).not.toBe(handover);
+    expect(recover).not.toBe(base);
+    expect(Codec.ROTATION_DOMAIN_RECOVER_WALLET).toBe(
+      keccak256(toBytes("quip.shrincs.rotation.recoverWallet"))
+    );
+    expect(Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP).toBe(
+      keccak256(toBytes("quip.shrincs.rotation.transferOwnership"))
+    );
   });
 
   it("payload hashes bind every field", () => {

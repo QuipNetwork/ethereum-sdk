@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -31,7 +32,8 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_succeeds() public {
         ShrincsTypes.RotationTarget memory nextKey = _nextKey();
-        ShrincsTypes.StatelessSignature memory recoverySig = _signFullRotation(nextKey);
+        ShrincsTypes.StatelessSignature memory recoverySig =
+            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
         uint256 nonceBefore = wallet.actionNonce();
         vm.prank(OWNER);
@@ -40,5 +42,17 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         assertEq(wallet.owner(), OWNER, "owner unchanged on recovery");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
         assertEq(wallet.actionNonce(), nonceBefore + 1, "stateless path advances the action nonce");
+    }
+
+    /// @dev The handover→recovery downgrade: a recovery signature signed as part of a
+    ///      `transferOwnership` bundle must NOT be accepted here — the tagged rotation domains
+    ///      make the two stateless-rotation paths mutually invalid.
+    function test_recoverWallet_revertsWhen_signatureSignedForTransferOwnership() public {
+        ShrincsTypes.RotationTarget memory nextKey = _nextKey();
+        ShrincsTypes.StatelessSignature memory handoverSig =
+            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.recoverWallet(_mainPk(), handoverSig, nextKey);
     }
 }

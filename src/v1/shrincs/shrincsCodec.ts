@@ -68,6 +68,17 @@ export const ACTION_SET_ERC1271_KEY = keccakUtf8(
 export const ACTION_ROTATE_KEY = keccakUtf8("quip.shrincs.action.rotateKey");
 export const ACTION_ERC1271 = keccakUtf8("quip.shrincs.action.erc1271");
 
+/// Per-path tags folded into `RotationContext.domainSeparator` (see
+/// `rotationDomainSeparator`). `RotationContext` carries no action
+/// discriminator, so distinct tags are what keep a `transferOwnership`
+/// recovery signature from doubling as a `recoverWallet` input.
+export const ROTATION_DOMAIN_RECOVER_WALLET = keccakUtf8(
+  "quip.shrincs.rotation.recoverWallet"
+);
+export const ROTATION_DOMAIN_TRANSFER_OWNERSHIP = keccakUtf8(
+  "quip.shrincs.rotation.transferOwnership"
+);
+
 const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -100,6 +111,13 @@ export function domainSeparator(
   domainTag: Hex = DOMAIN_TAG
 ): Hex {
   return hashWords(domainTag, word(chainId), addressWord(contractAddress));
+}
+
+/// `RotationContext.domainSeparator` for one stateless-rotation path:
+/// the wallet's base signing domain with a per-path `ROTATION_DOMAIN_*` tag
+/// folded in (mirrors `ShrincsWalletCodec.rotationDomainSeparator`).
+export function rotationDomainSeparator(base: Hex, tag: Hex): Hex {
+  return hashWords(base, tag);
 }
 
 /// Bundle commitment as the contract/keygen computes it:

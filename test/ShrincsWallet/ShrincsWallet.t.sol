@@ -153,10 +153,13 @@ contract ShrincsWalletTest is Test {
         );
     }
 
-    /// @dev Builds the wallet's canonical rotation context against its LIVE nonce/epoch.
-    function _rotationContext() internal view returns (ShrincsTypes.RotationContext memory) {
+    /// @dev Builds the wallet's canonical rotation context against its LIVE nonce/epoch, under
+    ///      the per-path tagged rotation domain (`Codec.ROTATION_DOMAIN_*`).
+    function _rotationContext(bytes32 rotationTag) internal view returns (ShrincsTypes.RotationContext memory) {
         return Codec.buildRotationContext(
-            wallet.exposed_shrincsDomainSeparator(), wallet.actionNonce(), wallet.keyVersion()
+            Codec.rotationDomainSeparator(wallet.exposed_shrincsDomainSeparator(), rotationTag),
+            wallet.actionNonce(),
+            wallet.keyVersion()
         );
     }
 
@@ -198,14 +201,15 @@ contract ShrincsWalletTest is Test {
         return _signStatelessRaw(erc1271Key, erc1271Pk, message);
     }
 
-    /// @dev Signs the canonical FULL-rotation recovery message with the main key's stateless half.
-    function _signFullRotation(ShrincsTypes.RotationTarget memory nextKey)
+    /// @dev Signs the canonical FULL-rotation recovery message with the main key's stateless half,
+    ///      under the given path's tagged rotation domain.
+    function _signFullRotation(ShrincsTypes.RotationTarget memory nextKey, bytes32 rotationTag)
         internal
         returns (ShrincsTypes.StatelessSignature memory)
     {
         ShrincsTypes.PublicKey memory pk = mainPk;
         bytes memory message = abi.encodePacked(
-            _fullRotationMessageHash(wallet.getShrincsPublicKeyCommitment(), pk, _rotationContext(), nextKey)
+            _fullRotationMessageHash(wallet.getShrincsPublicKeyCommitment(), pk, _rotationContext(rotationTag), nextKey)
         );
         return _signStatelessRaw(mainKey, pk, message);
     }

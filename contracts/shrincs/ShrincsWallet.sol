@@ -438,9 +438,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // A genuine handover must hand the NEW owner an entirely fresh bundle (new stateless
         // recovery root), so the OLD owner retains neither spend nor break-glass authority. That
         // full replacement is authorized by the current STATELESS recovery key, verified against
-        // the CURRENT commitment.
+        // the CURRENT commitment. The handover-tagged rotation domain keeps this signature from
+        // doubling as a `recoverWallet` input (handover→recovery downgrade).
         ShrincsTypes.RotationContext memory rctx = Codec.buildRotationContext(
-            _shrincsDomainSeparator(),
+            Codec.rotationDomainSeparator(
+                _shrincsDomainSeparator(),
+                Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP
+            ),
             $.nonce,
             $.keyVersion
         );
@@ -563,8 +567,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ) external payable onlyOwner {
         Storage.Layout storage $ = Storage.layout();
 
+        // Recovery-tagged rotation domain: a signature over this context is valid ONLY here,
+        // never as the recovery half of a `transferOwnership` bundle (and vice versa).
         ShrincsTypes.RotationContext memory ctx = Codec.buildRotationContext(
-            _shrincsDomainSeparator(),
+            Codec.rotationDomainSeparator(
+                _shrincsDomainSeparator(),
+                Codec.ROTATION_DOMAIN_RECOVER_WALLET
+            ),
             $.nonce,
             $.keyVersion
         );
