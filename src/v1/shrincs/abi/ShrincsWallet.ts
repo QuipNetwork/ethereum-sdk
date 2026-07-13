@@ -1,5 +1,5 @@
 // Auto-generated from out/ShrincsWallet.sol/ShrincsWallet.json — do not edit by hand.
-// Regenerate after `forge build` when the contract interface changes.
+// Regenerate with `npm run copy-abi` after `forge build` when the contract interface changes.
 
 export const shrincsWalletAbi = [
   {
@@ -183,35 +183,6 @@ export const shrincsWalletAbi = [
     "name": "execute",
     "inputs": [
       {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "value",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "data",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "result",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "execute",
-    "inputs": [
-      {
         "name": "publicKey",
         "type": "tuple",
         "internalType": "struct ShrincsTypes.PublicKey",
@@ -279,9 +250,77 @@ export const shrincsWalletAbi = [
         "name": "data",
         "type": "bytes",
         "internalType": "bytes"
+      },
+      {
+        "name": "maxFee",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "execute",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "maxFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "result",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "execute",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
     "stateMutability": "payable"
   },
   {
@@ -309,11 +348,52 @@ export const shrincsWalletAbi = [
             "internalType": "bytes"
           }
         ]
+      },
+      {
+        "name": "maxFee",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
         "name": "results",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "executeBatch",
+    "inputs": [
+      {
+        "name": "",
+        "type": "tuple[]",
+        "internalType": "struct ERC4337.Call[]",
+        "components": [
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "value",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "data",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
         "type": "bytes[]",
         "internalType": "bytes[]"
       }
@@ -1642,6 +1722,22 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
+    "name": "ExecuteFeeExceedsCap",
+    "inputs": [
+      {
+        "name": "fee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "FnSelectorNotRecognized",
     "inputs": []
   },
@@ -1746,6 +1842,11 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "StaleStatefulLeaf",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StandardExecuteDisabled",
     "inputs": []
   },
   {

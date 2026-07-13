@@ -351,6 +351,37 @@ export class DelegateExecuteDisabledError extends QuipError {
   }
 }
 
+/// The factory's live execute fee exceeds the `maxFee` ceiling the signer
+/// authorized. Only fee INCREASES past the cap trigger this — decreases charge
+/// the lower live fee. Re-sign with a fresh (or higher) `maxFee`.
+export class ExecuteFeeExceedsCapError extends QuipError {
+  readonly fee?: bigint;
+  readonly maxFee?: bigint;
+  constructor(fee?: bigint, maxFee?: bigint, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EXECUTE_FEE_EXCEEDS_CAP",
+      fee === undefined
+        ? "Live execute fee exceeds the signed maxFee ceiling; re-sign with a fresh maxFee"
+        : `Live execute fee ${fee} exceeds the signed maxFee ceiling ${maxFee ?? "?"}; re-sign with a fresh maxFee`,
+      opts
+    );
+    this.fee = fee;
+    this.maxFee = maxFee;
+  }
+}
+
+/// The inherited un-capped `execute`/`executeBatch` selector was called; only
+/// the `maxFee`-capped variants exist on this wallet.
+export class StandardExecuteDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STANDARD_EXECUTE_DISABLED",
+      "The un-capped execute/executeBatch selectors are disabled; use the maxFee-capped variants",
+      opts
+    );
+  }
+}
+
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    PAYMASTER ERRORS                         */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

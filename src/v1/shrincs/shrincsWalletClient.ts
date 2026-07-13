@@ -427,26 +427,36 @@ export class ShrincsWalletClient {
 
   /// Execute a single call. `value == 0 && data == "0x"` consumes a leaf without
   /// executing (emits `LeafConsumedOnly`).
+  ///
+  /// FEE CAP — `maxFee` (default: the live `executeFee` at prepare time) is the
+  /// signed CEILING, not the charged amount: the wallet charges the live fee at
+  /// landing and reverts `ExecuteFeeExceedsCap` only if it exceeds the cap. A
+  /// fee decrease between signing and landing succeeds at the lower price; pass
+  /// a higher `maxFee` for headroom against increases.
   async execute(
-    params: { target: Address; value?: bigint; data?: Hex },
+    params: { target: Address; value?: bigint; data?: Hex; maxFee?: bigint },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
     const value = params.value ?? 0n;
     const data = params.data ?? "0x";
     const { keypair, state, leaf, domainSeparator: ds } =
       await this.prepareStatefulOp(opts);
+    const maxFee = params.maxFee ?? state.executeFee;
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_EXECUTE,
-      payloadHash: executePayloadHash(params.target, value, keccakData(data), state.executeFee),
+      payloadHash: executePayloadHash(params.target, value, keccakData(data), maxFee),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
+    // msg.value funds the ceiling; any excess over the live fee stays in the
+    // wallet (the user's own funds), and the call cannot underfund a fee move
+    // within the cap.
     return this.submit(
       "execute",
-      [publicKeyToAbi(keypair.publicKey), signature, params.target, value, data],
-      value + state.executeFee,
+      [publicKeyToAbi(keypair.publicKey), signature, params.target, value, data, maxFee],
+      value + maxFee,
       opts
     );
   }
@@ -746,26 +756,29 @@ export class ShrincsWalletClient {
   /*  ── ERC-4337 (wallet as sender) ──────────────────────────────────────  */
 
   /// Assemble an unsigned `PackedUserOperation` whose `callData` invokes the
-  /// EntryPoint-only `execute(target, value, data)` on this wallet. Fill the
-  /// signature with `signExecuteUserOp`.
+  /// EntryPoint-only `execute(target, value, data, maxFee)` on this wallet.
+  /// `maxFee` is the signed execution-fee ceiling: it rides in `callData`, so
+  /// signing the userOp binds it with no digest work (typically the live
+  /// `executeFee`, e.g. from `getWalletState()`; higher for headroom). Fill
+  /// the signature with `signExecuteUserOp`.
   buildExecuteUserOp(
-    params: ShrincsCall & UserOpEnvelope
+    params: ShrincsCall & UserOpEnvelope & { maxFee: bigint }
   ): PackedUserOperation {
     const callData = encodeFunctionData({
       abi: shrincsWalletAbi,
       functionName: "execute",
-      args: [params.target, params.value ?? 0n, params.data ?? "0x"],
+      args: [params.target, params.value ?? 0n, params.data ?? "0x", params.maxFee],
     });
     return this.assembleUserOp(callData, params);
   }
 
   /// Assemble an unsigned `PackedUserOperation` whose `callData` invokes the
-  /// EntryPoint-only `executeBatch(Call[])` — an atomic multi-call. A single
-  /// stateful leaf authorizes the whole batch (the signature binds the
-  /// `userOpHash`, which already commits to every call). Fill the signature with
-  /// `signExecuteUserOp`.
+  /// EntryPoint-only `executeBatch(Call[], maxFee)` — an atomic multi-call. A
+  /// single stateful leaf authorizes the whole batch (the signature binds the
+  /// `userOpHash`, which already commits to every call) and a single `maxFee`
+  /// caps the one per-batch fee. Fill the signature with `signExecuteUserOp`.
   buildExecuteBatchUserOp(
-    params: { calls: readonly ShrincsCall[] } & UserOpEnvelope
+    params: { calls: readonly ShrincsCall[]; maxFee: bigint } & UserOpEnvelope
   ): PackedUserOperation {
     const callData = encodeFunctionData({
       abi: shrincsWalletAbi,
@@ -776,6 +789,7 @@ export class ShrincsWalletClient {
           value: c.value ?? 0n,
           data: c.data ?? "0x",
         })),
+        params.maxFee,
       ],
     });
     return this.assembleUserOp(callData, params);
@@ -802,9 +816,16 @@ export class ShrincsWalletClient {
   }
 
   /// Sign a `PackedUserOperation` for this wallet: read state, recover the key,
-  /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + execute fee
-  /// + live `actionNonce` into `ACTION_ERC4337_EXECUTE`, and return the userOp
-  /// with its `signature` field filled (plus the `userOpHash` and `leaf` used).
+  /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + live
+  /// `actionNonce` into `ACTION_ERC4337_EXECUTE`, and return the userOp with
+  /// its `signature` field filled (plus the `userOpHash` and `leaf` used).
+  ///
+  /// FEE CAP: no fee enters the digest — the `maxFee` ceiling the build methods
+  /// put into `callData` is covered by `userOpHash`, and validation reads no
+  /// fee (ERC-7562). If the live fee rises past the signed cap before landing,
+  /// the op still validates and the EXECUTION phase reverts — consuming the
+  /// leaf and advancing the nonce (inherent to validation-phase stateful
+  /// signatures); sign with headroom if fee changes are a concern.
   ///
   /// SERIALIZATION: the bound action nonce advances when any wallet signature is
   /// consumed, so ops must land in signing order — signing a second op before
@@ -820,7 +841,6 @@ export class ShrincsWalletClient {
       entryPoint: params.entryPoint,
       chainId: BigInt(this.chainId),
       wallet: this.walletAddress,
-      executeFee: state.executeFee,
       keyVersion: state.keyVersion,
       leaf,
       actionNonce: state.actionNonce,

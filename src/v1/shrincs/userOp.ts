@@ -96,7 +96,6 @@ export interface SignWalletUserOpParams {
   entryPoint: Address;
   chainId: bigint;
   wallet: Address;
-  executeFee: bigint;
   keyVersion: bigint;
   /// Lowest unused stateful leaf, read from the on-chain bitmap by the client.
   leaf: number;
@@ -112,9 +111,12 @@ export interface SignedWalletUserOp {
   userOpHash: Hex;
 }
 
-/// Sign a wallet ERC-4337 userOp: bind the EntryPoint `userOpHash` + execute fee
-/// into the canonical `ACTION_ERC4337_EXECUTE` action, sign at `leaf`, and ABI
-/// pack `(PublicKey, StatefulSignature)` into the signature field.
+/// Sign a wallet ERC-4337 userOp: bind the EntryPoint `userOpHash` into the
+/// canonical `ACTION_ERC4337_EXECUTE` action, sign at `leaf`, and ABI pack
+/// `(PublicKey, StatefulSignature)` into the signature field. No fee is bound
+/// here: the signer's `maxFee` ceiling is a calldata parameter of the capped
+/// `execute`/`executeBatch` variants, covered by `userOpHash` via `callData`
+/// (ERC-7562: validation reads no fee).
 export function signWalletUserOp(
   params: SignWalletUserOpParams
 ): SignedWalletUserOp {
@@ -124,7 +126,7 @@ export function signWalletUserOp(
     nonce: params.actionNonce,
     keyVersion: params.keyVersion,
     actionType: ACTION_ERC4337_EXECUTE,
-    payloadHash: erc4337PayloadHash(userOpHash, params.executeFee),
+    payloadHash: erc4337PayloadHash(userOpHash),
   });
   const signature = params.keypair.signStatefulActionAt(ctx, params.leaf);
   return {

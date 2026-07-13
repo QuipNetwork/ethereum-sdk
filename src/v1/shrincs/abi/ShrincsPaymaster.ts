@@ -1,5 +1,5 @@
 // Auto-generated from out/ShrincsPaymaster.sol/ShrincsPaymaster.json — do not edit by hand.
-// Regenerate after `forge build` when the contract interface changes.
+// Regenerate with `npm run copy-abi` after `forge build` when the contract interface changes.
 
 export const shrincsPaymasterAbi = [
   {

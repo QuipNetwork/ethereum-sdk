@@ -143,15 +143,21 @@ export function publicKeyCommitment(parts: {
 /*                     PAYLOAD HASHES                          */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-export const erc4337PayloadHash = (userOpHash: Hex, fee: bigint): Hex =>
-  hashWords(userOpHash, word(fee));
+/// ONE word — no fee: the signer's `maxFee` ceiling rides in `callData`, which
+/// `userOpHash` already commits to (ERC-7562: validation must not read the
+/// factory's live fee).
+export const erc4337PayloadHash = (userOpHash: Hex): Hex =>
+  hashWords(userOpHash);
 
+/// `maxFee` is the signer's fee CEILING, not the charged amount: execution
+/// reads the factory's live fee and reverts `ExecuteFeeExceedsCap` only if it
+/// exceeds this cap (decreases succeed at the lower price).
 export const executePayloadHash = (
   target: Address,
   value: bigint,
   dataKeccak: Hex,
-  fee: bigint
-): Hex => hashWords(addressWord(target), word(value), dataKeccak, word(fee));
+  maxFee: bigint
+): Hex => hashWords(addressWord(target), word(value), dataKeccak, word(maxFee));
 
 export const withdrawPayloadHash = (to: Address, amount: bigint): Hex =>
   hashWords(addressWord(to), word(amount));

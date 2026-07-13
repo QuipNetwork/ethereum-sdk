@@ -40,6 +40,8 @@ import {
   UnsupportedHashSuiteError,
   StaleStatefulLeafError,
   StaleActionNonceError,
+  ExecuteFeeExceedsCapError,
+  StandardExecuteDisabledError,
   StatefulBudgetExhaustedError,
   ImplementationNotVettedError,
   ImplementationDeprecatedError,
@@ -98,6 +100,10 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   StaleStatefulLeaf: (_, o) => new StaleStatefulLeafError(undefined, o),
   StaleActionNonce: (args, o) =>
     new StaleActionNonceError(args[0] as bigint, args[1] as bigint, o),
+  // `ExecuteFeeExceedsCap(uint256 fee, uint256 maxFee)`.
+  ExecuteFeeExceedsCap: (args, o) =>
+    new ExecuteFeeExceedsCapError(args[0] as bigint, args[1] as bigint, o),
+  StandardExecuteDisabled: (_, o) => new StandardExecuteDisabledError(o),
   StatefulBudgetExhausted: (_, o) =>
     new StatefulBudgetExhaustedError(undefined, undefined, o),
   ImplementationNotVetted: (_, o) => new ImplementationNotVettedError(o),

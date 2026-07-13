@@ -204,6 +204,41 @@ A reverted UserOp execution still **commits** the wallet's key rotation (the Ent
 
 ---
 
+## SHRINCS wallets (`/v1/shrincs`)
+
+`ShrincsWalletClient` (import from `@quip.network/ethereum-sdk/v1/shrincs`) operates the SHRINCS hash-based wallet family. The mental model differs from WOTS+ in two ways that change how you must sequence operations:
+
+**One-time leaves, budgeted.** Normal actions sign with a stateful leaf (`leaf index = authPath.length`), each usable once per key epoch, bounded by `maxSignatures`. The client picks the lowest unused leaf automatically by reading the on-chain bitmap. Rotate before the budget exhausts (`rotateKey`); break-glass recovery (`recoverWallet`) uses the stateless half.
+
+**Strict signing-order serialization.** Every signed context binds the wallet's live `actionNonce()`, and every consumed signature advances it. One outstanding signed authorization at a time: sign → land → sign. Signing a second op before the first lands binds a stale nonce and is rejected (`AA24` on the 4337 path; `InvalidSignatureError` on the direct path, leaf preserved). The flip side is free mass-cancellation: landing any action (even an empty `execute`) invalidates all outstanding signed material, including ERC-1271 blobs — integrators sign 1271 blobs late and re-sign after any wallet action.
+
+### Execute fee: signed `maxFee` ceiling, live price charged
+
+The factory charges a per-execute fee (`getExecuteFee()`). The signer authorizes a **ceiling**, not an amount:
+
+- `execute({ target, value, data, maxFee? })` — `maxFee` defaults to the live `executeFee` read at prepare time; pass a higher value for headroom against fee increases. The wallet charges the **live** fee at landing and reverts `ExecuteFeeExceedsCapError` only if it exceeds the cap. Fee decreases succeed at the lower price and never invalidate a signature.
+- On the 4337 path, `maxFee` is a required parameter of `buildExecuteUserOp` / `buildExecuteBatchUserOp` (they are pure encoders; pass `(await getWalletState()).executeFee` or headroom). It rides in `callData`, so the signature binds it via `userOpHash` — validation reads no fee at all (ERC-7562: the wallet's validation phase makes zero external calls, so conformant bundlers accept the op).
+- The un-capped `execute(address,uint256,bytes)` / `executeBatch(Call[])` selectors are disabled on-chain (`StandardExecuteDisabledError`); every execution path carries a signed ceiling.
+
+**Revert asymmetry, same as WOTS+.** A cap-exceeded revert on the **direct** path rolls back everything — leaf and nonce preserved. On the **4337** path, validation already consumed the leaf and advanced the nonce before execution reverts, so a cap-exceeded op burns the leaf without executing. Fee changes are rare owner-governance events; if in-flight exposure matters, sign with headroom.
+
+### ERC-4337 flow
+
+```ts
+const state = await client.getWalletState();
+const userOp = client.buildExecuteUserOp({
+  target, value, data,
+  maxFee: state.executeFee,               // the signed fee ceiling (see above)
+  nonce, maxFeePerGas, maxPriorityFeePerGas, // ERC-4337 envelope
+});
+const { userOp: signed, userOpHash, leaf } = await client.signExecuteUserOp({ userOp, entryPoint });
+// submit `signed` to your bundler; the SDK does not own bundler submission
+```
+
+`signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`) and binds `userOpHash` — nothing else. Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
+
+---
+
 ## Versioning
 
 `0.2.x` is a major break from `0.1.x` (see `MIGRATION.md` for the mapping). The SDK tracks the contract surface 1:1; minor releases land alongside contract upgrades that change the public surface.
