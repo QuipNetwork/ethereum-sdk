@@ -437,6 +437,7 @@ export class ShrincsWalletClient {
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_EXECUTE,
       payloadHash: executePayloadHash(params.target, value, keccakData(data), state.executeFee),
@@ -459,6 +460,7 @@ export class ShrincsWalletClient {
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_WITHDRAW,
       payloadHash: withdrawPayloadHash(params.to, params.amount),
@@ -500,6 +502,7 @@ export class ShrincsWalletClient {
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_SET_ERC1271_KEY,
       payloadHash: setErc1271KeyPayloadHash(params.newCommitment, hashSuite),
@@ -529,6 +532,7 @@ export class ShrincsWalletClient {
     });
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_ROTATE_KEY,
       payloadHash: rotateKeyPayloadHash(nextStatefulKey.publicKeyCommitment),
@@ -564,6 +568,7 @@ export class ShrincsWalletClient {
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_UPGRADE,
       payloadHash: upgradePayloadHash(
@@ -578,6 +583,9 @@ export class ShrincsWalletClient {
       signature,
       shouldMigrate,
       migratorPayload,
+      // Must be the same live nonce the context above bound (the wallet's
+      // StaleActionNonce gate checks blob nonce == actionNonce()).
+      nonce: state.actionNonce,
     });
     return this.submit(
       "upgradeToAndCall",
@@ -603,6 +611,7 @@ export class ShrincsWalletClient {
 
     const ownerCtx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_TRANSFER_OWNERSHIP,
       payloadHash: transferOwnershipPayloadHash(
@@ -679,6 +688,11 @@ export class ShrincsWalletClient {
   /// The ERC-1271 verifier key is a separate vault branch from the main key, so
   /// the caller supplies its recovered keypair (its commitment must match the
   /// installed `erc1271Commitment`). The `owner` must be a local signer.
+  ///
+  /// FRESHNESS: the blob binds the wallet's LIVE `actionNonce()`, so it is
+  /// invalidated the moment ANY wallet signature is consumed (an execute, a
+  /// rotation, a sponsored userOp, ...). Sign as late as possible and re-sign
+  /// after wallet actions.
   async signErc1271(params: {
     hash: Hex;
     erc1271KeyPair: ShrincsKeyPair;
@@ -700,10 +714,11 @@ export class ShrincsWalletClient {
       throw new ZeroAddressOwnerError();
     }
 
-    // The stateless context mirrors `_checkErc1271Signature`: no-nonce, the MAIN
-    // key's epoch, `ACTION_ERC1271`, and `payloadHash == hash`.
+    // The stateless context mirrors `_checkErc1271Signature`: the LIVE action
+    // nonce, the MAIN key's epoch, `ACTION_ERC1271`, and `payloadHash == hash`.
     const ctx = buildActionContext({
       domainSeparator: domainSeparator(this.chainId, this.walletAddress),
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_ERC1271,
       payloadHash: params.hash,
@@ -788,8 +803,12 @@ export class ShrincsWalletClient {
 
   /// Sign a `PackedUserOperation` for this wallet: read state, recover the key,
   /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + execute fee
-  /// into `ACTION_ERC4337_EXECUTE`, and return the userOp with its `signature`
-  /// field filled (plus the `userOpHash` and `leaf` used).
+  /// + live `actionNonce` into `ACTION_ERC4337_EXECUTE`, and return the userOp
+  /// with its `signature` field filled (plus the `userOpHash` and `leaf` used).
+  ///
+  /// SERIALIZATION: the bound action nonce advances when any wallet signature is
+  /// consumed, so ops must land in signing order — signing a second op before
+  /// the first lands binds a stale nonce and it will be rejected (AA24).
   async signExecuteUserOp(
     params: { userOp: PackedUserOperation; entryPoint: Address },
     opts: ShrincsTxKeyOptions = {}
@@ -804,6 +823,7 @@ export class ShrincsWalletClient {
       executeFee: state.executeFee,
       keyVersion: state.keyVersion,
       leaf,
+      actionNonce: state.actionNonce,
     });
     return { userOp: { ...params.userOp, signature }, userOpHash, leaf };
   }

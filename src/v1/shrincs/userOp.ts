@@ -100,6 +100,10 @@ export interface SignWalletUserOpParams {
   keyVersion: bigint;
   /// Lowest unused stateful leaf, read from the on-chain bitmap by the client.
   leaf: number;
+  /// The wallet's live `actionNonce()`. Every consumed signature advances it,
+  /// so ops must land in signing order — signing a second op before the first
+  /// lands binds a stale nonce and it will be rejected (AA24).
+  actionNonce: bigint;
 }
 
 export interface SignedWalletUserOp {
@@ -117,6 +121,7 @@ export function signWalletUserOp(
   const userOpHash = computeUserOpHash(params.userOp, params.entryPoint, params.chainId);
   const ctx = buildActionContext({
     domainSeparator: domainSeparator(params.chainId, params.wallet),
+    nonce: params.actionNonce,
     keyVersion: params.keyVersion,
     actionType: ACTION_ERC4337_EXECUTE,
     payloadHash: erc4337PayloadHash(userOpHash, params.executeFee),
@@ -211,6 +216,9 @@ export function signPaymasterUserOp(params: SignPaymasterUserOpParams): Hex {
   const bindingHash = paymasterBindingHash(params.userOp, header64);
   const ctx = buildActionContext({
     domainSeparator: domainSeparator(params.chainId, params.paymaster, PAYMASTER_DOMAIN_TAG),
+    // The ShrincsPaymaster binds no wrapper nonce: its sponsorship freshness is
+    // the validUntil/validAfter window plus its own one-time leaf.
+    nonce: 0n,
     keyVersion: params.keyVersion,
     actionType: ACTION_PAYMASTER_APPROVE,
     payloadHash: bindingHash,

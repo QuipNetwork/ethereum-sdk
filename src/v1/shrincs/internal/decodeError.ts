@@ -39,6 +39,7 @@ import {
   ZeroMaxSignaturesError,
   UnsupportedHashSuiteError,
   StaleStatefulLeafError,
+  StaleActionNonceError,
   StatefulBudgetExhaustedError,
   ImplementationNotVettedError,
   ImplementationDeprecatedError,
@@ -95,6 +96,8 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   ZeroMaxSignatures: (_, o) => new ZeroMaxSignaturesError(o),
   UnsupportedHashSuite: (_, o) => new UnsupportedHashSuiteError(o),
   StaleStatefulLeaf: (_, o) => new StaleStatefulLeafError(undefined, o),
+  StaleActionNonce: (args, o) =>
+    new StaleActionNonceError(args[0] as bigint, args[1] as bigint, o),
   StatefulBudgetExhausted: (_, o) =>
     new StatefulBudgetExhaustedError(undefined, undefined, o),
   ImplementationNotVetted: (_, o) => new ImplementationNotVettedError(o),

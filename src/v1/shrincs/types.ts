@@ -80,8 +80,10 @@ export interface StatelessSignature {
 }
 
 /// Canonical signing context for a normal (stateful or stateless) wallet
-/// action. All fields are 32-byte hex. On the stateful path `nonce` is always
-/// `0x..00` (anti-replay is the used-leaf bitmap, not a nonce).
+/// action. All fields are 32-byte hex. `nonce` is the wallet's live
+/// `actionNonce()` — bound into every context and advanced on every consumed
+/// signature, so a landed action supersedes all outstanding signed material.
+/// (Exception: the paymaster's sponsorship context binds nonce 0.)
 export interface ActionContext {
   domainSeparator: Hex;
   nonce: Hex;

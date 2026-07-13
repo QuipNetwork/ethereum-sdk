@@ -184,18 +184,22 @@ export const rotateKeyPayloadHash = (nextCommitment: Hex): Hex =>
 /*                    CONTEXT BUILDERS                         */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-/// Assemble a stateful `ActionContext`. On the stateful path `nonce` is always
-/// `0` (anti-replay is the on-chain used-leaf bitmap).
+/// Assemble a stateful `ActionContext`. `nonce` is REQUIRED and must be the
+/// wallet's live `actionNonce()` at verification time: the wallet binds it into
+/// every signed context and advances it on every consumed signature, so a
+/// signature dies the moment any later signature lands (supersession). The
+/// paymaster path is the one deliberate exception — it binds `0n` (its
+/// freshness is the validUntil/validAfter window).
 export function buildActionContext(params: {
   domainSeparator: Hex;
+  nonce: bigint;
   keyVersion: bigint;
   actionType: Hex;
   payloadHash: Hex;
-  nonce?: bigint;
 }): ActionContext {
   return {
     domainSeparator: params.domainSeparator,
-    nonce: params.nonce === undefined ? ZERO32 : word(params.nonce),
+    nonce: word(params.nonce),
     keyVersion: word(params.keyVersion),
     actionType: params.actionType,
     payloadHash: params.payloadHash,
@@ -334,12 +338,17 @@ export function decodeUserOpSignature(blob: Hex): {
 }
 
 /// UUPS `upgradeToAndCall` data = `abi.encode(PublicKey, StatefulSignature,
-/// bool shouldMigrate, bytes migratorPayload)`.
+/// bool shouldMigrate, bytes migratorPayload, uint256 nonce)`. The signed
+/// action nonce rides in the blob (5th head word) so the wallet's
+/// `verifyUpgrade` probe can rebuild the exact signed context both before and
+/// after consumption; `upgradeToAndCall` requires it to equal the live
+/// `actionNonce()` (else `StaleActionNonce`).
 export function encodeUpgradeData(params: {
   publicKey: ShrincsPublicKey;
   signature: StatefulSignature;
   shouldMigrate: boolean;
   migratorPayload: Hex;
+  nonce: bigint;
 }): Hex {
   return encodeAbiParameters(
     [
@@ -347,12 +356,14 @@ export function encodeUpgradeData(params: {
       STATEFUL_SIGNATURE_TUPLE,
       { name: "shouldMigrate", type: "bool" },
       { name: "migratorPayload", type: "bytes" },
+      { name: "nonce", type: "uint256" },
     ],
     [
       publicKeyToAbi(params.publicKey),
       params.signature,
       params.shouldMigrate,
       params.migratorPayload,
+      params.nonce,
     ]
   );
 }

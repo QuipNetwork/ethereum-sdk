@@ -1729,6 +1729,22 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
+    "name": "StaleActionNonce",
+    "inputs": [
+      {
+        "name": "expected",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "provided",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "StaleStatefulLeaf",
     "inputs": []
   },

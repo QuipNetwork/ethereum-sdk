@@ -214,6 +214,24 @@ export class StaleStatefulLeafError extends QuipError {
   }
 }
 
+/// An upgrade-auth blob bound an action nonce that no longer matches the live
+/// one — the signed upgrade was superseded by a later consumed signature.
+export class StaleActionNonceError extends QuipError {
+  readonly expected?: bigint;
+  readonly provided?: bigint;
+  constructor(expected?: bigint, provided?: bigint, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STALE_ACTION_NONCE",
+      expected === undefined
+        ? "Upgrade auth binds a stale action nonce; re-sign against the live actionNonce()"
+        : `Upgrade auth binds stale action nonce ${provided ?? "?"} (live is ${expected}); re-sign against the live actionNonce()`,
+      opts
+    );
+    this.expected = expected;
+    this.provided = provided;
+  }
+}
+
 /// No unused stateful leaf available in the current key epoch; rotate the key.
 export class StatefulBudgetExhaustedError extends QuipError {
   readonly maxSignatures?: number;
