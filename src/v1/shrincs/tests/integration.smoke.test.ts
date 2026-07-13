@@ -38,11 +38,16 @@ import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
 import { entryPointV07Abi } from "../../abi/EntryPointV07.js";
+import { quipFactoryAbi } from "../../abi/QuipFactory.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
-import { Erc1271ValidationResult, StaleStatefulLeafError } from "../errors.js";
+import {
+  Erc1271ValidationResult,
+  ExecuteFeeExceedsCapError,
+  StaleStatefulLeafError,
+} from "../errors.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
 import {
   SHRINCS_ANVIL_PORTS,
@@ -297,10 +302,15 @@ describe("Shrincs SDK live-anvil smoke", () => {
       args: [walletClient.walletAddress, 0n],
     })) as bigint;
 
+    // `maxFee` here is the wallet's signed EXECUTION-fee ceiling (rides in the
+    // execute callData) — unrelated to the gas-price `maxFeePerGas` below, and
+    // also distinct from the fixture's factory-level MAX_FEE constructor cap.
+    const walletState = await walletClient.getWalletState();
     let userOp = walletClient.buildExecuteUserOp({
       target: RECIPIENT,
       value,
       data: "0x",
+      maxFee: walletState.executeFee,
       nonce,
       maxFeePerGas,
       maxPriorityFeePerGas,
@@ -365,4 +375,75 @@ describe("Shrincs SDK live-anvil smoke", () => {
     });
     expect(recipientAfter - recipientBefore).toBe(value);
   }, 180_000);
+
+  // ── (g) execute-fee cap semantics ────────────────────────────────────
+  it("g. enforces the signed maxFee ceiling and charges the live fee below it", async () => {
+    const { client } = await createFreshShrincsWallet(stack, 0x70, {
+      maxSignatures: MAX_SIGS,
+    });
+
+    // NOTE on naming: the fixture's DEFAULT_MAX_FEE is the FACTORY-level
+    // constructor cap bounding what the owner may set `executeFee` to; the
+    // per-call `maxFee` exercised here is the signer's own execution-fee
+    // ceiling. Two different knobs.
+    const setExecuteFee = async (fee: bigint) => {
+      const hash = await stack.walletClient.writeContract({
+        chain: foundry,
+        address: stack.factoryAddress,
+        abi: quipFactoryAbi,
+        functionName: "setExecuteFee",
+        args: [fee],
+        account: stack.account,
+      });
+      await stack.publicClient.waitForTransactionReceipt({ hash });
+    };
+
+    try {
+      await setExecuteFee(parseEther("0.002"));
+
+      // Live fee above the signed ceiling: the pre-flight simulation reverts
+      // and the SDK decodes it into the typed cap error — no broadcast, no
+      // leaf consumed (direct path rolls everything back).
+      let caught: unknown = null;
+      try {
+        await client.execute({
+          target: RECIPIENT,
+          value: parseEther("0.01"),
+          maxFee: parseEther("0.001"),
+        });
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ExecuteFeeExceedsCapError);
+      expect((caught as ExecuteFeeExceedsCapError).fee).toBe(parseEther("0.002"));
+      expect((caught as ExecuteFeeExceedsCapError).maxFee).toBe(parseEther("0.001"));
+      expect(await client.isStatefulLeafUsed(1)).toBe(false);
+
+      // Ceiling with headroom above the live fee: lands, and the factory is
+      // credited the LIVE fee — not the signed ceiling.
+      const factoryBefore = await stack.publicClient.getBalance({
+        address: stack.factoryAddress,
+      });
+      const recipientBefore = await stack.publicClient.getBalance({
+        address: RECIPIENT,
+      });
+      await client.execute({
+        target: RECIPIENT,
+        value: parseEther("0.01"),
+        maxFee: parseEther("0.005"),
+      });
+      const factoryAfter = await stack.publicClient.getBalance({
+        address: stack.factoryAddress,
+      });
+      const recipientAfter = await stack.publicClient.getBalance({
+        address: RECIPIENT,
+      });
+      expect(factoryAfter - factoryBefore).toBe(parseEther("0.002"));
+      expect(recipientAfter - recipientBefore).toBe(parseEther("0.01"));
+      expect(await client.isStatefulLeafUsed(1)).toBe(true);
+    } finally {
+      // The factory fee is global to the shared anvil stack — restore it.
+      await setExecuteFee(0n);
+    }
+  }, 120_000);
 });

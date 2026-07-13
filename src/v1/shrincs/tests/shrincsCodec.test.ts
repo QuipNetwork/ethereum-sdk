@@ -117,6 +117,8 @@ describe("shrincsCodec", () => {
     const exec = Codec.executePayloadHash(target, 0n, EMPTY_DATA_HASH, 0n);
     expect(Codec.executePayloadHash(target, 1n, EMPTY_DATA_HASH, 0n)).not.toBe(exec);
     expect(Codec.executePayloadHash(target, 0n, keccak256("0x01"), 0n)).not.toBe(exec);
+    // 4th field is the signer's maxFee CEILING — bound so a relayer cannot
+    // raise the cap on a signed execute.
     expect(Codec.executePayloadHash(target, 0n, EMPTY_DATA_HASH, 1n)).not.toBe(exec);
 
     const withdraw = Codec.withdrawPayloadHash(target, 5n);
