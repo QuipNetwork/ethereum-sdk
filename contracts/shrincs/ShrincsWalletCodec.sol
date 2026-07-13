@@ -246,27 +246,30 @@ library ShrincsWalletCodec {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev `ActionContext.payloadHash` for the ERC-4337 execute path: binds the EntryPoint
-    ///      userOpHash (which already commits to target/value/data/nonce) and the execute fee.
+    ///      userOpHash, which already commits to target/value/data/nonce — and, via `callData`,
+    ///      to the `maxFee` execution parameter. No fee word here: validation must not read the
+    ///      factory's live fee (ERC-7562 STO-033).
     function erc4337PayloadHash(
-        bytes32 userOpHash,
-        uint256 fee
+        bytes32 userOpHash
     ) internal pure returns (bytes32) {
-        return EfficientHashLib.hash(userOpHash, bytes32(fee));
+        return EfficientHashLib.hash(userOpHash);
     }
 
-    /// @dev `payloadHash` for the owner `execute` path.
+    /// @dev `payloadHash` for the owner `execute` path. `maxFee` is the signer's fee ceiling,
+    ///      not the charged amount: execution reads the factory's live fee and reverts only if
+    ///      it exceeds this cap.
     function executePayloadHash(
         address target,
         uint256 value,
         bytes32 dataHash,
-        uint256 fee
+        uint256 maxFee
     ) internal pure returns (bytes32) {
         return
             EfficientHashLib.hash(
                 bytes32(uint256(uint160(target))),
                 bytes32(value),
                 dataHash,
-                bytes32(fee)
+                bytes32(maxFee)
             );
     }
 

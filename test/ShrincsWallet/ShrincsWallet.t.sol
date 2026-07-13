@@ -301,19 +301,20 @@ contract ShrincsWalletTest is Test {
     function _wrongContextStatefulSig() internal view returns (ShrincsTypes.StatefulSignature memory) {
         return _signStatefulAction(
             Codec.ACTION_ERC4337_EXECUTE,
-            Codec.erc4337PayloadHash(keccak256("throwaway-userop"), wallet.getExecuteFee()),
+            Codec.erc4337PayloadHash(keccak256("throwaway-userop")),
             1
         );
     }
 
-    /// @dev Signs the ERC-4337 validation context for `userOpHash` at `leaf` (fee read live).
+    /// @dev Signs the ERC-4337 validation context for `userOpHash` at `leaf`. No fee word: the
+    ///      signer's `maxFee` ceiling rides in `callData` (covered by userOpHash itself).
     function _signErc4337(bytes32 userOpHash, uint32 leaf)
         internal
         view
         returns (ShrincsTypes.StatefulSignature memory)
     {
         return _signStatefulAction(
-            Codec.ACTION_ERC4337_EXECUTE, Codec.erc4337PayloadHash(userOpHash, wallet.getExecuteFee()), leaf
+            Codec.ACTION_ERC4337_EXECUTE, Codec.erc4337PayloadHash(userOpHash), leaf
         );
     }
 

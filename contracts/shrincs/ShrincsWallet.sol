@@ -147,12 +147,16 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // The live action nonce is bound in addition to the EntryPoint nonce (inside userOpHash)
         // and the one-time leaf: consuming ANY wallet signature supersedes every outstanding
         // signed authorization, so in-flight ops are strictly serialized by signing order.
+        //
+        // Fee pricing lives in the execution phase — the signer's `maxFee` ceiling rides in 
+        // `callData` (covered by userOpHash), so reading the factory's mutable live fee here 
+        // for ERC7562 compliance
         ShrincsTypes.ActionContext memory ctx = Codec.buildActionContext(
             _shrincsDomainSeparator(),
             $.nonce,
             epoch,
             Codec.ACTION_ERC4337_EXECUTE,
-            Codec.erc4337PayloadHash(userOpHash, getExecuteFee())
+            Codec.erc4337PayloadHash(userOpHash)
         );
         if (
             !SHRINCS.verifyStateful($.shrincsPublicKeyCommitment, pk, ctx, sig)
@@ -177,22 +181,46 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /*                ERC-4337 EXECUTION                      */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @inheritdoc ERC4337
+    /// @dev Fee-capped ERC-4337 execution. `maxFee` is the signer's fee ceiling: it rides in
+    ///      `callData`, so the SHRINCS signature over userOpHash binds it with no digest work,
+    ///      and validation never has to read the factory's live fee (ERC-7562). A live fee above
+    ///      the cap reverts here — in the execution phase, after the leaf was consumed during
+    ///      validation (an inherent property of stateful signatures; see ERC7562_COMPLIANCE.md).
     function execute(
         address target,
         uint256 value,
-        bytes calldata data
-    ) public payable override onlyEntryPoint returns (bytes memory result) {
-        _collectExecuteFee();
+        bytes calldata data,
+        uint256 maxFee
+    ) public payable onlyEntryPoint returns (bytes memory result) {
+        _collectExecuteFee(maxFee);
         result = super.execute(target, value, data);
     }
 
-    /// @inheritdoc ERC4337
+    /// @dev Fee-capped ERC-4337 batch execution; see `execute` for the `maxFee` semantics.
+    ///      One fee per batch, not per call.
     function executeBatch(
-        Call[] calldata calls
-    ) public payable override onlyEntryPoint returns (bytes[] memory results) {
-        _collectExecuteFee();
+        Call[] calldata calls,
+        uint256 maxFee
+    ) public payable onlyEntryPoint returns (bytes[] memory results) {
+        _collectExecuteFee(maxFee);
         results = super.executeBatch(calls);
+    }
+
+    /// @dev Disabled. The inherited un-capped selector would let an op skip the signer's
+    ///      `maxFee` ceiling; only the fee-capped variant above is callable.
+    function execute(
+        address,
+        uint256,
+        bytes calldata
+    ) public payable override returns (bytes memory) {
+        revert StandardExecuteDisabled();
+    }
+
+    /// @dev Disabled. See `execute(address,uint256,bytes)`.
+    function executeBatch(
+        Call[] calldata
+    ) public payable override returns (bytes[] memory) {
+        revert StandardExecuteDisabled();
     }
 
     /// @dev Disabled. `delegateExecute` is the only entry point that would run UN-vetted bytecode
@@ -380,26 +408,27 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ShrincsTypes.StatefulSignature calldata signature,
         address target,
         uint256 value,
-        bytes calldata data
+        bytes calldata data,
+        uint256 maxFee
     ) external payable onlyOwner {
-        uint256 fee = getExecuteFee();
         bytes32 dataHash = EfficientHashLib.hashCalldata(data);
         bytes32 payloadHash = Codec.executePayloadHash(
             target,
             value,
             dataHash,
-            fee
+            maxFee
         );
 
         // SECURITY — CEI. The leaf advance is the Effect that blocks replay; every line below is
-        // an Interaction.
+        // an Interaction. Unlike the 4337 path, a cap-exceeded revert here rolls the whole call
+        // back — leaf and nonce included.
         uint32 leaf = _verifyStatefulAndAdvance(
             publicKey,
             signature,
             Codec.ACTION_EXECUTE,
             payloadHash
         );
-        _collectExecuteFee();
+        _collectExecuteFee(maxFee);
 
         // only reason this path exists is because the caller made 
         // an error (empty data) and the leaf must be consumed either way
@@ -927,9 +956,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         return Erc1271ValidationResult.Ok;
     }
 
-    /// @dev Sends the per-op execute fee to the factory, if any.
-    function _collectExecuteFee() internal {
+    /// @dev Sends the per-op execute fee to the factory, if any. Reads the LIVE fee once and
+    ///      charges it, reverting only if it exceeds the signer's `maxFee` ceiling — so a fee
+    ///      decrease between signing and landing succeeds at the lower price.
+    function _collectExecuteFee(uint256 maxFee) internal {
         uint256 fee = getExecuteFee();
+        if (fee > maxFee) revert ExecuteFeeExceedsCap(fee, maxFee);
         if (fee > 0) {
             SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
         }

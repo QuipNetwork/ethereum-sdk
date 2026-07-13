@@ -93,6 +93,14 @@ interface IShrincsWallet {
     ///         storage context is disabled; use `executeBatch` for batching.
     error DelegateExecuteDisabled();
 
+    /// @notice Thrown when the factory's live execute fee exceeds the `maxFee` ceiling the signer
+    ///         authorized. Fee decreases never trigger this; only an increase past the signed cap.
+    error ExecuteFeeExceedsCap(uint256 fee, uint256 maxFee);
+    /// @notice Thrown when the inherited un-capped `execute(address,uint256,bytes)` /
+    ///         `executeBatch(Call[])` selectors are called. Only the `maxFee`-capped variants are
+    ///         permitted, so every execution path carries a signer-authorized fee ceiling.
+    error StandardExecuteDisabled();
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -218,12 +226,17 @@ interface IShrincsWallet {
     /// @param target The call target.
     /// @param value The ETH value to send.
     /// @param data The calldata to execute.
+    /// @param maxFee The signed fee ceiling. Execution charges the factory's LIVE fee and
+    ///        reverts `ExecuteFeeExceedsCap` only if it exceeds this cap — so a fee decrease
+    ///        between signing and landing succeeds (charging the lower fee), and only an
+    ///        increase past the cap rejects.
     function execute(
         ShrincsTypes.PublicKey calldata publicKey,
         ShrincsTypes.StatefulSignature calldata signature,
         address target,
         uint256 value,
-        bytes calldata data
+        bytes calldata data,
+        uint256 maxFee
     ) external payable;
 
     /// @notice Withdraws from the EntryPoint deposit, authorized by a stateful SHRINCS signature.

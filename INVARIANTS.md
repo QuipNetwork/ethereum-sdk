@@ -294,6 +294,22 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 ---
 
+## 18. Shrincs Validation-Phase Purity (ERC-7562)
+
+**`ShrincsWallet._validateSignature` performs zero external calls; fee pricing happens only in the execution phase, capped by the signed `maxFee`.**
+
+- The validation frame touches only the wallet's own storage (STO-010: leaf bitmap, `statefulLeavesUsed`, action nonce) and pure/internal SHRINCS verification. In particular it must never read `factory.executeFee()` — mutable non-associated storage that conformant bundlers reject under STO-033 (finding F-1, `ERC7562_COMPLIANCE.md`).
+- The signer's fee authorization is the `maxFee` calldata parameter of the capped `execute`/`executeBatch` variants; `userOpHash` covers `callData`, so the SHRINCS signature binds it with no digest work. The direct signed path binds `maxFee` as the 4th `executePayloadHash` field.
+- Execution (`_collectExecuteFee(maxFee)`) reads the live fee exactly once, reverts `ExecuteFeeExceedsCap` only if it exceeds the cap, and charges the LIVE fee — decreases succeed at the lower price (deliberately `<=`, not `==`).
+- The inherited un-capped `execute(address,uint256,bytes)` / `executeBatch(Call[])` selectors revert `StandardExecuteDisabled`, so no execution path escapes the cap.
+- On the 4337 path a cap-exceeded revert happens after validation consumed the leaf and advanced the nonce — an inherent property of validation-phase stateful-signature consumption (N-3a), not a violation.
+
+**Contracts:** ShrincsWallet
+
+**Violation consequence:** An external read in validation makes every userOp unshippable through conformant bundlers (rejected at `eth_sendUserOperation`) and re-opens the fee TOCTOU where the user authorizes fee X and pays fee Y.
+
+---
+
 ## Critical Dependencies
 
 These invariants form a security web — they depend on each other:

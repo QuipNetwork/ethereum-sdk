@@ -109,16 +109,16 @@ contract ShrincsWalletCodecHarness {
 
     /* ─────────────────────────── PAYLOAD HASHES ────────────────────────────── */
 
-    function exposed_erc4337PayloadHash(bytes32 userOpHash, uint256 fee) external pure returns (bytes32) {
-        return Codec.erc4337PayloadHash(userOpHash, fee);
+    function exposed_erc4337PayloadHash(bytes32 userOpHash) external pure returns (bytes32) {
+        return Codec.erc4337PayloadHash(userOpHash);
     }
 
-    function exposed_executePayloadHash(address target, uint256 value, bytes32 dataHash, uint256 fee)
+    function exposed_executePayloadHash(address target, uint256 value, bytes32 dataHash, uint256 maxFee)
         external
         pure
         returns (bytes32)
     {
-        return Codec.executePayloadHash(target, value, dataHash, fee);
+        return Codec.executePayloadHash(target, value, dataHash, maxFee);
     }
 
     function exposed_withdrawPayloadHash(address to, uint256 amount) external pure returns (bytes32) {

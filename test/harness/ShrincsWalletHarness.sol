@@ -108,8 +108,8 @@ contract ShrincsWalletHarness is ShrincsWallet {
     }
 
     /// @dev Wraps the per-op execute-fee collection.
-    function exposed_collectExecuteFee() external {
-        _collectExecuteFee();
+    function exposed_collectExecuteFee(uint256 maxFee) external {
+        _collectExecuteFee(maxFee);
     }
 
     /// @dev Test-only setters writing directly to namespaced storage for boundary/namespace tests.
