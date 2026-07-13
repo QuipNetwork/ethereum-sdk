@@ -135,7 +135,10 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the UUPS `upgradeToAndCall` `data` blob, the ABI encoding of
     ///      `(PublicKey publicKey, StatefulSignature signature, bool shouldMigrate,
-    ///       bytes migratorPayload)`.
+    ///       bytes migratorPayload, uint256 nonce)`. The action nonce the signer bound rides in
+    ///      the blob (rather than being read live) so `verifyUpgrade` can rebuild the exact
+    ///      signed context at any moment — both in the SDK's pre-flight staticcall (live nonce
+    ///      == blob nonce) and in the post-consumption reachability probe (live == blob + 1).
     function decodeUpgradeAuth(
         bytes calldata data
     )
@@ -145,11 +148,12 @@ library ShrincsWalletCodec {
             ShrincsTypes.PublicKey calldata publicKey,
             ShrincsTypes.StatefulSignature calldata signature,
             bool shouldMigrate,
-            bytes calldata migratorPayload
+            bytes calldata migratorPayload,
+            uint256 nonce
         )
     {
-        if (data.length < 0x80) {
-            revert MalformedPayload(0x80, data.length);
+        if (data.length < 0xa0) {
+            revert MalformedPayload(0xa0, data.length);
         }
         assembly {
             let o := data.offset
@@ -159,6 +163,7 @@ library ShrincsWalletCodec {
             let mo := add(o, calldataload(add(o, 0x60)))
             migratorPayload.offset := add(mo, 0x20)
             migratorPayload.length := calldataload(mo)
+            nonce := calldataload(add(o, 0x80))
         }
     }
 

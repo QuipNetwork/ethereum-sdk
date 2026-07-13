@@ -49,19 +49,22 @@ contract ShrincsWalletCodecHarness {
             ShrincsTypes.PublicKey memory publicKey,
             ShrincsTypes.StatefulSignature memory signature,
             bool shouldMigrate,
-            bytes memory migratorPayload
+            bytes memory migratorPayload,
+            uint256 nonce
         )
     {
         (
             ShrincsTypes.PublicKey calldata _pk,
             ShrincsTypes.StatefulSignature calldata _sig,
             bool _m,
-            bytes calldata _p
+            bytes calldata _p,
+            uint256 _n
         ) = Codec.decodeUpgradeAuth(data);
         publicKey = _pk;
         signature = _sig;
         shouldMigrate = _m;
         migratorPayload = _p;
+        nonce = _n;
     }
 
     function exposed_decodeErc1271Signature(bytes calldata sig)

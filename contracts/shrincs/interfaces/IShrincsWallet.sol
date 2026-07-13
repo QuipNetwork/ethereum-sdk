@@ -54,6 +54,9 @@ interface IShrincsWallet {
     /// @notice Thrown when a stateful signature's leaf index has already been consumed in the
     ///         current key epoch (used-leaf bitmap anti-replay).
     error StaleStatefulLeaf();
+    /// @notice Thrown when an upgrade-auth blob binds an action nonce that no longer matches the
+    ///         wallet's live one (the signed upgrade was superseded by a later consumed action).
+    error StaleActionNonce(uint256 expected, uint256 provided);
     /// @notice Thrown when a stateful signature's leaf index is zero or exceeds the installed
     ///         key's `maxSignatures` budget (the key must be rotated via `rotateKey`).
     error StatefulBudgetExhausted();
@@ -194,12 +197,16 @@ interface IShrincsWallet {
     function migrate(bytes calldata payload) external;
 
     /// @notice SHRINCS-gated UUPS upgrade. Authorized by a stateful signature from the main key.
+    ///         The `data` blob carries the action nonce the signer bound; it must equal the live
+    ///         `actionNonce()` or the call reverts `StaleActionNonce`.
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
     ) external payable;
 
     /// @notice New-implementation reachability probe, delegatecalled during `upgradeToAndCall`.
+    ///         Rebuilds the signed context from the blob-borne nonce (never the live one), so the
+    ///         same auth blob re-verifies both before and after its consumption.
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data
@@ -339,6 +346,9 @@ interface IShrincsWallet {
     /// @notice The installed-key epoch.
     function keyVersion() external view returns (uint256);
 
-    /// @notice The SHRINCS action/rotation nonce (distinct from the EntryPoint nonce).
+    /// @notice The SHRINCS action/rotation nonce (distinct from the EntryPoint nonce). Bound
+    ///         into every signed context — actions, rotations, ERC-1271, and upgrades — and
+    ///         advanced on every consumed signature, so any landed action supersedes all
+    ///         outstanding signed material.
     function actionNonce() external view returns (uint256);
 }

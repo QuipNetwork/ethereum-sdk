@@ -10,34 +10,39 @@ contract ShrincsWalletCodec_decodeUpgradeAuth is ShrincsWalletCodecTest {
         ShrincsTypes.PublicKey memory pk = _samplePublicKey();
         ShrincsTypes.StatefulSignature memory sig = _sampleStatefulSig();
         bytes memory migratorPayload = hex"deadbeefcafe";
-        bytes memory data = abi.encode(pk, sig, true, migratorPayload);
+        bytes memory data = abi.encode(pk, sig, true, migratorPayload, uint256(7));
 
         (
             ShrincsTypes.PublicKey memory dpk,
             ShrincsTypes.StatefulSignature memory dsig,
             bool shouldMigrate,
-            bytes memory dPayload
+            bytes memory dPayload,
+            uint256 dNonce
         ) = codec.exposed_decodeUpgradeAuth(data);
 
         _assertPkEq(dpk, pk);
         _assertStatefulSigEq(dsig, sig);
         assertTrue(shouldMigrate, "shouldMigrate");
         assertEq(dPayload, migratorPayload, "migratorPayload");
+        assertEq(dNonce, 7, "blob nonce");
     }
 
     function test_decodeUpgradeAuth_roundTrip_migrateFalseEmptyPayload() public view {
         ShrincsTypes.PublicKey memory pk = _samplePublicKey();
         ShrincsTypes.StatefulSignature memory sig = _sampleStatefulSig();
-        bytes memory data = abi.encode(pk, sig, false, bytes(""));
+        bytes memory data = abi.encode(pk, sig, false, bytes(""), uint256(0));
 
-        (,, bool shouldMigrate, bytes memory dPayload) = codec.exposed_decodeUpgradeAuth(data);
+        (,, bool shouldMigrate, bytes memory dPayload, uint256 dNonce) =
+            codec.exposed_decodeUpgradeAuth(data);
         assertFalse(shouldMigrate, "shouldMigrate false");
         assertEq(dPayload.length, 0, "empty migratorPayload");
+        assertEq(dNonce, 0, "zero blob nonce");
     }
 
     function test_decodeUpgradeAuth_revertsWhen_tooShort() public {
-        bytes memory short = new bytes(0x60); // < 0x80
-        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0x80, 0x60));
+        // A 4-field (pre-nonce) head is 0x80 bytes — now one word short of the 0xa0 floor.
+        bytes memory short = new bytes(0x80);
+        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0xa0, 0x80));
         codec.exposed_decodeUpgradeAuth(short);
     }
 }

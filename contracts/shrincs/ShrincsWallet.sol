@@ -144,11 +144,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             return 1;
         }
 
-        // No wrapper nonce on the stateful path: freshness comes from the EntryPoint nonce
-        // (bound inside userOpHash) and the one-time leaf, so userOps may land in any order.
+        // The live action nonce is bound in addition to the EntryPoint nonce (inside userOpHash)
+        // and the one-time leaf: consuming ANY wallet signature supersedes every outstanding
+        // signed authorization, so in-flight ops are strictly serialized by signing order.
         ShrincsTypes.ActionContext memory ctx = Codec.buildActionContext(
             _shrincsDomainSeparator(),
-            0,
+            $.nonce,
             epoch,
             Codec.ACTION_ERC4337_EXECUTE,
             Codec.erc4337PayloadHash(userOpHash, getExecuteFee())
@@ -162,10 +163,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             return 1;
         }
 
-        // EFFECT (anti-replay): consume the leaf before execution runs.
+        // anti-replay: consume the leaf and advance the nonce before execution runs.
         _markStatefulLeafUsed($, epoch, leaf);
         unchecked {
             $.statefulLeavesUsed += 1;
+            $.nonce += 1;
         }
         emit StatefulSignatureVerified(leaf, epoch);
         return 0;
@@ -300,6 +302,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
         $.maxSignatures = decoded.maxSignatures;
+        // The action nonce is deliberately NOT advanced here: the `keyVersion` bump below
+        // already invalidates every outstanding signed context.
         unchecked {
             $.keyVersion += 1;
         }
@@ -327,8 +331,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             ShrincsTypes.PublicKey calldata pk,
             ShrincsTypes.StatefulSignature calldata sig,
             bool shouldMigrate,
-            bytes calldata migratorPayload
+            bytes calldata migratorPayload,
+            uint256 blobNonce
         ) = Codec.decodeUpgradeAuth(data);
+
+        uint256 liveNonce = Storage.layout().nonce;
+        if (blobNonce != liveNonce)
+            revert StaleActionNonce(liveNonce, blobNonce);
 
         bytes32 payloadHash = Codec.upgradePayloadHash(
             newImplementation,
@@ -336,8 +345,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             EfficientHashLib.hashCalldata(migratorPayload)
         );
 
-        // SECURITY — CEI. The leaf advance below IS the Effect that blocks replay of this signed
-        // upgrade payload by a re-entrant malicious vetted impl during the delegatecalls below.
+        // The guard snapshot is taken AFTER the nonce advance, so the
+        // guarded nonce slot (idx 6) is checked against its post-advance value
         _verifyStatefulAndAdvance(pk, sig, Codec.ACTION_UPGRADE, payloadHash);
 
         // verifyUpgrade is view here, but executes the NEW impl's bytecode in our storage context.
@@ -436,10 +445,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         Storage.Layout storage $ = Storage.layout();
 
         // A genuine handover must hand the NEW owner an entirely fresh bundle (new stateless
-        // recovery root), so the OLD owner retains neither spend nor break-glass authority. That
-        // full replacement is authorized by the current STATELESS recovery key, verified against
-        // the CURRENT commitment. The handover-tagged rotation domain keeps this signature from
-        // doubling as a `recoverWallet` input (handover→recovery downgrade).
+        // recovery root).
+        // this rotation context MUST be built and verified BEFORE
+        // `_verifyStatefulAndAdvance` below, which advances `$.nonce` — both client signatures
+        // bind the pre-call nonce N, and the call nets +2 (core +1, install block +1).
         ShrincsTypes.RotationContext memory rctx = Codec.buildRotationContext(
             Codec.rotationDomainSeparator(
                 _shrincsDomainSeparator(),
@@ -551,6 +560,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
         $.maxSignatures = decoded.maxSignatures;
+        // The action nonce already advanced (+1) inside `_verifyStatefulAndAdvance` above.
         unchecked {
             $.keyVersion += 1;
         }
@@ -646,8 +656,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev ERC-1271 validation: stateless SHRINCS verify against the dedicated verifier key AND
-    ///      classical `owner()` ECDSA. View-safe (no leaf consumed); callers must bake a
-    ///      nonce/deadline into `hash` and rotate the ERC-1271 key via `setErc1271Key`.
+    ///      classical `owner()` ECDSA. View-safe (no leaf consumed). The live action nonce is
+    ///      bound into the verified context, so a blob is valid only until the wallet's next
+    ///      consumed signature — sign as late as possible and re-sign after any wallet action.
+    ///      `setErc1271Key` remains the mass-invalidation of last resort.
     function isValidSignature(
         bytes32 hash,
         bytes calldata signature
@@ -679,15 +691,19 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             ShrincsTypes.PublicKey calldata pk,
             ShrincsTypes.StatefulSignature calldata sig,
             bool shouldMigrate,
-            bytes calldata migratorPayload
+            bytes calldata migratorPayload,
+            uint256 blobNonce
         ) = Codec.decodeUpgradeAuth(data);
 
         Storage.Layout storage $ = Storage.layout();
-        // The leaf was already consumed by `upgradeToAndCall`; rebuild the identical no-nonce
-        // context so the same signature re-verifies as a reachability probe.
+        // Rebuild the context from the BLOB-borne nonce, never the live one: at the SDK's
+        // pre-flight staticcall the live nonce equals the blob's, but in the post-consumption
+        // delegatecall from `upgradeToAndCall` the live nonce has already advanced past it —
+        // a live-nonce read here would make the same signature fail to re-verify and brick
+        // every upgrade. Freshness was already enforced by the `StaleActionNonce` gate.
         ShrincsTypes.ActionContext memory ctx = Codec.buildActionContext(
             _shrincsDomainSeparator(),
-            0,
+            blobNonce,
             $.keyVersion,
             Codec.ACTION_UPGRADE,
             Codec.upgradePayloadHash(
@@ -806,9 +822,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @dev Core stateful verify + bitmap leaf consume shared by every stateful path. Reverts on
     ///      a zero/over-budget/already-consumed leaf or invalid signature; on success marks the
-    ///      leaf used in the current epoch's bitmap (the replay-blocking Effect) and returns the
-    ///      consumed leaf. No wrapper nonce is bound: the one-time leaf is the anti-replay, so
-    ///      signed actions may be submitted and land in any order.
+    ///      leaf used in the current epoch's bitmap and advances the action nonce (both Effects),
+    ///      returning the consumed leaf.
     function _verifyStatefulAndAdvance(
         ShrincsTypes.PublicKey calldata publicKey,
         ShrincsTypes.StatefulSignature calldata signature,
@@ -824,7 +839,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         ShrincsTypes.ActionContext memory ctx = Codec.buildActionContext(
             _shrincsDomainSeparator(),
-            0,
+            $.nonce,
             epoch,
             actionType,
             payloadHash
@@ -841,6 +856,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         _markStatefulLeafUsed($, epoch, leaf);
         unchecked {
             $.statefulLeavesUsed += 1;
+            $.nonce += 1;
         }
         emit StatefulSignatureVerified(leaf, epoch);
     }
@@ -890,9 +906,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         }
 
         Storage.Layout storage $ = Storage.layout();
+        // Binds the LIVE action nonce: every consumed wallet signature invalidates all
+        // outstanding ERC-1271 blobs (intended supersession — integrators re-sign after actions).
         ShrincsTypes.ActionContext memory ctx = Codec.buildActionContext(
             _shrincsDomainSeparator(),
-            0,
+            $.nonce,
             $.keyVersion,
             Codec.ACTION_ERC1271,
             hash

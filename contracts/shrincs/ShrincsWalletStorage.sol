@@ -38,8 +38,12 @@ library ShrincsWalletStorage {
         ///      migration, so signatures from a prior key epoch cannot be replayed.
         uint256 keyVersion;
         /// @dev Canonical SHRINCS action/rotation nonce — SEPARATE from the ERC-4337
-        ///      EntryPoint nonce. Bound into every `ActionContext`/`RotationContext` and
-        ///      advanced on every consumed signature; hardens cross-actionType binding.
+        ///      EntryPoint nonce. Bound (live) into every `ActionContext`/`RotationContext`,
+        ///      including ERC-1271 and upgrade contexts, and advanced once per consumed
+        ///      signature (`transferOwnership` consumes two, netting +2). This is the wallet's
+        ///      freshness/supersession mechanism: any landed action invalidates all outstanding
+        ///      signed material — the passive invalidation the unordered leaf bitmap cannot
+        ///      provide. Replaces the abandoned signed-`validUntil` deadline design.
         uint256 nonce;
         /// @dev Packed leaf-budget state for the main key (all fields rotate together):
         ///        - statefulLeavesUsed: count of consumed stateful leaves in the current epoch.
