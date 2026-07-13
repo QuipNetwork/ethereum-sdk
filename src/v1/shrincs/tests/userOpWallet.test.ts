@@ -154,6 +154,7 @@ describe("shrincs wallet userOp", () => {
         executeFee: 0n,
         keyVersion: 0n,
         leaf: 1,
+        actionNonce: 0n,
       });
 
       // userOpHash matches the canonical ERC-4337 v0.7 hash.
@@ -169,6 +170,7 @@ describe("shrincs wallet userOp", () => {
       const message = main.statefulActionMessageHash(
         buildActionContext({
           domainSeparator: domainSeparator(CHAIN_ID, WALLET),
+          nonce: 0n,
           keyVersion: 0n,
           actionType: ACTION_ERC4337_EXECUTE,
           payloadHash: erc4337PayloadHash(userOpHash, 0n),
@@ -192,11 +194,36 @@ describe("shrincs wallet userOp", () => {
         executeFee: 0n,
         keyVersion: 0n,
         leaf: 2,
+        actionNonce: 0n,
       };
       const a = signWalletUserOp(args);
       const b = signWalletUserOp(args);
       expect(a.signature).toBe(b.signature);
       expect(a.userOpHash).toBe(b.userOpHash);
+    });
+
+    it("binds the wallet action nonce (different actionNonce => different signature)", async () => {
+      const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
+      const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
+        maxSignatures: MAX_SIG,
+      });
+      const op = userOp("0x1234" as Hex);
+      const base = {
+        keypair: main,
+        userOp: op,
+        entryPoint: ENTRY_POINT,
+        chainId: CHAIN_ID,
+        wallet: WALLET,
+        executeFee: 0n,
+        keyVersion: 0n,
+        leaf: 2,
+      };
+      const a = signWalletUserOp({ ...base, actionNonce: 0n });
+      const b = signWalletUserOp({ ...base, actionNonce: 1n });
+      // Same userOp => same userOpHash, but the signed context binds the nonce:
+      // a signature goes stale as soon as the wallet's live nonce moves on.
+      expect(a.userOpHash).toBe(b.userOpHash);
+      expect(a.signature).not.toBe(b.signature);
     });
 
     it("binds the wallet domain separator (different wallet => different signature)", async () => {
@@ -213,6 +240,7 @@ describe("shrincs wallet userOp", () => {
         executeFee: 0n,
         keyVersion: 0n,
         leaf: 3,
+        actionNonce: 0n,
       };
       const a = signWalletUserOp({ ...base, wallet: WALLET });
       const b = signWalletUserOp({

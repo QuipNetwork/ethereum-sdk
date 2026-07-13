@@ -112,6 +112,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     const stateBefore = await client.getWalletState();
     expect(stateBefore.statefulLeavesUsed).toBe(0);
+    expect(stateBefore.actionNonce).toBe(0n);
 
     await client.execute({ target: RECIPIENT, value });
 
@@ -121,6 +122,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const stateAfter = await client.getWalletState();
     expect(stateAfter.statefulLeavesUsed).toBe(1);
     expect(await client.isStatefulLeafUsed(1)).toBe(true);
+    expect(stateAfter.actionNonce).toBe(1n);
   }, 120_000);
 
   // ── (c) lowest-unused-leaf / no in-memory burn ───────────────────────
@@ -149,6 +151,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     const state = await client.getWalletState();
     expect(state.statefulLeavesUsed).toBe(2);
+    // Each landed execute consumed one signature => actionNonce went 0 -> 1 -> 2
+    // (the client re-read the live nonce before signing the second op).
+    expect(state.actionNonce).toBe(2n);
   }, 120_000);
 
   // ── (d) stale-leaf replay rejection ──────────────────────────────────
@@ -208,6 +213,22 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(await client.debugIsValidSignature(hash, blob)).toBe(
       Erc1271ValidationResult.Ok
     );
+
+    // Supersession: the blob binds the live action nonce, so ANY consumed
+    // wallet signature (here an execute) invalidates it; re-signing against
+    // the advanced nonce restores validity.
+    await client.execute({ target: RECIPIENT, value: parseEther("0.01") });
+    expect(await client.isValidSignature(hash, blob)).toBe(false);
+    expect(await client.debugIsValidSignature(hash, blob)).toBe(
+      Erc1271ValidationResult.InvalidShrincsSignature
+    );
+
+    const freshBlob = await client.signErc1271({
+      hash,
+      erc1271KeyPair,
+      owner: ownerAccount,
+    });
+    expect(await client.isValidSignature(hash, freshBlob)).toBe(true);
   }, 120_000);
 
   // ── (f) sponsored userOp (ERC-4337) ──────────────────────────────────

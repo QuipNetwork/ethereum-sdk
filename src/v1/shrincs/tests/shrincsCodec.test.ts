@@ -167,6 +167,30 @@ describe("shrincsCodec", () => {
     expect(pk).toEqual(Codec.publicKeyToAbi(mainKey.publicKey));
   });
 
+  it("encodeUpgradeData matches the wallet decodeUpgradeAuth head layout", () => {
+    const signature = mainKey.signStatefulRawAt(keccak256(toHex("upgrade auth")), 2);
+    const nonce = 7n;
+    const blob = Codec.encodeUpgradeData({
+      publicKey: mainKey.publicKey,
+      signature,
+      shouldMigrate: true,
+      migratorPayload: "0xdeadbeef",
+      nonce,
+    });
+    // Fixed 5-word head: PublicKey offset ‖ StatefulSignature offset ‖
+    // shouldMigrate ‖ migratorPayload offset ‖ nonce (what
+    // `Codec.decodeUpgradeAuth` slices; the nonce word is at head[4] so the
+    // prior offsets are unmoved from the 4-field layout).
+    const word = (i: number): Hex => sliceHex(blob, i * 32, (i + 1) * 32);
+    expect(BigInt(word(2))).toBe(1n); // shouldMigrate
+    expect(BigInt(word(4))).toBe(nonce); // blob-borne action nonce
+    // Head offsets 0/1/3 point past the 5-word head (0xa0), not the old 4-word
+    // head (0x80) — pins that consumers re-encoded for the new layout.
+    expect(BigInt(word(0)) >= 0xa0n).toBe(true);
+    expect(BigInt(word(1)) >= 0xa0n).toBe(true);
+    expect(BigInt(word(3)) >= 0xa0n).toBe(true);
+  });
+
   it("round-trips the userOp.signature ABI blob with a live signature", () => {
     const message = keccak256(toHex("codec blob message"));
     const signature = mainKey.signStatefulRawAt(message, 3);
