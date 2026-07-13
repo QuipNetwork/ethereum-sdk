@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
+import {ShrincsWalletCodecHarness} from "../../harness/ShrincsWalletCodecHarness.sol";
 import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol";
 import {MockShrincsFactory} from "../../mocks/MockShrincsFactory.sol";
 import {ShrincsE2EAssembler} from "./ShrincsE2EAssembler.t.sol";
@@ -61,9 +62,22 @@ contract ShrincsE2E_encodingCrossCheck is ShrincsE2EAssembler {
         );
     }
 
-    /// @dev The mirrored erc4337 payload hash construction (hash(userOpHash, fee)) must match the
-    ///      codec's — verified indirectly by decoding the signed blob and re-verifying against the
-    ///      wallet harness in the fork suite; here we pin the blob's ABI shape round-trips.
+    /// @dev The assembler hand-mirrors `Codec.erc4337PayloadHash` (ONE word — no fee: the maxFee
+    ///      ceiling rides in callData under userOpHash). If the codec's digest shape ever moves
+    ///      without the mirror, every e2e wallet signature silently stops validating; this pins
+    ///      them together directly.
+    function test_crossCheck_erc4337PayloadHashMirror() public {
+        ShrincsWalletCodecHarness codec = new ShrincsWalletCodecHarness();
+        bytes32 userOpHash = keccak256("cross-check-user-op");
+        assertEq(
+            keccak256(abi.encodePacked(userOpHash)), // the assembler's mirror formula
+            codec.exposed_erc4337PayloadHash(userOpHash),
+            "erc4337 payload hash mirror drift"
+        );
+    }
+
+    /// @dev Pins that the signed blob's ABI shape round-trips (the fork suite verifies the
+    ///      signatures themselves against the wallet harness).
     function test_crossCheck_userOpSignatureBlobDecodes() public view {
         PackedUserOperation memory op = _sponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
         (ShrincsTypes.PublicKey memory pk, ShrincsTypes.StatefulSignature memory sig) =

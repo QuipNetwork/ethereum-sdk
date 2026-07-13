@@ -22,8 +22,10 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
 
         uint256 pmDepositBefore = _deposit(PAYMASTER);
         // Signed with verifierKey2 under paymaster keyVersion 1.
-        PackedUserOperation memory op =
-            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, 0, 0, true, 1, 0, 0, false);
+        SponsoredOpParams memory p = _defaultOpParams(RECIPIENT, 0.1 ether, "", 0, 1);
+        p.useVerifier2 = true;
+        p.pmKeyVersion = 1;
+        PackedUserOperation memory op = _buildSponsoredOp(p);
         _assertLiveHash(op);
         _handle(op);
 

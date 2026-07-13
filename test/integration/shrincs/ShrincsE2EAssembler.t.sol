@@ -26,7 +26,9 @@ abstract contract ShrincsE2EAssembler is Test {
     uint256 internal constant CHAIN_ID = 31337;
     uint32 internal constant MAX_SIG = 8;
 
-    bytes4 internal constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes)"));
+    /// @dev The fee-capped 4337 execution selector: `maxFee` (the signer's fee ceiling) is an
+    ///      execution-calldata parameter, bound by the SHRINCS signature via userOpHash → callData.
+    bytes4 internal constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes,uint256)"));
 
     // Wallet/paymaster canonical tags (mirror the contracts' constants).
     bytes32 internal constant WALLET_DOMAIN_TAG = keccak256("quip-shrincs-wallet-v1");
@@ -69,57 +71,81 @@ abstract contract ShrincsE2EAssembler is Test {
     /*                    OP ASSEMBLY                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Full builder for a co-signed sponsored op. `useVerifier2`/`pmKeyVersion` select the
-    ///      paymaster key + epoch to sign under; `corruptPmBinding` makes the paymaster sign a
-    ///      flipped binding hash (its signature then fails on-chain while the wallet's stays valid).
-    function _buildSponsoredOp(
-        address target,
-        uint256 value,
-        bytes memory data,
-        uint256 nonce,
-        uint32 walletLeaf,
-        uint32 pmLeaf,
-        uint48 validUntil,
-        uint48 validAfter,
-        bool useVerifier2,
-        uint256 pmKeyVersion,
-        uint256 walletKeyVersion,
-        uint256 walletNonce,
-        bool corruptPmBinding
-    ) internal view returns (PackedUserOperation memory op) {
+    /// @dev Named-field parameters for `_buildSponsoredOp`. Build the common case with
+    ///      `_defaultOpParams(...)` and override only the knobs a test exercises.
+    struct SponsoredOpParams {
+        address target;
+        uint256 value;
+        bytes data;
+        uint256 nonce; // EntryPoint nonce
+        uint32 walletLeaf;
+        uint32 pmLeaf;
+        uint48 validUntil;
+        uint48 validAfter;
+        bool useVerifier2;
+        uint256 pmKeyVersion;
+        uint256 walletKeyVersion;
+        uint256 walletNonce; // the wallet's live actionNonce() the signature must bind
+        bool corruptPmBinding; // paymaster signs a flipped binding hash (its sig fails, wallet's stays valid)
+        uint256 maxFee; // the signed execution fee ceiling, carried in callData
+    }
+
+    /// @dev The common-case params: same leaf both sides, epoch 0 both sides, no time window,
+    ///      wallet action nonce 0, honest paymaster binding, maxFee 0 (the e2e factory default).
+    function _defaultOpParams(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
+        internal
+        pure
+        returns (SponsoredOpParams memory p)
+    {
+        p.target = target;
+        p.value = value;
+        p.data = data;
+        p.nonce = nonce;
+        p.walletLeaf = leaf;
+        p.pmLeaf = leaf;
+        // Remaining fields deliberately zero/false.
+    }
+
+    /// @dev Full builder for a co-signed sponsored op.
+    function _buildSponsoredOp(SponsoredOpParams memory p)
+        internal
+        view
+        returns (PackedUserOperation memory op)
+    {
         op.sender = WALLET;
-        op.nonce = nonce;
+        op.nonce = p.nonce;
         op.initCode = "";
-        op.callData = abi.encodeWithSelector(EXECUTE_SELECTOR, target, value, data);
+        op.callData = abi.encodeWithSelector(EXECUTE_SELECTOR, p.target, p.value, p.data, p.maxFee);
         op.accountGasLimits = bytes32((uint256(VERIFICATION_GAS) << 128) | uint256(CALL_GAS));
         op.preVerificationGas = PRE_VERIFICATION_GAS;
         op.gasFees = bytes32((uint256(1 gwei) << 128) | uint256(10 gwei));
         // Prefix-only paymasterAndData (exactly the 64 bytes the binding hash covers).
         op.paymasterAndData =
-            abi.encodePacked(PAYMASTER, PM_VERIFICATION_GAS, PM_POSTOP_GAS, validUntil, validAfter);
+            abi.encodePacked(PAYMASTER, PM_VERIFICATION_GAS, PM_POSTOP_GAS, p.validUntil, p.validAfter);
 
         // 1. Paymaster signs its binding hash over the blob-less op.
         bytes32 binding = _pmBindingHash(op);
-        if (corruptPmBinding) binding = binding ^ bytes32(uint256(1));
+        if (p.corruptPmBinding) binding = binding ^ bytes32(uint256(1));
         ShrincsTypes.StatefulSignature memory pmSig =
-            _signPaymasterApproval(binding, pmLeaf, pmKeyVersion, useVerifier2);
+            _signPaymasterApproval(binding, p.pmLeaf, p.pmKeyVersion, p.useVerifier2);
 
         // 2. Embed the (pk, sig) blob to complete paymasterAndData.
         op.paymasterAndData = abi.encodePacked(
-            op.paymasterAndData, abi.encode(useVerifier2 ? verifierPk2 : verifierPk, pmSig)
+            op.paymasterAndData, abi.encode(p.useVerifier2 ? verifierPk2 : verifierPk, pmSig)
         );
 
         // 3. The canonical v0.7 userOpHash now commits to the complete paymasterAndData.
         bytes32 userOpHash = _computeUserOpHash(op);
 
-        // 4. The wallet signs its erc4337 action context over that hash (fee 0 in e2e).
+        // 4. The wallet signs its erc4337 action context over that hash (maxFee is already
+        //    inside it via callData — the digest itself carries no fee word).
         ShrincsTypes.StatefulSignature memory walletSig =
-            _signWalletErc4337(userOpHash, walletLeaf, walletKeyVersion, walletNonce);
+            _signWalletErc4337(userOpHash, p.walletLeaf, p.walletKeyVersion, p.walletNonce);
         op.signature = abi.encode(walletPk, walletSig);
     }
 
-    /// @dev Convenience: default sponsored op (epoch 0 both sides, same leaf, no window, wallet
-    ///      nonce 0 — only correct for a wallet that has consumed no signature yet).
+    /// @dev Convenience: default sponsored op (see `_defaultOpParams`; wallet nonce 0 is only
+    ///      correct for a wallet that has consumed no signature yet).
     function _sponsoredOp(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
         internal
         view
@@ -138,20 +164,24 @@ abstract contract ShrincsE2EAssembler is Test {
         uint32 leaf,
         uint256 walletNonce
     ) internal view returns (PackedUserOperation memory) {
-        return _buildSponsoredOp(target, value, data, nonce, leaf, leaf, 0, 0, false, 0, 0, walletNonce, false);
+        SponsoredOpParams memory p = _defaultOpParams(target, value, data, nonce, leaf);
+        p.walletNonce = walletNonce;
+        return _buildSponsoredOp(p);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    SIGNING HELPERS                     */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Signs the wallet's ERC-4337 action context (payload = hash(userOpHash, fee 0)).
+    /// @dev Signs the wallet's ERC-4337 action context (payload = hash(userOpHash) — ONE word;
+    ///      mirrors `Codec.erc4337PayloadHash`, which binds no fee: the signer's maxFee ceiling
+    ///      is covered via callData inside userOpHash).
     function _signWalletErc4337(bytes32 userOpHash, uint32 leaf, uint256 keyVersion, uint256 walletNonce)
         internal
         view
         returns (ShrincsTypes.StatefulSignature memory)
     {
-        bytes32 payloadHash = keccak256(abi.encodePacked(userOpHash, bytes32(0)));
+        bytes32 payloadHash = keccak256(abi.encodePacked(userOpHash));
         return _signWalletAction(ACTION_ERC4337_EXECUTE, payloadHash, leaf, keyVersion, walletNonce);
     }
 

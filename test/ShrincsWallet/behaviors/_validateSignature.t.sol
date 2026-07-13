@@ -128,6 +128,33 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 2, "two leaves consumed");
     }
 
+    /* ─────────────── ERC-7562: validation is fee-independent and call-free ─────────────── */
+
+    /// @dev The digest no longer binds the factory fee: a fee change AFTER signing must not
+    ///      affect validation (the signer's ceiling lives in `callData` under userOpHash, and is
+    ///      enforced in the execution phase instead).
+    function test_validateSignature_unaffectedByFeeChange() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        factory.setExecuteFee(123456789); // moved between signing and validation
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "fee change cannot break validation");
+        assertTrue(wallet.isStatefulLeafUsed(1), "leaf consumed normally");
+    }
+
+    /// @dev THE regression guard for ERC-7562 finding F-1: the validation frame must perform no
+    ///      factory call at all. `executeFee()` is mocked to revert — if validation ever regains
+    ///      a `getExecuteFee()` read (an STO-033 violation conformant bundlers reject), this test
+    ///      fails loudly instead of the violation resurfacing at bundler rollout.
+    function test_validateSignature_noFactoryRead() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        vm.mockCallRevert(
+            address(factory),
+            abi.encodeWithSignature("executeFee()"),
+            "factory read during validation"
+        );
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "validation must not touch the factory");
+        vm.clearMockedCalls();
+    }
+
     function test_validateSignature_rejectsStaleNonce() public {
         // Both ops signed against the SAME live nonce (0); after the first lands, the second is
         // superseded — rejected as InvalidSignature with its leaf NOT consumed.
