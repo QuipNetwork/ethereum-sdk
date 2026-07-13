@@ -69,9 +69,11 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on invalid signature");
     }
 
-    function test_execute_leafConsumedOnly() public {
+    function test_execute_leafAndNonceConsumedOnly() public {
         // A signature binding (TARGET, value 0, empty data, fee 0); with an empty call the wallet
-        // consumes the leaf and emits `LeafConsumedOnly` without interacting.
+        // consumes the leaf and emits `LeafConsumedOnly` without interacting. Because the nonce
+        // advances too, this empty-execute path doubles as the one-leaf cancel-all for every
+        // outstanding signed authorization.
         ShrincsTypes.StatefulSignature memory sig = _executeSig(TARGET, 0, "", 1);
         vm.expectEmit(true, false, false, true, address(wallet));
         emit IShrincsWallet.LeafConsumedOnly(1);
@@ -79,6 +81,23 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         wallet.execute(_mainPk(), sig, TARGET, 0, "");
         assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
+        assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
+    }
+
+    /// @dev Supersession headline: a signature bound to a superseded nonce is dead even though
+    ///      its leaf is unused and its payload is intact.
+    function test_execute_revertsWhen_staleNonce() public {
+        // Sign at the live nonce, then let ANOTHER action land (leaf 2), advancing the nonce.
+        ShrincsTypes.StatefulSignature memory stale = _executeSig(TARGET, 0, "", 1);
+        ShrincsTypes.StatefulSignature memory fresh = _executeSig(TARGET, 0, "", 2);
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), fresh, TARGET, 0, "");
+        assertEq(wallet.actionNonce(), 1, "interleaved action advanced the nonce");
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.execute(_mainPk(), stale, TARGET, 0, "");
+        assertFalse(wallet.isStatefulLeafUsed(1), "superseded signature's leaf not consumed");
     }
 
     function test_execute_feeBinding() public {

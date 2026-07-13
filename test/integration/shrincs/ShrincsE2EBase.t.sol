@@ -92,12 +92,25 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     }
 
     /// @dev Builds the default sponsored op AND cross-checks it against the live EntryPoint hash.
+    ///      Binds wallet action nonce 0 — only correct for the wallet's FIRST consumed signature.
     function _checkedSponsoredOp(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
         internal
         view
         returns (PackedUserOperation memory op)
     {
-        op = _sponsoredOp(target, value, data, nonce, leaf);
+        op = _checkedSponsoredOp(target, value, data, nonce, leaf, 0);
+    }
+
+    /// @dev `_checkedSponsoredOp` at an explicit wallet action nonce (op N in a sequence binds N).
+    function _checkedSponsoredOp(
+        address target,
+        uint256 value,
+        bytes memory data,
+        uint256 nonce,
+        uint32 leaf,
+        uint256 walletNonce
+    ) internal view returns (PackedUserOperation memory op) {
+        op = _sponsoredOp(target, value, data, nonce, leaf, walletNonce);
         _assertLiveHash(op);
     }
 

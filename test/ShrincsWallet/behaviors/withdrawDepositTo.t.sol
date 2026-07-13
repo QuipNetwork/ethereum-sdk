@@ -65,5 +65,6 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
         vm.prank(OWNER);
         wallet.withdrawDepositTo(_pk(), sig, TO, 0);
         assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
+        assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
 }

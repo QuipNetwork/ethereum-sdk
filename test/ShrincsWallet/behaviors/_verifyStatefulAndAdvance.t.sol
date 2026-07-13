@@ -8,7 +8,8 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for the shared internal `_verifyStatefulAndAdvance` (via the harness). It is
 ///      the replay-blocking core of every owner-path action: leaf budget/used checks, SHRINCS
-///      verify, then the bitmap consume. Reverts, InvalidSignature, and the success consume (driven
+///      verify over the live-nonce context, then the bitmap consume + nonce advance. Reverts,
+///      InvalidSignature (including stale-nonce supersession), and the success consume (driven
 ///      by live-signed EXECUTE / ERC-4337 signatures) are all exercised.
 contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
     bytes32 internal constant ACTION = keccak256("test.action");
@@ -54,6 +55,37 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
         assertEq(leaf, 1, "consumed leaf returned");
         assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 marked used");
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
+        assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
+    }
+
+    /// @dev Every success advances the nonce by exactly one; no revert branch touches it
+    ///      (the revert cases above roll back state, so only assert the success arithmetic here).
+    function test_verifyStatefulAndAdvance_advancesNoncePerSignature() public {
+        bytes32 p1 = keccak256("payload-1");
+        ShrincsTypes.StatefulSignature memory s1 = _signStatefulAction(Codec.ACTION_EXECUTE, p1, 1);
+        wallet.exposed_verifyStatefulAndAdvance(_pk(), s1, Codec.ACTION_EXECUTE, p1);
+        assertEq(wallet.actionNonce(), 1, "+1 after first consume");
+
+        // The second signature must bind the NEW live nonce (signed after the first landed).
+        bytes32 p2 = keccak256("payload-2");
+        ShrincsTypes.StatefulSignature memory s2 = _signStatefulAction(Codec.ACTION_EXECUTE, p2, 2);
+        wallet.exposed_verifyStatefulAndAdvance(_pk(), s2, Codec.ACTION_EXECUTE, p2);
+        assertEq(wallet.actionNonce(), 2, "+1 after second consume");
+    }
+
+    /// @dev A signature bound to a superseded nonce is rejected `InvalidSignature` with no state
+    ///      change — the supersession property that replaced the signed-deadline design.
+    function test_verifyStatefulAndAdvance_rejectsStaleNonce() public {
+        bytes32 payloadHash = keccak256("stale-nonce-payload");
+        ShrincsTypes.StatefulSignature memory sig = _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 1);
+
+        // Any consumed signature elsewhere advances the live nonce past the one `sig` binds.
+        wallet.harness_setNonce(wallet.actionNonce() + 1);
+
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.exposed_verifyStatefulAndAdvance(_pk(), sig, Codec.ACTION_EXECUTE, payloadHash);
+        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on stale nonce");
+        assertEq(wallet.statefulLeavesUsed(), 0, "counter untouched");
     }
 
     /// @dev The consumed leaf tracks the signature, not a hardcoded 1: a leaf-2 signature consumes

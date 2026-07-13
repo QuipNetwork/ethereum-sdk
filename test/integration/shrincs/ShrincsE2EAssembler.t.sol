@@ -84,6 +84,7 @@ abstract contract ShrincsE2EAssembler is Test {
         bool useVerifier2,
         uint256 pmKeyVersion,
         uint256 walletKeyVersion,
+        uint256 walletNonce,
         bool corruptPmBinding
     ) internal view returns (PackedUserOperation memory op) {
         op.sender = WALLET;
@@ -113,17 +114,31 @@ abstract contract ShrincsE2EAssembler is Test {
 
         // 4. The wallet signs its erc4337 action context over that hash (fee 0 in e2e).
         ShrincsTypes.StatefulSignature memory walletSig =
-            _signWalletErc4337(userOpHash, walletLeaf, walletKeyVersion);
+            _signWalletErc4337(userOpHash, walletLeaf, walletKeyVersion, walletNonce);
         op.signature = abi.encode(walletPk, walletSig);
     }
 
-    /// @dev Convenience: default sponsored op (epoch 0 both sides, same leaf, no window).
+    /// @dev Convenience: default sponsored op (epoch 0 both sides, same leaf, no window, wallet
+    ///      nonce 0 — only correct for a wallet that has consumed no signature yet).
     function _sponsoredOp(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
         internal
         view
         returns (PackedUserOperation memory)
     {
-        return _buildSponsoredOp(target, value, data, nonce, leaf, leaf, 0, 0, false, 0, 0, false);
+        return _sponsoredOp(target, value, data, nonce, leaf, 0);
+    }
+
+    /// @dev Default sponsored op at an explicit wallet action nonce (each consumed wallet
+    ///      signature advances it, so op N in a sequence binds walletNonce N).
+    function _sponsoredOp(
+        address target,
+        uint256 value,
+        bytes memory data,
+        uint256 nonce,
+        uint32 leaf,
+        uint256 walletNonce
+    ) internal view returns (PackedUserOperation memory) {
+        return _buildSponsoredOp(target, value, data, nonce, leaf, leaf, 0, 0, false, 0, 0, walletNonce, false);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -131,24 +146,27 @@ abstract contract ShrincsE2EAssembler is Test {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Signs the wallet's ERC-4337 action context (payload = hash(userOpHash, fee 0)).
-    function _signWalletErc4337(bytes32 userOpHash, uint32 leaf, uint256 keyVersion)
+    function _signWalletErc4337(bytes32 userOpHash, uint32 leaf, uint256 keyVersion, uint256 walletNonce)
         internal
         view
         returns (ShrincsTypes.StatefulSignature memory)
     {
         bytes32 payloadHash = keccak256(abi.encodePacked(userOpHash, bytes32(0)));
-        return _signWalletAction(ACTION_ERC4337_EXECUTE, payloadHash, leaf, keyVersion);
+        return _signWalletAction(ACTION_ERC4337_EXECUTE, payloadHash, leaf, keyVersion, walletNonce);
     }
 
-    /// @dev Signs an arbitrary wallet action context with the wallet main key.
-    function _signWalletAction(bytes32 actionType, bytes32 payloadHash, uint32 leaf, uint256 keyVersion)
-        internal
-        view
-        returns (ShrincsTypes.StatefulSignature memory sig)
-    {
+    /// @dev Signs an arbitrary wallet action context with the wallet main key. `nonce` must be the
+    ///      wallet's live `actionNonce()` at validation time — every consumed signature advances it.
+    function _signWalletAction(
+        bytes32 actionType,
+        bytes32 payloadHash,
+        uint32 leaf,
+        uint256 keyVersion,
+        uint256 nonce
+    ) internal view returns (ShrincsTypes.StatefulSignature memory sig) {
         ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
             domainSeparator: _walletDomainSeparator(),
-            nonce: 0,
+            nonce: nonce,
             keyVersion: keyVersion,
             actionType: actionType,
             payloadHash: payloadHash
@@ -165,6 +183,8 @@ abstract contract ShrincsE2EAssembler is Test {
         view
         returns (ShrincsTypes.StatefulSignature memory sig)
     {
+        // The paymaster binds NO wrapper nonce (out of scope of the wallet's nonce scheme): its
+        // sponsorship freshness is the validUntil/validAfter window + its own one-time leaf.
         ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
             domainSeparator: _pmDomainSeparator(),
             nonce: 0,

@@ -78,7 +78,7 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
         wallet.rotateKey(_mainPk(), sig, t);
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "new stateful subkey installed");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
-        assertEq(wallet.actionNonce(), nonceBefore, "rotateKey leaves the action nonce unchanged");
+        assertEq(wallet.actionNonce(), nonceBefore + 1, "rotateKey advances the action nonce (+1 via the shared core)");
         assertEq(wallet.statefulLeavesUsed(), 0, "fresh epoch counter");
     }
 }

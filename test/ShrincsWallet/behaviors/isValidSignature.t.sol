@@ -61,4 +61,26 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         assertEq(wallet.isValidSignature(HASH, blob), MAGIC);
         assertEq(uint8(wallet.debugIsValidSignature(HASH, blob)), uint8(IShrincsWallet.Erc1271ValidationResult.Ok));
     }
+
+    /// @dev Intended supersession: the 1271 context binds the LIVE action nonce, so a blob dies
+    ///      the moment any wallet signature is consumed — and a fresh re-sign is valid again.
+    function test_isValidSignature_staleNonceRejected_freshResignOk() public {
+        ShrincsTypes.StatelessSignature memory sig = _signErc1271(HASH);
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
+        assertEq(wallet.isValidSignature(HASH, blob), MAGIC, "fresh blob valid");
+
+        // Any consumed wallet signature advances the nonce (stood in for by the harness setter).
+        wallet.harness_setNonce(wallet.actionNonce() + 1);
+
+        assertEq(wallet.isValidSignature(HASH, blob), FAIL, "blob superseded by the nonce advance");
+        assertEq(
+            uint8(wallet.debugIsValidSignature(HASH, blob)),
+            uint8(IShrincsWallet.Erc1271ValidationResult.InvalidShrincsSignature)
+        );
+
+        // Re-signing against the new live nonce restores validity.
+        ShrincsTypes.StatelessSignature memory fresh = _signErc1271(HASH);
+        bytes memory freshBlob = _blob(erc1271Pk, fresh, _ownerEcdsa(HASH));
+        assertEq(wallet.isValidSignature(HASH, freshBlob), MAGIC, "re-signed blob valid");
+    }
 }

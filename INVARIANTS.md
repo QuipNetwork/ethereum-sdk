@@ -277,6 +277,23 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 ---
 
+## 17. Shrincs Action-Nonce Freshness
+
+**`ShrincsWallet.actionNonce()` is monotonically non-decreasing, advances by exactly one per consumed signature, and is bound live into every signed context.**
+
+- Bound into every `ActionContext` (`ACTION_ERC4337_EXECUTE`, direct stateful actions, `ACTION_ERC1271`, `ACTION_UPGRADE`) and every `RotationContext` at verification time. A signature is valid only while the nonce it binds is the live one — any landed action supersedes all outstanding signed material.
+- Advances: +1 in `_verifyStatefulAndAdvance` and in the 4337 `_validateSignature` consume block (per consumed stateful signature); +1 in the `recoverWallet` / `transferOwnership` install blocks (per consumed stateless rotation signature). `transferOwnership` consumes one of each → nets +2, with both signatures binding the pre-call nonce (the rotation context is built and verified BEFORE the stateful core advances the nonce — load-bearing ordering).
+- Never advanced by failed verification, by views, or by `migrate` (whose `keyVersion` bump already invalidates every outstanding context). Never decreased or reset — it survives key rotation (unlike the per-epoch leaf bitmap and `statefulLeavesUsed`).
+- Upgrade path: the auth blob carries the signed nonce; `upgradeToAndCall` requires `blobNonce == actionNonce()` (`StaleActionNonce`), while `verifyUpgrade` rebuilds the context from the blob nonce so the consumed signature still re-verifies as the post-upgrade reachability probe.
+- The nonce slot is guarded slot index 6: the `upgradeToAndCall` probe snapshot is taken AFTER the nonce advance, so a malicious probe cannot tamper with it undetected.
+- Complementarity: nonce staleness rejects superseded signatures, but only the used-leaf bitmap (per-epoch, never cleared within an epoch) prevents an OTS leaf from signing a second, different message. Both must hold.
+
+**Contracts:** ShrincsWallet
+
+**Violation consequence:** A nonce that fails to advance on a consumed signature would leave superseded (potentially mempool-exposed or attacker-held) signatures replay-eligible until their leaves are burned. A nonce that advances without a consumed signature (or is tamperable) would brick every outstanding signature and, via the upgrade path, could block upgrades.
+
+---
+
 ## Critical Dependencies
 
 These invariants form a security web — they depend on each other:

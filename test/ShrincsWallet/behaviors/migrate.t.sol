@@ -26,6 +26,14 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         assertFalse(wallet.isStatefulLeafUsed(1), "fresh namespace");
     }
 
+    function test_migrate_doesNotAdvanceActionNonce() public {
+        wallet.harness_setNonce(5);
+        wallet.harness_migrateInUpgradeContext(_validInitPayload());
+        // The keyVersion bump already invalidates every outstanding context; the nonce is
+        // deliberately untouched by migration.
+        assertEq(wallet.actionNonce(), 5, "migrate leaves the action nonce unchanged");
+    }
+
     function test_migrate_emitsWalletMigrated() public {
         vm.recordLogs();
         wallet.harness_migrateInUpgradeContext(_validInitPayload());

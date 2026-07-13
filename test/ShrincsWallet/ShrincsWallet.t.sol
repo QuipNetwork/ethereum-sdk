@@ -142,14 +142,20 @@ contract ShrincsWalletTest is Test {
         return keccak256(abi.encodePacked(Codec.DOMAIN_TAG, block.chainid, uint256(uint160(WALLET))));
     }
 
-    /// @dev Builds the wallet's canonical no-nonce action context against its LIVE key epoch.
+    /// @dev Builds the wallet's canonical action context against its LIVE nonce and key epoch.
+    ///      Signing immediately before submission keeps the bound nonce fresh; a signature
+    ///      produced here goes stale as soon as any other wallet signature is consumed.
     function _actionContext(bytes32 actionType, bytes32 payloadHash)
         internal
         view
         returns (ShrincsTypes.ActionContext memory)
     {
         return Codec.buildActionContext(
-            wallet.exposed_shrincsDomainSeparator(), 0, wallet.keyVersion(), actionType, payloadHash
+            wallet.exposed_shrincsDomainSeparator(),
+            wallet.actionNonce(),
+            wallet.keyVersion(),
+            actionType,
+            payloadHash
         );
     }
 

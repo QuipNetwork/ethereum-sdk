@@ -23,7 +23,7 @@ contract ShrincsE2E_rejections is ShrincsE2EBase {
     function test_e2e_badPaymasterSig_AA34() public {
         // The paymaster signed a flipped binding hash; the wallet signature stays valid.
         PackedUserOperation memory op =
-            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, 0, 0, false, 0, 0, true);
+            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, 0, 0, false, 0, 0, 0, true);
         _assertLiveHash(op);
         _handleExpectRevert(op, _failedOp(0, "AA34 signature error"));
     }
@@ -34,7 +34,7 @@ contract ShrincsE2E_rejections is ShrincsE2EBase {
     function test_e2e_windowNotDue_AA32() public {
         // validAfter far in the future (year ~2096), validUntil unbounded.
         PackedUserOperation memory op = _buildSponsoredOp(
-            RECIPIENT, 0.1 ether, "", 0, 1, 1, type(uint48).max, uint48(4_000_000_000), false, 0, 0, false
+            RECIPIENT, 0.1 ether, "", 0, 1, 1, type(uint48).max, uint48(4_000_000_000), false, 0, 0, 0, false
         );
         _handleExpectRevert(op, _failedOp(0, "AA32 paymaster expired or not due"));
     }
@@ -43,7 +43,7 @@ contract ShrincsE2E_rejections is ShrincsE2EBase {
     function test_e2e_windowExpired_AA32() public {
         // validUntil already elapsed.
         PackedUserOperation memory op =
-            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, uint48(1), 0, false, 0, 0, false);
+            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, uint48(1), 0, false, 0, 0, 0, false);
         _handleExpectRevert(op, _failedOp(0, "AA32 paymaster expired or not due"));
     }
 }

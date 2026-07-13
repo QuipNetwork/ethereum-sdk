@@ -23,7 +23,7 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
         uint256 pmDepositBefore = _deposit(PAYMASTER);
         // Signed with verifierKey2 under paymaster keyVersion 1.
         PackedUserOperation memory op =
-            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, 0, 0, true, 1, 0, false);
+            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 1, 0, 0, true, 1, 0, 0, false);
         _assertLiveHash(op);
         _handle(op);
 
@@ -67,7 +67,7 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
             _walletStatefulRotationTarget("e2e-wallet-rotate-next");
         // rotateKeyPayloadHash = keccak256(nextCommitment).
         ShrincsTypes.StatefulSignature memory rotateSig = _signWalletAction(
-            keccak256("quip.shrincs.action.rotateKey"), keccak256(abi.encodePacked(nextCommitment)), 5, 0
+            keccak256("quip.shrincs.action.rotateKey"), keccak256(abi.encodePacked(nextCommitment)), 5, 0, 0
         );
 
         vm.prank(WALLET_OWNER);
@@ -82,7 +82,8 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
             "wallet rotated to the new commitment"
         );
 
-        // The pre-rotation sponsorship (wallet sig under the old key/epoch) no longer validates.
+        // The pre-rotation sponsorship no longer validates — doubly dead: its wallet signature is
+        // bound to the old key/epoch AND to action nonce 0, which the rotateKey consume advanced.
         _handleExpectRevert(preRotation, _failedOp(0, "AA24 signature error"));
     }
 }

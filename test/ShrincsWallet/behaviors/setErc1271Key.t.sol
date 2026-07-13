@@ -68,5 +68,6 @@ contract ShrincsWallet_setErc1271Key is ShrincsWalletTest {
         wallet.setErc1271Key(_mainPk(), sig, NEW_COMMITMENT, SUITE);
         assertEq(wallet.getErc1271Commitment(), NEW_COMMITMENT);
         assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
+        assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
 }
