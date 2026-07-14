@@ -81,6 +81,11 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
         assertEq(codec.exposed_rotateKeyPayloadHash(nextCommitment), EfficientHashLib.hash(nextCommitment));
     }
 
+    function test_markLeavesUsedPayloadHash() public view {
+        bytes32 leavesHash = keccak256("leaves-hash");
+        assertEq(codec.exposed_markLeavesUsedPayloadHash(leavesHash), EfficientHashLib.hash(leavesHash));
+    }
+
     function test_domainAndActionTags() public pure {
         assertEq(Codec.DOMAIN_TAG, keccak256("quip-shrincs-wallet-v1"));
         assertEq(Codec.ACTION_ERC4337_EXECUTE, keccak256("quip.shrincs.action.erc4337Execute"));
@@ -90,6 +95,7 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
         assertEq(Codec.ACTION_TRANSFER_OWNERSHIP, keccak256("quip.shrincs.action.transferOwnership"));
         assertEq(Codec.ACTION_SET_ERC1271_KEY, keccak256("quip.shrincs.action.setErc1271Key"));
         assertEq(Codec.ACTION_ROTATE_KEY, keccak256("quip.shrincs.action.rotateKey"));
+        assertEq(Codec.ACTION_MARK_LEAVES_USED, keccak256("quip.shrincs.action.markLeavesUsed"));
         assertEq(Codec.ACTION_ERC1271, keccak256("quip.shrincs.action.erc1271"));
     }
 
@@ -144,6 +150,10 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
 
     function testFuzz_rotateKeyPayloadHash(bytes32 nextCommitment) public view {
         assertEq(codec.exposed_rotateKeyPayloadHash(nextCommitment), EfficientHashLib.hash(nextCommitment));
+    }
+
+    function testFuzz_markLeavesUsedPayloadHash(bytes32 leavesHash) public view {
+        assertEq(codec.exposed_markLeavesUsedPayloadHash(leavesHash), EfficientHashLib.hash(leavesHash));
     }
 
     /// @dev Distinct maxFee ⇒ distinct execute payload hash (the ceiling field is genuinely

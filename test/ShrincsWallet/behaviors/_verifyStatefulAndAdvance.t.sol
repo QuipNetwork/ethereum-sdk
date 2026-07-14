@@ -104,6 +104,57 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 1, "exactly one leaf consumed");
     }
 
+    /* ────────────────────── CONSUME VARIANT (no nonce advance) ────────────────────── */
+
+    /// @dev `_verifyStatefulAndConsume` is the `markLeavesUsed` carve-out: identical verify +
+    ///      bitmap consume + counter + event, but the action nonce must stay untouched.
+    function test_verifyStatefulAndConsume_doesNotAdvanceNonce() public {
+        bytes32 payloadHash = keccak256("consume-payload");
+        ShrincsTypes.StatefulSignature memory sig =
+            _signStatefulAction(Codec.ACTION_MARK_LEAVES_USED, payloadHash, 1);
+
+        vm.expectEmit(true, true, false, false, address(wallet));
+        emit IShrincsWallet.StatefulSignatureVerified(1, 0);
+        uint32 leaf =
+            wallet.exposed_verifyStatefulAndConsume(_pk(), sig, Codec.ACTION_MARK_LEAVES_USED, payloadHash);
+
+        assertEq(leaf, 1, "consumed leaf returned");
+        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 marked used");
+        assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
+        assertEq(wallet.actionNonce(), 0, "consume variant must NOT advance the action nonce");
+    }
+
+    /// @dev The surgical property at helper level: a signature outstanding when a consume-only
+    ///      verification lands still binds the live nonce, so it remains valid — unlike after
+    ///      an advance, which supersedes it.
+    function test_verifyStatefulAndConsume_preservesOutstandingSignatures() public {
+        bytes32 p1 = keccak256("consumed-first");
+        bytes32 p2 = keccak256("outstanding");
+        // Both signed against the SAME live nonce (0), before either lands.
+        ShrincsTypes.StatefulSignature memory s1 =
+            _signStatefulAction(Codec.ACTION_MARK_LEAVES_USED, p1, 1);
+        ShrincsTypes.StatefulSignature memory s2 = _signStatefulAction(Codec.ACTION_EXECUTE, p2, 2);
+
+        wallet.exposed_verifyStatefulAndConsume(_pk(), s1, Codec.ACTION_MARK_LEAVES_USED, p1);
+        // The outstanding signature still verifies: the consume did not supersede it.
+        wallet.exposed_verifyStatefulAndAdvance(_pk(), s2, Codec.ACTION_EXECUTE, p2);
+        assertEq(wallet.actionNonce(), 1, "only the advancing consume moved the nonce");
+        assertEq(wallet.statefulLeavesUsed(), 2, "both leaves consumed");
+    }
+
+    /// @dev Contrast pin: after an ADVANCING consume, a same-nonce outstanding signature is
+    ///      superseded (`InvalidSignature`) — the exact behavior the consume variant carves out.
+    function test_verifyStatefulAndAdvance_supersedesOutstandingSignatures() public {
+        bytes32 p1 = keccak256("landed-first");
+        bytes32 p2 = keccak256("superseded");
+        ShrincsTypes.StatefulSignature memory s1 = _signStatefulAction(Codec.ACTION_EXECUTE, p1, 1);
+        ShrincsTypes.StatefulSignature memory s2 = _signStatefulAction(Codec.ACTION_EXECUTE, p2, 2);
+
+        wallet.exposed_verifyStatefulAndAdvance(_pk(), s1, Codec.ACTION_EXECUTE, p1);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.exposed_verifyStatefulAndAdvance(_pk(), s2, Codec.ACTION_EXECUTE, p2);
+    }
+
     /* ─────────────────────────────── FUZZ ─────────────────────────────── */
 
     /// @dev The pre-verify budget guard runs before any crypto, so it is fully fuzzable with a
