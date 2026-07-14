@@ -22,9 +22,8 @@ import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 // NOTE: OpenZeppelin 5.6.0-rc.1 is a pre-release version. Pin to a stable release before mainnet.
 import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
-import {IWOTSPlusImplementation} from "./wots/interfaces/IWOTSPlusImplementation.sol";
+import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
 
 /// @title QuipFactory
 contract QuipFactory is IQuipFactory, Ownable2Step {
@@ -181,12 +180,11 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         address oldOwner = walletOwner[msg.sender];
         if (oldOwner == newOwner) revert SameOwner();
         // NB:
-        // Pins the callback to the tail of `transferOwnership(bytes)` —
-        // the only path that produces `wallet.owner() == newOwner` in the
-        // same transaction. `execute` / `executeBatch` can't mutate `owner()`
-        // (no path); `delegateExecute` / `storageStore` can't either because
-        // of transient storage guards.
-        if (IWOTSPlusImplementation(msg.sender).owner() != newOwner) {
+        // Pins the callback to the tail of the wallet's PQ-authenticated
+        // ownership-transfer flow — per the vetting contract (`IQuipWallet`
+        // natspec, rule 2), the only path a vetted implementation may have
+        // that produces `wallet.owner() == newOwner` in the same transaction.
+        if (IQuipWallet(msg.sender).owner() != newOwner) {
             revert OwnerStateMismatch();
         }
 
@@ -322,7 +320,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
             vaultId
         );
 
-        IWOTSPlusImplementation(contractAddr).initialize(to, payload);
+        IQuipWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
         wallets[vaultId] = contractAddr;
         vaultIdOf[contractAddr] = vaultId;
@@ -337,10 +335,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
             block.timestamp,
             vaultId,
             to,
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(payload[0:32]),
-                publicKeyHash: bytes32(payload[32:64])
-            }),
+            impl,
             contractAddr
         );
 
