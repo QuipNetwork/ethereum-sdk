@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Test.sol";
+import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipFactoryHarness} from "../../harness/QuipFactoryHarness.sol";
 import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
@@ -14,7 +15,9 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
 
     function setUp() public override {
         super.setUp();
-        harness = new QuipFactoryHarness(payable(ADMIN), 0.1 ether);
+        QuipFactoryHarness harnessImpl = new QuipFactoryHarness(0.1 ether);
+        harness = QuipFactoryHarness(payable(LibClone.deployERC1967(address(harnessImpl))));
+        harness.initialize(payable(ADMIN));
         impl = new WOTSPlusImplementation(payable(address(harness)));
         vm.prank(ADMIN);
         harness.vetImplementation(address(impl));

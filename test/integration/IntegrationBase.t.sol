@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
+import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
 import {WOTSPlusImplementation} from "../../contracts/wots/WOTSPlusImplementation.sol";
@@ -132,9 +133,11 @@ contract IntegrationBase is Test {
     function _deployWalletStack() internal {
         deployer = new Deployer();
 
-        bytes memory factoryBytecode = abi.encodePacked(type(QuipFactory).creationCode, abi.encode(ADMIN, 0.1 ether));
-        address factoryAddr = deployer.deploy(factoryBytecode, keccak256("QuipFactory-integration"));
+        QuipFactory factoryImpl = new QuipFactory(0.1 ether);
+        bytes memory proxyInitcode = LibClone.initCodeERC1967(address(factoryImpl));
+        address factoryAddr = deployer.deploy(proxyInitcode, keccak256("QuipFactory-integration"));
         factory = QuipFactory(payable(factoryAddr));
+        factory.initialize(payable(ADMIN));
 
         walletImpl = new WOTSPlusImplementation(payable(address(factory)));
         vm.prank(ADMIN);

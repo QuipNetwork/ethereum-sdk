@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
+import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 
@@ -51,7 +51,7 @@ contract QuipFactory_setCreationFee is QuipFactoryTest {
 
     function test_setCreationFee_revertsWhen_callerNotAdmin() public {
         vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, ALICE));
+        vm.expectRevert(Ownable.Unauthorized.selector);
         factory.setCreationFee(CREATION_FEE);
     }
 

@@ -62,7 +62,7 @@ contract DeployAllTest is Test {
     // Salts mirror the deploy bases + PredictAddresses (independent copy: a typo
     // here fails the address asserts, catching salt drift).
     bytes32 internal constant WOTSPLUS_SALT = keccak256("QUIP:WOTSPlus:V1.1");
-    bytes32 internal constant FACTORY_SALT = keccak256("QUIP:QuipFactory:V1.1");
+    bytes32 internal constant FACTORY_PROXY_SALT = keccak256("QUIP:QuipFactory:Proxy:V2");
     bytes32 internal constant WOTS_IMPL_SALT = keccak256("QUIP:WOTSPlusImplementation:V1.1");
     bytes32 internal constant QUIP_PAYMASTER_PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1.1");
     // Impl salts bind the verifier scheme tag (PROFILE_TAG = the profile-name
@@ -106,7 +106,7 @@ contract DeployAllTest is Test {
 
         // Deterministic CREATE3 addresses (relative to this local Deployer).
         assertEq(lib, _predict(WOTSPLUS_SALT), "WOTSPlus addr");
-        assertEq(fAddr, _predict(FACTORY_SALT), "QuipFactory addr");
+        assertEq(fAddr, _predict(FACTORY_PROXY_SALT), "QuipFactory proxy addr");
         assertEq(sImpl, _predict(SHRINCS_WALLET_SALT), "ShrincsWallet addr");
         assertEq(sPm, _predict(SHRINCS_PAYMASTER_PROXY_SALT), "ShrincsPaymaster proxy addr");
         assertEq(wImpl, _predict(WOTS_IMPL_SALT), "WOTSPlusImplementation addr");

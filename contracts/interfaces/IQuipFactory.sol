@@ -22,6 +22,9 @@ pragma solidity ^0.8.33;
 ///         codehash and driven exclusively through the minimal `IQuipWallet`
 ///         surface (see its natspec for the behavioral vetting contract).
 ///         Supports multiple vetted implementation versions with index-based selection.
+///         UUPS-upgradeable behind an ERC-1967 proxy: the proxy address is the
+///         permanent factory identity (wallet immutables and CREATE3 wallet
+///         addressing both derive from it and survive logic upgrades).
 interface IQuipFactory {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
@@ -165,6 +168,15 @@ interface IQuipFactory {
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @notice Initializes the factory proxy with its initial owner.
+    /// @dev Callable exactly once (Solady `initializer`); the implementation
+    ///      itself is locked via `_disableInitializers` in its constructor.
+    ///      `MAX_FEE` is NOT set here — it is a per-implementation immutable
+    ///      supplied to the implementation's constructor.
+    /// @param initialOwner The initial factory owner (expected to be a
+    ///        post-quantum wallet; controls vetting, fees, and upgrades).
+    function initialize(address payable initialOwner) external;
+
     /// @notice Approves a fresh implementation's codehash for proxy deployment.
     /// @dev Only callable by the admin. Computes `extcodehash` of `impl` and adds it
     ///      to the vetted set as a new entry. Reverts with `AlreadyVetted` if the
@@ -270,8 +282,10 @@ interface IQuipFactory {
     /// @param amount The amount of ETH in wei to withdraw.
     function withdraw(uint256 amount) external;
 
-    /// @notice Disabled; always reverts with `RenounceDisabled`.
-    function renounceOwnership() external;
+    // NOTE: `renounceOwnership()` is deliberately NOT declared here. The
+    // implementation overrides Solady Ownable's payable `renounceOwnership`
+    // to always revert `RenounceDisabled` (same pattern as the wallets'
+    // interfaces, which declare only the error).
 
     /// @notice Returns the current fee charged for wallet creation.
     /// @return The creation fee in wei.
