@@ -82,6 +82,23 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _isStatefulLeafUsed(Storage.layout(), keyVersion_, leafIndex);
     }
 
+    /// @dev Wraps the consume-only stateful verify (no action-nonce advance — the
+    ///      `markLeavesUsed` carve-out) so the nonce-neutrality can be pinned directly.
+    function exposed_verifyStatefulAndConsume(
+        ShrincsTypes.PublicKey calldata publicKey,
+        ShrincsTypes.StatefulSignature calldata signature,
+        bytes32 actionType,
+        bytes32 payloadHash
+    ) external returns (uint32) {
+        return
+            _verifyStatefulAndConsume(
+                publicKey,
+                signature,
+                actionType,
+                payloadHash
+            );
+    }
+
     /// @dev Wraps the shared stateful verify + bitmap consume so the budget/used/InvalidSignature
     ///      branches can be exercised directly (the leaf consume mutates state, so non-view).
     function exposed_verifyStatefulAndAdvance(

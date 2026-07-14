@@ -60,6 +60,13 @@ interface IShrincsWallet {
     /// @notice Thrown when a stateful signature's leaf index is zero or exceeds the installed
     ///         key's `maxSignatures` budget (the key must be rotated via `rotateKey`).
     error StatefulBudgetExhausted();
+    /// @notice Thrown when `markLeavesUsed` is called with an empty target array. Burning the
+    ///         authorizing leaf for nothing is almost certainly a mistake; a deliberate
+    ///         single-leaf burn already exists via the empty `execute` path.
+    error EmptyLeaves();
+    /// @notice Thrown when a `markLeavesUsed` target leaf is zero or exceeds the installed key's
+    ///         `maxSignatures` budget — a client bug, not a race, so the whole batch reverts.
+    error LeafOutOfRange(uint32 leaf);
 
     /// @notice Thrown when `renounceOwnership` is called (always reverts).
     error RenounceDisabled();
@@ -129,6 +136,18 @@ interface IShrincsWallet {
     ///         `value == 0 && data.length == 0` — a deliberate leaf consumption with no call.
     /// @param leaf The consumed stateful leaf index.
     event LeafConsumedOnly(uint32 indexed leaf);
+
+    /// @notice Emitted for each target leaf freshly marked used by `markLeavesUsed`.
+    /// @param leaf The revoked stateful leaf index.
+    /// @param keyVersion The key epoch whose bitmap the revocation applies to.
+    event LeafRevoked(uint32 indexed leaf, uint256 indexed keyVersion);
+
+    /// @notice Emitted for each `markLeavesUsed` target leaf that was already used (a landed
+    ///         action racing its revocation, a duplicate in the array, or the authorizing leaf
+    ///         itself) — skipped rather than reverting the batch.
+    /// @param leaf The already-used target leaf index.
+    /// @param keyVersion The key epoch whose bitmap was checked.
+    event LeafRevocationSkipped(uint32 indexed leaf, uint256 indexed keyVersion);
 
     /// @notice Emitted when an execution call succeeds.
     /// @param target The recipient or contract address.
@@ -276,6 +295,28 @@ interface IShrincsWallet {
         uint32 newErc1271HashSuite
     ) external payable;
 
+    /// @notice Batch leaf revocation: marks the target leaves used in the CURRENT key epoch's
+    ///         bitmap, authorized by one stateful SHRINCS signature from a different leaf.
+    ///         OTS hygiene primitive — a leaf whose one-time key signed a message that will
+    ///         never land (superseded by the nonce) must be burned so it can never sign a
+    ///         second, different message.
+    /// @dev Surgical by design: the authorizing leaf is consumed but the action nonce is NOT
+    ///      advanced, so outstanding signed material at non-revoked leaves stays valid (unlike
+    ///      every other landed action). Already-used targets — races, duplicates, or the
+    ///      authorizing leaf itself — are skipped with `LeafRevocationSkipped`; out-of-range
+    ///      targets revert `LeafOutOfRange`; an empty array reverts `EmptyLeaves`. A revocation
+    ///      signed under epoch E is invalid after any rotation (the context binds `keyVersion`).
+    /// @param publicKey The main-key bundle (re-validated against the installed commitment).
+    /// @param signature The authorizing stateful signature; its leaf must be unused and SHOULD
+    ///        not be one of the targets (clients must never sign with a leaf being revoked —
+    ///        that is the key reuse this function exists to prevent).
+    /// @param leaves The target leaf indices to revoke (order-sensitive in the signed payload).
+    function markLeavesUsed(
+        ShrincsTypes.PublicKey calldata publicKey,
+        ShrincsTypes.StatefulSignature calldata signature,
+        uint32[] calldata leaves
+    ) external payable;
+
     /// @notice Routine stateful rotation of the main key's stateful subkey (reusing the
     ///         stateless recovery root). Authorized by a stateful signature; resets the leaf
     ///         budget. Use before `maxSignatures` is exhausted.
@@ -362,6 +403,7 @@ interface IShrincsWallet {
     /// @notice The SHRINCS action/rotation nonce (distinct from the EntryPoint nonce). Bound
     ///         into every signed context — actions, rotations, ERC-1271, and upgrades — and
     ///         advanced on every consumed signature, so any landed action supersedes all
-    ///         outstanding signed material.
+    ///         outstanding signed material. Sole exception: `markLeavesUsed` consumes its
+    ///         authorizing signature without advancing (surgical revocation).
     function actionNonce() external view returns (uint256);
 }

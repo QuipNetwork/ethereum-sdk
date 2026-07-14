@@ -59,6 +59,8 @@ library ShrincsWalletCodec {
         keccak256("quip.shrincs.action.setErc1271Key");
     bytes32 internal constant ACTION_ROTATE_KEY =
         keccak256("quip.shrincs.action.rotateKey");
+    bytes32 internal constant ACTION_MARK_LEAVES_USED =
+        keccak256("quip.shrincs.action.markLeavesUsed");
     bytes32 internal constant ACTION_ERC1271 =
         keccak256("quip.shrincs.action.erc1271");
 
@@ -331,5 +333,14 @@ library ShrincsWalletCodec {
         bytes32 nextCommitment
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(nextCommitment);
+    }
+
+    /// @dev `payloadHash` for the `markLeavesUsed` (batch leaf revocation) path. `leavesHash`
+    ///      commits to the exact target array — one 32-byte word per leaf index, in order —
+    ///      so a submitter can neither add nor drop targets from a signed revocation.
+    function markLeavesUsedPayloadHash(
+        bytes32 leavesHash
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(leavesHash);
     }
 }

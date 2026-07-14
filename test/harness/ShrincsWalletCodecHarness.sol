@@ -152,4 +152,8 @@ contract ShrincsWalletCodecHarness {
     function exposed_rotateKeyPayloadHash(bytes32 nextCommitment) external pure returns (bytes32) {
         return Codec.rotateKeyPayloadHash(nextCommitment);
     }
+
+    function exposed_markLeavesUsedPayloadHash(bytes32 leavesHash) external pure returns (bytes32) {
+        return Codec.markLeavesUsedPayloadHash(leavesHash);
+    }
 }

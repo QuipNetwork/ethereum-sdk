@@ -643,6 +643,63 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         emit KeyRotated(prev, nextCommitment, $.keyVersion);
     }
 
+    /// @inheritdoc IShrincsWallet
+    function markLeavesUsed(
+        ShrincsTypes.PublicKey calldata publicKey,
+        ShrincsTypes.StatefulSignature calldata signature,
+        uint32[] calldata leaves
+    ) external payable onlyOwner {
+        // Burning the authorizing leaf for nothing is almost certainly a client bug; a
+        // deliberate single-leaf burn already exists via the empty `execute` path.
+        if (leaves.length == 0) revert EmptyLeaves();
+
+        // Commit to the exact target array: one 32-byte word per leaf index, in order.
+        uint256 n = leaves.length;
+        bytes32[] memory words = EfficientHashLib.malloc(n);
+        for (uint256 i = 0; i < n; ++i) {
+            EfficientHashLib.set(words, i, uint256(leaves[i]));
+        }
+        bytes32 payloadHash = Codec.markLeavesUsedPayloadHash(
+            EfficientHashLib.hash(words)
+        );
+
+        // Deliberate carve-out: consume the authorizing leaf WITHOUT advancing the action
+        // nonce. Revocation only ever shrinks the set of valid signatures, so it has nothing
+        // to supersede — outstanding signed material at non-revoked leaves (an in-flight op,
+        // ERC-1271 approvals) stays valid. Replay of this call is blocked by the authorizing
+        // leaf's bitmap bit alone. Mass invalidation remains available via the empty
+        // `execute` `LeafConsumedOnly` path, which does advance the nonce.
+        _verifyStatefulAndConsume(
+            publicKey,
+            signature,
+            Codec.ACTION_MARK_LEAVES_USED,
+            payloadHash
+        );
+
+        // Marking loop: idempotent Effects only, no Interactions. Already-used targets
+        // (including duplicates and the just-consumed authorizing leaf) are skipped, not
+        // reverted — a pending action racing its own revocation must not brick the batch
+        // and force burning another authorizing leaf.
+        Storage.Layout storage $ = Storage.layout();
+        uint256 epoch = $.keyVersion;
+        for (uint256 i = 0; i < n; ++i) {
+            uint32 leaf = leaves[i];
+            // Out-of-range is a client bug, not a race — fail the whole batch loudly.
+            if (leaf == 0 || leaf > $.maxSignatures)
+                revert LeafOutOfRange(leaf);
+            if (_isStatefulLeafUsed($, epoch, leaf)) {
+                emit LeafRevocationSkipped(leaf, epoch);
+                continue;
+            }
+            _markStatefulLeafUsed($, epoch, leaf);
+            unchecked {
+                // Bounded by `maxSignatures`: every mark is a unique in-range leaf.
+                $.statefulLeavesUsed += 1;
+            }
+            emit LeafRevoked(leaf, epoch);
+        }
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                  DISABLED CLASSICAL                    */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -851,9 +908,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @dev Core stateful verify + bitmap leaf consume shared by every stateful path. Reverts on
     ///      a zero/over-budget/already-consumed leaf or invalid signature; on success marks the
-    ///      leaf used in the current epoch's bitmap and advances the action nonce (both Effects),
-    ///      returning the consumed leaf.
-    function _verifyStatefulAndAdvance(
+    ///      leaf used in the current epoch's bitmap (an Effect), returning the consumed leaf.
+    ///      Does NOT advance the action nonce — that is `_verifyStatefulAndAdvance`'s job. Only
+    ///      `markLeavesUsed` consumes without advancing: revocation is pure denial (the set of
+    ///      valid signatures strictly shrinks), so it has nothing to supersede, and the consumed
+    ///      leaf's bitmap bit alone is its anti-replay guard.
+    function _verifyStatefulAndConsume(
         ShrincsTypes.PublicKey calldata publicKey,
         ShrincsTypes.StatefulSignature calldata signature,
         bytes32 actionType,
@@ -885,9 +945,27 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         _markStatefulLeafUsed($, epoch, leaf);
         unchecked {
             $.statefulLeavesUsed += 1;
-            $.nonce += 1;
         }
         emit StatefulSignatureVerified(leaf, epoch);
+    }
+
+    /// @dev `_verifyStatefulAndConsume` plus the action-nonce advance — the default for every
+    ///      authorizing stateful path except `markLeavesUsed` (see the consume variant's note).
+    function _verifyStatefulAndAdvance(
+        ShrincsTypes.PublicKey calldata publicKey,
+        ShrincsTypes.StatefulSignature calldata signature,
+        bytes32 actionType,
+        bytes32 payloadHash
+    ) internal returns (uint32 leaf) {
+        leaf = _verifyStatefulAndConsume(
+            publicKey,
+            signature,
+            actionType,
+            payloadHash
+        );
+        unchecked {
+            Storage.layout().nonce += 1;
+        }
     }
 
     /// @dev Returns whether stateful `leafIndex` has been consumed in the given key epoch.
