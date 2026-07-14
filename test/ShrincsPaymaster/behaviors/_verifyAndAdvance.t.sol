@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+// prettier-ignore
+import {
+    IERC7913SignatureVerifier
+} from "@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 
@@ -12,7 +20,7 @@ contract ShrincsPaymaster__verifyAndAdvance is ShrincsPaymasterTest {
     address internal constant SENDER = address(0xA11CE);
 
     function _call(
-        ShrincsTypes.StatefulSignature memory sig
+        SHRINCS.Signature memory sig
     ) internal returns (bool) {
         PackedUserOperation memory op = _userOp(SENDER, _pmData(_pk(), sig));
         return paymaster.exposed_verifyAndAdvance(op);
@@ -62,6 +70,20 @@ contract ShrincsPaymaster__verifyAndAdvance is ShrincsPaymasterTest {
         );
         assertTrue(paymaster.isStatefulLeafUsed(leaf), "leaf consumed");
         assertEq(paymaster.statefulLeavesUsed(), 1, "counter incremented");
+    }
+
+    /// @dev Sponsorship verification must actually leave the paymaster: a valid sponsorship
+    ///      staticcalls the pinned verifier's ERC-7913 `verify` (in lock-step with the wallet).
+    function test_verifyAndAdvance_delegatesToVerifier() public {
+        (PackedUserOperation memory op, uint32 leaf) = _sponsorUserOp(0);
+        vm.expectCall(
+            address(shrincsVerifier), abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector)
+        );
+        assertTrue(
+            paymaster.exposed_verifyAndAdvance(op),
+            "sponsorship verified through the external verifier"
+        );
+        assertTrue(paymaster.isStatefulLeafUsed(leaf), "leaf consumed");
     }
 
     function test_verifyAndAdvance_outOfOrderLeaves() public {

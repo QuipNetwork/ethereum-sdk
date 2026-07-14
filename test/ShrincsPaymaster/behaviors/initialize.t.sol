@@ -3,7 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsPaymaster} from "../../../contracts/interfaces/IShrincsPaymaster.sol";
 import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
@@ -15,11 +19,12 @@ import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     ShrincsPaymasterHarness internal bare;
     bytes32 internal constant COMMITMENT = keccak256("verifier-commitment");
-    uint32 internal constant SUITE = ShrincsTypes.HASH_SUITE_KECCAK_256;
+    uint32 internal constant SUITE = HashSuite.HASH_SUITE_ID;
 
     function setUp() public override {
         super.setUp();
-        ShrincsPaymasterHarness impl = new ShrincsPaymasterHarness();
+        ShrincsPaymasterHarness impl =
+            new ShrincsPaymasterHarness(address(shrincsVerifier));
         address bareAddr = address(
             uint160(uint256(keccak256("bare-shrincs-paymaster")))
         );
@@ -84,7 +89,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     /// @dev A hash suite the on-chain library does not verify must be rejected at install time.
     function test_initialize_revertsWhen_unsupportedHashSuite() public {
         vm.expectRevert(IShrincsPaymaster.UnsupportedHashSuite.selector);
-        bare.initialize(OWNER, COMMITMENT, ShrincsTypes.HASH_SUITE_UNSUPPORTED, MAX_SIG);
+        bare.initialize(OWNER, COMMITMENT, SHRINCS.HASH_SUITE_UNSUPPORTED, MAX_SIG);
     }
 
     /// @dev Pins the FULL `ShrincsVerifierSet` payload at initialization: previousCommitment is zero

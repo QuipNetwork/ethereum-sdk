@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
@@ -11,7 +15,7 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 ///      property `upgradeToAndCall` depends on (the probe rebuilds the context from the blob's
 ///      nonce, never the live one).
 contract ShrincsWallet_verifyUpgrade is ShrincsWalletTest {
-    function _data(ShrincsTypes.StatefulSignature memory sig) internal view returns (bytes memory) {
+    function _data(SHRINCS.Signature memory sig) internal view returns (bytes memory) {
         return abi.encode(_mainPk(), sig, false, bytes(""), wallet.actionNonce());
     }
 
@@ -23,7 +27,7 @@ contract ShrincsWallet_verifyUpgrade is ShrincsWalletTest {
 
     function test_verifyUpgrade_succeeds() public view {
         // The signature binds newImplementation = 0xBEEF, shouldMigrate=false, empty migrator.
-        ShrincsTypes.StatefulSignature memory sig = _signStatefulAction(
+        SHRINCS.Signature memory sig = _signStatefulAction(
             Codec.ACTION_UPGRADE, Codec.upgradePayloadHash(address(0xBEEF), false, keccak256("")), 1
         );
         wallet.verifyUpgrade(address(0xBEEF), _data(sig));
@@ -35,7 +39,7 @@ contract ShrincsWallet_verifyUpgrade is ShrincsWalletTest {
     ///      `upgradeToAndCall` delegatecalls this probe AFTER consuming the signature.
     function test_verifyUpgrade_usesBlobNonce_notLiveNonce() public {
         wallet.harness_setNonce(5);
-        ShrincsTypes.StatefulSignature memory sig = _signStatefulAction(
+        SHRINCS.Signature memory sig = _signStatefulAction(
             Codec.ACTION_UPGRADE, Codec.upgradePayloadHash(address(0xBEEF), false, keccak256("")), 1
         );
         bytes memory data = abi.encode(_mainPk(), sig, false, bytes(""), uint256(5));

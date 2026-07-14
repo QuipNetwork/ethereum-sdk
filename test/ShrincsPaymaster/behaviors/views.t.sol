@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 
 /// @dev Behavior tests for the paymaster view getters.
@@ -19,7 +23,7 @@ contract ShrincsPaymaster_views is ShrincsPaymasterTest {
             uint32 statefulLeavesUsed
         ) = paymaster.getShrincsVerifier();
         assertEq(commitment, verifierCommitment);
-        assertEq(hashSuite, ShrincsTypes.HASH_SUITE_KECCAK_256);
+        assertEq(hashSuite, HashSuite.HASH_SUITE_ID);
         assertEq(keyVersion, 0);
         assertEq(maxSignatures, MAX_SIG);
         assertEq(statefulLeavesUsed, 0);

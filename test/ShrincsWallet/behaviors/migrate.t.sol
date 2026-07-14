@@ -2,9 +2,12 @@
 pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsUtils.sol";
-import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsTestSigner.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -56,28 +59,28 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     }
 
     function test_migrate_revertsWhen_zeroErc1271Commitment() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         bytes memory payload = _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             bytes32(0),
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.ZeroErc1271Commitment.selector);
         wallet.harness_migrateInUpgradeContext(payload);
     }
 
     function test_migrate_revertsWhen_unsupportedHashSuite() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         bytes memory payload = _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_UNSUPPORTED,
+            SHRINCS.HASH_SUITE_UNSUPPORTED,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
         wallet.harness_migrateInUpgradeContext(payload);
@@ -85,37 +88,37 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
 
     function test_migrate_revertsWhen_invalidBundle() public {
         // Corrupt the bundle's embedded commitment so `validPublicKey` fails its recompute check.
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         pk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-embedded-commitment"));
         bytes memory payload = _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
         wallet.harness_migrateInUpgradeContext(payload);
     }
 
     function test_migrate_revertsWhen_declaredCommitmentMismatch() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         // Valid bundle, but the standalone declared commitment is wrong.
         bytes memory payload = _buildInitPayload(
             keccak256("wrong-commitment"),
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
         wallet.harness_migrateInUpgradeContext(payload);
     }
 
     function test_migrate_revertsWhen_zeroMaxSignatures() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         // Zero the trailing 4-byte maxSignatures, then recompute the commitment so the shape/
         // commitment checks pass and the explicit `ZeroMaxSignatures` guard fires.
         bytes memory spk = pk.statefulPublicKey;
@@ -123,16 +126,16 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         spk[65] = 0;
         spk[66] = 0;
         spk[67] = 0;
-        bytes32 newCommit = ShrincsUtils.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
+        bytes32 newCommit = SHRINCS.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
         pk.statefulPublicKey = spk;
         pk.publicKeyCommitment = abi.encodePacked(newCommit);
         bytes memory payload = _buildInitPayload(
             newCommit,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.ZeroMaxSignatures.selector);
         wallet.harness_migrateInUpgradeContext(payload);
@@ -142,7 +145,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     ///      migrates to a freshly generated bundle plus a distinct ERC-1271 commitment, and asserts
     ///      the new main commitment and ERC-1271 commitment are installed.
     function test_migrate_installsSuppliedBundle() public {
-        (, ShrincsTypes.PublicKey memory next, bool ok) = ShrincsTestSigner.keygen("migrated-main-key", MAX_SIG);
+        (, SHRINCS.PublicKey memory next, bool ok) = SHRINCSTestSigner.keygen("migrated-main-key", MAX_SIG);
         assertTrue(ok, "next keygen");
         bytes32 nextCommit = _commitment32(next);
         bytes32 newErc1271 = keccak256("migrated-erc1271");
@@ -152,15 +155,15 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
             nextCommit,
             keccak256("indexing-handle"), // top-level pkSeed slot — ignored by migrate
             next,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             newErc1271,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         wallet.harness_migrateInUpgradeContext(payload);
 
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommit, "new main commitment installed");
         assertEq(wallet.getErc1271Commitment(), newErc1271, "new erc1271 commitment installed");
-        assertEq(wallet.getErc1271HashSuite(), ShrincsTypes.HASH_SUITE_KECCAK_256, "erc1271 suite installed");
+        assertEq(wallet.getErc1271HashSuite(), HashSuite.HASH_SUITE_ID, "erc1271 suite installed");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
     }
 }

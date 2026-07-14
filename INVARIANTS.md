@@ -298,9 +298,9 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 ## 18. Shrincs Validation-Phase Purity (ERC-7562)
 
-**`ShrincsWallet._validateSignature` performs zero external calls; fee pricing happens only in the execution phase, capped by the signed `maxFee`.**
+**`ShrincsWallet._validateSignature`'s only external call is the staticcall to the pinned, storage-free SHRINCS verifier; fee pricing happens only in the execution phase, capped by the signed `maxFee`.**
 
-- The validation frame touches only the wallet's own storage (STO-010: leaf bitmap, `statefulLeavesUsed`, action nonce) and pure/internal SHRINCS verification. In particular it must never read `factory.executeFee()` — mutable non-associated storage that conformant bundlers reject under STO-033 (finding F-1, `ERC7562_COMPLIANCE.md`).
+- The validation frame touches only the wallet's own storage (STO-010: leaf bitmap, `statefulLeavesUsed`, action nonce), pure SHRINCS context/hash helpers, and one staticcall to the immutable `SHRINCS_VERIFIER` (compliant: a deployed target that touches no storage and uses no banned opcodes — see invariant 19 and `ERC7562_COMPLIANCE.md`). In particular it must never read `factory.executeFee()` — mutable non-associated storage that conformant bundlers reject under STO-033 (finding F-1, `ERC7562_COMPLIANCE.md`).
 - The signer's fee authorization is the `maxFee` calldata parameter of the capped `execute`/`executeBatch` variants; `userOpHash` covers `callData`, so the SHRINCS signature binds it with no digest work. The direct signed path binds `maxFee` as the 4th `executePayloadHash` field.
 - Execution (`_collectExecuteFee(maxFee)`) reads the live fee exactly once, reverts `ExecuteFeeExceedsCap` only if it exceeds the cap, and charges the LIVE fee — decreases succeed at the lower price (deliberately `<=`, not `==`).
 - The inherited un-capped `execute(address,uint256,bytes)` / `executeBatch(Call[])` selectors revert `StandardExecuteDisabled`, so no execution path escapes the cap.
@@ -309,6 +309,23 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 **Contracts:** ShrincsWallet
 
 **Violation consequence:** An external read in validation makes every userOp unshippable through conformant bundlers (rejected at `eth_sendUserOperation`) and re-opens the fee TOCTOU where the user authorizes fee X and pays fee Y.
+
+---
+
+## 19. Shrincs External Verifier Delegation
+
+**All SHRINCS signature cryptography is delegated to the pinned external verifier (`SHRINCS_VERIFIER`, an `immutable` set at implementation deployment); the wallet and paymaster keep every pure check and every piece of state local.**
+
+- The pinned target is the dep's deployed `SHRINCS256sKeccak` ERC-7913 verifier — trustless by construction: no owner, no storage, no constructor, no upgradability. Pinning it grants it no authority: it can only answer "does this signature verify over this 32-byte hash". A malicious verifier could at worst wrongly accept/reject signatures — which is why the address is an immutable pointing at a reviewed, deterministic (CREATE3) deployment, not a mutable storage slot.
+- The wallet computes canonical message hashes locally (`statefulActionMessageHash` / `statelessActionMessageHash` / `fullRotationMessageHash` — pure library calls) and passes the exact 32 hash bytes; equivalence with the inlined library check is exact because the ERC-7913 verifier verifies over `SPHINCSPlusC.toMessage(hash) == abi.encodePacked(hash)`, precisely what the inline paths hash.
+- Division of labor with the dep's `SHRINCS.statelessRotate`: the verifier re-runs every check over material it SEES (current-bundle shape + installed-commitment match inside `prepareStatelessDelegation`, then the crypto), so the wallet replicates none of those. `_statelessRotate` keeps only what the verifier can never see — the rotation TARGET: `nextKey` structural validation (which also keeps `fullRotationMessageHash`'s packed preimage canonical), zero-budget rejection, and the declared-vs-recomputed next-commitment equality (the signature binds the declared bytes; the wallet installs the recomputed value). Likewise the library's `validActionContext`/`validRotationContext` nonzero membranes are not replicated: every context field is wallet-built from keccak-derived values — except the caller-supplied ERC-1271 `hash`, which gets an explicit zero guard at its call site.
+- Statefulness NEVER moves to the verifier: leaf bitmap, `statefulLeavesUsed`, action nonce, `keyVersion`, and commitment installs stay wallet-side (the verifier's `verifyAndAttest`/transient-attestation surface is deliberately unused).
+- Envelopes are re-encoded wallet-side from typed calldata structs (`abi.encode(publicKey, signature)` — byte-identical to `SHRINCS.encodeStatefulEnvelope`), so the ABI framing is well-formed by construction — but the signature INTERNALS remain attacker-controlled, and 0.2.0's revert-as-rejection channel means garbage internals revert inside the verifier. The wallet's policy boundary (`_tryVerifyStateful`/`_tryVerifyStateless`, plus the paymaster's inline try/catch) maps every verifier revert to "invalid signature", preserving `validateUserOp`'s never-revert-on-bad-sig property and never-revert ERC-1271. Accepted trade-off: an inner out-of-gas reports as an invalid signature. A codeless verifier stays loud (return-data decoding errors are not swallowed).
+- `ShrincsPaymaster` follows the identical pattern with its own immutable and an inline verifier call kept in lock-step with the wallet's inline sites.
+
+**Contracts:** ShrincsWallet, ShrincsPaymaster
+
+**Violation consequence:** Re-inlining verification bloats the implementations back toward the 24KB limit; dropping a wallet-side TARGET check (or the ERC-1271 zero-hash guard) silently widens the accept set of recovery/handover/1271 signatures; moving state into the verifier (shared across all wallets) would let one wallet's consumption affect another's.
 
 ---
 

@@ -119,6 +119,25 @@ contract ShrincsWalletHarness is ShrincsWallet {
             );
     }
 
+    /// @dev Wraps the stateful revert-policy boundary around the external verifier (raw
+    ///      message hash + pre-encoded envelope, exactly as the internal call sites pass them).
+    function exposed_tryVerifyStateful(
+        bytes32 expectedCommitment,
+        bytes32 messageHash,
+        bytes calldata envelope
+    ) external view returns (bool) {
+        return _tryVerifyStateful(expectedCommitment, messageHash, envelope);
+    }
+
+    /// @dev Wraps the stateless revert-policy boundary around the external verifier.
+    function exposed_tryVerifyStateless(
+        bytes32 expectedCommitment,
+        bytes32 messageHash,
+        bytes calldata envelope
+    ) external view returns (bool) {
+        return _tryVerifyStateless(expectedCommitment, messageHash, envelope);
+    }
+
     /// @dev Wraps the guarded-slot tamper check so each of the eight slots can be mutated and the
     ///      `GuardedSlotTampered(index)` revert asserted.
     function exposed_assertGuardedSlotsUnchanged(

@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletCodecTest} from "../ShrincsWalletCodec.t.sol";
 
 contract ShrincsWalletCodec_decodeUpgradeAuth is ShrincsWalletCodecTest {
     function test_decodeUpgradeAuth_roundTrip_migrateTrue() public view {
-        ShrincsTypes.PublicKey memory pk = _samplePublicKey();
-        ShrincsTypes.StatefulSignature memory sig = _sampleStatefulSig();
+        SHRINCS.PublicKey memory pk = _samplePublicKey();
+        SHRINCS.Signature memory sig = _sampleStatefulSig();
         bytes memory migratorPayload = hex"deadbeefcafe";
         bytes memory data = abi.encode(pk, sig, true, migratorPayload, uint256(7));
 
         (
-            ShrincsTypes.PublicKey memory dpk,
-            ShrincsTypes.StatefulSignature memory dsig,
+            SHRINCS.PublicKey memory dpk,
+            SHRINCS.Signature memory dsig,
             bool shouldMigrate,
             bytes memory dPayload,
             uint256 dNonce
@@ -28,8 +32,8 @@ contract ShrincsWalletCodec_decodeUpgradeAuth is ShrincsWalletCodecTest {
     }
 
     function test_decodeUpgradeAuth_roundTrip_migrateFalseEmptyPayload() public view {
-        ShrincsTypes.PublicKey memory pk = _samplePublicKey();
-        ShrincsTypes.StatefulSignature memory sig = _sampleStatefulSig();
+        SHRINCS.PublicKey memory pk = _samplePublicKey();
+        SHRINCS.Signature memory sig = _sampleStatefulSig();
         bytes memory data = abi.encode(pk, sig, false, bytes(""), uint256(0));
 
         (,, bool shouldMigrate, bytes memory dPayload, uint256 dNonce) =

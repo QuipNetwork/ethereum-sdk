@@ -3,7 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
@@ -29,7 +33,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function _markSig(uint32[] memory leaves, uint32 authLeaf)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory)
+        returns (SHRINCS.Signature memory)
     {
         bytes32 payloadHash = Codec.markLeavesUsedPayloadHash(_leavesHash(leaves));
         return _signStatefulAction(Codec.ACTION_MARK_LEAVES_USED, payloadHash, authLeaf);
@@ -76,7 +80,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     }
 
     function test_markLeavesUsed_revertsWhen_invalidSignature() public {
-        ShrincsTypes.StatefulSignature memory sig = _wrongContextStatefulSig();
+        SHRINCS.Signature memory sig = _wrongContextStatefulSig();
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.markLeavesUsed(_mainPk(), sig, _targets(2));
@@ -86,7 +90,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_revertsWhen_signatureBindsWrongArray() public {
         // A signature over [2] must not authorize revoking [2,3]: the payload commits to the
         // exact target array, so a submitter can neither add nor drop targets.
-        ShrincsTypes.StatefulSignature memory sig = _markSig(_targets(2), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(2), 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.markLeavesUsed(_mainPk(), sig, _targets(2, 3));
@@ -95,7 +99,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_revertsWhen_staleNonceSignature() public {
         // The revocation binds the live nonce like every action; a consumed action elsewhere
         // supersedes a pending revocation signature.
-        ShrincsTypes.StatefulSignature memory sig = _markSig(_targets(2), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(2), 1);
         wallet.harness_setNonce(wallet.actionNonce() + 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
@@ -105,7 +109,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_revertsWhen_wrongEpochSignature() public {
         // A revocation signed under epoch E is invalid after any rotation (context binds
         // keyVersion; the new epoch's bitmap namespace is empty anyway).
-        ShrincsTypes.StatefulSignature memory sig = _markSig(_targets(2), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(2), 1);
         wallet.harness_setKeyVersion(1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
@@ -115,7 +119,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_revertsWhen_targetLeafZero() public {
         // Out-of-range targets are a client bug, not a race: the whole batch reverts (which
         // also rolls back the authorizing-leaf consumption).
-        ShrincsTypes.StatefulSignature memory sig = _markSig(_targets(0), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(0), 1);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.LeafOutOfRange.selector, 0));
         wallet.markLeavesUsed(_mainPk(), sig, _targets(0));
@@ -124,7 +128,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
 
     function test_markLeavesUsed_revertsWhen_targetLeafOverBudget() public {
         uint32 over = MAX_SIG + 1;
-        ShrincsTypes.StatefulSignature memory sig = _markSig(_targets(2, over), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(2, over), 1);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.LeafOutOfRange.selector, over));
         wallet.markLeavesUsed(_mainPk(), sig, _targets(2, over));
@@ -134,7 +138,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
 
     function test_markLeavesUsed_succeeds_nonceUnchanged() public {
         uint32[] memory leaves = _targets(2, 3);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
         uint256 nonceBefore = wallet.actionNonce();
 
         vm.expectEmit(true, true, false, false, address(wallet));
@@ -160,7 +164,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_replayRejected() public {
         // The consumed authorizing leaf — not the nonce — is what blocks replaying the call.
         uint32[] memory leaves = _targets(2);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
@@ -172,7 +176,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_skipsAlreadyUsedTarget() public {
         wallet.harness_markLeafUsed(2);
         uint32[] memory leaves = _targets(2, 3);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
         emit IShrincsWallet.LeafRevocationSkipped(2, 0);
@@ -187,7 +191,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
 
     function test_markLeavesUsed_skipsDuplicateInArray() public {
         uint32[] memory leaves = _targets(2, 2);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
         emit IShrincsWallet.LeafRevoked(2, 0);
@@ -202,7 +206,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_skipsAuthLeafInArray() public {
         // The authorizing leaf was just consumed by the verify, so listing it degrades to a skip.
         uint32[] memory leaves = _targets(1, 2);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
         emit IShrincsWallet.LeafRevocationSkipped(1, 0);
@@ -217,7 +221,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_acceptsBoundaryLeafMaxSignatures() public {
         // leaf == maxSignatures is the last in-range index, not out-of-range.
         uint32[] memory leaves = _targets(MAX_SIG);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
         assertTrue(wallet.isStatefulLeafUsed(MAX_SIG), "boundary leaf revoked");
@@ -234,7 +238,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
             _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 5)));
 
         uint32[] memory leaves = _targets(3);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
@@ -250,7 +254,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
             _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 5)));
 
         uint32[] memory leaves = _targets(5);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
@@ -262,11 +266,11 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         // Same property on the direct signed path.
         address target = address(0xBEEF);
         bytes32 payloadHash = Codec.executePayloadHash(target, 0, keccak256(""), 0);
-        ShrincsTypes.StatefulSignature memory executeSig =
+        SHRINCS.Signature memory executeSig =
             _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 4);
 
         uint32[] memory leaves = _targets(4);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
@@ -279,15 +283,15 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
 
     function test_markLeavesUsed_rotationClearsRevocations() public {
         uint32[] memory leaves = _targets(2, 3);
-        ShrincsTypes.StatefulSignature memory sig = _markSig(leaves, 1);
+        SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
         assertTrue(wallet.isStatefulLeafUsed(2), "revoked in epoch 0");
 
         // Rotate: the new epoch's bitmap namespace is fresh — revocations do not leak across.
-        (ShrincsTypes.StatefulRotationTarget memory t, bytes32 nextCommitment) =
+        (SHRINCS.StatefulRotationTarget memory t, bytes32 nextCommitment) =
             _makeStatefulRotationTarget("mark-leaves-rotation");
-        ShrincsTypes.StatefulSignature memory rotateSig =
+        SHRINCS.Signature memory rotateSig =
             _signStatefulAction(Codec.ACTION_ROTATE_KEY, Codec.rotateKeyPayloadHash(nextCommitment), 4);
         vm.prank(OWNER);
         wallet.rotateKey(_mainPk(), rotateSig, t);

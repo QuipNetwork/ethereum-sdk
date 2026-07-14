@@ -3,7 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {IVettingFactory} from "../../script/DeployHelpers.sol";
 import {DeployWotsBase} from "../../script/DeployWotsBase.sol";
@@ -85,7 +89,7 @@ contract DeployAllTest is Test {
         address fAddr = h.factory(deployer, PK, owner, MAX_FEE);
         address sImpl = h.shrincsImpl(deployer, PK, fAddr);
         address sPm = h.shrincsPaymaster(
-            deployer, PK, owner, VERIFIER_COMMITMENT, ShrincsTypes.HASH_SUITE_KECCAK_256, VERIFIER_MAX_SIGS
+            deployer, PK, owner, VERIFIER_COMMITMENT, HashSuite.HASH_SUITE_ID, VERIFIER_MAX_SIGS
         );
         address wImpl = h.wotsImpl(deployer, PK, fAddr);
         address qPm = h.quipPaymaster(deployer, PK, owner);

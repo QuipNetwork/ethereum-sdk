@@ -4,21 +4,25 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsUtils.sol";
-import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsTestSigner.sol";
-import {ShrincsStatelessVectorSigner} from
-    "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsStatelessVectorSigner.sol";
-import {ShrincsStatelessVectorSigningFacade} from
-    "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsStatelessVectorSigningFacade.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
+import {SHRINCSStatelessVectorSigner} from
+    "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSStatelessVectorSigner.sol";
+import {SHRINCSStatelessVectorSigningFacade} from
+    "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSStatelessVectorSigningFacade.sol";
+import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
+import {SPHINCSPlusC256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC256sKeccak.sol";
 import {ShrincsWalletCodec as Codec} from "../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletHarness} from "../harness/ShrincsWalletHarness.sol";
 import {MockShrincsFactory} from "../mocks/MockShrincsFactory.sol";
 
 /// @title ShrincsWallet Base Test
 /// @dev Generates SHRINCS keys and signatures entirely in Solidity via the dependency's
-///      test-only signer helpers (`ShrincsTestSigner` for keygen + the stateful path, the staged
-///      `ShrincsStatelessVectorSigner` for the stateless path), so no external vectors are needed.
+///      test-only signer helpers (`SHRINCSTestSigner` for keygen + the stateful path, the staged
+///      `SHRINCSStatelessVectorSigner` for the stateless path), so no external vectors are needed.
 ///      The harness is installed with the generated commitments; every test signs the wallet's
 ///      canonical contexts live against the wallet's current state.
 contract ShrincsWalletTest is Test {
@@ -31,19 +35,25 @@ contract ShrincsWalletTest is Test {
     // Solady ERC4337's canonical EntryPoint (`onlyEntryPoint` overloads).
     address internal constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
+    // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
+    // sibling (`SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER`); the sibling's code must live
+    // there or every stateless verification reverts on empty code.
+    address internal constant SPHINCS_SIBLING = 0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A;
+
     ShrincsWalletHarness internal wallet;
     MockShrincsFactory internal factory;
-    ShrincsStatelessVectorSigner internal statelessSigner;
+    SHRINCS256sKeccak internal shrincsVerifier;
+    SHRINCSStatelessVectorSigner internal statelessSigner;
 
     // Main key: stateful path authorizes every normal action; its stateless half is the
     // break-glass recovery authority.
-    ShrincsTypes.SigningKey internal mainKey;
-    ShrincsTypes.PublicKey internal mainPk;
+    SHRINCS.SigningKey internal mainKey;
+    SHRINCS.PublicKey internal mainPk;
     bytes32 internal mainCommitment;
 
     // Dedicated ERC-1271 verifier key (only its stateless path is ever used).
-    ShrincsTypes.SigningKey internal erc1271Key;
-    ShrincsTypes.PublicKey internal erc1271Pk;
+    SHRINCS.SigningKey internal erc1271Key;
+    SHRINCS.PublicKey internal erc1271Pk;
     bytes32 internal erc1271Commitment;
 
     address internal OWNER;
@@ -54,21 +64,27 @@ contract ShrincsWalletTest is Test {
         (OWNER, OWNER_PK) = makeAddrAndKey("owner");
 
         bool ok;
-        (mainKey, mainPk, ok) = ShrincsTestSigner.keygen("shrincs-wallet-test-main-key", MAX_SIG);
+        (mainKey, mainPk, ok) = SHRINCSTestSigner.keygen("shrincs-wallet-test-main-key", MAX_SIG);
         assertTrue(ok, "main keygen");
         mainCommitment = _commitment32(mainPk);
-        (erc1271Key, erc1271Pk, ok) = ShrincsTestSigner.keygen("shrincs-wallet-test-erc1271-key", MAX_SIG);
+        (erc1271Key, erc1271Pk, ok) = SHRINCSTestSigner.keygen("shrincs-wallet-test-erc1271-key", MAX_SIG);
         assertTrue(ok, "erc1271 keygen");
         erc1271Commitment = _commitment32(erc1271Pk);
 
         factory = new MockShrincsFactory();
-        ShrincsWalletHarness impl = new ShrincsWalletHarness(payable(address(factory)));
+        // External verifier: deploy the real SHRINCS256sKeccak and place its SPHINCSPlusC
+        // sibling's code at the compile-time-pinned CREATE3 address (both are storage-free
+        // and constructor-free, so etching runtime code is exact).
+        shrincsVerifier = new SHRINCS256sKeccak();
+        vm.etch(SPHINCS_SIBLING, address(new SPHINCSPlusC256sKeccak()).code);
+        ShrincsWalletHarness impl =
+            new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier));
         vm.etch(WALLET, address(impl).code);
         wallet = ShrincsWalletHarness(payable(WALLET));
 
         wallet.harness_install(OWNER, mainCommitment, erc1271Commitment, MAX_SIG);
 
-        statelessSigner = new ShrincsStatelessVectorSigner();
+        statelessSigner = new SHRINCSStatelessVectorSigner();
     }
 
     function test_setUp() public view virtual {
@@ -85,12 +101,12 @@ contract ShrincsWalletTest is Test {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Memory copy of the main public-key bundle (calldata-bound wallet params).
-    function _mainPk() internal view returns (ShrincsTypes.PublicKey memory) {
+    function _mainPk() internal view returns (SHRINCS.PublicKey memory) {
         return mainPk;
     }
 
     /// @dev Extracts the 32-byte commitment from a bundle's encoded commitment field.
-    function _commitment32(ShrincsTypes.PublicKey memory pk) internal pure returns (bytes32 out) {
+    function _commitment32(SHRINCS.PublicKey memory pk) internal pure returns (bytes32 out) {
         bytes memory c = pk.publicKeyCommitment;
         require(c.length == 32, "commitment not 32 bytes");
         assembly {
@@ -101,14 +117,14 @@ contract ShrincsWalletTest is Test {
     /// @dev Generates a fresh full replacement bundle (for `recoverWallet` / `transferOwnership`).
     function _makeRotationTarget(bytes memory seed)
         internal
-        pure
-        returns (ShrincsTypes.RotationTarget memory target, ShrincsTypes.SigningKey memory key)
+        view
+        returns (SHRINCS.RotationTarget memory target, SHRINCS.SigningKey memory key)
     {
-        ShrincsTypes.PublicKey memory pk;
+        SHRINCS.PublicKey memory pk;
         bool ok;
-        (key, pk, ok) = ShrincsTestSigner.keygen(seed, MAX_SIG);
+        (key, pk, ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
         require(ok, "rotation keygen");
-        target = ShrincsTypes.RotationTarget({
+        target = SHRINCS.RotationTarget({
             statefulPublicKey: pk.statefulPublicKey,
             publicKeyCommitment: pk.publicKeyCommitment,
             pkSeed: pk.pkSeed,
@@ -121,13 +137,13 @@ contract ShrincsWalletTest is Test {
     function _makeStatefulRotationTarget(bytes memory seed)
         internal
         view
-        returns (ShrincsTypes.StatefulRotationTarget memory target, bytes32 nextCommitment)
+        returns (SHRINCS.StatefulRotationTarget memory target, bytes32 nextCommitment)
     {
-        (, ShrincsTypes.PublicKey memory pk, bool ok) = ShrincsTestSigner.keygen(seed, MAX_SIG);
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
         require(ok, "stateful rotation keygen");
         nextCommitment =
-            ShrincsUtils.publicKeyCommitmentFromParts(pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
-        target = ShrincsTypes.StatefulRotationTarget({
+            SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
+        target = SHRINCS.StatefulRotationTarget({
             statefulPublicKey: pk.statefulPublicKey,
             publicKeyCommitment: abi.encodePacked(nextCommitment)
         });
@@ -148,7 +164,7 @@ contract ShrincsWalletTest is Test {
     function _actionContext(bytes32 actionType, bytes32 payloadHash)
         internal
         view
-        returns (ShrincsTypes.ActionContext memory)
+        returns (SHRINCS.ActionContext memory)
     {
         return Codec.buildActionContext(
             wallet.exposed_shrincsDomainSeparator(),
@@ -161,7 +177,7 @@ contract ShrincsWalletTest is Test {
 
     /// @dev Builds the wallet's canonical rotation context against its LIVE nonce/epoch, under
     ///      the per-path tagged rotation domain (`Codec.ROTATION_DOMAIN_*`).
-    function _rotationContext(bytes32 rotationTag) internal view returns (ShrincsTypes.RotationContext memory) {
+    function _rotationContext(bytes32 rotationTag) internal view returns (SHRINCS.RotationContext memory) {
         return Codec.buildRotationContext(
             Codec.rotationDomainSeparator(wallet.exposed_shrincsDomainSeparator(), rotationTag),
             wallet.actionNonce(),
@@ -177,31 +193,31 @@ contract ShrincsWalletTest is Test {
     function _signStatefulAction(bytes32 actionType, bytes32 payloadHash, uint32 leaf)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory sig)
+        returns (SHRINCS.Signature memory sig)
     {
-        ShrincsTypes.ActionContext memory ctx = _actionContext(actionType, payloadHash);
+        SHRINCS.ActionContext memory ctx = _actionContext(actionType, payloadHash);
         bytes memory message =
             abi.encodePacked(SHRINCS.statefulActionMessageHash(wallet.getShrincsPublicKeyCommitment(), ctx));
         bool ok;
-        (sig, ok) = ShrincsTestSigner.signStatefulRawAtLeaf(mainKey, leaf, message);
+        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, leaf, message);
         require(ok, "stateful sign failed");
     }
 
     /// @dev Signs an arbitrary raw stateless message with the given key via the staged signer.
     function _signStatelessRaw(
-        ShrincsTypes.SigningKey memory key,
-        ShrincsTypes.PublicKey memory pk,
+        SHRINCS.SigningKey memory key,
+        SHRINCS.PublicKey memory pk,
         bytes memory message
-    ) internal returns (ShrincsTypes.StatelessSignature memory sig) {
+    ) internal returns (SPHINCSPlusC.Signature memory sig) {
         (bytes32 sessionId, bool ok) = statelessSigner.beginSession(key, pk, message);
         require(ok, "stateless session begin failed");
-        (, sig, ok) = ShrincsStatelessVectorSigningFacade.completeSession(statelessSigner, sessionId);
+        (, sig, ok) = SHRINCSStatelessVectorSigningFacade.completeSession(statelessSigner, sessionId);
         require(ok, "stateless sign failed");
     }
 
     /// @dev Signs the wallet's canonical ERC-1271 STATELESS action message (dedicated verifier key).
-    function _signErc1271(bytes32 hash) internal returns (ShrincsTypes.StatelessSignature memory) {
-        ShrincsTypes.ActionContext memory ctx = _actionContext(Codec.ACTION_ERC1271, hash);
+    function _signErc1271(bytes32 hash) internal returns (SPHINCSPlusC.Signature memory) {
+        SHRINCS.ActionContext memory ctx = _actionContext(Codec.ACTION_ERC1271, hash);
         bytes memory message =
             abi.encodePacked(SHRINCS.statelessActionMessageHash(wallet.getErc1271Commitment(), ctx));
         return _signStatelessRaw(erc1271Key, erc1271Pk, message);
@@ -209,11 +225,11 @@ contract ShrincsWalletTest is Test {
 
     /// @dev Signs the canonical FULL-rotation recovery message with the main key's stateless half,
     ///      under the given path's tagged rotation domain.
-    function _signFullRotation(ShrincsTypes.RotationTarget memory nextKey, bytes32 rotationTag)
+    function _signFullRotation(SHRINCS.RotationTarget memory nextKey, bytes32 rotationTag)
         internal
-        returns (ShrincsTypes.StatelessSignature memory)
+        returns (SPHINCSPlusC.Signature memory)
     {
-        ShrincsTypes.PublicKey memory pk = mainPk;
+        SHRINCS.PublicKey memory pk = mainPk;
         bytes memory message = abi.encodePacked(
             _fullRotationMessageHash(wallet.getShrincsPublicKeyCommitment(), pk, _rotationContext(rotationTag), nextKey)
         );
@@ -223,14 +239,14 @@ contract ShrincsWalletTest is Test {
     /// @dev Mirrors `SHRINCS.fullRotationMessageHash` (which requires calldata structs) in memory.
     function _fullRotationMessageHash(
         bytes32 expectedCommitment,
-        ShrincsTypes.PublicKey memory currentPk,
-        ShrincsTypes.RotationContext memory ctx,
-        ShrincsTypes.RotationTarget memory nextKey
+        SHRINCS.PublicKey memory currentPk,
+        SHRINCS.RotationContext memory ctx,
+        SHRINCS.RotationTarget memory nextKey
     ) internal pure returns (bytes32) {
         return keccak256(
             abi.encodePacked(
-                ShrincsTypes.OP_ROTATE_FULL,
-                ShrincsTypes.HASH_SUITE_KECCAK_256,
+                SHRINCS.OP_ROTATE_FULL,
+                HashSuite.HASH_SUITE_ID,
                 expectedCommitment,
                 ctx.domainSeparator,
                 ctx.nonce,
@@ -257,7 +273,7 @@ contract ShrincsWalletTest is Test {
     function _buildInitPayload(
         bytes32 commitment,
         bytes32 pkSeed,
-        ShrincsTypes.PublicKey memory pk,
+        SHRINCS.PublicKey memory pk,
         uint32 hashSuite,
         bytes32 erc1271Commitment_,
         uint32 erc1271HashSuite
@@ -269,14 +285,14 @@ contract ShrincsWalletTest is Test {
     ///      `initialize` verifies NO signature (only deterministic shape/commitment validation),
     ///      this drives the real success path.
     function _validInitPayload() internal view returns (bytes memory) {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         return _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
     }
 
@@ -290,7 +306,7 @@ contract ShrincsWalletTest is Test {
     /// @dev A `StatefulSignature` whose only meaningful field is `authPath.length` (= the leaf
     ///      index). Used to drive the pre-verify leaf guards (`StatefulBudgetExhausted`) without
     ///      a real signature.
-    function _statefulSigWithLeaf(uint256 leaf) internal pure returns (ShrincsTypes.StatefulSignature memory sig) {
+    function _statefulSigWithLeaf(uint256 leaf) internal pure returns (SHRINCS.Signature memory sig) {
         sig.authPath = new bytes32[](leaf);
     }
 
@@ -298,7 +314,7 @@ contract ShrincsWalletTest is Test {
     ///      over a throwaway userOpHash. Its leaf is in-budget and initially unused, so it REACHES
     ///      `SHRINCS.verifyStateful` — but against any other action it fails verification,
     ///      exercising the `InvalidSignature` branch.
-    function _wrongContextStatefulSig() internal view returns (ShrincsTypes.StatefulSignature memory) {
+    function _wrongContextStatefulSig() internal view returns (SHRINCS.Signature memory) {
         return _signStatefulAction(
             Codec.ACTION_ERC4337_EXECUTE,
             Codec.erc4337PayloadHash(keccak256("throwaway-userop")),
@@ -311,7 +327,7 @@ contract ShrincsWalletTest is Test {
     function _signErc4337(bytes32 userOpHash, uint32 leaf)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory)
+        returns (SHRINCS.Signature memory)
     {
         return _signStatefulAction(
             Codec.ACTION_ERC4337_EXECUTE, Codec.erc4337PayloadHash(userOpHash), leaf

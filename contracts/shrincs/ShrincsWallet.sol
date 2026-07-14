@@ -185,11 +185,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // locally, bundle checks + crypto delegated (see EXTERNAL VERIFIER DELEGATION).
         bytes32 commitment = $.shrincsPublicKeyCommitment;
         if (
-            IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
-                abi.encodePacked(commitment),
+            !_tryVerifyStateful(
+                commitment,
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
                 abi.encode(pk, sig)
-            ) != IERC7913SignatureVerifier.verify.selector
+            )
         ) {
             emit UserOpValidationRejected(
                 UserOpValidationFailure.InvalidSignature
@@ -832,11 +832,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // pinned verifier is reachable; see EXTERNAL VERIFIER DELEGATION).
         bytes32 commitment = $.shrincsPublicKeyCommitment;
         if (
-            IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
-                abi.encodePacked(commitment),
+            !_tryVerifyStateful(
+                commitment,
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
                 abi.encode(pk, sig)
-            ) != IERC7913SignatureVerifier.verify.selector
+            )
         ) revert InvalidSignature();
     }
 
@@ -979,11 +979,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // locally, bundle checks + crypto delegated
         bytes32 commitment = $.shrincsPublicKeyCommitment;
         if (
-            IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
-                abi.encodePacked(commitment),
+            !_tryVerifyStateful(
+                commitment,
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
                 abi.encode(publicKey, signature)
-            ) != IERC7913SignatureVerifier.verify.selector
+            )
         ) revert InvalidSignature();
 
         _markStatefulLeafUsed($, epoch, leaf);
@@ -1009,6 +1009,53 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
         unchecked {
             Storage.layout().nonce += 1;
+        }
+    }
+
+    /// @dev The wallet's policy boundary for the verifier's revert-as-rejection channel.
+    ///      hashsigs 0.2.0 dropped the library's shape/canonicity walk: garbage signature
+    ///      internals (attacker-controlled array lengths inside `userOp.signature` or an
+    ///      ERC-1271 blob) REVERT inside the verifier instead of returning 0xffffffff, and
+    ///      the dep is explicit that "a caller that needs a boolean must treat a revert as
+    ///      its own policy decision". This wallet's contract is never-revert validation
+    ///      (ERC-4337 returns 1) and never-revert ERC-1271, so EVERY verifier revert maps
+    ///      to "invalid signature". Accepted trade-off: an inner out-of-gas is also
+    ///      reported as an invalid signature instead of propagating.
+    function _tryVerifyStateful(
+        bytes32 expectedCommitment,
+        bytes32 messageHash,
+        bytes memory envelope
+    ) internal view returns (bool) {
+        try
+            IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
+                abi.encodePacked(expectedCommitment),
+                messageHash,
+                envelope
+            )
+        returns (bytes4 result) {
+            return result == IERC7913SignatureVerifier.verify.selector;
+        } catch {
+            return false;
+        }
+    }
+
+    /// @dev Stateless twin of `_tryVerifyStateful` (identical revert policy), targeting the
+    ///      verifier's `verifyStateless` entrypoint.
+    function _tryVerifyStateless(
+        bytes32 expectedCommitment,
+        bytes32 messageHash,
+        bytes memory envelope
+    ) internal view returns (bool) {
+        try
+            SHRINCSVerifier(SHRINCS_VERIFIER).verifyStateless(
+                abi.encodePacked(expectedCommitment),
+                messageHash,
+                envelope
+            )
+        returns (bytes4 result) {
+            return result == IERC7913SignatureVerifier.verify.selector;
+        } catch {
+            return false;
         }
     }
 
@@ -1065,11 +1112,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             nextKey
         );
         if (
-            SHRINCSVerifier(SHRINCS_VERIFIER).verifyStateless(
-                abi.encodePacked(expectedCommitment),
+            !_tryVerifyStateless(
+                expectedCommitment,
                 messageHash,
                 abi.encode(currentPublicKey, recoverySignature)
-            ) != IERC7913SignatureVerifier.verify.selector
+            )
         ) return bytes32(0);
 
         return computedNext;
@@ -1139,14 +1186,14 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // Stateless verification via the pinned verifier: canonical stateless action hash
         // computed locally; bundle checks + FORS-C/hypertree crypto delegated
         if (
-            SHRINCSVerifier(SHRINCS_VERIFIER).verifyStateless(
-                abi.encodePacked($.erc1271StatelessCommitment),
+            !_tryVerifyStateless(
+                $.erc1271StatelessCommitment,
                 SHRINCS.statelessActionMessageHash(
                     $.erc1271StatelessCommitment,
                     ctx
                 ),
                 abi.encode(pk, sig)
-            ) != IERC7913SignatureVerifier.verify.selector
+            )
         ) return Erc1271ValidationResult.InvalidShrincsSignature;
 
         return Erc1271ValidationResult.Ok;

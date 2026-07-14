@@ -33,7 +33,8 @@ contract ShrincsPaymaster__domainSeparator is ShrincsPaymasterTest {
     ///      paymaster at a different address (same chain) must produce a different separator, and it
     ///      must match the canonical definition for THAT address.
     function test_domainSeparator_bindsPaymasterAddress() public {
-        ShrincsPaymasterHarness other = new ShrincsPaymasterHarness();
+        ShrincsPaymasterHarness other =
+            new ShrincsPaymasterHarness(address(shrincsVerifier));
         assertTrue(
             address(other) != PAYMASTER,
             "distinct address precondition"

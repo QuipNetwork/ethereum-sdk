@@ -3,7 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsPaymaster} from "../../../contracts/interfaces/IShrincsPaymaster.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 
@@ -11,7 +15,7 @@ import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 ///      is verified, so success + reverts are testable now.
 contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
     bytes32 internal constant NEW_COMMITMENT = keccak256("rotated-verifier");
-    uint32 internal constant SUITE = ShrincsTypes.HASH_SUITE_KECCAK_256;
+    uint32 internal constant SUITE = HashSuite.HASH_SUITE_ID;
 
     function test_setShrincsVerifier_rotatesAndBumpsEpoch() public {
         vm.prank(OWNER);
@@ -80,7 +84,7 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
     function test_setShrincsVerifier_revertsWhen_unsupportedHashSuite() public {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsPaymaster.UnsupportedHashSuite.selector);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, ShrincsTypes.HASH_SUITE_UNSUPPORTED, MAX_SIG);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SHRINCS.HASH_SUITE_UNSUPPORTED, MAX_SIG);
     }
 
     /// @dev Epoch is MONOTONIC: each rotation increments it by exactly one and never resets, so a

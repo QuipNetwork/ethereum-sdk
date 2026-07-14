@@ -297,15 +297,21 @@ contract ShrincsPaymaster is
         });
 
         // Stateful verification via the pinned ERC-7913 verifier, in lock-step with the
-        // wallet's inline sites (delegation model: SDK_README.md "External verifier
-        // delegation" + INVARIANTS.md invariant 19; ERC-7562: ERC7562_COMPLIANCE.md N-5).
-        if (
+        // wallet's `_tryVerifyStateful`
+        bool sponsorshipValid;
+        try
             IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
                 abi.encodePacked(commitment),
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
                 abi.encode(pk, sig)
-            ) != IERC7913SignatureVerifier.verify.selector
-        ) {
+            )
+        returns (bytes4 result) {
+            sponsorshipValid =
+                result == IERC7913SignatureVerifier.verify.selector;
+        } catch {
+            sponsorshipValid = false;
+        }
+        if (!sponsorshipValid) {
             emit PaymasterValidationRejected(
                 userOp.sender,
                 PaymasterValidationFailure.InvalidSignature

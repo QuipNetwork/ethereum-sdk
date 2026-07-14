@@ -3,8 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsUtils.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
@@ -21,7 +24,8 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         // Etch the runtime code at a clean address so the constructor's `_disableInitializers`
         // never runs and `initialize` (the `initializer`-gated path) is reachable. The immutable
         // FACTORY is inlined into the runtime code, so the etched copy still points at the mock.
-        ShrincsWalletHarness impl = new ShrincsWalletHarness(payable(address(factory)));
+        ShrincsWalletHarness impl =
+            new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier));
         address bareAddr = address(uint160(uint256(keccak256("bare-shrincs-wallet"))));
         vm.etch(bareAddr, address(impl).code);
         bare = ShrincsWalletHarness(payable(bareAddr));
@@ -35,8 +39,8 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         assertEq(bare.quipFactory(), address(factory), "factory installed");
         assertEq(bare.getShrincsPublicKeyCommitment(), mainCommitment, "main commitment");
         assertEq(bare.getErc1271Commitment(), erc1271Commitment, "erc1271 commitment");
-        assertEq(bare.getHashSuite(), ShrincsTypes.HASH_SUITE_KECCAK_256, "hash suite");
-        assertEq(bare.getErc1271HashSuite(), ShrincsTypes.HASH_SUITE_KECCAK_256, "erc1271 hash suite");
+        assertEq(bare.getHashSuite(), HashSuite.HASH_SUITE_ID, "hash suite");
+        assertEq(bare.getErc1271HashSuite(), HashSuite.HASH_SUITE_ID, "erc1271 hash suite");
         assertEq(bare.maxSignatures(), MAX_SIG, "maxSignatures decoded from the bundle");
         assertEq(bare.keyVersion(), 0, "epoch starts at 0");
         assertEq(bare.statefulLeavesUsed(), 0, "no leaves used");
@@ -74,14 +78,14 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     }
 
     function test_initialize_revertsWhen_zeroErc1271Commitment() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         bytes memory payload = _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             bytes32(0), // zero ERC-1271 commitment
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.ZeroErc1271Commitment.selector);
@@ -89,14 +93,14 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     }
 
     function test_initialize_revertsWhen_unsupportedHashSuite() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         bytes memory payload = _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_UNSUPPORTED,
+            SHRINCS.HASH_SUITE_UNSUPPORTED,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
@@ -104,14 +108,14 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     }
 
     function test_initialize_revertsWhen_unsupportedErc1271HashSuite() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         bytes memory payload = _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_UNSUPPORTED
+            SHRINCS.HASH_SUITE_UNSUPPORTED
         );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
@@ -120,15 +124,15 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
 
     function test_initialize_revertsWhen_invalidBundle() public {
         // Corrupt the bundle's embedded commitment so `validPublicKey` fails its recompute check.
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         pk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-embedded-commitment"));
         bytes memory payload = _buildInitPayload(
             mainCommitment,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
@@ -136,15 +140,15 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     }
 
     function test_initialize_revertsWhen_declaredCommitmentMismatch() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         // Valid bundle, but the standalone declared commitment is wrong.
         bytes memory payload = _buildInitPayload(
             keccak256("wrong-commitment"),
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
@@ -152,7 +156,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     }
 
     function test_initialize_revertsWhen_zeroMaxSignatures() public {
-        ShrincsTypes.PublicKey memory pk = _mainPk();
+        SHRINCS.PublicKey memory pk = _mainPk();
         // Zero the trailing 4-byte maxSignatures of the 68-byte stateful key, then recompute the
         // bundle commitment so the shape/commitment checks pass and the explicit guard fires.
         bytes memory spk = pk.statefulPublicKey;
@@ -160,16 +164,16 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         spk[65] = 0;
         spk[66] = 0;
         spk[67] = 0;
-        bytes32 newCommit = ShrincsUtils.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
+        bytes32 newCommit = SHRINCS.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
         pk.statefulPublicKey = spk;
         pk.publicKeyCommitment = abi.encodePacked(newCommit);
         bytes memory payload = _buildInitPayload(
             newCommit,
             _toBytes32(pk.pkSeed),
             pk,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             erc1271Commitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256
+            HashSuite.HASH_SUITE_ID
         );
 
         vm.prank(address(factory));
