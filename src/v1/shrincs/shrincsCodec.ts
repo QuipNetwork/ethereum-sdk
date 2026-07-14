@@ -66,7 +66,21 @@ export const ACTION_SET_ERC1271_KEY = keccakUtf8(
   "quip.shrincs.action.setErc1271Key"
 );
 export const ACTION_ROTATE_KEY = keccakUtf8("quip.shrincs.action.rotateKey");
+export const ACTION_MARK_LEAVES_USED = keccakUtf8(
+  "quip.shrincs.action.markLeavesUsed"
+);
 export const ACTION_ERC1271 = keccakUtf8("quip.shrincs.action.erc1271");
+
+/// Per-path tags folded into `RotationContext.domainSeparator` (see
+/// `rotationDomainSeparator`). `RotationContext` carries no action
+/// discriminator, so distinct tags are what keep a `transferOwnership`
+/// recovery signature from doubling as a `recoverWallet` input.
+export const ROTATION_DOMAIN_RECOVER_WALLET = keccakUtf8(
+  "quip.shrincs.rotation.recoverWallet"
+);
+export const ROTATION_DOMAIN_TRANSFER_OWNERSHIP = keccakUtf8(
+  "quip.shrincs.rotation.transferOwnership"
+);
 
 const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
@@ -102,10 +116,23 @@ export function domainSeparator(
   return hashWords(domainTag, word(chainId), addressWord(contractAddress));
 }
 
-/// Bundle commitment as the contract/keygen computes it:
-/// `keccak256("shrincs-public-key" ‖ statefulPublicKey ‖ pkSeed ‖ hypertreeRoot)`.
-/// Used to derive the `publicKeyCommitment` of a rotation target whose stateless
-/// half is reused (e.g. `rotateKey`).
+/// `RotationContext.domainSeparator` for one stateless-rotation path:
+/// the wallet's base signing domain with a per-path `ROTATION_DOMAIN_*` tag
+/// folded in (mirrors `ShrincsWalletCodec.rotationDomainSeparator`).
+export function rotationDomainSeparator(base: Hex, tag: Hex): Hex {
+  return hashWords(base, tag);
+}
+
+/// The compile-time SHRINCS profile this SDK is built against — must equal
+/// `SHRINCSParams.PROFILE_NAME` of the on-chain verifier (the `shrincs-profile/`
+/// remapping selects `profiles/256s` + keccak).
+export const SHRINCS_PROFILE_NAME = "shrincs-256s-keccak";
+
+/// Bundle commitment as the contract/keygen computes it, profile-bound:
+/// `keccak256("shrincs-public-key/" ‖ PROFILE_NAME ‖ statefulPublicKey ‖ pkSeed
+/// ‖ hypertreeRoot)` (raw ASCII, no length prefixes). Used to derive the
+/// `publicKeyCommitment` of a rotation target whose stateless half is reused
+/// (e.g. `rotateKey`).
 export function publicKeyCommitment(parts: {
   statefulPublicKey: Hex;
   pkSeed: Hex;
@@ -113,7 +140,8 @@ export function publicKeyCommitment(parts: {
 }): Hex {
   return keccak256(
     concat([
-      toHex(toBytes("shrincs-public-key")),
+      toHex(toBytes("shrincs-public-key/")),
+      toHex(toBytes(SHRINCS_PROFILE_NAME)),
       parts.statefulPublicKey,
       parts.pkSeed,
       parts.hypertreeRoot,
@@ -125,15 +153,21 @@ export function publicKeyCommitment(parts: {
 /*                     PAYLOAD HASHES                          */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-export const erc4337PayloadHash = (userOpHash: Hex, fee: bigint): Hex =>
-  hashWords(userOpHash, word(fee));
+/// ONE word — no fee: the signer's `maxFee` ceiling rides in `callData`, which
+/// `userOpHash` already commits to (ERC-7562: validation must not read the
+/// factory's live fee).
+export const erc4337PayloadHash = (userOpHash: Hex): Hex =>
+  hashWords(userOpHash);
 
+/// `maxFee` is the signer's fee CEILING, not the charged amount: execution
+/// reads the factory's live fee and reverts `ExecuteFeeExceedsCap` only if it
+/// exceeds this cap (decreases succeed at the lower price).
 export const executePayloadHash = (
   target: Address,
   value: bigint,
   dataKeccak: Hex,
-  fee: bigint
-): Hex => hashWords(addressWord(target), word(value), dataKeccak, word(fee));
+  maxFee: bigint
+): Hex => hashWords(addressWord(target), word(value), dataKeccak, word(maxFee));
 
 export const withdrawPayloadHash = (to: Address, amount: bigint): Hex =>
   hashWords(addressWord(to), word(amount));
@@ -162,22 +196,38 @@ export const setErc1271KeyPayloadHash = (
 export const rotateKeyPayloadHash = (nextCommitment: Hex): Hex =>
   hashWords(nextCommitment);
 
+/// Commitment to a `markLeavesUsed` target array: one 32-byte word per leaf
+/// index, in order (the TS image of the wallet's EfficientHashLib word buffer).
+/// Order-sensitive by construction — the signed payload authorizes exactly this
+/// array, so a submitter can neither add, drop, nor reorder targets.
+export const leavesHash = (leaves: readonly number[]): Hex =>
+  hashWords(...leaves.map((leaf) => word(leaf)));
+
+/// `payloadHash` for `markLeavesUsed` (surgical batch leaf revocation): binds
+/// the `leavesHash` commitment over the exact target array.
+export const markLeavesUsedPayloadHash = (leavesHashValue: Hex): Hex =>
+  hashWords(leavesHashValue);
+
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    CONTEXT BUILDERS                         */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-/// Assemble a stateful `ActionContext`. On the stateful path `nonce` is always
-/// `0` (anti-replay is the on-chain used-leaf bitmap).
+/// Assemble a stateful `ActionContext`. `nonce` is REQUIRED and must be the
+/// wallet's live `actionNonce()` at verification time: the wallet binds it into
+/// every signed context and advances it on every consumed signature, so a
+/// signature dies the moment any later signature lands (supersession). The
+/// paymaster path is the one deliberate exception — it binds `0n` (its
+/// freshness is the validUntil/validAfter window).
 export function buildActionContext(params: {
   domainSeparator: Hex;
+  nonce: bigint;
   keyVersion: bigint;
   actionType: Hex;
   payloadHash: Hex;
-  nonce?: bigint;
 }): ActionContext {
   return {
     domainSeparator: params.domainSeparator,
-    nonce: params.nonce === undefined ? ZERO32 : word(params.nonce),
+    nonce: word(params.nonce),
     keyVersion: word(params.keyVersion),
     actionType: params.actionType,
     payloadHash: params.payloadHash,
@@ -227,9 +277,9 @@ function findStructTuple(internalType: string): AbiParameter {
   throw new Error(`struct ${internalType} not found in shrincsWalletAbi`);
 }
 
-const PUBLIC_KEY_TUPLE = findStructTuple("struct ShrincsTypes.PublicKey");
-const STATEFUL_SIGNATURE_TUPLE = findStructTuple("struct ShrincsTypes.StatefulSignature");
-const STATELESS_SIGNATURE_TUPLE = findStructTuple("struct ShrincsTypes.StatelessSignature");
+const PUBLIC_KEY_TUPLE = findStructTuple("struct SHRINCS.PublicKey");
+const STATEFUL_SIGNATURE_TUPLE = findStructTuple("struct SHRINCS.Signature");
+const STATELESS_SIGNATURE_TUPLE = findStructTuple("struct SPHINCSPlusC.Signature");
 
 /// The on-chain `PublicKey` struct now matches the SDK/WASM shape field-for-field
 /// (no parameter-set discriminator). These converters survive as explicit
@@ -316,12 +366,17 @@ export function decodeUserOpSignature(blob: Hex): {
 }
 
 /// UUPS `upgradeToAndCall` data = `abi.encode(PublicKey, StatefulSignature,
-/// bool shouldMigrate, bytes migratorPayload)`.
+/// bool shouldMigrate, bytes migratorPayload, uint256 nonce)`. The signed
+/// action nonce rides in the blob (5th head word) so the wallet's
+/// `verifyUpgrade` probe can rebuild the exact signed context both before and
+/// after consumption; `upgradeToAndCall` requires it to equal the live
+/// `actionNonce()` (else `StaleActionNonce`).
 export function encodeUpgradeData(params: {
   publicKey: ShrincsPublicKey;
   signature: StatefulSignature;
   shouldMigrate: boolean;
   migratorPayload: Hex;
+  nonce: bigint;
 }): Hex {
   return encodeAbiParameters(
     [
@@ -329,12 +384,14 @@ export function encodeUpgradeData(params: {
       STATEFUL_SIGNATURE_TUPLE,
       { name: "shouldMigrate", type: "bool" },
       { name: "migratorPayload", type: "bytes" },
+      { name: "nonce", type: "uint256" },
     ],
     [
       publicKeyToAbi(params.publicKey),
       params.signature,
       params.shouldMigrate,
       params.migratorPayload,
+      params.nonce,
     ]
   );
 }

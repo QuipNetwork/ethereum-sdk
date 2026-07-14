@@ -6,7 +6,7 @@ What an operator is trusted to do today, what they can't do, and where on-chain 
 
 ## TL;DR
 
-The QuipFactory and QuipPaymaster are owned by a single classical address. That owner can vet implementations, set fees, deprecate impls, and withdraw factory ETH balance — all in a single transaction, with no on-chain timelock or staged approval. Wallet user funds are **not** at risk from a compromised factory owner; the blast radius is implementation policy, fee economics, and accumulated factory revenue.
+The QuipFactory and QuipPaymaster are owned by a single classical address. That owner can vet implementations, set fees, deprecate impls, withdraw factory ETH balance, and — since the factory became UUPS-upgradeable — **replace the factory's implementation** — all in a single transaction, with no on-chain timelock or staged approval. Wallet user funds are **not** at risk from a compromised factory owner; the blast radius is implementation policy, fee economics, accumulated factory revenue, and (via upgrade) denial-of-service on factory-mediated wallet flows.
 
 The intended production posture is: factory owner is a multisig (Safe or equivalent), and eventually that multisig is itself replaced by a governance contract with a timelock. Both transitions happen via the existing `transferOwnership` flow on each contract.
 
@@ -23,8 +23,9 @@ Every entry in this table is `onlyOwner`, single transaction, immediate effect:
 | `undeprecateImplementation(address)` | `QuipFactory.sol:99` | Reverses a deprecation. |
 | `setCreationFee(uint256)` | `QuipFactory.sol:149` | Changes the per-wallet creation fee, bounded by the immutable `MAX_FEE`. |
 | `setExecuteFee(uint256)` | `QuipFactory.sol:157` | Changes the per-execute fee, bounded by `MAX_FEE`. |
-| `withdraw(uint256)` | `QuipFactory.sol:165` | Transfers up to the factory balance to the owner. Drains accumulated fee revenue. |
-| `transferOwnership(address)` | OZ `Ownable` | Hands ownership to a new address. Single-step (no two-step pending pattern). |
+| `withdraw(uint256)` | `QuipFactory.sol` | Transfers up to the factory balance to the owner. Drains accumulated fee revenue. |
+| `upgradeToAndCall(address,bytes)` | Solady `UUPSUpgradeable` | Replaces the factory implementation behind the ERC-1967 proxy. THE trust-delta action — see below. |
+| `transferOwnership(address)` | Solady `Ownable` | Hands ownership to a new address IMMEDIATELY. The two-step alternative is Solady's handover: the candidate calls `requestOwnershipHandover()`, the owner calls `completeOwnershipHandover(candidate)`. |
 
 Paymaster owner has the same shape of powers over `QuipPaymaster` (sponsorship config, deposit management). See `QuipPaymaster.sol` for the per-method list.
 
@@ -35,10 +36,14 @@ Even a fully compromised factory owner key cannot:
 - **Steal user funds out of any wallet.** Wallets are PQ-owned and protected by WOTS+ one-time signatures. The factory is invoked only at deploy time and as a callback receiver for the registry update on `transferOwnership`. Nothing in the factory can move funds from a wallet.
 - **Forge a vetted impl.** `vetImplementation` records `impl.codehash` and asserts non-zero code. To weaponize this an attacker still has to deploy malicious bytecode and convince *users* to deploy or upgrade against it — vetting alone doesn't migrate any existing wallet.
 - **Upgrade existing wallets unilaterally.** Each wallet upgrades through its own UUPS-style flow gated by the wallet's PQ owner. The factory's vetted set controls *what is upgradeable to*, not *whether an upgrade happens*.
-- **Renounce ownership.** `renounceOwnership` is overridden to revert (`QuipFactory.sol:204–210`). This is invariant §12.
-- **Exceed `MAX_FEE`.** Both fee setters revert on `newFee > MAX_FEE`. `MAX_FEE` is set at construction and immutable. Worst case fee inflation is bounded by the deploy-time choice.
+- **Renounce ownership.** `renounceOwnership` is overridden to revert. This is invariant §12.
+- **Exceed `MAX_FEE` without an upgrade.** Both fee setters revert on `newFee > MAX_FEE`. `MAX_FEE` is a per-implementation immutable, so within one implementation the cap is fixed — but a factory upgrade can install an implementation with a higher cap. The load-bearing bound is wallet-side: every wallet signs the fee (`maxFee`) into its execute digest, so no factory state can raise what a wallet actually pays (invariant §8).
 
-So the blast radius of a single compromised owner key is: rogue impl entering the vetted set (users who blindly deploy from `latestWalletImpl` get the rogue impl), fees pushed to `MAX_FEE`, factory ETH balance drained. Painful, recoverable, and visible — every change emits a typed event.
+### The upgrade trust delta
+
+`upgradeToAndCall` extends the owner's power beyond curation and fees. A malicious factory implementation could: rewrite `updateWalletOwner` (every wallet's PQ ownership transfer reverts at its tail callback — denial of service, not theft), rewrite the vetted-set views (`getVettedCodeIndex`/`deprecatedImpls` — wallet upgrades brick), lift `MAX_FEE`, or corrupt registry views (UI-level; invariant §16's consequence). It still cannot force a wallet upgrade, move wallet funds, or mutate any wallet's `owner()` — those require each wallet's own PQ signature. Full analysis: [INVARIANTS.md §22](INVARIANTS.md) and [FACTORY_UPGRADEABILITY.md](FACTORY_UPGRADEABILITY.md).
+
+So the blast radius of a single compromised owner key is: rogue impl entering the vetted set (users who blindly deploy from `latestWalletImpl` get the rogue impl), fees pushed to `MAX_FEE`, factory ETH balance drained, and — via upgrade — DoS on ownership transfers and wallet upgrades until an honest upgrade restores the logic (the proxy address, and with it the registry state, survives). Painful, recoverable, and visible — every change emits a typed event (upgrades emit ERC-1967 `Upgraded`).
 
 ## What new owners cannot be
 
@@ -54,7 +59,8 @@ The factory's `updateWalletOwner` callback (`QuipFactory.sol:173–201`) validat
    - `CreationFeeUpdated(uint256 oldFee, uint256 newFee)`
    - `ExecuteFeeUpdated(uint256 oldFee, uint256 newFee)`
    - `Withdrawn(address to, uint256 amount)`
-   - OZ `OwnershipTransferred(address previousOwner, address newOwner)`
+   - ERC-1967 `Upgraded(address implementation)` — a factory upgrade is the single highest-privilege owner action; alert, don't just log
+   - Solady `OwnershipTransferred(address oldOwner, address newOwner)` and `OwnershipHandoverRequested(address pendingOwner)`
 3. **Pre-publish vetting candidates.** Before `vetImplementation`, publish the impl's address + codehash + source provenance (commit hash, build settings — `deployments/bytecode/<Contract>.sol/<addr>.json` snapshots this from Foundry's `out/`). Users should be able to independently confirm the codehash off-chain before deploying against `latestWalletImpl`.
 4. **Use `deploySpecificWalletProxy` for sensitive deploys.** Avoid `latestWalletImpl` if the user wants to pin a specific vetted index — defends against a same-block surprise vet.
 
@@ -74,6 +80,8 @@ Phases 2 and 3 are additive — each one tightens controls without invalidating 
 
 - [INVARIANTS.md §7 Implementation Vetting](INVARIANTS.md) — what the vetted set enforces on-chain.
 - [INVARIANTS.md §12 Renounce Ownership Disabled](INVARIANTS.md) — the one ownership operation the factory does explicitly block.
-- [INVARIANTS.md §15 Factory Immutability](INVARIANTS.md) — properties of the factory address itself.
+- [INVARIANTS.md §15 Factory Reference Immutability](INVARIANTS.md) — properties of the factory address itself.
+- [INVARIANTS.md §22 Factory Upgrade Safety](INVARIANTS.md) — UUPS + ERC-7201 rules and the upgrade trust delta.
+- [FACTORY_UPGRADEABILITY.md](FACTORY_UPGRADEABILITY.md) — the design/scope record for the UUPS conversion.
 - [DEPLOYMENTS.md](DEPLOYMENTS.md) — current owner addresses per chain.
 - [TODO.md](TODO.md) — Phase 2 timelock + Phase 3 governance migration items.

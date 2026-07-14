@@ -7,7 +7,7 @@ import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSP
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
@@ -72,10 +72,11 @@ contract QuipFactory_deploySpecificWalletProxy is QuipFactoryTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (
-                logs[i].topics[0] == keccak256("QuipCreated(uint256,uint256,bytes32,address,(bytes32,bytes32),address)")
-            ) {
+            if (logs[i].topics[0] == keccak256("QuipCreated(uint256,uint256,bytes32,address,address,address)")) {
                 found = true;
+                // Pins the emitted implementation to the impl at the requested index.
+                (,, address implementation) = abi.decode(logs[i].data, (uint256, uint256, address));
+                assertEq(implementation, address(walletImplementation));
                 break;
             }
         }

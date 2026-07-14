@@ -26,8 +26,6 @@ import {
 import { createAnvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { quipFactoryAbi } from "../abi/QuipFactory.js";
 import { prepareTx, applyGasMultiplier, type ContractCallParams } from "../gas.js";
@@ -36,15 +34,7 @@ import {
   BalanceTooLowError,
   FeeExceedsMaxError,
 } from "../errors.js";
-
-// ─── Forge artifact ─────────────────────────────────────────────────
-const factoryArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipFactory.sol/QuipFactory.json"),
-    "utf8"
-  )
-);
-const factoryBytecode = factoryArtifact.bytecode.object as Hex;
+import { deployFactoryProxy } from "./utils/anvilFixture.js";
 
 const ANVIL_PRIV_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -64,15 +54,12 @@ beforeAll(async () => {
   publicClient = createPublicClient({ chain: foundry, transport });
   walletClient = createWalletClient({ chain: foundry, transport, account });
 
-  const hash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
-    bytecode: factoryBytecode,
-    args: [account.address, MAX_FEE],
+  ({ factoryAddress } = await deployFactoryProxy(
+    walletClient,
+    publicClient,
     account,
-    chain: foundry,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  factoryAddress = receipt.contractAddress!;
+    MAX_FEE
+  ));
 }, 30_000);
 
 afterAll(async () => {

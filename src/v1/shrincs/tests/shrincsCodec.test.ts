@@ -5,9 +5,11 @@
 import {
   type Address,
   type Hex,
+  concat,
   decodeAbiParameters,
   keccak256,
   sliceHex,
+  toBytes,
   toHex,
 } from "viem";
 
@@ -85,11 +87,38 @@ describe("shrincsCodec", () => {
     ).not.toBe(base);
   });
 
+  it("rotation domain separator folds a distinct per-path tag into the base", () => {
+    const base = Codec.domainSeparator(CHAIN_ID, WALLET);
+    const recover = Codec.rotationDomainSeparator(
+      base,
+      Codec.ROTATION_DOMAIN_RECOVER_WALLET
+    );
+    const handover = Codec.rotationDomainSeparator(
+      base,
+      Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP
+    );
+    // Mirrors `EfficientHashLib.hash(base, tag)` on-chain.
+    expect(recover).toBe(
+      keccak256(concat([base, Codec.ROTATION_DOMAIN_RECOVER_WALLET]))
+    );
+    // The two paths must never share a rotation domain (handover→recovery downgrade).
+    expect(recover).not.toBe(handover);
+    expect(recover).not.toBe(base);
+    expect(Codec.ROTATION_DOMAIN_RECOVER_WALLET).toBe(
+      keccak256(toBytes("quip.shrincs.rotation.recoverWallet"))
+    );
+    expect(Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP).toBe(
+      keccak256(toBytes("quip.shrincs.rotation.transferOwnership"))
+    );
+  });
+
   it("payload hashes bind every field", () => {
     const target = "0x00000000000000000000000000000000000000b0" as Address;
     const exec = Codec.executePayloadHash(target, 0n, EMPTY_DATA_HASH, 0n);
     expect(Codec.executePayloadHash(target, 1n, EMPTY_DATA_HASH, 0n)).not.toBe(exec);
     expect(Codec.executePayloadHash(target, 0n, keccak256("0x01"), 0n)).not.toBe(exec);
+    // 4th field is the signer's maxFee CEILING — bound so a relayer cannot
+    // raise the cap on a signed execute.
     expect(Codec.executePayloadHash(target, 0n, EMPTY_DATA_HASH, 1n)).not.toBe(exec);
 
     const withdraw = Codec.withdrawPayloadHash(target, 5n);
@@ -110,6 +139,22 @@ describe("shrincsCodec", () => {
     expect(Codec.rotateKeyPayloadHash(mainKey.publicKeyCommitment)).toBe(
       keccak256(mainKey.publicKeyCommitment)
     );
+  });
+
+  it("markLeavesUsed payload binds the exact target array (content, order, length)", () => {
+    // leavesHash preimage is one 32-byte word per leaf index, in order — the
+    // TS image of the wallet's EfficientHashLib word buffer.
+    expect(Codec.leavesHash([1, 2])).toBe(
+      keccak256(concat([toHex(1n, { size: 32 }), toHex(2n, { size: 32 })]))
+    );
+    // The payload hash is the single-word EfficientHashLib.hash(leavesHash).
+    const base = Codec.markLeavesUsedPayloadHash(Codec.leavesHash([1, 2]));
+    expect(base).toBe(keccak256(Codec.leavesHash([1, 2])));
+    // A signed revocation authorizes exactly its array: reorder, extend, and
+    // drop must all move the hash (a submitter cannot alter the batch).
+    expect(Codec.markLeavesUsedPayloadHash(Codec.leavesHash([2, 1]))).not.toBe(base);
+    expect(Codec.markLeavesUsedPayloadHash(Codec.leavesHash([1, 2, 3]))).not.toBe(base);
+    expect(Codec.markLeavesUsedPayloadHash(Codec.leavesHash([1]))).not.toBe(base);
   });
 
   it("encodeInitPayload matches the wallet decodeInit head layout", () => {
@@ -138,6 +183,30 @@ describe("shrincsCodec", () => {
       payload
     );
     expect(pk).toEqual(Codec.publicKeyToAbi(mainKey.publicKey));
+  });
+
+  it("encodeUpgradeData matches the wallet decodeUpgradeAuth head layout", () => {
+    const signature = mainKey.signStatefulRawAt(keccak256(toHex("upgrade auth")), 2);
+    const nonce = 7n;
+    const blob = Codec.encodeUpgradeData({
+      publicKey: mainKey.publicKey,
+      signature,
+      shouldMigrate: true,
+      migratorPayload: "0xdeadbeef",
+      nonce,
+    });
+    // Fixed 5-word head: PublicKey offset ‖ StatefulSignature offset ‖
+    // shouldMigrate ‖ migratorPayload offset ‖ nonce (what
+    // `Codec.decodeUpgradeAuth` slices; the nonce word is at head[4] so the
+    // prior offsets are unmoved from the 4-field layout).
+    const word = (i: number): Hex => sliceHex(blob, i * 32, (i + 1) * 32);
+    expect(BigInt(word(2))).toBe(1n); // shouldMigrate
+    expect(BigInt(word(4))).toBe(nonce); // blob-borne action nonce
+    // Head offsets 0/1/3 point past the 5-word head (0xa0), not the old 4-word
+    // head (0x80) — pins that consumers re-encoded for the new layout.
+    expect(BigInt(word(0)) >= 0xa0n).toBe(true);
+    expect(BigInt(word(1)) >= 0xa0n).toBe(true);
+    expect(BigInt(word(3)) >= 0xa0n).toBe(true);
   });
 
   it("round-trips the userOp.signature ABI blob with a live signature", () => {

@@ -32,6 +32,7 @@ import {
   // Wallet
   ZeroAddressFactoryError,
   ZeroAddressOwnerError,
+  ZeroAddressVerifierError,
   InvalidFactoryError,
   InvalidSignatureError,
   CommitmentMismatchError,
@@ -39,6 +40,11 @@ import {
   ZeroMaxSignaturesError,
   UnsupportedHashSuiteError,
   StaleStatefulLeafError,
+  StaleActionNonceError,
+  EmptyLeavesError,
+  LeafOutOfRangeError,
+  ExecuteFeeExceedsCapError,
+  StandardExecuteDisabledError,
   StatefulBudgetExhaustedError,
   ImplementationNotVettedError,
   ImplementationDeprecatedError,
@@ -88,6 +94,7 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   // Wallet
   ZeroAddressFactory: (_, o) => new ZeroAddressFactoryError(o),
   ZeroAddressOwner: (_, o) => new ZeroAddressOwnerError(o),
+  ZeroAddressVerifier: (_, o) => new ZeroAddressVerifierError(o),
   InvalidFactory: (_, o) => new InvalidFactoryError(o),
   InvalidSignature: (_, o) => new InvalidSignatureError(o),
   CommitmentMismatch: (_, o) => new CommitmentMismatchError(undefined, undefined, o),
@@ -95,6 +102,15 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   ZeroMaxSignatures: (_, o) => new ZeroMaxSignaturesError(o),
   UnsupportedHashSuite: (_, o) => new UnsupportedHashSuiteError(o),
   StaleStatefulLeaf: (_, o) => new StaleStatefulLeafError(undefined, o),
+  StaleActionNonce: (args, o) =>
+    new StaleActionNonceError(args[0] as bigint, args[1] as bigint, o),
+  EmptyLeaves: (_, o) => new EmptyLeavesError(o),
+  // `LeafOutOfRange(uint32 leaf)`.
+  LeafOutOfRange: (args, o) => new LeafOutOfRangeError(Number(args[0]), undefined, o),
+  // `ExecuteFeeExceedsCap(uint256 fee, uint256 maxFee)`.
+  ExecuteFeeExceedsCap: (args, o) =>
+    new ExecuteFeeExceedsCapError(args[0] as bigint, args[1] as bigint, o),
+  StandardExecuteDisabled: (_, o) => new StandardExecuteDisabledError(o),
   StatefulBudgetExhausted: (_, o) =>
     new StatefulBudgetExhaustedError(undefined, undefined, o),
   ImplementationNotVetted: (_, o) => new ImplementationNotVettedError(o),

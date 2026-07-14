@@ -132,6 +132,7 @@ For concurrent writes, the caller is responsible for picking distinct keys: read
 | `QuipWalletClient` | Orchestrates one wallet: reads, writes, simulation. | One per wallet, per process. References a `QuipSigner`. |
 | `QuipClient` | Factory client: creates wallets, lists vaults, vets implementations. | One per chain. |
 | `QuipPaymasterClient` | Per-wallet WOTS+ paymaster: registration, deposits, sponsored UserOp signing. | One per paymaster instance. |
+| `ShrincsPaymasterClient` | Global-key SHRINCS paymaster: sponsorship signing, verifier rotation, leaf revocation, deposits/stake. | One per paymaster instance. Recreate with a grafted `keypair` after rotation (see the SHRINCS paymaster section). |
 
 ---
 
@@ -201,6 +202,83 @@ The canonical v0.7 EntryPoint address (`0x0000000071727De22E5E9d8BAf0edAc6f37da0
 A reverted UserOp execution still **commits** the wallet's key rotation (the EntryPoint runs validation and execution as separate top-level calls). The SDK records the burn via the injected `ConsumeKeyFn` at sign time, in both cases.
 
 `prepareExecuteUserOp` (and `buildExecuteUserOp`, which composes prepare + sign) pre-flights the inner `wallet.execute(target, value, data)` call via `eth_estimateGas` from the EntryPoint. Reverts surface as typed errors (`QuipError` subclasses for known selectors, `UnknownContractError` for non-Quip ABIs, `GasEstimationError` for bare reverts) **before any key is burned**. The other three builders (`buildExecuteBatchUserOp`, `buildDelegateExecuteUserOp`, `buildStorageStoreUserOp`) use the same pre-flight pipeline against their respective inner calldata. To bypass pre-flight on the rare "ship a userOp whose inner call I expect to revert" path, pin `opts.callGasLimit` and set `opts.skipGasEstimation: true`.
+
+---
+
+## SHRINCS wallets (`/v1/shrincs`)
+
+`ShrincsWalletClient` (import from `@quip.network/ethereum-sdk/v1/shrincs`) operates the SHRINCS hash-based wallet family. The mental model differs from WOTS+ in two ways that change how you must sequence operations:
+
+**One-time leaves, budgeted.** Normal actions sign with a stateful leaf (`leaf index = authPath.length`), each usable once per key epoch, bounded by `maxSignatures`. The client picks the lowest unused leaf automatically by reading the on-chain bitmap. Rotate before the budget exhausts (`rotateKey`); break-glass recovery (`recoverWallet`) uses the stateless half.
+
+**Strict signing-order serialization.** Every signed context binds the wallet's live `actionNonce()`, and every consumed signature advances it (sole exception: `markLeavesUsed`, below). One outstanding signed authorization at a time: sign → land → sign. Signing a second op before the first lands binds a stale nonce and is rejected (`AA24` on the 4337 path; `InvalidSignatureError` on the direct path, leaf preserved). The flip side is free mass-cancellation: landing any action (even an empty `execute`) invalidates all outstanding signed material, including ERC-1271 blobs — integrators sign 1271 blobs late and re-sign after any wallet action.
+
+### External verifier delegation
+
+Since hashsigs-solidity 0.2.0, the wallet and paymaster implementations no longer inline the SHRINCS verification bytecode. Each pins the canonical deployed `SHRINCS256sKeccak` ERC-7913 verifier as an `immutable` (`getShrincsVerifier()` / `SHRINCS_VERIFIER()`), set at implementation deployment. The verifier is trustless by construction — no owner, no storage, no upgradability — so the pin grants it no authority: it can only answer "does this signature verify over this 32-byte hash". All state (leaf bitmap, action nonce, `keyVersion`, installed commitments) stays in the wallet.
+
+How the delegation preserves the inlined library's semantics exactly:
+
+- The verifier calls inlined at `_validateSignature`, `verifyUpgrade`, `_verifyStatefulAndConsume`, and `_checkErc1271Signature`, plus `_statelessRotate`, are the only paths to signature cryptography. Each computes the canonical message hash locally (pure `SHRINCS` helpers) and delegates everything else via a staticcall over the exact 32 hash bytes — byte-identical to the inlined check, because the ERC-7913 verifier verifies over `SPHINCSPlusC.toMessage(hash) == abi.encodePacked(hash)`, precisely what `SHRINCS.verifyStateful`/`verifyStateless` hash internally.
+- The envelope is always `abi.encode(publicKey, signature)` — byte-identical to `SHRINCS.encodeStatefulEnvelope`/`encodeStatelessEnvelope`, the formats the verifier re-tags in place.
+- The verifier re-runs the full bundle checks (installed-commitment match, key shape, key decode) before the crypto, so none of those are replicated wallet-side. For rotations, the wallet keeps only what the verifier can never see — the rotation *target*: `nextKey` structural validation and the declared-vs-recomputed next-commitment equality.
+- The library's `validActionContext`/`validRotationContext` nonzero membranes are not replicated: every context is wallet-built from keccak-derived fields, so they can never trip — with one real exception, the caller-supplied ERC-1271 `hash`, which is zero-guarded at its call site.
+- Revert model: 0.2.0 replaced the library's signature shape checks with revert-as-rejection — garbage signature *internals* (attacker-controlled array lengths inside `userOp.signature` or a 1271 blob) revert inside the verifier instead of returning `0xffffffff`, and the dep explicitly leaves the boolean policy to callers. The wallet's policy boundary is `_tryVerifyStateful`/`_tryVerifyStateless`: every verifier revert maps to "invalid signature", preserving `validateUserOp`'s never-revert-on-bad-sig property and never-revert ERC-1271. Accepted trade-off: an inner out-of-gas also reports as an invalid signature. A codeless verifier address stays loud (solc's return-data decoding error is deliberately not swallowed by try/catch) — a missing verifier is never misread as a bad signature.
+- ERC-7562: the verifier is storage-free and pure-opcode, so the validation-phase staticcall is compliant (`ERC7562_COMPLIANCE.md` N-5); the trust model is invariant 19 in `INVARIANTS.md`.
+
+### Execute fee: signed `maxFee` ceiling, live price charged
+
+The factory charges a per-execute fee (`getExecuteFee()`). The signer authorizes a **ceiling**, not an amount:
+
+- `execute({ target, value, data, maxFee? })` — `maxFee` defaults to the live `executeFee` read at prepare time; pass a higher value for headroom against fee increases. The wallet charges the **live** fee at landing and reverts `ExecuteFeeExceedsCapError` only if it exceeds the cap. Fee decreases succeed at the lower price and never invalidate a signature.
+- On the 4337 path, `maxFee` is a required parameter of `buildExecuteUserOp` / `buildExecuteBatchUserOp` (they are pure encoders; pass `(await getWalletState()).executeFee` or headroom). It rides in `callData`, so the signature binds it via `userOpHash` — validation reads no fee at all (ERC-7562: the wallet's only validation-phase external call is the compliant staticcall to the storage-free verifier, so conformant bundlers accept the op).
+- The un-capped `execute(address,uint256,bytes)` / `executeBatch(Call[])` selectors are disabled on-chain (`StandardExecuteDisabledError`); every execution path carries a signed ceiling.
+
+**Revert asymmetry, same as WOTS+.** A cap-exceeded revert on the **direct** path rolls back everything — leaf and nonce preserved. On the **4337** path, validation already consumed the leaf and advanced the nonce before execution reverts, so a cap-exceeded op burns the leaf without executing. Fee changes are rare owner-governance events; if in-flight exposure matters, sign with headroom.
+
+### Leaf revocation: `markLeavesUsed` (surgical)
+
+`markLeavesUsed({ leaves })` burns target leaves in the current key epoch's bitmap, authorized by one stateful signature from a *different* leaf. Use it for OTS hygiene — a leaf whose one-time key signed a message that will never land (superseded by the nonce) must never sign a second message — or to kill one specific outstanding approval.
+
+- **Surgical: no nonce advance.** Unlike every other landed action, revocation does not touch `actionNonce()`, so outstanding signed material at non-revoked leaves stays valid. It is the targeted complement to the empty-`execute` cancel-all.
+- **Skip, don't brick.** Already-used targets (a pending action raced its own revocation, duplicates) are skipped with a `LeafRevocationSkipped` event; the batch never reverts for a race. Out-of-range targets throw `LeafOutOfRangeError` and an empty array throws `EmptyLeavesError` — both client-side before signing, and on-chain as the backstop.
+- **The authorizing leaf never comes from the target set.** A leaf you are revoking has typically already signed off-chain; signing the revocation with it would be exactly the key reuse being prevented. The client auto-picks outside the set; an explicit `opts.leaf` inside it throws `AuthLeafInTargetsError` before signing. Each call costs one leaf of budget on top of the leaves it burns.
+
+### ERC-4337 flow
+
+```ts
+const state = await client.getWalletState();
+const userOp = client.buildExecuteUserOp({
+  target, value, data,
+  maxFee: state.executeFee,               // the signed fee ceiling (see above)
+  nonce, maxFeePerGas, maxPriorityFeePerGas, // ERC-4337 envelope
+});
+const { userOp: signed, userOpHash, leaf } = await client.signExecuteUserOp({ userOp, entryPoint });
+// submit `signed` to your bundler; the SDK does not own bundler submission
+```
+
+`signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`) and binds `userOpHash` — nothing else. Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `markLeavesUsed`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
+
+### Sponsorship paymaster (`ShrincsPaymasterClient`)
+
+One global SHRINCS stateful key sponsors every wallet: the operator signs each userOp it will pay for, bound to that op's `sender` + `nonce`, so signatures can't be replayed across wallets and land in ANY order (no wrapper nonce — anti-replay is the one-time leaf). Signing order in the 4337 flow: the paymaster fills `paymasterAndData` FIRST (`sponsorUserOp`), then the wallet signs the final `userOpHash` over it.
+
+**Admin is owner-fiat.** `rotateStatefulKey` and `markLeavesUsed` carry no PQ signature of their own — the paymaster's owner is expected to be a post-quantum wallet, which secures the admin path upstream. This is deliberate: a compromised or lost sponsorship key must never gate its own replacement.
+
+**Rotation rotates the stateful subkey ONLY.** `rotateStatefulKey({ nextStatefulPublicKey })` takes a fresh key's encoded 68-byte stateful public key (keygen it under a NEW vaultId of the same signer) and carries the installed bundle's stateless half forward. The new `maxSignatures` budget rides inside the encoding. The client pre-flights the current keypair against the on-chain commitment (`VerifierMismatchError` before any tx).
+
+**After a rotation, the live bundle is a cross-vault graft** — the new vault's stateful secrets under the ORIGINAL vault's stateless half. A plain `recoverKeyPair` on either vault reproduces the wrong commitment; build the operator keypair explicitly and pass it as the `keypair` constructor param:
+
+```ts
+const grafted = signer.deriveKeyPair({
+  statefulVaultId: newVault,      // rotated-in stateful key
+  statelessVaultId: originalVault, // stateless half never rotates
+  maxSignatures: NEW_MAX,
+});
+const pmClient = new ShrincsPaymasterClient({ ...params, vaultId: newVault, keypair: grafted });
+```
+
+**Revocation spends budget.** `markLeavesUsed(leaves)` kills outstanding sponsorship signatures by marking their leaves used (idempotent per leaf; out-of-range reverts the batch). Every fresh mark decrements `remainingStatefulSignatures()` — a leaf is available, sponsored, or revoked, and the three always sum to the budget.
 
 ---
 

@@ -58,10 +58,10 @@ export interface ForsEntry {
   authPath: Hex[];
 }
 
-/// One hypertree layer authenticating a WOTS-C public key up to its parent root.
+/// One hypertree layer authenticating a WOTS-C public key up to its parent
+/// root. Tree coordinates are not carried: the verifier re-derives them from
+/// the message, so the wire shape is just the WOTS-C material + auth path.
 export interface HypertreeLayerSignature {
-  treeIndex: bigint;
-  leafIndex: number;
   wotsCPkHash: Hex;
   wotsCSignature: WotsCSignature;
   authPath: Hex[];
@@ -80,8 +80,10 @@ export interface StatelessSignature {
 }
 
 /// Canonical signing context for a normal (stateful or stateless) wallet
-/// action. All fields are 32-byte hex. On the stateful path `nonce` is always
-/// `0x..00` (anti-replay is the used-leaf bitmap, not a nonce).
+/// action. All fields are 32-byte hex. `nonce` is the wallet's live
+/// `actionNonce()` — bound into every context and advanced on every consumed
+/// signature, so a landed action supersedes all outstanding signed material.
+/// (Exception: the paymaster's sponsorship context binds nonce 0.)
 export interface ActionContext {
   domainSeparator: Hex;
   nonce: Hex;

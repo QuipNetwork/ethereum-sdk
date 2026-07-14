@@ -285,7 +285,11 @@ export interface QuipCreatedEvent {
   when: bigint;
   vaultId: Hex;
   creator: Address;
-  disasterRecoveryKey: WinternitzAddress;
+  /// The vetted implementation the proxy was deployed with — identifies the
+  /// wallet family/version. Key material is not echoed by the factory (the
+  /// init payload is opaque to it); read each family's own WalletInitialized
+  /// event or on-chain wallet state instead.
+  implementation: Address;
   quip: Address;
 }
 
@@ -299,7 +303,7 @@ export function parseQuipCreated(src: LogSource): QuipCreatedEvent[] {
     when: l.args.when,
     vaultId: l.args.vaultId,
     creator: l.args.creator,
-    disasterRecoveryKey: l.args.disasterRecoveryKey,
+    implementation: l.args.implementation,
     quip: l.args.quip,
   }));
 }

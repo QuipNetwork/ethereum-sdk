@@ -62,6 +62,48 @@ contract ShrincsE2E_sponsoredExecute is ShrincsE2EBase {
         assertTrue(paymaster.isStatefulLeafUsed(1), "paymaster leaf consumed");
     }
 
+    /// @dev Fee decrease between signing and landing: the op lands and the wallet is charged the
+    ///      LOWER live fee (the `<=` cap semantics; the old digest-bound design would have
+    ///      invalidated the signature instead).
+    function test_e2e_feeDecreaseLandsChargingLiveFee() public {
+        factory.setExecuteFee(0.01 ether);
+        SponsoredOpParams memory p = _defaultOpParams(RECIPIENT, 0.1 ether, "", 0, 1);
+        p.maxFee = 0.01 ether;
+        PackedUserOperation memory op = _buildSponsoredOp(p);
+        _assertLiveHash(op);
+
+        factory.setExecuteFee(0.002 ether); // fee lowered after the op was signed
+        uint256 factoryBefore = address(factory).balance;
+        uint256 recipientBefore = RECIPIENT.balance;
+
+        _handle(op);
+
+        assertEq(RECIPIENT.balance, recipientBefore + 0.1 ether, "transfer landed");
+        assertEq(address(factory).balance - factoryBefore, 0.002 ether, "LIVE fee charged, not the ceiling");
+        assertTrue(wallet.isStatefulLeafUsed(1), "wallet leaf consumed");
+    }
+
+    /// @dev Fee raised past the signed ceiling AFTER signing: validation passes (it reads no fee
+    ///      — ERC-7562), so the op is included and the EXECUTION phase reverts on the cap. The
+    ///      leaf and action nonce were consumed during validation and stay consumed — the
+    ///      documented N-3a property of validation-phase stateful-signature consumption
+    ///      (ERC7562_COMPLIANCE.md); the execution effect itself does not happen.
+    function test_e2e_feeIncreasePastCap_executionRevertsLeafBurned() public {
+        PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1); // maxFee 0
+        factory.setExecuteFee(0.01 ether); // raised past the signed ceiling after signing
+
+        uint256 recipientBefore = RECIPIENT.balance;
+        uint256 factoryBefore = address(factory).balance;
+        assertEq(wallet.actionNonce(), 0, "pre: nonce untouched");
+
+        _handle(op); // does NOT revert: execution-phase failures are absorbed by the EntryPoint
+
+        assertEq(RECIPIENT.balance, recipientBefore, "execution effect did not happen");
+        assertEq(address(factory).balance, factoryBefore, "no fee collected");
+        assertTrue(wallet.isStatefulLeafUsed(1), "leaf consumed during validation stays consumed");
+        assertEq(wallet.actionNonce(), 1, "nonce advanced during validation stays advanced");
+    }
+
     function test_e2e_emitsSponsorshipEvents() public {
         PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
 

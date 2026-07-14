@@ -2,12 +2,12 @@
 pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Test.sol";
+import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipFactoryHarness} from "../../harness/QuipFactoryHarness.sol";
 import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
 import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
 
 contract QuipFactory__deployProxy is QuipFactoryTest {
     QuipFactoryHarness public harness;
@@ -15,7 +15,9 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
 
     function setUp() public override {
         super.setUp();
-        harness = new QuipFactoryHarness(payable(ADMIN), 0.1 ether);
+        QuipFactoryHarness harnessImpl = new QuipFactoryHarness(0.1 ether);
+        harness = QuipFactoryHarness(payable(LibClone.deployERC1967(address(harnessImpl))));
+        harness.initialize(payable(ADMIN));
         impl = new WOTSPlusImplementation(payable(address(harness)));
         vm.prank(ADMIN);
         harness.vetImplementation(address(impl));
@@ -80,14 +82,14 @@ contract QuipFactory__deployProxy is QuipFactoryTest {
                 bytes32 vid = logs[i].topics[1];
                 address creator = address(uint160(uint256(logs[i].topics[2])));
                 address quip = address(uint160(uint256(logs[i].topics[3])));
-                (uint256 amount,, WOTSPlus.WinternitzAddress memory pqPub) =
-                    abi.decode(logs[i].data, (uint256, uint256, WOTSPlus.WinternitzAddress));
+                (uint256 amount,, address implementation) =
+                    abi.decode(logs[i].data, (uint256, uint256, address));
                 assertEq(amount, 1 ether);
                 assertEq(vid, vaultId);
                 assertEq(creator, ALICE);
-                // Event now emits the disaster recovery key (first 64 bytes of payload).
-                assertEq(pqPub.publicSeed, bytes32(uint256(500)));
-                assertEq(pqPub.publicKeyHash, bytes32(uint256(501)));
+                // The event carries the implementation the proxy was deployed
+                // with; the init payload itself is opaque to the factory.
+                assertEq(implementation, address(impl));
                 assertEq(quip, proxy);
                 break;
             }

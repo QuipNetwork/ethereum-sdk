@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
+import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 contract BatchTarget {
@@ -15,7 +16,9 @@ contract BatchTarget {
     receive() external payable {}
 }
 
-/// @dev Behavior tests for the ERC-4337 `executeBatch` overload (`onlyEntryPoint`, no SHRINCS).
+/// @dev Behavior tests for the ERC-4337 `executeBatch(Call[],uint256 maxFee)` overload
+///      (`onlyEntryPoint`, no SHRINCS — `maxFee` is signed by riding in `callData`). One fee per
+///      batch. The inherited un-capped `executeBatch(Call[])` must be dead.
 contract ShrincsWallet_executeBatch is ShrincsWalletTest {
     BatchTarget internal target;
 
@@ -33,7 +36,7 @@ contract ShrincsWallet_executeBatch is ShrincsWalletTest {
     function test_executeBatch_revertsWhen_callerNotEntryPoint() public {
         vm.prank(makeAddr("notEntryPoint"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.executeBatch(_calls());
+        wallet.executeBatch(_calls(), 0);
     }
 
     function test_executeBatch_runsAllCallsAndCollectsFee() public {
@@ -43,9 +46,30 @@ contract ShrincsWallet_executeBatch is ShrincsWalletTest {
         uint256 factoryBefore = address(factory).balance;
 
         vm.prank(ENTRY_POINT);
-        wallet.executeBatch(_calls());
+        wallet.executeBatch(_calls(), fee);
 
         assertEq(target.sum(), 7, "both calls executed");
         assertEq(address(factory).balance - factoryBefore, fee, "single fee collected for the batch");
+    }
+
+    function test_executeBatch_revertsWhen_feeExceedsCap() public {
+        factory.setExecuteFee(0.02 ether);
+        vm.deal(WALLET, 1 ether);
+
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.ExecuteFeeExceedsCap.selector, 0.02 ether, 0.01 ether));
+        wallet.executeBatch(_calls(), 0.01 ether);
+
+        assertEq(target.sum(), 0, "no call executed past the cap");
+    }
+
+    function test_executeBatch_standardSelectorDisabled() public {
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert(IShrincsWallet.StandardExecuteDisabled.selector);
+        wallet.executeBatch(_calls());
+
+        vm.prank(makeAddr("stranger"));
+        vm.expectRevert(IShrincsWallet.StandardExecuteDisabled.selector);
+        wallet.executeBatch(_calls());
     }
 }

@@ -25,13 +25,25 @@ with no env vars and no RPC.
 > would break the cross-chain pin without a corresponding redeploy
 > everywhere. Only the downstream contracts roll forward.
 
+> ⚠️ **Factory V2 (UUPS) supersedes the address above.** The QuipFactory
+> became UUPS-upgradeable (impl + ERC-1967 proxy, like the paymaster) on
+> fresh `V2` salts — the V1.1 salt is retired because CREATE3 ignores
+> initcode, so reusing it would resolve to the old non-upgradeable factory
+> on chains where it exists. The V2 proxy address (the permanent factory
+> identity — wallets bake it in, CREATE3 wallet addressing derives from
+> it) materializes on the next deploy; run `make predict-addresses` for
+> the canonical value. The `0xd175…` V1.1 factory above remains on Base
+> Sepolia as a retired artifact.
+
 ### Salts
 
 | Contract | Salt preimage |
 |---|---|
 | Deployer (via CreateX, unchanged) | `QUIP:Deployer:V1` |
 | WOTSPlus | `QUIP:WOTSPlus:V1.1` |
-| QuipFactory | `QUIP:QuipFactory:V1.1` |
+| QuipFactory impl (UUPS) | `QUIP:QuipFactory:Impl:V2` |
+| QuipFactory proxy (canonical) | `QUIP:QuipFactory:Proxy:V2` |
+| QuipFactory (retired, non-upgradeable) | `QUIP:QuipFactory:V1.1` |
 | QuipWallet impl | `QUIP:QuipWallet:V1.1` |
 | QuipPaymaster impl | `QUIP:QuipPaymaster:Impl:V1.1` |
 | QuipPaymaster proxy | `QUIP:QuipPaymaster:Proxy:V1.1` |
@@ -58,21 +70,23 @@ to deploy via solady CREATE3.
 
 ### Library linking
 
-`QuipWallet` and `QuipFactory` both call into the `WOTSPlus` library at
-runtime — their compiled bytecode contains a placeholder that must be
-replaced with WOTSPlus's address before deploy. Foundry handles this via
-the `[profile.deploy]` profile in `foundry.toml`:
+`QuipWallet` calls into the `WOTSPlus` library at runtime — its compiled
+bytecode contains a placeholder that must be replaced with WOTSPlus's
+address before deploy. (`QuipFactory` no longer links WOTSPlus: the
+WOTS+ decoupling removed its last dependency, so factory bytecode is
+link-free.) Foundry handles the wallet linking via the
+`[profile.deploy]` profile in `foundry.toml`:
 
 ```toml
 [profile.deploy]
 libraries = [
-    "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus:0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723"
+    "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol:WOTSPlus:0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723"
 ]
 ```
 
-Every script that touches `QuipWallet` or `QuipFactory` bytecode runs
-under `FOUNDRY_PROFILE=deploy`. The Makefile per-chain targets set this
-automatically.
+Every script that touches `QuipWallet` bytecode runs under
+`FOUNDRY_PROFILE=deploy`. The Makefile per-chain targets set this
+automatically (harmless for the factory-only script).
 
 ### Deployment workflow
 

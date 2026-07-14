@@ -2,7 +2,13 @@
 pragma solidity ^0.8.33;
 
 import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
+import {SPHINCSPlusC256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC256sKeccak.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol";
 import {MockShrincsFactory} from "../../mocks/MockShrincsFactory.sol";
@@ -33,6 +39,11 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     ShrincsPaymasterHarness internal paymaster;
     MockShrincsFactory internal factory;
     MockCallTarget internal callTarget;
+    SHRINCS256sKeccak internal shrincsVerifier;
+
+    // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
+    // sibling; its code must exist there or stateless verification reverts on empty code.
+    address internal constant SPHINCS_SIBLING = 0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A;
 
     function setUp() public virtual override {
         super.setUp(); // generates the wallet + verifier keys
@@ -40,10 +51,15 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
         // Pin chainid to the assembler's signing domain (the live EntryPoint reads block.chainid).
         vm.chainId(CHAIN_ID);
 
+        // ── External verifier (fork won't have it; deploy + etch the pinned sibling) ──
+        shrincsVerifier = new SHRINCS256sKeccak();
+        vm.etch(SPHINCS_SIBLING, address(new SPHINCSPlusC256sKeccak()).code);
+
         // ── Place the wallet at its fixed address ──
         factory = new MockShrincsFactory(); // executeFee defaults to 0
         ShrincsWalletHarness walletImpl = new ShrincsWalletHarness(
-            payable(address(factory))
+            payable(address(factory)),
+            address(shrincsVerifier)
         );
         vm.etch(WALLET, address(walletImpl).code);
         wallet = ShrincsWalletHarness(payable(WALLET));
@@ -55,7 +71,8 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
         );
 
         // ── Place the paymaster at its fixed address ──
-        ShrincsPaymasterHarness pmImpl = new ShrincsPaymasterHarness();
+        ShrincsPaymasterHarness pmImpl =
+            new ShrincsPaymasterHarness(address(shrincsVerifier));
         vm.etch(PAYMASTER, address(pmImpl).code);
         paymaster = ShrincsPaymasterHarness(payable(PAYMASTER));
         paymaster.harness_setOwner(ADMIN);
@@ -92,12 +109,25 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     }
 
     /// @dev Builds the default sponsored op AND cross-checks it against the live EntryPoint hash.
+    ///      Binds wallet action nonce 0 — only correct for the wallet's FIRST consumed signature.
     function _checkedSponsoredOp(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
         internal
         view
         returns (PackedUserOperation memory op)
     {
-        op = _sponsoredOp(target, value, data, nonce, leaf);
+        op = _checkedSponsoredOp(target, value, data, nonce, leaf, 0);
+    }
+
+    /// @dev `_checkedSponsoredOp` at an explicit wallet action nonce (op N in a sequence binds N).
+    function _checkedSponsoredOp(
+        address target,
+        uint256 value,
+        bytes memory data,
+        uint256 nonce,
+        uint32 leaf,
+        uint256 walletNonce
+    ) internal view returns (PackedUserOperation memory op) {
+        op = _sponsoredOp(target, value, data, nonce, leaf, walletNonce);
         _assertLiveHash(op);
     }
 

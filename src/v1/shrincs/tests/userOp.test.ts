@@ -102,10 +102,14 @@ describe("shrincs paymaster userOp", () => {
     expect(publicKey).toEqual(verifier.publicKey);
     expect(signature.authPath.length).toBe(leaf);
 
-    // The signature verifies over the canonical sponsorship message.
+    // The signature verifies over the canonical sponsorship message. The
+    // paymaster context binds nonce 0 (it is outside the wallet's action-nonce
+    // scheme) — this doubles as the pin that the sponsorship blob is unchanged
+    // by the wallet's nonce redesign.
     const message = verifier.statefulActionMessageHash(
       buildActionContext({
         domainSeparator: domainSeparator(CHAIN_ID, PAYMASTER, PAYMASTER_DOMAIN_TAG),
+        nonce: 0n,
         keyVersion: 0n,
         actionType: ACTION_PAYMASTER_APPROVE,
         payloadHash: paymasterBindingHash(op, header64()),

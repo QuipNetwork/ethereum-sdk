@@ -31,8 +31,11 @@ import { tryMulticall } from "../internal/multicall.js";
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
 import { HASH_SUITE_KECCAK_256 } from "./constants.js";
 import {
+  AuthLeafInTargetsError,
   CommitmentMismatchError,
+  EmptyLeavesError,
   Erc1271ValidationResult,
+  LeafOutOfRangeError,
   StatefulBudgetExhaustedError,
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
@@ -42,11 +45,14 @@ import { withDecodedError } from "./internal/decodeError.js";
 import {
   ACTION_ERC1271,
   ACTION_EXECUTE,
+  ACTION_MARK_LEAVES_USED,
   ACTION_ROTATE_KEY,
   ACTION_SET_ERC1271_KEY,
   ACTION_TRANSFER_OWNERSHIP,
   ACTION_UPGRADE,
   ACTION_WITHDRAW,
+  ROTATION_DOMAIN_RECOVER_WALLET,
+  ROTATION_DOMAIN_TRANSFER_OWNERSHIP,
   buildActionContext,
   buildRotationContext,
   buildStatefulRotationTarget,
@@ -55,8 +61,11 @@ import {
   encodeErc1271Signature,
   encodeUpgradeData,
   executePayloadHash,
+  leavesHash,
+  markLeavesUsedPayloadHash,
   publicKeyToAbi,
   rotateKeyPayloadHash,
+  rotationDomainSeparator,
   setErc1271KeyPayloadHash,
   toRotationTarget,
   transferOwnershipPayloadHash,
@@ -221,10 +230,14 @@ export class ShrincsWalletClient {
 
   /// Lowest unused stateful leaf in `1..maxSignatures` for the current key
   /// epoch, found by scanning the on-chain bitmap via multicall. Throws
-  /// `StatefulBudgetExhaustedError` if every leaf is consumed.
+  /// `StatefulBudgetExhaustedError` if every leaf is consumed (or every free
+  /// leaf is excluded). `exclude` skips leaves the bitmap considers free but
+  /// that must not sign — e.g. `markLeavesUsed` targets, whose one-time keys
+  /// have typically already signed an off-chain message.
   async lowestUnusedLeaf(
     maxSignatures: number,
-    statefulLeavesUsed: number
+    statefulLeavesUsed: number,
+    exclude?: ReadonlySet<number>
   ): Promise<number> {
     if (statefulLeavesUsed >= maxSignatures) {
       throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
@@ -241,6 +254,7 @@ export class ShrincsWalletClient {
     const results = await tryMulticall(this.publicClient, calls);
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
+      if (exclude?.has(i + 1)) continue;
       if (r && r.status === "success" && r.result === false) return i + 1;
     }
     throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
@@ -254,6 +268,18 @@ export class ShrincsWalletClient {
         address: this.walletAddress,
         abi: shrincsWalletAbi,
         functionName: "quipFactory",
+      })
+    ) as Promise<Address>;
+  }
+
+  /// The pinned external SHRINCS verifier (an implementation immutable) every
+  /// signature check is delegated to.
+  async getShrincsVerifier(): Promise<Address> {
+    return withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: shrincsWalletAbi,
+        functionName: "getShrincsVerifier",
       })
     ) as Promise<Address>;
   }
@@ -356,8 +382,13 @@ export class ShrincsWalletClient {
   }
 
   /// Common stateful-op preamble: assert provider, read state, recover key, pick
-  /// the lowest unused leaf (or honor an explicit override).
-  private async prepareStatefulOp(keyOpts?: ShrincsTxKeyOptions): Promise<{
+  /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
+  /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
+  /// are responsible for their own exclusion guard (see `markLeavesUsed`).
+  private async prepareStatefulOp(
+    keyOpts?: ShrincsTxKeyOptions,
+    excludeLeaves?: ReadonlySet<number>
+  ): Promise<{
     keypair: ShrincsKeyPair;
     state: ShrincsWalletState;
     leaf: number;
@@ -371,7 +402,11 @@ export class ShrincsWalletClient {
     );
     const leaf =
       keyOpts?.leaf ??
-      (await this.lowestUnusedLeaf(state.maxSignatures, state.statefulLeavesUsed));
+      (await this.lowestUnusedLeaf(
+        state.maxSignatures,
+        state.statefulLeavesUsed,
+        excludeLeaves
+      ));
     return {
       keypair,
       state,
@@ -424,25 +459,36 @@ export class ShrincsWalletClient {
 
   /// Execute a single call. `value == 0 && data == "0x"` consumes a leaf without
   /// executing (emits `LeafConsumedOnly`).
+  ///
+  /// FEE CAP — `maxFee` (default: the live `executeFee` at prepare time) is the
+  /// signed CEILING, not the charged amount: the wallet charges the live fee at
+  /// landing and reverts `ExecuteFeeExceedsCap` only if it exceeds the cap. A
+  /// fee decrease between signing and landing succeeds at the lower price; pass
+  /// a higher `maxFee` for headroom against increases.
   async execute(
-    params: { target: Address; value?: bigint; data?: Hex },
+    params: { target: Address; value?: bigint; data?: Hex; maxFee?: bigint },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
     const value = params.value ?? 0n;
     const data = params.data ?? "0x";
     const { keypair, state, leaf, domainSeparator: ds } =
       await this.prepareStatefulOp(opts);
+    const maxFee = params.maxFee ?? state.executeFee;
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_EXECUTE,
-      payloadHash: executePayloadHash(params.target, value, keccakData(data), state.executeFee),
+      payloadHash: executePayloadHash(params.target, value, keccakData(data), maxFee),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
+    // msg.value funds the ceiling; any excess over the live fee stays in the
+    // wallet (the user's own funds), and the call cannot underfund a fee move
+    // within the cap.
     return this.submit(
       "execute",
-      [publicKeyToAbi(keypair.publicKey), signature, params.target, value, data],
-      value + state.executeFee,
+      [publicKeyToAbi(keypair.publicKey), signature, params.target, value, data, maxFee],
+      value + maxFee,
       opts
     );
   }
@@ -456,6 +502,7 @@ export class ShrincsWalletClient {
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_WITHDRAW,
       payloadHash: withdrawPayloadHash(params.to, params.amount),
@@ -497,6 +544,7 @@ export class ShrincsWalletClient {
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_SET_ERC1271_KEY,
       payloadHash: setErc1271KeyPayloadHash(params.newCommitment, hashSuite),
@@ -526,6 +574,7 @@ export class ShrincsWalletClient {
     });
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_ROTATE_KEY,
       payloadHash: rotateKeyPayloadHash(nextStatefulKey.publicKeyCommitment),
@@ -546,6 +595,60 @@ export class ShrincsWalletClient {
     );
   }
 
+  /// Surgical batch leaf revocation: mark the target leaves used in the current
+  /// key epoch's bitmap, authorized by one stateful signature from a DIFFERENT
+  /// leaf. OTS hygiene — burn a leaf whose one-time key signed a message that
+  /// will never land, or kill a specific outstanding approval.
+  ///
+  /// SURGICAL — unlike every other landed action, this does NOT advance the
+  /// action nonce, so outstanding signed material at non-revoked leaves stays
+  /// valid. On-chain skip semantics: already-used targets (races, duplicates)
+  /// emit `LeafRevocationSkipped` instead of reverting; out-of-range targets
+  /// revert `LeafOutOfRange`; an empty array reverts `EmptyLeaves`.
+  ///
+  /// The authorizing leaf is auto-picked OUTSIDE the target set: a leaf being
+  /// revoked has typically already signed off-chain, and authorizing with it
+  /// would be exactly the key reuse this call prevents. An explicit `opts.leaf`
+  /// inside the targets throws `AuthLeafInTargetsError` before signing.
+  async markLeavesUsed(
+    params: { leaves: readonly number[] },
+    opts: TxOptions & ShrincsTxKeyOptions = {}
+  ): Promise<TransactionReceipt> {
+    const leaves = params.leaves;
+    if (leaves.length === 0) throw new EmptyLeavesError();
+    const targetSet = new Set(leaves);
+    if (opts.leaf !== undefined && targetSet.has(opts.leaf)) {
+      throw new AuthLeafInTargetsError(opts.leaf);
+    }
+    const { keypair, state, leaf, domainSeparator: ds } =
+      await this.prepareStatefulOp(opts, targetSet);
+    // All guards run BEFORE signing: a signed-then-aborted call would itself
+    // leave a leaf needing revocation.
+    for (const target of leaves) {
+      if (
+        !Number.isInteger(target) ||
+        target < 1 ||
+        target > state.maxSignatures
+      ) {
+        throw new LeafOutOfRangeError(target, state.maxSignatures);
+      }
+    }
+    const ctx = buildActionContext({
+      domainSeparator: ds,
+      nonce: state.actionNonce,
+      keyVersion: state.keyVersion,
+      actionType: ACTION_MARK_LEAVES_USED,
+      payloadHash: markLeavesUsedPayloadHash(leavesHash(leaves)),
+    });
+    const signature = keypair.signStatefulActionAt(ctx, leaf);
+    return this.submit(
+      "markLeavesUsed",
+      [publicKeyToAbi(keypair.publicKey), signature, [...leaves]],
+      state.executeFee,
+      opts
+    );
+  }
+
   /// UUPS upgrade gated by a stateful signature.
   async upgradeToAndCall(
     params: {
@@ -561,6 +664,7 @@ export class ShrincsWalletClient {
       await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_UPGRADE,
       payloadHash: upgradePayloadHash(
@@ -575,6 +679,9 @@ export class ShrincsWalletClient {
       signature,
       shouldMigrate,
       migratorPayload,
+      // Must be the same live nonce the context above bound (the wallet's
+      // StaleActionNonce gate checks blob nonce == actionNonce()).
+      nonce: state.actionNonce,
     });
     return this.submit(
       "upgradeToAndCall",
@@ -600,6 +707,7 @@ export class ShrincsWalletClient {
 
     const ownerCtx = buildActionContext({
       domainSeparator: ds,
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_TRANSFER_OWNERSHIP,
       payloadHash: transferOwnershipPayloadHash(
@@ -609,8 +717,13 @@ export class ShrincsWalletClient {
     });
     const ownerBindingSignature = keypair.signStatefulActionAt(ownerCtx, leaf);
 
+    // Handover-tagged rotation domain — this signature can never double as a
+    // `recoverWallet` input (see `rotationDomainSeparator`).
     const rctx = buildRotationContext({
-      domainSeparator: ds,
+      domainSeparator: rotationDomainSeparator(
+        ds,
+        ROTATION_DOMAIN_TRANSFER_OWNERSHIP
+      ),
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
     });
@@ -644,7 +757,10 @@ export class ShrincsWalletClient {
     );
     const rotationTarget: RotationTarget = toRotationTarget(params.nextKey);
     const rctx = buildRotationContext({
-      domainSeparator: domainSeparator(this.chainId, this.walletAddress),
+      domainSeparator: rotationDomainSeparator(
+        domainSeparator(this.chainId, this.walletAddress),
+        ROTATION_DOMAIN_RECOVER_WALLET
+      ),
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
     });
@@ -668,6 +784,11 @@ export class ShrincsWalletClient {
   /// The ERC-1271 verifier key is a separate vault branch from the main key, so
   /// the caller supplies its recovered keypair (its commitment must match the
   /// installed `erc1271Commitment`). The `owner` must be a local signer.
+  ///
+  /// FRESHNESS: the blob binds the wallet's LIVE `actionNonce()`, so it is
+  /// invalidated the moment ANY wallet signature is consumed (an execute, a
+  /// rotation, a sponsored userOp, ...). Sign as late as possible and re-sign
+  /// after wallet actions.
   async signErc1271(params: {
     hash: Hex;
     erc1271KeyPair: ShrincsKeyPair;
@@ -689,10 +810,11 @@ export class ShrincsWalletClient {
       throw new ZeroAddressOwnerError();
     }
 
-    // The stateless context mirrors `_checkErc1271Signature`: no-nonce, the MAIN
-    // key's epoch, `ACTION_ERC1271`, and `payloadHash == hash`.
+    // The stateless context mirrors `_checkErc1271Signature`: the LIVE action
+    // nonce, the MAIN key's epoch, `ACTION_ERC1271`, and `payloadHash == hash`.
     const ctx = buildActionContext({
       domainSeparator: domainSeparator(this.chainId, this.walletAddress),
+      nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_ERC1271,
       payloadHash: params.hash,
@@ -720,26 +842,29 @@ export class ShrincsWalletClient {
   /*  ── ERC-4337 (wallet as sender) ──────────────────────────────────────  */
 
   /// Assemble an unsigned `PackedUserOperation` whose `callData` invokes the
-  /// EntryPoint-only `execute(target, value, data)` on this wallet. Fill the
-  /// signature with `signExecuteUserOp`.
+  /// EntryPoint-only `execute(target, value, data, maxFee)` on this wallet.
+  /// `maxFee` is the signed execution-fee ceiling: it rides in `callData`, so
+  /// signing the userOp binds it with no digest work (typically the live
+  /// `executeFee`, e.g. from `getWalletState()`; higher for headroom). Fill
+  /// the signature with `signExecuteUserOp`.
   buildExecuteUserOp(
-    params: ShrincsCall & UserOpEnvelope
+    params: ShrincsCall & UserOpEnvelope & { maxFee: bigint }
   ): PackedUserOperation {
     const callData = encodeFunctionData({
       abi: shrincsWalletAbi,
       functionName: "execute",
-      args: [params.target, params.value ?? 0n, params.data ?? "0x"],
+      args: [params.target, params.value ?? 0n, params.data ?? "0x", params.maxFee],
     });
     return this.assembleUserOp(callData, params);
   }
 
   /// Assemble an unsigned `PackedUserOperation` whose `callData` invokes the
-  /// EntryPoint-only `executeBatch(Call[])` — an atomic multi-call. A single
-  /// stateful leaf authorizes the whole batch (the signature binds the
-  /// `userOpHash`, which already commits to every call). Fill the signature with
-  /// `signExecuteUserOp`.
+  /// EntryPoint-only `executeBatch(Call[], maxFee)` — an atomic multi-call. A
+  /// single stateful leaf authorizes the whole batch (the signature binds the
+  /// `userOpHash`, which already commits to every call) and a single `maxFee`
+  /// caps the one per-batch fee. Fill the signature with `signExecuteUserOp`.
   buildExecuteBatchUserOp(
-    params: { calls: readonly ShrincsCall[] } & UserOpEnvelope
+    params: { calls: readonly ShrincsCall[]; maxFee: bigint } & UserOpEnvelope
   ): PackedUserOperation {
     const callData = encodeFunctionData({
       abi: shrincsWalletAbi,
@@ -750,6 +875,7 @@ export class ShrincsWalletClient {
           value: c.value ?? 0n,
           data: c.data ?? "0x",
         })),
+        params.maxFee,
       ],
     });
     return this.assembleUserOp(callData, params);
@@ -776,9 +902,20 @@ export class ShrincsWalletClient {
   }
 
   /// Sign a `PackedUserOperation` for this wallet: read state, recover the key,
-  /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + execute fee
-  /// into `ACTION_ERC4337_EXECUTE`, and return the userOp with its `signature`
-  /// field filled (plus the `userOpHash` and `leaf` used).
+  /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + live
+  /// `actionNonce` into `ACTION_ERC4337_EXECUTE`, and return the userOp with
+  /// its `signature` field filled (plus the `userOpHash` and `leaf` used).
+  ///
+  /// FEE CAP: no fee enters the digest — the `maxFee` ceiling the build methods
+  /// put into `callData` is covered by `userOpHash`, and validation reads no
+  /// fee (ERC-7562). If the live fee rises past the signed cap before landing,
+  /// the op still validates and the EXECUTION phase reverts — consuming the
+  /// leaf and advancing the nonce (inherent to validation-phase stateful
+  /// signatures); sign with headroom if fee changes are a concern.
+  ///
+  /// SERIALIZATION: the bound action nonce advances when any wallet signature is
+  /// consumed, so ops must land in signing order — signing a second op before
+  /// the first lands binds a stale nonce and it will be rejected (AA24).
   async signExecuteUserOp(
     params: { userOp: PackedUserOperation; entryPoint: Address },
     opts: ShrincsTxKeyOptions = {}
@@ -790,9 +927,9 @@ export class ShrincsWalletClient {
       entryPoint: params.entryPoint,
       chainId: BigInt(this.chainId),
       wallet: this.walletAddress,
-      executeFee: state.executeFee,
       keyVersion: state.keyVersion,
       leaf,
+      actionNonce: state.actionNonce,
     });
     return { userOp: { ...params.userOp, signature }, userOpHash, leaf };
   }

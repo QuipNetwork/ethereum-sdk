@@ -96,10 +96,13 @@ export interface SignWalletUserOpParams {
   entryPoint: Address;
   chainId: bigint;
   wallet: Address;
-  executeFee: bigint;
   keyVersion: bigint;
   /// Lowest unused stateful leaf, read from the on-chain bitmap by the client.
   leaf: number;
+  /// The wallet's live `actionNonce()`. Every consumed signature advances it,
+  /// so ops must land in signing order — signing a second op before the first
+  /// lands binds a stale nonce and it will be rejected (AA24).
+  actionNonce: bigint;
 }
 
 export interface SignedWalletUserOp {
@@ -108,18 +111,22 @@ export interface SignedWalletUserOp {
   userOpHash: Hex;
 }
 
-/// Sign a wallet ERC-4337 userOp: bind the EntryPoint `userOpHash` + execute fee
-/// into the canonical `ACTION_ERC4337_EXECUTE` action, sign at `leaf`, and ABI
-/// pack `(PublicKey, StatefulSignature)` into the signature field.
+/// Sign a wallet ERC-4337 userOp: bind the EntryPoint `userOpHash` into the
+/// canonical `ACTION_ERC4337_EXECUTE` action, sign at `leaf`, and ABI pack
+/// `(PublicKey, StatefulSignature)` into the signature field. No fee is bound
+/// here: the signer's `maxFee` ceiling is a calldata parameter of the capped
+/// `execute`/`executeBatch` variants, covered by `userOpHash` via `callData`
+/// (ERC-7562: validation reads no fee).
 export function signWalletUserOp(
   params: SignWalletUserOpParams
 ): SignedWalletUserOp {
   const userOpHash = computeUserOpHash(params.userOp, params.entryPoint, params.chainId);
   const ctx = buildActionContext({
     domainSeparator: domainSeparator(params.chainId, params.wallet),
+    nonce: params.actionNonce,
     keyVersion: params.keyVersion,
     actionType: ACTION_ERC4337_EXECUTE,
-    payloadHash: erc4337PayloadHash(userOpHash, params.executeFee),
+    payloadHash: erc4337PayloadHash(userOpHash),
   });
   const signature = params.keypair.signStatefulActionAt(ctx, params.leaf);
   return {
@@ -211,6 +218,9 @@ export function signPaymasterUserOp(params: SignPaymasterUserOpParams): Hex {
   const bindingHash = paymasterBindingHash(params.userOp, header64);
   const ctx = buildActionContext({
     domainSeparator: domainSeparator(params.chainId, params.paymaster, PAYMASTER_DOMAIN_TAG),
+    // The ShrincsPaymaster binds no wrapper nonce: its sponsorship freshness is
+    // the validUntil/validAfter window plus its own one-time leaf.
+    nonce: 0n,
     keyVersion: params.keyVersion,
     actionType: ACTION_PAYMASTER_APPROVE,
     payloadHash: bindingHash,
