@@ -66,7 +66,16 @@ abstract contract ShrincsE2EAssembler is Test {
         verifierCommitment = _toBytes32(verifierPk.publicKeyCommitment);
         (verifierKey2, verifierPk2, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-verifier-key-2", MAX_SIG);
         assertTrue(ok, "verifier2 keygen");
-        verifierCommitment2 = _toBytes32(verifierPk2.publicKeyCommitment);
+        // Bundle 2 is the ROTATED bundle `rotateStatefulKey` installs: verifier2's fresh stateful
+        // subkey carried over bundle 1's stateless half (the paymaster never rotates it). Only the
+        // stateful signing secrets of `verifierKey2` are exercised, so the mismatch between its
+        // (discarded) stateless secrets and bundle 1's stateless public parts is irrelevant.
+        verifierCommitment2 = SHRINCS.publicKeyCommitmentFromParts(
+            verifierPk2.statefulPublicKey, verifierPk.pkSeed, verifierPk.hypertreeRoot
+        );
+        verifierPk2.publicKeyCommitment = abi.encodePacked(verifierCommitment2);
+        verifierPk2.pkSeed = verifierPk.pkSeed;
+        verifierPk2.hypertreeRoot = verifierPk.hypertreeRoot;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
