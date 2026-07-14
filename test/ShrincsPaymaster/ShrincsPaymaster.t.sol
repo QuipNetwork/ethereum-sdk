@@ -2,15 +2,19 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.1.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
-import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.1.0/test/helpers/ShrincsTestSigner.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
+import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {ShrincsPaymasterHarness} from "../harness/ShrincsPaymasterHarness.sol";
 
 /// @title ShrincsPaymaster Base Test
 /// @dev Generates the global SHRINCS verifier key and every sponsorship signature in Solidity via
-///      the dependency's test-only `ShrincsTestSigner`, so no external vectors are needed. Each
+///      the dependency's test-only `SHRINCSTestSigner`, so no external vectors are needed. Each
 ///      sponsorship signs the paymaster's `_userOpBindingHash` (read live via the harness) over a
 ///      `PackedUserOperation` built in-test.
 contract ShrincsPaymasterTest is Test {
@@ -30,10 +34,11 @@ contract ShrincsPaymasterTest is Test {
     uint128 internal constant PM_POSTOP_GAS = 50_000;
 
     ShrincsPaymasterHarness internal paymaster;
+    SHRINCS256sKeccak internal shrincsVerifier;
 
     // The global verifier key (the sponsor's stateful signing key).
-    ShrincsTypes.SigningKey internal verifierKey;
-    ShrincsTypes.PublicKey internal verifierPk;
+    SHRINCS.SigningKey internal verifierKey;
+    SHRINCS.PublicKey internal verifierPk;
     bytes32 internal verifierCommitment;
 
     address internal OWNER;
@@ -44,11 +49,15 @@ contract ShrincsPaymasterTest is Test {
         (OWNER, OWNER_PK) = makeAddrAndKey("owner");
 
         bool ok;
-        (verifierKey, verifierPk, ok) = ShrincsTestSigner.keygen("shrincs-paymaster-test-verifier", MAX_SIG);
+        (verifierKey, verifierPk, ok) = SHRINCSTestSigner.keygen("shrincs-paymaster-test-verifier", MAX_SIG);
         assertTrue(ok, "verifier keygen");
         verifierCommitment = _toBytes32(verifierPk.publicKeyCommitment);
 
-        ShrincsPaymasterHarness impl = new ShrincsPaymasterHarness();
+        // External verifier: only the stateful path is exercised here, so the pinned
+        // SPHINCSPlusC sibling is not needed.
+        shrincsVerifier = new SHRINCS256sKeccak();
+        ShrincsPaymasterHarness impl =
+            new ShrincsPaymasterHarness(address(shrincsVerifier));
         vm.etch(PAYMASTER, address(impl).code);
         paymaster = ShrincsPaymasterHarness(payable(PAYMASTER));
 
@@ -61,7 +70,7 @@ contract ShrincsPaymasterTest is Test {
         (bytes32 commitment, uint32 hashSuite, uint256 keyVersion, uint32 maxSignatures, uint32 statefulLeavesUsed) =
             paymaster.getShrincsVerifier();
         assertEq(commitment, verifierCommitment);
-        assertEq(hashSuite, ShrincsTypes.HASH_SUITE_KECCAK_256);
+        assertEq(hashSuite, HashSuite.HASH_SUITE_ID);
         assertEq(keyVersion, 0);
         assertEq(maxSignatures, MAX_SIG);
         assertEq(statefulLeavesUsed, 0);
@@ -80,13 +89,13 @@ contract ShrincsPaymasterTest is Test {
     }
 
     /// @dev The installed global verifier public key.
-    function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
+    function _pk() internal view returns (SHRINCS.PublicKey memory) {
         return verifierPk;
     }
 
     /// @dev A `StatefulSignature` whose only meaningful field is `authPath.length` (= the leaf
     ///      index), to drive the pre-verify leaf guards without a real signature.
-    function _statefulSigWithLeaf(uint256 leaf) internal pure returns (ShrincsTypes.StatefulSignature memory sig) {
+    function _statefulSigWithLeaf(uint256 leaf) internal pure returns (SHRINCS.Signature memory sig) {
         sig.authPath = new bytes32[](leaf);
     }
 
@@ -94,10 +103,10 @@ contract ShrincsPaymasterTest is Test {
     function _signSponsorship(bytes32 bindingHash, uint32 leaf)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory sig)
+        returns (SHRINCS.Signature memory sig)
     {
         (,, uint256 keyVersion,,) = paymaster.getShrincsVerifier();
-        ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
+        SHRINCS.ActionContext memory ctx = SHRINCS.ActionContext({
             domainSeparator: paymaster.exposed_domainSeparator(),
             nonce: 0,
             keyVersion: keyVersion,
@@ -106,14 +115,14 @@ contract ShrincsPaymasterTest is Test {
         });
         bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(verifierCommitment, ctx));
         bool ok;
-        (sig, ok) = ShrincsTestSigner.signStatefulRawAtLeaf(verifierKey, leaf, message);
+        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(verifierKey, leaf, message);
         require(ok, "sponsorship sign failed");
     }
 
     /// @dev A structurally valid leaf-1 signature (in budget, unused) that REACHES
     ///      `SHRINCS.verifyStateful` but is bound to a DIFFERENT userOp's binding hash (nonce 1),
     ///      so against the default nonce-0 op it fails verification (`InvalidSignature` branch).
-    function _wrongContextStatefulSig() internal view returns (ShrincsTypes.StatefulSignature memory) {
+    function _wrongContextStatefulSig() internal view returns (SHRINCS.Signature memory) {
         PackedUserOperation memory other = _userOp(SPONSOR_SENDER, _paymasterAndData(0, 0, ""));
         other.nonce = 1;
         return _signSponsorship(paymaster.exposed_userOpBindingHash(other), 1);
@@ -126,7 +135,7 @@ contract ShrincsPaymasterTest is Test {
         leaf = uint32(i + 1);
         op = _userOp(SPONSOR_SENDER, _paymasterAndData(0, 0, ""));
         op.nonce = i + 1;
-        ShrincsTypes.StatefulSignature memory sig =
+        SHRINCS.Signature memory sig =
             _signSponsorship(paymaster.exposed_userOpBindingHash(op), leaf);
         op.paymasterAndData = _paymasterAndData(0, 0, _blob(verifierPk, sig));
     }
@@ -143,7 +152,7 @@ contract ShrincsPaymasterTest is Test {
         validAfter = uint48(1_700_000_000);
         op = _userOp(SPONSOR_SENDER, _paymasterAndData(validUntil, validAfter, ""));
         op.nonce = 42;
-        ShrincsTypes.StatefulSignature memory sig =
+        SHRINCS.Signature memory sig =
             _signSponsorship(paymaster.exposed_userOpBindingHash(op), leaf);
         op.paymasterAndData = _paymasterAndData(validUntil, validAfter, _blob(verifierPk, sig));
     }
@@ -153,7 +162,7 @@ contract ShrincsPaymasterTest is Test {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev ABI-encodes the `(PublicKey, StatefulSignature)` blob that lives at `paymasterAndData[64:]`.
-    function _blob(ShrincsTypes.PublicKey memory pk, ShrincsTypes.StatefulSignature memory sig)
+    function _blob(SHRINCS.PublicKey memory pk, SHRINCS.Signature memory sig)
         internal
         pure
         returns (bytes memory)
@@ -172,7 +181,7 @@ contract ShrincsPaymasterTest is Test {
     }
 
     /// @dev Convenience: a `paymasterAndData` carrying a given pk+sig with zero validity window.
-    function _pmData(ShrincsTypes.PublicKey memory pk, ShrincsTypes.StatefulSignature memory sig)
+    function _pmData(SHRINCS.PublicKey memory pk, SHRINCS.Signature memory sig)
         internal
         pure
         returns (bytes memory)

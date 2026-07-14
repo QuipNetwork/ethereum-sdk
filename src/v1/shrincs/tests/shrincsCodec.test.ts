@@ -117,6 +117,8 @@ describe("shrincsCodec", () => {
     const exec = Codec.executePayloadHash(target, 0n, EMPTY_DATA_HASH, 0n);
     expect(Codec.executePayloadHash(target, 1n, EMPTY_DATA_HASH, 0n)).not.toBe(exec);
     expect(Codec.executePayloadHash(target, 0n, keccak256("0x01"), 0n)).not.toBe(exec);
+    // 4th field is the signer's maxFee CEILING — bound so a relayer cannot
+    // raise the cap on a signed execute.
     expect(Codec.executePayloadHash(target, 0n, EMPTY_DATA_HASH, 1n)).not.toBe(exec);
 
     const withdraw = Codec.withdrawPayloadHash(target, 5n);
@@ -137,6 +139,22 @@ describe("shrincsCodec", () => {
     expect(Codec.rotateKeyPayloadHash(mainKey.publicKeyCommitment)).toBe(
       keccak256(mainKey.publicKeyCommitment)
     );
+  });
+
+  it("markLeavesUsed payload binds the exact target array (content, order, length)", () => {
+    // leavesHash preimage is one 32-byte word per leaf index, in order — the
+    // TS image of the wallet's EfficientHashLib word buffer.
+    expect(Codec.leavesHash([1, 2])).toBe(
+      keccak256(concat([toHex(1n, { size: 32 }), toHex(2n, { size: 32 })]))
+    );
+    // The payload hash is the single-word EfficientHashLib.hash(leavesHash).
+    const base = Codec.markLeavesUsedPayloadHash(Codec.leavesHash([1, 2]));
+    expect(base).toBe(keccak256(Codec.leavesHash([1, 2])));
+    // A signed revocation authorizes exactly its array: reorder, extend, and
+    // drop must all move the hash (a submitter cannot alter the batch).
+    expect(Codec.markLeavesUsedPayloadHash(Codec.leavesHash([2, 1]))).not.toBe(base);
+    expect(Codec.markLeavesUsedPayloadHash(Codec.leavesHash([1, 2, 3]))).not.toBe(base);
+    expect(Codec.markLeavesUsedPayloadHash(Codec.leavesHash([1]))).not.toBe(base);
   });
 
   it("encodeInitPayload matches the wallet decodeInit head layout", () => {

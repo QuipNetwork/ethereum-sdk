@@ -16,14 +16,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec} from "../WOTSPlusCodec.sol";
+import {IQuipWallet} from "../../interfaces/IQuipWallet.sol";
 
 /// @title IWOTSPlusImplementation
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz
 ///         one-time signatures, providing post-quantum security for ETH transfers
 ///         and arbitrary calls.
-interface IWOTSPlusImplementation {
+///         Extends `IQuipWallet` — the factory-facing surface whose natspec
+///         states the behavioral vetting contract this implementation upholds.
+interface IWOTSPlusImplementation is IQuipWallet {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -451,7 +454,7 @@ interface IWOTSPlusImplementation {
     function initialize(
         address payable newOwner,
         bytes calldata payload
-    ) external;
+    ) external override;
 
     /// @notice Re-initializes the PQ state (disaster recovery key + ownership key +
     ///         transaction, recovery, and verification keysets) during an upgrade.
@@ -509,7 +512,7 @@ interface IWOTSPlusImplementation {
     /// @dev Read by the factory's `updateWalletOwner` callback to pin the
     ///      callback to the tail of `transferOwnership(bytes)`. Exposed here
     ///      so the factory does not need to depend on Solady's Ownable types.
-    function owner() external view returns (address);
+    function owner() external view override returns (address);
 
     /// @notice Returns the current execute fee as set by the factory.
     /// @return The execute fee in wei.

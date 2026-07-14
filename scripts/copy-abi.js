@@ -35,6 +35,14 @@ const CONTRACTS = [
   { name: "QuipPaymaster", path: "QuipPaymaster.sol/QuipPaymaster.json" },
 ];
 
+// Shrincs ABIs live in their own directory (src/v1/shrincs/abi/) with a
+// hand-maintained barrel; only the contract files are regenerated here.
+const SHRINCS_ABI_DIR = join(ROOT, "src", "v1", "shrincs", "abi");
+const SHRINCS_CONTRACTS = [
+  { name: "ShrincsWallet", path: "ShrincsWallet.sol/ShrincsWallet.json" },
+  { name: "ShrincsPaymaster", path: "ShrincsPaymaster.sol/ShrincsPaymaster.json" },
+];
+
 mkdirSync(ABI_DIR, { recursive: true });
 
 const barrelLines = [];
@@ -52,6 +60,18 @@ for (const contract of CONTRACTS) {
   console.log(`Wrote ${outPath} (${abi.length} entries)`);
 
   barrelLines.push(`export { ${exportName} } from "./${contract.name}.js";`);
+}
+
+for (const contract of SHRINCS_CONTRACTS) {
+  const artifact = JSON.parse(readFileSync(join(OUT_DIR, contract.path), "utf-8"));
+  const exportName = toExportName(contract.name);
+  const header =
+    `// Auto-generated from out/${contract.path} — do not edit by hand.\n` +
+    `// Regenerate with \`npm run copy-abi\` after \`forge build\` when the contract interface changes.\n\n`;
+  const tsContent = `${header}export const ${exportName} = ${JSON.stringify(artifact.abi, null, 2)} as const;\n`;
+  const outPath = join(SHRINCS_ABI_DIR, `${contract.name}.ts`);
+  writeFileSync(outPath, tsContent);
+  console.log(`Wrote ${outPath} (${artifact.abi.length} entries)`);
 }
 
 // The ERC-4337 v0.7 EntryPoint is an external canonical contract, not built by

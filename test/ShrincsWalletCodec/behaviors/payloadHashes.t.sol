@@ -9,12 +9,13 @@ import {ShrincsWalletCodecTest} from "../ShrincsWalletCodec.t.sol";
 ///      the domain/action tags to their `keccak256` source strings.
 contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
     function test_erc4337PayloadHash() public view {
+        // One word only — no fee: the signer's maxFee ceiling rides in `callData`, which
+        // userOpHash already commits to (ERC-7562: validation must not read the live fee).
         bytes32 userOpHash = keccak256("userOp");
-        uint256 fee = 123;
-        assertEq(codec.exposed_erc4337PayloadHash(userOpHash, fee), EfficientHashLib.hash(userOpHash, bytes32(fee)));
+        assertEq(codec.exposed_erc4337PayloadHash(userOpHash), EfficientHashLib.hash(userOpHash));
     }
 
-    function test_executePayloadHash_bindsFee() public view {
+    function test_executePayloadHash_bindsMaxFee() public view {
         address target = address(0xABCD);
         uint256 value = 7 ether;
         bytes32 dataHash = keccak256("data");
@@ -22,11 +23,12 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
             codec.exposed_executePayloadHash(target, value, dataHash, 1),
             EfficientHashLib.hash(bytes32(uint256(uint160(target))), bytes32(value), dataHash, bytes32(uint256(1)))
         );
-        // A different fee must change the bound payload hash.
+        // A different maxFee ceiling must change the bound payload hash (a relayer cannot raise
+        // the signer's cap).
         assertTrue(
             codec.exposed_executePayloadHash(target, value, dataHash, 1)
                 != codec.exposed_executePayloadHash(target, value, dataHash, 2),
-            "fee is bound"
+            "maxFee is bound"
         );
     }
 
@@ -79,6 +81,11 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
         assertEq(codec.exposed_rotateKeyPayloadHash(nextCommitment), EfficientHashLib.hash(nextCommitment));
     }
 
+    function test_markLeavesUsedPayloadHash() public view {
+        bytes32 leavesHash = keccak256("leaves-hash");
+        assertEq(codec.exposed_markLeavesUsedPayloadHash(leavesHash), EfficientHashLib.hash(leavesHash));
+    }
+
     function test_domainAndActionTags() public pure {
         assertEq(Codec.DOMAIN_TAG, keccak256("quip-shrincs-wallet-v1"));
         assertEq(Codec.ACTION_ERC4337_EXECUTE, keccak256("quip.shrincs.action.erc4337Execute"));
@@ -88,6 +95,7 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
         assertEq(Codec.ACTION_TRANSFER_OWNERSHIP, keccak256("quip.shrincs.action.transferOwnership"));
         assertEq(Codec.ACTION_SET_ERC1271_KEY, keccak256("quip.shrincs.action.setErc1271Key"));
         assertEq(Codec.ACTION_ROTATE_KEY, keccak256("quip.shrincs.action.rotateKey"));
+        assertEq(Codec.ACTION_MARK_LEAVES_USED, keccak256("quip.shrincs.action.markLeavesUsed"));
         assertEq(Codec.ACTION_ERC1271, keccak256("quip.shrincs.action.erc1271"));
     }
 
@@ -96,14 +104,17 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
     // domain. Because the recomputation includes every field, a builder that silently dropped or
     // reordered a field would diverge for some fuzzed input — so these double as field-binding tests.
 
-    function testFuzz_erc4337PayloadHash(bytes32 userOpHash, uint256 fee) public view {
-        assertEq(codec.exposed_erc4337PayloadHash(userOpHash, fee), EfficientHashLib.hash(userOpHash, bytes32(fee)));
+    function testFuzz_erc4337PayloadHash(bytes32 userOpHash) public view {
+        assertEq(codec.exposed_erc4337PayloadHash(userOpHash), EfficientHashLib.hash(userOpHash));
     }
 
-    function testFuzz_executePayloadHash(address target, uint256 value, bytes32 dataHash, uint256 fee) public view {
+    function testFuzz_executePayloadHash(address target, uint256 value, bytes32 dataHash, uint256 maxFee)
+        public
+        view
+    {
         assertEq(
-            codec.exposed_executePayloadHash(target, value, dataHash, fee),
-            EfficientHashLib.hash(bytes32(uint256(uint160(target))), bytes32(value), dataHash, bytes32(fee))
+            codec.exposed_executePayloadHash(target, value, dataHash, maxFee),
+            EfficientHashLib.hash(bytes32(uint256(uint160(target))), bytes32(value), dataHash, bytes32(maxFee))
         );
     }
 
@@ -141,20 +152,24 @@ contract ShrincsWalletCodec_payloadHashes is ShrincsWalletCodecTest {
         assertEq(codec.exposed_rotateKeyPayloadHash(nextCommitment), EfficientHashLib.hash(nextCommitment));
     }
 
-    /// @dev Distinct fee ⇒ distinct execute payload hash (the fee field is genuinely bound, not
-    ///      dropped). A complement to the equality-to-definition fuzz above.
-    function testFuzz_executePayloadHash_feeIsBound(
+    function testFuzz_markLeavesUsedPayloadHash(bytes32 leavesHash) public view {
+        assertEq(codec.exposed_markLeavesUsedPayloadHash(leavesHash), EfficientHashLib.hash(leavesHash));
+    }
+
+    /// @dev Distinct maxFee ⇒ distinct execute payload hash (the ceiling field is genuinely
+    ///      bound, not dropped). A complement to the equality-to-definition fuzz above.
+    function testFuzz_executePayloadHash_maxFeeIsBound(
         address target,
         uint256 value,
         bytes32 dataHash,
-        uint256 feeA,
-        uint256 feeB
+        uint256 maxFeeA,
+        uint256 maxFeeB
     ) public view {
-        vm.assume(feeA != feeB);
+        vm.assume(maxFeeA != maxFeeB);
         assertTrue(
-            codec.exposed_executePayloadHash(target, value, dataHash, feeA)
-                != codec.exposed_executePayloadHash(target, value, dataHash, feeB),
-            "distinct fee yields distinct payload hash"
+            codec.exposed_executePayloadHash(target, value, dataHash, maxFeeA)
+                != codec.exposed_executePayloadHash(target, value, dataHash, maxFeeB),
+            "distinct maxFee yields distinct payload hash"
         );
     }
 }

@@ -34,8 +34,10 @@ contract ShrincsE2E_multiOpOutOfOrder is ShrincsE2EBase {
         _handle(_checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 1, 2, 1)); // advances EP nonce to 2
 
         // EP nonce 2, wallet nonce 2 (both fresh), reuses wallet leaf 3 with fresh paymaster leaf 4.
-        PackedUserOperation memory stale =
-            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 2, 3, 4, 0, 0, false, 0, 0, 2, false);
+        SponsoredOpParams memory p = _defaultOpParams(RECIPIENT, 0.1 ether, "", 2, 3);
+        p.pmLeaf = 4;
+        p.walletNonce = 2;
+        PackedUserOperation memory stale = _buildSponsoredOp(p);
         _assertLiveHash(stale);
         _handleExpectRevert(stale, _failedOp(0, "AA24 signature error"));
         // The fresh paymaster leaf was NOT consumed (validation reverted before paymaster effect).
@@ -48,8 +50,9 @@ contract ShrincsE2E_multiOpOutOfOrder is ShrincsE2EBase {
         _handle(_checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 0)); // advances wallet nonce to 1
 
         // EP nonce 1 (valid), leaf 2 (unused), but wallet nonce 0 (superseded).
-        PackedUserOperation memory stale =
-            _buildSponsoredOp(RECIPIENT, 0.1 ether, "", 1, 2, 2, 0, 0, false, 0, 0, 0, false);
+        SponsoredOpParams memory p = _defaultOpParams(RECIPIENT, 0.1 ether, "", 1, 2);
+        p.walletNonce = 0; // explicitly stale: the landed op above advanced the live nonce to 1
+        PackedUserOperation memory stale = _buildSponsoredOp(p);
         _assertLiveHash(stale);
         _handleExpectRevert(stale, _failedOp(0, "AA24 signature error"));
         assertFalse(wallet.isStatefulLeafUsed(2), "superseded op's wallet leaf not consumed");

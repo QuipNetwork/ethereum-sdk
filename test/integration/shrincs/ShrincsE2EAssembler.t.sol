@@ -2,10 +2,12 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.1.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsUtils.sol";
-import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.1.0/test/helpers/ShrincsTestSigner.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 /// @title ShrincsE2E signing assembler
@@ -26,7 +28,9 @@ abstract contract ShrincsE2EAssembler is Test {
     uint256 internal constant CHAIN_ID = 31337;
     uint32 internal constant MAX_SIG = 8;
 
-    bytes4 internal constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes)"));
+    /// @dev The fee-capped 4337 execution selector: `maxFee` (the signer's fee ceiling) is an
+    ///      execution-calldata parameter, bound by the SHRINCS signature via userOpHash → callData.
+    bytes4 internal constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes,uint256)"));
 
     // Wallet/paymaster canonical tags (mirror the contracts' constants).
     bytes32 internal constant WALLET_DOMAIN_TAG = keccak256("quip-shrincs-wallet-v1");
@@ -42,84 +46,117 @@ abstract contract ShrincsE2EAssembler is Test {
     uint256 internal constant PRE_VERIFICATION_GAS = 100_000;
 
     // Keys: wallet main key, plus two paymaster verifier keys (the second for rotation cases).
-    ShrincsTypes.SigningKey internal walletKey;
-    ShrincsTypes.PublicKey internal walletPk;
+    SHRINCS.SigningKey internal walletKey;
+    SHRINCS.PublicKey internal walletPk;
     bytes32 internal walletCommitment;
-    ShrincsTypes.SigningKey internal verifierKey;
-    ShrincsTypes.PublicKey internal verifierPk;
+    SHRINCS.SigningKey internal verifierKey;
+    SHRINCS.PublicKey internal verifierPk;
     bytes32 internal verifierCommitment;
-    ShrincsTypes.SigningKey internal verifierKey2;
-    ShrincsTypes.PublicKey internal verifierPk2;
+    SHRINCS.SigningKey internal verifierKey2;
+    SHRINCS.PublicKey internal verifierPk2;
     bytes32 internal verifierCommitment2;
 
     function setUp() public virtual {
         bool ok;
-        (walletKey, walletPk, ok) = ShrincsTestSigner.keygen("shrincs-e2e-wallet-key", MAX_SIG);
+        (walletKey, walletPk, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-wallet-key", MAX_SIG);
         assertTrue(ok, "wallet keygen");
         walletCommitment = _toBytes32(walletPk.publicKeyCommitment);
-        (verifierKey, verifierPk, ok) = ShrincsTestSigner.keygen("shrincs-e2e-verifier-key", MAX_SIG);
+        (verifierKey, verifierPk, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-verifier-key", MAX_SIG);
         assertTrue(ok, "verifier keygen");
         verifierCommitment = _toBytes32(verifierPk.publicKeyCommitment);
-        (verifierKey2, verifierPk2, ok) = ShrincsTestSigner.keygen("shrincs-e2e-verifier-key-2", MAX_SIG);
+        (verifierKey2, verifierPk2, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-verifier-key-2", MAX_SIG);
         assertTrue(ok, "verifier2 keygen");
-        verifierCommitment2 = _toBytes32(verifierPk2.publicKeyCommitment);
+        // Bundle 2 is the ROTATED bundle `rotateStatefulKey` installs: verifier2's fresh stateful
+        // subkey carried over bundle 1's stateless half (the paymaster never rotates it). Only the
+        // stateful signing secrets of `verifierKey2` are exercised, so the mismatch between its
+        // (discarded) stateless secrets and bundle 1's stateless public parts is irrelevant.
+        verifierCommitment2 = SHRINCS.publicKeyCommitmentFromParts(
+            verifierPk2.statefulPublicKey, verifierPk.pkSeed, verifierPk.hypertreeRoot
+        );
+        verifierPk2.publicKeyCommitment = abi.encodePacked(verifierCommitment2);
+        verifierPk2.pkSeed = verifierPk.pkSeed;
+        verifierPk2.hypertreeRoot = verifierPk.hypertreeRoot;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    OP ASSEMBLY                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Full builder for a co-signed sponsored op. `useVerifier2`/`pmKeyVersion` select the
-    ///      paymaster key + epoch to sign under; `corruptPmBinding` makes the paymaster sign a
-    ///      flipped binding hash (its signature then fails on-chain while the wallet's stays valid).
-    function _buildSponsoredOp(
-        address target,
-        uint256 value,
-        bytes memory data,
-        uint256 nonce,
-        uint32 walletLeaf,
-        uint32 pmLeaf,
-        uint48 validUntil,
-        uint48 validAfter,
-        bool useVerifier2,
-        uint256 pmKeyVersion,
-        uint256 walletKeyVersion,
-        uint256 walletNonce,
-        bool corruptPmBinding
-    ) internal view returns (PackedUserOperation memory op) {
+    /// @dev Named-field parameters for `_buildSponsoredOp`. Build the common case with
+    ///      `_defaultOpParams(...)` and override only the knobs a test exercises.
+    struct SponsoredOpParams {
+        address target;
+        uint256 value;
+        bytes data;
+        uint256 nonce; // EntryPoint nonce
+        uint32 walletLeaf;
+        uint32 pmLeaf;
+        uint48 validUntil;
+        uint48 validAfter;
+        bool useVerifier2;
+        uint256 pmKeyVersion;
+        uint256 walletKeyVersion;
+        uint256 walletNonce; // the wallet's live actionNonce() the signature must bind
+        bool corruptPmBinding; // paymaster signs a flipped binding hash (its sig fails, wallet's stays valid)
+        uint256 maxFee; // the signed execution fee ceiling, carried in callData
+    }
+
+    /// @dev The common-case params: same leaf both sides, epoch 0 both sides, no time window,
+    ///      wallet action nonce 0, honest paymaster binding, maxFee 0 (the e2e factory default).
+    function _defaultOpParams(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
+        internal
+        pure
+        returns (SponsoredOpParams memory p)
+    {
+        p.target = target;
+        p.value = value;
+        p.data = data;
+        p.nonce = nonce;
+        p.walletLeaf = leaf;
+        p.pmLeaf = leaf;
+        // Remaining fields deliberately zero/false.
+    }
+
+    /// @dev Full builder for a co-signed sponsored op.
+    function _buildSponsoredOp(SponsoredOpParams memory p)
+        internal
+        view
+        returns (PackedUserOperation memory op)
+    {
         op.sender = WALLET;
-        op.nonce = nonce;
+        op.nonce = p.nonce;
         op.initCode = "";
-        op.callData = abi.encodeWithSelector(EXECUTE_SELECTOR, target, value, data);
+        op.callData = abi.encodeWithSelector(EXECUTE_SELECTOR, p.target, p.value, p.data, p.maxFee);
         op.accountGasLimits = bytes32((uint256(VERIFICATION_GAS) << 128) | uint256(CALL_GAS));
         op.preVerificationGas = PRE_VERIFICATION_GAS;
         op.gasFees = bytes32((uint256(1 gwei) << 128) | uint256(10 gwei));
         // Prefix-only paymasterAndData (exactly the 64 bytes the binding hash covers).
         op.paymasterAndData =
-            abi.encodePacked(PAYMASTER, PM_VERIFICATION_GAS, PM_POSTOP_GAS, validUntil, validAfter);
+            abi.encodePacked(PAYMASTER, PM_VERIFICATION_GAS, PM_POSTOP_GAS, p.validUntil, p.validAfter);
 
         // 1. Paymaster signs its binding hash over the blob-less op.
         bytes32 binding = _pmBindingHash(op);
-        if (corruptPmBinding) binding = binding ^ bytes32(uint256(1));
-        ShrincsTypes.StatefulSignature memory pmSig =
-            _signPaymasterApproval(binding, pmLeaf, pmKeyVersion, useVerifier2);
+        if (p.corruptPmBinding) binding = binding ^ bytes32(uint256(1));
+        SHRINCS.Signature memory pmSig =
+            _signPaymasterApproval(binding, p.pmLeaf, p.pmKeyVersion, p.useVerifier2);
 
         // 2. Embed the (pk, sig) blob to complete paymasterAndData.
         op.paymasterAndData = abi.encodePacked(
-            op.paymasterAndData, abi.encode(useVerifier2 ? verifierPk2 : verifierPk, pmSig)
+            op.paymasterAndData, abi.encode(p.useVerifier2 ? verifierPk2 : verifierPk, pmSig)
         );
 
         // 3. The canonical v0.7 userOpHash now commits to the complete paymasterAndData.
         bytes32 userOpHash = _computeUserOpHash(op);
 
-        // 4. The wallet signs its erc4337 action context over that hash (fee 0 in e2e).
-        ShrincsTypes.StatefulSignature memory walletSig =
-            _signWalletErc4337(userOpHash, walletLeaf, walletKeyVersion, walletNonce);
+        // 4. The wallet signs its erc4337 action context over that hash (maxFee is already
+        //    inside it via callData — the digest itself carries no fee word).
+        SHRINCS.Signature memory walletSig =
+            _signWalletErc4337(userOpHash, p.walletLeaf, p.walletKeyVersion, p.walletNonce);
         op.signature = abi.encode(walletPk, walletSig);
     }
 
-    /// @dev Convenience: default sponsored op (epoch 0 both sides, same leaf, no window, wallet
-    ///      nonce 0 — only correct for a wallet that has consumed no signature yet).
+    /// @dev Convenience: default sponsored op (see `_defaultOpParams`; wallet nonce 0 is only
+    ///      correct for a wallet that has consumed no signature yet).
     function _sponsoredOp(address target, uint256 value, bytes memory data, uint256 nonce, uint32 leaf)
         internal
         view
@@ -138,20 +175,24 @@ abstract contract ShrincsE2EAssembler is Test {
         uint32 leaf,
         uint256 walletNonce
     ) internal view returns (PackedUserOperation memory) {
-        return _buildSponsoredOp(target, value, data, nonce, leaf, leaf, 0, 0, false, 0, 0, walletNonce, false);
+        SponsoredOpParams memory p = _defaultOpParams(target, value, data, nonce, leaf);
+        p.walletNonce = walletNonce;
+        return _buildSponsoredOp(p);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    SIGNING HELPERS                     */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Signs the wallet's ERC-4337 action context (payload = hash(userOpHash, fee 0)).
+    /// @dev Signs the wallet's ERC-4337 action context (payload = hash(userOpHash) — ONE word;
+    ///      mirrors `Codec.erc4337PayloadHash`, which binds no fee: the signer's maxFee ceiling
+    ///      is covered via callData inside userOpHash).
     function _signWalletErc4337(bytes32 userOpHash, uint32 leaf, uint256 keyVersion, uint256 walletNonce)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory)
+        returns (SHRINCS.Signature memory)
     {
-        bytes32 payloadHash = keccak256(abi.encodePacked(userOpHash, bytes32(0)));
+        bytes32 payloadHash = keccak256(abi.encodePacked(userOpHash));
         return _signWalletAction(ACTION_ERC4337_EXECUTE, payloadHash, leaf, keyVersion, walletNonce);
     }
 
@@ -163,8 +204,8 @@ abstract contract ShrincsE2EAssembler is Test {
         uint32 leaf,
         uint256 keyVersion,
         uint256 nonce
-    ) internal view returns (ShrincsTypes.StatefulSignature memory sig) {
-        ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
+    ) internal view returns (SHRINCS.Signature memory sig) {
+        SHRINCS.ActionContext memory ctx = SHRINCS.ActionContext({
             domainSeparator: _walletDomainSeparator(),
             nonce: nonce,
             keyVersion: keyVersion,
@@ -173,7 +214,7 @@ abstract contract ShrincsE2EAssembler is Test {
         });
         bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(walletCommitment, ctx));
         bool ok;
-        (sig, ok) = ShrincsTestSigner.signStatefulRawAtLeaf(walletKey, leaf, message);
+        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(walletKey, leaf, message);
         require(ok, "wallet sign failed");
     }
 
@@ -181,11 +222,11 @@ abstract contract ShrincsE2EAssembler is Test {
     function _signPaymasterApproval(bytes32 bindingHash, uint32 leaf, uint256 keyVersion, bool useVerifier2)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory sig)
+        returns (SHRINCS.Signature memory sig)
     {
         // The paymaster binds NO wrapper nonce (out of scope of the wallet's nonce scheme): its
         // sponsorship freshness is the validUntil/validAfter window + its own one-time leaf.
-        ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
+        SHRINCS.ActionContext memory ctx = SHRINCS.ActionContext({
             domainSeparator: _pmDomainSeparator(),
             nonce: 0,
             keyVersion: keyVersion,
@@ -196,7 +237,7 @@ abstract contract ShrincsE2EAssembler is Test {
         bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(commitment, ctx));
         bool ok;
         (sig, ok) =
-            ShrincsTestSigner.signStatefulRawAtLeaf(useVerifier2 ? verifierKey2 : verifierKey, leaf, message);
+            SHRINCSTestSigner.signStatefulRawAtLeaf(useVerifier2 ? verifierKey2 : verifierKey, leaf, message);
         require(ok, "paymaster sign failed");
     }
 
@@ -266,13 +307,13 @@ abstract contract ShrincsE2EAssembler is Test {
     function _walletStatefulRotationTarget(bytes memory seed)
         internal
         view
-        returns (ShrincsTypes.StatefulRotationTarget memory target, bytes32 nextCommitment)
+        returns (SHRINCS.StatefulRotationTarget memory target, bytes32 nextCommitment)
     {
-        (, ShrincsTypes.PublicKey memory pk, bool ok) = ShrincsTestSigner.keygen(seed, MAX_SIG);
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
         require(ok, "rotation keygen");
         nextCommitment =
-            ShrincsUtils.publicKeyCommitmentFromParts(pk.statefulPublicKey, walletPk.pkSeed, walletPk.hypertreeRoot);
-        target = ShrincsTypes.StatefulRotationTarget({
+            SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, walletPk.pkSeed, walletPk.hypertreeRoot);
+        target = SHRINCS.StatefulRotationTarget({
             statefulPublicKey: pk.statefulPublicKey,
             publicKeyCommitment: abi.encodePacked(nextCommitment)
         });

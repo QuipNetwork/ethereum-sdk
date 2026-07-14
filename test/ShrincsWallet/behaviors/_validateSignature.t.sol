@@ -3,7 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -13,7 +17,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     /// @dev A userOp signed at `leaf` over a synthetic-but-fixed userOpHash.
     function _erc4337Op(uint32 leaf) internal view returns (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) {
         userOpHash = keccak256(abi.encodePacked("erc4337-userop", leaf));
-        ShrincsTypes.StatefulSignature memory sig = _signErc4337(userOpHash, leaf);
+        SHRINCS.Signature memory sig = _signErc4337(userOpHash, leaf);
         op = _makeUserOp(abi.encode(_mainPk(), sig));
     }
 
@@ -126,6 +130,33 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         assertTrue(wallet.isStatefulLeafUsed(3), "leaf 3 consumed");
         assertTrue(wallet.isStatefulLeafUsed(2), "leaf 2 consumed");
         assertEq(wallet.statefulLeavesUsed(), 2, "two leaves consumed");
+    }
+
+    /* ─────────────── ERC-7562: validation is fee-independent and call-free ─────────────── */
+
+    /// @dev The digest no longer binds the factory fee: a fee change AFTER signing must not
+    ///      affect validation (the signer's ceiling lives in `callData` under userOpHash, and is
+    ///      enforced in the execution phase instead).
+    function test_validateSignature_unaffectedByFeeChange() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        factory.setExecuteFee(123456789); // moved between signing and validation
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "fee change cannot break validation");
+        assertTrue(wallet.isStatefulLeafUsed(1), "leaf consumed normally");
+    }
+
+    /// @dev THE regression guard for ERC-7562 finding F-1: the validation frame must perform no
+    ///      factory call at all. `executeFee()` is mocked to revert — if validation ever regains
+    ///      a `getExecuteFee()` read (an STO-033 violation conformant bundlers reject), this test
+    ///      fails loudly instead of the violation resurfacing at bundler rollout.
+    function test_validateSignature_noFactoryRead() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        vm.mockCallRevert(
+            address(factory),
+            abi.encodeWithSignature("executeFee()"),
+            "factory read during validation"
+        );
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "validation must not touch the factory");
+        vm.clearMockedCalls();
     }
 
     function test_validateSignature_rejectsStaleNonce() public {

@@ -89,13 +89,6 @@ contract QuipFactoryInvariantHandler is Test {
         _markCodehash(initialImpl_.codehash);
     }
 
-    /// @dev Two-step ownership acceptance helper. Called from the base setUp
-    ///      AFTER `factory.transferOwnership(address(this))` so that
-    ///      `_msgSender()` inside Ownable2Step is the handler itself.
-    function acceptFactoryOwnership(QuipFactory factory_) external {
-        factory_.acceptOwnership();
-    }
-
     /*══════════════════════════ helpers ════════════════════════════════*/
 
     function _markCodehash(bytes32 ch) internal {

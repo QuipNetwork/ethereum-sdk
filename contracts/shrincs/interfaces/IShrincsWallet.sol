@@ -16,7 +16,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {IQuipWallet} from "../../interfaces/IQuipWallet.sol";
 
 /// @title IShrincsWallet
 /// @notice A smart-contract wallet whose operations are authorized by SHRINCS
@@ -24,13 +26,18 @@ import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/Shri
 ///         and arbitrary calls. Normal operations use the cheap stateful path
 ///         (leaf-indexed, bounded by `maxSignatures`); break-glass recovery uses the
 ///         stateless path. A separate, dedicated stateless key backs ERC-1271.
-interface IShrincsWallet {
+///         Extends `IQuipWallet` — the factory-facing surface whose natspec
+///         states the behavioral vetting contract this implementation upholds.
+interface IShrincsWallet is IQuipWallet {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Thrown when the factory address is zero.
     error ZeroAddressFactory();
+    /// @notice Thrown when the external SHRINCS verifier address is zero at implementation
+    ///         deployment (see `getShrincsVerifier`).
+    error ZeroAddressVerifier();
     /// @notice Thrown when the owner address is zero.
     error ZeroAddressOwner();
     /// @notice Thrown when the caller is not the immutable factory.
@@ -44,8 +51,8 @@ interface IShrincsWallet {
     /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
     error ZeroErc1271Commitment();
     /// @notice Thrown when an install payload declares a hash suite other than
-    ///         `ShrincsTypes.HASH_SUITE_KECCAK_256` (the only suite this implementation
-    ///         verifies; the SHRINCS library binds it into every canonical message hash).
+    ///         the compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this
+    ///         implementation verifies; SHRINCS binds it into every canonical message hash).
     error UnsupportedHashSuite();
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
@@ -60,6 +67,13 @@ interface IShrincsWallet {
     /// @notice Thrown when a stateful signature's leaf index is zero or exceeds the installed
     ///         key's `maxSignatures` budget (the key must be rotated via `rotateKey`).
     error StatefulBudgetExhausted();
+    /// @notice Thrown when `markLeavesUsed` is called with an empty target array. Burning the
+    ///         authorizing leaf for nothing is almost certainly a mistake; a deliberate
+    ///         single-leaf burn already exists via the empty `execute` path.
+    error EmptyLeaves();
+    /// @notice Thrown when a `markLeavesUsed` target leaf is zero or exceeds the installed key's
+    ///         `maxSignatures` budget — a client bug, not a race, so the whole batch reverts.
+    error LeafOutOfRange(uint32 leaf);
 
     /// @notice Thrown when `renounceOwnership` is called (always reverts).
     error RenounceDisabled();
@@ -93,6 +107,14 @@ interface IShrincsWallet {
     ///         storage context is disabled; use `executeBatch` for batching.
     error DelegateExecuteDisabled();
 
+    /// @notice Thrown when the factory's live execute fee exceeds the `maxFee` ceiling the signer
+    ///         authorized. Fee decreases never trigger this; only an increase past the signed cap.
+    error ExecuteFeeExceedsCap(uint256 fee, uint256 maxFee);
+    /// @notice Thrown when the inherited un-capped `execute(address,uint256,bytes)` /
+    ///         `executeBatch(Call[])` selectors are called. Only the `maxFee`-capped variants are
+    ///         permitted, so every execution path carries a signer-authorized fee ceiling.
+    error StandardExecuteDisabled();
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -121,6 +143,18 @@ interface IShrincsWallet {
     ///         `value == 0 && data.length == 0` — a deliberate leaf consumption with no call.
     /// @param leaf The consumed stateful leaf index.
     event LeafConsumedOnly(uint32 indexed leaf);
+
+    /// @notice Emitted for each target leaf freshly marked used by `markLeavesUsed`.
+    /// @param leaf The revoked stateful leaf index.
+    /// @param keyVersion The key epoch whose bitmap the revocation applies to.
+    event LeafRevoked(uint32 indexed leaf, uint256 indexed keyVersion);
+
+    /// @notice Emitted for each `markLeavesUsed` target leaf that was already used (a landed
+    ///         action racing its revocation, a duplicate in the array, or the authorizing leaf
+    ///         itself) — skipped rather than reverting the batch.
+    /// @param leaf The already-used target leaf index.
+    /// @param keyVersion The key epoch whose bitmap was checked.
+    event LeafRevocationSkipped(uint32 indexed leaf, uint256 indexed keyVersion);
 
     /// @notice Emitted when an execution call succeeds.
     /// @param target The recipient or contract address.
@@ -191,7 +225,7 @@ interface IShrincsWallet {
     function initialize(
         address payable newOwner,
         bytes calldata payload
-    ) external;
+    ) external override;
 
     /// @notice Re-installs PQ state during an upgrade. Only valid inside `upgradeToAndCall`.
     function migrate(bytes calldata payload) external;
@@ -218,18 +252,23 @@ interface IShrincsWallet {
     /// @param target The call target.
     /// @param value The ETH value to send.
     /// @param data The calldata to execute.
+    /// @param maxFee The signed fee ceiling. Execution charges the factory's LIVE fee and
+    ///        reverts `ExecuteFeeExceedsCap` only if it exceeds this cap — so a fee decrease
+    ///        between signing and landing succeeds (charging the lower fee), and only an
+    ///        increase past the cap rejects.
     function execute(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         address target,
         uint256 value,
-        bytes calldata data
+        bytes calldata data,
+        uint256 maxFee
     ) external payable;
 
     /// @notice Withdraws from the EntryPoint deposit, authorized by a stateful SHRINCS signature.
     function withdrawDepositTo(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         address to,
         uint256 amount
     ) external payable;
@@ -247,20 +286,42 @@ interface IShrincsWallet {
     /// @param nextKey The new owner's replacement full key bundle.
     /// @param newOwner The incoming classical owner (ERC-1271 ECDSA gate + factory registry).
     function transferOwnership(
-        ShrincsTypes.PublicKey calldata currentPublicKey,
-        ShrincsTypes.StatefulSignature calldata ownerBindingSignature,
-        ShrincsTypes.StatelessSignature calldata recoverySignature,
-        ShrincsTypes.RotationTarget calldata nextKey,
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SHRINCS.Signature calldata ownerBindingSignature,
+        SPHINCSPlusC.Signature calldata recoverySignature,
+        SHRINCS.RotationTarget calldata nextKey,
         address newOwner
     ) external payable;
 
     /// @notice (Re)installs the dedicated ERC-1271 stateless verifier key, authorized by a
     ///         stateful SHRINCS action from the main key.
     function setErc1271Key(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         bytes32 newErc1271Commitment,
         uint32 newErc1271HashSuite
+    ) external payable;
+
+    /// @notice Batch leaf revocation: marks the target leaves used in the CURRENT key epoch's
+    ///         bitmap, authorized by one stateful SHRINCS signature from a different leaf.
+    ///         OTS hygiene primitive — a leaf whose one-time key signed a message that will
+    ///         never land (superseded by the nonce) must be burned so it can never sign a
+    ///         second, different message.
+    /// @dev Surgical by design: the authorizing leaf is consumed but the action nonce is NOT
+    ///      advanced, so outstanding signed material at non-revoked leaves stays valid (unlike
+    ///      every other landed action). Already-used targets — races, duplicates, or the
+    ///      authorizing leaf itself — are skipped with `LeafRevocationSkipped`; out-of-range
+    ///      targets revert `LeafOutOfRange`; an empty array reverts `EmptyLeaves`. A revocation
+    ///      signed under epoch E is invalid after any rotation (the context binds `keyVersion`).
+    /// @param publicKey The main-key bundle (re-validated against the installed commitment).
+    /// @param signature The authorizing stateful signature; its leaf must be unused and SHOULD
+    ///        not be one of the targets (clients must never sign with a leaf being revoked —
+    ///        that is the key reuse this function exists to prevent).
+    /// @param leaves The target leaf indices to revoke (order-sensitive in the signed payload).
+    function markLeavesUsed(
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
+        uint32[] calldata leaves
     ) external payable;
 
     /// @notice Routine stateful rotation of the main key's stateful subkey (reusing the
@@ -270,9 +331,9 @@ interface IShrincsWallet {
     /// @param signature The stateful signature authorizing the rotation.
     /// @param nextStatefulKey The replacement stateful subkey target.
     function rotateKey(
-        ShrincsTypes.PublicKey calldata currentPublicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
-        ShrincsTypes.StatefulRotationTarget calldata nextStatefulKey
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SHRINCS.Signature calldata signature,
+        SHRINCS.StatefulRotationTarget calldata nextStatefulKey
     ) external payable;
 
     /// @notice Break-glass wallet recovery: authorized by a STATELESS signature from the main
@@ -284,9 +345,9 @@ interface IShrincsWallet {
     /// @param recoverySignature The stateless recovery signature authorizing the rotation.
     /// @param nextKey The replacement full key bundle.
     function recoverWallet(
-        ShrincsTypes.PublicKey calldata currentPublicKey,
-        ShrincsTypes.StatelessSignature calldata recoverySignature,
-        ShrincsTypes.RotationTarget calldata nextKey
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SPHINCSPlusC.Signature calldata recoverySignature,
+        SHRINCS.RotationTarget calldata nextKey
     ) external payable;
 
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
@@ -304,7 +365,7 @@ interface IShrincsWallet {
     ) external view returns (bytes32);
 
     /// @notice The classical owner (ERC-1271 ECDSA gate + factory registry).
-    function owner() external view returns (address);
+    function owner() external view override returns (address);
 
     /// @notice The factory's vetted-code index for this wallet's current implementation.
     function version() external view returns (uint256);
@@ -321,15 +382,23 @@ interface IShrincsWallet {
     /// @notice The installed ERC-1271 verifier-key commitment.
     function getErc1271Commitment() external view returns (bytes32);
 
-    /// @notice The `ShrincsTypes.HASH_SUITE_*` id the installed main key was validated against.
-    ///         Always `HASH_SUITE_KECCAK_256`: the id is not stored — install/rotate paths
-    ///         reject every other suite.
+    /// @notice The hash-suite id the installed main key was validated against. Always the
+    ///         compiled keccak `HashSuite.HASH_SUITE_ID`: the id is not stored —
+    ///         install/rotate paths reject every other suite.
     function getHashSuite() external view returns (uint32);
 
-    /// @notice The `ShrincsTypes.HASH_SUITE_*` id the installed ERC-1271 verifier key was
-    ///         validated against. Always `HASH_SUITE_KECCAK_256`: the id is not stored —
+    /// @notice The hash-suite id the installed ERC-1271 verifier key was validated against.
+    ///         Always the compiled keccak `HashSuite.HASH_SUITE_ID`: the id is not stored —
     ///         install/rotate paths reject every other suite.
     function getErc1271HashSuite() external view returns (uint32);
+
+    /// @notice The pinned external SHRINCS verifier this implementation delegates all
+    ///         signature cryptography to (an `immutable` set at implementation deployment).
+    ///         The verifier is trustless by construction — no owner, no storage, no
+    ///         upgradability — so pinning it grants it no authority: it can only answer
+    ///         "does this signature verify over this hash", and all statefulness (leaf
+    ///         bitmap, nonce, keyVersion, commitment installs) stays in the wallet.
+    function getShrincsVerifier() external view returns (address);
 
     /// @notice Whether stateful `leafIndex` has been consumed in the current key epoch.
     function isStatefulLeafUsed(uint256 leafIndex) external view returns (bool);
@@ -349,6 +418,7 @@ interface IShrincsWallet {
     /// @notice The SHRINCS action/rotation nonce (distinct from the EntryPoint nonce). Bound
     ///         into every signed context — actions, rotations, ERC-1271, and upgrades — and
     ///         advanced on every consumed signature, so any landed action supersedes all
-    ///         outstanding signed material.
+    ///         outstanding signed material. Sole exception: `markLeavesUsed` consumes its
+    ///         authorizing signature without advancing (surgical revocation).
     function actionNonce() external view returns (uint256);
 }

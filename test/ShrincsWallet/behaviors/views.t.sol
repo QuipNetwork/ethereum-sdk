@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for the wallet's view getters.
@@ -25,8 +29,13 @@ contract ShrincsWallet_views is ShrincsWalletTest {
     }
 
     function test_getHashSuites() public view {
-        assertEq(wallet.getHashSuite(), ShrincsTypes.HASH_SUITE_KECCAK_256);
-        assertEq(wallet.getErc1271HashSuite(), ShrincsTypes.HASH_SUITE_KECCAK_256);
+        assertEq(wallet.getHashSuite(), HashSuite.HASH_SUITE_ID);
+        assertEq(wallet.getErc1271HashSuite(), HashSuite.HASH_SUITE_ID);
+    }
+
+    function test_getShrincsVerifier() public view {
+        assertEq(wallet.getShrincsVerifier(), address(shrincsVerifier), "view getter");
+        assertEq(wallet.SHRINCS_VERIFIER(), address(shrincsVerifier), "public immutable getter");
     }
 
     function test_epochCountersStartZero() public view {

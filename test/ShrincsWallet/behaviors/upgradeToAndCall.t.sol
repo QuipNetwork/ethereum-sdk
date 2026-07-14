@@ -3,7 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
@@ -103,13 +107,13 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
         newImpl = new DummyImpl();
     }
 
-    function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
+    function _pk() internal view returns (SHRINCS.PublicKey memory) {
         return _mainPk();
     }
 
     /// @dev Upgrade-auth blob binding the LIVE action nonce (the 5th head word the wallet's
     ///      `StaleActionNonce` gate checks against).
-    function _data(ShrincsTypes.StatefulSignature memory sig) internal view returns (bytes memory) {
+    function _data(SHRINCS.Signature memory sig) internal view returns (bytes memory) {
         return abi.encode(_pk(), sig, false, bytes(""), wallet.actionNonce());
     }
 
@@ -128,13 +132,13 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
     function _signUpgrade(bool shouldMigrate, bytes memory migrator)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory)
+        returns (SHRINCS.Signature memory)
     {
         bytes32 payloadHash = Codec.upgradePayloadHash(address(0xBEEF), shouldMigrate, keccak256(migrator));
         return _signStatefulAction(Codec.ACTION_UPGRADE, payloadHash, 1);
     }
 
-    function _upgradeSig() internal view returns (ShrincsTypes.StatefulSignature memory) {
+    function _upgradeSig() internal view returns (SHRINCS.Signature memory) {
         return _signUpgrade(false, "");
     }
 
@@ -290,7 +294,7 @@ contract ShrincsWallet_upgradeToAndCall is ShrincsWalletTest {
 
     function test_upgrade_succeedsWithMigrate() public {
         address impl = _installSignedImpl(address(new MockMigrateImpl()).code);
-        ShrincsTypes.StatefulSignature memory sig = _signUpgrade(true, "");
+        SHRINCS.Signature memory sig = _signUpgrade(true, "");
         assertEq(wallet.keyVersion(), 0, "epoch starts at 0");
 
         bytes memory data = abi.encode(_pk(), sig, true, bytes(""), wallet.actionNonce());

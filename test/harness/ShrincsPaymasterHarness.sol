@@ -8,6 +8,10 @@ import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces
 /// @dev Test harness exposing `ShrincsPaymaster` internals and a direct storage installer so
 ///      behavior tests can set up arbitrary verifier state without an owner-gated registration.
 contract ShrincsPaymasterHarness is ShrincsPaymaster {
+    constructor(
+        address shrincsVerifier_
+    ) ShrincsPaymaster(shrincsVerifier_) {}
+
     /// @dev Wraps the internal SHRINCS verify + bitmap leaf consume for direct unit testing.
     function exposed_verifyAndAdvance(
         PackedUserOperation calldata userOp
@@ -28,7 +32,7 @@ contract ShrincsPaymasterHarness is ShrincsPaymaster {
     }
 
     /// @dev Test-only direct install of the global verifier state, bypassing the owner-gated
-    ///      `setShrincsVerifier` (no epoch bump). NOT a production function.
+    ///      `initialize`/`rotateStatefulKey` paths (no epoch bump). NOT a production function.
     function harness_install(
         bytes32 commitment,
         uint32 maxSignaturesValue

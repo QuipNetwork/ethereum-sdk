@@ -1,17 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletCodecTest} from "../ShrincsWalletCodec.t.sol";
 
 contract ShrincsWalletCodec_decodeUserOpSignature is ShrincsWalletCodecTest {
     function test_decodeUserOpSignature_roundTrip() public view {
-        ShrincsTypes.PublicKey memory pk = _samplePublicKey();
-        ShrincsTypes.StatefulSignature memory sig = _sampleStatefulSig();
+        SHRINCS.PublicKey memory pk = _samplePublicKey();
+        SHRINCS.Signature memory sig = _sampleStatefulSig();
         bytes memory blob = abi.encode(pk, sig);
 
-        (ShrincsTypes.PublicKey memory dpk, ShrincsTypes.StatefulSignature memory dsig) =
+        (SHRINCS.PublicKey memory dpk, SHRINCS.Signature memory dsig) =
             codec.exposed_decodeUserOpSignature(blob);
 
         _assertPkEq(dpk, pk);
@@ -42,20 +46,20 @@ contract ShrincsWalletCodec_decodeUserOpSignature is ShrincsWalletCodecTest {
         // Keep arrays modest so the fuzzer stays fast; lengths are still varied.
         vm.assume(chains.length <= 64 && authPath.length <= 64);
 
-        ShrincsTypes.PublicKey memory pk;
+        SHRINCS.PublicKey memory pk;
         pk.statefulPublicKey = statefulPublicKey;
         pk.publicKeyCommitment = commitment;
         pk.pkSeed = pkSeed;
         pk.hypertreeRoot = hypertreeRoot;
 
-        ShrincsTypes.StatefulSignature memory sig;
+        SHRINCS.Signature memory sig;
         sig.randomizer = randomizer;
         sig.counter = counter;
         sig.chains = chains;
         sig.authPath = authPath;
 
         bytes memory blob = abi.encode(pk, sig);
-        (ShrincsTypes.PublicKey memory dpk, ShrincsTypes.StatefulSignature memory dsig) =
+        (SHRINCS.PublicKey memory dpk, SHRINCS.Signature memory dsig) =
             codec.exposed_decodeUserOpSignature(blob);
 
         _assertPkEq(dpk, pk);

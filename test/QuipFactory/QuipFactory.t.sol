@@ -3,10 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
+import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
 import {WOTSPlusImplementation} from "../../contracts/wots/WOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
 
 /// @title QuipFactory Base Test
@@ -40,11 +41,15 @@ contract QuipFactoryTest is Test {
         // Deploy Deployer
         deployer = new Deployer();
 
-        // Deploy QuipFactory via CREATE3
-        bytes memory factoryBytecode = abi.encodePacked(type(QuipFactory).creationCode, abi.encode(ADMIN, 0.1 ether));
+        // Deploy the QuipFactory implementation, then its ERC-1967 proxy via
+        // CREATE3 — mirrors production: the PROXY address is the factory
+        // identity (CREATE3 wallet addressing derives from it).
+        QuipFactory factoryImpl = new QuipFactory(0.1 ether);
+        bytes memory proxyInitcode = LibClone.initCodeERC1967(address(factoryImpl));
         bytes32 factorySalt = keccak256("QuipFactory");
-        address factoryAddr = deployer.deploy(factoryBytecode, factorySalt);
+        address factoryAddr = deployer.deploy(proxyInitcode, factorySalt);
         factory = QuipFactory(payable(factoryAddr));
+        factory.initialize(payable(ADMIN));
 
         // Deploy and vet a WOTSPlusImplementation implementation
         walletImplementation = new WOTSPlusImplementation(payable(address(factory)));

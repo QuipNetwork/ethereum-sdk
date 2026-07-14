@@ -51,16 +51,20 @@ afterAll(async () => {
 
 describe("Factory event parsers", () => {
   test("parseQuipCreated decodes deployLatestWalletProxy receipt", async () => {
-    const { creationReceipt, walletAddress, disasterKey } =
-      await createFreshWallet(stack, 0xc0);
+    const { creationReceipt, walletAddress } = await createFreshWallet(
+      stack,
+      0xc0
+    );
     const events = parseQuipCreated(creationReceipt);
     expect(events).toHaveLength(1);
     expect(events[0].creator.toLowerCase()).toBe(
       stack.account.address.toLowerCase()
     );
     expect(events[0].quip.toLowerCase()).toBe(walletAddress.toLowerCase());
-    expect(events[0].disasterRecoveryKey.publicSeed).toBe(
-      disasterKey.publicSeed
+    // The factory echoes the implementation it deployed with, not key
+    // material — the init payload is opaque to it.
+    expect(events[0].implementation.toLowerCase()).toBe(
+      stack.walletImplAddress.toLowerCase()
     );
   }, 30_000);
 });
