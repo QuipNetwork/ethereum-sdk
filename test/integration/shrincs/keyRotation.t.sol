@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 
 /// @dev e2e key-rotation: rotating the paymaster's global verifier (owner-only) bumps its epoch and
@@ -10,8 +10,17 @@ import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 ///      rejected, while an op signed under the NEW key (epoch 1) is sponsored.
 contract ShrincsE2E_keyRotation is ShrincsE2EBase {
     function _rotateToVerifier2() internal {
+        // Stateful-only fiat rotation: current bundle pins the stateless half; the target's
+        // declared commitment must match the recomputed one (verifier2 is pre-built in the
+        // assembler as exactly this rotated bundle).
         vm.prank(ADMIN);
-        paymaster.setShrincsVerifier(verifierCommitment2, ShrincsTypes.HASH_SUITE_KECCAK_256, MAX_SIG);
+        paymaster.rotateStatefulKey(
+            verifierPk,
+            SHRINCS.StatefulRotationTarget({
+                statefulPublicKey: verifierPk2.statefulPublicKey,
+                publicKeyCommitment: abi.encodePacked(verifierCommitment2)
+            })
+        );
         (,, uint256 keyVersion,,) = paymaster.getShrincsVerifier();
         assertEq(keyVersion, 1, "paymaster epoch bumped to 1");
     }
@@ -65,10 +74,10 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
         // Build the pre-rotation sponsorship FIRST (bound to the old key/epoch 0).
         PackedUserOperation memory preRotation = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
 
-        (ShrincsTypes.StatefulRotationTarget memory target, bytes32 nextCommitment) =
+        (SHRINCS.StatefulRotationTarget memory target, bytes32 nextCommitment) =
             _walletStatefulRotationTarget("e2e-wallet-rotate-next");
         // rotateKeyPayloadHash = keccak256(nextCommitment).
-        ShrincsTypes.StatefulSignature memory rotateSig = _signWalletAction(
+        SHRINCS.Signature memory rotateSig = _signWalletAction(
             keccak256("quip.shrincs.action.rotateKey"), keccak256(abi.encodePacked(nextCommitment)), 5, 0, 0
         );
 

@@ -58,10 +58,10 @@ export interface ForsEntry {
   authPath: Hex[];
 }
 
-/// One hypertree layer authenticating a WOTS-C public key up to its parent root.
+/// One hypertree layer authenticating a WOTS-C public key up to its parent
+/// root. Tree coordinates are not carried: the verifier re-derives them from
+/// the message, so the wire shape is just the WOTS-C material + auth path.
 export interface HypertreeLayerSignature {
-  treeIndex: bigint;
-  leafIndex: number;
   wotsCPkHash: Hex;
   wotsCSignature: WotsCSignature;
   authPath: Hex[];

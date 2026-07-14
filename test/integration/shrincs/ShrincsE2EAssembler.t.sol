@@ -2,10 +2,12 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.1.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsUtils.sol";
-import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.1.0/test/helpers/ShrincsTestSigner.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 /// @title ShrincsE2E signing assembler
@@ -44,27 +46,36 @@ abstract contract ShrincsE2EAssembler is Test {
     uint256 internal constant PRE_VERIFICATION_GAS = 100_000;
 
     // Keys: wallet main key, plus two paymaster verifier keys (the second for rotation cases).
-    ShrincsTypes.SigningKey internal walletKey;
-    ShrincsTypes.PublicKey internal walletPk;
+    SHRINCS.SigningKey internal walletKey;
+    SHRINCS.PublicKey internal walletPk;
     bytes32 internal walletCommitment;
-    ShrincsTypes.SigningKey internal verifierKey;
-    ShrincsTypes.PublicKey internal verifierPk;
+    SHRINCS.SigningKey internal verifierKey;
+    SHRINCS.PublicKey internal verifierPk;
     bytes32 internal verifierCommitment;
-    ShrincsTypes.SigningKey internal verifierKey2;
-    ShrincsTypes.PublicKey internal verifierPk2;
+    SHRINCS.SigningKey internal verifierKey2;
+    SHRINCS.PublicKey internal verifierPk2;
     bytes32 internal verifierCommitment2;
 
     function setUp() public virtual {
         bool ok;
-        (walletKey, walletPk, ok) = ShrincsTestSigner.keygen("shrincs-e2e-wallet-key", MAX_SIG);
+        (walletKey, walletPk, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-wallet-key", MAX_SIG);
         assertTrue(ok, "wallet keygen");
         walletCommitment = _toBytes32(walletPk.publicKeyCommitment);
-        (verifierKey, verifierPk, ok) = ShrincsTestSigner.keygen("shrincs-e2e-verifier-key", MAX_SIG);
+        (verifierKey, verifierPk, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-verifier-key", MAX_SIG);
         assertTrue(ok, "verifier keygen");
         verifierCommitment = _toBytes32(verifierPk.publicKeyCommitment);
-        (verifierKey2, verifierPk2, ok) = ShrincsTestSigner.keygen("shrincs-e2e-verifier-key-2", MAX_SIG);
+        (verifierKey2, verifierPk2, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-verifier-key-2", MAX_SIG);
         assertTrue(ok, "verifier2 keygen");
-        verifierCommitment2 = _toBytes32(verifierPk2.publicKeyCommitment);
+        // Bundle 2 is the ROTATED bundle `rotateStatefulKey` installs: verifier2's fresh stateful
+        // subkey carried over bundle 1's stateless half (the paymaster never rotates it). Only the
+        // stateful signing secrets of `verifierKey2` are exercised, so the mismatch between its
+        // (discarded) stateless secrets and bundle 1's stateless public parts is irrelevant.
+        verifierCommitment2 = SHRINCS.publicKeyCommitmentFromParts(
+            verifierPk2.statefulPublicKey, verifierPk.pkSeed, verifierPk.hypertreeRoot
+        );
+        verifierPk2.publicKeyCommitment = abi.encodePacked(verifierCommitment2);
+        verifierPk2.pkSeed = verifierPk.pkSeed;
+        verifierPk2.hypertreeRoot = verifierPk.hypertreeRoot;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -126,7 +137,7 @@ abstract contract ShrincsE2EAssembler is Test {
         // 1. Paymaster signs its binding hash over the blob-less op.
         bytes32 binding = _pmBindingHash(op);
         if (p.corruptPmBinding) binding = binding ^ bytes32(uint256(1));
-        ShrincsTypes.StatefulSignature memory pmSig =
+        SHRINCS.Signature memory pmSig =
             _signPaymasterApproval(binding, p.pmLeaf, p.pmKeyVersion, p.useVerifier2);
 
         // 2. Embed the (pk, sig) blob to complete paymasterAndData.
@@ -139,7 +150,7 @@ abstract contract ShrincsE2EAssembler is Test {
 
         // 4. The wallet signs its erc4337 action context over that hash (maxFee is already
         //    inside it via callData — the digest itself carries no fee word).
-        ShrincsTypes.StatefulSignature memory walletSig =
+        SHRINCS.Signature memory walletSig =
             _signWalletErc4337(userOpHash, p.walletLeaf, p.walletKeyVersion, p.walletNonce);
         op.signature = abi.encode(walletPk, walletSig);
     }
@@ -179,7 +190,7 @@ abstract contract ShrincsE2EAssembler is Test {
     function _signWalletErc4337(bytes32 userOpHash, uint32 leaf, uint256 keyVersion, uint256 walletNonce)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory)
+        returns (SHRINCS.Signature memory)
     {
         bytes32 payloadHash = keccak256(abi.encodePacked(userOpHash));
         return _signWalletAction(ACTION_ERC4337_EXECUTE, payloadHash, leaf, keyVersion, walletNonce);
@@ -193,8 +204,8 @@ abstract contract ShrincsE2EAssembler is Test {
         uint32 leaf,
         uint256 keyVersion,
         uint256 nonce
-    ) internal view returns (ShrincsTypes.StatefulSignature memory sig) {
-        ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
+    ) internal view returns (SHRINCS.Signature memory sig) {
+        SHRINCS.ActionContext memory ctx = SHRINCS.ActionContext({
             domainSeparator: _walletDomainSeparator(),
             nonce: nonce,
             keyVersion: keyVersion,
@@ -203,7 +214,7 @@ abstract contract ShrincsE2EAssembler is Test {
         });
         bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(walletCommitment, ctx));
         bool ok;
-        (sig, ok) = ShrincsTestSigner.signStatefulRawAtLeaf(walletKey, leaf, message);
+        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(walletKey, leaf, message);
         require(ok, "wallet sign failed");
     }
 
@@ -211,11 +222,11 @@ abstract contract ShrincsE2EAssembler is Test {
     function _signPaymasterApproval(bytes32 bindingHash, uint32 leaf, uint256 keyVersion, bool useVerifier2)
         internal
         view
-        returns (ShrincsTypes.StatefulSignature memory sig)
+        returns (SHRINCS.Signature memory sig)
     {
         // The paymaster binds NO wrapper nonce (out of scope of the wallet's nonce scheme): its
         // sponsorship freshness is the validUntil/validAfter window + its own one-time leaf.
-        ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
+        SHRINCS.ActionContext memory ctx = SHRINCS.ActionContext({
             domainSeparator: _pmDomainSeparator(),
             nonce: 0,
             keyVersion: keyVersion,
@@ -226,7 +237,7 @@ abstract contract ShrincsE2EAssembler is Test {
         bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(commitment, ctx));
         bool ok;
         (sig, ok) =
-            ShrincsTestSigner.signStatefulRawAtLeaf(useVerifier2 ? verifierKey2 : verifierKey, leaf, message);
+            SHRINCSTestSigner.signStatefulRawAtLeaf(useVerifier2 ? verifierKey2 : verifierKey, leaf, message);
         require(ok, "paymaster sign failed");
     }
 
@@ -296,13 +307,13 @@ abstract contract ShrincsE2EAssembler is Test {
     function _walletStatefulRotationTarget(bytes memory seed)
         internal
         view
-        returns (ShrincsTypes.StatefulRotationTarget memory target, bytes32 nextCommitment)
+        returns (SHRINCS.StatefulRotationTarget memory target, bytes32 nextCommitment)
     {
-        (, ShrincsTypes.PublicKey memory pk, bool ok) = ShrincsTestSigner.keygen(seed, MAX_SIG);
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
         require(ok, "rotation keygen");
         nextCommitment =
-            ShrincsUtils.publicKeyCommitmentFromParts(pk.statefulPublicKey, walletPk.pkSeed, walletPk.hypertreeRoot);
-        target = ShrincsTypes.StatefulRotationTarget({
+            SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, walletPk.pkSeed, walletPk.hypertreeRoot);
+        target = SHRINCS.StatefulRotationTarget({
             statefulPublicKey: pk.statefulPublicKey,
             publicKeyCommitment: abi.encodePacked(nextCommitment)
         });

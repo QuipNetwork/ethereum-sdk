@@ -32,6 +32,7 @@ import {
   // Wallet
   ZeroAddressFactoryError,
   ZeroAddressOwnerError,
+  ZeroAddressVerifierError,
   InvalidFactoryError,
   InvalidSignatureError,
   CommitmentMismatchError,
@@ -93,6 +94,7 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   // Wallet
   ZeroAddressFactory: (_, o) => new ZeroAddressFactoryError(o),
   ZeroAddressOwner: (_, o) => new ZeroAddressOwnerError(o),
+  ZeroAddressVerifier: (_, o) => new ZeroAddressVerifierError(o),
   InvalidFactory: (_, o) => new InvalidFactoryError(o),
   InvalidSignature: (_, o) => new InvalidSignatureError(o),
   CommitmentMismatch: (_, o) => new CommitmentMismatchError(undefined, undefined, o),

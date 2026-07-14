@@ -74,9 +74,11 @@ export function randomVaultId(): Hex {
 
 /// Aggregated factory state — one multicall round-trip's worth of view
 /// reads. Useful for an admin dashboard or pre-flight overview.
+/// NOTE: no `pendingOwner` — the UUPS factory uses Solady Ownable, whose
+/// two-step handover is keyed by candidate address
+/// (`ownershipHandoverExpiresAt(addr)`), not a single pending-owner slot.
 export interface FactoryState {
   owner: Address;
-  pendingOwner: Address;
   creationFee: bigint;
   executeFee: bigint;
   maxFee: bigint;
@@ -575,7 +577,6 @@ export class QuipClient {
     await this.initializationPromise;
     const calls = [
       { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "owner" as const },
-      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "pendingOwner" as const },
       { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "creationFee" as const },
       { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "executeFee" as const },
       { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
@@ -589,7 +590,6 @@ export class QuipClient {
 
     const labels = [
       "owner",
-      "pendingOwner",
       "creationFee",
       "executeFee",
       "MAX_FEE",
@@ -610,12 +610,11 @@ export class QuipClient {
 
     return {
       owner: (results[0] as { status: "success"; result: Address }).result,
-      pendingOwner: (results[1] as { status: "success"; result: Address }).result,
-      creationFee: (results[2] as { status: "success"; result: bigint }).result,
-      executeFee: (results[3] as { status: "success"; result: bigint }).result,
-      maxFee: (results[4] as { status: "success"; result: bigint }).result,
-      latestWalletImpl: (results[5] as { status: "success"; result: Address }).result,
-      vettedCodeCount: (results[6] as { status: "success"; result: bigint }).result,
+      creationFee: (results[1] as { status: "success"; result: bigint }).result,
+      executeFee: (results[2] as { status: "success"; result: bigint }).result,
+      maxFee: (results[3] as { status: "success"; result: bigint }).result,
+      latestWalletImpl: (results[4] as { status: "success"; result: Address }).result,
+      vettedCodeCount: (results[5] as { status: "success"; result: bigint }).result,
     };
   }
 }

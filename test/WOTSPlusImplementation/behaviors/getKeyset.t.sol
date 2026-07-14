@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlusCodec as Codec} from "../../../contracts/wots/WOTSPlusCodec.sol";
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusImplementation_getKeyset is WOTSPlusImplementationTest {
     function test_getKeyset_transactionReturnsAllInitialKeys() public view {

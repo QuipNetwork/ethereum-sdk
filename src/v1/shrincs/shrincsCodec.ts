@@ -123,10 +123,16 @@ export function rotationDomainSeparator(base: Hex, tag: Hex): Hex {
   return hashWords(base, tag);
 }
 
-/// Bundle commitment as the contract/keygen computes it:
-/// `keccak256("shrincs-public-key" ‖ statefulPublicKey ‖ pkSeed ‖ hypertreeRoot)`.
-/// Used to derive the `publicKeyCommitment` of a rotation target whose stateless
-/// half is reused (e.g. `rotateKey`).
+/// The compile-time SHRINCS profile this SDK is built against — must equal
+/// `SHRINCSParams.PROFILE_NAME` of the on-chain verifier (the `shrincs-profile/`
+/// remapping selects `profiles/256s` + keccak).
+export const SHRINCS_PROFILE_NAME = "shrincs-256s-keccak";
+
+/// Bundle commitment as the contract/keygen computes it, profile-bound:
+/// `keccak256("shrincs-public-key/" ‖ PROFILE_NAME ‖ statefulPublicKey ‖ pkSeed
+/// ‖ hypertreeRoot)` (raw ASCII, no length prefixes). Used to derive the
+/// `publicKeyCommitment` of a rotation target whose stateless half is reused
+/// (e.g. `rotateKey`).
 export function publicKeyCommitment(parts: {
   statefulPublicKey: Hex;
   pkSeed: Hex;
@@ -134,7 +140,8 @@ export function publicKeyCommitment(parts: {
 }): Hex {
   return keccak256(
     concat([
-      toHex(toBytes("shrincs-public-key")),
+      toHex(toBytes("shrincs-public-key/")),
+      toHex(toBytes(SHRINCS_PROFILE_NAME)),
       parts.statefulPublicKey,
       parts.pkSeed,
       parts.hypertreeRoot,
@@ -270,9 +277,9 @@ function findStructTuple(internalType: string): AbiParameter {
   throw new Error(`struct ${internalType} not found in shrincsWalletAbi`);
 }
 
-const PUBLIC_KEY_TUPLE = findStructTuple("struct ShrincsTypes.PublicKey");
-const STATEFUL_SIGNATURE_TUPLE = findStructTuple("struct ShrincsTypes.StatefulSignature");
-const STATELESS_SIGNATURE_TUPLE = findStructTuple("struct ShrincsTypes.StatelessSignature");
+const PUBLIC_KEY_TUPLE = findStructTuple("struct SHRINCS.PublicKey");
+const STATEFUL_SIGNATURE_TUPLE = findStructTuple("struct SHRINCS.Signature");
+const STATELESS_SIGNATURE_TUPLE = findStructTuple("struct SPHINCSPlusC.Signature");
 
 /// The on-chain `PublicKey` struct now matches the SDK/WASM shape field-for-field
 /// (no parameter-set discriminator). These converters survive as explicit

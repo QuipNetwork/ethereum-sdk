@@ -17,7 +17,7 @@
 pragma solidity ^0.8.33;
 
 import {IPaymaster} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
 /// @title IQuipPaymaster
 /// @notice A UUPS-upgradeable ERC-4337 verifying paymaster that sponsors gas for

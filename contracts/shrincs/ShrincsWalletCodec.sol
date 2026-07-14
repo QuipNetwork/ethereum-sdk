@@ -16,7 +16,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 
 /// @title ShrincsWalletCodec
@@ -82,8 +83,9 @@ library ShrincsWalletCodec {
     /// @dev Decodes the factory-supplied init payload, the ABI encoding of
     ///      `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle, uint32 hashSuite,
     ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
-    ///      `commitment` and `pkSeed` occupy `payload[0:32]` / `[32:64]` so the factory's
-    ///      opaque `QuipCreated` indexing read lands on meaningful handles.
+    ///      The payload is opaque to the factory; `commitment`/`pkSeed` landing at
+    ///      `payload[0:32]` / `[32:64]` is just natural ABI head-word order, not a
+    ///      layout constraint.
     function decodeInit(
         bytes calldata payload
     )
@@ -92,7 +94,7 @@ library ShrincsWalletCodec {
         returns (
             bytes32 commitment,
             bytes32 pkSeed,
-            ShrincsTypes.PublicKey calldata mainBundle,
+            SHRINCS.PublicKey calldata mainBundle,
             uint32 hashSuite,
             bytes32 erc1271Commitment,
             uint32 erc1271HashSuite
@@ -114,7 +116,7 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the ERC-4337 `userOp.signature` field, which by convention carries *both*
     ///      SHRINCS structs: it is the ABI encoding of `(PublicKey publicKey,
-    ///      StatefulSignature signature)`. Note the name collision — the outer `signature` is
+    ///      SHRINCS.Signature signature)`. Note the name collision — the outer `signature` is
     ///      ERC-4337's `userOp` field; the inner `signature` is the SHRINCS stateful signature
     ///      that travels inside it alongside the public key.
     function decodeUserOpSignature(
@@ -123,8 +125,8 @@ library ShrincsWalletCodec {
         internal
         pure
         returns (
-            ShrincsTypes.PublicKey calldata publicKey,
-            ShrincsTypes.StatefulSignature calldata signature
+            SHRINCS.PublicKey calldata publicKey,
+            SHRINCS.Signature calldata signature
         )
     {
         if (sig.length < 0x40) revert MalformedPayload(0x40, sig.length);
@@ -136,7 +138,7 @@ library ShrincsWalletCodec {
     }
 
     /// @dev Decodes the UUPS `upgradeToAndCall` `data` blob, the ABI encoding of
-    ///      `(PublicKey publicKey, StatefulSignature signature, bool shouldMigrate,
+    ///      `(PublicKey publicKey, SHRINCS.Signature signature, bool shouldMigrate,
     ///       bytes migratorPayload, uint256 nonce)`. The action nonce the signer bound rides in
     ///      the blob (rather than being read live) so `verifyUpgrade` can rebuild the exact
     ///      signed context at any moment — both in the SDK's pre-flight staticcall (live nonce
@@ -147,8 +149,8 @@ library ShrincsWalletCodec {
         internal
         pure
         returns (
-            ShrincsTypes.PublicKey calldata publicKey,
-            ShrincsTypes.StatefulSignature calldata signature,
+            SHRINCS.PublicKey calldata publicKey,
+            SHRINCS.Signature calldata signature,
             bool shouldMigrate,
             bytes calldata migratorPayload,
             uint256 nonce
@@ -170,15 +172,15 @@ library ShrincsWalletCodec {
     }
 
     /// @dev Decodes the ERC-1271 `signature` blob, the ABI encoding of
-    ///      `(PublicKey publicKey, StatelessSignature signature, bytes ecdsaSig)`.
+    ///      `(PublicKey publicKey, SPHINCSPlusC.Signature signature, bytes ecdsaSig)`.
     function decodeErc1271Signature(
         bytes calldata sig
     )
         internal
         pure
         returns (
-            ShrincsTypes.PublicKey calldata publicKey,
-            ShrincsTypes.StatelessSignature calldata signature,
+            SHRINCS.PublicKey calldata publicKey,
+            SPHINCSPlusC.Signature calldata signature,
             bytes calldata ecdsaSig
         )
     {
@@ -207,9 +209,9 @@ library ShrincsWalletCodec {
         uint256 keyVersion,
         bytes32 actionType,
         bytes32 payloadHash
-    ) internal pure returns (ShrincsTypes.ActionContext memory) {
+    ) internal pure returns (SHRINCS.ActionContext memory) {
         return
-            ShrincsTypes.ActionContext({
+            SHRINCS.ActionContext({
                 domainSeparator: domainSeparator,
                 nonce: nonce,
                 keyVersion: keyVersion,
@@ -234,9 +236,9 @@ library ShrincsWalletCodec {
         bytes32 domainSeparator,
         uint256 nonce,
         uint256 keyVersion
-    ) internal pure returns (ShrincsTypes.RotationContext memory) {
+    ) internal pure returns (SHRINCS.RotationContext memory) {
         return
-            ShrincsTypes.RotationContext({
+            SHRINCS.RotationContext({
                 domainSeparator: domainSeparator,
                 nonce: nonce,
                 keyVersion: keyVersion

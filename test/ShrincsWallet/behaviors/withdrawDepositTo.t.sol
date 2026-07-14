@@ -2,7 +2,11 @@
 pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
@@ -20,7 +24,7 @@ contract MockEntryPointStub {
 contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     address internal constant TO = address(0xD00D);
 
-    function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
+    function _pk() internal view returns (SHRINCS.PublicKey memory) {
         return _mainPk();
     }
 
@@ -50,7 +54,7 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     }
 
     function test_withdraw_revertsWhen_invalidSignature() public {
-        ShrincsTypes.StatefulSignature memory sig = _wrongContextStatefulSig();
+        SHRINCS.Signature memory sig = _wrongContextStatefulSig();
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.withdrawDepositTo(_pk(), sig, TO, 1 ether);
@@ -60,7 +64,7 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
         // Sign the WITHDRAW context over (TO, amount 0). `ERC4337.withdrawDepositTo` forwards to
         // the canonical EntryPoint, so etch a stub there that accepts `withdrawTo`.
         vm.etch(ENTRY_POINT, address(new MockEntryPointStub()).code);
-        ShrincsTypes.StatefulSignature memory sig =
+        SHRINCS.Signature memory sig =
             _signStatefulAction(Codec.ACTION_WITHDRAW, Codec.withdrawPayloadHash(TO, 0), 1);
         vm.prank(OWNER);
         wallet.withdrawDepositTo(_pk(), sig, TO, 0);

@@ -25,8 +25,15 @@ import {
 
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { shrincsPaymasterAbi } from "./abi/ShrincsPaymaster.js";
-import { HASH_SUITE_KECCAK_256 } from "./constants.js";
-import { StatefulBudgetExhaustedError, VerifierMismatchError } from "./errors.js";
+import {
+  EmptyLeavesError,
+  StatefulBudgetExhaustedError,
+  VerifierMismatchError,
+} from "./errors.js";
+import {
+  buildStatefulRotationTarget,
+  publicKeyToAbi,
+} from "./shrincsCodec.js";
 import { prepareTx, type TxOptions } from "./gas.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
@@ -56,6 +63,12 @@ export interface ShrincsPaymasterClientParams {
   vaultId: Hex;
   chainId: number;
   account: Address;
+  /// Pre-built keypair override. Takes precedence over `signer.recoverKeyPair`
+  /// — REQUIRED after a `rotateStatefulKey`, where the live bundle is a graft
+  /// of the new stateful vault and the ORIGINAL stateless vault (build it with
+  /// `signer.deriveKeyPair({ statefulVaultId, statelessVaultId, maxSignatures })`;
+  /// a plain `recoverKeyPair` on either vault reproduces the wrong commitment).
+  keypair?: ShrincsKeyPair;
 }
 
 /// Per-paymaster client: sponsorship signing + verifier/deposit/stake admin.
@@ -70,6 +83,7 @@ export class ShrincsPaymasterClient {
   private readonly publicClient: PublicClient;
   private readonly walletClient: WalletClient;
   private readonly signer: ShrincsSigner;
+  private readonly keypair?: ShrincsKeyPair;
 
   constructor(params: ShrincsPaymasterClientParams) {
     this.paymasterAddress = params.paymasterAddress;
@@ -79,6 +93,16 @@ export class ShrincsPaymasterClient {
     this.vaultId = params.vaultId;
     this.chainId = params.chainId;
     this.account = params.account;
+    this.keypair = params.keypair;
+  }
+
+  /// The operator keypair: the explicit override when set (post-rotation
+  /// grafted bundles), else re-derived from the signer's vault branch.
+  private operatorKeyPair(maxSignatures: number): ShrincsKeyPair {
+    return (
+      this.keypair ??
+      this.signer.recoverKeyPair(this.vaultId, { maxSignatures })
+    );
   }
 
   /*  ── reads ───────────────────────────────────────────────────────────  */
@@ -159,9 +183,7 @@ export class ShrincsPaymasterClient {
       expectedChainId: this.chainId,
     });
     const verifier = await this.getShrincsVerifier();
-    const keypair: ShrincsKeyPair = this.signer.recoverKeyPair(this.vaultId, {
-      maxSignatures: verifier.maxSignatures,
-    });
+    const keypair = this.operatorKeyPair(verifier.maxSignatures);
     if (
       keypair.publicKeyCommitment.toLowerCase() !== verifier.commitment.toLowerCase()
     ) {
@@ -198,21 +220,59 @@ export class ShrincsPaymasterClient {
 
   /*  ── admin writes ────────────────────────────────────────────────────  */
 
-  /// Rotate the global sponsorship verifier key (owner-only; bumps the epoch).
-  async setShrincsVerifier(
-    params: { commitment: Hex; hashSuite?: number; maxSignatures: number },
+  /// Rotate ONLY the stateful subkey of the global sponsorship verifier key
+  /// (owner-only FIAT rotation — no PQ signature of its own; the owner is
+  /// expected to be a post-quantum wallet). Bumps the epoch and resets the
+  /// leaf bitmap; the current bundle's stateless half is reused, never rotated
+  /// (it is inert — the paymaster only verifies stateful sponsorship
+  /// signatures). `nextStatefulPublicKey` is the fresh stateful key's encoded
+  /// 68-byte public key (from a freshly keygen'd bundle under a new vaultId);
+  /// the new `maxSignatures` budget is decoded on-chain from that encoding.
+  /// The operator signer must still hold the CURRENT key: its public bundle is
+  /// pinned on-chain to authorize carrying the stateless half forward
+  /// (`VerifierMismatchError` is thrown before submitting if it drifted).
+  async rotateStatefulKey(
+    params: { nextStatefulPublicKey: Hex },
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
+    const verifier = await this.getShrincsVerifier();
+    const keypair = this.operatorKeyPair(verifier.maxSignatures);
+    if (
+      keypair.publicKeyCommitment.toLowerCase() !== verifier.commitment.toLowerCase()
+    ) {
+      throw new VerifierMismatchError(keypair.publicKeyCommitment, verifier.commitment);
+    }
+    const nextStatefulKey = buildStatefulRotationTarget({
+      nextStatefulPublicKey: params.nextStatefulPublicKey,
+      currentPkSeed: keypair.publicKey.pkSeed,
+      currentHypertreeRoot: keypair.publicKey.hypertreeRoot,
+    });
     return this.submit(
-      "setShrincsVerifier",
+      "rotateStatefulKey",
       [
-        params.commitment,
-        params.hashSuite ?? HASH_SUITE_KECCAK_256,
-        params.maxSignatures,
+        publicKeyToAbi(keypair.publicKey),
+        {
+          statefulPublicKey: nextStatefulKey.statefulPublicKey,
+          publicKeyCommitment: nextStatefulKey.publicKeyCommitment,
+        },
       ],
       0n,
       opts
     );
+  }
+
+  /// Revoke outstanding sponsorship leaves in the current epoch (owner-only
+  /// fiat, mirroring the contract's idempotent batch semantics: already-used
+  /// targets are skipped on-chain, out-of-range ones revert the whole batch).
+  /// Every freshly revoked leaf decrements `remainingStatefulSignatures()` —
+  /// revocation spends budget exactly like a landed sponsorship.
+  async markLeavesUsed(
+    leaves: readonly number[],
+    opts: TxOptions = {}
+  ): Promise<TransactionReceipt> {
+    // Fail fast client-side (mirrors the contract's EmptyLeaves revert).
+    if (leaves.length === 0) throw new EmptyLeavesError();
+    return this.submit("markLeavesUsed", [leaves], 0n, opts);
   }
 
   async deposit(value: bigint, opts: TxOptions = {}): Promise<TransactionReceipt> {

@@ -188,7 +188,7 @@ make deploy-deployer-base-sepolia
 
 Env: `PRIVATE_KEY` (any funded wallet on the target chain), `ETHERSCAN_API_KEY` (for `--verify`).
 
-**2. Deploy the shared infra — WOTSPlus library, QuipFactory, QuipPaymaster.** ⚠️ **Governance-sensitive. Contact Rick first.** `FACTORY_OWNER` becomes the only address that can vet implementations and collect creation fees on this chain going forward; `PAYMASTER_OWNER` becomes the only address that can configure the Paymaster. These cannot be changed except by their current owners.
+**2. Deploy the shared infra — WOTSPlus library, QuipFactory (UUPS impl + ERC-1967 proxy), QuipPaymaster (impl + proxy).** ⚠️ **Governance-sensitive. Contact Rick first.** `FACTORY_OWNER` becomes the only address that can vet implementations, collect creation fees, and **upgrade the factory implementation** on this chain going forward; `PAYMASTER_OWNER` becomes the only address that can configure the Paymaster. These cannot be changed except by their current owners. The factory PROXY address is the permanent identity every wallet bakes in — the impl behind it is replaceable via `upgradeToAndCall`.
 
 ```bash
 make deploy-all-base-sepolia

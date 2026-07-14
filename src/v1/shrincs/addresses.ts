@@ -36,20 +36,31 @@ export interface ShrincsNetworkAddresses {
   /// ShrincsPaymaster implementation (UUPS upgrade target; rarely referenced
   /// directly by consumers).
   ShrincsPaymasterImpl: Address;
+  /// The external `SHRINCS256sKeccak` ERC-7913 verifier both implementations
+  /// pin as an immutable and delegate all signature crypto to. Deployed by
+  /// hashsigs-solidity's own CREATE3 scripts (its `DEPLOYMENTS.md`), not this
+  /// repo — same address on every chain.
+  ShrincsVerifier: Address;
 }
 
-// Deterministic CREATE3 addresses produced by `script/PredictAddresses.s.sol`
-// (salts `QUIP:ShrincsWallet:V1.0`, `QUIP:ShrincsPaymaster:Impl:V1.0`,
-// `QUIP:ShrincsPaymaster:Proxy:V1.0`). CREATE3 makes the address depend only on
-// (Deployer, salt) — not the bytecode — so these are identical on every chain
-// the canonical Deployer is bootstrapped on, and are stable once the
-// DeployShrincs* scripts deploy with these salts.
+// Deterministic CREATE3 addresses produced by `script/PredictAddresses.s.sol`.
+// The implementation salts bind the verifier SCHEME tag on top of the version:
+// `keccak256("QUIP:ShrincsWallet:V1.1:" ‖ PROFILE_ID)` (and the paymaster-impl
+// analog) where PROFILE_ID = keccak256("shrincs-256s-keccak") — the deployed
+// verifier's constant `PROFILE_TAG()` — so implementations pinned to a
+// different cryptographic scheme land at different addresses. The proxy salt
+// is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1` (scheme-agnostic). CREATE3
+// makes the address depend only on (Deployer, salt) — not the bytecode — so
+// these are identical on every chain the canonical Deployer is bootstrapped
+// on, and are stable once the DeployShrincs* scripts deploy with these salts.
 const SHRINCS_WALLET_IMPLEMENTATION =
-  "0xD1f3b80793D952551C26E31CC147e5df4149De76" as Address;
+  "0x2A4C7Cc9117a37dC9498A67637C9Fcf109C5b2aC" as Address;
 const SHRINCS_PAYMASTER_PROXY =
-  "0x50a75bAF3a1eB13A266cA9a6b0ac916A62BC392F" as Address;
+  "0x681B88b513D1ee3ee9bD4f3A4f6f2F6a8d4d6365" as Address;
 const SHRINCS_PAYMASTER_IMPL =
-  "0x5F5210F324Ab9dce1080DB0fab0c3C55b51209b6" as Address;
+  "0xC318894cb679EAc20e26Ad0762Cce5411A3B2386" as Address;
+const SHRINCS_VERIFIER =
+  "0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A" as Address;
 
 /// Registry keyed by chain id, with a deterministic `default` entry shared by
 /// every chain (CREATE3 addresses are chain-independent).
@@ -59,6 +70,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", ShrincsNetworkAddress
     ShrincsWalletImplementation: SHRINCS_WALLET_IMPLEMENTATION,
     ShrincsPaymaster: SHRINCS_PAYMASTER_PROXY,
     ShrincsPaymasterImpl: SHRINCS_PAYMASTER_IMPL,
+    ShrincsVerifier: SHRINCS_VERIFIER,
   },
 };
 

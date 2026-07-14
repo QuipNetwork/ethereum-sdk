@@ -246,7 +246,7 @@ describe("MIDL Integration", function () {
     it("should deploy and verify WOTS+ signatures locally", async function () {
       // Deploy WOTSPlus library
       const WOTSPlusLib = await hre.ethers.getContractFactory(
-        "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus"
+        "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol:WOTSPlus"
       );
       const wotsPlus = await WOTSPlusLib.deploy();
       await wotsPlus.waitForDeployment();

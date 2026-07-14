@@ -2,7 +2,12 @@
 pragma solidity ^0.8.33;
 
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletCodecHarness} from "../../harness/ShrincsWalletCodecHarness.sol";
 import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol";
@@ -21,10 +26,13 @@ contract ShrincsE2E_encodingCrossCheck is ShrincsE2EAssembler {
         super.setUp();
         vm.chainId(CHAIN_ID);
         MockShrincsFactory factory = new MockShrincsFactory();
-        ShrincsWalletHarness walletImpl = new ShrincsWalletHarness(payable(address(factory)));
+        // Domain-separator mirrors only — nothing verifies here, but the ctors zero-check.
+        SHRINCS256sKeccak verifier = new SHRINCS256sKeccak();
+        ShrincsWalletHarness walletImpl =
+            new ShrincsWalletHarness(payable(address(factory)), address(verifier));
         vm.etch(WALLET, address(walletImpl).code);
         wallet = ShrincsWalletHarness(payable(WALLET));
-        ShrincsPaymasterHarness pmImpl = new ShrincsPaymasterHarness();
+        ShrincsPaymasterHarness pmImpl = new ShrincsPaymasterHarness(address(verifier));
         vm.etch(PAYMASTER, address(pmImpl).code);
         paymaster = ShrincsPaymasterHarness(payable(PAYMASTER));
     }
@@ -80,8 +88,8 @@ contract ShrincsE2E_encodingCrossCheck is ShrincsE2EAssembler {
     ///      signatures themselves against the wallet harness).
     function test_crossCheck_userOpSignatureBlobDecodes() public view {
         PackedUserOperation memory op = _sponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
-        (ShrincsTypes.PublicKey memory pk, ShrincsTypes.StatefulSignature memory sig) =
-            abi.decode(op.signature, (ShrincsTypes.PublicKey, ShrincsTypes.StatefulSignature));
+        (SHRINCS.PublicKey memory pk, SHRINCS.Signature memory sig) =
+            abi.decode(op.signature, (SHRINCS.PublicKey, SHRINCS.Signature));
         assertEq(_toBytes32(pk.publicKeyCommitment), walletCommitment, "wallet pk round-trips");
         assertEq(sig.authPath.length, 1, "leaf-1 signature round-trips");
     }

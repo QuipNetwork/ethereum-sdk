@@ -142,6 +142,16 @@ export class ZeroAddressOwnerError extends QuipError {
   }
 }
 
+export class ZeroAddressVerifierError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_ZERO_ADDRESS_VERIFIER",
+      "SHRINCS verifier address is zero",
+      opts
+    );
+  }
+}
+
 export class InvalidFactoryError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_INVALID_FACTORY", "Caller is not the wallet factory", opts);
@@ -188,7 +198,7 @@ export class ZeroMaxSignaturesError extends QuipError {
 
 /// A declared hash suite other than `HASH_SUITE_KECCAK_256` was supplied at
 /// install/rotate time (wallet initialize/migrate/setErc1271Key, paymaster
-/// initialize/setShrincsVerifier).
+/// initialize).
 export class UnsupportedHashSuiteError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
