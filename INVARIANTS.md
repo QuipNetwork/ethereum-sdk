@@ -329,6 +329,25 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 ---
 
+## 20. Shrincs Paymaster Verifier-Key Lifecycle
+
+**The paymaster's global sponsorship key rotates its STATEFUL subkey only, via owner-fiat `rotateStatefulKey` (the stateless half is carried forward, never rotated); `keyVersion` is monotonic and namespaces the leaf bitmap; and revocation spends budget exactly like consumption.**
+
+- **Owner-fiat admin, deliberately.** `rotateStatefulKey` and `markLeavesUsed` (like upgrades and treasury) carry no PQ signature of their own: the owner is expected to be a post-quantum wallet (e.g. a ShrincsWallet), which PQ-secures the call upstream. Fiat rotation is load-bearing for incident response — a compromised or lost sponsorship key must never be able to gate its own replacement (the wallet's signature-authorized `rotateKey` model is intentionally NOT mirrored here).
+- **No rotation nonce needed:** rotation is compare-and-swap. `currentPublicKey` is pinned to the installed commitment (`validPublicKey` + `matchesExpectedPublicKeyCommitment`); once a rotation applies, the installed commitment changes and any replay fails the pin.
+- **The declared-vs-recomputed commitment equality is the fiat substitute for an authorizing signature.** The next commitment is recomputed from parts (`nextStatefulKey.statefulPublicKey` + the PINNED current bundle's `pkSeed`/`hypertreeRoot`) and must equal the target's declared `publicKeyCommitment`. Nothing proves the operator controls the new key, so this end-to-end equality is the only guard against installing a mistyped commitment nobody can sign for.
+- **The budget is never a free parameter.** `maxSignatures` is decoded from the new subkey's 68-byte encoding (bytes [64,68)) — a budget diverging from the key's real tree capacity would misreport `remainingStatefulSignatures()` and desync the on-chain gate from the signer.
+- **`keyVersion` is MONOTONIC** (mirrors the wallet): every rotation bumps it, it never resets, and it namespaces `usedStatefulLeafBitmap` — a rotated key always starts from an all-unused namespace, and no epoch's namespace is ever reused. Old-epoch sponsorships die twice over: the context binds `keyVersion`, and the old bundle fails the commitment match.
+- **No wrapper nonce in the sponsorship context** (`nonce: 0` constant, unlike the wallet's action nonce): anti-replay is the one-time leaf plus the `userOp.sender`/`userOp.nonce` binding inside `_userOpBindingHash`. A sequential nonce would serialize ALL sponsored ops globally and turn every landed op into a mass-invalidation of pending ones — any-order landing is a design requirement.
+- **Revocation spends budget.** `markLeavesUsed` mirrors the wallet's batch semantics (idempotent skip on already-used targets and in-batch duplicates; out-of-range reverts the whole batch) and increments `statefulLeavesUsed` per fresh mark, so `remainingStatefulSignatures() = maxSignatures − statefulLeavesUsed` always counts every leaf as available, sponsored, or revoked — the three partitions sum to the budget.
+- **All sponsorship state lives in the paymaster** (bitmap, counter, epoch, commitment). This is forced, not chosen: ERC-7562 permits validation-phase writes only to the validating entity's own storage, so validation-time leaf consumption cannot be delegated to any other contract.
+
+**Contracts:** ShrincsPaymaster
+
+**Violation consequence:** Epoch reuse would resurrect consumed leaves across rotations (one-time property broken by construction). A free-parameter budget lets the gauge lie about signer capacity. A wrapper nonce reintroduces the global serialization bottleneck and bundler-reputation mass-invalidation. Dropping the declared-commitment equality lets a fat-fingered rotation brick sponsorship silently. Revocation that doesn't spend budget overstates remaining signatures and invites signing past the effective budget.
+
+---
+
 ## Critical Dependencies
 
 These invariants form a security web — they depend on each other:

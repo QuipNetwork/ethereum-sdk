@@ -132,6 +132,7 @@ For concurrent writes, the caller is responsible for picking distinct keys: read
 | `QuipWalletClient` | Orchestrates one wallet: reads, writes, simulation. | One per wallet, per process. References a `QuipSigner`. |
 | `QuipClient` | Factory client: creates wallets, lists vaults, vets implementations. | One per chain. |
 | `QuipPaymasterClient` | Per-wallet WOTS+ paymaster: registration, deposits, sponsored UserOp signing. | One per paymaster instance. |
+| `ShrincsPaymasterClient` | Global-key SHRINCS paymaster: sponsorship signing, verifier rotation, leaf revocation, deposits/stake. | One per paymaster instance. Recreate with a grafted `keypair` after rotation (see the SHRINCS paymaster section). |
 
 ---
 
@@ -257,6 +258,27 @@ const { userOp: signed, userOpHash, leaf } = await client.signExecuteUserOp({ us
 ```
 
 `signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`) and binds `userOpHash` — nothing else. Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `markLeavesUsed`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
+
+### Sponsorship paymaster (`ShrincsPaymasterClient`)
+
+One global SHRINCS stateful key sponsors every wallet: the operator signs each userOp it will pay for, bound to that op's `sender` + `nonce`, so signatures can't be replayed across wallets and land in ANY order (no wrapper nonce — anti-replay is the one-time leaf). Signing order in the 4337 flow: the paymaster fills `paymasterAndData` FIRST (`sponsorUserOp`), then the wallet signs the final `userOpHash` over it.
+
+**Admin is owner-fiat.** `rotateStatefulKey` and `markLeavesUsed` carry no PQ signature of their own — the paymaster's owner is expected to be a post-quantum wallet, which secures the admin path upstream. This is deliberate: a compromised or lost sponsorship key must never gate its own replacement.
+
+**Rotation rotates the stateful subkey ONLY.** `rotateStatefulKey({ nextStatefulPublicKey })` takes a fresh key's encoded 68-byte stateful public key (keygen it under a NEW vaultId of the same signer) and carries the installed bundle's stateless half forward. The new `maxSignatures` budget rides inside the encoding. The client pre-flights the current keypair against the on-chain commitment (`VerifierMismatchError` before any tx).
+
+**After a rotation, the live bundle is a cross-vault graft** — the new vault's stateful secrets under the ORIGINAL vault's stateless half. A plain `recoverKeyPair` on either vault reproduces the wrong commitment; build the operator keypair explicitly and pass it as the `keypair` constructor param:
+
+```ts
+const grafted = signer.deriveKeyPair({
+  statefulVaultId: newVault,      // rotated-in stateful key
+  statelessVaultId: originalVault, // stateless half never rotates
+  maxSignatures: NEW_MAX,
+});
+const pmClient = new ShrincsPaymasterClient({ ...params, vaultId: newVault, keypair: grafted });
+```
+
+**Revocation spends budget.** `markLeavesUsed(leaves)` kills outstanding sponsorship signatures by marking their leaves used (idempotent per leaf; out-of-range reverts the batch). Every fresh mark decrements `remainingStatefulSignatures()` — a leaf is available, sponsored, or revoked, and the three always sum to the budget.
 
 ---
 
