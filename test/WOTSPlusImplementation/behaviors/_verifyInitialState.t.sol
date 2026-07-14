@@ -5,7 +5,7 @@ import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementationHarness, HarnessKeyset} from "../../harness/WOTSPlusImplementationHarness.sol";
 import {WOTSPlusCodec} from "../../../contracts/wots/WOTSPlusCodec.sol";
 import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorage.sol";
 
 contract WOTSPlusImplementation__verifyInitialState is WOTSPlusImplementationTest {

@@ -1,3 +1,27 @@
 {
-  "type": "commonjs"
+  "name": "hashsigs-rs",
+  "collaborators": [
+    "Richard T. Carback III <rick.rust.cargo.383d5@passmail.net>"
+  ],
+  "description": "Hash-based signatures core library with WOTS+ and SHRINCS primitives",
+  "version": "0.0.3",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/quipnetwork/hashsigs-rs"
+  },
+  "files": [
+    "hashsigs_rs_bg.wasm",
+    "hashsigs_rs.js",
+    "hashsigs_rs.d.ts"
+  ],
+  "main": "hashsigs_rs.js",
+  "types": "hashsigs_rs.d.ts",
+  "keywords": [
+    "cryptography",
+    "wots",
+    "shrincs",
+    "signature",
+    "solana"
+  ]
 }

@@ -5,7 +5,7 @@ import {WOTSPlusCodec as Codec} from "../../../contracts/wots/WOTSPlusCodec.sol"
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
 import {WOTSPlusCodecHarness} from "../../harness/WOTSPlusCodecHarness.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__encodeResetKeyset is WOTSPlusCodecTest {
     function test_exposed_encodeResetKeyset_producesCorrectLength() public view {

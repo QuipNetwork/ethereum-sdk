@@ -3,7 +3,11 @@ pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -13,7 +17,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     /// @dev A userOp signed at `leaf` over a synthetic-but-fixed userOpHash.
     function _erc4337Op(uint32 leaf) internal view returns (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) {
         userOpHash = keccak256(abi.encodePacked("erc4337-userop", leaf));
-        ShrincsTypes.StatefulSignature memory sig = _signErc4337(userOpHash, leaf);
+        SHRINCS.Signature memory sig = _signErc4337(userOpHash, leaf);
         op = _makeUserOp(abi.encode(_mainPk(), sig));
     }
 

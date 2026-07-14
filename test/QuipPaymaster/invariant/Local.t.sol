@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {QuipPaymasterInvariantBase} from "./InvariantBase.sol";
 import {QuipPaymasterInvariantHandler} from "./Handler.t.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
 /// @title QuipPaymaster — Local Invariant Suite (verifier lifecycle)
 /// @dev Stateful fuzz over the verifier-lifecycle surface:

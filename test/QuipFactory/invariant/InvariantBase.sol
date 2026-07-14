@@ -5,9 +5,9 @@ import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipFactoryInvariantHandler, FactoryImplStub} from "./Handler.t.sol";
 
 /// @title QuipFactory Invariant Test Base
-/// @dev Hands factory ownership to the fuzz Handler via Ownable2Step's
-///      two-step handover so `onlyOwner` calls inside fuzz selectors
-///      need no pranking. Seeds the Handler with a pool of pre-deployed
+/// @dev Hands factory ownership to the fuzz Handler (Solady Ownable's
+///      immediate `transferOwnership`) so `onlyOwner` calls inside fuzz
+///      selectors need no pranking. Seeds the Handler with a pool of pre-deployed
 ///      `FactoryImplStub` pairs — each pair shares a codehash so the
 ///      `vettedWalletImpls[codehash]` rebind path inside
 ///      `undeprecateImplementation` is reachable. Subclasses declare
@@ -28,12 +28,11 @@ abstract contract QuipFactoryInvariantBase is QuipFactoryTest {
 
         handler = new QuipFactoryInvariantHandler();
 
-        // Ownable2Step handover: ADMIN initiates, handler accepts.
-        // Post-accept, `factory.owner() == address(handler)` and every
-        // fuzzed `onlyOwner` call resolves directly.
+        // Solady Ownable: `transferOwnership` is immediate. Post-transfer,
+        // `factory.owner() == address(handler)` and every fuzzed
+        // `onlyOwner` call resolves directly.
         vm.prank(ADMIN);
         factory.transferOwnership(address(handler));
-        handler.acceptFactoryOwnership(factory);
 
         // Pre-deploy the (original, twin) pool. `id = i + 1` ensures each
         // slot's stubs have a distinct immutable value baked into runtime

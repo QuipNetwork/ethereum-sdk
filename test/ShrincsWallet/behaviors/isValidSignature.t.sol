@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {SHRINCSVerifier} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCSVerifier.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -14,7 +19,7 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
     bytes32 internal constant HASH = keccak256("erc1271-message");
 
     /// @dev Encodes the ERC-1271 `(PublicKey, StatelessSignature, bytes ecdsaSig)` blob.
-    function _blob(ShrincsTypes.PublicKey memory pk, ShrincsTypes.StatelessSignature memory sig, bytes memory ecdsaSig)
+    function _blob(SHRINCS.PublicKey memory pk, SPHINCSPlusC.Signature memory sig, bytes memory ecdsaSig)
         internal
         pure
         returns (bytes memory)
@@ -33,7 +38,7 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
     function test_isValidSignature_revertsWhen_invalidEcdsa() public {
         (, uint256 wrongPk) = makeAddrAndKey("wrongSigner");
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongPk, wallet.quipSignedHashEcdsaTarget(HASH));
-        ShrincsTypes.StatelessSignature memory emptySig;
+        SPHINCSPlusC.Signature memory emptySig;
         bytes memory blob = _blob(erc1271Pk, emptySig, abi.encodePacked(r, s, v));
 
         assertEq(wallet.isValidSignature(HASH, blob), FAIL);
@@ -45,7 +50,7 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
 
     function test_isValidSignature_revertsWhen_invalidShrincs() public {
         // Owner ECDSA is valid, but the (empty) stateless signature fails SHRINCS verification.
-        ShrincsTypes.StatelessSignature memory emptySig;
+        SPHINCSPlusC.Signature memory emptySig;
         bytes memory blob = _blob(erc1271Pk, emptySig, _ownerEcdsa(HASH));
 
         assertEq(wallet.isValidSignature(HASH, blob), FAIL);
@@ -56,16 +61,27 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
     }
 
     function test_isValidSignature_ok() public {
-        ShrincsTypes.StatelessSignature memory sig = _signErc1271(HASH);
+        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
         bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
         assertEq(wallet.isValidSignature(HASH, blob), MAGIC);
         assertEq(uint8(wallet.debugIsValidSignature(HASH, blob)), uint8(IShrincsWallet.Erc1271ValidationResult.Ok));
     }
 
+    /// @dev The stateless 1271 verify must actually leave the wallet: a valid blob staticcalls
+    ///      the pinned verifier's `verifyStateless`.
+    function test_isValidSignature_delegatesToVerifier() public {
+        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
+        vm.expectCall(
+            address(shrincsVerifier), abi.encodeWithSelector(SHRINCSVerifier.verifyStateless.selector)
+        );
+        assertEq(wallet.isValidSignature(HASH, blob), MAGIC, "valid through the external verifier");
+    }
+
     /// @dev Intended supersession: the 1271 context binds the LIVE action nonce, so a blob dies
     ///      the moment any wallet signature is consumed — and a fresh re-sign is valid again.
     function test_isValidSignature_staleNonceRejected_freshResignOk() public {
-        ShrincsTypes.StatelessSignature memory sig = _signErc1271(HASH);
+        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
         bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
         assertEq(wallet.isValidSignature(HASH, blob), MAGIC, "fresh blob valid");
 
@@ -79,7 +95,7 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         );
 
         // Re-signing against the new live nonce restores validity.
-        ShrincsTypes.StatelessSignature memory fresh = _signErc1271(HASH);
+        SPHINCSPlusC.Signature memory fresh = _signErc1271(HASH);
         bytes memory freshBlob = _blob(erc1271Pk, fresh, _ownerEcdsa(HASH));
         assertEq(wallet.isValidSignature(HASH, freshBlob), MAGIC, "re-signed blob valid");
     }

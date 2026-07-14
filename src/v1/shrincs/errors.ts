@@ -142,6 +142,16 @@ export class ZeroAddressOwnerError extends QuipError {
   }
 }
 
+export class ZeroAddressVerifierError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_ZERO_ADDRESS_VERIFIER",
+      "SHRINCS verifier address is zero",
+      opts
+    );
+  }
+}
+
 export class InvalidFactoryError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_INVALID_FACTORY", "Caller is not the wallet factory", opts);
@@ -188,7 +198,7 @@ export class ZeroMaxSignaturesError extends QuipError {
 
 /// A declared hash suite other than `HASH_SUITE_KECCAK_256` was supplied at
 /// install/rotate time (wallet initialize/migrate/setErc1271Key, paymaster
-/// initialize/setShrincsVerifier).
+/// initialize).
 export class UnsupportedHashSuiteError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
@@ -246,6 +256,55 @@ export class StatefulBudgetExhaustedError extends QuipError {
     );
     this.maxSignatures = maxSignatures;
     this.used = used;
+  }
+}
+
+/// `markLeavesUsed` was called with an empty target array. Burning the
+/// authorizing leaf for nothing is almost certainly a mistake; a deliberate
+/// single-leaf burn already exists via the empty `execute` path.
+export class EmptyLeavesError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EMPTY_LEAVES",
+      "markLeavesUsed requires at least one target leaf",
+      opts
+    );
+  }
+}
+
+/// A `markLeavesUsed` target leaf is zero or exceeds the installed key's
+/// `maxSignatures` budget — a client bug, not a race, so the whole batch fails.
+export class LeafOutOfRangeError extends QuipError {
+  readonly leaf: number;
+  readonly maxSignatures?: number;
+  constructor(leaf: number, maxSignatures?: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_LEAF_OUT_OF_RANGE",
+      maxSignatures === undefined
+        ? `Revocation target leaf ${leaf} is out of range`
+        : `Revocation target leaf ${leaf} is out of range (valid: 1..${maxSignatures})`,
+      opts
+    );
+    this.leaf = leaf;
+    this.maxSignatures = maxSignatures;
+  }
+}
+
+/// Client-side only (never a contract revert): the explicitly-chosen authorizing
+/// leaf is inside the revocation target set. A leaf being revoked has typically
+/// already signed a message off-chain — authorizing with it would make its
+/// one-time key sign a SECOND message, the exact key reuse `markLeavesUsed`
+/// exists to prevent. Pick an authorizing leaf outside the target set (or omit
+/// the override and let the client choose one).
+export class AuthLeafInTargetsError extends QuipError {
+  readonly leaf: number;
+  constructor(leaf: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_AUTH_LEAF_IN_TARGETS",
+      `Authorizing leaf ${leaf} is inside the revocation target set (OTS key-reuse hazard)`,
+      opts
+    );
+    this.leaf = leaf;
   }
 }
 

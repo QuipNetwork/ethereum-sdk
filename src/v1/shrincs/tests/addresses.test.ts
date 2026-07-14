@@ -10,13 +10,17 @@ import {
   getShrincsAddresses,
 } from "../addresses.js";
 
-// Deterministic CREATE3 addresses from `script/PredictAddresses.s.sol` (salts
-// QUIP:ShrincsWallet:V1.0 / QUIP:ShrincsPaymaster:Impl:V1.0 / :Proxy:V1.0).
-// Pinned here so a salt/Deployer drift is caught.
+// Deterministic CREATE3 addresses from `script/PredictAddresses.s.sol`. The
+// impl salts bind the verifier scheme tag: `"QUIP:ShrincsWallet:V1.1:" ‖
+// keccak256("shrincs-256s-keccak")` (and the paymaster-impl analog); the proxy
+// salt is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1`. Pinned here so a
+// salt/Deployer drift is caught. `ShrincsVerifier` is the canonical
+// hashsigs-solidity CREATE3 deploy the implementations pin.
 const EXPECTED = {
-  ShrincsWalletImplementation: "0xD1f3b80793D952551C26E31CC147e5df4149De76",
-  ShrincsPaymaster: "0x50a75bAF3a1eB13A266cA9a6b0ac916A62BC392F",
-  ShrincsPaymasterImpl: "0x5F5210F324Ab9dce1080DB0fab0c3C55b51209b6",
+  ShrincsWalletImplementation: "0x2A4C7Cc9117a37dC9498A67637C9Fcf109C5b2aC",
+  ShrincsPaymaster: "0x681B88b513D1ee3ee9bD4f3A4f6f2F6a8d4d6365",
+  ShrincsPaymasterImpl: "0xC318894cb679EAc20e26Ad0762Cce5411A3B2386",
+  ShrincsVerifier: "0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A",
 } as const;
 
 describe("shrincs addresses", () => {
@@ -26,6 +30,7 @@ describe("shrincs addresses", () => {
     expect(d.ShrincsWalletImplementation).toBe(EXPECTED.ShrincsWalletImplementation);
     expect(d.ShrincsPaymaster).toBe(EXPECTED.ShrincsPaymaster);
     expect(d.ShrincsPaymasterImpl).toBe(EXPECTED.ShrincsPaymasterImpl);
+    expect(d.ShrincsVerifier).toBe(EXPECTED.ShrincsVerifier);
   });
 
   it("addresses are valid checksummed addresses", () => {

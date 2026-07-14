@@ -9,6 +9,11 @@ export const shrincsWalletAbi = [
         "name": "factory_",
         "type": "address",
         "internalType": "address payable"
+      },
+      {
+        "name": "shrincsVerifier_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -30,6 +35,19 @@ export const shrincsWalletAbi = [
         "name": "",
         "type": "address",
         "internalType": "address payable"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "SHRINCS_VERIFIER",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -185,7 +203,7 @@ export const shrincsWalletAbi = [
       {
         "name": "publicKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.PublicKey",
+        "internalType": "struct SHRINCS.PublicKey",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -212,7 +230,7 @@ export const shrincsWalletAbi = [
       {
         "name": "signature",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatefulSignature",
+        "internalType": "struct SHRINCS.Signature",
         "components": [
           {
             "name": "randomizer",
@@ -480,6 +498,19 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "getShrincsVerifier",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -564,6 +595,73 @@ export const shrincsWalletAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "markLeavesUsed",
+    "inputs": [
+      {
+        "name": "publicKey",
+        "type": "tuple",
+        "internalType": "struct SHRINCS.PublicKey",
+        "components": [
+          {
+            "name": "statefulPublicKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "publicKeyCommitment",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "pkSeed",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "hypertreeRoot",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "signature",
+        "type": "tuple",
+        "internalType": "struct SHRINCS.Signature",
+        "components": [
+          {
+            "name": "randomizer",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "counter",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "chains",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          },
+          {
+            "name": "authPath",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "leaves",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -675,7 +773,7 @@ export const shrincsWalletAbi = [
       {
         "name": "currentPublicKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.PublicKey",
+        "internalType": "struct SHRINCS.PublicKey",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -702,12 +800,12 @@ export const shrincsWalletAbi = [
       {
         "name": "recoverySignature",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatelessSignature",
+        "internalType": "struct SPHINCSPlusC.Signature",
         "components": [
           {
             "name": "fors",
             "type": "tuple",
-            "internalType": "struct ShrincsTypes.ForsSignature",
+            "internalType": "struct FORSMinusC.ForsSignature",
             "components": [
               {
                 "name": "randomizer",
@@ -722,7 +820,7 @@ export const shrincsWalletAbi = [
               {
                 "name": "entries",
                 "type": "tuple[]",
-                "internalType": "struct ShrincsTypes.ForsEntry[]",
+                "internalType": "struct FORSMinusC.ForsEntry[]",
                 "components": [
                   {
                     "name": "secretLeaf",
@@ -741,18 +839,8 @@ export const shrincsWalletAbi = [
           {
             "name": "hypertree",
             "type": "tuple[]",
-            "internalType": "struct ShrincsTypes.HypertreeLayerSignature[]",
+            "internalType": "struct Hypertree.HypertreeLayerSignature[]",
             "components": [
-              {
-                "name": "treeIndex",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "leafIndex",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
               {
                 "name": "wotsCPkHash",
                 "type": "bytes",
@@ -761,7 +849,7 @@ export const shrincsWalletAbi = [
               {
                 "name": "wotsCSignature",
                 "type": "tuple",
-                "internalType": "struct ShrincsTypes.WotsCSignature",
+                "internalType": "struct WOTSPlusC.WotsCSignature",
                 "components": [
                   {
                     "name": "randomizer",
@@ -792,7 +880,7 @@ export const shrincsWalletAbi = [
       {
         "name": "nextKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.RotationTarget",
+        "internalType": "struct SHRINCS.RotationTarget",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -854,7 +942,7 @@ export const shrincsWalletAbi = [
       {
         "name": "currentPublicKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.PublicKey",
+        "internalType": "struct SHRINCS.PublicKey",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -881,7 +969,7 @@ export const shrincsWalletAbi = [
       {
         "name": "signature",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatefulSignature",
+        "internalType": "struct SHRINCS.Signature",
         "components": [
           {
             "name": "randomizer",
@@ -908,7 +996,7 @@ export const shrincsWalletAbi = [
       {
         "name": "nextStatefulKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatefulRotationTarget",
+        "internalType": "struct SHRINCS.StatefulRotationTarget",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -933,7 +1021,7 @@ export const shrincsWalletAbi = [
       {
         "name": "publicKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.PublicKey",
+        "internalType": "struct SHRINCS.PublicKey",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -960,7 +1048,7 @@ export const shrincsWalletAbi = [
       {
         "name": "signature",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatefulSignature",
+        "internalType": "struct SHRINCS.Signature",
         "components": [
           {
             "name": "randomizer",
@@ -1055,7 +1143,7 @@ export const shrincsWalletAbi = [
       {
         "name": "currentPublicKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.PublicKey",
+        "internalType": "struct SHRINCS.PublicKey",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -1082,7 +1170,7 @@ export const shrincsWalletAbi = [
       {
         "name": "ownerBindingSignature",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatefulSignature",
+        "internalType": "struct SHRINCS.Signature",
         "components": [
           {
             "name": "randomizer",
@@ -1109,12 +1197,12 @@ export const shrincsWalletAbi = [
       {
         "name": "recoverySignature",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatelessSignature",
+        "internalType": "struct SPHINCSPlusC.Signature",
         "components": [
           {
             "name": "fors",
             "type": "tuple",
-            "internalType": "struct ShrincsTypes.ForsSignature",
+            "internalType": "struct FORSMinusC.ForsSignature",
             "components": [
               {
                 "name": "randomizer",
@@ -1129,7 +1217,7 @@ export const shrincsWalletAbi = [
               {
                 "name": "entries",
                 "type": "tuple[]",
-                "internalType": "struct ShrincsTypes.ForsEntry[]",
+                "internalType": "struct FORSMinusC.ForsEntry[]",
                 "components": [
                   {
                     "name": "secretLeaf",
@@ -1148,18 +1236,8 @@ export const shrincsWalletAbi = [
           {
             "name": "hypertree",
             "type": "tuple[]",
-            "internalType": "struct ShrincsTypes.HypertreeLayerSignature[]",
+            "internalType": "struct Hypertree.HypertreeLayerSignature[]",
             "components": [
-              {
-                "name": "treeIndex",
-                "type": "uint64",
-                "internalType": "uint64"
-              },
-              {
-                "name": "leafIndex",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
               {
                 "name": "wotsCPkHash",
                 "type": "bytes",
@@ -1168,7 +1246,7 @@ export const shrincsWalletAbi = [
               {
                 "name": "wotsCSignature",
                 "type": "tuple",
-                "internalType": "struct ShrincsTypes.WotsCSignature",
+                "internalType": "struct WOTSPlusC.WotsCSignature",
                 "components": [
                   {
                     "name": "randomizer",
@@ -1199,7 +1277,7 @@ export const shrincsWalletAbi = [
       {
         "name": "nextKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.RotationTarget",
+        "internalType": "struct SHRINCS.RotationTarget",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -1395,7 +1473,7 @@ export const shrincsWalletAbi = [
       {
         "name": "publicKey",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.PublicKey",
+        "internalType": "struct SHRINCS.PublicKey",
         "components": [
           {
             "name": "statefulPublicKey",
@@ -1422,7 +1500,7 @@ export const shrincsWalletAbi = [
       {
         "name": "signature",
         "type": "tuple",
-        "internalType": "struct ShrincsTypes.StatefulSignature",
+        "internalType": "struct SHRINCS.Signature",
         "components": [
           {
             "name": "randomizer",
@@ -1551,6 +1629,44 @@ export const shrincsWalletAbi = [
         "type": "uint32",
         "indexed": true,
         "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LeafRevocationSkipped",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LeafRevoked",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1722,6 +1838,11 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
+    "name": "EmptyLeaves",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ExecuteFeeExceedsCap",
     "inputs": [
       {
@@ -1776,6 +1897,17 @@ export const shrincsWalletAbi = [
     "type": "error",
     "name": "InvalidSignature",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LeafOutOfRange",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1887,6 +2019,11 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "ZeroAddressOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddressVerifier",
     "inputs": []
   },
   {

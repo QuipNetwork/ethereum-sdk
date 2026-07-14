@@ -4,12 +4,31 @@
 export const shrincsPaymasterAbi = [
   {
     "type": "constructor",
-    "inputs": [],
+    "inputs": [
+      {
+        "name": "shrincsVerifier_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
     "name": "ENTRY_POINT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "SHRINCS_VERIFIER",
     "inputs": [],
     "outputs": [
       {
@@ -155,6 +174,19 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "function",
+    "name": "markLeavesUsed",
+    "inputs": [
+      {
+        "name": "leaves",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "owner",
     "inputs": [],
     "outputs": [
@@ -255,22 +287,51 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "function",
-    "name": "setShrincsVerifier",
+    "name": "rotateStatefulKey",
     "inputs": [
       {
-        "name": "commitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "currentPublicKey",
+        "type": "tuple",
+        "internalType": "struct SHRINCS.PublicKey",
+        "components": [
+          {
+            "name": "statefulPublicKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "publicKeyCommitment",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "pkSeed",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "hypertreeRoot",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       },
       {
-        "name": "hashSuite",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "maxSignatures",
-        "type": "uint32",
-        "internalType": "uint32"
+        "name": "nextStatefulKey",
+        "type": "tuple",
+        "internalType": "struct SHRINCS.StatefulRotationTarget",
+        "components": [
+          {
+            "name": "statefulPublicKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "publicKeyCommitment",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       }
     ],
     "outputs": [],
@@ -435,6 +496,75 @@ export const shrincsPaymasterAbi = [
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "KeyRotated",
+    "inputs": [
+      {
+        "name": "previousCommitment",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "nextCommitment",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxSignatures",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LeafRevocationSkipped",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LeafRevoked",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -629,6 +759,16 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "error",
+    "name": "CommitmentMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EmptyLeaves",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidEntryPoint",
     "inputs": []
   },
@@ -636,6 +776,17 @@ export const shrincsPaymasterAbi = [
     "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LeafOutOfRange",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
   },
   {
     "type": "error",
@@ -691,6 +842,11 @@ export const shrincsPaymasterAbi = [
   {
     "type": "error",
     "name": "ZeroAddressOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddressVerifier",
     "inputs": []
   },
   {

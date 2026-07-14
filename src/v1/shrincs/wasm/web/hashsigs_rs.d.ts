@@ -1,115 +1,18 @@
 /* tslint:disable */
 /* eslint-disable */
 export function shrincsKeygen(seed_hex: string, max_stateful_signatures: number): WasmShrincsKeypair;
-export function shrincsVerifyStatelessAction(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, context: ActionContext, signature: StatelessSignature): boolean;
-export function shrincsVerifyStatefulRaw(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, message_hex: string, signature: StatefulSignature): boolean;
-export function shrincsFullRotationMessageHash(expected_public_key_commitment_hex: string, current_public_key: ShrincsPublicKey, context: RotationContext, next_key: RotationTarget): string;
-export function shrincsStatefulRotationMessageHash(expected_public_key_commitment_hex: string, current_public_key: ShrincsPublicKey, context: RotationContext, next_key: StatefulRotationTarget): string;
-export function shrincsStatefulActionMessageHash(expected_public_key_commitment_hex: string, context: ActionContext): string;
-export function shrincsStatelessActionMessageHash(expected_public_key_commitment_hex: string, context: ActionContext): string;
-export function shrincsVerifyStatefulAction(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, context: ActionContext, signature: StatefulSignature): boolean;
-export function shrincsVerifyStatelessRaw(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, message_hex: string, signature: StatelessSignature): boolean;
+export function shrincsStatefulActionMessageHash(expected_public_key_commitment_hex: string, context: any): string;
+export function shrincsStatelessActionMessageHash(expected_public_key_commitment_hex: string, context: any): string;
+export function shrincsStatefulRotationMessageHash(expected_public_key_commitment_hex: string, current_public_key: any, context: any, next_key: any): string;
+export function shrincsFullRotationMessageHash(expected_public_key_commitment_hex: string, current_public_key: any, context: any, next_key: any): string;
+export function shrincsVerifyStatefulRaw(expected_public_key_commitment_hex: string, public_key: any, message_hex: string, signature: any): boolean;
+export function shrincsVerifyStatefulAction(expected_public_key_commitment_hex: string, public_key: any, context: any, signature: any): boolean;
+export function shrincsVerifyStatelessRaw(expected_public_key_commitment_hex: string, public_key: any, message_hex: string, signature: any): boolean;
+export function shrincsVerifyStatelessAction(expected_public_key_commitment_hex: string, public_key: any, context: any, signature: any): boolean;
 /**
  * Initialize Javascript logging and panic handler
  */
 export function solana_program_init(): void;
-export interface HypertreeLayerSignature {
-    treeIndex: bigint;
-    leafIndex: number;
-    wotsCPkHash: string;
-    wotsCSignature: WotsCSignature;
-    authPath: string[];
-}
-
-export interface ShrincsPublicKey {
-    statefulPublicKey: string;
-    publicKeyCommitment: string;
-    pkSeed: string;
-    hypertreeRoot: string;
-}
-
-export interface RotationTarget {
-    statefulPublicKey: string;
-    publicKeyCommitment: string;
-    pkSeed: string;
-    hypertreeRoot: string;
-}
-
-export interface WotsCSignature {
-    randomizer: string;
-    counter: number;
-    chains: string[];
-}
-
-export interface StatefulSignature {
-    randomizer: string;
-    counter: number;
-    chains: string[];
-    authPath: string[];
-}
-
-export interface ActionContext {
-    domainSeparator: string;
-    nonce: string;
-    keyVersion: string;
-    actionType: string;
-    payloadHash: string;
-}
-
-export interface ForsEntry {
-    secretLeaf: string;
-    authPath: string[];
-}
-
-export interface StatefulRotationTarget {
-    statefulPublicKey: string;
-    publicKeyCommitment: string;
-}
-
-export interface RotationContext {
-    domainSeparator: string;
-    nonce: string;
-    keyVersion: string;
-}
-
-export interface StatelessSignature {
-    fors: ForsSignature;
-    hypertree: HypertreeLayerSignature[];
-}
-
-export interface ShrincsExportedSigningKey {
-    statefulSkSeed: string;
-    statefulPrfSeed: string;
-    statefulPkSeed: string;
-    statefulRoot: string;
-    maxStatefulSignatures: number;
-    nextStatefulLeafIndex: number;
-    statelessSkSeed: string;
-    statelessPrfSeed: string;
-    pkSeed: string;
-    hypertreeRoot: string;
-}
-
-export interface ForsSignature {
-    randomizer: string;
-    counter: number;
-    entries: ForsEntry[];
-}
-
-export interface ShrincsAccountSnapshot {
-    currentShrincsPublicKey: string;
-    owner: string;
-    chainId: string;
-    contractAddress: string;
-    domainSeparator: string;
-    nonce: string;
-    keyVersion: string;
-    statelessSignaturesUsed: bigint;
-    statefulPolicy: string;
-    nextStatefulLeafIndex: number;
-    recoveryMode: boolean;
-}
-
 /**
  * A hash; the 32-byte output of a hashing algorithm.
  *
@@ -128,6 +31,10 @@ export class Hash {
    */
   constructor(value: any);
   /**
+   * Return the base58 string representation of the hash
+   */
+  toString(): string;
+  /**
    * Checks if two `Hash`s are equal
    */
   equals(other: Hash): boolean;
@@ -135,10 +42,6 @@ export class Hash {
    * Return the `Uint8Array` representation of the hash
    */
   toBytes(): Uint8Array;
-  /**
-   * Return the base58 string representation of the hash
-   */
-  toString(): string;
 }
 /**
  * wasm-bindgen version of the Instruction struct.
@@ -192,20 +95,13 @@ export class Pubkey {
    */
   constructor(value: any);
   /**
-   * Derive a Pubkey from another Pubkey, string seed, and a program id
+   * Return the base58 string representation of the public key
    */
-  static createWithSeed(base: Pubkey, seed: string, owner: Pubkey): Pubkey;
+  toString(): string;
   /**
-   * Find a valid program address
-   *
-   * Returns:
-   * * `[PubKey, number]` - the program address and bump seed
+   * Check if a `Pubkey` is on the ed25519 curve.
    */
-  static findProgramAddress(seeds: any[], program_id: Pubkey): any;
-  /**
-   * Derive a program address from seeds and a program id
-   */
-  static createProgramAddress(seeds: any[], program_id: Pubkey): Pubkey;
+  isOnCurve(): boolean;
   /**
    * Checks if two `Pubkey`s are equal
    */
@@ -215,34 +111,39 @@ export class Pubkey {
    */
   toBytes(): Uint8Array;
   /**
-   * Return the base58 string representation of the public key
+   * Derive a Pubkey from another Pubkey, string seed, and a program id
    */
-  toString(): string;
+  static createWithSeed(base: Pubkey, seed: string, owner: Pubkey): Pubkey;
   /**
-   * Check if a `Pubkey` is on the ed25519 curve.
+   * Derive a program address from seeds and a program id
    */
-  isOnCurve(): boolean;
+  static createProgramAddress(seeds: any[], program_id: Pubkey): Pubkey;
+  /**
+   * Find a valid program address
+   *
+   * Returns:
+   * * `[PubKey, number]` - the program address and bump seed
+   */
+  static findProgramAddress(seeds: any[], program_id: Pubkey): any;
 }
 export class WasmShrincsAccount {
   free(): void;
-  rotateFullKey(current_public_key: ShrincsPublicKey, recovery_signature: StatelessSignature, next_key: RotationTarget): boolean;
-  enterRecoveryMode(caller_hex: string): void;
-  rotateToFreshKey(current_public_key: ShrincsPublicKey, recovery_signature: StatelessSignature, next_key: StatefulRotationTarget): boolean;
-  verifyStatefulAction(public_key: ShrincsPublicKey, action_type_hex: string, payload_hash_hex: string, signature: StatefulSignature): boolean;
-  verifyStatelessAction(public_key: ShrincsPublicKey, action_type_hex: string, payload_hash_hex: string, signature: StatelessSignature): boolean;
-  setStatefulPolicyLeafBitmap(caller_hex: string): void;
+  constructor(owner_hex: string, chain_id_hex: string, contract_address_hex: string, initial_public_key_commitment_hex: string);
+  snapshot(): any;
+  verifyStatefulAction(public_key: any, action_type_hex: string, payload_hash_hex: string, signature: any): boolean;
+  verifyStatelessAction(public_key: any, action_type_hex: string, payload_hash_hex: string, signature: any): boolean;
+  rotateToFreshKey(current_public_key: any, recovery_signature: any, next_key: any): boolean;
+  rotateFullKey(current_public_key: any, recovery_signature: any, next_key: any): boolean;
   setStatefulPolicyMonotonicIndex(caller_hex: string, initial_leaf_index: number): void;
   setStatefulPolicyRecoveryRotation(caller_hex: string): void;
-  constructor(owner_hex: string, chain_id_hex: string, contract_address_hex: string, initial_public_key_commitment_hex: string);
-  snapshot(): ShrincsAccountSnapshot;
+  setStatefulPolicyLeafBitmap(caller_hex: string): void;
+  enterRecoveryMode(caller_hex: string): void;
 }
 export class WasmShrincsKeypair {
   private constructor();
   free(): void;
-  publicKey(): ShrincsPublicKey;
-  signStatefulRaw(message_hex: string): StatefulSignature;
-  exportSigningKey(): ShrincsExportedSigningKey;
-  signStatelessRaw(message_hex: string): StatelessSignature;
+  publicKey(): any;
+  signStatefulRaw(message_hex: string): any;
   /**
    * Deterministically sign a raw message at a caller-chosen stateful leaf.
    *
@@ -252,73 +153,75 @@ export class WasmShrincsKeypair {
    * requires `authPath.length == leaf`, so the SDK stays authoritative over
    * which leaf is burned.
    */
-  signStatefulRawAt(message_hex: string, leaf: number): StatefulSignature;
+  signStatefulRawAt(message_hex: string, leaf: number): any;
+  signStatelessRaw(message_hex: string): any;
+  exportSigningKey(): any;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly __wbg_wasmshrincsaccount_free: (a: number, b: number) => void;
   readonly __wbg_wasmshrincskeypair_free: (a: number, b: number) => void;
-  readonly shrincsFullRotationMessageHash: (a: number, b: number, c: any, d: any, e: any) => [number, number, number, number];
-  readonly shrincsKeygen: (a: number, b: number, c: number) => [number, number, number];
-  readonly shrincsStatefulActionMessageHash: (a: number, b: number, c: any) => [number, number, number, number];
-  readonly shrincsStatefulRotationMessageHash: (a: number, b: number, c: any, d: any, e: any) => [number, number, number, number];
-  readonly shrincsStatelessActionMessageHash: (a: number, b: number, c: any) => [number, number, number, number];
-  readonly shrincsVerifyStatefulAction: (a: number, b: number, c: any, d: any, e: any) => [number, number, number];
-  readonly shrincsVerifyStatefulRaw: (a: number, b: number, c: any, d: number, e: number, f: any) => [number, number, number];
-  readonly shrincsVerifyStatelessAction: (a: number, b: number, c: any, d: any, e: any) => [number, number, number];
-  readonly shrincsVerifyStatelessRaw: (a: number, b: number, c: any, d: number, e: number, f: any) => [number, number, number];
-  readonly wasmshrincsaccount_enterRecoveryMode: (a: number, b: number, c: number) => [number, number];
-  readonly wasmshrincsaccount_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
-  readonly wasmshrincsaccount_rotateFullKey: (a: number, b: any, c: any, d: any) => [number, number, number];
-  readonly wasmshrincsaccount_rotateToFreshKey: (a: number, b: any, c: any, d: any) => [number, number, number];
-  readonly wasmshrincsaccount_setStatefulPolicyLeafBitmap: (a: number, b: number, c: number) => [number, number];
-  readonly wasmshrincsaccount_setStatefulPolicyMonotonicIndex: (a: number, b: number, c: number, d: number) => [number, number];
-  readonly wasmshrincsaccount_setStatefulPolicyRecoveryRotation: (a: number, b: number, c: number) => [number, number];
-  readonly wasmshrincsaccount_snapshot: (a: number) => [number, number, number];
-  readonly wasmshrincsaccount_verifyStatefulAction: (a: number, b: any, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
-  readonly wasmshrincsaccount_verifyStatelessAction: (a: number, b: any, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
-  readonly wasmshrincskeypair_exportSigningKey: (a: number) => [number, number, number];
   readonly wasmshrincskeypair_publicKey: (a: number) => [number, number, number];
   readonly wasmshrincskeypair_signStatefulRaw: (a: number, b: number, c: number) => [number, number, number];
   readonly wasmshrincskeypair_signStatefulRawAt: (a: number, b: number, c: number, d: number) => [number, number, number];
   readonly wasmshrincskeypair_signStatelessRaw: (a: number, b: number, c: number) => [number, number, number];
+  readonly wasmshrincskeypair_exportSigningKey: (a: number) => [number, number, number];
+  readonly __wbg_wasmshrincsaccount_free: (a: number, b: number) => void;
+  readonly wasmshrincsaccount_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+  readonly wasmshrincsaccount_snapshot: (a: number) => [number, number, number];
+  readonly wasmshrincsaccount_verifyStatefulAction: (a: number, b: any, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
+  readonly wasmshrincsaccount_verifyStatelessAction: (a: number, b: any, c: number, d: number, e: number, f: number, g: any) => [number, number, number];
+  readonly wasmshrincsaccount_rotateToFreshKey: (a: number, b: any, c: any, d: any) => [number, number, number];
+  readonly wasmshrincsaccount_rotateFullKey: (a: number, b: any, c: any, d: any) => [number, number, number];
+  readonly wasmshrincsaccount_setStatefulPolicyMonotonicIndex: (a: number, b: number, c: number, d: number) => [number, number];
+  readonly wasmshrincsaccount_setStatefulPolicyRecoveryRotation: (a: number, b: number, c: number) => [number, number];
+  readonly wasmshrincsaccount_setStatefulPolicyLeafBitmap: (a: number, b: number, c: number) => [number, number];
+  readonly wasmshrincsaccount_enterRecoveryMode: (a: number, b: number, c: number) => [number, number];
+  readonly shrincsKeygen: (a: number, b: number, c: number) => [number, number, number];
+  readonly shrincsStatefulActionMessageHash: (a: number, b: number, c: any) => [number, number, number, number];
+  readonly shrincsStatelessActionMessageHash: (a: number, b: number, c: any) => [number, number, number, number];
+  readonly shrincsStatefulRotationMessageHash: (a: number, b: number, c: any, d: any, e: any) => [number, number, number, number];
+  readonly shrincsFullRotationMessageHash: (a: number, b: number, c: any, d: any, e: any) => [number, number, number, number];
+  readonly shrincsVerifyStatefulRaw: (a: number, b: number, c: any, d: number, e: number, f: any) => [number, number, number];
+  readonly shrincsVerifyStatefulAction: (a: number, b: number, c: any, d: any, e: any) => [number, number, number];
+  readonly shrincsVerifyStatelessRaw: (a: number, b: number, c: any, d: number, e: number, f: any) => [number, number, number];
+  readonly shrincsVerifyStatelessAction: (a: number, b: number, c: any, d: any, e: any) => [number, number, number];
   readonly solana_program_init: () => void;
-  readonly __wbg_get_message_recent_blockhash: (a: number) => number;
   readonly __wbg_message_free: (a: number, b: number) => void;
+  readonly __wbg_get_message_recent_blockhash: (a: number) => number;
   readonly __wbg_set_message_recent_blockhash: (a: number, b: number) => void;
-  readonly systeminstruction_advanceNonceAccount: (a: number, b: number) => number;
-  readonly systeminstruction_allocate: (a: number, b: bigint) => number;
-  readonly systeminstruction_allocateWithSeed: (a: number, b: number, c: number, d: number, e: bigint, f: number) => number;
-  readonly systeminstruction_assign: (a: number, b: number) => number;
-  readonly systeminstruction_assignWithSeed: (a: number, b: number, c: number, d: number, e: number) => number;
-  readonly systeminstruction_authorizeNonceAccount: (a: number, b: number, c: number) => number;
   readonly systeminstruction_createAccount: (a: number, b: number, c: bigint, d: bigint, e: number) => number;
   readonly systeminstruction_createAccountWithSeed: (a: number, b: number, c: number, d: number, e: number, f: bigint, g: bigint, h: number) => number;
-  readonly systeminstruction_createNonceAccount: (a: number, b: number, c: number, d: bigint) => any;
+  readonly systeminstruction_assign: (a: number, b: number) => number;
+  readonly systeminstruction_assignWithSeed: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly systeminstruction_transfer: (a: number, b: number, c: bigint) => number;
   readonly systeminstruction_transferWithSeed: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => number;
+  readonly systeminstruction_allocate: (a: number, b: bigint) => number;
+  readonly systeminstruction_allocateWithSeed: (a: number, b: number, c: number, d: number, e: bigint, f: number) => number;
+  readonly systeminstruction_createNonceAccount: (a: number, b: number, c: number, d: bigint) => any;
+  readonly systeminstruction_advanceNonceAccount: (a: number, b: number) => number;
   readonly systeminstruction_withdrawNonceAccount: (a: number, b: number, c: number, d: bigint) => number;
-  readonly __wbg_instruction_free: (a: number, b: number) => void;
+  readonly systeminstruction_authorizeNonceAccount: (a: number, b: number, c: number) => number;
   readonly __wbg_instructions_free: (a: number, b: number) => void;
   readonly instructions_constructor: () => number;
   readonly instructions_push: (a: number, b: number) => void;
+  readonly __wbg_instruction_free: (a: number, b: number) => void;
   readonly __wbg_pubkey_free: (a: number, b: number) => void;
   readonly pubkey_constructor: (a: any) => [number, number, number];
-  readonly pubkey_createProgramAddress: (a: number, b: number, c: number) => [number, number, number];
-  readonly pubkey_createWithSeed: (a: number, b: number, c: number, d: number) => [number, number, number];
-  readonly pubkey_equals: (a: number, b: number) => number;
-  readonly pubkey_findProgramAddress: (a: number, b: number, c: number) => [number, number, number];
-  readonly pubkey_isOnCurve: (a: number) => number;
-  readonly pubkey_toBytes: (a: number) => [number, number];
   readonly pubkey_toString: (a: number) => [number, number];
+  readonly pubkey_isOnCurve: (a: number) => number;
+  readonly pubkey_equals: (a: number, b: number) => number;
+  readonly pubkey_toBytes: (a: number) => [number, number];
+  readonly pubkey_createWithSeed: (a: number, b: number, c: number, d: number) => [number, number, number];
+  readonly pubkey_createProgramAddress: (a: number, b: number, c: number) => [number, number, number];
+  readonly pubkey_findProgramAddress: (a: number, b: number, c: number) => [number, number, number];
   readonly __wbg_hash_free: (a: number, b: number) => void;
   readonly hash_constructor: (a: any) => [number, number, number];
+  readonly hash_toString: (a: number) => [number, number];
   readonly hash_equals: (a: number, b: number) => number;
   readonly hash_toBytes: (a: number) => [number, number];
-  readonly hash_toString: (a: number) => [number, number];
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;

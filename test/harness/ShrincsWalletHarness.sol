@@ -3,12 +3,15 @@ pragma solidity ^0.8.33;
 
 import {ShrincsWallet} from "../../contracts/shrincs/ShrincsWallet.sol";
 import {ShrincsWalletStorage as Storage} from "../../contracts/shrincs/ShrincsWalletStorage.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 
 /// @dev Test harness exposing `ShrincsWallet` internals and a direct storage installer so
 ///      behavior tests can set up arbitrary state without threading a factory deploy.
 contract ShrincsWalletHarness is ShrincsWallet {
-    constructor(address payable factory_) ShrincsWallet(factory_) {}
+    constructor(
+        address payable factory_,
+        address shrincsVerifier_
+    ) ShrincsWallet(factory_, shrincsVerifier_) {}
 
     /// @dev Wraps the internal ERC-4337 `_validateSignature` for direct unit testing.
     function exposed_validateSignature(
@@ -82,11 +85,28 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _isStatefulLeafUsed(Storage.layout(), keyVersion_, leafIndex);
     }
 
+    /// @dev Wraps the consume-only stateful verify (no action-nonce advance — the
+    ///      `markLeavesUsed` carve-out) so the nonce-neutrality can be pinned directly.
+    function exposed_verifyStatefulAndConsume(
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
+        bytes32 actionType,
+        bytes32 payloadHash
+    ) external returns (uint32) {
+        return
+            _verifyStatefulAndConsume(
+                publicKey,
+                signature,
+                actionType,
+                payloadHash
+            );
+    }
+
     /// @dev Wraps the shared stateful verify + bitmap consume so the budget/used/InvalidSignature
     ///      branches can be exercised directly (the leaf consume mutates state, so non-view).
     function exposed_verifyStatefulAndAdvance(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         bytes32 actionType,
         bytes32 payloadHash
     ) external returns (uint32) {
@@ -97,6 +117,25 @@ contract ShrincsWalletHarness is ShrincsWallet {
                 actionType,
                 payloadHash
             );
+    }
+
+    /// @dev Wraps the stateful revert-policy boundary around the external verifier (raw
+    ///      message hash + pre-encoded envelope, exactly as the internal call sites pass them).
+    function exposed_tryVerifyStateful(
+        bytes32 expectedCommitment,
+        bytes32 messageHash,
+        bytes calldata envelope
+    ) external view returns (bool) {
+        return _tryVerifyStateful(expectedCommitment, messageHash, envelope);
+    }
+
+    /// @dev Wraps the stateless revert-policy boundary around the external verifier.
+    function exposed_tryVerifyStateless(
+        bytes32 expectedCommitment,
+        bytes32 messageHash,
+        bytes calldata envelope
+    ) external view returns (bool) {
+        return _tryVerifyStateless(expectedCommitment, messageHash, envelope);
     }
 
     /// @dev Wraps the guarded-slot tamper check so each of the eight slots can be mutated and the
