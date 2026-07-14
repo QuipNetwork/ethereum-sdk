@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 
 /**
  * @title PredictAddresses
@@ -48,9 +49,23 @@ contract PredictAddresses is Script {
         _predict(deployerAddr, "WOTSPlusImplementation (impl)", keccak256("QUIP:WOTSPlusImplementation:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
-        _predict(deployerAddr, "ShrincsWallet (impl)", keccak256("QUIP:ShrincsWallet:V1.0"));
-        _predict(deployerAddr, "ShrincsPaymaster (impl)", keccak256("QUIP:ShrincsPaymaster:Impl:V1.0"));
-        _predict(deployerAddr, "ShrincsPaymaster (proxy)", keccak256("QUIP:ShrincsPaymaster:Proxy:V1.0"));
+        // Impl salts bind the verifier scheme tag (the verifier's PROFILE_TAG ==
+        // SHRINCSParams.PROFILE_ID) — see DeployShrincsBase: a different
+        // cryptographic scheme must land at a different implementation address.
+        _predict(
+            deployerAddr,
+            "ShrincsWallet (impl)",
+            keccak256(abi.encodePacked("QUIP:ShrincsWallet:V1.1:", SHRINCSParams.PROFILE_ID))
+        );
+        _predict(
+            deployerAddr,
+            "ShrincsPaymaster (impl)",
+            keccak256(abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.1:", SHRINCSParams.PROFILE_ID))
+        );
+        _predict(deployerAddr, "ShrincsPaymaster (proxy)", keccak256("QUIP:ShrincsPaymaster:Proxy:V1.1"));
+        // Not deployed by this repo — the canonical hashsigs-solidity CREATE3
+        // verifier the Shrincs impls pin (see DeployShrincsBase).
+        console.log("SHRINCS256sKeccak (pinned):", 0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A);
     }
 
     function _predict(address deployer, string memory name, bytes32 salt) internal pure {

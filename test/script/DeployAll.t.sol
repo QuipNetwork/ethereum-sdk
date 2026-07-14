@@ -4,6 +4,8 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
+import {SPHINCSPlusC256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC256sKeccak.sol";
 import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
@@ -63,8 +65,11 @@ contract DeployAllTest is Test {
     bytes32 internal constant FACTORY_SALT = keccak256("QUIP:QuipFactory:V1.1");
     bytes32 internal constant WOTS_IMPL_SALT = keccak256("QUIP:WOTSPlusImplementation:V1.1");
     bytes32 internal constant QUIP_PAYMASTER_PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1.1");
-    bytes32 internal constant SHRINCS_WALLET_SALT = keccak256("QUIP:ShrincsWallet:V1.0");
-    bytes32 internal constant SHRINCS_PAYMASTER_PROXY_SALT = keccak256("QUIP:ShrincsPaymaster:Proxy:V1.0");
+    // Impl salts bind the verifier scheme tag (PROFILE_TAG = the profile-name
+    // hash), spelled out literally here per the independent-copy rule above.
+    bytes32 internal constant SHRINCS_WALLET_SALT =
+        keccak256(abi.encodePacked("QUIP:ShrincsWallet:V1.1:", keccak256("shrincs-256s-keccak")));
+    bytes32 internal constant SHRINCS_PAYMASTER_PROXY_SALT = keccak256("QUIP:ShrincsPaymaster:Proxy:V1.1");
 
     address internal owner;
     Deployer internal deployer;
@@ -75,6 +80,11 @@ contract DeployAllTest is Test {
         vm.deal(owner, 100 ether);
         deployer = new Deployer();
         h = new DeployHarness();
+        // Real-chain precondition mirrored locally: the deploy base's
+        // `_requireExists` gate expects the canonical hashsigs-solidity CREATE3
+        // deploys (sibling + SHRINCS verifier) to already exist.
+        vm.etch(0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A, address(new SHRINCS256sKeccak()).code);
+        vm.etch(0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A, address(new SPHINCSPlusC256sKeccak()).code);
     }
 
     function _predict(bytes32 salt) internal view returns (address) {

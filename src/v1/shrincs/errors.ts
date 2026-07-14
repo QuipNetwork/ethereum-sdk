@@ -142,6 +142,16 @@ export class ZeroAddressOwnerError extends QuipError {
   }
 }
 
+export class ZeroAddressVerifierError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_ZERO_ADDRESS_VERIFIER",
+      "SHRINCS verifier address is zero",
+      opts
+    );
+  }
+}
+
 export class InvalidFactoryError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_INVALID_FACTORY", "Caller is not the wallet factory", opts);

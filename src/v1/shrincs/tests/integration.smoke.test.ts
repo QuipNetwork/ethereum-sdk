@@ -103,6 +103,12 @@ describe("Shrincs SDK live-anvil smoke", () => {
       mainKey.publicKeyCommitment.toLowerCase()
     );
 
+    // The wallet delegates signature crypto to the fixture's external verifier
+    // (pinned as an implementation immutable).
+    expect(getAddress(await client.getShrincsVerifier())).toBe(
+      getAddress(stack.shrincsVerifier)
+    );
+
     // getShrincsWallet resolves the same address and validates the commitment.
     const factory = makeShrincsFactoryClient(stack);
     const resolved = await factory.getShrincsWallet(vaultId, signer);

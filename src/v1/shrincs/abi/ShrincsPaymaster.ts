@@ -4,12 +4,31 @@
 export const shrincsPaymasterAbi = [
   {
     "type": "constructor",
-    "inputs": [],
+    "inputs": [
+      {
+        "name": "shrincsVerifier_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
     "name": "ENTRY_POINT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "SHRINCS_VERIFIER",
     "inputs": [],
     "outputs": [
       {
@@ -691,6 +710,11 @@ export const shrincsPaymasterAbi = [
   {
     "type": "error",
     "name": "ZeroAddressOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroAddressVerifier",
     "inputs": []
   },
   {

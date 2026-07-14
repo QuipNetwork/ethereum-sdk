@@ -272,6 +272,18 @@ export class ShrincsWalletClient {
     ) as Promise<Address>;
   }
 
+  /// The pinned external SHRINCS verifier (an implementation immutable) every
+  /// signature check is delegated to.
+  async getShrincsVerifier(): Promise<Address> {
+    return withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: shrincsWalletAbi,
+        functionName: "getShrincsVerifier",
+      })
+    ) as Promise<Address>;
+  }
+
   /// This wallet's ETH deposit held at the EntryPoint — what pays for its own
   /// userOps when they are not sponsored by a paymaster.
   async getDeposit(): Promise<bigint> {

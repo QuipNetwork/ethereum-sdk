@@ -68,10 +68,18 @@ export const SHRINCS_ANVIL_PORTS = {
   smoke: 8560,
 } as const;
 
+/// The SPHINCSPlusC verifier address compile-time pinned inside
+/// `SHRINCS256sKeccak` (dep `DEPLOYMENTS.md`, CREATE3 — same on every chain).
+/// The fixture places its runtime bytecode here; stateless verification
+/// reverts on empty code at this address.
+export const SPHINCS_PLUS_C_SIBLING =
+  "0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A" as const;
+
 // ─── Forge artifact loading ─────────────────────────────────────────
 
 interface ForgeArtifact {
   bytecode: { object: string };
+  deployedBytecode: { object: string };
   abi: unknown;
 }
 
@@ -92,6 +100,9 @@ export interface ShrincsAnvilStack {
   factoryAddress: Address;
   shrincsWalletImpl: Address;
   paymasterProxy: Address;
+  /// The deployed external SHRINCS verifier every wallet/paymaster signature
+  /// check is delegated to (pinned as an implementation immutable).
+  shrincsVerifier: Address;
 }
 
 export interface SetupShrincsAnvilOptions {
@@ -116,6 +127,12 @@ export async function setupShrincsAnvilStack(
   );
   const paymasterArtifact = readForgeArtifact(
     "out/ShrincsPaymaster.sol/ShrincsPaymaster.json"
+  );
+  const shrincsVerifierArtifact = readForgeArtifact(
+    "out/SHRINCS256sKeccak.sol/SHRINCS256sKeccak.json"
+  );
+  const sphincsSiblingArtifact = readForgeArtifact(
+    "out/SPHINCSPlusC256sKeccak.sol/SPHINCSPlusC256sKeccak.json"
   );
   const entryPointFixture = JSON.parse(
     readFileSync(
@@ -149,6 +166,25 @@ export async function setupShrincsAnvilStack(
     bytecode: entryPointFixture.deployedBytecode,
   });
 
+  // SPHINCSPlusC sibling runtime code at its compile-time-pinned address
+  // (constructor-free + storage-free, so placing runtime code is exact),
+  // then the SHRINCS verifier that delegates its stateless half to it.
+  await testClient.setCode({
+    address: SPHINCS_PLUS_C_SIBLING,
+    bytecode: sphincsSiblingArtifact.deployedBytecode.object as Hex,
+  });
+  const verifierHash = await walletClient.deployContract({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    abi: shrincsVerifierArtifact.abi as any,
+    bytecode: shrincsVerifierArtifact.bytecode.object as Hex,
+    account,
+    chain: foundry,
+  });
+  const verifierReceipt = await publicClient.waitForTransactionReceipt({
+    hash: verifierHash,
+  });
+  const shrincsVerifier = verifierReceipt.contractAddress!;
+
   // 1. QuipFactory
   const factoryHash = await walletClient.deployContract({
     abi: quipFactoryAbi,
@@ -167,7 +203,7 @@ export async function setupShrincsAnvilStack(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     abi: walletArtifact.abi as any,
     bytecode: walletArtifact.bytecode.object as Hex,
-    args: [factoryAddress],
+    args: [factoryAddress, shrincsVerifier],
     account,
     chain: foundry,
   });
@@ -186,11 +222,12 @@ export async function setupShrincsAnvilStack(
   });
   await publicClient.waitForTransactionReceipt({ hash: vetHash });
 
-  // 3. ShrincsPaymaster impl (ctor takes no args) + ERC-1967 proxy.
+  // 3. ShrincsPaymaster impl (same pinned-verifier ctor arg) + ERC-1967 proxy.
   const pmImplHash = await walletClient.deployContract({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     abi: paymasterArtifact.abi as any,
     bytecode: paymasterArtifact.bytecode.object as Hex,
+    args: [shrincsVerifier],
     account,
     chain: foundry,
   });
@@ -213,6 +250,7 @@ export async function setupShrincsAnvilStack(
     factoryAddress,
     shrincsWalletImpl,
     paymasterProxy,
+    shrincsVerifier,
   };
 }
 
