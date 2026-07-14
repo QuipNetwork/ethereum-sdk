@@ -268,6 +268,7 @@ The factory's per-owner registry tracks the wallet's CURRENT classical owner. `w
 - No other path mutates `wallet.owner()`: classical `transferOwnership(address)` and the entire two-step handover surface (`requestOwnershipHandover`, `cancelOwnershipHandover`, `completeOwnershipHandover(address)`) all revert. `execute` / `executeBatch` cannot reach the owner slot. `delegateExecute` / `storageStore` would mutate it, but their guards snapshot the seven PQ-sensitive slots (owner included) pre-call and revert post-call, rolling back any attempted change.
 - `updateWalletOwner` is callable only from the wallet whose vaultId it'll mutate (`msg.sender` must be in `vaultIdOf`), and requires `wallet.owner() == newOwner` to have already committed. The combination pins the callback to exactly the `transferOwnership(bytes)` tail.
 - `recoveryUpgrade`, `saveWallet`, `recoverWallet`, `replaceKeys`, `resetKeyset`, `upgradeToAndCall` do not change `owner()`, so the invariant is trivially preserved across them.
+- The "no other path mutates `owner()`" argument is per-implementation, not factory-enforced: it is rule 2 of the vetting contract (21), owed by every vetted family (the WOTS enforcement mechanics above are one family's discharge of it).
 
 The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are write-once in `_deployProxy` and never rotate; `walletOwner[wallet]` and `_vaultIds[owner]` are the only state that rotates on transfer.
 
@@ -345,6 +346,25 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 **Contracts:** ShrincsPaymaster
 
 **Violation consequence:** Epoch reuse would resurrect consumed leaves across rotations (one-time property broken by construction). A free-parameter budget lets the gauge lie about signer capacity. A wrapper nonce reintroduces the global serialization bottleneck and bundler-reputation mass-invalidation. Dropping the declared-commitment equality lets a fat-fingered rotation brick sponsorship silently. Revocation that doesn't spend budget overstates remaining signatures and invites signing past the effective budget.
+
+---
+
+## 21. Factory Implementation-Agnosticism & the Vetting Contract
+
+**The factory is agnostic to the signature scheme securing its wallets: it drives every wallet exclusively through the minimal `IQuipWallet` surface (`initialize` + `owner()`), treats the init payload as fully opaque, and echoes no wallet-family-typed data. Everything the factory cannot enforce in code is a behavioral obligation of vetting — the VETTING CONTRACT stated in `IQuipWallet`'s natspec.**
+
+- **The `IQuipWallet` surface is the whole coupling.** `_deployProxy` calls `initialize(to, payload)`; `updateWalletOwner` reads `owner()`. Nothing else about a wallet family is visible to the factory — no key types, no payload layout (no minimum length either: each family's codec is the sole validator of its own encoding).
+- **`QuipCreated` carries the implementation address, not key material.** The impl identifies the wallet family/version for indexers; each family emits its own `WalletInitialized` event (indexed by factory and owner) with its typed key handles. The factory never slices the payload — an event field typed for one family would lie for every other (as the pre-decoupling `disasterRecoveryKey` field did for SHRINCS deployments).
+- **The vetting contract (behavioral obligations of every vetted implementation):**
+  1. `initialize` callable only by the deploying factory, only once.
+  2. `owner()` mutates ONLY inside the wallet's PQ-authenticated ownership-transfer flow, whose tail calls back `updateWalletOwner(newOwner)` in the same transaction, after the new owner commits. No arbitrary-call, delegatecall, or raw-storage-write path may change `owner()` without that callback.
+  3. Classical (non-PQ) ownership entry points are disabled.
+- **Registry Consistency (16) rests on the vetting contract, not on any family's internals.** The factory's `owner() == newOwner` pin proves the callback fires at the committed moment; that this moment is reachable only via the sanctioned flow is exactly rule 2 — enforced by review at `vetImplementation` time (Implementation Vetting, 7), per family: WOTS via its guard snapshots on `delegateExecute`/`storageStore`, SHRINCS by disabling those paths outright.
+- **Blast radius of a violating implementation is bounded:** it can desync its own wallets' registry entries (UI-level, per invariant 16's consequence), never other wallets, the vetted set, or factory funds.
+
+**Contracts:** QuipFactory, IQuipWallet (natspec), every vetted implementation
+
+**Violation consequence:** Vetting an implementation that breaks rule 2 silently desyncs the per-owner registry for its wallets. Re-typing the factory to one family's shapes re-creates the layout coupling that forced other families to contort their encodings and mislabel indexer data.
 
 ---
 
