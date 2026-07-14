@@ -8,14 +8,10 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for break-glass `recoverWallet` (stateless full-bundle rotation, same owner).
 ///      Access control, the `InvalidSignature` (statelessRotate returns zero) branch, and the
-///      regenerated-vector success path are all exercised.
+///      live-signed success path are all exercised.
 contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
-    function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
-        return _parsePublicKey(".mainKey");
-    }
-
-    function _nextKey() internal view returns (ShrincsTypes.RotationTarget memory) {
-        return _parseRotationTarget(".cases.rotateFullKey.nextKey");
+    function _nextKey() internal pure returns (ShrincsTypes.RotationTarget memory nextKey) {
+        (nextKey,) = _makeRotationTarget("recover-wallet-next-key");
     }
 
     function test_recoverWallet_revertsWhen_notOwner() public {
@@ -23,22 +19,23 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         ShrincsTypes.RotationTarget memory nextKey;
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.recoverWallet(_pk(), recoverySig, nextKey);
+        wallet.recoverWallet(_mainPk(), recoverySig, nextKey);
     }
 
     function test_recoverWallet_revertsWhen_invalidRecoverySignature() public {
         ShrincsTypes.StatelessSignature memory recoverySig; // empty ⇒ statelessRotate returns zero
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.recoverWallet(_pk(), recoverySig, _nextKey());
+        wallet.recoverWallet(_mainPk(), recoverySig, _nextKey());
     }
 
     function test_recoverWallet_succeeds() public {
-        ShrincsTypes.StatelessSignature memory recoverySig = _parseStatelessSignature(".cases.rotateFullKey.signature");
-        bytes32 nextCommitment = _bytes32(".cases.rotateFullKey.nextKey.publicKeyCommitment");
+        ShrincsTypes.RotationTarget memory nextKey = _nextKey();
+        ShrincsTypes.StatelessSignature memory recoverySig = _signFullRotation(nextKey);
+        bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
         uint256 nonceBefore = wallet.actionNonce();
         vm.prank(OWNER);
-        wallet.recoverWallet(_pk(), recoverySig, _nextKey());
+        wallet.recoverWallet(_mainPk(), recoverySig, nextKey);
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "fresh recovery bundle installed");
         assertEq(wallet.owner(), OWNER, "owner unchanged on recovery");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");

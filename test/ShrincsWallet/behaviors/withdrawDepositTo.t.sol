@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -20,7 +21,7 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     address internal constant TO = address(0xD00D);
 
     function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
-        return _parsePublicKey(".mainKey");
+        return _mainPk();
     }
 
     function test_withdraw_revertsWhen_notOwner() public {
@@ -49,16 +50,18 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     }
 
     function test_withdraw_revertsWhen_invalidSignature() public {
+        ShrincsTypes.StatefulSignature memory sig = _wrongContextStatefulSig();
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.withdrawDepositTo(_pk(), _wrongContextStatefulSig(), TO, 1 ether);
+        wallet.withdrawDepositTo(_pk(), sig, TO, 1 ether);
     }
 
     function test_withdraw_succeeds() public {
-        // The WITHDRAW vector binds (TO=0xD00D, amount 0). `ERC4337.withdrawDepositTo` forwards to
+        // Sign the WITHDRAW context over (TO, amount 0). `ERC4337.withdrawDepositTo` forwards to
         // the canonical EntryPoint, so etch a stub there that accepts `withdrawTo`.
         vm.etch(ENTRY_POINT, address(new MockEntryPointStub()).code);
-        ShrincsTypes.StatefulSignature memory sig = _parseStatefulSignature(".cases.withdraw.signature");
+        ShrincsTypes.StatefulSignature memory sig =
+            _signStatefulAction(Codec.ACTION_WITHDRAW, Codec.withdrawPayloadHash(TO, 0), 1);
         vm.prank(OWNER);
         wallet.withdrawDepositTo(_pk(), sig, TO, 0);
         assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");

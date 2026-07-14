@@ -18,7 +18,6 @@
 import { keccak_256 } from "@noble/hashes/sha3";
 import { type Hex, hexToBytes, toHex } from "viem";
 
-import { PARAMETER_SET_ID, parameterSetIdToEnum } from "./constants.js";
 import { publicKeyCommitment } from "./shrincsCodec.js";
 import { ShrincsKeyDerivationSelfTestError } from "./errors.js";
 import {
@@ -61,31 +60,25 @@ export interface ShrincsKeygenOptions {
   /// Stateful signature budget burned into the key's commitment. Must match the
   /// budget the wallet was initialized with when recovering a key for signing.
   maxSignatures: number;
-  /// WASM parameter-set id. Defaults to the only shipped profile.
-  parameterSetId?: string;
 }
 
 export interface DeriveKeyPairParams {
   statefulVaultId: Hex;
   statelessVaultId: Hex;
   maxSignatures: number;
-  parameterSetId?: string;
 }
 
 function graftHybridPublicKey(
-  parameterSetId: string,
   statefulInner: WasmShrincsKeypair,
   statelessInner: WasmShrincsKeypair
 ): ShrincsPublicKey {
   const stateful = statefulInner.publicKey();
   const stateless = statelessInner.publicKey();
   return {
-    parameterSetId,
     statefulPublicKey: stateful.statefulPublicKey,
     pkSeed: stateless.pkSeed,
     hypertreeRoot: stateless.hypertreeRoot,
     publicKeyCommitment: publicKeyCommitment({
-      parameterSetId: parameterSetIdToEnum(parameterSetId),
       statefulPublicKey: stateful.statefulPublicKey,
       pkSeed: stateless.pkSeed,
       hypertreeRoot: stateless.hypertreeRoot,
@@ -103,9 +96,6 @@ export class ShrincsKeyPair {
   /// Long-lived public key bundle. Pass straight into the codec/ABI encoders and
   /// the WASM verify/message-hash entry points.
   readonly publicKey: ShrincsPublicKey;
-  /// WASM string parameter-set id (the scalar argument the WASM entry points
-  /// take, distinct from the bundle's own `parameterSetId` field).
-  readonly parameterSetId: string;
 
   private readonly wasm: ShrincsWasmModule;
   private readonly statefulInner: WasmShrincsKeypair;
@@ -114,17 +104,15 @@ export class ShrincsKeyPair {
   constructor(
     wasm: ShrincsWasmModule,
     statefulInner: WasmShrincsKeypair,
-    parameterSetId: string,
     statelessInner: WasmShrincsKeypair = statefulInner
   ) {
     this.wasm = wasm;
     this.statefulInner = statefulInner;
     this.statelessInner = statelessInner;
-    this.parameterSetId = parameterSetId;
     this.publicKey =
       statelessInner === statefulInner
         ? statefulInner.publicKey()
-        : graftHybridPublicKey(parameterSetId, statefulInner, statelessInner);
+        : graftHybridPublicKey(statefulInner, statelessInner);
   }
 
   /// The installed-key commitment (the on-chain identity of this bundle).
@@ -174,7 +162,6 @@ export class ShrincsKeyPair {
 
   statefulActionMessageHash(context: ActionContext): Hex {
     return this.wasm.shrincsStatefulActionMessageHash(
-      this.parameterSetId,
       this.publicKeyCommitment,
       context
     ) as Hex;
@@ -182,7 +169,6 @@ export class ShrincsKeyPair {
 
   statelessActionMessageHash(context: ActionContext): Hex {
     return this.wasm.shrincsStatelessActionMessageHash(
-      this.parameterSetId,
       this.publicKeyCommitment,
       context
     ) as Hex;
@@ -193,7 +179,6 @@ export class ShrincsKeyPair {
     nextKey: RotationTarget
   ): Hex {
     return this.wasm.shrincsFullRotationMessageHash(
-      this.parameterSetId,
       this.publicKeyCommitment,
       this.publicKey,
       context,
@@ -206,7 +191,6 @@ export class ShrincsKeyPair {
     nextStatefulKey: StatefulRotationTarget
   ): Hex {
     return this.wasm.shrincsStatefulRotationMessageHash(
-      this.parameterSetId,
       this.publicKeyCommitment,
       this.publicKey,
       context,
@@ -229,8 +213,7 @@ export class ShrincsKeyPair {
   // ── verification helpers (self-test / debugging) ───────────────────────────
 
   verifyStatefulRaw(messageHex: Hex, signature: StatefulSignature): boolean {
-    return this.wasm.shrincs_verify_stateful_raw(
-      this.parameterSetId,
+    return this.wasm.shrincsVerifyStatefulRaw(
       this.publicKeyCommitment,
       this.publicKey,
       messageHex,
@@ -242,8 +225,7 @@ export class ShrincsKeyPair {
     context: ActionContext,
     signature: StatelessSignature
   ): boolean {
-    return this.wasm.shrincs_verify_stateless_action(
-      this.parameterSetId,
+    return this.wasm.shrincsVerifyStatelessAction(
       this.publicKeyCommitment,
       this.publicKey,
       context,
@@ -257,7 +239,7 @@ export class ShrincsKeyPair {
 /// it plus a per-wallet `vaultId`:
 ///
 ///   seedHex = keccak256(keccak256(masterSecret) ‖ vaultId)
-///   keypair = shrincsKeygen(parameterSetId, seedHex, maxSignatures)
+///   keypair = shrincsKeygen(seedHex, maxSignatures)
 ///
 /// Unlike the WOTS+ `QuipSigner`, there is **no burn set**: SHRINCS is stateful
 /// and the on-chain used-leaf bitmap is authoritative. The signer never tracks
@@ -300,9 +282,7 @@ export class ShrincsSigner {
   }
 
   deriveKeyPair(params: DeriveKeyPairParams): ShrincsKeyPair {
-    const parameterSetId = params.parameterSetId ?? PARAMETER_SET_ID;
     const statefulInner = this.wasm.shrincsKeygen(
-      parameterSetId,
       this.deriveSeedHex(params.statefulVaultId),
       params.maxSignatures
     );
@@ -310,31 +290,19 @@ export class ShrincsSigner {
       params.statelessVaultId === params.statefulVaultId
         ? statefulInner
         : this.wasm.shrincsKeygen(
-            parameterSetId,
             this.deriveSeedHex(params.statelessVaultId),
             params.maxSignatures
           );
-    const pair = new ShrincsKeyPair(
-      this.wasm,
-      statefulInner,
-      parameterSetId,
-      statelessInner
-    );
+    const pair = new ShrincsKeyPair(this.wasm, statefulInner, statelessInner);
     this.runSelfTest(pair);
     return pair;
   }
 
-  /// Low-level keygen from explicit seed material. Used for recovering keys whose
-  /// seed is held out-of-band and to reproduce the committed test vectors (whose
-  /// seeds are fixed byte strings). Runs the self-test before returning.
+  /// Low-level keygen from explicit seed material. Used for recovering keys
+  /// whose seed is held out-of-band. Runs the self-test before returning.
   keygenFromSeedHex(seedHex: Hex, opts: ShrincsKeygenOptions): ShrincsKeyPair {
-    const parameterSetId = opts.parameterSetId ?? PARAMETER_SET_ID;
-    const inner = this.wasm.shrincsKeygen(
-      parameterSetId,
-      seedHex,
-      opts.maxSignatures
-    );
-    const pair = new ShrincsKeyPair(this.wasm, inner, parameterSetId);
+    const inner = this.wasm.shrincsKeygen(seedHex, opts.maxSignatures);
+    const pair = new ShrincsKeyPair(this.wasm, inner);
     this.runSelfTest(pair);
     return pair;
   }

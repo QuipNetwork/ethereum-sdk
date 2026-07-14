@@ -7,7 +7,6 @@ import { toHex, type Hex } from "viem";
 
 import { ShrincsSigner } from "../shrincsSigner.js";
 import { publicKeyCommitment } from "../shrincsCodec.js";
-import { parameterSetIdToEnum } from "../constants.js";
 import { type ActionContext } from "../types.js";
 
 const MAX_SIG = 8;
@@ -48,7 +47,6 @@ describe("ShrincsSigner.deriveKeyPair", () => {
     expect(hybrid.publicKey.hypertreeRoot).toBe(sHalf.publicKey.hypertreeRoot);
     expect(hybrid.publicKeyCommitment).toBe(
       publicKeyCommitment({
-        parameterSetId: parameterSetIdToEnum(hybrid.parameterSetId),
         statefulPublicKey: tHalf.publicKey.statefulPublicKey,
         pkSeed: sHalf.publicKey.pkSeed,
         hypertreeRoot: sHalf.publicKey.hypertreeRoot,

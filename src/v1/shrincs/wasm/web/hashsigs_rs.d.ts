@@ -1,19 +1,115 @@
 /* tslint:disable */
 /* eslint-disable */
-export function shrincs_verify_stateless_action(parameter_set_id: string, expected_public_key_commitment_hex: string, public_key: any, context: any, signature: any): boolean;
-export function shrincs_verify_stateless_raw(parameter_set_id: string, expected_public_key_commitment_hex: string, public_key: any, message_hex: string, signature: any): boolean;
-export function supported_parameter_sets(): string[];
-export function shrincsStatefulRotationMessageHash(parameter_set_id: string, expected_public_key_commitment_hex: string, current_public_key: any, context: any, next_key: any): string;
-export function shrincsStatefulActionMessageHash(parameter_set_id: string, expected_public_key_commitment_hex: string, context: any): string;
-export function shrincs_verify_stateful_action(parameter_set_id: string, expected_public_key_commitment_hex: string, public_key: any, context: any, signature: any): boolean;
-export function shrincsFullRotationMessageHash(parameter_set_id: string, expected_public_key_commitment_hex: string, current_public_key: any, context: any, next_key: any): string;
-export function shrincs_verify_stateful_raw(parameter_set_id: string, expected_public_key_commitment_hex: string, public_key: any, message_hex: string, signature: any): boolean;
-export function shrincsStatelessActionMessageHash(parameter_set_id: string, expected_public_key_commitment_hex: string, context: any): string;
-export function shrincsKeygen(parameter_set_id: string, seed_hex: string, max_stateful_signatures: number): WasmShrincsKeypair;
+export function shrincsKeygen(seed_hex: string, max_stateful_signatures: number): WasmShrincsKeypair;
+export function shrincsVerifyStatelessAction(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, context: ActionContext, signature: StatelessSignature): boolean;
+export function shrincsVerifyStatefulRaw(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, message_hex: string, signature: StatefulSignature): boolean;
+export function shrincsFullRotationMessageHash(expected_public_key_commitment_hex: string, current_public_key: ShrincsPublicKey, context: RotationContext, next_key: RotationTarget): string;
+export function shrincsStatefulRotationMessageHash(expected_public_key_commitment_hex: string, current_public_key: ShrincsPublicKey, context: RotationContext, next_key: StatefulRotationTarget): string;
+export function shrincsStatefulActionMessageHash(expected_public_key_commitment_hex: string, context: ActionContext): string;
+export function shrincsStatelessActionMessageHash(expected_public_key_commitment_hex: string, context: ActionContext): string;
+export function shrincsVerifyStatefulAction(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, context: ActionContext, signature: StatefulSignature): boolean;
+export function shrincsVerifyStatelessRaw(expected_public_key_commitment_hex: string, public_key: ShrincsPublicKey, message_hex: string, signature: StatelessSignature): boolean;
 /**
  * Initialize Javascript logging and panic handler
  */
 export function solana_program_init(): void;
+export interface HypertreeLayerSignature {
+    treeIndex: bigint;
+    leafIndex: number;
+    wotsCPkHash: string;
+    wotsCSignature: WotsCSignature;
+    authPath: string[];
+}
+
+export interface ShrincsPublicKey {
+    statefulPublicKey: string;
+    publicKeyCommitment: string;
+    pkSeed: string;
+    hypertreeRoot: string;
+}
+
+export interface RotationTarget {
+    statefulPublicKey: string;
+    publicKeyCommitment: string;
+    pkSeed: string;
+    hypertreeRoot: string;
+}
+
+export interface WotsCSignature {
+    randomizer: string;
+    counter: number;
+    chains: string[];
+}
+
+export interface StatefulSignature {
+    randomizer: string;
+    counter: number;
+    chains: string[];
+    authPath: string[];
+}
+
+export interface ActionContext {
+    domainSeparator: string;
+    nonce: string;
+    keyVersion: string;
+    actionType: string;
+    payloadHash: string;
+}
+
+export interface ForsEntry {
+    secretLeaf: string;
+    authPath: string[];
+}
+
+export interface StatefulRotationTarget {
+    statefulPublicKey: string;
+    publicKeyCommitment: string;
+}
+
+export interface RotationContext {
+    domainSeparator: string;
+    nonce: string;
+    keyVersion: string;
+}
+
+export interface StatelessSignature {
+    fors: ForsSignature;
+    hypertree: HypertreeLayerSignature[];
+}
+
+export interface ShrincsExportedSigningKey {
+    statefulSkSeed: string;
+    statefulPrfSeed: string;
+    statefulPkSeed: string;
+    statefulRoot: string;
+    maxStatefulSignatures: number;
+    nextStatefulLeafIndex: number;
+    statelessSkSeed: string;
+    statelessPrfSeed: string;
+    pkSeed: string;
+    hypertreeRoot: string;
+}
+
+export interface ForsSignature {
+    randomizer: string;
+    counter: number;
+    entries: ForsEntry[];
+}
+
+export interface ShrincsAccountSnapshot {
+    currentShrincsPublicKey: string;
+    owner: string;
+    chainId: string;
+    contractAddress: string;
+    domainSeparator: string;
+    nonce: string;
+    keyVersion: string;
+    statelessSignaturesUsed: bigint;
+    statefulPolicy: string;
+    nextStatefulLeafIndex: number;
+    recoveryMode: boolean;
+}
+
 /**
  * A hash; the 32-byte output of a hashing algorithm.
  *
@@ -129,24 +225,24 @@ export class Pubkey {
 }
 export class WasmShrincsAccount {
   free(): void;
-  rotateFullKey(current_public_key: any, recovery_signature: any, next_key: any): boolean;
+  rotateFullKey(current_public_key: ShrincsPublicKey, recovery_signature: StatelessSignature, next_key: RotationTarget): boolean;
   enterRecoveryMode(caller_hex: string): void;
-  rotateToFreshKey(current_public_key: any, recovery_signature: any, next_key: any): boolean;
-  verifyStatefulAction(public_key: any, action_type_hex: string, payload_hash_hex: string, signature: any): boolean;
-  verifyStatelessAction(public_key: any, action_type_hex: string, payload_hash_hex: string, signature: any): boolean;
+  rotateToFreshKey(current_public_key: ShrincsPublicKey, recovery_signature: StatelessSignature, next_key: StatefulRotationTarget): boolean;
+  verifyStatefulAction(public_key: ShrincsPublicKey, action_type_hex: string, payload_hash_hex: string, signature: StatefulSignature): boolean;
+  verifyStatelessAction(public_key: ShrincsPublicKey, action_type_hex: string, payload_hash_hex: string, signature: StatelessSignature): boolean;
   setStatefulPolicyLeafBitmap(caller_hex: string): void;
   setStatefulPolicyMonotonicIndex(caller_hex: string, initial_leaf_index: number): void;
   setStatefulPolicyRecoveryRotation(caller_hex: string): void;
   constructor(owner_hex: string, chain_id_hex: string, contract_address_hex: string, initial_public_key_commitment_hex: string);
-  snapshot(): any;
+  snapshot(): ShrincsAccountSnapshot;
 }
 export class WasmShrincsKeypair {
   private constructor();
   free(): void;
-  publicKey(): any;
-  signStatefulRaw(message_hex: string): any;
-  exportSigningKey(): any;
-  signStatelessRaw(message_hex: string): any;
+  publicKey(): ShrincsPublicKey;
+  signStatefulRaw(message_hex: string): StatefulSignature;
+  exportSigningKey(): ShrincsExportedSigningKey;
+  signStatelessRaw(message_hex: string): StatelessSignature;
   /**
    * Deterministically sign a raw message at a caller-chosen stateful leaf.
    *
@@ -156,7 +252,7 @@ export class WasmShrincsKeypair {
    * requires `authPath.length == leaf`, so the SDK stays authoritative over
    * which leaf is burned.
    */
-  signStatefulRawAt(message_hex: string, leaf: number): any;
+  signStatefulRawAt(message_hex: string, leaf: number): StatefulSignature;
 }
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -165,16 +261,15 @@ export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_wasmshrincsaccount_free: (a: number, b: number) => void;
   readonly __wbg_wasmshrincskeypair_free: (a: number, b: number) => void;
-  readonly shrincsFullRotationMessageHash: (a: number, b: number, c: number, d: number, e: any, f: any, g: any) => [number, number, number, number];
-  readonly shrincsKeygen: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-  readonly shrincsStatefulActionMessageHash: (a: number, b: number, c: number, d: number, e: any) => [number, number, number, number];
-  readonly shrincsStatefulRotationMessageHash: (a: number, b: number, c: number, d: number, e: any, f: any, g: any) => [number, number, number, number];
-  readonly shrincsStatelessActionMessageHash: (a: number, b: number, c: number, d: number, e: any) => [number, number, number, number];
-  readonly shrincs_verify_stateful_action: (a: number, b: number, c: number, d: number, e: any, f: any, g: any) => [number, number, number];
-  readonly shrincs_verify_stateful_raw: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any) => [number, number, number];
-  readonly shrincs_verify_stateless_action: (a: number, b: number, c: number, d: number, e: any, f: any, g: any) => [number, number, number];
-  readonly shrincs_verify_stateless_raw: (a: number, b: number, c: number, d: number, e: any, f: number, g: number, h: any) => [number, number, number];
-  readonly supported_parameter_sets: () => [number, number];
+  readonly shrincsFullRotationMessageHash: (a: number, b: number, c: any, d: any, e: any) => [number, number, number, number];
+  readonly shrincsKeygen: (a: number, b: number, c: number) => [number, number, number];
+  readonly shrincsStatefulActionMessageHash: (a: number, b: number, c: any) => [number, number, number, number];
+  readonly shrincsStatefulRotationMessageHash: (a: number, b: number, c: any, d: any, e: any) => [number, number, number, number];
+  readonly shrincsStatelessActionMessageHash: (a: number, b: number, c: any) => [number, number, number, number];
+  readonly shrincsVerifyStatefulAction: (a: number, b: number, c: any, d: any, e: any) => [number, number, number];
+  readonly shrincsVerifyStatefulRaw: (a: number, b: number, c: any, d: number, e: number, f: any) => [number, number, number];
+  readonly shrincsVerifyStatelessAction: (a: number, b: number, c: any, d: any, e: any) => [number, number, number];
+  readonly shrincsVerifyStatelessRaw: (a: number, b: number, c: any, d: number, e: number, f: any) => [number, number, number];
   readonly wasmshrincsaccount_enterRecoveryMode: (a: number, b: number, c: number) => [number, number];
   readonly wasmshrincsaccount_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
   readonly wasmshrincsaccount_rotateFullKey: (a: number, b: any, c: any, d: any) => [number, number, number];
@@ -231,7 +326,6 @@ export interface InitOutput {
   readonly __wbindgen_export_4: WebAssembly.Table;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
   readonly __externref_table_dealloc: (a: number) => void;
-  readonly __externref_drop_slice: (a: number, b: number) => void;
   readonly __wbindgen_start: () => void;
 }
 

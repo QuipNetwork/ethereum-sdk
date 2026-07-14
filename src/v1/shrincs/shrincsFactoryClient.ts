@@ -37,7 +37,6 @@ import {
 } from "../errors.js";
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { getShrincsAddresses } from "./addresses.js";
-import { type ParameterSetId, parameterSetIdToEnum } from "./constants.js";
 import {
   CommitmentMismatchError,
   ImplementationNotVettedError,
@@ -66,11 +65,11 @@ export function randomVaultId(): Hex {
 /// it (exactly as it must for the main `vaultId`). Either:
 ///   - `{ vaultId, maxSignatures? }`: derive it from the SAME `signer` under a
 ///     caller-chosen vault branch (recover later via the same `vaultId`), or
-///   - `{ commitment, parameterSetId }`: supply a precomputed commitment for a
-///     fully independent key (e.g. a different signer or an out-of-band key).
+///   - `{ commitment }`: supply a precomputed commitment for a fully
+///     independent key (e.g. a different signer or an out-of-band key).
 export type Erc1271KeySpec =
   | { vaultId: Hex; maxSignatures?: number }
-  | { commitment: Hex; parameterSetId: ParameterSetId };
+  | { commitment: Hex };
 
 export interface ShrincsFactoryClientParams {
   publicClient: PublicClient;
@@ -159,22 +158,18 @@ export class ShrincsFactoryClient {
     // Resolve the ERC-1271 verifier commitment from whichever explicit form the
     // caller chose — never inferred from the main key/vaultId.
     let erc1271Commitment: Hex;
-    let erc1271ParameterSetId: ParameterSetId;
     if ("vaultId" in params.erc1271) {
       const erc1271Key = params.signer.recoverKeyPair(params.erc1271.vaultId, {
         maxSignatures: params.erc1271.maxSignatures ?? params.maxSignatures,
       });
       erc1271Commitment = erc1271Key.publicKeyCommitment;
-      erc1271ParameterSetId = parameterSetIdToEnum(erc1271Key.parameterSetId);
     } else {
       erc1271Commitment = params.erc1271.commitment;
-      erc1271ParameterSetId = params.erc1271.parameterSetId;
     }
 
     const initPayload = encodeInitPayload({
       mainBundle: mainKey.publicKey,
       erc1271Commitment,
-      erc1271ParameterSetId,
     });
 
     const index = await this.resolveImplementationIndex();
@@ -271,7 +266,7 @@ export class ShrincsFactoryClient {
     keyVersion: number;
     shrincsPublicKeyCommitment: Hex;
     maxSignatures: number;
-    parameterSetId: ParameterSetId;
+    hashSuite: number;
   } | null> {
     const walletAddress = await this.getShrincsWalletAddress(vaultId);
     if (walletAddress === zeroAddress) return null;
@@ -280,7 +275,7 @@ export class ShrincsFactoryClient {
       keyVersion: Number(state.keyVersion),
       shrincsPublicKeyCommitment: state.shrincsPublicKeyCommitment,
       maxSignatures: state.maxSignatures,
-      parameterSetId: state.parameterSetId as ParameterSetId,
+      hashSuite: state.hashSuite,
     };
   }
 

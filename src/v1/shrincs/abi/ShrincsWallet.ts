@@ -1,8 +1,6 @@
-// Copyright (C) 2025 quip.network
-//
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// Auto-generated from out/ShrincsWallet.sol/ShrincsWallet.json — do not edit by hand.
+// Regenerate after `forge build` when the contract interface changes.
 
-// Generated from forge build output (out/). Do not edit by hand.
 export const shrincsWalletAbi = [
   {
     "type": "constructor",
@@ -219,11 +217,6 @@ export const shrincsWalletAbi = [
         "internalType": "struct ShrincsTypes.PublicKey",
         "components": [
           {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
-          {
             "name": "statefulPublicKey",
             "type": "bytes",
             "internalType": "bytes"
@@ -355,16 +348,16 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
-    "name": "getErc1271ParameterSetId",
+    "name": "getErc1271HashSuite",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint8",
-        "internalType": "enum ShrincsTypes.ParameterSetId"
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -381,16 +374,16 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
-    "name": "getParameterSetId",
+    "name": "getHashSuite",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint8",
-        "internalType": "enum ShrincsTypes.ParameterSetId"
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -605,11 +598,6 @@ export const shrincsWalletAbi = [
         "internalType": "struct ShrincsTypes.PublicKey",
         "components": [
           {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
-          {
             "name": "statefulPublicKey",
             "type": "bytes",
             "internalType": "bytes"
@@ -727,11 +715,6 @@ export const shrincsWalletAbi = [
         "internalType": "struct ShrincsTypes.RotationTarget",
         "components": [
           {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
-          {
             "name": "statefulPublicKey",
             "type": "bytes",
             "internalType": "bytes"
@@ -794,11 +777,6 @@ export const shrincsWalletAbi = [
         "internalType": "struct ShrincsTypes.PublicKey",
         "components": [
           {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
-          {
             "name": "statefulPublicKey",
             "type": "bytes",
             "internalType": "bytes"
@@ -853,11 +831,6 @@ export const shrincsWalletAbi = [
         "internalType": "struct ShrincsTypes.StatefulRotationTarget",
         "components": [
           {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
-          {
             "name": "statefulPublicKey",
             "type": "bytes",
             "internalType": "bytes"
@@ -882,11 +855,6 @@ export const shrincsWalletAbi = [
         "type": "tuple",
         "internalType": "struct ShrincsTypes.PublicKey",
         "components": [
-          {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
           {
             "name": "statefulPublicKey",
             "type": "bytes",
@@ -942,9 +910,9 @@ export const shrincsWalletAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "newErc1271ParameterSetId",
-        "type": "uint8",
-        "internalType": "uint8"
+        "name": "newErc1271HashSuite",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "outputs": [],
@@ -1009,11 +977,6 @@ export const shrincsWalletAbi = [
         "type": "tuple",
         "internalType": "struct ShrincsTypes.PublicKey",
         "components": [
-          {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
           {
             "name": "statefulPublicKey",
             "type": "bytes",
@@ -1158,11 +1121,6 @@ export const shrincsWalletAbi = [
         "type": "tuple",
         "internalType": "struct ShrincsTypes.RotationTarget",
         "components": [
-          {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
           {
             "name": "statefulPublicKey",
             "type": "bytes",
@@ -1360,11 +1318,6 @@ export const shrincsWalletAbi = [
         "internalType": "struct ShrincsTypes.PublicKey",
         "components": [
           {
-            "name": "parameterSetId",
-            "type": "uint8",
-            "internalType": "enum ShrincsTypes.ParameterSetId"
-          },
-          {
             "name": "statefulPublicKey",
             "type": "bytes",
             "internalType": "bytes"
@@ -1499,12 +1452,6 @@ export const shrincsWalletAbi = [
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
-      },
-      {
-        "name": "parameterSetId",
-        "type": "uint8",
-        "indexed": false,
-        "internalType": "uint8"
       },
       {
         "name": "keyVersion",
@@ -1803,6 +1750,11 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "UnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedHashSuite",
     "inputs": []
   },
   {

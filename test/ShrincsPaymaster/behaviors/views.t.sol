@@ -13,13 +13,13 @@ contract ShrincsPaymaster_views is ShrincsPaymasterTest {
     function test_getShrincsVerifier_reflectsInstall() public view {
         (
             bytes32 commitment,
-            ShrincsTypes.ParameterSetId parameterSetId,
+            uint32 hashSuite,
             uint256 keyVersion,
             uint32 maxSignatures,
             uint32 statefulLeavesUsed
         ) = paymaster.getShrincsVerifier();
-        assertEq(commitment, _bytes32(".verifierKey.publicKeyCommitment"));
-        assertEq(uint8(parameterSetId), 0);
+        assertEq(commitment, verifierCommitment);
+        assertEq(hashSuite, ShrincsTypes.HASH_SUITE_KECCAK_256);
         assertEq(keyVersion, 0);
         assertEq(maxSignatures, MAX_SIG);
         assertEq(statefulLeavesUsed, 0);

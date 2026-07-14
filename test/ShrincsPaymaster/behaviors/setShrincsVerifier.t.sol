@@ -11,10 +11,11 @@ import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 ///      is verified, so success + reverts are testable now.
 contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
     bytes32 internal constant NEW_COMMITMENT = keccak256("rotated-verifier");
+    uint32 internal constant SUITE = ShrincsTypes.HASH_SUITE_KECCAK_256;
 
     function test_setShrincsVerifier_rotatesAndBumpsEpoch() public {
         vm.prank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, 16);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, 16);
 
         (
             bytes32 commitment,
@@ -35,7 +36,7 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
         assertTrue(paymaster.isStatefulLeafUsed(1), "used under epoch 0");
 
         vm.prank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, MAX_SIG);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, MAX_SIG);
         assertFalse(
             paymaster.isStatefulLeafUsed(1),
             "fresh namespace under epoch 1"
@@ -43,10 +44,10 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
     }
 
     function test_setShrincsVerifier_emitsShrincsVerifierSet() public {
-        bytes32 prev = _bytes32(".verifierKey.publicKeyCommitment");
+        bytes32 prev = verifierCommitment;
         vm.recordLogs();
         vm.prank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, MAX_SIG);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, MAX_SIG);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
@@ -63,7 +64,7 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
                 );
                 (bytes32 previousCommitment, , , ) = abi.decode(
                     logs[i].data,
-                    (bytes32, uint8, uint32, uint256)
+                    (bytes32, uint32, uint32, uint256)
                 );
                 assertEq(
                     previousCommitment,
@@ -75,14 +76,11 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
         assertTrue(found, "ShrincsVerifierSet emitted");
     }
 
-    /// @dev `parameterSetId` is rotated (persisted), not just commitment/budget. The base install uses
-    ///      0, so rotate to the `Unsupported` member (1) and read it back.
-    function test_setShrincsVerifier_rotatesParameterSetId() public {
+    /// @dev A hash suite the on-chain library does not verify must be rejected on rotation.
+    function test_setShrincsVerifier_revertsWhen_unsupportedHashSuite() public {
         vm.prank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 1, MAX_SIG);
-        (, ShrincsTypes.ParameterSetId parameterSetId, , , ) = paymaster
-            .getShrincsVerifier();
-        assertEq(uint8(parameterSetId), 1, "parameterSetId rotated");
+        vm.expectRevert(IShrincsPaymaster.UnsupportedHashSuite.selector);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, ShrincsTypes.HASH_SUITE_UNSUPPORTED, MAX_SIG);
     }
 
     /// @dev Epoch is MONOTONIC: each rotation increments it by exactly one and never resets, so a
@@ -90,7 +88,7 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
     ///      the security property that lets one global key span rotations safely).
     function test_setShrincsVerifier_epochMonotonicAcrossRotations() public {
         vm.startPrank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, MAX_SIG); // epoch 0 -> 1
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, MAX_SIG); // epoch 0 -> 1
         vm.stopPrank();
         (, , uint256 epoch1, , ) = paymaster.getShrincsVerifier();
         assertEq(epoch1, 1, "first rotation -> epoch 1");
@@ -99,7 +97,7 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
         assertTrue(paymaster.isStatefulLeafUsed(1), "used under epoch 1");
 
         vm.prank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, MAX_SIG); // epoch 1 -> 2
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, MAX_SIG); // epoch 1 -> 2
         (, , uint256 epoch2, , ) = paymaster.getShrincsVerifier();
         assertEq(epoch2, 2, "second rotation -> epoch 2 (never resets)");
         assertFalse(
@@ -116,7 +114,7 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
         assertEq(paymaster.statefulLeavesUsed(), 2, "counter advanced");
 
         vm.prank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, MAX_SIG);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, MAX_SIG);
         assertEq(
             paymaster.statefulLeavesUsed(),
             0,
@@ -125,12 +123,12 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
         assertEq(paymaster.remainingStatefulSignatures(), MAX_SIG);
     }
 
-    /// @dev Pins the FULL `ShrincsVerifierSet` payload on rotation: parameterSetId/maxSignatures echo
+    /// @dev Pins the FULL `ShrincsVerifierSet` payload on rotation: hashSuite/maxSignatures echo
     ///      the args and keyVersion is the bumped epoch.
     function test_setShrincsVerifier_emitsFullPayload() public {
         vm.recordLogs();
         vm.prank(OWNER);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 1, 16);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, 16);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
@@ -142,16 +140,12 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
                 found = true;
                 (
                     bytes32 previousCommitment,
-                    uint8 parameterSetId,
+                    uint32 hashSuite,
                     uint32 maxSignatures,
                     uint256 keyVersion
-                ) = abi.decode(logs[i].data, (bytes32, uint8, uint32, uint256));
-                assertEq(
-                    previousCommitment,
-                    _bytes32(".verifierKey.publicKeyCommitment"),
-                    "previous commitment"
-                );
-                assertEq(parameterSetId, 1, "parameterSetId in data");
+                ) = abi.decode(logs[i].data, (bytes32, uint32, uint32, uint256));
+                assertEq(previousCommitment, verifierCommitment, "previous commitment");
+                assertEq(hashSuite, SUITE, "hashSuite in data");
                 assertEq(maxSignatures, 16, "maxSignatures in data");
                 assertEq(keyVersion, 1, "bumped epoch in data");
             }
@@ -162,18 +156,18 @@ contract ShrincsPaymaster_setShrincsVerifier is ShrincsPaymasterTest {
     function test_setShrincsVerifier_revertsWhen_notOwner() public {
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, MAX_SIG);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, MAX_SIG);
     }
 
     function test_setShrincsVerifier_revertsWhen_zeroCommitment() public {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsPaymaster.ZeroCommitment.selector);
-        paymaster.setShrincsVerifier(bytes32(0), 0, MAX_SIG);
+        paymaster.setShrincsVerifier(bytes32(0), SUITE, MAX_SIG);
     }
 
     function test_setShrincsVerifier_revertsWhen_zeroMaxSignatures() public {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsPaymaster.ZeroMaxSignatures.selector);
-        paymaster.setShrincsVerifier(NEW_COMMITMENT, 0, 0);
+        paymaster.setShrincsVerifier(NEW_COMMITMENT, SUITE, 0);
     }
 }

@@ -37,6 +37,7 @@ import {
   CommitmentMismatchError,
   ZeroErc1271CommitmentError,
   ZeroMaxSignaturesError,
+  UnsupportedHashSuiteError,
   StaleStatefulLeafError,
   StatefulBudgetExhaustedError,
   ImplementationNotVettedError,
@@ -92,6 +93,7 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   CommitmentMismatch: (_, o) => new CommitmentMismatchError(undefined, undefined, o),
   ZeroErc1271Commitment: (_, o) => new ZeroErc1271CommitmentError(o),
   ZeroMaxSignatures: (_, o) => new ZeroMaxSignaturesError(o),
+  UnsupportedHashSuite: (_, o) => new UnsupportedHashSuiteError(o),
   StaleStatefulLeaf: (_, o) => new StaleStatefulLeafError(undefined, o),
   StatefulBudgetExhausted: (_, o) =>
     new StatefulBudgetExhaustedError(undefined, undefined, o),

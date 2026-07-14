@@ -18,7 +18,6 @@ contract ShrincsWalletCodecTest is Test {
     /* ───────────────────────────── sample structs ──────────────────────────── */
 
     function _samplePublicKey() internal pure returns (ShrincsTypes.PublicKey memory pk) {
-        pk.parameterSetId = ShrincsTypes.ParameterSetId(0);
         pk.statefulPublicKey = abi.encodePacked(keccak256("spk-a"), keccak256("spk-b"), uint32(8));
         pk.publicKeyCommitment = abi.encodePacked(keccak256("commitment"));
         pk.pkSeed = abi.encodePacked(keccak256("pkSeed"));
@@ -47,7 +46,6 @@ contract ShrincsWalletCodecTest is Test {
     /* ───────────────────────────── equality helpers ────────────────────────── */
 
     function _assertPkEq(ShrincsTypes.PublicKey memory a, ShrincsTypes.PublicKey memory b) internal pure {
-        assertEq(uint8(a.parameterSetId), uint8(b.parameterSetId), "parameterSetId");
         assertEq(a.statefulPublicKey, b.statefulPublicKey, "statefulPublicKey");
         assertEq(a.publicKeyCommitment, b.publicKeyCommitment, "publicKeyCommitment");
         assertEq(a.pkSeed, b.pkSeed, "pkSeed");

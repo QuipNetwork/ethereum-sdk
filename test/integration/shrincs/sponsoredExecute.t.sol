@@ -11,7 +11,7 @@ import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 ///      effect, and that both anti-replay bitmaps advanced.
 contract ShrincsE2E_sponsoredExecute is ShrincsE2EBase {
     function test_e2e_sponsoredEthTransfer() public {
-        PackedUserOperation memory op = _op("sponsoredEthTransfer");
+        PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
 
         uint256 pmDepositBefore = _deposit(PAYMASTER);
         uint256 walletDepositBefore = _deposit(WALLET);
@@ -47,7 +47,7 @@ contract ShrincsE2E_sponsoredExecute is ShrincsE2EBase {
     }
 
     function test_e2e_sponsoredContractCall() public {
-        PackedUserOperation memory op = _op("sponsoredContractCall");
+        PackedUserOperation memory op = _checkedSponsoredOp(CALL_TARGET, 0, hex"1234", 0, 1);
 
         uint256 pmDepositBefore = _deposit(PAYMASTER);
 
@@ -63,7 +63,7 @@ contract ShrincsE2E_sponsoredExecute is ShrincsE2EBase {
     }
 
     function test_e2e_emitsSponsorshipEvents() public {
-        PackedUserOperation memory op = _op("sponsoredEthTransfer");
+        PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
 
         vm.recordLogs();
         _handle(op);

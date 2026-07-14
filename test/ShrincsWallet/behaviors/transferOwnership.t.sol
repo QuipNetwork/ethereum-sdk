@@ -3,25 +3,32 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for the atomic ownership-handover `transferOwnership`. Access control, input
-///      validation, stateless-budget exhaustion, and the stateless-rotate `InvalidSignature` branch
-///      are testable now. The full dual-signature happy path (a stateless recovery rotation AND a
-///      stateful owner-binding signature over `(newOwner, nextCommitment)`) and its cross-binding
-///      check are exercised by the regenerated `.cases.transferOwnership` vectors.
+///      validation, and the stateless-rotate `InvalidSignature` branch are covered, plus the full
+///      dual-signature happy path (a stateless recovery rotation AND a stateful owner-binding
+///      signature over `(newOwner, nextCommitment)`) and its cross-binding check — all signed live.
 contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     address internal NEW_OWNER = makeAddr("newOwner");
 
-    function _pk() internal view returns (ShrincsTypes.PublicKey memory) {
-        return _parsePublicKey(".mainKey");
+    /// @dev A structurally-valid next-key bundle to drive past argument decoding (the rotation
+    ///      still fails verification with an empty recovery signature).
+    function _nextKey() internal pure returns (ShrincsTypes.RotationTarget memory nextKey) {
+        (nextKey,) = _makeRotationTarget("transfer-ownership-next-key");
     }
 
-    /// @dev A structurally-valid next-key bundle to drive past argument decoding (the rotation
-    ///      still fails verification, returning the zero commitment).
-    function _nextKey() internal view returns (ShrincsTypes.RotationTarget memory) {
-        return _parseRotationTarget(".cases.rotateFullKey.nextKey");
+    /// @dev Stateful owner-binding signature cross-binding `newOwner` to the incoming bundle.
+    function _ownerBindingSig(address newOwner, bytes32 nextCommitment)
+        internal
+        view
+        returns (ShrincsTypes.StatefulSignature memory)
+    {
+        return _signStatefulAction(
+            Codec.ACTION_TRANSFER_OWNERSHIP, Codec.transferOwnershipPayloadHash(newOwner, nextCommitment), 1
+        );
     }
 
     function test_transferOwnership_revertsWhen_notOwner() public {
@@ -30,7 +37,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         ShrincsTypes.RotationTarget memory nextKey;
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.transferOwnership(_pk(), ownerSig, recoverySig, nextKey, NEW_OWNER);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER);
     }
 
     function test_transferOwnership_revertsWhen_zeroOwner() public {
@@ -39,29 +46,27 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         ShrincsTypes.RotationTarget memory nextKey;
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.ZeroAddressOwner.selector);
-        wallet.transferOwnership(_pk(), ownerSig, recoverySig, nextKey, address(0));
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, address(0));
     }
 
     function test_transferOwnership_revertsWhen_invalidRecoverySignature() public {
-        // Stateless budget available, but an empty recovery signature makes `statelessRotate`
-        // return the zero commitment, surfaced as InvalidSignature.
+        // An empty recovery signature makes `statelessRotate` return the zero commitment,
+        // surfaced as InvalidSignature.
         ShrincsTypes.StatefulSignature memory ownerSig;
         ShrincsTypes.StatelessSignature memory recoverySig;
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.transferOwnership(_pk(), ownerSig, recoverySig, _nextKey(), NEW_OWNER);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, _nextKey(), NEW_OWNER);
     }
 
-    /// @dev `NEW_OWNER` must equal the generator's `makeAddr("newOwner")` baked into the
-    ///      owner-binding signature's `(newOwner, nextCommitment)` payload.
     function test_transferOwnership_fullHandover() public {
-        assertEq(NEW_OWNER, _addr(".cases.transferOwnership.newOwner"), "test NEW_OWNER matches the signed newOwner");
-        ShrincsTypes.StatefulSignature memory ownerSig = _parseStatefulSignature(".cases.transferOwnership.signature");
-        ShrincsTypes.StatelessSignature memory recoverySig =
-            _parseStatelessSignature(".cases.transferOwnership.recoverySignature");
-        bytes32 nextCommitment = _bytes32(".cases.transferOwnership.nextCommitment");
+        ShrincsTypes.RotationTarget memory nextKey = _nextKey();
+        bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
+        ShrincsTypes.StatelessSignature memory recoverySig = _signFullRotation(nextKey);
+        ShrincsTypes.StatefulSignature memory ownerSig = _ownerBindingSig(NEW_OWNER, nextCommitment);
+
         vm.prank(OWNER);
-        wallet.transferOwnership(_pk(), ownerSig, recoverySig, _nextKey(), NEW_OWNER);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER);
         assertEq(wallet.owner(), NEW_OWNER, "classical owner handed over");
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "fresh bundle installed for the new owner");
         assertEq(factory.lastOwnerUpdate(address(wallet)), NEW_OWNER, "factory registry synced");
@@ -71,15 +76,13 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_crossBindingMismatch() public {
         // The stateless rotation succeeds, but a `newOwner` not matching the stateful owner-binding
         // signature's `(newOwner, nextCommitment)` payload fails verification.
-        ShrincsTypes.StatefulSignature memory ownerSig = _parseStatefulSignature(".cases.transferOwnership.signature");
-        ShrincsTypes.StatelessSignature memory recoverySig =
-            _parseStatelessSignature(".cases.transferOwnership.recoverySignature");
+        ShrincsTypes.RotationTarget memory nextKey = _nextKey();
+        bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
+        ShrincsTypes.StatelessSignature memory recoverySig = _signFullRotation(nextKey);
+        ShrincsTypes.StatefulSignature memory ownerSig = _ownerBindingSig(NEW_OWNER, nextCommitment);
+
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.transferOwnership(_pk(), ownerSig, recoverySig, _nextKey(), makeAddr("wrongOwner"));
-    }
-
-    function _addr(string memory key) internal view returns (address) {
-        return vm.parseJsonAddress(vectors, key);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, makeAddr("wrongOwner"));
     }
 }

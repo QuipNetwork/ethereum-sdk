@@ -39,8 +39,8 @@ describe("shrincs SDK barrel exports", () => {
     expect(new SDK.CommitmentMismatchError()).toBeInstanceOf(SDK.QuipError);
   });
 
-  it("exports the parameter-set constant", () => {
-    expect(SDK.PARAMETER_SET_ID).toBe("sphincs-256s-keccak-q20");
+  it("exports the hash-suite constant", () => {
+    expect(SDK.HASH_SUITE_KECCAK_256).toBe(1);
   });
 
   it("exports the event parsers and userOp builders", () => {

@@ -15,8 +15,12 @@ cbor_metadata = false
 bytecode_hash = "none"
 extra_output = ["abi", "storageLayout"]
 extra_output_files = ["abi"]
-# Allow reading JSON test vectors (Rust-generated SHRINCS/wallet fixtures).
-fs_permissions = [{ access = "read", path = "./test/test_vectors/" }]
+
+# The in-Solidity SHRINCS test signer (dependency test/helpers) is hash- and memory-heavy:
+# keygen/stateless signing expand EVM memory far past the defaults (matches the dependency's
+# own test config).
+gas_limit = "18446744073709551615" # u64::MAX
+memory_limit = 1073741824 # 1 GiB
 
 # Invariant fuzz budget — sized for ~2 min local runtime against the WOTSPlusImplementation
 # light suite (WOTS+ signing dominates per-call cost). The heavy suite
@@ -32,8 +36,8 @@ fail_on_revert = false
 forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
-  "@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", branch = "shrincs-audited-2" }
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
+"@quip.network/hashsigs-solidity" = { version = "0.1.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "0490e1020befeacbc2705386965b993f48198958" }
 
 # Deploy profile: links WOTSPlus at its CREATE3 address for WOTSPlusImplementation compilation.
 # Usage: FOUNDRY_PROFILE=deploy forge script ...

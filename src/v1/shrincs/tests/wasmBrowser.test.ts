@@ -4,47 +4,46 @@
 //
 // Proves the BROWSER wasm code path (the `web/` wasm-bindgen target instantiated
 // from the base64-inlined bytes — exactly what ships to a frontend) produces the
-// same, correct results as the Node path and the committed vectors. Combined with
-// the esbuild FE bundle smoke (scripts/fe-smoke.mjs), this guarantees an FE
-// consumer can both bundle AND run the SDK.
+// same, correct results as the Node path. Combined with the esbuild FE bundle
+// smoke (scripts/fe-smoke.mjs), this guarantees an FE consumer can both bundle
+// AND run the SDK.
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { keccak256, toHex } from "viem";
 
-import { toHex } from "viem";
-
-import { loadShrincsWasm } from "../wasm/loader.browser.js";
-
-const vectors = JSON.parse(
-  readFileSync(
-    resolve(process.cwd(), "test/test_vectors/shrincs_wallet_sphincs_256s_keccak.json"),
-    "utf8"
-  )
-) as any;
+import { loadShrincsWasm as loadBrowserWasm } from "../wasm/loader.browser.js";
+import { loadShrincsWasm as loadNodeWasm } from "../wasm/index.js";
 
 const seed = (s: string) => toHex(new TextEncoder().encode(s));
 
 describe("browser wasm loader (web target, inlined bytes)", () => {
-  it("instantiates from inlined bytes and reproduces the committed key + signature", async () => {
-    const wasm = await loadShrincsWasm();
-    expect(wasm.supported_parameter_sets()).toContain("sphincs-256s-keccak-q20");
+  it("instantiates from inlined bytes and matches the Node wasm path exactly", async () => {
+    const browser = await loadBrowserWasm();
+    const node = await loadNodeWasm();
 
-    const kp = wasm.shrincsKeygen(
-      "sphincs-256s-keccak-q20",
-      seed("shrincs wallet main key seed"),
-      8
-    );
-    expect(kp.publicKey().publicKeyCommitment).toBe(vectors.mainKey.publicKeyCommitment);
+    const browserKp = browser.shrincsKeygen(seed("shrincs wallet main key seed"), 8);
+    const nodeKp = node.shrincsKeygen(seed("shrincs wallet main key seed"), 8);
 
-    const exec = vectors.cases.execute;
-    const sig = kp.signStatefulRawAt(exec.message, exec.leaf);
-    expect(sig).toEqual(exec.signature);
+    // Same seed => identical bundle across the two build targets.
+    expect(browserKp.publicKey()).toEqual(nodeKp.publicKey());
+
+    // Deterministic leaf signing agrees byte-for-byte and cross-verifies.
+    const message = keccak256(seed("browser wasm message"));
+    const sig = browserKp.signStatefulRawAt(message, 1);
+    expect(sig.authPath.length).toBe(1);
+    expect(sig).toEqual(nodeKp.signStatefulRawAt(message, 1));
     expect(
-      wasm.shrincs_verify_stateful_raw(
-        "sphincs-256s-keccak-q20",
-        kp.publicKey().publicKeyCommitment,
-        kp.publicKey(),
-        exec.message,
+      browser.shrincsVerifyStatefulRaw(
+        browserKp.publicKey().publicKeyCommitment,
+        browserKp.publicKey(),
+        message,
+        sig
+      )
+    ).toBe(true);
+    expect(
+      node.shrincsVerifyStatefulRaw(
+        nodeKp.publicKey().publicKeyCommitment,
+        nodeKp.publicKey(),
+        message,
         sig
       )
     ).toBe(true);

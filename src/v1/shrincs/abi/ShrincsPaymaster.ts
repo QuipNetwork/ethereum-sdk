@@ -1,8 +1,6 @@
-// Copyright (C) 2025 quip.network
-//
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// Auto-generated from out/ShrincsPaymaster.sol/ShrincsPaymaster.json — do not edit by hand.
+// Regenerate after `forge build` when the contract interface changes.
 
-// Generated from forge build output (out/). Do not edit by hand.
 export const shrincsPaymasterAbi = [
   {
     "type": "constructor",
@@ -86,9 +84,9 @@ export const shrincsPaymasterAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "parameterSetId",
-        "type": "uint8",
-        "internalType": "enum ShrincsTypes.ParameterSetId"
+        "name": "hashSuite",
+        "type": "uint32",
+        "internalType": "uint32"
       },
       {
         "name": "keyVersion",
@@ -123,9 +121,9 @@ export const shrincsPaymasterAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "parameterSetId",
-        "type": "uint8",
-        "internalType": "uint8"
+        "name": "hashSuite",
+        "type": "uint32",
+        "internalType": "uint32"
       },
       {
         "name": "maxSignatures",
@@ -265,9 +263,9 @@ export const shrincsPaymasterAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "parameterSetId",
-        "type": "uint8",
-        "internalType": "uint8"
+        "name": "hashSuite",
+        "type": "uint32",
+        "internalType": "uint32"
       },
       {
         "name": "maxSignatures",
@@ -535,10 +533,10 @@ export const shrincsPaymasterAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "parameterSetId",
-        "type": "uint8",
+        "name": "hashSuite",
+        "type": "uint32",
         "indexed": false,
-        "internalType": "uint8"
+        "internalType": "uint32"
       },
       {
         "name": "maxSignatures",
@@ -678,6 +676,11 @@ export const shrincsPaymasterAbi = [
   {
     "type": "error",
     "name": "UnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedHashSuite",
     "inputs": []
   },
   {

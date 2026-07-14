@@ -30,7 +30,6 @@ contract ShrincsWalletCodec_decodeUserOpSignature is ShrincsWalletCodecTest {
     ///      StatefulSignature)` — arbitrary `bytes` field contents and arbitrary dynamic-array
     ///      lengths (the `authPath` length is what the wallet reads as the leaf index).
     function testFuzz_decodeUserOpSignature_roundTrip(
-        uint8 paramId,
         bytes memory statefulPublicKey,
         bytes memory commitment,
         bytes memory pkSeed,
@@ -44,7 +43,6 @@ contract ShrincsWalletCodec_decodeUserOpSignature is ShrincsWalletCodecTest {
         vm.assume(chains.length <= 64 && authPath.length <= 64);
 
         ShrincsTypes.PublicKey memory pk;
-        pk.parameterSetId = ShrincsTypes.ParameterSetId(bound(paramId, 0, 1));
         pk.statefulPublicKey = statefulPublicKey;
         pk.publicKeyCommitment = commitment;
         pk.pkSeed = pkSeed;

@@ -15,6 +15,7 @@ import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     ShrincsPaymasterHarness internal bare;
     bytes32 internal constant COMMITMENT = keccak256("verifier-commitment");
+    uint32 internal constant SUITE = ShrincsTypes.HASH_SUITE_KECCAK_256;
 
     function setUp() public override {
         super.setUp();
@@ -27,7 +28,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     }
 
     function test_initialize_setsOwnerAndVerifier() public {
-        bare.initialize(OWNER, COMMITMENT, 0, MAX_SIG);
+        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
 
         assertEq(bare.owner(), OWNER, "owner");
         (
@@ -46,7 +47,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
 
     function test_initialize_emitsEvents() public {
         vm.recordLogs();
-        bare.initialize(OWNER, COMMITMENT, 0, MAX_SIG);
+        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool init;
@@ -72,21 +73,25 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
         assertTrue(set, "ShrincsVerifierSet emitted");
     }
 
-    /// @dev `parameterSetId` must actually be persisted (the success-path test above passes 0, which a
-    ///      dropped `$.shrincsParameterSetId =` write would not reveal). Use the `Unsupported` member
-    ///      (1) — a valid enum value the getter can safely cast.
-    function test_initialize_storesParameterSetId() public {
-        bare.initialize(OWNER, COMMITMENT, 1, MAX_SIG);
-        (, ShrincsTypes.ParameterSetId parameterSetId, , , ) = bare
-            .getShrincsVerifier();
-        assertEq(uint8(parameterSetId), 1, "parameterSetId persisted");
+    /// @dev The hash suite is not stored (initialize rejects everything but keccak-256), so the
+    ///      view must echo the constant.
+    function test_initialize_reportsHashSuite() public {
+        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
+        (, uint32 hashSuite, , , ) = bare.getShrincsVerifier();
+        assertEq(hashSuite, SUITE, "hashSuite reported");
+    }
+
+    /// @dev A hash suite the on-chain library does not verify must be rejected at install time.
+    function test_initialize_revertsWhen_unsupportedHashSuite() public {
+        vm.expectRevert(IShrincsPaymaster.UnsupportedHashSuite.selector);
+        bare.initialize(OWNER, COMMITMENT, ShrincsTypes.HASH_SUITE_UNSUPPORTED, MAX_SIG);
     }
 
     /// @dev Pins the FULL `ShrincsVerifierSet` payload at initialization: previousCommitment is zero
-    ///      (first registration), the parameterSetId/maxSignatures echo the args, and the epoch is 0.
+    ///      (first registration), the hashSuite/maxSignatures echo the args, and the epoch is 0.
     function test_initialize_emitsShrincsVerifierSetFullPayload() public {
         vm.recordLogs();
-        bare.initialize(OWNER, COMMITMENT, 1, MAX_SIG);
+        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
@@ -103,12 +108,12 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
                 );
                 (
                     bytes32 previousCommitment,
-                    uint8 parameterSetId,
+                    uint32 hashSuite,
                     uint32 maxSignatures,
                     uint256 keyVersion
-                ) = abi.decode(logs[i].data, (bytes32, uint8, uint32, uint256));
+                ) = abi.decode(logs[i].data, (bytes32, uint32, uint32, uint256));
                 assertEq(previousCommitment, bytes32(0), "no prior commitment");
-                assertEq(parameterSetId, 1, "parameterSetId in data");
+                assertEq(hashSuite, SUITE, "hashSuite in data");
                 assertEq(maxSignatures, MAX_SIG, "maxSignatures in data");
                 assertEq(keyVersion, 0, "initial epoch in data");
             }
@@ -118,22 +123,22 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
 
     function test_initialize_revertsWhen_zeroOwner() public {
         vm.expectRevert(IShrincsPaymaster.ZeroAddressOwner.selector);
-        bare.initialize(address(0), COMMITMENT, 0, MAX_SIG);
+        bare.initialize(address(0), COMMITMENT, SUITE, MAX_SIG);
     }
 
     function test_initialize_revertsWhen_zeroCommitment() public {
         vm.expectRevert(IShrincsPaymaster.ZeroCommitment.selector);
-        bare.initialize(OWNER, bytes32(0), 0, MAX_SIG);
+        bare.initialize(OWNER, bytes32(0), SUITE, MAX_SIG);
     }
 
     function test_initialize_revertsWhen_zeroMaxSignatures() public {
         vm.expectRevert(IShrincsPaymaster.ZeroMaxSignatures.selector);
-        bare.initialize(OWNER, COMMITMENT, 0, 0);
+        bare.initialize(OWNER, COMMITMENT, SUITE, 0);
     }
 
     function test_initialize_revertsWhen_alreadyInitialized() public {
-        bare.initialize(OWNER, COMMITMENT, 0, MAX_SIG);
+        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        bare.initialize(OWNER, COMMITMENT, 0, MAX_SIG);
+        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
     }
 }

@@ -18,7 +18,6 @@ pragma solidity ^0.8.33;
 
 // prettier-ignore
 import {IPaymaster} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
 
 /// @title IShrincsPaymaster
 /// @notice An ERC-4337 verifying paymaster that authorizes gas sponsorship with a single global
@@ -41,6 +40,10 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();
+    /// @notice Thrown when registering a verifier key with a hash suite other than
+    ///         `ShrincsTypes.HASH_SUITE_KECCAK_256` (the only suite this implementation
+    ///         verifies; the SHRINCS library binds it into every canonical message hash).
+    error UnsupportedHashSuite();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
@@ -52,13 +55,13 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Emitted when the global SHRINCS verifier key is (re)registered.
     /// @param previousCommitment The prior verifier commitment (zero on first registration).
     /// @param newCommitment The installed verifier commitment.
-    /// @param parameterSetId The verifier key's parameter set.
+    /// @param hashSuite The `ShrincsTypes.HASH_SUITE_*` id the key was validated against.
     /// @param maxSignatures The installed key's stateful leaf budget.
     /// @param keyVersion The new verifier-key epoch.
     event ShrincsVerifierSet(
         bytes32 previousCommitment,
         bytes32 indexed newCommitment,
-        uint8 parameterSetId,
+        uint32 hashSuite,
         uint32 maxSignatures,
         uint256 keyVersion
     );
@@ -107,23 +110,25 @@ interface IShrincsPaymaster is IPaymaster {
     ///         no way to unset it (only rotate via `setShrincsVerifier`).
     /// @param owner_ The paymaster owner.
     /// @param commitment The initial verifier-key bundle commitment.
-    /// @param parameterSetId The verifier key's parameter set.
+    /// @param hashSuite The verifier key's `ShrincsTypes.HASH_SUITE_*` id (client-agreement
+    ///        check; must be `HASH_SUITE_KECCAK_256`).
     /// @param maxSignatures The key's stateful leaf budget.
     function initialize(
         address owner_,
         bytes32 commitment,
-        uint8 parameterSetId,
+        uint32 hashSuite,
         uint32 maxSignatures
     ) external;
 
     /// @notice Rotates the global SHRINCS verifier key. Owner-only. Bumps the verifier epoch (fresh
     ///         leaf-bitmap namespace) and resets the leaf-used counter. Cannot unset the key.
     /// @param commitment The verifier-key bundle commitment.
-    /// @param parameterSetId The verifier key's parameter set.
+    /// @param hashSuite The verifier key's `ShrincsTypes.HASH_SUITE_*` id (client-agreement
+    ///        check; must be `HASH_SUITE_KECCAK_256`).
     /// @param maxSignatures The key's stateful leaf budget.
     function setShrincsVerifier(
         bytes32 commitment,
-        uint8 parameterSetId,
+        uint32 hashSuite,
         uint32 maxSignatures
     ) external;
 
@@ -142,13 +147,15 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Withdraws unlocked stake from the EntryPoint. Owner-only.
     function withdrawStake(address payable to) external;
 
-    /// @notice Returns the registered global verifier state.
+    /// @notice Returns the registered global verifier state. `hashSuite` is always
+    ///         `HASH_SUITE_KECCAK_256`: the id is not stored — registration rejects every
+    ///         other suite.
     function getShrincsVerifier()
         external
         view
         returns (
             bytes32 commitment,
-            ShrincsTypes.ParameterSetId parameterSetId,
+            uint32 hashSuite,
             uint256 keyVersion,
             uint32 maxSignatures,
             uint32 statefulLeavesUsed

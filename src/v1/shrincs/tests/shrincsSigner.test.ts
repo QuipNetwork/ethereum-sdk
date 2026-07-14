@@ -2,178 +2,145 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import { keccak_256 } from "@noble/hashes/sha3";
 import { toHex } from "viem";
 
-import { ShrincsSigner } from "../shrincsSigner.js";
-import { type ActionContext, type RotationContext, type RotationTarget } from "../types.js";
+import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
+import {
+  type ActionContext,
+  type RotationContext,
+  type RotationTarget,
+} from "../types.js";
 
 const ACTION_EXECUTE = keccakStr("quip.shrincs.action.execute");
-const ACTION_ERC4337 = keccakStr("quip.shrincs.action.erc4337Execute");
 const ACTION_ERC1271 = keccakStr("quip.shrincs.action.erc1271");
 const ZERO32 = ("0x" + "00".repeat(32)) as `0x${string}`;
-
-const vectors = JSON.parse(
-  readFileSync(
-    resolve(process.cwd(), "test/test_vectors/shrincs_wallet_sphincs_256s_keccak.json"),
-    "utf8"
-  )
-) as WalletVectors;
 
 const MAX_SIG = 8;
 const seed = (s: string) => toHex(new TextEncoder().encode(s));
 
-describe("ShrincsSigner", () => {
-  it("keygen reproduces the committed main + erc1271 key bundles", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
-    const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-      maxSignatures: MAX_SIG,
-    });
-    expectPublicKey(main.publicKey, vectors.mainKey);
+let signer: ShrincsSigner;
+let main: ShrincsKeyPair;
+let erc1271: ShrincsKeyPair;
 
-    const erc1271 = signer.keygenFromSeedHex(seed("shrincs wallet erc1271 key seed"), {
-      maxSignatures: MAX_SIG,
-    });
-    expectPublicKey(erc1271.publicKey, vectors.erc1271Key);
+beforeAll(async () => {
+  signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
+  main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
+    maxSignatures: MAX_SIG,
   });
-
-  it("signStatefulRawAt reproduces each stateful case signature at its pinned leaf", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
-    const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-      maxSignatures: MAX_SIG,
-    });
-
-    for (const c of ["execute", "executeEth", "executeCall", "withdraw", "rotateKey", "upgrade"] as const) {
-      const v = vectors.cases[c];
-      const sig = main.signStatefulRawAt(v.message, v.leaf);
-      expect(sig).toEqual(v.signature);
-      expect(main.verifyStatefulRaw(v.message, sig)).toBe(true);
-    }
-
-    for (const v of vectors.cases.erc4337) {
-      const sig = main.signStatefulRawAt(v.message, v.leaf);
-      expect(sig).toEqual(v.signature);
-    }
-  });
-
-  it("computes the canonical stateful action message hash from a TS-assembled context", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
-    const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-      maxSignatures: MAX_SIG,
-    });
-
-    const exec = vectors.cases.execute;
-    const ctx: ActionContext = {
-      domainSeparator: vectors.domainSeparator,
-      nonce: ZERO32,
-      keyVersion: ZERO32,
-      actionType: ACTION_EXECUTE,
-      payloadHash: exec.payloadHash,
-    };
-    expect(main.statefulActionMessageHash(ctx)).toBe(exec.message);
-
-    const op = vectors.cases.erc4337[0];
-    const opCtx: ActionContext = {
-      domainSeparator: vectors.domainSeparator,
-      nonce: ZERO32,
-      keyVersion: ZERO32,
-      actionType: ACTION_ERC4337,
-      payloadHash: op.payloadHash,
-    };
-    expect(main.statefulActionMessageHash(opCtx)).toBe(op.message);
-  });
-
-  it("reproduces the stateless ERC-1271 signature and its message hash", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
-    const erc1271 = signer.keygenFromSeedHex(seed("shrincs wallet erc1271 key seed"), {
-      maxSignatures: MAX_SIG,
-    });
-
-    const v = vectors.cases.erc1271;
-    const ctx: ActionContext = {
-      domainSeparator: vectors.domainSeparator,
-      nonce: ZERO32,
-      keyVersion: ZERO32,
-      actionType: ACTION_ERC1271,
-      payloadHash: v.hash,
-    };
-    expect(erc1271.statelessActionMessageHash(ctx)).toBe(v.message);
-    const sig = erc1271.signStatelessRaw(v.message);
-    expect(erc1271.verifyStatelessAction(ctx, sig)).toBe(true);
-  });
-
-  it("reproduces the full-rotation recovery message (recoverWallet)", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
-    const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-      maxSignatures: MAX_SIG,
-    });
-
-    const v = vectors.cases.rotateFullKey;
-    const ctx: RotationContext = {
-      domainSeparator: vectors.domainSeparator,
-      nonce: ZERO32,
-      keyVersion: ZERO32,
-    };
-    const nextKey: RotationTarget = toRotationTarget(v.nextKey);
-    expect(main.fullRotationMessageHash(ctx, nextKey)).toBe(v.message);
+  erc1271 = signer.keygenFromSeedHex(seed("shrincs wallet erc1271 key seed"), {
+    maxSignatures: MAX_SIG,
   });
 });
 
-// ── helpers / fixture types ──────────────────────────────────────────────────
+describe("ShrincsSigner", () => {
+  it("keygen is deterministic in the seed and distinct across seeds", async () => {
+    const again = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
+      maxSignatures: MAX_SIG,
+    });
+    expect(again.publicKey).toEqual(main.publicKey);
+    // A different signer instance with a different master secret does not
+    // matter for keygenFromSeedHex — the seed is the sole input.
+    const other = await ShrincsSigner.create(new TextEncoder().encode("other"));
+    expect(
+      other.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
+        maxSignatures: MAX_SIG,
+      }).publicKeyCommitment
+    ).toBe(main.publicKeyCommitment);
+
+    expect(erc1271.publicKeyCommitment).not.toBe(main.publicKeyCommitment);
+  });
+
+  it("signStatefulRawAt is deterministic, leaf-shaped, and verifies", () => {
+    const message = keccakStr("stateful message");
+    for (const leaf of [1, 2, MAX_SIG]) {
+      const sig = main.signStatefulRawAt(message, leaf);
+      // On-chain invariant: the leaf index is carried as authPath.length.
+      expect(sig.authPath.length).toBe(leaf);
+      expect(sig).toEqual(main.signStatefulRawAt(message, leaf));
+      expect(main.verifyStatefulRaw(message, sig)).toBe(true);
+      // A signature over a different message must not verify.
+      expect(main.verifyStatefulRaw(keccakStr("tampered"), sig)).toBe(false);
+    }
+  });
+
+  it("signStatefulActionAt signs the canonical stateful action message", () => {
+    const ctx: ActionContext = {
+      domainSeparator: keccakStr("domain"),
+      nonce: ZERO32,
+      keyVersion: ZERO32,
+      actionType: ACTION_EXECUTE,
+      payloadHash: keccakStr("payload"),
+    };
+    const message = main.statefulActionMessageHash(ctx);
+    expect(message).toMatch(/^0x[0-9a-f]{64}$/);
+    // The hash binds the commitment: another key hashes the same ctx differently.
+    expect(erc1271.statefulActionMessageHash(ctx)).not.toBe(message);
+    // And every context field.
+    expect(
+      main.statefulActionMessageHash({ ...ctx, payloadHash: keccakStr("other") })
+    ).not.toBe(message);
+    expect(
+      main.statefulActionMessageHash({ ...ctx, keyVersion: keccakStr("v1") })
+    ).not.toBe(message);
+
+    const sig = main.signStatefulActionAt(ctx, 4);
+    expect(sig).toEqual(main.signStatefulRawAt(message, 4));
+    expect(main.verifyStatefulRaw(message, sig)).toBe(true);
+  });
+
+  it("signs and verifies the stateless ERC-1271 action path", () => {
+    const ctx: ActionContext = {
+      domainSeparator: keccakStr("domain"),
+      nonce: ZERO32,
+      keyVersion: ZERO32,
+      actionType: ACTION_ERC1271,
+      payloadHash: keccakStr("erc1271 hash"),
+    };
+    const sig = erc1271.signStatelessAction(ctx);
+    expect(erc1271.verifyStatelessAction(ctx, sig)).toBe(true);
+    // Bound to the exact context…
+    expect(
+      erc1271.verifyStatelessAction({ ...ctx, payloadHash: keccakStr("x") }, sig)
+    ).toBe(false);
+    // …and to the signing key.
+    expect(main.verifyStatelessAction(ctx, sig)).toBe(false);
+  });
+
+  it("computes distinct, deterministic full-rotation recovery messages", () => {
+    const ctx: RotationContext = {
+      domainSeparator: keccakStr("domain"),
+      nonce: ZERO32,
+      keyVersion: ZERO32,
+    };
+    const nextKey: RotationTarget = {
+      statefulPublicKey: erc1271.publicKey.statefulPublicKey,
+      publicKeyCommitment: erc1271.publicKeyCommitment,
+      pkSeed: erc1271.publicKey.pkSeed,
+      hypertreeRoot: erc1271.publicKey.hypertreeRoot,
+    };
+    const message = main.fullRotationMessageHash(ctx, nextKey);
+    expect(message).toBe(main.fullRotationMessageHash(ctx, nextKey));
+    // Binds the incoming bundle and the context.
+    const selfTarget: RotationTarget = {
+      statefulPublicKey: main.publicKey.statefulPublicKey,
+      publicKeyCommitment: main.publicKeyCommitment,
+      pkSeed: main.publicKey.pkSeed,
+      hypertreeRoot: main.publicKey.hypertreeRoot,
+    };
+    expect(main.fullRotationMessageHash(ctx, selfTarget)).not.toBe(message);
+    expect(
+      main.fullRotationMessageHash({ ...ctx, nonce: keccakStr("n") }, nextKey)
+    ).not.toBe(message);
+
+    // The stateless recovery signature over the rotation message verifies raw.
+    const sig = main.signStatelessRaw(message);
+    expect(sig).toEqual(main.signStatelessRaw(message));
+  });
+});
+
+// ── helpers ──────────────────────────────────────────────────────────────────
 
 function keccakStr(s: string): `0x${string}` {
   return toHex(keccak_256(new TextEncoder().encode(s)));
-}
-
-function expectPublicKey(got: VectorPublicKey, want: VectorPublicKey): void {
-  expect(got.statefulPublicKey).toBe(want.statefulPublicKey);
-  expect(got.publicKeyCommitment).toBe(want.publicKeyCommitment);
-  expect(got.pkSeed).toBe(want.pkSeed);
-  expect(got.hypertreeRoot).toBe(want.hypertreeRoot);
-}
-
-function toRotationTarget(pk: VectorPublicKey): RotationTarget {
-  return {
-    parameterSetId: "sphincs-256s-keccak-q20",
-    statefulPublicKey: pk.statefulPublicKey,
-    publicKeyCommitment: pk.publicKeyCommitment,
-    pkSeed: pk.pkSeed,
-    hypertreeRoot: pk.hypertreeRoot,
-  };
-}
-
-type Hex = `0x${string}`;
-
-interface VectorPublicKey {
-  statefulPublicKey: Hex;
-  publicKeyCommitment: Hex;
-  pkSeed: Hex;
-  hypertreeRoot: Hex;
-}
-
-interface StatefulCase {
-  leaf: number;
-  payloadHash: Hex;
-  message: Hex;
-  signature: { randomizer: Hex; counter: number; chains: Hex[]; authPath: Hex[] };
-}
-
-interface WalletVectors {
-  domainSeparator: Hex;
-  mainKey: VectorPublicKey;
-  erc1271Key: VectorPublicKey;
-  cases: {
-    erc4337: StatefulCase[];
-    execute: StatefulCase;
-    executeEth: StatefulCase;
-    executeCall: StatefulCase;
-    withdraw: StatefulCase;
-    rotateKey: StatefulCase;
-    upgrade: StatefulCase;
-    erc1271: { hash: Hex; message: Hex };
-    rotateFullKey: { message: Hex; nextKey: VectorPublicKey };
-  };
 }

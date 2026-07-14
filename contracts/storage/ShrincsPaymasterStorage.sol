@@ -26,9 +26,6 @@ library ShrincsPaymasterStorage {
         ///      the paymaster is unconfigured. Registered/rotated by the owner via
         ///      `setShrincsVerifier`.
         bytes32 shrincsCommitment;
-        /// @dev Parameter set for the verifier key (stored as uint8). Packs with the two uint32s
-        ///      below into a single slot.
-        uint8 shrincsParameterSetId;
         /// @dev Leaf budget cached from the registered key so the paymaster can reject signatures
         ///      past the budget and expose `remainingStatefulSignatures()`.
         uint32 maxSignatures;

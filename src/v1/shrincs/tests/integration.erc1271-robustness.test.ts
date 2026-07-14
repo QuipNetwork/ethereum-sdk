@@ -40,7 +40,6 @@ const EMPTY_STATELESS: StatelessSignature = {
 };
 
 const EMPTY_PUBLIC_KEY = {
-  parameterSetId: "sphincs-256s-keccak-q20",
   statefulPublicKey: "0x" as Hex,
   publicKeyCommitment: "0x" as Hex,
   pkSeed: "0x" as Hex,

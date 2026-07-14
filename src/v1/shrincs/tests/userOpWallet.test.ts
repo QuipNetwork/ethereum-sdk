@@ -2,9 +2,6 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
 import {
   type Address,
   type Hex,
@@ -39,15 +36,8 @@ import {
   packGasFees,
 } from "../../wotsCodec.js";
 
-const vectors = JSON.parse(
-  readFileSync(
-    resolve(process.cwd(), "test/test_vectors/shrincs_wallet_sphincs_256s_keccak.json"),
-    "utf8"
-  )
-) as any;
-
-const WALLET = vectors.wallet as Address;
-const CHAIN_ID = BigInt(vectors.chainId);
+const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
+const CHAIN_ID = 31337n;
 const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as const;
 const MAX_SIG = 8;
 const seed = (s: string) => toHex(new TextEncoder().encode(s));
@@ -147,8 +137,6 @@ describe("shrincs wallet userOp", () => {
       const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
         maxSignatures: MAX_SIG,
       });
-      // Sanity: this is the committed wallet main key.
-      expect(main.publicKeyCommitment).toBe(vectors.mainKey.publicKeyCommitment);
 
       const callData = encodeFunctionData({
         abi: shrincsWalletAbi,
