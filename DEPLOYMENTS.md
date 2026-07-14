@@ -25,6 +25,13 @@ with no env vars and no RPC.
 > would break the cross-chain pin without a corresponding redeploy
 > everywhere. Only the downstream contracts roll forward.
 
+> ⚠️ **The WOTS+ family is sunset** (July 2026). `WOTSPlus`, `QuipWallet`, and
+> `QuipPaymaster` above are the deprecated WOTS+ family — the deployed artifacts
+> remain live and fully functional, but the source now lives under
+> `contracts/deprecated/` (deploy scripts under `script/deprecated/`; SDK surface
+> under the `./deprecated/*` npm subpaths). SHRINCS (`ShrincsWallet` +
+> `ShrincsPaymaster`) is the go-forward family.
+
 > ⚠️ **Factory V2 (UUPS) supersedes the address above.** The QuipFactory
 > became UUPS-upgradeable (impl + ERC-1967 proxy, like the paymaster) on
 > fresh `V2` salts — the V1.1 salt is retired because CREATE3 ignores
@@ -70,7 +77,8 @@ to deploy via solady CREATE3.
 
 ### Library linking
 
-`QuipWallet` calls into the `WOTSPlus` library at runtime — its compiled
+`QuipWallet` (the sunset WOTS+ implementation, `contracts/deprecated/wots/`)
+calls into the `WOTSPlus` library at runtime — its compiled
 bytecode contains a placeholder that must be replaced with WOTSPlus's
 address before deploy. (`QuipFactory` no longer links WOTSPlus: the
 WOTS+ decoupling removed its last dependency, so factory bytecode is
@@ -103,7 +111,8 @@ automatically (harmless for the factory-only script).
                          # Requires FACTORY_OWNER, MAX_FEE, PAYMASTER_OWNER in .env.
 
 4. Deploy wallet impl    make deploy-impl-<chain>
-                         # Per-release flow, runs under FOUNDRY_PROFILE=deploy.
+                         # WOTS+ (sunset family) flow, script under script/deprecated/.
+                         # Runs under FOUNDRY_PROFILE=deploy.
 
 5. Vet wallet impl       IMPLEMENTATION=0x... make vet-impl-<chain>
                          # Factory owner whitelists the new impl.
@@ -143,7 +152,7 @@ IMPLEMENTATION=0x...                           # filled in after deploy-impl
 
 ## v0.1.x — historical (CREATE2 via custom DeployDeployer at nonce=1)
 
-`@quip.network/ethereum-sdk@0.1.7` and earlier (now vendored at `/v0`).
+`@quip.network/ethereum-sdk@0.1.7` and earlier (now vendored at `src/deprecated/v0`, npm subpath `./deprecated/v0`).
 Deployer was bootstrapped via plain CREATE at nonce 1 from a fresh EOA;
 downstream contracts used `keccak256("QUIP")` as the salt with no
 per-contract versioning.

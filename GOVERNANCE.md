@@ -27,7 +27,7 @@ Every entry in this table is `onlyOwner`, single transaction, immediate effect:
 | `upgradeToAndCall(address,bytes)` | Solady `UUPSUpgradeable` | Replaces the factory implementation behind the ERC-1967 proxy. THE trust-delta action — see below. |
 | `transferOwnership(address)` | Solady `Ownable` | Hands ownership to a new address IMMEDIATELY. The two-step alternative is Solady's handover: the candidate calls `requestOwnershipHandover()`, the owner calls `completeOwnershipHandover(candidate)`. |
 
-Paymaster owner has the same shape of powers over `QuipPaymaster` (sponsorship config, deposit management). See `QuipPaymaster.sol` for the per-method list.
+Paymaster owner has the same shape of powers over the paymasters (sponsorship config, deposit management). Note the WOTS+-family `QuipPaymaster` is sunset — source under `contracts/deprecated/QuipPaymaster.sol`, still live on chain and fully functional — while `ShrincsPaymaster` is the go-forward paymaster; see each contract for its per-method list.
 
 ## What the factory owner cannot do
 

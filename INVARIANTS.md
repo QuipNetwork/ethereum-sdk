@@ -2,6 +2,12 @@
 
 Critical invariants that must hold across all contracts. Violating any single invariant compromises post-quantum security or financial safety.
 
+> The WOTS+ wallet family (`QuipWallet`/`WOTSPlusImplementation`) and its `QuipPaymaster`
+> are sunset — superseded by SHRINCS, source relocated under `contracts/deprecated/` —
+> but deprecation changed code location, not enforcement: every invariant referencing
+> those contracts still applies verbatim, and their test suites still run in CI
+> (`test/deprecated/`).
+
 ---
 
 ## 1. PQ Key Rotation After Every Guarded Call
