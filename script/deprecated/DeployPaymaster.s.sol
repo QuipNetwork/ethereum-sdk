@@ -4,8 +4,8 @@ pragma solidity ^0.8.33;
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
-import {Deployer} from "../contracts/Deployer.sol";
-import {QuipPaymaster} from "../contracts/QuipPaymaster.sol";
+import {Deployer} from "../../contracts/Deployer.sol";
+import {QuipPaymaster} from "../../contracts/deprecated/QuipPaymaster.sol";
 
 /**
  * @title DeployPaymaster

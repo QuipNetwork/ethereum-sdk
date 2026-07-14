@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorage.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/deprecated/wots/WOTSPlusStorage.sol";
 
 /// @dev Behaviour tests for the ERC-4337 `storageStore(bytes32, bytes32)`
 ///      override. Guarded by `onlyEntryPoint` and our `storageStoreGuard`,

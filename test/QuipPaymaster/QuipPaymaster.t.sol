@@ -5,9 +5,9 @@ import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {QuipPaymaster} from "../../contracts/QuipPaymaster.sol";
+import {QuipPaymaster} from "../../contracts/deprecated/QuipPaymaster.sol";
 import {QuipPaymasterHarness} from "../harness/QuipPaymasterHarness.sol";
-import {IQuipPaymaster} from "../../contracts/interfaces/IQuipPaymaster.sol";
+import {IQuipPaymaster} from "../../contracts/deprecated/interfaces/IQuipPaymaster.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 /// @title QuipPaymaster Base Test

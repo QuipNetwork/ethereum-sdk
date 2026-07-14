@@ -2,10 +2,10 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../../contracts/wots/WOTSPlusCodec.sol";
-import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorage.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/deprecated/wots/WOTSPlusStorage.sol";
 
 /// @dev Storage-layout preservation tests for `upgradeToAndCall`. Two flavours:
 ///

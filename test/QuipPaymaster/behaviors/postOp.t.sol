@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipPaymasterTest} from "../QuipPaymaster.t.sol";
-import {IQuipPaymaster} from "../../../contracts/interfaces/IQuipPaymaster.sol";
+import {IQuipPaymaster} from "../../../contracts/deprecated/interfaces/IQuipPaymaster.sol";
 import {IPaymaster} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 contract QuipPaymaster_postOp is QuipPaymasterTest {

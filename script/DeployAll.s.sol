@@ -3,7 +3,9 @@ pragma solidity ^0.8.33;
 
 import {console} from "forge-std-1.14.0/Script.sol";
 import {Deployer} from "../contracts/Deployer.sol";
-import {DeployWotsBase} from "./DeployWotsBase.sol";
+// Deliberate live->deprecated import: deploy-all still provisions the sunset WOTS+
+// family alongside SHRINCS (operational tooling, not runtime code).
+import {DeployWotsBase} from "./deprecated/DeployWotsBase.sol";
 import {DeployShrincsBase} from "./DeployShrincsBase.sol";
 import {IVettingFactory} from "./DeployHelpers.sol";
 
@@ -22,8 +24,8 @@ import {IVettingFactory} from "./DeployHelpers.sol";
  *      instead make Shrincs the default `latest`, swap the two `*ImplAndVet` calls
  *      below (a deliberate policy change — WOTS+ `createWallet` would then revert).
  *
- *      MUST run with `FOUNDRY_PROFILE=deploy` (QuipFactory + WOTSPlusImplementation
- *      link the WOTSPlus library). PRIVATE_KEY must be the QuipFactory owner.
+ *      MUST run with `FOUNDRY_PROFILE=deploy` (WOTSPlusImplementation links the
+ *      WOTSPlus library). PRIVATE_KEY must be the QuipFactory owner.
  *
  * Usage:
  *   FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \

@@ -20,6 +20,8 @@ pragma solidity ^0.8.33;
 import {EnumerableWinternitzAddressSet as Keyset} from "./EnumerableWinternitzAddressSet.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
+/// @custom:deprecated The WOTS+ wallet family is sunset — superseded by SHRINCS
+///                    (contracts/shrincs/). Kept fully functional for existing deployments.
 library WOTSPlusStorage {
     /// @custom:storage-location erc7201:quip.storage.wallet.wotsplus
     struct Layout {

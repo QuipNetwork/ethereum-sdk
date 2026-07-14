@@ -6,9 +6,9 @@ import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
-import {WOTSPlusImplementation} from "../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
 /// @title QuipFactory Base Test
 /// @dev Base contract for testing QuipFactory. Deploys full stack via CREATE3

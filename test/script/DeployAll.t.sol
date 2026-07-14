@@ -12,7 +12,7 @@ import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {IVettingFactory} from "../../script/DeployHelpers.sol";
-import {DeployWotsBase} from "../../script/DeployWotsBase.sol";
+import {DeployWotsBase} from "../../script/deprecated/DeployWotsBase.sol";
 import {DeployShrincsBase} from "../../script/DeployShrincsBase.sol";
 
 /// Public wrapper exposing the internal deploy-base helpers so a `Test` can drive

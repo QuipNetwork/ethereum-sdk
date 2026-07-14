@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipFactoryHarness} from "../../harness/QuipFactoryHarness.sol";
-import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 
 contract QuipFactory__findLatestActive is QuipFactoryTest {
     QuipFactoryHarness public harness;

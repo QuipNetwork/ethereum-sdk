@@ -5,9 +5,9 @@ import {Vm} from "forge-std-1.14.0/Test.sol";
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
 import {QuipFactoryHarness} from "../../harness/QuipFactoryHarness.sol";
-import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
-import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 
 contract QuipFactory__deployProxy is QuipFactoryTest {
     QuipFactoryHarness public harness;

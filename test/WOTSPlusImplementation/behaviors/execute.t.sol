@@ -2,14 +2,14 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {DummyContract} from "../../../contracts/test/DummyContract.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../../contracts/wots/WOTSPlusCodec.sol";
-import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
-import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/wots/EnumerableWinternitzAddressSet.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/deprecated/wots/EnumerableWinternitzAddressSet.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 
 /// @dev Contract-owner test harness for reentrancy testing of `execute(bytes)`.

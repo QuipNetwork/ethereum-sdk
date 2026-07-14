@@ -18,7 +18,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec} from "../WOTSPlusCodec.sol";
-import {IQuipWallet} from "../../interfaces/IQuipWallet.sol";
+import {IQuipWallet} from "../../../interfaces/IQuipWallet.sol";
 
 /// @title IWOTSPlusImplementation
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz
@@ -26,6 +26,9 @@ import {IQuipWallet} from "../../interfaces/IQuipWallet.sol";
 ///         and arbitrary calls.
 ///         Extends `IQuipWallet` — the factory-facing surface whose natspec
 ///         states the behavioral vetting contract this implementation upholds.
+/// @custom:deprecated The WOTS+ wallet family is sunset — superseded by SHRINCS
+///                    (contracts/shrincs/ShrincsWallet.sol). Kept fully functional for
+///                    existing deployments.
 interface IWOTSPlusImplementation is IQuipWallet {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */

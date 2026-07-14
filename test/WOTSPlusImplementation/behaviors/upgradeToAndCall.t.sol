@@ -2,13 +2,13 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../../contracts/wots/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
-import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/wots/EnumerableWinternitzAddressSet.sol";
-import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorage.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from "../../../contracts/deprecated/wots/EnumerableWinternitzAddressSet.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/deprecated/wots/WOTSPlusStorage.sol";
 
 /// @dev Minimal "rogue vetted impl" used to prove the verify-delegatecall guard
 ///      catches SSTOREs to any guarded slot. The fallback overwrites the

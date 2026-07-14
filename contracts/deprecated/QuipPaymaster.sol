@@ -35,6 +35,9 @@ import {QuipPaymasterStorage as Storage} from "./storage/QuipPaymasterStorage.so
 ///      signatures from a trusted backend to authorize gas sponsorship for QuipWallet
 ///      UserOperations. Each sponsored wallet has its own WOTS+ key chain, so key
 ///      rotation serializes per-wallet rather than globally.
+/// @custom:deprecated Sunset with the WOTS+ wallet family — superseded by ShrincsPaymaster
+///                    (contracts/shrincs/ShrincsPaymaster.sol). Kept fully functional for
+///                    existing deployments.
 contract QuipPaymaster is
     IQuipPaymaster,
     Ownable,

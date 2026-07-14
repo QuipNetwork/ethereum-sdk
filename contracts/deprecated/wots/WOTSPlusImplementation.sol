@@ -26,13 +26,16 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {ECDSA} from "solady-0.1.26/src/utils/ECDSA.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {IWOTSPlusImplementation} from "./interfaces/IWOTSPlusImplementation.sol";
-import {IQuipFactory} from "../interfaces/IQuipFactory.sol";
+import {IQuipFactory} from "../../interfaces/IQuipFactory.sol";
 import {WOTSPlusCodec as Codec} from "./WOTSPlusCodec.sol";
 import {WOTSPlusStorage as Storage} from "./WOTSPlusStorage.sol";
 // prettier-ignore
 import {EnumerableWinternitzAddressSet as Keyset} from "./EnumerableWinternitzAddressSet.sol";
 
 /// @title WOTSPlusImplementation
+/// @custom:deprecated The WOTS+ wallet family is sunset — superseded by SHRINCS
+///                    (contracts/shrincs/ShrincsWallet.sol). Kept fully functional for
+///                    existing deployments.
 contract WOTSPlusImplementation is
     IWOTSPlusImplementation,
     ERC4337,

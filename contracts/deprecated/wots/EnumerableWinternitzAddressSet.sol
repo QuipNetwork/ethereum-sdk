@@ -45,6 +45,8 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus
 /// `publicSeed == 0` is used as the empty-slot sentinel in the lazy phase.
 /// Uniqueness is determined by the full pair — two addresses sharing the same
 /// `publicSeed` but differing in `publicKeyHash` (or vice versa) are distinct elements.
+/// @custom:deprecated The WOTS+ wallet family is sunset — superseded by SHRINCS
+///                    (contracts/shrincs/). Kept fully functional for existing deployments.
 library EnumerableWinternitzAddressSet {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                     CUSTOM ERRORS                      */
