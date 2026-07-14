@@ -26,8 +26,7 @@ import {
 import { createAnvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { deployFactoryProxy } from "./utils/anvilFixture.js";
 
 import { quipFactoryAbi } from "../abi/QuipFactory.js";
 import {
@@ -76,15 +75,6 @@ function makeTestQuipClient(opts: {
   return client;
 }
 
-// ─── Forge artifact ─────────────────────────────────────────────────
-const factoryArtifact = JSON.parse(
-  readFileSync(
-    join(process.cwd(), "out/QuipFactory.sol/QuipFactory.json"),
-    "utf8"
-  )
-);
-const factoryBytecode = factoryArtifact.bytecode.object as Hex;
-
 const ANVIL_PRIV_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const account = privateKeyToAccount(ANVIL_PRIV_KEY);
@@ -103,15 +93,12 @@ beforeAll(async () => {
   publicClient = createPublicClient({ chain: foundry, transport });
   walletClient = createWalletClient({ chain: foundry, transport, account });
 
-  const hash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
-    bytecode: factoryBytecode,
-    args: [account.address, MAX_FEE],
+  ({ factoryAddress } = await deployFactoryProxy(
+    walletClient,
+    publicClient,
     account,
-    chain: foundry,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  factoryAddress = receipt.contractAddress!;
+    MAX_FEE
+  ));
 
   resetMulticallCacheForTesting();
 }, 30_000);
@@ -253,7 +240,6 @@ describe("QuipClient.getFactoryState end-to-end", () => {
     // pattern + result shape against a live deployment.
     const calls = [
       { address: factoryAddress, abi: quipFactoryAbi, functionName: "owner" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "pendingOwner" as const },
       { address: factoryAddress, abi: quipFactoryAbi, functionName: "creationFee" as const },
       { address: factoryAddress, abi: quipFactoryAbi, functionName: "executeFee" as const },
       { address: factoryAddress, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
@@ -268,14 +254,13 @@ describe("QuipClient.getFactoryState end-to-end", () => {
 
     expect(results.every((r) => r.status === "success")).toBe(true);
     expect(results[0].status === "success" && results[0].result).toBe(account.address);
-    // Pre-deploy default state: no pending owner, no fees, no vetted impl.
+    // Pre-deploy default state: no fees, no vetted impl.
     const ZERO = "0x0000000000000000000000000000000000000000" as Address;
-    expect(results[1].status === "success" && results[1].result).toBe(ZERO);
+    expect(results[1].status === "success" && results[1].result).toBe(0n);
     expect(results[2].status === "success" && results[2].result).toBe(0n);
-    expect(results[3].status === "success" && results[3].result).toBe(0n);
-    expect(results[4].status === "success" && results[4].result).toBe(MAX_FEE);
-    expect(results[5].status === "success" && results[5].result).toBe(ZERO);
-    expect(results[6].status === "success" && results[6].result).toBe(0n);
+    expect(results[3].status === "success" && results[3].result).toBe(MAX_FEE);
+    expect(results[4].status === "success" && results[4].result).toBe(ZERO);
+    expect(results[5].status === "success" && results[5].result).toBe(0n);
   });
 
   test("`QuipClient` placeholder exists for cross-reference (compile check)", () => {

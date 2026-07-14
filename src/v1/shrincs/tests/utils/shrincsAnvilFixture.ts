@@ -185,18 +185,33 @@ export async function setupShrincsAnvilStack(
   });
   const shrincsVerifier = verifierReceipt.contractAddress!;
 
-  // 1. QuipFactory
-  const factoryHash = await walletClient.deployContract({
+  // 1. QuipFactory: UUPS impl + ERC-1967 proxy + initialize. The PROXY
+  // address is the factory identity wallets bake in.
+  const factoryImplHash = await walletClient.deployContract({
     abi: quipFactoryAbi,
     bytecode: factoryArtifact.bytecode.object as Hex,
-    args: [account.address, maxFee],
+    args: [maxFee],
     account,
     chain: foundry,
   });
-  const factoryReceipt = await publicClient.waitForTransactionReceipt({
-    hash: factoryHash,
+  const factoryImplReceipt = await publicClient.waitForTransactionReceipt({
+    hash: factoryImplHash,
   });
-  const factoryAddress = factoryReceipt.contractAddress!;
+  const factoryAddress = await deployErc1967Proxy(
+    walletClient,
+    publicClient,
+    account,
+    factoryImplReceipt.contractAddress!
+  );
+  const factoryInitHash = await walletClient.writeContract({
+    chain: foundry,
+    address: factoryAddress,
+    abi: quipFactoryAbi,
+    functionName: "initialize",
+    args: [account.address],
+    account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: factoryInitHash });
 
   // 2. ShrincsWallet impl (no library linking — empty linkReferences) + vet.
   const implHash = await walletClient.deployContract({

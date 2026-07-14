@@ -30,6 +30,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { deployFactoryProxy } from "./utils/anvilFixture.js";
 import {
   decodeContractError,
   withDecodedError,
@@ -71,15 +72,12 @@ beforeAll(async () => {
   publicClient = createPublicClient({ chain: foundry, transport });
   walletClient = createWalletClient({ chain: foundry, transport, account });
 
-  const hash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
-    bytecode: factoryBytecode,
-    args: [account.address, MAX_FEE],
+  ({ factoryAddress } = await deployFactoryProxy(
+    walletClient,
+    publicClient,
     account,
-    chain: foundry,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  factoryAddress = receipt.contractAddress!;
+    MAX_FEE
+  ));
 }, 30_000);
 
 afterAll(async () => {
@@ -142,7 +140,7 @@ describe("Anvil — QuipFactory error decoding", () => {
         walletClient.deployContract({
           abi: quipFactoryAbi,
           bytecode: factoryBytecode,
-          args: [account.address, 0n],
+          args: [0n],
           account,
           chain: foundry,
         })
