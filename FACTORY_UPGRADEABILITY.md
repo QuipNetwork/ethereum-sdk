@@ -1,7 +1,9 @@
 # QuipFactory Upgradeability — Scope
 
 Effort 2 of the factory rework (effort 1, WOTS+ decoupling, landed on `feat/factory-rework`).
-Status: **planned, not started**. This document is the scope agreement for the implementation.
+Status: **IMPLEMENTED** (July 2026, `feat/factory-rework`). This document is the design record;
+the enforced rules live in [INVARIANTS.md §22](INVARIANTS.md), the trust delta in
+[GOVERNANCE.md](GOVERNANCE.md). Deviations from the original scope are marked ✎ inline.
 
 ## Why the factory must become upgradeable (and why now)
 
@@ -73,7 +75,7 @@ It notably does NOT add: forcing a wallet upgrade (still requires the wallet's o
 signature), moving wallet funds, or mutating any wallet's `owner()`. Mitigations: owner is a PQ
 wallet; two-step handover; upgrade events; (future option) timelock.
 
-## Invariant updates required
+## Invariant updates required — DONE (see INVARIANTS.md §8, §15, §22)
 
 - **§15 Factory Immutability**: retitle/qualify — the wallet's *reference* to the factory stays
   immutable; the factory's *logic* becomes upgradeable behind a stable address. State the new
@@ -102,9 +104,31 @@ wallet; two-step handover; upgrade events; (future option) timelock.
 5. **Docs** — INVARIANTS.md edits above; GOVERNANCE.md trust-delta section; README deploy-flow
    updates (steps 2/4 reference the proxy); DEPLOYMENTS.md shape for proxy+impl pairs.
 
-## Open questions (resolve at stage 1 kickoff)
+## Open questions — RESOLVED
 
-- Keep `Ownable2Step`-equivalent semantics via solady handover only, or forbid handover and
-  require explicit `transferOwnership` from the owning wallet? (Current lean: allow handover.)
-- Does anything on testnets depend on the current factory address? (If yes, note the
-  counterfactual-address break in DEPLOYMENTS.md when the proxy lands.)
+- **Handover semantics:** solady `Ownable` as-is — `transferOwnership` is IMMEDIATE (the OZ
+  Ownable2Step pending/accept flow is gone) and the two-step handover (candidate
+  `requestOwnershipHandover` → owner `completeOwnershipHandover`) stays ENABLED. Pinned by
+  `test/QuipFactory/behaviors/transferOwnership.t.sol`.
+- **Testnet address break:** acknowledged in DEPLOYMENTS.md — the V1.1 factory on Base Sepolia
+  (`0xd175…`) is retired in place; V2 salts (`QUIP:QuipFactory:{Impl,Proxy}:V2`) give the UUPS
+  factory a fresh address, REQUIRED because CREATE3 ignores initcode and the old salt would
+  silently resolve to the old deployment.
+
+## Implementation notes (✎ deltas from scope)
+
+- ✎ The proxy is OZ `ERC1967Proxy` with constructor initData (matching the QuipPaymaster deploy
+  pattern), not a bare proxy + separate initialize tx, in the deploy scripts; test fixtures use
+  `LibClone.deployERC1967` + explicit `initialize` (equivalent shape).
+- ✎ `IQuipFactory.renounceOwnership()` declaration was REMOVED from the interface (solady's is
+  payable; the wallets' interfaces set the precedent of declaring only the `RenounceDisabled`
+  error). The override still reverts unconditionally.
+- ✎ SDK: `FactoryState.pendingOwner` removed from `QuipClient.getFactoryState` — no on-chain
+  counterpart under solady (handover is keyed by candidate address). Only consumer-visible SDK
+  break.
+- ✎ Bonus from effort 1: the factory links NO libraries anymore (WOTSPlus dependency deleted),
+  so `DeployQuipFactory.s.sol` no longer needs `FOUNDRY_PROFILE=deploy`.
+- Verification landed: `test/QuipFactory/behaviors/upgradeToAndCall.t.sol` (10 tests: auth,
+  onlyProxy, init-locking, storage continuity, per-impl `MAX_FEE`, CREATE3 stability) and SDK
+  `src/v1/tests/integration.factory-upgrade.test.ts` (live mid-flight upgrade: registry,
+  counterfactual addresses, event parsing, pre-upgrade wallet still executes).

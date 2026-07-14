@@ -165,7 +165,6 @@ describe("tryMulticall against deployed QuipFactory", () => {
       { address: factoryAddress, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
       { address: factoryAddress, abi: quipFactoryAbi, functionName: "latestWalletImpl" as const },
       { address: factoryAddress, abi: quipFactoryAbi, functionName: "getVettedCodeCount" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "pendingOwner" as const },
     ];
 
     const viaAuto = await tryMulticall(publicClient, calls, {

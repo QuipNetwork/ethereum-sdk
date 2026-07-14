@@ -22,13 +22,13 @@ import {QuipFactory} from "../contracts/QuipFactory.sol";
  *      reusing it on a chain with an existing V1.1 deployment would silently
  *      skip and leave the old factory in place).
  *
- *      IMPORTANT: this script must be run with `FOUNDRY_PROFILE=deploy` so
- *      the QuipFactory bytecode has the WOTSPlus library linked at compile
- *      time. Without that, the bytecode contains an unlinked library
- *      reference and the deploy reverts.
+ *      NOTE: since the WOTS+ decoupling the factory links NO libraries
+ *      (the WOTSPlus dependency is gone), so this script no longer needs
+ *      `FOUNDRY_PROFILE=deploy`. Running with it is still harmless — and
+ *      required for the orchestrators that also deploy the wallet impl.
  *
  * Usage:
- *   FOUNDRY_PROFILE=deploy forge script script/DeployQuipFactory.s.sol \
+ *   forge script script/DeployQuipFactory.s.sol \
  *       --rpc-url $RPC --private-key $PRIVATE_KEY --broadcast --verify
  *
  * Environment:

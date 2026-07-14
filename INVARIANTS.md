@@ -146,7 +146,8 @@ Protected slots:
 
 **Fees are capped at `MAX_FEE` and committed in the signed digest.**
 
-- Factory owner sets `executeFee` and `creationFee`, both capped by immutable `MAX_FEE`
+- Factory owner sets `executeFee` and `creationFee`, both capped by `MAX_FEE`
+- `MAX_FEE` is a per-IMPLEMENTATION immutable of the UUPS factory (22): it lives in implementation code, so a factory upgrade CAN change the cap. The wallet-side signed fee is therefore the load-bearing bound, not the cap.
 - The fee value is included in the execute digest — the signer explicitly authorizes the fee amount
 - Fee transfer happens after successful execution (atomic with the call)
 
@@ -244,13 +245,15 @@ Decoders use assembly pointer arithmetic to read exact offsets.
 
 ---
 
-## 15. Factory Immutability
+## 15. Factory Reference Immutability
 
-**Each wallet's factory reference is immutable after initialization.**
+**Each wallet's factory reference is immutable after initialization; the factory's ADDRESS is permanent even though its logic is upgradeable.**
 
 `FACTORY` is set in the constructor (immutable). `quipFactory` is stored in PQ-protected storage and guarded against writes. Only the factory can initialize the wallet.
 
-**Contracts:** QuipWallet
+The referenced address is the factory's ERC-1967 PROXY — the permanent factory identity. The factory's logic is UUPS-upgradeable behind it (22), which is precisely what makes the wallet-side immutability safe to commit to: the one address wallets can never re-point survives every factory fix.
+
+**Contracts:** QuipWallet, ShrincsWallet, QuipFactory
 
 **Violation consequence:** A mutable factory reference lets an attacker redirect fee transfers or bypass initialization checks.
 
@@ -368,7 +371,21 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 ---
 
-## Critical Dependencies
+## 22. Factory Upgrade Safety (UUPS + ERC-7201)
+
+**The factory is UUPS behind an ERC-1967 proxy: the PROXY address is the permanent identity, all mutable state lives in the `quip.storage.factory` ERC-7201 namespace with an append-only layout, and upgrades are owner-fiat (`_authorizeUpgrade` + `onlyOwner`).**
+
+- **Why the proxy address is permanent:** every wallet bakes it in as an immutable (15) — the `updateWalletOwner` callback, upgrade-gating reads (`getVettedCodeIndex`/`deprecatedImpls`), and live-fee reads all target it forever — and CREATE3 wallet addressing is a pure function of (proxy address, vaultId), independent of both wallet initcode and factory implementation. Counterfactual and cross-chain wallet addresses therefore survive factory upgrades. Pinned by tests: `test_upgrade_walletAddressesStableAcrossUpgrade`, SDK `integration.factory-upgrade`.
+- **Layout continuity across upgrades:** `QuipFactoryStorage.Layout` fields are never moved, retyped, or removed — append-only — and the ERC-7201 namespace string is never changed. No new implementation may write registry state outside the existing mutation paths (`_deployProxy`, `updateWalletOwner`, fee setters, vet/deprecate/undeprecate).
+- **`MAX_FEE` is per-implementation** (constructor immutable, lives in impl code): an upgrade can change the cap (8). This is a documented trust delta, not an accident — the wallet-side signed fee is the floor of protection.
+- **Owner-fiat upgrades, PQ-secured upstream:** the owner is expected to be a post-quantum wallet (same posture as the ShrincsPaymaster, 20). Solady Ownable with `transferOwnership` IMMEDIATE and two-step handover ENABLED (candidate requests, owner completes); renounce disabled. Deliberately unlike the wallets, which disable the whole classical ownership surface.
+- **Initialization is single-shot on the proxy** (Solady `initializer`) and locked on the raw implementation (`_disableInitializers` in the constructor).
+- **What upgrade power does NOT add:** forcing a wallet upgrade (still requires the wallet's own PQ signature choosing a vetted impl), moving wallet funds, or mutating any wallet's `owner()`. What it DOES add over curation+fees: the ability to DoS `updateWalletOwner` (bricking wallet ownership transfers), DoS the vetted-set views (bricking wallet upgrades), lift `MAX_FEE`, and corrupt registry views (UI-level, 16).
+- **Deploy shape:** impl + OZ `ERC1967Proxy` via Deployer/CREATE3, salts `QUIP:QuipFactory:{Impl,Proxy}:V2`. V2 is load-bearing — CREATE3 ignores initcode, so the V1.1 salt would silently resolve to any pre-existing non-upgradeable factory deployment and skip.
+
+**Contracts:** QuipFactory, QuipFactoryStorage
+
+**Violation consequence:** A moved or re-namespaced storage field silently corrupts the registry for every wallet ever deployed (reads return garbage from the new offsets — worse than a revert). A changed proxy address orphans all wallets' immutable factory pointers and shifts every counterfactual wallet address. Registry writes outside the sanctioned paths break invariant 16 without tripping its defense-in-depth checks.
 
 These invariants form a security web — they depend on each other:
 
