@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
+import {IWOTSPlusImplementation} from "../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 
 contract WOTSPlusImplementation_renounceOwnership is WOTSPlusImplementationTest {
     function test_renounceOwnership_alwaysReverts() public {

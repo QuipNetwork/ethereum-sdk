@@ -18,6 +18,8 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
+/// @custom:deprecated Sunset with the WOTS+ wallet family — superseded by ShrincsPaymaster's
+///                    storage (contracts/shrincs/). Kept fully functional for existing deployments.
 library QuipPaymasterStorage {
     /// @custom:storage-location erc7201:quip.storage.paymaster
     struct Layout {

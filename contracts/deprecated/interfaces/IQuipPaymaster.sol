@@ -29,6 +29,9 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus
 ///         The paymaster's WOTS+ digest is built from constituent UserOp fields (sender, nonce,
 ///         callData) rather than the EntryPoint's userOpHash. This avoids a circular dependency:
 ///         userOpHash includes paymasterAndData, which contains the paymaster's own signature.
+/// @custom:deprecated Sunset with the WOTS+ wallet family — superseded by ShrincsPaymaster
+///                    (contracts/shrincs/ShrincsPaymaster.sol). Kept fully functional for
+///                    existing deployments.
 interface IQuipPaymaster is IPaymaster {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */

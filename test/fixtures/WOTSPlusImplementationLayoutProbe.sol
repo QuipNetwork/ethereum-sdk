@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlusStorage} from "../../contracts/wots/WOTSPlusStorage.sol";
+import {WOTSPlusStorage} from "../../contracts/deprecated/wots/WOTSPlusStorage.sol";
 
 /// @dev Test-only probe whose sole purpose is to expose `WOTSPlusStorage.Layout`
 ///      to `forge inspect storageLayout`. ERC-7201 namespaced storage is invisible

@@ -2,8 +2,8 @@
 pragma solidity ^0.8.33;
 
 import {QuipPaymasterTest} from "../QuipPaymaster.t.sol";
-import {QuipPaymaster} from "../../../contracts/QuipPaymaster.sol";
-import {IQuipPaymaster} from "../../../contracts/interfaces/IQuipPaymaster.sol";
+import {QuipPaymaster} from "../../../contracts/deprecated/QuipPaymaster.sol";
+import {IQuipPaymaster} from "../../../contracts/deprecated/interfaces/IQuipPaymaster.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 
 contract QuipPaymaster_initialize is QuipPaymasterTest {

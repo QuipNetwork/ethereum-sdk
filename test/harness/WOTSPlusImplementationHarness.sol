@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlusImplementation} from "../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusStorage as Storage} from "../../contracts/wots/WOTSPlusStorage.sol";
-import {EnumerableWinternitzAddressSet as Keyset} from "../../contracts/wots/EnumerableWinternitzAddressSet.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
+import {WOTSPlusStorage as Storage} from "../../contracts/deprecated/wots/WOTSPlusStorage.sol";
+import {EnumerableWinternitzAddressSet as Keyset} from "../../contracts/deprecated/wots/EnumerableWinternitzAddressSet.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 
 /// @dev Enum mirroring the three keyset storage slots so harness tests can target any of them.

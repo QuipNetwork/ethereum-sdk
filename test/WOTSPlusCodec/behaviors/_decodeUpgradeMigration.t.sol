@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
-import {WOTSPlusCodec} from "../../../contracts/wots/WOTSPlusCodec.sol";
+import {WOTSPlusCodec} from "../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
 contract WOTSPlusCodec__decodeUpgradeMigration is WOTSPlusCodecTest {
     function test_exposed_decodeUpgradeMigration_decodesTrue() public view {

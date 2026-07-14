@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {EnumerableWinternitzAddressSet} from "contracts/wots/EnumerableWinternitzAddressSet.sol";
+import {EnumerableWinternitzAddressSet} from "contracts/deprecated/wots/EnumerableWinternitzAddressSet.sol";
 
 /// @dev Reuses the same harness shape as the main suite, scoped tighter so
 ///      this file is self-contained.

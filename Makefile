@@ -113,7 +113,7 @@ deploy-deployer:
 	forge script script/DeployDeployer.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-wotsplus:
-	forge script script/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	forge script script/deprecated/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-factory:
 	FOUNDRY_PROFILE=deploy forge script script/DeployQuipFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
@@ -122,7 +122,7 @@ deploy-all:
 	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify
 
 deploy-impl:
-	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 vet-impl:
 	forge script script/VetImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
@@ -161,7 +161,7 @@ deploy-all-base-sepolia:
 	  --broadcast --verify
 
 deploy-impl-base-sepolia:
-	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol \
+	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol \
 	  --rpc-url base_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
@@ -188,7 +188,7 @@ deploy-all-op-sepolia:
 	  --broadcast --verify
 
 deploy-impl-op-sepolia:
-	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol \
+	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol \
 	  --rpc-url op_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify

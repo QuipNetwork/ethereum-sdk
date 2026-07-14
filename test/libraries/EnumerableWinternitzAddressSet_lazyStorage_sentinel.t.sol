@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {EnumerableWinternitzAddressSet} from "contracts/wots/EnumerableWinternitzAddressSet.sol";
+import {EnumerableWinternitzAddressSet} from "contracts/deprecated/wots/EnumerableWinternitzAddressSet.sol";
 
 /// @dev Harness exposing the set's `_rootSlot` derivation so the test can
 ///      `vm.load` specific slots. The derivation is replicated verbatim

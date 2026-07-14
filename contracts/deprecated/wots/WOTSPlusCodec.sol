@@ -111,6 +111,8 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 ///
 ///      Constants:
 ///        MAX_KEYS = 10  (every keyset always holds exactly 10 entries)
+/// @custom:deprecated The WOTS+ wallet family is sunset — superseded by SHRINCS
+///                    (contracts/shrincs/). Kept fully functional for existing deployments.
 library WOTSPlusCodec {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */

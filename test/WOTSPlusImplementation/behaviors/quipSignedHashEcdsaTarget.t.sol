@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
+import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 
 /// @title WOTSPlusImplementation.quipSignedHashEcdsaTarget — view parity & binding
 /// @dev `quipSignedHashEcdsaTarget(hash)` returns the exact 32-byte digest

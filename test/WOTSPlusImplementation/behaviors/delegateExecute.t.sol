@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
-import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorage.sol";
+import {WOTSPlusStorage as Storage} from "../../../contracts/deprecated/wots/WOTSPlusStorage.sol";
 
 /// @dev Benign delegate — writes to a slot outside the 7 guarded slots.
 ///      Picks an arbitrary high slot (not aliased to owner/impl/factory/

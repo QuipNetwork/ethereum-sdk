@@ -3,8 +3,8 @@ pragma solidity ^0.8.33;
 
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
-import {Deployer} from "../contracts/Deployer.sol";
-import {WOTSPlusImplementation} from "../contracts/wots/WOTSPlusImplementation.sol";
+import {Deployer} from "../../contracts/Deployer.sol";
+import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 
 /**
  * @title DeployImplementation

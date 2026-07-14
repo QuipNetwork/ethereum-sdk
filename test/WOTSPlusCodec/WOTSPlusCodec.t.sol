@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {WOTSPlusCodecHarness} from "../harness/WOTSPlusCodecHarness.sol";
