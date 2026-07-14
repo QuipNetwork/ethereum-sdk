@@ -21,7 +21,11 @@ import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+// prettier-ignore
+import {
+    IERC7913SignatureVerifier
+} from "@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
 // prettier-ignore
 import {
     IPaymaster,
@@ -75,7 +79,15 @@ contract ShrincsPaymaster is
     bytes32 private constant _ACTION_PAYMASTER_APPROVE =
         keccak256("quip.shrincs.action.paymasterApprove");
 
-    constructor() {
+    /// @dev The pinned external SHRINCS verifier all sponsorship-signature cryptography is
+    ///      delegated to (the dep's deployed `SHRINCS256sKeccak` ERC-7913 verifier — trustless:
+    ///      no owner, no storage, no upgradability). Immutable, so it lives in implementation
+    ///      code and is set at implementation deployment (behind the UUPS proxy).
+    address public immutable SHRINCS_VERIFIER;
+
+    constructor(address shrincsVerifier_) {
+        if (shrincsVerifier_ == address(0)) revert ZeroAddressVerifier();
+        SHRINCS_VERIFIER = shrincsVerifier_;
         _disableInitializers();
     }
 
@@ -104,7 +116,7 @@ contract ShrincsPaymaster is
     ) external initializer {
         if (owner_ == address(0)) revert ZeroAddressOwner();
         if (commitment == bytes32(0)) revert ZeroCommitment();
-        if (hashSuite != ShrincsTypes.HASH_SUITE_KECCAK_256)
+        if (hashSuite != HashSuite.HASH_SUITE_ID)
             revert UnsupportedHashSuite();
         if (maxSignatures == 0) revert ZeroMaxSignatures();
 
@@ -182,7 +194,7 @@ contract ShrincsPaymaster is
         uint32 maxSignatures
     ) external onlyOwner {
         if (commitment == bytes32(0)) revert ZeroCommitment();
-        if (hashSuite != ShrincsTypes.HASH_SUITE_KECCAK_256)
+        if (hashSuite != HashSuite.HASH_SUITE_ID)
             revert UnsupportedHashSuite();
         if (maxSignatures == 0) revert ZeroMaxSignatures();
 
@@ -255,8 +267,8 @@ contract ShrincsPaymaster is
         bytes calldata blob = userOp.paymasterAndData[_PAYMASTER_DATA_OFFSET +
             _CUSTOM_SIG_OFFSET:];
         (
-            ShrincsTypes.PublicKey calldata pk,
-            ShrincsTypes.StatefulSignature calldata sig
+            SHRINCS.PublicKey calldata pk,
+            SHRINCS.Signature calldata sig
         ) = Codec.decodeUserOpSignature(blob);
 
         uint256 epoch = $.keyVersion;
@@ -276,7 +288,7 @@ contract ShrincsPaymaster is
             return false;
         }
 
-        ShrincsTypes.ActionContext memory ctx = ShrincsTypes.ActionContext({
+        SHRINCS.ActionContext memory ctx = SHRINCS.ActionContext({
             domainSeparator: _domainSeparator(),
             nonce: 0,
             keyVersion: epoch,
@@ -284,7 +296,16 @@ contract ShrincsPaymaster is
             payloadHash: _userOpBindingHash(userOp)
         });
 
-        if (!SHRINCS.verifyStateful(commitment, pk, ctx, sig)) {
+        // Stateful verification via the pinned ERC-7913 verifier, in lock-step with the
+        // wallet's inline sites (delegation model: SDK_README.md "External verifier
+        // delegation" + INVARIANTS.md invariant 19; ERC-7562: ERC7562_COMPLIANCE.md N-5).
+        if (
+            IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
+                abi.encodePacked(commitment),
+                SHRINCS.statefulActionMessageHash(commitment, ctx),
+                abi.encode(pk, sig)
+            ) != IERC7913SignatureVerifier.verify.selector
+        ) {
             emit PaymasterValidationRejected(
                 userOp.sender,
                 PaymasterValidationFailure.InvalidSignature
@@ -376,7 +397,7 @@ contract ShrincsPaymaster is
         // HASH_SUITE_KECCAK_256, so the installed suite is always the constant.
         return (
             $.shrincsCommitment,
-            ShrincsTypes.HASH_SUITE_KECCAK_256,
+            HashSuite.HASH_SUITE_ID,
             $.keyVersion,
             $.maxSignatures,
             $.statefulLeavesUsed

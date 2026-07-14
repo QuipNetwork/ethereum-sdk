@@ -24,7 +24,7 @@ library ShrincsWalletStorage {
         /// @dev Commitment to the installed SHRINCS public-key bundle that authorizes every
         ///      normal operation (stateful path) and break-glass recovery (stateless path).
         ///      Only the 32-byte commitment is stored; callers always supply the full
-        ///      `ShrincsTypes.PublicKey` bundle in calldata, which the SHRINCS library
+        ///      `SHRINCS.PublicKey` bundle in calldata, which the SHRINCS library
         ///      re-validates against this commitment. Changes only via `rotateKey`
         ///      (stateful) or `recoverWallet` (stateless break-glass).
         bytes32 shrincsPublicKeyCommitment;

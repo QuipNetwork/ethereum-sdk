@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
 import {Deployer} from "../contracts/Deployer.sol";
 import {ShrincsPaymaster} from "../contracts/ShrincsPaymaster.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {ShrincsWallet} from "../contracts/shrincs/ShrincsWallet.sol";
 import {DeployHelpers} from "./DeployHelpers.sol";
 
@@ -20,6 +20,11 @@ import {DeployHelpers} from "./DeployHelpers.sol";
  *      `script/PredictAddresses.s.sol` (V1.0).
  */
 abstract contract DeployShrincsBase is DeployHelpers {
+    /// Canonical CREATE3 address of the deployed `SHRINCS256sKeccak` ERC-7913 verifier
+    /// (hashsigs-solidity `DEPLOYMENTS.md`; same address on every chain). Pinned as an
+    /// immutable by the ShrincsWallet and ShrincsPaymaster implementation constructors.
+    address internal constant SHRINCS_EXTERNAL_VERIFIER = 0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A;
+
     bytes32 internal constant SHRINCS_WALLET_SALT = keccak256("QUIP:ShrincsWallet:V1.0");
     bytes32 internal constant SHRINCS_PAYMASTER_IMPL_SALT = keccak256("QUIP:ShrincsPaymaster:Impl:V1.0");
     bytes32 internal constant SHRINCS_PAYMASTER_PROXY_SALT = keccak256("QUIP:ShrincsPaymaster:Proxy:V1.0");
@@ -41,7 +46,7 @@ abstract contract DeployShrincsBase is DeployHelpers {
             paymasterOwner: vm.envAddress("SHRINCS_PAYMASTER_OWNER"),
             commitment: vm.envBytes32("SHRINCS_VERIFIER_COMMITMENT"),
             hashSuite: uint32(
-                vm.envOr("SHRINCS_VERIFIER_HASH_SUITE", uint256(ShrincsTypes.HASH_SUITE_KECCAK_256))
+                vm.envOr("SHRINCS_VERIFIER_HASH_SUITE", uint256(HashSuite.HASH_SUITE_ID))
             ),
             maxSignatures: uint32(vm.envUint("SHRINCS_VERIFIER_MAX_SIGNATURES"))
         });
@@ -53,7 +58,8 @@ abstract contract DeployShrincsBase is DeployHelpers {
     /// SDK always uses `deploySpecificWalletProxy`, so it is order-independent).
     function _deployShrincsImplAndVet(Deployer deployer, uint256 pk, address factory) internal returns (address impl) {
         _requireExists(factory, "QuipFactory");
-        bytes memory code = abi.encodePacked(type(ShrincsWallet).creationCode, abi.encode(factory));
+        bytes memory code =
+            abi.encodePacked(type(ShrincsWallet).creationCode, abi.encode(factory, SHRINCS_EXTERNAL_VERIFIER));
         impl = _create3(deployer, pk, code, SHRINCS_WALLET_SALT, "ShrincsWallet");
         _vetIfNeeded(factory, pk, impl, "ShrincsWallet");
     }
@@ -66,8 +72,9 @@ abstract contract DeployShrincsBase is DeployHelpers {
         require(v.commitment != bytes32(0), "SHRINCS verifier commitment zero");
         require(v.maxSignatures != 0, "SHRINCS verifier maxSignatures zero");
 
-        address impl =
-            _create3(deployer, pk, type(ShrincsPaymaster).creationCode, SHRINCS_PAYMASTER_IMPL_SALT, "ShrincsPaymaster impl");
+        bytes memory implCode =
+            abi.encodePacked(type(ShrincsPaymaster).creationCode, abi.encode(SHRINCS_EXTERNAL_VERIFIER));
+        address impl = _create3(deployer, pk, implCode, SHRINCS_PAYMASTER_IMPL_SALT, "ShrincsPaymaster impl");
         bytes memory initData = abi.encodeCall(
             ShrincsPaymaster.initialize, (v.paymasterOwner, v.commitment, v.hashSuite, v.maxSignatures)
         );

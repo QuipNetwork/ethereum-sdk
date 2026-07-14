@@ -33,6 +33,9 @@ interface IShrincsPaymaster is IPaymaster {
 
     /// @notice Thrown when the owner address is zero.
     error ZeroAddressOwner();
+    /// @notice Thrown when the external SHRINCS verifier address is zero at implementation
+    ///         deployment.
+    error ZeroAddressVerifier();
     /// @notice Thrown when the caller is not the ERC-4337 EntryPoint.
     error InvalidEntryPoint();
     /// @notice Thrown when registering a zero verifier commitment.
@@ -40,9 +43,9 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();
-    /// @notice Thrown when registering a verifier key with a hash suite other than
-    ///         `ShrincsTypes.HASH_SUITE_KECCAK_256` (the only suite this implementation
-    ///         verifies; the SHRINCS library binds it into every canonical message hash).
+    /// @notice Thrown when registering a verifier key with a hash suite other than the
+    ///         compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this implementation
+    ///         verifies; SHRINCS binds it into every canonical message hash).
     error UnsupportedHashSuite();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -55,7 +58,7 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Emitted when the global SHRINCS verifier key is (re)registered.
     /// @param previousCommitment The prior verifier commitment (zero on first registration).
     /// @param newCommitment The installed verifier commitment.
-    /// @param hashSuite The `ShrincsTypes.HASH_SUITE_*` id the key was validated against.
+    /// @param hashSuite The hash-suite id the key was validated against.
     /// @param maxSignatures The installed key's stateful leaf budget.
     /// @param keyVersion The new verifier-key epoch.
     event ShrincsVerifierSet(
@@ -110,7 +113,7 @@ interface IShrincsPaymaster is IPaymaster {
     ///         no way to unset it (only rotate via `setShrincsVerifier`).
     /// @param owner_ The paymaster owner.
     /// @param commitment The initial verifier-key bundle commitment.
-    /// @param hashSuite The verifier key's `ShrincsTypes.HASH_SUITE_*` id (client-agreement
+    /// @param hashSuite The verifier key's hash-suite id (client-agreement
     ///        check; must be `HASH_SUITE_KECCAK_256`).
     /// @param maxSignatures The key's stateful leaf budget.
     function initialize(
@@ -123,7 +126,7 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Rotates the global SHRINCS verifier key. Owner-only. Bumps the verifier epoch (fresh
     ///         leaf-bitmap namespace) and resets the leaf-used counter. Cannot unset the key.
     /// @param commitment The verifier-key bundle commitment.
-    /// @param hashSuite The verifier key's `ShrincsTypes.HASH_SUITE_*` id (client-agreement
+    /// @param hashSuite The verifier key's hash-suite id (client-agreement
     ///        check; must be `HASH_SUITE_KECCAK_256`).
     /// @param maxSignatures The key's stateful leaf budget.
     function setShrincsVerifier(

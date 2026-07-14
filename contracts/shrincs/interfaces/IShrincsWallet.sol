@@ -16,7 +16,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
 
 /// @title IShrincsWallet
 /// @notice A smart-contract wallet whose operations are authorized by SHRINCS
@@ -31,6 +32,9 @@ interface IShrincsWallet {
 
     /// @notice Thrown when the factory address is zero.
     error ZeroAddressFactory();
+    /// @notice Thrown when the external SHRINCS verifier address is zero at implementation
+    ///         deployment (see `getShrincsVerifier`).
+    error ZeroAddressVerifier();
     /// @notice Thrown when the owner address is zero.
     error ZeroAddressOwner();
     /// @notice Thrown when the caller is not the immutable factory.
@@ -44,8 +48,8 @@ interface IShrincsWallet {
     /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
     error ZeroErc1271Commitment();
     /// @notice Thrown when an install payload declares a hash suite other than
-    ///         `ShrincsTypes.HASH_SUITE_KECCAK_256` (the only suite this implementation
-    ///         verifies; the SHRINCS library binds it into every canonical message hash).
+    ///         the compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this
+    ///         implementation verifies; SHRINCS binds it into every canonical message hash).
     error UnsupportedHashSuite();
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
@@ -250,8 +254,8 @@ interface IShrincsWallet {
     ///        between signing and landing succeeds (charging the lower fee), and only an
     ///        increase past the cap rejects.
     function execute(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         address target,
         uint256 value,
         bytes calldata data,
@@ -260,8 +264,8 @@ interface IShrincsWallet {
 
     /// @notice Withdraws from the EntryPoint deposit, authorized by a stateful SHRINCS signature.
     function withdrawDepositTo(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         address to,
         uint256 amount
     ) external payable;
@@ -279,18 +283,18 @@ interface IShrincsWallet {
     /// @param nextKey The new owner's replacement full key bundle.
     /// @param newOwner The incoming classical owner (ERC-1271 ECDSA gate + factory registry).
     function transferOwnership(
-        ShrincsTypes.PublicKey calldata currentPublicKey,
-        ShrincsTypes.StatefulSignature calldata ownerBindingSignature,
-        ShrincsTypes.StatelessSignature calldata recoverySignature,
-        ShrincsTypes.RotationTarget calldata nextKey,
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SHRINCS.Signature calldata ownerBindingSignature,
+        SPHINCSPlusC.Signature calldata recoverySignature,
+        SHRINCS.RotationTarget calldata nextKey,
         address newOwner
     ) external payable;
 
     /// @notice (Re)installs the dedicated ERC-1271 stateless verifier key, authorized by a
     ///         stateful SHRINCS action from the main key.
     function setErc1271Key(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         bytes32 newErc1271Commitment,
         uint32 newErc1271HashSuite
     ) external payable;
@@ -312,8 +316,8 @@ interface IShrincsWallet {
     ///        that is the key reuse this function exists to prevent).
     /// @param leaves The target leaf indices to revoke (order-sensitive in the signed payload).
     function markLeavesUsed(
-        ShrincsTypes.PublicKey calldata publicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
+        SHRINCS.PublicKey calldata publicKey,
+        SHRINCS.Signature calldata signature,
         uint32[] calldata leaves
     ) external payable;
 
@@ -324,9 +328,9 @@ interface IShrincsWallet {
     /// @param signature The stateful signature authorizing the rotation.
     /// @param nextStatefulKey The replacement stateful subkey target.
     function rotateKey(
-        ShrincsTypes.PublicKey calldata currentPublicKey,
-        ShrincsTypes.StatefulSignature calldata signature,
-        ShrincsTypes.StatefulRotationTarget calldata nextStatefulKey
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SHRINCS.Signature calldata signature,
+        SHRINCS.StatefulRotationTarget calldata nextStatefulKey
     ) external payable;
 
     /// @notice Break-glass wallet recovery: authorized by a STATELESS signature from the main
@@ -338,9 +342,9 @@ interface IShrincsWallet {
     /// @param recoverySignature The stateless recovery signature authorizing the rotation.
     /// @param nextKey The replacement full key bundle.
     function recoverWallet(
-        ShrincsTypes.PublicKey calldata currentPublicKey,
-        ShrincsTypes.StatelessSignature calldata recoverySignature,
-        ShrincsTypes.RotationTarget calldata nextKey
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SPHINCSPlusC.Signature calldata recoverySignature,
+        SHRINCS.RotationTarget calldata nextKey
     ) external payable;
 
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
@@ -375,15 +379,23 @@ interface IShrincsWallet {
     /// @notice The installed ERC-1271 verifier-key commitment.
     function getErc1271Commitment() external view returns (bytes32);
 
-    /// @notice The `ShrincsTypes.HASH_SUITE_*` id the installed main key was validated against.
-    ///         Always `HASH_SUITE_KECCAK_256`: the id is not stored — install/rotate paths
-    ///         reject every other suite.
+    /// @notice The hash-suite id the installed main key was validated against. Always the
+    ///         compiled keccak `HashSuite.HASH_SUITE_ID`: the id is not stored —
+    ///         install/rotate paths reject every other suite.
     function getHashSuite() external view returns (uint32);
 
-    /// @notice The `ShrincsTypes.HASH_SUITE_*` id the installed ERC-1271 verifier key was
-    ///         validated against. Always `HASH_SUITE_KECCAK_256`: the id is not stored —
+    /// @notice The hash-suite id the installed ERC-1271 verifier key was validated against.
+    ///         Always the compiled keccak `HashSuite.HASH_SUITE_ID`: the id is not stored —
     ///         install/rotate paths reject every other suite.
     function getErc1271HashSuite() external view returns (uint32);
+
+    /// @notice The pinned external SHRINCS verifier this implementation delegates all
+    ///         signature cryptography to (an `immutable` set at implementation deployment).
+    ///         The verifier is trustless by construction — no owner, no storage, no
+    ///         upgradability — so pinning it grants it no authority: it can only answer
+    ///         "does this signature verify over this hash", and all statefulness (leaf
+    ///         bitmap, nonce, keyVersion, commitment installs) stays in the wallet.
+    function getShrincsVerifier() external view returns (address);
 
     /// @notice Whether stateful `leafIndex` has been consumed in the current key epoch.
     function isStatefulLeafUsed(uint256 leafIndex) external view returns (bool);
