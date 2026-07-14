@@ -19,64 +19,46 @@ pragma solidity ^0.8.33;
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
-// NOTE: OpenZeppelin 5.6.0-rc.1 is a pre-release version. Pin to a stable release before mainnet.
-import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
-import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
+import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
+import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
-import {IWOTSPlusImplementation} from "./wots/interfaces/IWOTSPlusImplementation.sol";
+import {IQuipWallet} from "./interfaces/IQuipWallet.sol";
+import {QuipFactoryStorage as Storage} from "./storage/QuipFactoryStorage.sol";
 
 /// @title QuipFactory
-contract QuipFactory is IQuipFactory, Ownable2Step {
+/// @notice UUPS-upgradeable behind an ERC-1967 proxy. The PROXY address is the
+///         permanent factory identity: every wallet bakes it in as an immutable
+///         (callback, upgrade-gating, and fee reads all target it), and CREATE3
+///         wallet addressing derives from it — so wallet addresses are stable
+///         across factory upgrades (CREATE3 ignores initcode and `address(this)`
+///         is the proxy). The registry lives in ERC-7201 namespaced storage
+///         (`QuipFactoryStorage`) whose layout is append-only across upgrades.
+///         The owner is expected to be a post-quantum wallet; upgrades are
+///         authorized by `onlyOwner` and thus PQ-secured upstream.
+contract QuipFactory is IQuipFactory, Ownable, UUPSUpgradeable, Initializable {
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     /// @inheritdoc IQuipFactory
+    /// @dev Per-IMPLEMENTATION immutable: it lives in implementation code, not
+    ///      proxy storage, so an upgrade can change the cap. The wallet-side
+    ///      floor of protection is the signed `maxFee` committed in every
+    ///      execute digest — no factory state can raise what a wallet pays.
     uint256 public immutable MAX_FEE;
 
-    /// @inheritdoc IQuipFactory
-    uint256 public creationFee = 0;
-    /// @inheritdoc IQuipFactory
-    uint256 public executeFee = 0;
-
-    /// @inheritdoc IQuipFactory
-    mapping(bytes32 vaultId => address wallet) public wallets;
-
-    /// @inheritdoc IQuipFactory
-    mapping(address wallet => bytes32 vaultId) public vaultIdOf;
-
-    /// @inheritdoc IQuipFactory
-    mapping(address wallet => address owner) public walletOwner;
-
-    /// @dev Per-owner set of vaultIds. Tracks CURRENT classical owner — the
-    ///      `transferOwnership(bytes)` flow on a wallet calls back into
-    ///      `updateWalletOwner` to move the entry between owners. Exposed
-    ///      via `getVaultIdCount` / `getVaultIdAt` / `getVaultIdIndex` /
-    ///      `getVaultIds` / `getWallets`.
-    mapping(address owner => EnumerableSetLib.Bytes32Set) internal _vaultIds;
-
-    /// @dev Insertion-ordered set of vetted implementation codehashes.
-    ///      Deprecated entries remain in the set to preserve index stability.
-    EnumerableSetLib.Bytes32Set private _vettedCode;
-
-    /// @inheritdoc IQuipFactory
-    mapping(bytes32 codehash => address walletImplementation)
-        public vettedWalletImpls;
-
-    /// @inheritdoc IQuipFactory
-    mapping(bytes32 codehash => bool isDeprecated) public deprecatedImpls;
-
-    /// @inheritdoc IQuipFactory
-    address public latestWalletImpl;
-
-    constructor(
-        address payable initialOwner,
-        uint256 maxFee_
-    ) payable OZOwnable(initialOwner) {
+    constructor(uint256 maxFee_) payable {
         if (maxFee_ == 0) revert ZeroMaxFee();
         MAX_FEE = maxFee_;
+        _disableInitializers();
     }
 
     receive() external payable {}
+
+    /// @inheritdoc IQuipFactory
+    function initialize(address payable initialOwner) external initializer {
+        if (initialOwner == address(0)) revert ZeroAddressOwner();
+        _initializeOwner(initialOwner);
+    }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                EXTERNAL STATE-CHANGING                 */
@@ -84,42 +66,45 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     /// @inheritdoc IQuipFactory
     function vetImplementation(address impl) external onlyOwner {
+        Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = impl.codehash;
         if (codehash == 0) revert EmptyCode();
-        if (!_vettedCode.add(codehash)) revert AlreadyVetted();
-        vettedWalletImpls[codehash] = impl;
+        if (!$.vettedCode.add(codehash)) revert AlreadyVetted();
+        $.vettedWalletImpls[codehash] = impl;
         // A freshly-added entry is, by construction, at `length() - 1` — the
         // most recently inserted slot that `_findLatestActive` would return —
         // so it is unconditionally the new latest active implementation.
-        latestWalletImpl = impl;
+        $.latestWalletImpl = impl;
         emit ImplementationVetted(impl, codehash);
     }
 
     /// @inheritdoc IQuipFactory
     function undeprecateImplementation(address impl) external onlyOwner {
+        Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = impl.codehash;
-        if (!_vettedCode.contains(codehash)) revert ImplementationNotVetted();
-        if (!deprecatedImpls[codehash]) revert NotDeprecated();
-        deprecatedImpls[codehash] = false;
+        if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
+        if (!$.deprecatedImpls[codehash]) revert NotDeprecated();
+        $.deprecatedImpls[codehash] = false;
         // Re-bind the address pointer so a redeploy of the same bytecode at a
         // different address can replace the original. Same-codehash means same
         // behavior, so this is a benign address swap, not a security boundary.
-        vettedWalletImpls[codehash] = impl;
+        $.vettedWalletImpls[codehash] = impl;
         // Recompute via the insertion-order backward scan: if the reactivated
         // entry is at the highest index among non-deprecated entries it becomes
         // the latest, otherwise the previously latest entry is preserved.
-        latestWalletImpl = _findLatestActive();
+        $.latestWalletImpl = _findLatestActive();
         emit ImplementationUndeprecated(impl, codehash);
     }
 
     /// @inheritdoc IQuipFactory
     function deprecateImplementation(address impl) external onlyOwner {
+        Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = impl.codehash;
-        if (!_vettedCode.contains(codehash)) revert ImplementationNotVetted();
-        deprecatedImpls[codehash] = true;
+        if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
+        $.deprecatedImpls[codehash] = true;
         emit ImplementationSunset(impl, codehash);
-        if (latestWalletImpl == impl) {
-            latestWalletImpl = _findLatestActive();
+        if ($.latestWalletImpl == impl) {
+            $.latestWalletImpl = _findLatestActive();
         }
     }
 
@@ -129,8 +114,9 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         address payable to,
         bytes calldata payload
     ) external payable returns (address) {
-        if (latestWalletImpl == address(0)) revert NoActiveImplementation();
-        return _deployProxy(latestWalletImpl, vaultId, to, payload);
+        address impl = Storage.layout().latestWalletImpl;
+        if (impl == address(0)) revert NoActiveImplementation();
+        return _deployProxy(impl, vaultId, to, payload);
     }
 
     /// @inheritdoc IQuipFactory
@@ -140,24 +126,27 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         address payable to,
         bytes calldata payload
     ) external payable returns (address) {
-        bytes32 codehash = _vettedCode.at(index);
-        if (deprecatedImpls[codehash]) revert ImplementationDeprecated();
-        return _deployProxy(vettedWalletImpls[codehash], vaultId, to, payload);
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 codehash = $.vettedCode.at(index);
+        if ($.deprecatedImpls[codehash]) revert ImplementationDeprecated();
+        return _deployProxy($.vettedWalletImpls[codehash], vaultId, to, payload);
     }
 
     /// @inheritdoc IQuipFactory
     function setCreationFee(uint256 newFee) external onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
-        uint256 oldFee = creationFee;
-        creationFee = newFee;
+        Storage.Layout storage $ = Storage.layout();
+        uint256 oldFee = $.creationFee;
+        $.creationFee = newFee;
         emit CreationFeeUpdated(oldFee, newFee);
     }
 
     /// @inheritdoc IQuipFactory
     function setExecuteFee(uint256 newFee) external onlyOwner {
         if (newFee > MAX_FEE) revert FeeExceedsMax(newFee, MAX_FEE);
-        uint256 oldFee = executeFee;
-        executeFee = newFee;
+        Storage.Layout storage $ = Storage.layout();
+        uint256 oldFee = $.executeFee;
+        $.executeFee = newFee;
         emit ExecuteFeeUpdated(oldFee, newFee);
     }
 
@@ -172,42 +161,38 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     /// @inheritdoc IQuipFactory
     function updateWalletOwner(address newOwner) external {
-        bytes32 vaultId = vaultIdOf[msg.sender];
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 vaultId = $.vaultIdOf[msg.sender];
         if (vaultId == bytes32(0)) revert OnlyWallet();
         if (newOwner == address(0)) revert ZeroAddressOwner();
         // Authoritative read — the factory's own source of truth for
         // who currently owns this wallet. The wallet does not get to pass
         // a (potentially wrong) `oldOwner`.
-        address oldOwner = walletOwner[msg.sender];
+        address oldOwner = $.walletOwner[msg.sender];
         if (oldOwner == newOwner) revert SameOwner();
         // NB:
-        // Pins the callback to the tail of `transferOwnership(bytes)` —
-        // the only path that produces `wallet.owner() == newOwner` in the
-        // same transaction. `execute` / `executeBatch` can't mutate `owner()`
-        // (no path); `delegateExecute` / `storageStore` can't either because
-        // of transient storage guards.
-        if (IWOTSPlusImplementation(msg.sender).owner() != newOwner) {
+        // Pins the callback to the tail of the wallet's PQ-authenticated
+        // ownership-transfer flow — per the vetting contract (`IQuipWallet`
+        // natspec, rule 2), the only path a vetted implementation may have
+        // that produces `wallet.owner() == newOwner` in the same transaction.
+        if (IQuipWallet(msg.sender).owner() != newOwner) {
             revert OwnerStateMismatch();
         }
 
-        walletOwner[msg.sender] = newOwner;
+        $.walletOwner[msg.sender] = newOwner;
         // Both mutations MUST succeed: `oldOwner` came from the factory's
         // authoritative `walletOwner` mapping so its set must contain
         // `vaultId`; `newOwner` cannot already hold it because vaultIds are
         // globally unique (CREATE3) and each lives in at most one owner's
         // set at a time. A `false` return here means the registry diverged
         // from `walletOwner` somehow — revert loudly.
-        if (!_vaultIds[oldOwner].remove(vaultId)) revert RegistryDesync();
-        if (!_vaultIds[newOwner].add(vaultId)) revert RegistryDesync();
+        if (!$.vaultIds[oldOwner].remove(vaultId)) revert RegistryDesync();
+        if (!$.vaultIds[newOwner].add(vaultId)) revert RegistryDesync();
         emit WalletOwnerChanged(vaultId, oldOwner, newOwner);
     }
 
-    /// @inheritdoc IQuipFactory
-    function renounceOwnership()
-        public
-        override(IQuipFactory, OZOwnable)
-        onlyOwner
-    {
+    /// @notice Disabled; always reverts with `RenounceDisabled`.
+    function renounceOwnership() public payable override(Ownable) onlyOwner {
         revert RenounceDisabled();
     }
 
@@ -216,25 +201,69 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IQuipFactory
+    function creationFee() external view returns (uint256) {
+        return Storage.layout().creationFee;
+    }
+
+    /// @inheritdoc IQuipFactory
+    function executeFee() external view returns (uint256) {
+        return Storage.layout().executeFee;
+    }
+
+    /// @inheritdoc IQuipFactory
+    function wallets(bytes32 vaultId) external view returns (address) {
+        return Storage.layout().wallets[vaultId];
+    }
+
+    /// @inheritdoc IQuipFactory
+    function vaultIdOf(address wallet) external view returns (bytes32) {
+        return Storage.layout().vaultIdOf[wallet];
+    }
+
+    /// @inheritdoc IQuipFactory
+    function walletOwner(address wallet) external view returns (address) {
+        return Storage.layout().walletOwner[wallet];
+    }
+
+    /// @inheritdoc IQuipFactory
+    function vettedWalletImpls(
+        bytes32 codehash
+    ) external view returns (address walletImplementation) {
+        return Storage.layout().vettedWalletImpls[codehash];
+    }
+
+    /// @inheritdoc IQuipFactory
+    function deprecatedImpls(
+        bytes32 codehash
+    ) external view returns (bool isDeprecated) {
+        return Storage.layout().deprecatedImpls[codehash];
+    }
+
+    /// @inheritdoc IQuipFactory
+    function latestWalletImpl() external view returns (address) {
+        return Storage.layout().latestWalletImpl;
+    }
+
+    /// @inheritdoc IQuipFactory
     function getVettedCodeCount() external view returns (uint256) {
-        return _vettedCode.length();
+        return Storage.layout().vettedCode.length();
     }
 
     /// @inheritdoc IQuipFactory
     function getVettedCodeAt(uint256 index) external view returns (bytes32) {
-        return _vettedCode.at(index);
+        return Storage.layout().vettedCode.at(index);
     }
 
     /// @inheritdoc IQuipFactory
     function getVettedCodeIndex(
         bytes32 codehash
     ) external view returns (uint256) {
-        return _vettedCode.indexOf(codehash);
+        return Storage.layout().vettedCode.indexOf(codehash);
     }
 
     /// @inheritdoc IQuipFactory
     function getVaultIdCount(address owner_) external view returns (uint256) {
-        return _vaultIds[owner_].length();
+        return Storage.layout().vaultIds[owner_].length();
     }
 
     /// @inheritdoc IQuipFactory
@@ -242,7 +271,7 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         address owner_,
         uint256 index
     ) external view returns (bytes32) {
-        return _vaultIds[owner_].at(index);
+        return Storage.layout().vaultIds[owner_].at(index);
     }
 
     /// @inheritdoc IQuipFactory
@@ -250,44 +279,50 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
         address owner_,
         bytes32 vaultId
     ) external view returns (uint256) {
-        return _vaultIds[owner_].indexOf(vaultId);
+        return Storage.layout().vaultIds[owner_].indexOf(vaultId);
     }
 
     /// @inheritdoc IQuipFactory
     function getVaultIds(
         address owner_
     ) external view returns (bytes32[] memory) {
-        return _vaultIds[owner_].values();
+        return Storage.layout().vaultIds[owner_].values();
     }
 
     /// @inheritdoc IQuipFactory
     function getWallets(
         address owner_
     ) external view returns (address[] memory walletAddrs) {
-        bytes32[] memory ids = _vaultIds[owner_].values();
+        Storage.Layout storage $ = Storage.layout();
+        bytes32[] memory ids = $.vaultIds[owner_].values();
         walletAddrs = new address[](ids.length);
         for (uint256 i = 0; i < ids.length; i++) {
-            walletAddrs[i] = wallets[ids[i]];
+            walletAddrs[i] = $.wallets[ids[i]];
         }
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                      PRIVATE                           */
+    /*                      INTERNAL                          */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev UUPS upgrade authorization. The owner is expected to be a
+    ///      post-quantum wallet, so the upgrade call is PQ-secured upstream.
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
     /// @dev Iterates backwards through the vetted set to find the latest
     ///      non-deprecated implementation. Returns `address(0)` if none found.
     ///      Solady's EnumerableSetLib stores entries in contiguous slots in
     ///      insertion order, so `at(length() - 1)` is the most recently added.
     function _findLatestActive() internal view returns (address) {
-        uint256 len = _vettedCode.length();
+        Storage.Layout storage $ = Storage.layout();
+        uint256 len = $.vettedCode.length();
         for (uint256 i = len; i > 0; ) {
             unchecked {
                 --i;
             }
-            bytes32 codehash = _vettedCode.at(i);
-            if (!deprecatedImpls[codehash]) {
-                return vettedWalletImpls[codehash];
+            bytes32 codehash = $.vettedCode.at(i);
+            if (!$.deprecatedImpls[codehash]) {
+                return $.vettedWalletImpls[codehash];
             }
         }
         return address(0);
@@ -295,6 +330,9 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
     /// @dev Deploys a Solady minimal ERC-1967 proxy via CREATE3, initializes it,
     ///      and forwards deposited ETH (minus creation fee) to the wallet.
+    ///      Runs behind the factory's own proxy: `address(this)` is the proxy
+    ///      address, so CREATE3 wallet addresses are stable across factory
+    ///      upgrades.
     function _deployProxy(
         address impl,
         bytes32 vaultId,
@@ -313,34 +351,32 @@ contract QuipFactory is IQuipFactory, Ownable2Step {
 
         if (to == address(0)) revert ZeroAddressOwner();
         if (vaultId == bytes32(0)) revert ZeroVaultId();
-        if (msg.value < creationFee) {
-            revert InsufficientCreationFee(msg.value, creationFee);
+        Storage.Layout storage $ = Storage.layout();
+        if (msg.value < $.creationFee) {
+            revert InsufficientCreationFee(msg.value, $.creationFee);
         }
-        uint256 contractValue = msg.value - creationFee;
+        uint256 contractValue = msg.value - $.creationFee;
         address contractAddr = CREATE3.deployDeterministic(
             proxyInitcode,
             vaultId
         );
 
-        IWOTSPlusImplementation(contractAddr).initialize(to, payload);
+        IQuipWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
-        wallets[vaultId] = contractAddr;
-        vaultIdOf[contractAddr] = vaultId;
-        walletOwner[contractAddr] = to;
+        $.wallets[vaultId] = contractAddr;
+        $.vaultIdOf[contractAddr] = vaultId;
+        $.walletOwner[contractAddr] = to;
         // `.add` cannot return false here: vaultId is unique per CREATE3,
         // and a fresh contract address never appeared in any set before.
         // Guard anyway against future Solady changes.
-        if (!_vaultIds[to].add(vaultId)) revert RegistryDesync();
+        if (!$.vaultIds[to].add(vaultId)) revert RegistryDesync();
 
         emit QuipCreated(
             msg.value,
             block.timestamp,
             vaultId,
             to,
-            WOTSPlus.WinternitzAddress({
-                publicSeed: bytes32(payload[0:32]),
-                publicKeyHash: bytes32(payload[32:64])
-            }),
+            impl,
             contractAddr
         );
 

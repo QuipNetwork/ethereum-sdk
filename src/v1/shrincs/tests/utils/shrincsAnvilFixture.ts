@@ -185,18 +185,33 @@ export async function setupShrincsAnvilStack(
   });
   const shrincsVerifier = verifierReceipt.contractAddress!;
 
-  // 1. QuipFactory
-  const factoryHash = await walletClient.deployContract({
+  // 1. QuipFactory: UUPS impl + ERC-1967 proxy + initialize. The PROXY
+  // address is the factory identity wallets bake in.
+  const factoryImplHash = await walletClient.deployContract({
     abi: quipFactoryAbi,
     bytecode: factoryArtifact.bytecode.object as Hex,
-    args: [account.address, maxFee],
+    args: [maxFee],
     account,
     chain: foundry,
   });
-  const factoryReceipt = await publicClient.waitForTransactionReceipt({
-    hash: factoryHash,
+  const factoryImplReceipt = await publicClient.waitForTransactionReceipt({
+    hash: factoryImplHash,
   });
-  const factoryAddress = factoryReceipt.contractAddress!;
+  const factoryAddress = await deployErc1967Proxy(
+    walletClient,
+    publicClient,
+    account,
+    factoryImplReceipt.contractAddress!
+  );
+  const factoryInitHash = await walletClient.writeContract({
+    chain: foundry,
+    address: factoryAddress,
+    abi: quipFactoryAbi,
+    functionName: "initialize",
+    args: [account.address],
+    account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: factoryInitHash });
 
   // 2. ShrincsWallet impl (no library linking — empty linkReferences) + vet.
   const implHash = await walletClient.deployContract({
@@ -369,7 +384,10 @@ export async function createFreshShrincsWallet(
 // ─── Paymaster helpers ──────────────────────────────────────────────
 
 /// Initialize the (already-deployed) paymaster proxy with `owner`, a verifier
-/// `commitment`, and a `maxSignatures` budget.
+/// `commitment`, and a `maxSignatures` budget. `paymaster` overrides the
+/// target (default: the shared stack proxy) — pass a
+/// `deployFreshPaymasterProxy` address for tests that must own their proxy's
+/// whole verifier lifecycle.
 export async function initializePaymaster(
   stack: ShrincsAnvilStack,
   params: {
@@ -377,11 +395,12 @@ export async function initializePaymaster(
     commitment: Hex;
     maxSignatures: number;
     hashSuite?: number;
+    paymaster?: Address;
   }
 ): Promise<void> {
   const hash = await stack.walletClient.writeContract({
     chain: foundry,
-    address: stack.paymasterProxy,
+    address: params.paymaster ?? stack.paymasterProxy,
     abi: shrincsPaymasterAbi,
     functionName: "initialize",
     args: [
@@ -393,4 +412,33 @@ export async function initializePaymaster(
     account: stack.account,
   });
   await stack.publicClient.waitForTransactionReceipt({ hash });
+}
+
+/// Deploy a FRESH paymaster impl + ERC-1967 proxy (uninitialized), pinned to
+/// the stack's shared SHRINCS verifier. The shared `stack.paymasterProxy` is
+/// initialized once by whichever test claims it first; rotation/revocation
+/// tests need a proxy whose epoch/bitmap state they fully own.
+export async function deployFreshPaymasterProxy(
+  stack: ShrincsAnvilStack
+): Promise<Address> {
+  const paymasterArtifact = readForgeArtifact(
+    "out/ShrincsPaymaster.sol/ShrincsPaymaster.json"
+  );
+  const implHash = await stack.walletClient.deployContract({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    abi: paymasterArtifact.abi as any,
+    bytecode: paymasterArtifact.bytecode.object as Hex,
+    args: [stack.shrincsVerifier],
+    account: stack.account,
+    chain: foundry,
+  });
+  const implReceipt = await stack.publicClient.waitForTransactionReceipt({
+    hash: implHash,
+  });
+  return deployErc1967Proxy(
+    stack.walletClient,
+    stack.publicClient,
+    stack.account,
+    implReceipt.contractAddress!
+  );
 }

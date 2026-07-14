@@ -3,10 +3,6 @@ pragma solidity ^0.8.33;
 
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
-import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
-import {HashSuite} from "shrincs-hash/HashSuite.sol";
-import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 
 /// @dev e2e key-rotation: rotating the paymaster's global verifier (owner-only) bumps its epoch and
@@ -14,8 +10,17 @@ import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 ///      rejected, while an op signed under the NEW key (epoch 1) is sponsored.
 contract ShrincsE2E_keyRotation is ShrincsE2EBase {
     function _rotateToVerifier2() internal {
+        // Stateful-only fiat rotation: current bundle pins the stateless half; the target's
+        // declared commitment must match the recomputed one (verifier2 is pre-built in the
+        // assembler as exactly this rotated bundle).
         vm.prank(ADMIN);
-        paymaster.setShrincsVerifier(verifierCommitment2, HashSuite.HASH_SUITE_ID, MAX_SIG);
+        paymaster.rotateStatefulKey(
+            verifierPk,
+            SHRINCS.StatefulRotationTarget({
+                statefulPublicKey: verifierPk2.statefulPublicKey,
+                publicKeyCommitment: abi.encodePacked(verifierCommitment2)
+            })
+        );
         (,, uint256 keyVersion,,) = paymaster.getShrincsVerifier();
         assertEq(keyVersion, 1, "paymaster epoch bumped to 1");
     }

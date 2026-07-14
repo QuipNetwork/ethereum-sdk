@@ -86,6 +86,7 @@ export const ANVIL_PORTS = {
   // 8556 reserved
   dualSig: 8557,
   erc1271: 8558,
+  factoryUpgrade: 8559,
 } as const;
 
 // ─── Forge artifact loading ─────────────────────────────────────────
@@ -200,7 +201,10 @@ export interface AnvilStack {
   walletClient: WalletClient;
   testClient: TestClient;
   account: PrivateKeyAccount;
+  /// The factory PROXY address — the permanent factory identity.
   factoryAddress: Address;
+  /// The factory UUPS implementation behind the proxy.
+  factoryImplAddress: Address;
   walletImplAddress: Address;
   /// Address of the deployed WOTSPlus library — exposed for callers that
   /// need to link additional artifacts (e.g. paymaster impl).
@@ -257,18 +261,15 @@ export async function setupAnvilStack(
     });
   }
 
-  // 1. QuipFactory
-  const factoryHash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
-    bytecode: artifacts.factoryBytecode,
-    args: [account.address, maxFee],
+  // 1. QuipFactory: UUPS impl + ERC-1967 proxy + initialize. The PROXY
+  // address is the factory identity (wallets bake it in; CREATE3 wallet
+  // addressing derives from it and survives impl upgrades).
+  const { factoryAddress, factoryImplAddress } = await deployFactoryProxy(
+    walletClient,
+    publicClient,
     account,
-    chain: foundry,
-  });
-  const factoryReceipt = await publicClient.waitForTransactionReceipt({
-    hash: factoryHash,
-  });
-  const factoryAddress = factoryReceipt.contractAddress!;
+    maxFee
+  );
 
   // 2. WOTSPlus library
   const wotsHash = await walletClient.deployContract({
@@ -319,6 +320,7 @@ export async function setupAnvilStack(
     testClient,
     account,
     factoryAddress,
+    factoryImplAddress,
     walletImplAddress,
     wotsPlusAddress,
   };
@@ -475,7 +477,49 @@ export async function createFreshWallet(
   };
 }
 
-// ─── ERC-1967 proxy helper ──────────────────────────────────────────
+// ─── ERC-1967 proxy helpers ─────────────────────────────────────────
+
+/// Deploy the QuipFactory as UUPS impl + ERC-1967 proxy and initialize the
+/// proxy with `owner` (defaults to the deployer). Returns the PROXY address
+/// (the permanent factory identity) alongside the impl behind it.
+export async function deployFactoryProxy(
+  walletClient: WalletClient,
+  publicClient: PublicClient,
+  account: PrivateKeyAccount,
+  maxFee: bigint,
+  owner?: Address,
+  chain: Chain = foundry
+): Promise<{ factoryAddress: Address; factoryImplAddress: Address }> {
+  const { factoryBytecode } = loadForgeArtifacts();
+  const implHash = await walletClient.deployContract({
+    abi: quipFactoryAbi,
+    bytecode: factoryBytecode,
+    args: [maxFee],
+    account,
+    chain,
+  });
+  const implReceipt = await publicClient.waitForTransactionReceipt({
+    hash: implHash,
+  });
+  const factoryImplAddress = implReceipt.contractAddress!;
+  const factoryAddress = await deployErc1967Proxy(
+    walletClient,
+    publicClient,
+    account,
+    factoryImplAddress,
+    chain
+  );
+  const initHash = await walletClient.writeContract({
+    address: factoryAddress,
+    abi: quipFactoryAbi,
+    functionName: "initialize",
+    args: [owner ?? account.address],
+    account,
+    chain,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: initHash });
+  return { factoryAddress, factoryImplAddress };
+}
 
 /// Deploy a Solady minimal ERC-1967 proxy pointing at `impl`. Initcode
 /// mirrors `QuipFactory._deployProxy`'s emission so the on-chain layout

@@ -21,11 +21,13 @@ import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 // prettier-ignore
 import {
     IERC7913SignatureVerifier
 } from "@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 // prettier-ignore
 import {
     IPaymaster,
@@ -44,6 +46,9 @@ import {ShrincsPaymasterStorage as Storage} from "./storage/ShrincsPaymasterStor
 ///         keyVersion-namespaced used-leaf bitmap: each leaf is consumable once, in ANY order, so
 ///         out-of-order userOp landing never reverts. Validation is state-changing (unlike the
 ///         wallet's view-only ERC-1271 path), so it consumes the leaf during validation.
+///         Admin paths (`rotateStatefulKey`, `markLeavesUsed`, upgrades, treasury) are owner-fiat
+///         with no PQ signature of their own: the owner is expected to be a post-quantum wallet
+///         (e.g. a ShrincsWallet), which makes the whole admin surface PQ-secured upstream.
 contract ShrincsPaymaster is
     IShrincsPaymaster,
     Ownable,
@@ -188,34 +193,92 @@ contract ShrincsPaymaster is
     }
 
     /// @inheritdoc IShrincsPaymaster
-    function setShrincsVerifier(
-        bytes32 commitment,
-        uint32 hashSuite,
-        uint32 maxSignatures
+    function rotateStatefulKey(
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SHRINCS.StatefulRotationTarget calldata nextStatefulKey
     ) external onlyOwner {
-        if (commitment == bytes32(0)) revert ZeroCommitment();
-        if (hashSuite != HashSuite.HASH_SUITE_ID)
-            revert UnsupportedHashSuite();
-        if (maxSignatures == 0) revert ZeroMaxSignatures();
-
         Storage.Layout storage $ = Storage.layout();
+
+        // Pin the presented current bundle to the installed commitment so its stateless half
+        // (pkSeed, hypertreeRoot) is trustworthy to carry into the next bundle. The stateless
+        // half is never rotated here: only stateful sponsorship signatures are ever verified,
+        // so the stateless side is inert key identity.
+        if (
+            !SHRINCS.validPublicKey(currentPublicKey) ||
+            !SHRINCS.matchesExpectedPublicKeyCommitment(
+                currentPublicKey,
+                $.shrincsCommitment
+            )
+        ) revert CommitmentMismatch();
+
+        if (
+            nextStatefulKey.statefulPublicKey.length !=
+            SHRINCSParams.STATEFUL_PUBLIC_KEY_BYTES
+        ) revert CommitmentMismatch();
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(nextStatefulKey.statefulPublicKey);
+        if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
+
+        bytes32 nextCommitment = SHRINCS.publicKeyCommitmentFromParts(
+            nextStatefulKey.statefulPublicKey,
+            currentPublicKey.pkSeed,
+            currentPublicKey.hypertreeRoot
+        );
+        // Fiat rotation carries no authorizing signature over the next commitment (unlike the
+        // wallet's `rotateKey`, whose PQ signature covers it): the owner is expected to be a
+        // post-quantum wallet (e.g. a ShrincsWallet), so this call is already PQ-authorized
+        // upstream, and the current-bundle pin above makes rotation compare-and-swap (a replay
+        // fails the pin once the installed commitment changes — no rotation nonce needed). The
+        // declared target commitment is the operator's statement of intent and MUST match the
+        // recomputed one end-to-end.
+        if (
+            nextStatefulKey.publicKeyCommitment.length != 32 ||
+            bytes32(nextStatefulKey.publicKeyCommitment[:32]) != nextCommitment
+        ) revert CommitmentMismatch();
+
         bytes32 previous = $.shrincsCommitment;
         // keyVersion is monotonic: always bump, never reset. A fresh epoch gives a fresh (empty)
-        // leaf-bitmap namespace so a rotated/re-registered key starts from no consumed leaves.
+        // leaf-bitmap namespace so the rotated key starts from no consumed leaves.
         uint256 nextEpoch = $.keyVersion + 1;
 
-        $.shrincsCommitment = commitment;
-        $.maxSignatures = maxSignatures;
+        $.shrincsCommitment = nextCommitment;
+        $.maxSignatures = decoded.maxSignatures;
         $.statefulLeavesUsed = 0;
         $.keyVersion = nextEpoch;
 
-        emit ShrincsVerifierSet(
+        emit KeyRotated(
             previous,
-            commitment,
-            hashSuite,
-            maxSignatures,
-            nextEpoch
+            nextCommitment,
+            nextEpoch,
+            decoded.maxSignatures
         );
+    }
+
+    /// @inheritdoc IShrincsPaymaster
+    function markLeavesUsed(uint32[] calldata leaves) external onlyOwner {
+        if (leaves.length == 0) revert EmptyLeaves();
+
+        Storage.Layout storage $ = Storage.layout();
+        uint256 epoch = $.keyVersion;
+        uint256 n = leaves.length;
+        // Idempotent Effects only: already-used targets (including duplicates within the batch)
+        // are skipped, not reverted — a sponsorship racing its own revocation must not brick the
+        // batch. Out-of-range is a client bug, not a race — fail the whole batch loudly.
+        for (uint256 i = 0; i < n; ++i) {
+            uint32 leaf = leaves[i];
+            if (leaf == 0 || leaf > $.maxSignatures)
+                revert LeafOutOfRange(leaf);
+            if (_isStatefulLeafUsed($, epoch, leaf)) {
+                emit LeafRevocationSkipped(leaf, epoch);
+                continue;
+            }
+            _markStatefulLeafUsed($, epoch, leaf);
+            unchecked {
+                // Bounded by `maxSignatures`: every mark is a unique in-range leaf.
+                $.statefulLeavesUsed += 1;
+            }
+            emit LeafRevoked(leaf, epoch);
+        }
     }
 
     /// @inheritdoc IShrincsPaymaster

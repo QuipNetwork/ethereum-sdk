@@ -32,7 +32,7 @@ contract ShrincsPaymasterHarness is ShrincsPaymaster {
     }
 
     /// @dev Test-only direct install of the global verifier state, bypassing the owner-gated
-    ///      `setShrincsVerifier` (no epoch bump). NOT a production function.
+    ///      `initialize`/`rotateStatefulKey` paths (no epoch bump). NOT a production function.
     function harness_install(
         bytes32 commitment,
         uint32 maxSignaturesValue
