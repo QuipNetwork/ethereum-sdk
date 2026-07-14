@@ -23,18 +23,18 @@ library ShrincsPaymasterStorage {
         ///      sponsorship. The paymaster operator (the sponsor) holds one stateful key and signs
         ///      every userOp it is willing to sponsor; the binding hash commits to `userOp.sender`,
         ///      so a signature minted for one wallet cannot be replayed against another. Zero means
-        ///      the paymaster is unconfigured. Registered/rotated by the owner via
-        ///      `setShrincsVerifier`.
+        ///      the paymaster is unconfigured. Registered at `initialize`; the stateful subkey is
+        ///      rotated by the owner via `rotateStatefulKey` (the stateless half never rotates).
         bytes32 shrincsCommitment;
         /// @dev Leaf budget cached from the registered key so the paymaster can reject signatures
         ///      past the budget and expose `remainingStatefulSignatures()`.
         uint32 maxSignatures;
         /// @dev Count of stateful leaves consumed in the current epoch. Backs
-        ///      `remainingStatefulSignatures()`; reset to 0 on every `setShrincsVerifier`. NOT the
+        ///      `remainingStatefulSignatures()`; reset to 0 on every `rotateStatefulKey`. NOT the
         ///      anti-replay mechanism — that is `usedStatefulLeafBitmap` below.
         uint32 statefulLeavesUsed;
         /// @dev Global verifier-key epoch. The initial key (set at `initialize`) is epoch 0; every
-        ///      `setShrincsVerifier` rotation bumps it. Bound into the canonical action context and
+        ///      `rotateStatefulKey` rotation bumps it. Bound into the canonical action context and
         ///      used to namespace the leaf bitmap so a rotation starts from a fresh (all-unused)
         ///      namespace. MONOTONIC — only ever increments, so a rotated key can never reuse a
         ///      namespace that already has consumed leaves.
