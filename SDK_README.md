@@ -4,7 +4,25 @@
 
 For installation and a quickstart, see the package `README.md`. This file is the "what you need to know to use this correctly" companion.
 
-> ⚠️ **The `./v0` export is legacy.** It targets the original pre-v1 contract deployments (single-`pqOwner` model, old payload layouts) and exists only so already-deployed v0 wallets remain operable. Its method names and codec offsets do **not** match the v1 contract ABI — using it against a v1 wallet produces malformed payloads. All new integrations must import from `@quip.network/ethereum-sdk/v1`.
+> ⚠️ **The WOTS+ wallet family is sunset** (as of `0.3.0-beta.1`, July 2026). **SHRINCS** (`@quip.network/ethereum-sdk/v1/shrincs`) is the go-forward family; all new integrations must use it. The WOTS+ SDK remains fully functional for existing deployments but receives no new features, and its import subpaths moved under `./deprecated/` — a **breaking rename**:
+>
+> | Old subpath | New subpath |
+> |---|---|
+> | `/v1` (WOTS+ classes in the barrel) | `/deprecated/v1` |
+> | `/v1/signer` | `/deprecated/v1/signer` |
+> | `/v1/walletClient` | `/deprecated/v1/walletClient` |
+> | `/v1/factoryClient` | `/deprecated/v1/factoryClient` |
+> | `/v1/paymaster` | `/deprecated/v1/paymaster` |
+> | `/v1/userOp` | `/deprecated/v1/userOp` |
+> | `/v1/wotsCodec` | `/deprecated/v1/wotsCodec` |
+> | `/v1/events` | `/deprecated/v1/events` |
+> | `/v0` | `/deprecated/v0` |
+>
+> Unchanged (shared, live): `/v1/addresses`, `/v1/errors`, `/v1/gas`, `/v1/abi`, `/v1/shrincs`. New: `/v1/userOpCodec` — the scheme-agnostic ERC-4337 helpers (`PackedUserOperation`, `computeUserOpHash`, gas-field packing) formerly exported from `/v1/wotsCodec`. The `/v1` barrel now carries only the shared surface; the full historical WOTS+ barrel lives at `/deprecated/v1`. Each moved subpath re-exports the shared symbols it used to expose, so migrating is a specifier change only.
+>
+> The bulk of this document describes the deprecated WOTS+ SDK and remains the operational reference for it.
+
+> ⚠️ **The `./deprecated/v0` export is doubly legacy.** It targets the original pre-v1 contract deployments (single-`pqOwner` model, old payload layouts) and exists only so already-deployed v0 wallets remain operable. Its method names and codec offsets do **not** match the v1 contract ABI — using it against a v1 wallet produces malformed payloads.
 
 ---
 
@@ -43,7 +61,7 @@ This applies to:
 The SDK does **not** own a burn set. Every `QuipSigner` is constructed with a `ConsumeKeyFn` supplied by the caller:
 
 ```ts
-import { QuipSigner, createInMemoryBurnSet } from "@quip.network/ethereum-sdk";
+import { QuipSigner, createInMemoryBurnSet } from "@quip.network/ethereum-sdk/deprecated/v1";
 
 const burnSet = createInMemoryBurnSet();           // dev default
 const signer = new QuipSigner(quantumSecret, burnSet.consume);
@@ -179,7 +197,7 @@ Defaults: balance preflight on, `gasMultiplier: 1.2` (20% buffer), EIP-1559 fees
 To verify a payload off-chain or build one for a custom flow, import the codec directly:
 
 ```ts
-import { WotsCodec } from "@quip.network/ethereum-sdk";
+import { WotsCodec } from "@quip.network/ethereum-sdk/deprecated/v1";
 ```
 
 ---
