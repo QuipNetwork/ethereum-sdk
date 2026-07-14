@@ -68,7 +68,7 @@ gas:
 # Usage:
 #   make storage-layout-snapshot  # regenerate fixture (after intentional change)
 #   make storage-layout-check     # CI gate; fails on drift
-STORAGE_LAYOUT_FIXTURE := test/fixtures/WOTSPlusImplementation.storageLayout.json
+STORAGE_LAYOUT_FIXTURE := test/deprecated/fixtures/WOTSPlusImplementation.storageLayout.json
 STORAGE_LAYOUT_NORMALIZE := walk(if type == "object" and has("astId") then del(.astId) else . end) \
 	| walk(if type == "string" then gsub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage") else . end) \
 	| .types |= with_entries(.key |= sub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage"))

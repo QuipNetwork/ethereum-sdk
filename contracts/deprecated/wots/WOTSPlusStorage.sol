@@ -79,7 +79,7 @@ library WOTSPlusStorage {
     /// @dev Slots of the first five `Layout` fields that `WOTSPlusImplementation`'s
     ///      guard modifiers snapshot/check. Must be kept in lock-step with
     ///      the field order of `Layout` above;
-    ///      `test/fixtures/WOTSPlusImplementation.storageLayout.json`
+    ///      `test/deprecated/fixtures/WOTSPlusImplementation.storageLayout.json`
     ///      pins each field's slot offset and fails the suite on any drift.
     ///      A namespace rename above must regenerate every literal below
     ///      together — they aren't independently meaningful.
