@@ -50,12 +50,15 @@ import {
   ExecuteFeeExceedsCapError,
   LeafOutOfRangeError,
   StaleStatefulLeafError,
+  VerifierMismatchError,
 } from "../errors.js";
+import { publicKeyCommitment } from "../shrincsCodec.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
 import {
   SHRINCS_ANVIL_PORTS,
   type ShrincsAnvilStack,
   createFreshShrincsWallet,
+  deployFreshPaymasterProxy,
   initializePaymaster,
   makeShrincsFactoryClient,
   makeShrincsSigner,
@@ -609,4 +612,215 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(await client.isStatefulLeafUsed(3)).toBe(true); // revoked target
     expect(final.actionNonce).toBe(1n); // only the landed op advanced it
   }, 180_000);
+
+  // ── (j) paymaster fiat revocation + stateful-only key rotation ───────
+  it("j. paymaster markLeavesUsed spends budget; rotateStatefulKey carries the stateless half into a fresh epoch that sponsors", async () => {
+    // Own proxy: this test owns the verifier's whole epoch/bitmap lifecycle,
+    // so it must not share the stack proxy that test (f) initialized.
+    const paymaster = await deployFreshPaymasterProxy(stack);
+
+    // ONE operator signer, two vault branches: vault1 = the initial key,
+    // vault2 = the rotation target (real operators rotate within one master
+    // secret — that is what makes the post-rotation graft recoverable).
+    const operator = await makeShrincsSigner(0xa0);
+    const vault1 = toHex(new Uint8Array(32).fill(0xa0));
+    const vault2 = toHex(new Uint8Array(32).fill(0xa1));
+    const key1 = operator.recoverKeyPair(vault1, { maxSignatures: MAX_SIGS });
+
+    await initializePaymaster(stack, {
+      owner: stack.account.address,
+      commitment: key1.publicKeyCommitment,
+      maxSignatures: MAX_SIGS,
+      paymaster,
+    });
+
+    const pmClient = new ShrincsPaymasterClient({
+      paymasterAddress: paymaster,
+      publicClient: stack.publicClient,
+      walletClient: stack.walletClient,
+      signer: operator,
+      vaultId: vault1,
+      chainId: foundry.id,
+      account: stack.account.address,
+    });
+
+    // Client-side guard: an empty batch never reaches the chain. Contract
+    // guards decode through gas estimation: out-of-range reverts the batch.
+    await expect(pmClient.markLeavesUsed([])).rejects.toBeInstanceOf(
+      EmptyLeavesError
+    );
+    await expect(pmClient.markLeavesUsed([0])).rejects.toBeInstanceOf(
+      LeafOutOfRangeError
+    );
+    await expect(
+      pmClient.markLeavesUsed([MAX_SIGS + 1])
+    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
+
+    // Fiat revocation (no signature, owner tx) spends budget exactly like a
+    // landed sponsorship: every fresh mark decrements what's left.
+    const revocation = await pmClient.markLeavesUsed([1, 3]);
+    const revoked = parseEventLogs({
+      abi: shrincsPaymasterAbi,
+      logs: revocation.logs,
+      eventName: "LeafRevoked",
+    });
+    expect(revoked.map((l) => Number(l.args.leaf)).sort()).toEqual([1, 3]);
+    expect(await pmClient.isStatefulLeafUsed(1)).toBe(true);
+    expect(await pmClient.isStatefulLeafUsed(3)).toBe(true);
+    let verifier = await pmClient.getShrincsVerifier();
+    expect(verifier.statefulLeavesUsed).toBe(2);
+
+    // Idempotent skip: a used target emits the skip event and never
+    // double-counts; the fresh target in the same batch still lands.
+    const rerun = await pmClient.markLeavesUsed([3, 4]);
+    const skipped = parseEventLogs({
+      abi: shrincsPaymasterAbi,
+      logs: rerun.logs,
+      eventName: "LeafRevocationSkipped",
+    });
+    expect(skipped.map((l) => Number(l.args.leaf))).toEqual([3]);
+    verifier = await pmClient.getShrincsVerifier();
+    expect(verifier.statefulLeavesUsed).toBe(3);
+
+    // Rotate to vault2's fresh stateful subkey with a BIGGER budget (the
+    // budget rides inside the 68-byte encoding — each rotation may change it).
+    const NEW_MAX = 8;
+    const key2 = operator.recoverKeyPair(vault2, { maxSignatures: NEW_MAX });
+    const rotation = await pmClient.rotateStatefulKey({
+      nextStatefulPublicKey: key2.publicKey.statefulPublicKey,
+    });
+    const rotatedEvents = parseEventLogs({
+      abi: shrincsPaymasterAbi,
+      logs: rotation.logs,
+      eventName: "KeyRotated",
+    });
+    expect(rotatedEvents.length).toBe(1);
+    expect(Number(rotatedEvents[0].args.maxSignatures)).toBe(NEW_MAX);
+
+    // The installed commitment is the CARRIED-FORWARD bundle (key2's stateful
+    // subkey + key1's stateless half) — NOT key2's own full-bundle commitment.
+    verifier = await pmClient.getShrincsVerifier();
+    const expectedCommitment = publicKeyCommitment({
+      statefulPublicKey: key2.publicKey.statefulPublicKey,
+      pkSeed: key1.publicKey.pkSeed,
+      hypertreeRoot: key1.publicKey.hypertreeRoot,
+    });
+    expect(verifier.commitment.toLowerCase()).toBe(
+      expectedCommitment.toLowerCase()
+    );
+    expect(verifier.commitment.toLowerCase()).not.toBe(
+      key2.publicKeyCommitment.toLowerCase()
+    );
+    expect(verifier.keyVersion).toBe(1n);
+    expect(verifier.maxSignatures).toBe(NEW_MAX);
+    expect(verifier.statefulLeavesUsed).toBe(0);
+    expect(await pmClient.isStatefulLeafUsed(1)).toBe(false); // fresh namespace
+
+    // The stale vault1 client is locked out BEFORE any tx is submitted.
+    await expect(
+      pmClient.rotateStatefulKey({
+        nextStatefulPublicKey: key2.publicKey.statefulPublicKey,
+      })
+    ).rejects.toBeInstanceOf(VerifierMismatchError);
+
+    // Post-rotation operator keypair: graft vault2's stateful secrets onto
+    // vault1's stateless half — reproduces the installed commitment exactly.
+    const grafted = operator.deriveKeyPair({
+      statefulVaultId: vault2,
+      statelessVaultId: vault1,
+      maxSignatures: NEW_MAX,
+    });
+    expect(grafted.publicKeyCommitment.toLowerCase()).toBe(
+      verifier.commitment.toLowerCase()
+    );
+    const pmClient2 = new ShrincsPaymasterClient({
+      paymasterAddress: paymaster,
+      publicClient: stack.publicClient,
+      walletClient: stack.walletClient,
+      signer: operator,
+      vaultId: vault2,
+      chainId: foundry.id,
+      account: stack.account.address,
+      keypair: grafted,
+    });
+
+    // Full sponsorship under the ROTATED key: fund, sponsor, land a real op.
+    await pmClient2.deposit(parseEther("2"));
+    await pmClient2.addStake({ unstakeDelaySec: 86_400, value: parseEther("1") });
+
+    const { client: walletClient } = await createFreshShrincsWallet(stack, 0xa2, {
+      maxSignatures: MAX_SIGS,
+    });
+    await stack.testClient.setBalance({
+      address: walletClient.walletAddress,
+      value: parseEther("5"),
+    });
+
+    const block = await stack.publicClient.getBlock();
+    const baseFee = block.baseFeePerGas ?? parseEther("0.000000001");
+    const maxPriorityFeePerGas = parseEther("0.000000001");
+    const maxFeePerGas = baseFee * 2n + maxPriorityFeePerGas;
+    const nonce = (await stack.publicClient.readContract({
+      address: CANONICAL_ENTRYPOINT_V07,
+      abi: entryPointV07Abi,
+      functionName: "getNonce",
+      args: [walletClient.walletAddress, 0n],
+    })) as bigint;
+
+    const value = parseEther("0.1");
+    const recipientBefore = await stack.publicClient.getBalance({
+      address: RECIPIENT,
+    });
+    const walletState = await walletClient.getWalletState();
+    let userOp = walletClient.buildExecuteUserOp({
+      target: RECIPIENT,
+      value,
+      data: "0x",
+      maxFee: walletState.executeFee,
+      nonce,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    });
+    const { paymasterAndData, leaf } = await pmClient2.sponsorUserOp({ userOp });
+    userOp = { ...userOp, paymasterAndData };
+    const signed = await walletClient.signExecuteUserOp({
+      userOp,
+      entryPoint: CANONICAL_ENTRYPOINT_V07,
+    });
+
+    const handleHash = await stack.walletClient.writeContract({
+      chain: foundry,
+      address: CANONICAL_ENTRYPOINT_V07,
+      abi: entryPointV07Abi,
+      functionName: "handleOps",
+      args: [[signed.userOp], stack.account.address],
+      account: stack.account,
+      gas: 6_000_000n,
+    });
+    const receipt = await stack.publicClient.waitForTransactionReceipt({
+      hash: handleHash,
+    });
+    const opEvents = parseEventLogs({
+      abi: entryPointV07Abi,
+      logs: receipt.logs,
+      eventName: "UserOperationEvent",
+    });
+    expect(opEvents.length).toBe(1);
+    expect(opEvents[0].args.success).toBe(true);
+
+    // The money assertion: sponsored under the ROTATED key's epoch 1.
+    const sponsorships = parseEventLogs({
+      abi: shrincsPaymasterAbi,
+      logs: receipt.logs,
+      eventName: "SponsorshipVerified",
+    });
+    expect(sponsorships.length).toBe(1);
+    expect(Number(sponsorships[0].args.leaf)).toBe(leaf);
+    expect(BigInt(sponsorships[0].args.keyVersion)).toBe(1n);
+
+    const recipientAfter = await stack.publicClient.getBalance({
+      address: RECIPIENT,
+    });
+    expect(recipientAfter - recipientBefore).toBe(value);
+  }, 240_000);
 });
