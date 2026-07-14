@@ -17,8 +17,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import { foundry } from "viem/chains";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
-import { computeVaultAddress } from "../addresses.js";
+import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { computeVaultAddress } from "../../../v1/addresses.js";
 import { parseQuipCreated } from "../events.js";
 import {
   ANVIL_PORTS,

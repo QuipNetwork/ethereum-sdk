@@ -67,6 +67,7 @@ export interface InMemoryBurnSet {
 /// Wire `consume` into `new QuipSigner(secret, burnSet.consume)`. For
 /// production use, wrap the returned function (or write your own) to also
 /// persist to durable storage before returning.
+/** @deprecated WOTS+ family sunset — the burn-set mechanism is WOTS+-specific (SHRINCS uses stateful-leaf accounting instead). Fully functional for existing deployments. */
 export function createInMemoryBurnSet(): InMemoryBurnSet {
   const burned = new Set<string>();
   return {

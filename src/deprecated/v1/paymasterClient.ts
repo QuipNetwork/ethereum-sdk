@@ -23,24 +23,24 @@ import {
   zeroHash,
 } from "viem";
 
-import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
-import { getNetworkAddresses } from "./addresses.js";
+import { quipPaymasterAbi } from "../../v1/abi/QuipPaymaster.js";
+import { getNetworkAddresses } from "../../v1/addresses.js";
 import {
   PqVerifierNotRegisteredError,
   VerifierMismatchError,
 } from "./errors.js";
 import { QuipSigner } from "./signer.js";
-import { withDecodedError } from "./internal/decodeError.js";
+import { withDecodedError } from "../../v1/internal/decodeError.js";
 import {
   assertProviderState,
   boundChain,
-} from "./internal/providerState.js";
+} from "../../v1/internal/providerState.js";
 import {
   type TxOptions,
   type PreparedTx,
   type ContractCallParams,
   prepareTx,
-} from "./gas.js";
+} from "../../v1/gas.js";
 import {
   type SponsorshipCostBreakdown,
   buildSignedPaymasterAndData,
@@ -73,6 +73,7 @@ import {
 /// reverts route through `decodeContractError` → typed `QuipError`
 /// subclasses (e.g. `ZeroValuePqVerifierKeyError`,
 /// `PqVerifierNotRegisteredError`, `VerifierKeyInUseError`).
+/** @deprecated WOTS+ family sunset — superseded by SHRINCS (`ShrincsPaymasterClient` in `./v1/shrincs`). Fully functional for existing deployments. */
 export class QuipPaymasterClient {
   private publicClient: PublicClient;
   private walletClient: WalletClient;

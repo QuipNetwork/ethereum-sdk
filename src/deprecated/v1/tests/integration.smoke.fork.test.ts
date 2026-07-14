@@ -56,10 +56,10 @@ import {
 import { createAnvil } from "@viem/anvil";
 import { mainnet } from "viem/chains";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
-import { quipPaymasterAbi } from "../abi/QuipPaymaster.js";
-import { entryPointV07Abi } from "../abi/EntryPointV07.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { quipPaymasterAbi } from "../../../v1/abi/QuipPaymaster.js";
+import { entryPointV07Abi } from "../../../v1/abi/EntryPointV07.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../../../v1/addresses.js";
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";
 import { WOTSPlusImplementationClient, KeyType } from "../walletClient.js";

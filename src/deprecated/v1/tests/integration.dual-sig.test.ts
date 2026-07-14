@@ -50,13 +50,13 @@ import {
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
+import { wotsPlusImplementationAbi } from "../../../v1/abi/WOTSPlusImplementation.js";
 import { WOTSPlusImplementationClient } from "../walletClient.js";
 import {
   InvalidSignatureError,
   UnknownContractError,
 } from "../errors.js";
-import { withDecodedError } from "../internal/decodeError.js";
+import { withDecodedError } from "../../../v1/internal/decodeError.js";
 import {
   encodeExecute,
   executeDigest,

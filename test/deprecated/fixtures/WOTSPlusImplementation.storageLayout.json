@@ -1,7 +1,7 @@
 {
   "storage": [
     {
-      "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+      "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
       "label": "layout",
       "offset": 0,
       "slot": "0",
@@ -37,49 +37,49 @@
       "numberOfBytes": "288",
       "members": [
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "quipFactory",
           "offset": 0,
           "slot": "0",
           "type": "t_address_payable"
         },
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "disasterRecoveryKey",
           "offset": 0,
           "slot": "1",
           "type": "t_struct(WinternitzAddress)_storage"
         },
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "ownershipKey",
           "offset": 0,
           "slot": "3",
           "type": "t_struct(WinternitzAddress)_storage"
         },
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "transactionKeys",
           "offset": 0,
           "slot": "5",
           "type": "t_struct(WinternitzAddressSet)_storage"
         },
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "recoveryKeys",
           "offset": 0,
           "slot": "6",
           "type": "t_struct(WinternitzAddressSet)_storage"
         },
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "verificationKeys",
           "offset": 0,
           "slot": "7",
           "type": "t_struct(WinternitzAddressSet)_storage"
         },
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "isKeySpent",
           "offset": 0,
           "slot": "8",
@@ -93,14 +93,14 @@
       "numberOfBytes": "64",
       "members": [
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "publicSeed",
           "offset": 0,
           "slot": "0",
           "type": "t_bytes32"
         },
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "publicKeyHash",
           "offset": 0,
           "slot": "1",
@@ -114,7 +114,7 @@
       "numberOfBytes": "32",
       "members": [
         {
-          "contract": "test/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
+          "contract": "test/deprecated/fixtures/WOTSPlusImplementationLayoutProbe.sol:WOTSPlusImplementationLayoutProbe",
           "label": "_spacer",
           "offset": 0,
           "slot": "0",

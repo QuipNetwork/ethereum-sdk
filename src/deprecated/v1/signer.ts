@@ -97,6 +97,7 @@ const KEY_SELFTEST_DIGEST: Uint8Array = keccak_256(
 /// before the key is used for a real payload. The sentinel signature is
 /// local, never returned, and never recorded against the burn set —
 /// WOTS+ one-time-use is preserved.
+/** @deprecated WOTS+ family sunset — superseded by SHRINCS (`ShrincsSigner` in `./v1/shrincs`). Fully functional for existing deployments. */
 export class QuipSigner {
   private quantumSecret: Uint8Array;
   private wots: WOTSPlus;

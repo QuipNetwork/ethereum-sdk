@@ -43,7 +43,7 @@ import { join } from "node:path";
 import { quipFactoryAbi } from "../../../abi/QuipFactory.js";
 import { entryPointV07Abi } from "../../../abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../../addresses.js";
-import { deployErc1967Proxy } from "../../../tests/utils/anvilFixture.js";
+import { deployErc1967Proxy } from "../../../tests/utils/deployErc1967Proxy.js";
 import { shrincsPaymasterAbi } from "../../abi/ShrincsPaymaster.js";
 import { HASH_SUITE_KECCAK_256 } from "../../constants.js";
 import { ShrincsFactoryClient } from "../../shrincsFactoryClient.js";

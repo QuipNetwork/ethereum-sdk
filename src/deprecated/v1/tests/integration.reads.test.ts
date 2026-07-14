@@ -28,18 +28,18 @@ import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { deployFactoryProxy } from "./utils/anvilFixture.js";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
 import {
   tryMulticall,
   resetMulticallCacheForTesting,
   getMulticall3Address,
   MULTICALL3_ADDRESS,
-} from "../internal/multicall.js";
+} from "../../../v1/internal/multicall.js";
 import {
   CANONICAL_ENTRYPOINT_V07,
   CHAIN_IDS,
   NETWORK_ADDRESSES,
-} from "../addresses.js";
+} from "../../../v1/addresses.js";
 import { QuipClient } from "../factoryClient.js";
 
 // `QuipClient.create(provider)` resolves NETWORK_ADDRESSES via getChainId(),

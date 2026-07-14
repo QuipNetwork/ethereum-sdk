@@ -122,7 +122,8 @@ let bytecode = walletArtifact.bytecode.object;
 // Replace library placeholder (__$<hash>$__) with actual WOTSPlus address
 bytecode = bytecode.replace(/__\$[0-9a-fA-F]{34}\$__/g, wotsAddress);
 
-const bytecodeOut = join(ROOT, "src", "v1", "bytecode.json");
+// WOTS-only artifact — lives with the deprecated WOTS+ SDK tree.
+const bytecodeOut = join(ROOT, "src", "deprecated", "v1", "bytecode.json");
 writeFileSync(
   bytecodeOut,
   JSON.stringify({ wotsPlusImplementationCreationCode: bytecode }, null, 2) + "\n"

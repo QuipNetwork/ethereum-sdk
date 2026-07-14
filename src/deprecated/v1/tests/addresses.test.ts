@@ -6,7 +6,7 @@ import {
   getVaultAddress,
   computeVaultAddress,
   QUIP_FACTORY_ADDRESS,
-} from "../addresses.js";
+} from "../../../v1/addresses.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
 describe("Vault Address Functions", () => {

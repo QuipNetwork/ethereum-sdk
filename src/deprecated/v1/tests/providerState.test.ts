@@ -18,7 +18,7 @@ import type { Address, PublicClient, WalletClient } from "viem";
 import {
   assertProviderState,
   boundChain,
-} from "../internal/providerState.js";
+} from "../../../v1/internal/providerState.js";
 import { AccountChangedError, ChainChangedError } from "../errors.js";
 
 const ACCOUNT = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as Address;

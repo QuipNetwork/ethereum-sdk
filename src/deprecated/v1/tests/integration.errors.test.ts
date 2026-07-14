@@ -29,12 +29,12 @@ import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
 import { deployFactoryProxy } from "./utils/anvilFixture.js";
 import {
   decodeContractError,
   withDecodedError,
-} from "../internal/decodeError.js";
+} from "../../../v1/internal/decodeError.js";
 import {
   FeeExceedsMaxError,
   InsufficientBalanceError,

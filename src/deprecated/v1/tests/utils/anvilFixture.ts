@@ -42,9 +42,9 @@ import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "../../abi/QuipFactory.js";
-import { entryPointV07Abi } from "../../abi/EntryPointV07.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
+import { quipFactoryAbi } from "../../../../v1/abi/QuipFactory.js";
+import { entryPointV07Abi } from "../../../../v1/abi/EntryPointV07.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../../../../v1/addresses.js";
 import { QuipSigner } from "../../signer.js";
 import { createInMemoryBurnSet, type InMemoryBurnSet } from "../../burnSet.js";
 import { WOTSPlusImplementationClient } from "../../walletClient.js";
@@ -521,28 +521,9 @@ export async function deployFactoryProxy(
   return { factoryAddress, factoryImplAddress };
 }
 
-/// Deploy a Solady minimal ERC-1967 proxy pointing at `impl`. Initcode
-/// mirrors `QuipFactory._deployProxy`'s emission so the on-chain layout
-/// matches what the factory produces.
-export async function deployErc1967Proxy(
-  walletClient: WalletClient,
-  publicClient: PublicClient,
-  account: PrivateKeyAccount,
-  impl: Address,
-  chain: Chain = foundry
-): Promise<Address> {
-  const initcode = concat([
-    "0x603d3d8160223d3973",
-    impl,
-    "0x6009",
-    "0x5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076",
-    "0xcc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3",
-  ]);
-  const hash = await walletClient.sendTransaction({
-    chain,
-    data: initcode,
-    account,
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  return receipt.contractAddress!;
-}
+import { deployErc1967Proxy } from "../../../../v1/tests/utils/deployErc1967Proxy.js";
+
+// `deployErc1967Proxy` is family-agnostic and shared with the SHRINCS
+// fixture — it lives in its own live module; re-exported here so existing
+// importers of this fixture keep working.
+export { deployErc1967Proxy } from "../../../../v1/tests/utils/deployErc1967Proxy.js";

@@ -34,7 +34,7 @@ import { type Hex, toHex, keccak256 } from "viem";
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
+import { wotsPlusImplementationAbi } from "../../../v1/abi/WOTSPlusImplementation.js";
 import { quipSignedHashEcdsaTarget } from "../wotsCodec.js";
 import {
   ANVIL_PORTS,
