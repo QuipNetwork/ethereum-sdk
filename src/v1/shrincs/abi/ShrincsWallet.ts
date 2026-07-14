@@ -567,6 +567,73 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "markLeavesUsed",
+    "inputs": [
+      {
+        "name": "publicKey",
+        "type": "tuple",
+        "internalType": "struct ShrincsTypes.PublicKey",
+        "components": [
+          {
+            "name": "statefulPublicKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "publicKeyCommitment",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "pkSeed",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "hypertreeRoot",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      },
+      {
+        "name": "signature",
+        "type": "tuple",
+        "internalType": "struct ShrincsTypes.StatefulSignature",
+        "components": [
+          {
+            "name": "randomizer",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "counter",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "chains",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          },
+          {
+            "name": "authPath",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "leaves",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "maxSignatures",
     "inputs": [],
     "outputs": [
@@ -1557,6 +1624,44 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "event",
+    "name": "LeafRevocationSkipped",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LeafRevoked",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "indexed": true,
+        "internalType": "uint32"
+      },
+      {
+        "name": "keyVersion",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OwnershipHandoverCanceled",
     "inputs": [
       {
@@ -1722,6 +1827,11 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
+    "name": "EmptyLeaves",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ExecuteFeeExceedsCap",
     "inputs": [
       {
@@ -1776,6 +1886,17 @@ export const shrincsWalletAbi = [
     "type": "error",
     "name": "InvalidSignature",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LeafOutOfRange",
+    "inputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ]
   },
   {
     "type": "error",

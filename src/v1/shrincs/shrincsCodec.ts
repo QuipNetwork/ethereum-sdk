@@ -66,6 +66,9 @@ export const ACTION_SET_ERC1271_KEY = keccakUtf8(
   "quip.shrincs.action.setErc1271Key"
 );
 export const ACTION_ROTATE_KEY = keccakUtf8("quip.shrincs.action.rotateKey");
+export const ACTION_MARK_LEAVES_USED = keccakUtf8(
+  "quip.shrincs.action.markLeavesUsed"
+);
 export const ACTION_ERC1271 = keccakUtf8("quip.shrincs.action.erc1271");
 
 /// Per-path tags folded into `RotationContext.domainSeparator` (see
@@ -185,6 +188,18 @@ export const setErc1271KeyPayloadHash = (
 
 export const rotateKeyPayloadHash = (nextCommitment: Hex): Hex =>
   hashWords(nextCommitment);
+
+/// Commitment to a `markLeavesUsed` target array: one 32-byte word per leaf
+/// index, in order (the TS image of the wallet's EfficientHashLib word buffer).
+/// Order-sensitive by construction — the signed payload authorizes exactly this
+/// array, so a submitter can neither add, drop, nor reorder targets.
+export const leavesHash = (leaves: readonly number[]): Hex =>
+  hashWords(...leaves.map((leaf) => word(leaf)));
+
+/// `payloadHash` for `markLeavesUsed` (surgical batch leaf revocation): binds
+/// the `leavesHash` commitment over the exact target array.
+export const markLeavesUsedPayloadHash = (leavesHashValue: Hex): Hex =>
+  hashWords(leavesHashValue);
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    CONTEXT BUILDERS                         */

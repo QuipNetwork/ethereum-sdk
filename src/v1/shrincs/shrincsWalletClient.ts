@@ -31,8 +31,11 @@ import { tryMulticall } from "../internal/multicall.js";
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
 import { HASH_SUITE_KECCAK_256 } from "./constants.js";
 import {
+  AuthLeafInTargetsError,
   CommitmentMismatchError,
+  EmptyLeavesError,
   Erc1271ValidationResult,
+  LeafOutOfRangeError,
   StatefulBudgetExhaustedError,
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
@@ -42,6 +45,7 @@ import { withDecodedError } from "./internal/decodeError.js";
 import {
   ACTION_ERC1271,
   ACTION_EXECUTE,
+  ACTION_MARK_LEAVES_USED,
   ACTION_ROTATE_KEY,
   ACTION_SET_ERC1271_KEY,
   ACTION_TRANSFER_OWNERSHIP,
@@ -57,6 +61,8 @@ import {
   encodeErc1271Signature,
   encodeUpgradeData,
   executePayloadHash,
+  leavesHash,
+  markLeavesUsedPayloadHash,
   publicKeyToAbi,
   rotateKeyPayloadHash,
   rotationDomainSeparator,
@@ -224,10 +230,14 @@ export class ShrincsWalletClient {
 
   /// Lowest unused stateful leaf in `1..maxSignatures` for the current key
   /// epoch, found by scanning the on-chain bitmap via multicall. Throws
-  /// `StatefulBudgetExhaustedError` if every leaf is consumed.
+  /// `StatefulBudgetExhaustedError` if every leaf is consumed (or every free
+  /// leaf is excluded). `exclude` skips leaves the bitmap considers free but
+  /// that must not sign — e.g. `markLeavesUsed` targets, whose one-time keys
+  /// have typically already signed an off-chain message.
   async lowestUnusedLeaf(
     maxSignatures: number,
-    statefulLeavesUsed: number
+    statefulLeavesUsed: number,
+    exclude?: ReadonlySet<number>
   ): Promise<number> {
     if (statefulLeavesUsed >= maxSignatures) {
       throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
@@ -244,6 +254,7 @@ export class ShrincsWalletClient {
     const results = await tryMulticall(this.publicClient, calls);
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
+      if (exclude?.has(i + 1)) continue;
       if (r && r.status === "success" && r.result === false) return i + 1;
     }
     throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
@@ -359,8 +370,13 @@ export class ShrincsWalletClient {
   }
 
   /// Common stateful-op preamble: assert provider, read state, recover key, pick
-  /// the lowest unused leaf (or honor an explicit override).
-  private async prepareStatefulOp(keyOpts?: ShrincsTxKeyOptions): Promise<{
+  /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
+  /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
+  /// are responsible for their own exclusion guard (see `markLeavesUsed`).
+  private async prepareStatefulOp(
+    keyOpts?: ShrincsTxKeyOptions,
+    excludeLeaves?: ReadonlySet<number>
+  ): Promise<{
     keypair: ShrincsKeyPair;
     state: ShrincsWalletState;
     leaf: number;
@@ -374,7 +390,11 @@ export class ShrincsWalletClient {
     );
     const leaf =
       keyOpts?.leaf ??
-      (await this.lowestUnusedLeaf(state.maxSignatures, state.statefulLeavesUsed));
+      (await this.lowestUnusedLeaf(
+        state.maxSignatures,
+        state.statefulLeavesUsed,
+        excludeLeaves
+      ));
     return {
       keypair,
       state,
@@ -558,6 +578,60 @@ export class ShrincsWalletClient {
           publicKeyCommitment: nextStatefulKey.publicKeyCommitment,
         },
       ],
+      state.executeFee,
+      opts
+    );
+  }
+
+  /// Surgical batch leaf revocation: mark the target leaves used in the current
+  /// key epoch's bitmap, authorized by one stateful signature from a DIFFERENT
+  /// leaf. OTS hygiene — burn a leaf whose one-time key signed a message that
+  /// will never land, or kill a specific outstanding approval.
+  ///
+  /// SURGICAL — unlike every other landed action, this does NOT advance the
+  /// action nonce, so outstanding signed material at non-revoked leaves stays
+  /// valid. On-chain skip semantics: already-used targets (races, duplicates)
+  /// emit `LeafRevocationSkipped` instead of reverting; out-of-range targets
+  /// revert `LeafOutOfRange`; an empty array reverts `EmptyLeaves`.
+  ///
+  /// The authorizing leaf is auto-picked OUTSIDE the target set: a leaf being
+  /// revoked has typically already signed off-chain, and authorizing with it
+  /// would be exactly the key reuse this call prevents. An explicit `opts.leaf`
+  /// inside the targets throws `AuthLeafInTargetsError` before signing.
+  async markLeavesUsed(
+    params: { leaves: readonly number[] },
+    opts: TxOptions & ShrincsTxKeyOptions = {}
+  ): Promise<TransactionReceipt> {
+    const leaves = params.leaves;
+    if (leaves.length === 0) throw new EmptyLeavesError();
+    const targetSet = new Set(leaves);
+    if (opts.leaf !== undefined && targetSet.has(opts.leaf)) {
+      throw new AuthLeafInTargetsError(opts.leaf);
+    }
+    const { keypair, state, leaf, domainSeparator: ds } =
+      await this.prepareStatefulOp(opts, targetSet);
+    // All guards run BEFORE signing: a signed-then-aborted call would itself
+    // leave a leaf needing revocation.
+    for (const target of leaves) {
+      if (
+        !Number.isInteger(target) ||
+        target < 1 ||
+        target > state.maxSignatures
+      ) {
+        throw new LeafOutOfRangeError(target, state.maxSignatures);
+      }
+    }
+    const ctx = buildActionContext({
+      domainSeparator: ds,
+      nonce: state.actionNonce,
+      keyVersion: state.keyVersion,
+      actionType: ACTION_MARK_LEAVES_USED,
+      payloadHash: markLeavesUsedPayloadHash(leavesHash(leaves)),
+    });
+    const signature = keypair.signStatefulActionAt(ctx, leaf);
+    return this.submit(
+      "markLeavesUsed",
+      [publicKeyToAbi(keypair.publicKey), signature, [...leaves]],
       state.executeFee,
       opts
     );

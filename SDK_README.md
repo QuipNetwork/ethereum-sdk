@@ -210,7 +210,7 @@ A reverted UserOp execution still **commits** the wallet's key rotation (the Ent
 
 **One-time leaves, budgeted.** Normal actions sign with a stateful leaf (`leaf index = authPath.length`), each usable once per key epoch, bounded by `maxSignatures`. The client picks the lowest unused leaf automatically by reading the on-chain bitmap. Rotate before the budget exhausts (`rotateKey`); break-glass recovery (`recoverWallet`) uses the stateless half.
 
-**Strict signing-order serialization.** Every signed context binds the wallet's live `actionNonce()`, and every consumed signature advances it. One outstanding signed authorization at a time: sign → land → sign. Signing a second op before the first lands binds a stale nonce and is rejected (`AA24` on the 4337 path; `InvalidSignatureError` on the direct path, leaf preserved). The flip side is free mass-cancellation: landing any action (even an empty `execute`) invalidates all outstanding signed material, including ERC-1271 blobs — integrators sign 1271 blobs late and re-sign after any wallet action.
+**Strict signing-order serialization.** Every signed context binds the wallet's live `actionNonce()`, and every consumed signature advances it (sole exception: `markLeavesUsed`, below). One outstanding signed authorization at a time: sign → land → sign. Signing a second op before the first lands binds a stale nonce and is rejected (`AA24` on the 4337 path; `InvalidSignatureError` on the direct path, leaf preserved). The flip side is free mass-cancellation: landing any action (even an empty `execute`) invalidates all outstanding signed material, including ERC-1271 blobs — integrators sign 1271 blobs late and re-sign after any wallet action.
 
 ### Execute fee: signed `maxFee` ceiling, live price charged
 
@@ -221,6 +221,14 @@ The factory charges a per-execute fee (`getExecuteFee()`). The signer authorizes
 - The un-capped `execute(address,uint256,bytes)` / `executeBatch(Call[])` selectors are disabled on-chain (`StandardExecuteDisabledError`); every execution path carries a signed ceiling.
 
 **Revert asymmetry, same as WOTS+.** A cap-exceeded revert on the **direct** path rolls back everything — leaf and nonce preserved. On the **4337** path, validation already consumed the leaf and advanced the nonce before execution reverts, so a cap-exceeded op burns the leaf without executing. Fee changes are rare owner-governance events; if in-flight exposure matters, sign with headroom.
+
+### Leaf revocation: `markLeavesUsed` (surgical)
+
+`markLeavesUsed({ leaves })` burns target leaves in the current key epoch's bitmap, authorized by one stateful signature from a *different* leaf. Use it for OTS hygiene — a leaf whose one-time key signed a message that will never land (superseded by the nonce) must never sign a second message — or to kill one specific outstanding approval.
+
+- **Surgical: no nonce advance.** Unlike every other landed action, revocation does not touch `actionNonce()`, so outstanding signed material at non-revoked leaves stays valid. It is the targeted complement to the empty-`execute` cancel-all.
+- **Skip, don't brick.** Already-used targets (a pending action raced its own revocation, duplicates) are skipped with a `LeafRevocationSkipped` event; the batch never reverts for a race. Out-of-range targets throw `LeafOutOfRangeError` and an empty array throws `EmptyLeavesError` — both client-side before signing, and on-chain as the backstop.
+- **The authorizing leaf never comes from the target set.** A leaf you are revoking has typically already signed off-chain; signing the revocation with it would be exactly the key reuse being prevented. The client auto-picks outside the set; an explicit `opts.leaf` inside it throws `AuthLeafInTargetsError` before signing. Each call costs one leaf of budget on top of the leaves it burns.
 
 ### ERC-4337 flow
 
@@ -235,7 +243,7 @@ const { userOp: signed, userOpHash, leaf } = await client.signExecuteUserOp({ us
 // submit `signed` to your bundler; the SDK does not own bundler submission
 ```
 
-`signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`) and binds `userOpHash` — nothing else. Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
+`signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`) and binds `userOpHash` — nothing else. Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `markLeavesUsed`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
 
 ---
 
