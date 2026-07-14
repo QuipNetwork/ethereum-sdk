@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletCodecHarness} from "../../harness/ShrincsWalletCodecHarness.sol";
 import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol";

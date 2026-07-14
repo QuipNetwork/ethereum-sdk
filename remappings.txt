@@ -1,5 +1,7 @@
 @openzeppelin-contracts-5.6.0-rc.1/=dependencies/@openzeppelin-contracts-5.6.0-rc.1/
-@quip.network/hashsigs-solidity-0.1.0/=dependencies/@quip.network-hashsigs-solidity-0.1.0/
+@quip.network/hashsigs-solidity-0.2.0/=dependencies/@quip.network-hashsigs-solidity-0.2.0/
 forge-std-1.14.0/=dependencies/forge-std-1.14.0/src/
 pcaversaccio-createx-1.0.0/=dependencies/pcaversaccio-createx-1.0.0/
 solady-0.1.26/=dependencies/solady-0.1.26/
+shrincs-profile/=dependencies/@quip.network-hashsigs-solidity-0.2.0/contracts/profiles/256s/
+shrincs-hash/=dependencies/@quip.network-hashsigs-solidity-0.2.0/contracts/hash/keccak/

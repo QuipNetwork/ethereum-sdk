@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementationHarness} from "../../harness/WOTSPlusImplementationHarness.sol";
 import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusStorage as Storage} from "../../../contracts/wots/WOTSPlusStorage.sol";
 
 /// @dev Behaviour tests for `_assertGuardedSlotsUnchanged(snapshot)`.

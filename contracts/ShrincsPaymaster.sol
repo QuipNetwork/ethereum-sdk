@@ -20,8 +20,8 @@ import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.1.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
 // prettier-ignore
 import {
     IPaymaster,

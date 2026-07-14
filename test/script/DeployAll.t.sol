@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
 import {IVettingFactory} from "../../script/DeployHelpers.sol";
 import {DeployWotsBase} from "../../script/DeployWotsBase.sol";

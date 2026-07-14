@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
 import {Deployer} from "../contracts/Deployer.sol";
 import {ShrincsPaymaster} from "../contracts/ShrincsPaymaster.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
 import {ShrincsWallet} from "../contracts/shrincs/ShrincsWallet.sol";
 import {DeployHelpers} from "./DeployHelpers.sol";
 

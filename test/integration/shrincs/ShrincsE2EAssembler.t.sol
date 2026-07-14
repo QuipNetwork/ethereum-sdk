@@ -2,10 +2,10 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.1.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsUtils.sol";
-import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.1.0/test/helpers/ShrincsTestSigner.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsUtils.sol";
+import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsTestSigner.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 /// @title ShrincsE2E signing assembler

@@ -3,14 +3,14 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.1.0/contracts/SHRINCS.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsUtils.sol";
-import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.1.0/test/helpers/ShrincsTestSigner.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsUtils.sol";
+import {ShrincsTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsTestSigner.sol";
 import {ShrincsStatelessVectorSigner} from
-    "@quip.network/hashsigs-solidity-0.1.0/test/helpers/ShrincsStatelessVectorSigner.sol";
+    "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsStatelessVectorSigner.sol";
 import {ShrincsStatelessVectorSigningFacade} from
-    "@quip.network/hashsigs-solidity-0.1.0/test/helpers/ShrincsStatelessVectorSigningFacade.sol";
+    "@quip.network/hashsigs-solidity-0.2.0/test/helpers/ShrincsStatelessVectorSigningFacade.sol";
 import {ShrincsWalletCodec as Codec} from "../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletHarness} from "../harness/ShrincsWalletHarness.sol";
 import {MockShrincsFactory} from "../mocks/MockShrincsFactory.sol";

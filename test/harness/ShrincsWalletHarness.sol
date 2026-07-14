@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {ShrincsWallet} from "../../contracts/shrincs/ShrincsWallet.sol";
 import {ShrincsWalletStorage as Storage} from "../../contracts/shrincs/ShrincsWalletStorage.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
 
 /// @dev Test harness exposing `ShrincsWallet` internals and a direct storage installer so
 ///      behavior tests can set up arbitrary state without threading a factory deploy.

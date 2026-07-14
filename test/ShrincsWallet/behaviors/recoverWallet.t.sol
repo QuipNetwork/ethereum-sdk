@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";

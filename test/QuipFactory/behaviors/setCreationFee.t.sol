@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {QuipFactoryTest} from "../QuipFactory.t.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {Ownable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";

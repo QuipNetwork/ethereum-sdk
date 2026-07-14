@@ -22,7 +22,7 @@ import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
 // NOTE: OpenZeppelin 5.6.0-rc.1 is a pre-release version. Pin to a stable release before mainnet.
 import {Ownable as OZOwnable} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin-contracts-5.6.0-rc.1/access/Ownable2Step.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {IQuipFactory} from "./interfaces/IQuipFactory.sol";
 import {IWOTSPlusImplementation} from "./wots/interfaces/IWOTSPlusImplementation.sol";
 

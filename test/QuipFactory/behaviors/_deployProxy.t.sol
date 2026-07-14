@@ -7,7 +7,7 @@ import {QuipFactoryHarness} from "../../harness/QuipFactoryHarness.sol";
 import {WOTSPlusImplementation} from "../../../contracts/wots/WOTSPlusImplementation.sol";
 import {IQuipFactory} from "../../../contracts/interfaces/IQuipFactory.sol";
 import {IWOTSPlusImplementation} from "../../../contracts/wots/interfaces/IWOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
 contract QuipFactory__deployProxy is QuipFactoryTest {
     QuipFactoryHarness public harness;

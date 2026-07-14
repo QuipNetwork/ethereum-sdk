@@ -3,8 +3,8 @@ pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
-import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsTypes.sol";
-import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.1.0/contracts/ShrincsUtils.sol";
+import {ShrincsTypes} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsTypes.sol";
+import {ShrincsUtils} from "@quip.network/hashsigs-solidity-0.2.0/contracts/ShrincsUtils.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
