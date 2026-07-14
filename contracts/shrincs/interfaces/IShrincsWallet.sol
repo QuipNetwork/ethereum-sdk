@@ -18,6 +18,7 @@ pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {IQuipWallet} from "../../interfaces/IQuipWallet.sol";
 
 /// @title IShrincsWallet
 /// @notice A smart-contract wallet whose operations are authorized by SHRINCS
@@ -25,7 +26,9 @@ import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHI
 ///         and arbitrary calls. Normal operations use the cheap stateful path
 ///         (leaf-indexed, bounded by `maxSignatures`); break-glass recovery uses the
 ///         stateless path. A separate, dedicated stateless key backs ERC-1271.
-interface IShrincsWallet {
+///         Extends `IQuipWallet` — the factory-facing surface whose natspec
+///         states the behavioral vetting contract this implementation upholds.
+interface IShrincsWallet is IQuipWallet {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -222,7 +225,7 @@ interface IShrincsWallet {
     function initialize(
         address payable newOwner,
         bytes calldata payload
-    ) external;
+    ) external override;
 
     /// @notice Re-installs PQ state during an upgrade. Only valid inside `upgradeToAndCall`.
     function migrate(bytes calldata payload) external;
@@ -362,7 +365,7 @@ interface IShrincsWallet {
     ) external view returns (bytes32);
 
     /// @notice The classical owner (ERC-1271 ECDSA gate + factory registry).
-    function owner() external view returns (address);
+    function owner() external view override returns (address);
 
     /// @notice The factory's vetted-code index for this wallet's current implementation.
     function version() external view returns (uint256);

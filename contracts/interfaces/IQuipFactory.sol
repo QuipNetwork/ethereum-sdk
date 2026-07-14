@@ -16,12 +16,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-
 /// @title IQuipFactory
-/// @notice Factory for creating and managing WOTSPlusImplementation proxies secured by
-///         Winternitz one-time signatures.
+/// @notice Factory for creating and managing Quip wallet proxies. Agnostic to the
+///         signature scheme securing each wallet: implementations are vetted by
+///         codehash and driven exclusively through the minimal `IQuipWallet`
+///         surface (see its natspec for the behavioral vetting contract).
 ///         Supports multiple vetted implementation versions with index-based selection.
+///         UUPS-upgradeable behind an ERC-1967 proxy: the proxy address is the
+///         permanent factory identity (wallet immutables and CREATE3 wallet
+///         addressing both derive from it and survive logic upgrades).
 interface IQuipFactory {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
@@ -123,22 +126,23 @@ interface IQuipFactory {
     /// @param newFee The new execute fee.
     event ExecuteFeeUpdated(uint256 oldFee, uint256 newFee);
 
-    /// @notice Emitted when a new WOTSPlusImplementation proxy is created.
+    /// @notice Emitted when a new wallet proxy is created.
     /// @param amount The ETH value sent with the creation transaction.
     /// @param when The block timestamp at which the wallet was created.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param creator The classical address that owns the new wallet.
-    /// @param disasterRecoveryKey The wallet's disaster recovery Winternitz public key —
-    ///        the backstop that authorizes `saveWallet` if transaction and recovery keysets
-    ///        are ever corrupted. This key is the most stable identifier an off-chain indexer
-    ///        can associate with the wallet, since it rotates only on emergency rescue.
-    /// @param quip The address of the newly deployed WOTSPlusImplementation proxy.
+    /// @param implementation The vetted implementation the proxy was deployed with —
+    ///        tells an off-chain indexer which wallet family/version this is. The
+    ///        wallet's key material is NOT echoed here: the init payload is opaque
+    ///        to the factory, and each family emits its own `WalletInitialized`
+    ///        event (indexed by factory and owner) with its typed key handles.
+    /// @param quip The address of the newly deployed wallet proxy.
     event QuipCreated(
         uint256 amount,
         uint256 when,
         bytes32 indexed vaultId,
         address indexed creator,
-        WOTSPlus.WinternitzAddress disasterRecoveryKey,
+        address implementation,
         address indexed quip
     );
 
@@ -148,7 +152,7 @@ interface IQuipFactory {
     event Withdrawn(address indexed to, uint256 amount);
 
     /// @notice Emitted when a wallet's classical owner changes via the
-    ///         WOTS+-authenticated `transferOwnership(bytes)` path. The wallet
+    ///         wallet's PQ-authenticated ownership-transfer path. The wallet
     ///         calls back into the factory at the tail of that flow to keep
     ///         the per-owner vaultIds set consistent with the wallet's `owner()`.
     /// @param vaultId The wallet's vaultId (derived via `vaultIdOf[msg.sender]`).
@@ -163,6 +167,15 @@ interface IQuipFactory {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Initializes the factory proxy with its initial owner.
+    /// @dev Callable exactly once (Solady `initializer`); the implementation
+    ///      itself is locked via `_disableInitializers` in its constructor.
+    ///      `MAX_FEE` is NOT set here — it is a per-implementation immutable
+    ///      supplied to the implementation's constructor.
+    /// @param initialOwner The initial factory owner (expected to be a
+    ///        post-quantum wallet; controls vetting, fees, and upgrades).
+    function initialize(address payable initialOwner) external;
 
     /// @notice Approves a fresh implementation's codehash for proxy deployment.
     /// @dev Only callable by the admin. Computes `extcodehash` of `impl` and adds it
@@ -192,23 +205,24 @@ interface IQuipFactory {
     /// @param impl The deployed implementation contract address.
     function undeprecateImplementation(address impl) external;
 
-    /// @notice Deploys a new WOTSPlusImplementation proxy using the latest active implementation,
+    /// @notice Deploys a new wallet proxy using the latest active implementation,
     ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
     /// @dev Iterates backwards through the vetted set to find the most recently added
     ///      non-deprecated implementation. Uses CREATE3 for deterministic addressing.
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param to The classical address that will own the new wallet.
-    /// @param payload Packed init data: [0:64) disasterRecoveryKey,
-    ///                [64:128) ownershipKey, [128:768) transactionKeys[10],
-    ///                [768:1408) recoveryKeys[10], [1408:2048) verificationKeys[10].
-    /// @return The address of the newly deployed WOTSPlusImplementation proxy.
+    /// @param payload Implementation-defined init data, passed to the wallet's
+    ///                `initialize` verbatim. Opaque to the factory: layout and
+    ///                length are documented and validated by each wallet
+    ///                family's own codec.
+    /// @return The address of the newly deployed wallet proxy.
     function deployLatestWalletProxy(
         bytes32 vaultId,
         address payable to,
         bytes calldata payload
     ) external payable returns (address);
 
-    /// @notice Deploys a new WOTSPlusImplementation proxy using the implementation at a
+    /// @notice Deploys a new wallet proxy using the implementation at a
     ///         specific index, initializes it, and forwards deposited ETH (minus creation
     ///         fee) to the wallet.
     /// @dev The index corresponds to insertion order in the vetted set. Reverts if the
@@ -216,10 +230,11 @@ interface IQuipFactory {
     /// @param vaultId The salt used to derive the wallet's deterministic address.
     /// @param index The index into the vetted implementation set.
     /// @param to The classical address that will own the new wallet.
-    /// @param payload Packed init data: [0:64) disasterRecoveryKey,
-    ///                [64:128) ownershipKey, [128:768) transactionKeys[10],
-    ///                [768:1408) recoveryKeys[10], [1408:2048) verificationKeys[10].
-    /// @return The address of the newly deployed WOTSPlusImplementation proxy.
+    /// @param payload Implementation-defined init data, passed to the wallet's
+    ///                `initialize` verbatim. Opaque to the factory: layout and
+    ///                length are documented and validated by each wallet
+    ///                family's own codec.
+    /// @return The address of the newly deployed wallet proxy.
     function deploySpecificWalletProxy(
         bytes32 vaultId,
         uint256 index,
@@ -228,8 +243,8 @@ interface IQuipFactory {
     ) external payable returns (address);
 
     /// @notice Callback used by deployed wallets to keep the per-owner
-    ///         vaultIds set consistent with `owner()` during the
-    ///         WOTS+-authenticated `transferOwnership(bytes)` flow.
+    ///         vaultIds set consistent with `owner()` during the wallet's
+    ///         PQ-authenticated ownership-transfer flow.
     /// @dev NOT callable outside that flow. The factory looks up `oldOwner`
     ///      internally via `walletOwner[msg.sender]` — its own source of
     ///      truth — so the wallet cannot pass a wrong value. Gates, in order:
@@ -237,10 +252,11 @@ interface IQuipFactory {
     ///          deployed by THIS factory. Reverts `OnlyWallet` otherwise.
     ///        - `newOwner != address(0)` — reverts `ZeroAddressOwner`.
     ///        - `newOwner != walletOwner[msg.sender]` — reverts `SameOwner`.
-    ///        - `IWOTSPlusImplementation(msg.sender).owner() == newOwner` — pins the
+    ///        - `IQuipWallet(msg.sender).owner() == newOwner` — pins the
     ///          callback to a moment when the wallet has ALREADY committed
-    ///          `_setOwner(newOwner)`. The only path producing that state
-    ///          is `transferOwnership(bytes)`. Reverts `OwnerStateMismatch`.
+    ///          its new owner. Per the vetting contract (`IQuipWallet`
+    ///          natspec, rule 2), the only path producing that state is the
+    ///          wallet's ownership-transfer flow. Reverts `OwnerStateMismatch`.
     ///      On success, moves the vaultId from `walletOwner[msg.sender]`'s
     ///      set to `newOwner`'s set, updates `walletOwner[msg.sender]`,
     ///      and emits `WalletOwnerChanged`. The set mutations are guarded
@@ -251,12 +267,12 @@ interface IQuipFactory {
     /// @param newOwner The owner after the transfer (wallet `owner()` state check).
     function updateWalletOwner(address newOwner) external;
 
-    /// @notice Sets the fee charged when creating a new WOTSPlusImplementation.
+    /// @notice Sets the fee charged when creating a new wallet proxy.
     /// @dev Only callable by the current admin.
     /// @param newFee The new creation fee in wei.
     function setCreationFee(uint256 newFee) external;
 
-    /// @notice Sets the fee charged on Winternitz-authenticated operations.
+    /// @notice Sets the fee charged on PQ-authenticated wallet operations.
     /// @dev Only callable by the current admin.
     /// @param newFee The new execute fee in wei.
     function setExecuteFee(uint256 newFee) external;
@@ -266,14 +282,16 @@ interface IQuipFactory {
     /// @param amount The amount of ETH in wei to withdraw.
     function withdraw(uint256 amount) external;
 
-    /// @notice Disabled; always reverts with `RenounceDisabled`.
-    function renounceOwnership() external;
+    // NOTE: `renounceOwnership()` is deliberately NOT declared here. The
+    // implementation overrides Solady Ownable's payable `renounceOwnership`
+    // to always revert `RenounceDisabled` (same pattern as the wallets'
+    // interfaces, which declare only the error).
 
     /// @notice Returns the current fee charged for wallet creation.
     /// @return The creation fee in wei.
     function creationFee() external view returns (uint256);
 
-    /// @notice Returns the current fee charged for Winternitz-authenticated operations.
+    /// @notice Returns the current fee charged for PQ-authenticated wallet operations.
     /// @return The execute fee in wei.
     function executeFee() external view returns (uint256);
 
@@ -281,7 +299,7 @@ interface IQuipFactory {
     /// @return The maximum fee in wei.
     function MAX_FEE() external view returns (uint256);
 
-    /// @notice Returns the WOTSPlusImplementation address deployed at `vaultId` on this
+    /// @notice Returns the wallet address deployed at `vaultId` on this
     ///         factory.
     /// @dev `vaultId` is a GLOBAL CREATE3 salt — same vaultId on every chain
     ///      resolves to the same deterministic address. The outer
@@ -290,7 +308,7 @@ interface IQuipFactory {
     ///      address is a pure function of the salt. Off-chain integrators
     ///      MUST treat `vaultId` as a first-come-first-served global resource.
     /// @param vaultId The vaultId used as CREATE3 salt.
-    /// @return The WOTSPlusImplementation address, or `address(0)` if none deployed here.
+    /// @return The wallet address, or `address(0)` if none deployed here.
     function wallets(bytes32 vaultId) external view returns (address);
 
     /// @notice Returns the vaultId of a wallet deployed by this factory.

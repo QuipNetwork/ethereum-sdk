@@ -71,10 +71,11 @@ contract QuipFactory_deployLatestWalletProxy is QuipFactoryTest {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (
-                logs[i].topics[0] == keccak256("QuipCreated(uint256,uint256,bytes32,address,(bytes32,bytes32),address)")
-            ) {
+            if (logs[i].topics[0] == keccak256("QuipCreated(uint256,uint256,bytes32,address,address,address)")) {
                 found = true;
+                // Pins the emitted implementation to the latest active impl.
+                (,, address implementation) = abi.decode(logs[i].data, (uint256, uint256, address));
+                assertEq(implementation, address(walletImplementation));
                 break;
             }
         }

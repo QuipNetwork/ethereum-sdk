@@ -320,10 +320,10 @@ describe("simulateUserOp — rejection paths", () => {
 
 describe("buildExecuteUserOp — inner-call revert pre-flight", () => {
   // The inner call we'll force to revert: wallet.execute(factory,
-  // setExecuteFee(0)). Factory.setExecuteFee is OZ-onlyOwner; the wallet
-  // is not the factory owner, so the call reverts with
-  // `OwnableUnauthorizedAccount(address)`. That selector isn't in the
-  // Quip error registry, so it surfaces as `UnknownContractError`.
+  // setExecuteFee(0)). Factory.setExecuteFee is Solady-onlyOwner; the
+  // wallet is not the factory owner, so the call reverts with
+  // `Unauthorized()`. That selector isn't in the WOTS-family Quip error
+  // registry, so it surfaces as `UnknownContractError`.
   function revertingInnerCallData(): Hex {
     return encodeFunctionData({
       abi: quipFactoryAbi,
@@ -348,12 +348,10 @@ describe("buildExecuteUserOp — inner-call revert pre-flight", () => {
       caught = e;
     }
 
-    // The OZ Ownable error is not in the Quip registry; the SDK decodes
-    // it to `UnknownContractError` carrying the OZ selector + raw data.
+    // The Solady Ownable error is not in the Quip registry; the SDK
+    // decodes it to `UnknownContractError` carrying the selector + raw data.
     expect(caught).toBeInstanceOf(UnknownContractError);
-    expect((caught as UnknownContractError).errorName).toBe(
-      "OwnableUnauthorizedAccount"
-    );
+    expect((caught as UnknownContractError).errorName).toBe("Unauthorized");
 
     // Critical: the head key MUST NOT be burned. The bug this fix
     // addresses was: `estimateExecuteCallGas` swallowed the revert,

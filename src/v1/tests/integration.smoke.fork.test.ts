@@ -80,12 +80,12 @@ import {
 import {
   DEFAULT_ACCOUNT,
   deployErc1967Proxy,
+  deployFactoryProxy,
   linkBytecode,
   loadForgeArtifacts,
 } from "./utils/anvilFixture.js";
 
 const {
-  factoryBytecode,
   walletArtifact,
   walletUnlinkedBytecode,
   walletAbi: wotsPlusImplementationDeployAbi,
@@ -174,18 +174,15 @@ beforeAll(async () => {
     );
   }
 
-  // Deploy QuipFactory.
-  const factoryHash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
-    bytecode: factoryBytecode,
-    args: [account.address, MAX_FEE],
+  // Deploy QuipFactory (UUPS impl + ERC-1967 proxy + initialize).
+  ({ factoryAddress } = await deployFactoryProxy(
+    walletClient,
+    publicClient,
     account,
-    chain: mainnet,
-  });
-  const factoryReceipt = await publicClient.waitForTransactionReceipt({
-    hash: factoryHash,
-  });
-  factoryAddress = factoryReceipt.contractAddress!;
+    MAX_FEE,
+    undefined,
+    mainnet
+  ));
 
   // Deploy WOTSPlus library.
   const wotsHash = await walletClient.deployContract({

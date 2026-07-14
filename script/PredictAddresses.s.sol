@@ -45,7 +45,8 @@ contract PredictAddresses is Script {
         console.log("");
 
         _predict(deployerAddr, "WOTSPlus", keccak256("QUIP:WOTSPlus:V1.1"));
-        _predict(deployerAddr, "QuipFactory", keccak256("QUIP:QuipFactory:V1.1"));
+        _predict(deployerAddr, "QuipFactory (impl)", keccak256("QUIP:QuipFactory:Impl:V2"));
+        _predict(deployerAddr, "QuipFactory (proxy)", keccak256("QUIP:QuipFactory:Proxy:V2"));
         _predict(deployerAddr, "WOTSPlusImplementation (impl)", keccak256("QUIP:WOTSPlusImplementation:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
         _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));

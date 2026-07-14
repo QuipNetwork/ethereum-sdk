@@ -3,8 +3,11 @@ pragma solidity ^0.8.33;
 
 import {QuipFactory} from "../../contracts/QuipFactory.sol";
 
+/// @dev Deploy like production: `new QuipFactoryHarness(maxFee)` gives an
+///      implementation (initializers disabled), so tests must front it with an
+///      ERC-1967 proxy (e.g. `LibClone.deployERC1967`) and call `initialize`.
 contract QuipFactoryHarness is QuipFactory {
-    constructor(address payable initialOwner, uint256 maxFee_) payable QuipFactory(initialOwner, maxFee_) {}
+    constructor(uint256 maxFee_) payable QuipFactory(maxFee_) {}
 
     function exposed_findLatestActive() external view returns (address) {
         return _findLatestActive();

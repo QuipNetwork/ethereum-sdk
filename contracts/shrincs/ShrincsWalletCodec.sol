@@ -83,8 +83,9 @@ library ShrincsWalletCodec {
     /// @dev Decodes the factory-supplied init payload, the ABI encoding of
     ///      `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle, uint32 hashSuite,
     ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
-    ///      `commitment` and `pkSeed` occupy `payload[0:32]` / `[32:64]` so the factory's
-    ///      opaque `QuipCreated` indexing read lands on meaningful handles.
+    ///      The payload is opaque to the factory; `commitment`/`pkSeed` landing at
+    ///      `payload[0:32]` / `[32:64]` is just natural ABI head-word order, not a
+    ///      layout constraint.
     function decodeInit(
         bytes calldata payload
     )
