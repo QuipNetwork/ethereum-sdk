@@ -15,57 +15,25 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// ABIs
+// Shared (wallet-family-agnostic) v1 surface. The SHRINCS client SDK lives at
+// the `./v1/shrincs` subpath; the sunset WOTS+ family (QuipSigner,
+// WOTSPlusImplementationClient, QuipClient, QuipPaymasterClient, WotsCodec,
+// …) moved to `./deprecated/v1` and is no longer exported from this barrel.
+
+// ABIs (generated). The WOTS-family ABIs still exist under the generated
+// `./v1/abi` subpath — the live decode registry needs them — but are only
+// re-exported from the `./deprecated/v1` barrel.
 export { deployerAbi } from "./abi/Deployer.js";
 export { quipFactoryAbi } from "./abi/QuipFactory.js";
-export { wotsPlusImplementationAbi } from "./abi/WOTSPlusImplementation.js";
-export { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
 export { entryPointV07Abi } from "./abi/EntryPointV07.js";
 
-// Addresses, network helpers, codec, constants
+// Addresses & network helpers
 export * from "./addresses.js";
-export * as WotsCodec from "./wotsCodec.js";
-export * from "./constants.js";
 
-// Core SDK classes
-export { QuipSigner } from "./signer.js";
-export type { WinternitzKeyPair } from "./signer.js";
-export { WOTSPlusImplementationClient } from "./walletClient.js";
-export { QuipClient } from "./factoryClient.js";
-export { QuipPaymasterClient } from "./paymasterClient.js";
-
-// `KeyType` is canonically defined in `wotsCodec.ts` (it mirrors
-// `WOTSPlusCodec.KeyType`). Re-exported here at the package barrel so
-// callers don't have to reach into the codec subpath.
-export { KeyType } from "./wotsCodec.js";
-
-// Burn-set injection: every QuipSigner needs a `ConsumeKeyFn` to enforce
-// WOTS+ one-time-use. `createInMemoryBurnSet()` is the process-local default;
-// production callers should wrap or replace it with a durable backing store.
-// (`KeyAlreadyBurnedError` is exported via the wildcard re-export of
-// `./errors.js` above — callers writing their own `consume` import it from
-// the package barrel and throw it on a reused seed.)
-export { createInMemoryBurnSet } from "./burnSet.js";
-export type { ConsumeKeyFn, InMemoryBurnSet } from "./burnSet.js";
-
-// Typed errors, simulation/gas helpers, and the staged userOp/paymaster/event
-// surfaces (Phase 5+).
+// Typed errors and simulation/gas helpers
 export * from "./errors.js";
 export * from "./gas.js";
-export * from "./userOp.js";
-export * from "./paymasterClient.js";
-export * from "./events.js";
 
-// Re-export the aggregator types so callers can use them without reaching
-// into the module subpaths.
-export type {
-  WalletState,
-  WinternitzAddress,
-  TransactionKeyOptions,
-  BuildExecuteUserOpOptions,
-  BuildExecuteUserOpResult,
-  PreparedExecuteUserOp,
-  SimulateUserOpResult,
-} from "./walletClient.js";
-export type { FactoryState } from "./factoryClient.js";
-export type { PackedUserOperation } from "./wotsCodec.js";
+// Signature-scheme-agnostic ERC-4337 v0.7 codec (PackedUserOperation,
+// userOpHash, gas-field packing) — shared by both wallet families.
+export * from "./userOpCodec.js";

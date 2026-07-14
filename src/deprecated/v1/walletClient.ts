@@ -28,22 +28,22 @@ import {
   zeroHash,
 } from "viem";
 
-import { wotsPlusImplementationAbi } from "./abi/WOTSPlusImplementation.js";
-import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
-import { entryPointV07Abi } from "./abi/EntryPointV07.js";
+import { wotsPlusImplementationAbi } from "../../v1/abi/WOTSPlusImplementation.js";
+import { quipPaymasterAbi } from "../../v1/abi/QuipPaymaster.js";
+import { entryPointV07Abi } from "../../v1/abi/EntryPointV07.js";
 import { QuipSigner } from "./signer.js";
-import { withDecodedError } from "./internal/decodeError.js";
-import { tryMulticall } from "./internal/multicall.js";
+import { withDecodedError } from "../../v1/internal/decodeError.js";
+import { tryMulticall } from "../../v1/internal/multicall.js";
 import {
   assertProviderState,
   boundChain,
-} from "./internal/providerState.js";
+} from "../../v1/internal/providerState.js";
 import {
   type TxOptions,
   type PreparedTx,
   type ContractCallParams,
   prepareTx,
-} from "./gas.js";
+} from "../../v1/gas.js";
 import {
   DuplicateKeyError,
   EmptyKeysError,
@@ -62,7 +62,7 @@ import {
   UserOpValidationFailure,
   ZeroAddressOwnerError,
 } from "./errors.js";
-import { decodeContractError } from "./internal/decodeError.js";
+import { decodeContractError } from "../../v1/internal/decodeError.js";
 import {
   type PackedUserOperation,
   type WinternitzAddress,
@@ -316,6 +316,7 @@ interface SignedWriteSpec {
   totalValue: bigint;
 }
 
+/** @deprecated WOTS+ family sunset — superseded by SHRINCS (`ShrincsWalletClient` in `./v1/shrincs`). Fully functional for existing deployments. */
 export class WOTSPlusImplementationClient {
   private publicClient: PublicClient;
   private walletClient: WalletClient;

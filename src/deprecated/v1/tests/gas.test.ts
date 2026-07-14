@@ -23,7 +23,7 @@ import {
   MIN_GAS_MULTIPLIER,
   MAX_GAS_MULTIPLIER,
   type TxOptions,
-} from "../gas.js";
+} from "../../../v1/gas.js";
 import { BalanceTooLowError } from "../errors.js";
 
 describe("applyGasMultiplier", () => {

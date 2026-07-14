@@ -27,9 +27,9 @@ import {
 } from "viem";
 import { foundry } from "viem/chains";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
-import { entryPointV07Abi } from "../abi/EntryPointV07.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { entryPointV07Abi } from "../../../v1/abi/EntryPointV07.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../../../v1/addresses.js";
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";
 import { KeyType } from "../walletClient.js";

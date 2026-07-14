@@ -30,25 +30,25 @@ import {
 } from "viem";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
+import { quipFactoryAbi } from "../../v1/abi/QuipFactory.js";
 import {
   getVaultAddress,
   getNetworkAddresses,
   CHAIN_IDS,
-} from "./addresses.js";
+} from "../../v1/addresses.js";
 import { QuipSigner } from "./signer.js";
 import { WOTSPlusImplementationClient } from "./walletClient.js";
-import { withDecodedError } from "./internal/decodeError.js";
-import { tryMulticall } from "./internal/multicall.js";
+import { withDecodedError } from "../../v1/internal/decodeError.js";
+import { tryMulticall } from "../../v1/internal/multicall.js";
 import {
   assertProviderState,
   boundChain,
-} from "./internal/providerState.js";
+} from "../../v1/internal/providerState.js";
 import {
   type TxOptions,
   type ContractCallParams,
   prepareTx,
-} from "./gas.js";
+} from "../../v1/gas.js";
 import {
   WalletNotInitializedError,
   WalletAlreadyExistsError,
@@ -86,6 +86,7 @@ export interface FactoryState {
   vettedCodeCount: bigint;
 }
 
+/** @deprecated WOTS+ family sunset — superseded by SHRINCS (`ShrincsFactoryClient` in `./v1/shrincs`). Fully functional for existing deployments. */
 export class QuipClient {
   private publicClient: PublicClient;
   private walletClient: WalletClient;

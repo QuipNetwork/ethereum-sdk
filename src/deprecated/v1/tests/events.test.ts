@@ -24,7 +24,7 @@ import {
   zeroHash,
 } from "viem";
 
-import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
+import { wotsPlusImplementationAbi } from "../../../v1/abi/WOTSPlusImplementation.js";
 import {
   parseExecutionSucceeded,
   parseKeyRotated,

@@ -28,6 +28,20 @@ import {
   toHex,
 } from "viem";
 
+// The scheme-agnostic ERC-4337 v0.7 helpers live in the shared (non-deprecated)
+// `userOpCodec` module — SHRINCS consumes them too. Re-exported here so the
+// historical WotsCodec surface is unchanged.
+export {
+  type PackedUserOperation,
+  computeUserOpHash,
+  packAccountGasLimits,
+  packGasFees,
+  packUint128Pair,
+  unpackAccountGasLimits,
+  unpackGasFees,
+} from "../../v1/userOpCodec.js";
+import { type PackedUserOperation } from "../../v1/userOpCodec.js";
+
 export interface WinternitzAddress {
   publicSeed: Hex;
   publicKeyHash: Hex;
@@ -1430,24 +1444,6 @@ export function paymasterUserOpDigest(
   );
 }
 
-/// ERC-4337 v0.7 PackedUserOperation. Matches Solady's `ERC4337.sol:34` and
-/// the canonical EntryPoint v0.7 layout. The two packed fields use the
-/// EntryPoint v0.7 convention:
-///   - `accountGasLimits` = `verificationGasLimit (uint128) || callGasLimit (uint128)`
-///   - `gasFees`          = `maxPriorityFeePerGas (uint128) || maxFeePerGas (uint128)`
-/// (high bytes first in each case)
-export interface PackedUserOperation {
-  sender: Address;
-  nonce: bigint;
-  initCode: Hex;
-  callData: Hex;
-  accountGasLimits: Hex; // bytes32
-  preVerificationGas: bigint;
-  gasFees: Hex; // bytes32
-  paymasterAndData: Hex;
-  signature: Hex;
-}
-
 /// Total `paymasterAndData` length the Quip paymaster expects:
 ///   52 (header: paymaster + verificationGasLimit + postOpGasLimit)
 ///   + 6 (validUntil) + 6 (validAfter)
@@ -1468,125 +1464,6 @@ export const PAYMASTER_AND_DATA_LEN: number = 2272;
 /// base slot is `namespace + 1`.
 export const PAYMASTER_STORAGE_NAMESPACE: Hex =
   "0x8926ce57d385a1d96a00d5ce1618d3e300ce201cbf2177f181835ec0ca228b00";
-
-/// Pack two uint128 values into a bytes32 with the high 16 bytes being
-/// `hi` and the low 16 bytes being `lo`. EntryPoint v0.7 uses this for
-/// both `accountGasLimits` and `gasFees`.
-export function packUint128Pair(hi: bigint, lo: bigint): Hex {
-  if (hi < 0n || hi >= 1n << 128n) {
-    throw new Error(`packUint128Pair: high value out of range: ${hi}`);
-  }
-  if (lo < 0n || lo >= 1n << 128n) {
-    throw new Error(`packUint128Pair: low value out of range: ${lo}`);
-  }
-  const packed = (hi << 128n) | lo;
-  return pad(toHex(packed), { size: 32 });
-}
-
-/// Convenience: pack (verificationGasLimit, callGasLimit) for `accountGasLimits`.
-export function packAccountGasLimits(
-  verificationGasLimit: bigint,
-  callGasLimit: bigint
-): Hex {
-  return packUint128Pair(verificationGasLimit, callGasLimit);
-}
-
-/// Convenience: pack (maxPriorityFeePerGas, maxFeePerGas) for `gasFees`.
-export function packGasFees(
-  maxPriorityFeePerGas: bigint,
-  maxFeePerGas: bigint
-): Hex {
-  return packUint128Pair(maxPriorityFeePerGas, maxFeePerGas);
-}
-
-/// Reverse of `packAccountGasLimits` for inspection. Returns
-/// `{ verificationGasLimit, callGasLimit }`.
-export function unpackAccountGasLimits(packed: Hex): {
-  verificationGasLimit: bigint;
-  callGasLimit: bigint;
-} {
-  if (size(packed) !== 32) {
-    throw new Error(
-      `unpackAccountGasLimits: expected 32 bytes, got ${size(packed)}`
-    );
-  }
-  return {
-    verificationGasLimit: hexToBigInt(slice(packed, 0, 16)),
-    callGasLimit: hexToBigInt(slice(packed, 16, 32)),
-  };
-}
-
-/// Reverse of `packGasFees` for inspection. Returns
-/// `{ maxPriorityFeePerGas, maxFeePerGas }`.
-export function unpackGasFees(packed: Hex): {
-  maxPriorityFeePerGas: bigint;
-  maxFeePerGas: bigint;
-} {
-  if (size(packed) !== 32) {
-    throw new Error(`unpackGasFees: expected 32 bytes, got ${size(packed)}`);
-  }
-  return {
-    maxPriorityFeePerGas: hexToBigInt(slice(packed, 0, 16)),
-    maxFeePerGas: hexToBigInt(slice(packed, 16, 32)),
-  };
-}
-
-/// Compute the EntryPoint v0.7 `userOpHash` locally — no RPC roundtrip.
-/// Matches the reference implementation at
-/// https://github.com/eth-infinitism/account-abstraction/blob/v0.7/contracts/core/UserOperationLib.sol
-///
-///     keccak256(abi.encode(hashUserOp(userOp), entryPoint, chainId))
-///
-/// where
-///
-///     hashUserOp(userOp) =
-///       keccak256(abi.encode(
-///         sender, nonce,
-///         keccak256(initCode),
-///         keccak256(callData),
-///         accountGasLimits,
-///         preVerificationGas,
-///         gasFees,
-///         keccak256(paymasterAndData)
-///       ))
-///
-/// `signature` is excluded by design — it's what we're about to produce.
-export function computeUserOpHash(
-  userOp: PackedUserOperation,
-  entryPoint: Address,
-  chainId: bigint
-): Hex {
-  const inner = keccak256(
-    encodeAbiParameters(
-      [
-        { type: "address" },
-        { type: "uint256" },
-        { type: "bytes32" },
-        { type: "bytes32" },
-        { type: "bytes32" },
-        { type: "uint256" },
-        { type: "bytes32" },
-        { type: "bytes32" },
-      ],
-      [
-        userOp.sender,
-        userOp.nonce,
-        keccak256(userOp.initCode),
-        keccak256(userOp.callData),
-        userOp.accountGasLimits,
-        userOp.preVerificationGas,
-        userOp.gasFees,
-        keccak256(userOp.paymasterAndData),
-      ]
-    )
-  );
-  return keccak256(
-    encodeAbiParameters(
-      [{ type: "bytes32" }, { type: "address" }, { type: "uint256" }],
-      [inner, entryPoint, chainId]
-    )
-  );
-}
 
 /// Construct the `paymasterAndData` field of a sponsored UserOp per the
 /// Quip paymaster's layout (`QuipPaymaster.sol:52-59` + `INVARIANTS.md:229`):

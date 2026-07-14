@@ -24,7 +24,7 @@ import {
   computeUserOpHash,
   packAccountGasLimits,
   packGasFees,
-} from "../wotsCodec.js";
+} from "../userOpCodec.js";
 import {
   ACTION_ERC4337_EXECUTE,
   buildActionContext,
@@ -42,7 +42,7 @@ import {
 import { type ShrincsKeyPair } from "./shrincsSigner.js";
 import { type ShrincsPublicKey, type StatefulSignature } from "./types.js";
 
-export { type PackedUserOperation } from "../wotsCodec.js";
+export { type PackedUserOperation } from "../userOpCodec.js";
 
 /// Paymaster sponsorship domain/action (mirror `ShrincsPaymaster.sol`).
 export const PAYMASTER_DOMAIN_TAG = keccak256(toBytes("quip-shrincs-paymaster-v1"));

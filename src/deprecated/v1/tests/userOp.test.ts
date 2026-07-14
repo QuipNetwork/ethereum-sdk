@@ -23,7 +23,7 @@ import {
   DEFAULT_PRE_VERIFICATION_GAS,
   DEFAULT_VERIFICATION_GAS_LIMIT,
 } from "../constants.js";
-import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { CANONICAL_ENTRYPOINT_V07 } from "../../../v1/addresses.js";
 import {
   type PackedUserOperation,
   type WinternitzAddress,

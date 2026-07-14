@@ -22,9 +22,9 @@ import {
   parseEventLogs,
 } from "viem";
 
-import { quipFactoryAbi } from "./abi/QuipFactory.js";
-import { quipPaymasterAbi } from "./abi/QuipPaymaster.js";
-import { wotsPlusImplementationAbi } from "./abi/WOTSPlusImplementation.js";
+import { quipFactoryAbi } from "../../v1/abi/QuipFactory.js";
+import { quipPaymasterAbi } from "../../v1/abi/QuipPaymaster.js";
+import { wotsPlusImplementationAbi } from "../../v1/abi/WOTSPlusImplementation.js";
 import {
   PaymasterValidationFailure,
   UserOpValidationFailure,

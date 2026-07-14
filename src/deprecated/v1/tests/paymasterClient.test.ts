@@ -17,7 +17,7 @@
 import { describe, it, expect } from "@jest/globals";
 import { type PublicClient, type WalletClient } from "viem";
 
-import { CHAIN_IDS, NETWORK_ADDRESSES } from "../addresses.js";
+import { CHAIN_IDS, NETWORK_ADDRESSES } from "../../../v1/addresses.js";
 import { QuipPaymasterClient } from "../paymasterClient.js";
 import { UnsupportedNetworkError } from "../errors.js";
 

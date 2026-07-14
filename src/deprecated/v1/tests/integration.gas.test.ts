@@ -27,8 +27,8 @@ import { createAnvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
-import { prepareTx, applyGasMultiplier, type ContractCallParams } from "../gas.js";
+import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { prepareTx, applyGasMultiplier, type ContractCallParams } from "../../../v1/gas.js";
 import {
   GasEstimationError,
   BalanceTooLowError,

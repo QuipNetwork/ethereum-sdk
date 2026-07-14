@@ -34,7 +34,7 @@ import {
   computeUserOpHash,
   packAccountGasLimits,
   packGasFees,
-} from "../../wotsCodec.js";
+} from "../../userOpCodec.js";
 
 const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const CHAIN_ID = 31337n;
