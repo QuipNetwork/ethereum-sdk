@@ -44,8 +44,11 @@ import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
+  AuthLeafInTargetsError,
+  EmptyLeavesError,
   Erc1271ValidationResult,
   ExecuteFeeExceedsCapError,
+  LeafOutOfRangeError,
   StaleStatefulLeafError,
 } from "../errors.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
@@ -446,4 +449,158 @@ describe("Shrincs SDK live-anvil smoke", () => {
       await setExecuteFee(0n);
     }
   }, 120_000);
+
+  // ── (h) surgical leaf revocation ─────────────────────────────────────
+  it("h. markLeavesUsed burns targets without advancing the nonce, auth leaf picked outside the set", async () => {
+    const { client } = await createFreshShrincsWallet(stack, 0x80, {
+      maxSignatures: MAX_SIGS,
+    });
+
+    // Client-side guards fire BEFORE signing — no tx, no leaf burned.
+    await expect(client.markLeavesUsed({ leaves: [] })).rejects.toBeInstanceOf(
+      EmptyLeavesError
+    );
+    await expect(
+      client.markLeavesUsed({ leaves: [2, 3] }, { leaf: 2 })
+    ).rejects.toBeInstanceOf(AuthLeafInTargetsError);
+    await expect(
+      client.markLeavesUsed({ leaves: [0] })
+    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
+    await expect(
+      client.markLeavesUsed({ leaves: [MAX_SIGS + 1] })
+    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
+    expect((await client.getWalletState()).statefulLeavesUsed).toBe(0);
+
+    // Burn [1, 3]. Leaf 1 is the lowest FREE leaf, so this proves the auto-pick
+    // excludes the target set: the authorizing leaf must be 2.
+    const receipt = await client.markLeavesUsed({ leaves: [1, 3] });
+
+    const revoked = parseEventLogs({
+      abi: shrincsWalletAbi,
+      logs: receipt.logs,
+      eventName: "LeafRevoked",
+    });
+    expect(revoked.map((l) => Number(l.args.leaf)).sort()).toEqual([1, 3]);
+    const verified = parseEventLogs({
+      abi: shrincsWalletAbi,
+      logs: receipt.logs,
+      eventName: "StatefulSignatureVerified",
+    });
+    expect(verified.length).toBe(1);
+    expect(Number(verified[0].args.leaf)).toBe(2);
+
+    const state = await client.getWalletState();
+    expect(await client.isStatefulLeafUsed(1)).toBe(true);
+    expect(await client.isStatefulLeafUsed(2)).toBe(true); // authorizing leaf
+    expect(await client.isStatefulLeafUsed(3)).toBe(true);
+    expect(state.statefulLeavesUsed).toBe(3);
+    // SURGICAL: unlike every other landed action, revocation must NOT advance
+    // the action nonce.
+    expect(state.actionNonce).toBe(0n);
+
+    // A revoked leaf can no longer sign: forcing it is rejected at pre-flight
+    // with the decoded stale-leaf error.
+    let caught: unknown = null;
+    try {
+      await client.execute(
+        { target: RECIPIENT, value: parseEther("0.01") },
+        { leaf: 3 }
+      );
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(StaleStatefulLeafError);
+
+    // The untouched leaf 4 still works normally afterward.
+    await client.execute({ target: RECIPIENT, value: parseEther("0.01") });
+    const final = await client.getWalletState();
+    expect(final.statefulLeavesUsed).toBe(4);
+    expect(final.actionNonce).toBe(1n); // only the execute advanced it
+  }, 120_000);
+
+  // ── (i) surgical property end-to-end (pre-signed userOp survives) ────
+  it("i. a userOp signed BEFORE a revocation of a different leaf still lands after it", async () => {
+    const { client } = await createFreshShrincsWallet(stack, 0x90, {
+      maxSignatures: MAX_SIGS,
+    });
+
+    // Self-funded 4337: the wallet's EntryPoint deposit pays prefund (no
+    // paymaster needed), and the wallet holds the transfer value.
+    await client.addDeposit(parseEther("1"));
+    await stack.testClient.setBalance({
+      address: client.walletAddress,
+      value: parseEther("5"),
+    });
+
+    const block = await stack.publicClient.getBlock();
+    const baseFee = block.baseFeePerGas ?? parseEther("0.000000001");
+    const maxPriorityFeePerGas = parseEther("0.000000001");
+    const maxFeePerGas = baseFee * 2n + maxPriorityFeePerGas;
+    const nonce = (await stack.publicClient.readContract({
+      address: CANONICAL_ENTRYPOINT_V07,
+      abi: entryPointV07Abi,
+      functionName: "getNonce",
+      args: [client.walletAddress, 0n],
+    })) as bigint;
+
+    const value = parseEther("0.2");
+    const walletState = await client.getWalletState();
+    const userOp = client.buildExecuteUserOp({
+      target: RECIPIENT,
+      value,
+      data: "0x",
+      maxFee: walletState.executeFee,
+      nonce,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    });
+    // Signed at leaf 1 (lowest unused), binding actionNonce 0 — now OUTSTANDING.
+    const signed = await client.signExecuteUserOp({
+      userOp,
+      entryPoint: CANONICAL_ENTRYPOINT_V07,
+    });
+    expect(signed.leaf).toBe(1);
+
+    // Revoke leaf 3 while the op is in flight. The auth leaf must be forced
+    // OFF leaf 1: the bitmap still shows leaf 1 free (the op hasn't landed),
+    // and the client cannot know it signed off-chain — this is the documented
+    // client-side leaf discipline.
+    await client.markLeavesUsed({ leaves: [3] }, { leaf: 2 });
+    expect((await client.getWalletState()).actionNonce).toBe(0n);
+
+    // The pre-signed op still lands: revocation superseded nothing.
+    const recipientBefore = await stack.publicClient.getBalance({
+      address: RECIPIENT,
+    });
+    const handleHash = await stack.walletClient.writeContract({
+      chain: foundry,
+      address: CANONICAL_ENTRYPOINT_V07,
+      abi: entryPointV07Abi,
+      functionName: "handleOps",
+      args: [[signed.userOp], stack.account.address],
+      account: stack.account,
+      gas: 6_000_000n,
+    });
+    const receipt = await stack.publicClient.waitForTransactionReceipt({
+      hash: handleHash,
+    });
+    const opEvents = parseEventLogs({
+      abi: entryPointV07Abi,
+      logs: receipt.logs,
+      eventName: "UserOperationEvent",
+    });
+    expect(opEvents.length).toBe(1);
+    expect(opEvents[0].args.success).toBe(true);
+
+    const recipientAfter = await stack.publicClient.getBalance({
+      address: RECIPIENT,
+    });
+    expect(recipientAfter - recipientBefore).toBe(value);
+
+    const final = await client.getWalletState();
+    expect(await client.isStatefulLeafUsed(1)).toBe(true); // the landed op
+    expect(await client.isStatefulLeafUsed(2)).toBe(true); // revocation auth
+    expect(await client.isStatefulLeafUsed(3)).toBe(true); // revoked target
+    expect(final.actionNonce).toBe(1n); // only the landed op advanced it
+  }, 180_000);
 });
