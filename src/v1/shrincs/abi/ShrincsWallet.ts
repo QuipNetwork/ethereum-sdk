@@ -755,6 +755,25 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "quipUserOpHashEcdsaTarget",
+    "inputs": [
+      {
+        "name": "userOpHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "recoverWallet",
     "inputs": [
       {
