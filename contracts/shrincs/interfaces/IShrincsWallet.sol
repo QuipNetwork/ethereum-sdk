@@ -38,6 +38,11 @@ interface IShrincsWallet is IQuipWallet {
     /// @notice Thrown when the external SHRINCS verifier address is zero at implementation
     ///         deployment (see `getShrincsVerifier`).
     error ZeroAddressVerifier();
+    /// @notice Thrown at implementation deployment when the pinned verifier's `PROFILE_TAG`
+    ///         does not match the `SHRINCSParams.PROFILE_ID` this wallet was compiled under —
+    ///         wiring a wrong-profile verifier would silently break every signature check,
+    ///         and the EIP-712 domain name embeds `PROFILE_NAME` on the strength of this guard.
+    error VerifierProfileMismatch();
     /// @notice Thrown when the owner address is zero.
     error ZeroAddressOwner();
     /// @notice Thrown when the caller is not the immutable factory.

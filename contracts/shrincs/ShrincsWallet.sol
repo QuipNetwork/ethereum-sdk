@@ -39,6 +39,14 @@ import {IQuipFactory} from "../interfaces/IQuipFactory.sol";
 import {ShrincsWalletCodec as Codec} from "./ShrincsWalletCodec.sol";
 import {ShrincsWalletStorage as Storage} from "./ShrincsWalletStorage.sol";
 
+/// @dev Every concrete SHRINCS verifier exposes its compiled profile identity as a public
+///      constant (it cannot live on the abstract `SHRINCSVerifier` base — constants are not
+///      virtual/overridable there). Minimal profile-agnostic surface for the constructor's
+///      drift guard.
+interface ISHRINCSProfileTag {
+    function PROFILE_TAG() external view returns (bytes32);
+}
+
 /// @title ShrincsWallet
 /// @notice A post-quantum ERC-4337 smart-account wallet authorized by SHRINCS hash-based
 ///         signatures. Normal operations use the cheap stateful path (leaf-indexed,
@@ -93,6 +101,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     constructor(address payable factory_, address shrincsVerifier_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
         if (shrincsVerifier_ == address(0)) revert ZeroAddressVerifier();
+        // Profile drift guard: the wallet is compiled under SHRINCSParams (array sizes,
+        // digest layout) and its EIP-712 domain name embeds PROFILE_NAME — the pinned
+        // verifier must be the verifier for that exact profile.
+        if (
+            ISHRINCSProfileTag(shrincsVerifier_).PROFILE_TAG() !=
+            SHRINCSParams.PROFILE_ID
+        ) revert VerifierProfileMismatch();
         FACTORY = factory_;
         SHRINCS_VERIFIER = shrincsVerifier_;
         _disableInitializers();
@@ -102,15 +117,22 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /*                   INTERNAL OVERRIDES                   */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev EIP-712 domain name/version for the ERC-1271 ECDSA half. Distinct from the WOTS+
-    ///      wallet's "QuipWallet" so a classical owner signature cannot cross wallet families.
+    /// @dev EIP-712 domain name/version for the ERC-1271 ECDSA half. The name embeds the
+    ///      pinned verifier's profile identity (`SHRINCSParams.PROFILE_NAME`, whose keccak
+    ///      equals the verifier's `PROFILE_TAG` — enforced by the constructor guard), so a
+    ///      classical owner signature can cross neither wallet families (the WOTS+ wallet
+    ///      signs under "QuipWallet") nor SHRINCS profiles.
     function _domainNameAndVersion()
         internal
         pure
         override
         returns (string memory name, string memory version)
     {
-        name = "QuipShrincsWallet";
+        name = string.concat(
+            "QuipShrincsWallet/",
+            SHRINCSParams.PROFILE_NAME,
+            "/v1"
+        );
         version = "1";
     }
 
