@@ -393,6 +393,21 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 **Violation consequence:** A moved or re-namespaced storage field silently corrupts the registry for every wallet ever deployed (reads return garbage from the new offsets — worse than a revert). A changed proxy address orphans all wallets' immutable factory pointers and shifts every counterfactual wallet address. Registry writes outside the sanctioned paths break invariant 16 without tripping its defense-in-depth checks.
 
+---
+
+## 23. Shrincs Stateless Signature Budget (Off-Chain Discipline)
+
+**Every SHRINCS stateless (SPHINCS+-C) key has a profile-fixed signing budget (`SHRINCSParams.STATELESS_SIGNATURE_LIMIT`, 2^20 for 256s) that the wallet does not — and cannot — enforce on-chain. The main key's stateless half is bounded to one signature per key lifetime by construction; the dedicated ERC-1271 key's budget is an OPERATIONAL rule the client MUST enforce.**
+
+- The budget counts distinct messages SIGNED, an off-chain act no contract can meter. The dep's example wrapper counts on-chain verifications on its mutating paths, but ERC-1271 is a staticcall — even that wrapper's counter cannot advance through `isValidSignature`. On-chain enforcement is impossible for the 1271 key, not merely omitted.
+- **Main key: safe by construction.** Its stateless half signs only in `recoverWallet` / `transferOwnership` rotation contexts, and both install a full fresh bundle (new `pkSeed`/`hypertreeRoot`), so each stateless root ever authorizes at most ONE accepted signature. This property is load-bearing: a rotation path that carried the stateless root forward while consuming a stateless signature would start accumulating uncounted uses (the wallet's stateful-only `rotateKey` deliberately consumes a STATEFUL signature for exactly this reason).
+- **ERC-1271 key: the client counts.** The SDK/signer must track how many distinct hashes the dedicated 1271 key has signed and rotate it via `setErc1271Key` (fresh key, stateful-authorized) well before `STATELESS_SIGNATURE_LIMIT`. Failed or repeated on-chain VERIFICATIONS of the same blob are free; only new signed hashes spend budget.
+- Signing past the budget degrades SPHINCS+-C's few-time-signature security margin gradually (forgery probability grows with signature count) — it is not a cliff, which is why a generous safety margin, not precision, is the requirement.
+
+**Contracts:** ShrincsWallet (behavioral obligation of the SDK/signer — no on-chain check exists or can exist)
+
+**Violation consequence:** An ERC-1271 key signing far past 2^20 messages erodes its forgery resistance until approvals become forgeable — silently, with no on-chain symptom. A future rotation path that reuses the stateless root while consuming stateless signatures would silently break the main key's ≤1-use construction.
+
 These invariants form a security web — they depend on each other:
 
 1. **Key Rotation (1) + Reuse Prevention (2):** Rotation must happen AND the new key must differ. Either failing alone breaks WOTS+ security.
