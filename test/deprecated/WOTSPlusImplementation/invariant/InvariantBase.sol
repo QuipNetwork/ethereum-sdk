@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {QuipFactoryTest} from "../../../QuipFactory/QuipFactory.t.sol";
+import {WalletFactoryTest} from "../../../WalletFactory/WalletFactory.t.sol";
 import {WOTSPlusImplementation} from "../../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
@@ -16,7 +16,7 @@ import {WOTSPlusImplementationInvariantHandler} from "./Handler.t.sol";
 ///      declare `invariant_*` functions and call
 ///      `targetContract(address(handler))` from their own `setUp` after
 ///      `super.setUp()`.
-abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
+abstract contract WOTSPlusImplementationInvariantBase is WalletFactoryTest {
     WOTSPlusImplementationInvariantHandler public handler;
     WOTSPlusImplementation public wallet;
     WOTSPlusImplementation internal secondImpl;
@@ -120,7 +120,7 @@ abstract contract WOTSPlusImplementationInvariantBase is QuipFactoryTest {
         return address(uint160(uint256(vm.load(address(wallet), slot))));
     }
 
-    /// @dev Override the inherited `test_setUp` from QuipFactoryTest. The
+    /// @dev Override the inherited `test_setUp` from WalletFactoryTest. The
     ///      parent asserts `getVettedCodeCount() == 1`, but the invariant
     ///      base vets a second impl for the upgrade-flow fuzz selectors.
     ///      Re-asserts the parent's other checks and adjusts the count.

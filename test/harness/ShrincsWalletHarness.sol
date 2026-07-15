@@ -53,7 +53,7 @@ contract ShrincsWalletHarness is ShrincsWallet {
     ) external {
         _initializeOwner(owner_);
         Storage.Layout storage $ = Storage.layout();
-        $.quipFactory = FACTORY;
+        $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
         $.maxSignatures = maxSignaturesValue;

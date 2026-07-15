@@ -18,18 +18,18 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec} from "../WOTSPlusCodec.sol";
-import {IQuipWallet} from "../../../interfaces/IQuipWallet.sol";
+import {IWallet} from "../../../interfaces/IWallet.sol";
 
 /// @title IWOTSPlusImplementation
 /// @notice A smart-contract wallet whose operations are authorized by Winternitz
 ///         one-time signatures, providing post-quantum security for ETH transfers
 ///         and arbitrary calls.
-///         Extends `IQuipWallet` — the factory-facing surface whose natspec
+///         Extends `IWallet` — the factory-facing surface whose natspec
 ///         states the behavioral vetting contract this implementation upholds.
 /// @custom:deprecated The WOTS+ wallet family is sunset — superseded by SHRINCS
 ///                    (contracts/shrincs/ShrincsWallet.sol). Kept fully functional for
 ///                    existing deployments.
-interface IWOTSPlusImplementation is IQuipWallet {
+interface IWOTSPlusImplementation is IWallet {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -199,7 +199,7 @@ interface IWOTSPlusImplementation is IQuipWallet {
     /// @dev The three keyset arrays are summarized as `keccak256(abi.encode(arr))`
     ///      hashes rather than emitted in full — off-chain indexers recompute
     ///      from the init payload (available via the wallet-creation calldata).
-    /// @param factory The QuipFactory that created this wallet.
+    /// @param factory The WalletFactory that created this wallet.
     /// @param owner The classical owner address.
     /// @param transactionKeysHash `keccak256(abi.encode(transactionKeys[10]))`.
     /// @param recoveryKeysHash `keccak256(abi.encode(recoveryKeys[10]))`.
@@ -521,7 +521,7 @@ interface IWOTSPlusImplementation is IQuipWallet {
     /// @return The execute fee in wei.
     function getExecuteFee() external view returns (uint256);
 
-    /// @notice Returns the address of the QuipFactory that created this wallet.
+    /// @notice Returns the address of the WalletFactory that created this wallet.
     /// @return The factory address.
     function quipFactory() external view returns (address payable);
 

@@ -26,7 +26,7 @@ import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {ECDSA} from "solady-0.1.26/src/utils/ECDSA.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {IWOTSPlusImplementation} from "./interfaces/IWOTSPlusImplementation.sol";
-import {IQuipFactory} from "../../interfaces/IQuipFactory.sol";
+import {IWalletFactory} from "../../interfaces/IWalletFactory.sol";
 import {WOTSPlusCodec as Codec} from "./WOTSPlusCodec.sol";
 import {WOTSPlusStorage as Storage} from "./WOTSPlusStorage.sol";
 // prettier-ignore
@@ -427,7 +427,7 @@ contract WOTSPlusImplementation is
     {
         // Vet implementation locally BEFORE any delegatecall.
         bytes32 implCodehash = newImplementation.codehash;
-        IQuipFactory factory = IQuipFactory(FACTORY);
+        IWalletFactory factory = IWalletFactory(FACTORY);
         if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max) {
             revert ImplementationNotVetted();
         }
@@ -857,7 +857,7 @@ contract WOTSPlusImplementation is
     ) public onlyOwner {
         // Vet implementation locally BEFORE any delegatecall.
         bytes32 implCodehash = newImplementation.codehash;
-        IQuipFactory factory = IQuipFactory(FACTORY);
+        IWalletFactory factory = IWalletFactory(FACTORY);
         if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max) {
             revert ImplementationNotVetted();
         }
@@ -1115,12 +1115,12 @@ contract WOTSPlusImplementation is
         assembly {
             impl := sload(_ERC1967_IMPLEMENTATION_SLOT)
         }
-        return IQuipFactory(FACTORY).getVettedCodeIndex(impl.codehash);
+        return IWalletFactory(FACTORY).getVettedCodeIndex(impl.codehash);
     }
 
     /// @inheritdoc IWOTSPlusImplementation
     function getExecuteFee() public view returns (uint256) {
-        return IQuipFactory(Storage.layout().quipFactory).executeFee();
+        return IWalletFactory(Storage.layout().quipFactory).executeFee();
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -1505,7 +1505,7 @@ contract WOTSPlusImplementation is
     ///      has committed — the wallet calls back into the factory via
     ///      `updateWalletOwner(oldOwner, newOwner)`. The factory verifies
     ///      `wallet.owner() == newOwner` as a load-bearing predicate that pins
-    ///      the callback to this exact site; see `IQuipFactory.updateWalletOwner`
+    ///      the callback to this exact site; see `IWalletFactory.updateWalletOwner`
     ///      for the full attack tree.
     function _reinitializeAndTransferOwnership(
         bytes calldata payload
@@ -1614,7 +1614,7 @@ contract WOTSPlusImplementation is
         // committed the transfer above. Reverts here roll back the whole
         // transferOwnership — partial state (owner updated, registry stale)
         // would be confusing.
-        IQuipFactory(FACTORY).updateWalletOwner(newOwner);
+        IWalletFactory(FACTORY).updateWalletOwner(newOwner);
 
         emit OwnershipReinitialized(
             currentOwnershipKey,

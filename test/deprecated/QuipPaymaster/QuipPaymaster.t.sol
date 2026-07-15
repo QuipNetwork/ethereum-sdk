@@ -83,7 +83,7 @@ contract QuipPaymasterTest is Test {
 
     // --- Helpers ---
 
-    /// @dev Deploy a minimal ERC-1967 proxy via CREATE3 (same bytecode as QuipFactory).
+    /// @dev Deploy a minimal ERC-1967 proxy via CREATE3 (same bytecode as WalletFactory).
     function _deployProxy(address impl, bytes32 salt) internal returns (address) {
         bytes memory proxyInitcode = abi.encodePacked(
             hex"603d3d8160223d3973",
