@@ -29,7 +29,7 @@ import { UnsupportedNetworkError } from "./errors.js";
 export interface NetworkAddresses {
   Deployer: Address;
   WOTSPlus: Address;
-  QuipFactory: Address;
+  WalletFactory: Address;
   /// WOTSPlusImplementation implementation that the factory clones via CREATE3 on
   /// `createWallet`. The impl itself is never called directly (its
   /// initializers are gated); surfaced so tooling can verify which
@@ -99,7 +99,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
   default: {
     Deployer: addresses.Deployer as Address,
     WOTSPlus: addresses.WOTSPlus as Address,
-    QuipFactory: addresses.QuipFactory as Address,
+    WalletFactory: addresses.WalletFactory as Address,
     WOTSPlusImplementation: addresses.WOTSPlusImplementation as Address,
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
     QuipPaymaster: addresses.QuipPaymaster as Address,
@@ -112,7 +112,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
   [CHAIN_IDS.MIDL_TESTNET]: {
     Deployer: "0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1",
     WOTSPlus: "0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e",
-    QuipFactory: "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC",
+    WalletFactory: "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC",
     WOTSPlusImplementation: "0x81648CBFA79aD8f2c4A59E0DdeA03b1BC8b34cfb",
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
     QuipPaymaster: "0x4A952d592fAe490762f492dC65487eE2B53Ef554",
@@ -162,7 +162,7 @@ export function isMidlNetwork(chainId: number): boolean {
 // Backwards-compatible exports (use default addresses for existing integrations)
 export const DEPLOYER_ADDRESS = NETWORK_ADDRESSES.default.Deployer;
 export const WOTS_PLUS_ADDRESS = NETWORK_ADDRESSES.default.WOTSPlus;
-export const QUIP_FACTORY_ADDRESS = NETWORK_ADDRESSES.default.QuipFactory;
+export const QUIP_FACTORY_ADDRESS = NETWORK_ADDRESSES.default.WalletFactory;
 
 // Solady CREATE3 proxy initcode hash: keccak256(0x67363d3d37363d34f03d5260086018f3)
 const PROXY_INITCODE_HASH: Hex =
@@ -177,14 +177,14 @@ const PROXY_INITCODE_HASH: Hex =
  * @returns The address where the vault contract would be deployed
  */
 export function getVaultAddress(vaultId: Hex, chainId?: number): Address {
-  const factory = getNetworkAddresses(chainId).QuipFactory;
+  const factory = getNetworkAddresses(chainId).WalletFactory;
   return computeVaultAddress(factory, vaultId);
 }
 
 /**
  * Compute a CREATE3 vault address with an explicit factory address.
  *
- * @param factoryAddress - The QuipFactory contract address
+ * @param factoryAddress - The WalletFactory contract address
  * @param vaultId - The vault identifier (used as CREATE3 salt)
  * @returns The address where the vault contract would be deployed
  */

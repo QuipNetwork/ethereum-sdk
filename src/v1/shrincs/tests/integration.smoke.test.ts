@@ -38,7 +38,7 @@ import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
 import { entryPointV07Abi } from "../../abi/EntryPointV07.js";
-import { quipFactoryAbi } from "../../abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../abi/WalletFactory.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
@@ -402,7 +402,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       const hash = await stack.walletClient.writeContract({
         chain: foundry,
         address: stack.factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "setExecuteFee",
         args: [fee],
         account: stack.account,

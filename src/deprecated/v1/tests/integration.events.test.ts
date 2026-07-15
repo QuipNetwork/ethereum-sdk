@@ -24,7 +24,7 @@ import {
   parseKeyRotationOnly,
   parseKeysReplaced,
   parseKeysetReset,
-  parseQuipCreated,
+  parseWalletDeployed,
   parseWalletInitialized,
   parseWalletReceipt,
 } from "../events.js";
@@ -50,12 +50,12 @@ afterAll(async () => {
 }, 10_000);
 
 describe("Factory event parsers", () => {
-  test("parseQuipCreated decodes deployLatestWalletProxy receipt", async () => {
+  test("parseWalletDeployed decodes deployLatestWalletProxy receipt", async () => {
     const { creationReceipt, walletAddress } = await createFreshWallet(
       stack,
       0xc0
     );
-    const events = parseQuipCreated(creationReceipt);
+    const events = parseWalletDeployed(creationReceipt);
     expect(events).toHaveLength(1);
     expect(events[0].creator.toLowerCase()).toBe(
       stack.account.address.toLowerCase()

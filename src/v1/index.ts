@@ -24,7 +24,7 @@
 // `./v1/abi` subpath — the live decode registry needs them — but are only
 // re-exported from the `./deprecated/v1` barrel.
 export { deployerAbi } from "./abi/Deployer.js";
-export { quipFactoryAbi } from "./abi/QuipFactory.js";
+export { walletFactoryAbi } from "./abi/WalletFactory.js";
 export { entryPointV07Abi } from "./abi/EntryPointV07.js";
 
 // Addresses & network helpers

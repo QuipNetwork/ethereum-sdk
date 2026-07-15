@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 
 console.log("  - live v1 barrel (shared surface only)...");
 const live = await import("@quip.network/ethereum-sdk/v1");
-assert(Array.isArray(live.quipFactoryAbi), "quipFactoryAbi missing from v1 barrel");
+assert(Array.isArray(live.walletFactoryAbi), "walletFactoryAbi missing from v1 barrel");
 assert(typeof live.CANONICAL_ENTRYPOINT_V07 === "string", "CANONICAL_ENTRYPOINT_V07 missing");
 assert(typeof live.computeUserOpHash === "function", "computeUserOpHash missing (userOpCodec)");
 assert(typeof live.QuipError === "function", "QuipError missing from v1 barrel");
@@ -42,7 +42,7 @@ assert(typeof barrel.WotsCodec.encodeInit === "function", "WotsCodec.encodeInit 
 assert(barrel.KeyType.Transaction === 0, "KeyType enum wrong");
 assert(typeof barrel.CANONICAL_ENTRYPOINT_V07 === "string", "CANONICAL_ENTRYPOINT_V07 missing (shared re-export)");
 assert(typeof barrel.parseWalletReceipt === "function", "parseWalletReceipt missing");
-assert(typeof barrel.parseQuipCreated === "function", "parseQuipCreated missing");
+assert(typeof barrel.parseWalletDeployed === "function", "parseWalletDeployed missing");
 assert(typeof barrel.buildUserOp === "function", "buildUserOp missing");
 assert(typeof barrel.WotsCodec.computeUserOpHash === "function", "computeUserOpHash missing from WotsCodec re-export surface");
 
@@ -51,7 +51,7 @@ const errors = await import("@quip.network/ethereum-sdk/deprecated/v1/errors");
 assert(typeof errors.KeyAlreadyBurnedError === "function", "KeyAlreadyBurnedError via deprecated subpath");
 assert(typeof errors.InvalidSignatureError === "function", "shared error re-export via deprecated subpath");
 const events = await import("@quip.network/ethereum-sdk/deprecated/v1/events");
-assert(typeof events.parseQuipCreated === "function", "parseQuipCreated via subpath");
+assert(typeof events.parseWalletDeployed === "function", "parseWalletDeployed via subpath");
 const directCodec = await import("@quip.network/ethereum-sdk/deprecated/v1").then((m) => m.WotsCodec);
 assert(directCodec.WOTS_ELEMENTS_COUNT === 67, "codec constant wrong");
 
@@ -61,7 +61,7 @@ assert(typeof v0.QuipSigner === "function", "QuipSigner missing from v0 barrel")
 assert(typeof v0.QuipWalletClient === "function", "QuipWalletClient missing from v0 barrel");
 assert(typeof v0.QuipClient === "function", "QuipClient missing from v0 barrel");
 assert(typeof v0.QuipWallet__factory === "function", "QuipWallet__factory missing");
-assert(typeof v0.QuipFactory__factory === "function", "QuipFactory__factory missing");
+assert(typeof v0.QuipFactory__factory === "function", "QuipFactory__factory missing (v0 contract keeps its historical name)");
 assert(typeof v0.QuipWallet__factory.connect === "function", "QuipWallet__factory.connect missing");
 assert(v0.SUPPORTED_NETWORKS?.MAINNET === "mainnet", "v0 SUPPORTED_NETWORKS.MAINNET");
 assert(v0.CHAIN_IDS?.ETHEREUM_MAINNET === 1, "v0 CHAIN_IDS.ETHEREUM_MAINNET");

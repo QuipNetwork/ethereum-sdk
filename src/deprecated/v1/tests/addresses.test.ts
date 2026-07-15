@@ -14,7 +14,7 @@ describe("Vault Address Functions", () => {
     "0x783e1393edc4a6dac846b6da7723acb50de92b51b66ccdbc69bcadfb3fd9da69";
 
   // Known-good CREATE3 address for (QUIP_FACTORY_ADDRESS, testVaultId).
-  // Updated for the v1.1 factory address (QuipFactory at 0xd175378E…),
+  // Updated for the v1.1 factory address (WalletFactory at 0xd175378E…),
   // independently re-derived with `cast`:
   //   proxy = create2(factory, vaultId, keccak256(0x67363d3d37363d34f03d5260086018f3))
   //   vault = keccak256(0xd694 ++ proxy ++ 0x01)[12:]
@@ -36,14 +36,14 @@ describe("Vault Address Functions", () => {
 describe("getNetworkAddresses", () => {
   it("returns default addresses when chainId is omitted", () => {
     const addrs = getNetworkAddresses();
-    expect(addrs.QuipFactory).toEqual(QUIP_FACTORY_ADDRESS);
+    expect(addrs.WalletFactory).toEqual(QUIP_FACTORY_ADDRESS);
   });
 
   it("returns the registered entry for chains explicitly listed in NETWORK_ADDRESSES (MIDL)", () => {
     const addrs = getNetworkAddresses(CHAIN_IDS.MIDL_TESTNET);
     expect(addrs).toBe(NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET]);
-    expect(addrs.QuipFactory).toEqual(
-      NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].QuipFactory
+    expect(addrs.WalletFactory).toEqual(
+      NETWORK_ADDRESSES[CHAIN_IDS.MIDL_TESTNET].WalletFactory
     );
   });
 
@@ -57,7 +57,7 @@ describe("getNetworkAddresses", () => {
       CHAIN_IDS.OPTIMISM_SEPOLIA,
     ]) {
       const addrs = getNetworkAddresses(chainId);
-      expect(addrs.QuipFactory).toEqual(QUIP_FACTORY_ADDRESS);
+      expect(addrs.WalletFactory).toEqual(QUIP_FACTORY_ADDRESS);
     }
   });
 

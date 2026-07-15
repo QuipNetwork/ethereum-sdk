@@ -28,7 +28,7 @@ import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { deployFactoryProxy } from "./utils/anvilFixture.js";
 
-import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../v1/abi/WalletFactory.js";
 import {
   tryMulticall,
   resetMulticallCacheForTesting,
@@ -123,7 +123,7 @@ describe("multicall3 address resolver", () => {
   });
 });
 
-describe("tryMulticall against deployed QuipFactory", () => {
+describe("tryMulticall against deployed WalletFactory", () => {
   beforeEach(() => {
     // Each test starts with a clean cache so prior `forceSequential` doesn't
     // bleed into the multicall path.
@@ -138,9 +138,9 @@ describe("tryMulticall against deployed QuipFactory", () => {
 
   test("forceSequential reads owner + creationFee + MAX_FEE", async () => {
     const calls = [
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "owner" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "creationFee" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "owner" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "creationFee" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "MAX_FEE" as const },
     ];
     const results = await tryMulticall(publicClient, calls, {
       chainId: foundry.id,
@@ -159,12 +159,12 @@ describe("tryMulticall against deployed QuipFactory", () => {
     // First call: probes Multicall3 (fails on Anvil), caches unavailable,
     // falls back to sequential. Second call: cached → straight to sequential.
     const calls = [
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "owner" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "creationFee" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "executeFee" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "latestWalletImpl" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "getVettedCodeCount" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "owner" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "creationFee" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "executeFee" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "MAX_FEE" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "latestWalletImpl" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "getVettedCodeCount" as const },
     ];
 
     const viaAuto = await tryMulticall(publicClient, calls, {
@@ -196,7 +196,7 @@ describe("tryMulticall against deployed QuipFactory", () => {
     const calls = [
       {
         address: factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "getVaultIdAt" as const,
         args: [account.address, 0n] as const,
       },
@@ -214,7 +214,7 @@ describe("tryMulticall against deployed QuipFactory", () => {
     // call. Verifies the cache stays cold so other tests aren't affected.
     expect(getMulticall3Address(CHAIN_IDS.MIDL_TESTNET)).toBeNull();
     const calls = [
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "owner" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "owner" as const },
     ];
     const results = await tryMulticall(publicClient, calls, {
       chainId: CHAIN_IDS.MIDL_TESTNET,
@@ -229,7 +229,7 @@ describe("QuipClient.getFactoryState end-to-end", () => {
   // QuipClient depends on a chainId match in NETWORK_ADDRESSES — Anvil's
   // foundry chainId (31337) isn't in the table. Skip the QuipClient.create
   // path and exercise the underlying tryMulticall against the real factory
-  // by talking to it directly with the quipFactoryAbi.
+  // by talking to it directly with the walletFactoryAbi.
   beforeEach(() => {
     resetMulticallCacheForTesting();
   });
@@ -238,12 +238,12 @@ describe("QuipClient.getFactoryState end-to-end", () => {
     // Mirror the body of QuipClient.getFactoryState to validate the call
     // pattern + result shape against a live deployment.
     const calls = [
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "owner" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "creationFee" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "executeFee" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "latestWalletImpl" as const },
-      { address: factoryAddress, abi: quipFactoryAbi, functionName: "getVettedCodeCount" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "owner" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "creationFee" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "executeFee" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "MAX_FEE" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "latestWalletImpl" as const },
+      { address: factoryAddress, abi: walletFactoryAbi, functionName: "getVettedCodeCount" as const },
     ];
 
     const results = await tryMulticall(publicClient, calls, {

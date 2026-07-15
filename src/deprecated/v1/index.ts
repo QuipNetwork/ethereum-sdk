@@ -24,7 +24,7 @@
 
 // ABIs
 export { deployerAbi } from "../../v1/abi/Deployer.js";
-export { quipFactoryAbi } from "../../v1/abi/QuipFactory.js";
+export { walletFactoryAbi } from "../../v1/abi/WalletFactory.js";
 export { wotsPlusImplementationAbi } from "../../v1/abi/WOTSPlusImplementation.js";
 export { quipPaymasterAbi } from "../../v1/abi/QuipPaymaster.js";
 export { entryPointV07Abi } from "../../v1/abi/EntryPointV07.js";

@@ -29,7 +29,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../v1/abi/WalletFactory.js";
 import { deployFactoryProxy } from "./utils/anvilFixture.js";
 import {
   decodeContractError,
@@ -45,7 +45,7 @@ import {
 // ─── Forge artifact ─────────────────────────────────────────────────
 const factoryArtifact = JSON.parse(
   readFileSync(
-    join(process.cwd(), "out/QuipFactory.sol/QuipFactory.json"),
+    join(process.cwd(), "out/WalletFactory.sol/WalletFactory.json"),
     "utf8"
   )
 );
@@ -86,7 +86,7 @@ afterAll(async () => {
 
 // ─── Tests ──────────────────────────────────────────────────────────
 
-describe("Anvil — QuipFactory error decoding", () => {
+describe("Anvil — WalletFactory error decoding", () => {
   test("setExecuteFee above MAX_FEE → FeeExceedsMaxError with parsed args", async () => {
     let caught: unknown = null;
     try {
@@ -94,7 +94,7 @@ describe("Anvil — QuipFactory error decoding", () => {
         walletClient.writeContract({
           chain: foundry,
           address: factoryAddress,
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           functionName: "setExecuteFee",
           args: [MAX_FEE + 1n],
           account,
@@ -118,7 +118,7 @@ describe("Anvil — QuipFactory error decoding", () => {
         walletClient.writeContract({
           chain: foundry,
           address: factoryAddress,
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           functionName: "withdraw",
           args: [1000n],
           account,
@@ -138,7 +138,7 @@ describe("Anvil — QuipFactory error decoding", () => {
     try {
       await withDecodedError(
         walletClient.deployContract({
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           bytecode: factoryBytecode,
           args: [0n],
           account,
@@ -158,7 +158,7 @@ describe("Anvil — QuipFactory error decoding", () => {
       await walletClient.writeContract({
         chain: foundry,
         address: factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "setCreationFee",
         args: [MAX_FEE + 100n],
         account,

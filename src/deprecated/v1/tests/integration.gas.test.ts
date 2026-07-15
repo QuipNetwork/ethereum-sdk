@@ -27,7 +27,7 @@ import { createAnvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../v1/abi/WalletFactory.js";
 import { prepareTx, applyGasMultiplier, type ContractCallParams } from "../../../v1/gas.js";
 import {
   GasEstimationError,
@@ -66,13 +66,13 @@ afterAll(async () => {
   await anvil.stop().catch(() => {});
 }, 10_000);
 
-// Reusable contract-call params builder for QuipFactory.setExecuteFee — a
+// Reusable contract-call params builder for WalletFactory.setExecuteFee — a
 // state-mutating call we can drive from the deployer that may or may not
 // revert depending on the fee value.
 function setExecuteFeeCall(fee: bigint): ContractCallParams {
   return {
     address: factoryAddress,
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     functionName: "setExecuteFee",
     args: [fee],
     account: account.address,
@@ -185,7 +185,7 @@ describe("prepareTx — preflight balance check", () => {
         publicClient,
         contractParams: {
           address: factoryAddress,
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           functionName: "setExecuteFee",
           args: [MAX_FEE / 2n],
           account: broke.address,
@@ -216,7 +216,7 @@ describe("prepareTx — preflight balance check", () => {
         publicClient,
         contractParams: {
           address: factoryAddress,
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           functionName: "setExecuteFee",
           args: [MAX_FEE / 2n],
           account: broke.address,
@@ -243,7 +243,7 @@ describe("prepareTx — gas-estimation failure path", () => {
         publicClient,
         contractParams: {
           address: noCodeAddr,
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           functionName: "owner",
           account: account.address,
         },

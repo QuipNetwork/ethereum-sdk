@@ -24,7 +24,7 @@ import {
 } from "viem";
 
 import { wotsPlusImplementationAbi } from "../abi/WOTSPlusImplementation.js";
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { walletFactoryAbi } from "../abi/WalletFactory.js";
 import { quipPaymasterAbi } from "../abi/QuipPaymaster.js";
 
 import {
@@ -89,7 +89,7 @@ const COMBINED_ERROR_ABI: Abi = (() => {
   const merged: Abi[number][] = [];
   for (const fragment of [
     ...wotsPlusImplementationAbi,
-    ...quipFactoryAbi,
+    ...walletFactoryAbi,
     ...quipPaymasterAbi,
   ]) {
     if (fragment.type !== "error") continue;

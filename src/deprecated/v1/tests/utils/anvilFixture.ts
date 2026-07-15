@@ -42,7 +42,7 @@ import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "../../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../../v1/abi/WalletFactory.js";
 import { entryPointV07Abi } from "../../../../v1/abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../../../v1/addresses.js";
 import { QuipSigner } from "../../signer.js";
@@ -131,7 +131,7 @@ export function loadForgeArtifacts(): ForgeArtifacts {
   if (cachedArtifacts) return cachedArtifacts;
 
   const factoryArtifact = readForgeArtifact(
-    "out/QuipFactory.sol/QuipFactory.json"
+    "out/WalletFactory.sol/WalletFactory.json"
   );
   const walletArtifact = readForgeArtifact(
     "out/WOTSPlusImplementation.sol/WOTSPlusImplementation.json"
@@ -223,7 +223,7 @@ export interface SetupAnvilOptions {
 }
 
 /// Bootstrap a hermetic anvil + Quip stack: starts anvil on `port`, places
-/// the canonical EntryPoint v0.7 bytecode (optional), deploys QuipFactory,
+/// the canonical EntryPoint v0.7 bytecode (optional), deploys WalletFactory,
 /// deploys WOTSPlus, links + deploys the wallet impl, and vets it on the
 /// factory. Returns the live clients + addresses; callers `await` it inside
 /// `beforeAll` and stop with `stopAnvilStack` in `afterAll`.
@@ -261,7 +261,7 @@ export async function setupAnvilStack(
     });
   }
 
-  // 1. QuipFactory: UUPS impl + ERC-1967 proxy + initialize. The PROXY
+  // 1. WalletFactory: UUPS impl + ERC-1967 proxy + initialize. The PROXY
   // address is the factory identity (wallets bake it in; CREATE3 wallet
   // addressing derives from it and survives impl upgrades).
   const { factoryAddress, factoryImplAddress } = await deployFactoryProxy(
@@ -306,7 +306,7 @@ export async function setupAnvilStack(
   const vetHash = await walletClient.writeContract({
     chain: foundry,
     address: factoryAddress,
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     functionName: "vetImplementation",
     args: [walletImplAddress],
     account,
@@ -416,7 +416,7 @@ export async function createFreshWallet(
   const hash = await stack.walletClient.writeContract({
     chain: foundry,
     address: stack.factoryAddress,
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     functionName: "deployLatestWalletProxy",
     args: [vaultId, owner, initPayload],
     account: deployer,
@@ -425,9 +425,9 @@ export async function createFreshWallet(
     hash,
   });
   const logs = parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: creationReceipt.logs,
-    eventName: "QuipCreated",
+    eventName: "WalletDeployed",
   });
   const walletAddress = logs[0].args.quip;
 
@@ -479,7 +479,7 @@ export async function createFreshWallet(
 
 // ─── ERC-1967 proxy helpers ─────────────────────────────────────────
 
-/// Deploy the QuipFactory as UUPS impl + ERC-1967 proxy and initialize the
+/// Deploy the WalletFactory as UUPS impl + ERC-1967 proxy and initialize the
 /// proxy with `owner` (defaults to the deployer). Returns the PROXY address
 /// (the permanent factory identity) alongside the impl behind it.
 export async function deployFactoryProxy(
@@ -492,7 +492,7 @@ export async function deployFactoryProxy(
 ): Promise<{ factoryAddress: Address; factoryImplAddress: Address }> {
   const { factoryBytecode } = loadForgeArtifacts();
   const implHash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     bytecode: factoryBytecode,
     args: [maxFee],
     account,
@@ -511,7 +511,7 @@ export async function deployFactoryProxy(
   );
   const initHash = await walletClient.writeContract({
     address: factoryAddress,
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     functionName: "initialize",
     args: [owner ?? account.address],
     account,

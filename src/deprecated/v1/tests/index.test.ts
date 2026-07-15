@@ -21,7 +21,7 @@ import {
   QuipClient as BarrelQuipClient,
   KeyType as BarrelKeyType,
   wotsPlusImplementationAbi,
-  quipFactoryAbi,
+  walletFactoryAbi,
   quipPaymasterAbi,
   deployerAbi,
 } from "../index.js";
@@ -61,7 +61,7 @@ describe("Phase 0 module split", () => {
 
   test("ABIs are exported from the barrel", () => {
     expect(Array.isArray(wotsPlusImplementationAbi)).toBe(true);
-    expect(Array.isArray(quipFactoryAbi)).toBe(true);
+    expect(Array.isArray(walletFactoryAbi)).toBe(true);
     expect(Array.isArray(quipPaymasterAbi)).toBe(true);
     expect(Array.isArray(deployerAbi)).toBe(true);
   });
