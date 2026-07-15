@@ -12,8 +12,20 @@ contract ShrincsE2E_rejections is ShrincsE2EBase {
     ///      stays consistent) makes the wallet's PQ verification fail → `AA24`.
     function test_e2e_invalidWalletSig_AA24() public {
         PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
-        // Flip a byte deep inside the wallet signature blob (past the ABI header).
-        op.signature[op.signature.length - 1] ^= bytes1(0x01);
+        // Flip a byte in the middle of the blob: the SHRINCS signature tail dominates the
+        // encoding (the ECDSA co-signature is a fixed 128-byte tail at the end), so the midpoint
+        // lands deep inside the PQ signature.
+        op.signature[op.signature.length / 2] ^= bytes1(0x01);
+        _handleExpectRevert(op, _failedOp(0, "AA24 signature error"));
+    }
+
+    /// @dev Corrupting the owner's ECDSA co-signature alone (valid PQ half) must also fail the
+    ///      wallet's validation → `AA24`: the hybrid gate requires BOTH keys.
+    function test_e2e_invalidOwnerCoSig_AA24() public {
+        PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
+        // The co-signature tail is [32-byte length][65 sig bytes][63 pad]; length-64 is the
+        // final signature byte (v).
+        op.signature[op.signature.length - 64] ^= bytes1(0x01);
         _handleExpectRevert(op, _failedOp(0, "AA24 signature error"));
     }
 

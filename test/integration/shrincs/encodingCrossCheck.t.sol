@@ -84,13 +84,26 @@ contract ShrincsE2E_encodingCrossCheck is ShrincsE2EAssembler {
         );
     }
 
+    /// @dev The assembler hand-mirrors the wallet's userOp EIP-712 co-signature target; if the
+    ///      wallet's domain (name/version/typehash) ever moves without the mirror, every e2e
+    ///      co-signature silently stops validating — this pins them together directly.
+    function test_crossCheck_userOpEcdsaTargetMirror() public view {
+        bytes32 userOpHash = keccak256("cross-check-cosig-target");
+        assertEq(
+            _userOpEcdsaTargetMirror(userOpHash),
+            wallet.quipUserOpHashEcdsaTarget(userOpHash),
+            "userOp ECDSA target mirror drift"
+        );
+    }
+
     /// @dev Pins that the signed blob's ABI shape round-trips (the fork suite verifies the
     ///      signatures themselves against the wallet harness).
     function test_crossCheck_userOpSignatureBlobDecodes() public view {
         PackedUserOperation memory op = _sponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
-        (SHRINCS.PublicKey memory pk, SHRINCS.Signature memory sig) =
-            abi.decode(op.signature, (SHRINCS.PublicKey, SHRINCS.Signature));
+        (SHRINCS.PublicKey memory pk, SHRINCS.Signature memory sig, bytes memory ecdsaSig) =
+            abi.decode(op.signature, (SHRINCS.PublicKey, SHRINCS.Signature, bytes));
         assertEq(_toBytes32(pk.publicKeyCommitment), walletCommitment, "wallet pk round-trips");
         assertEq(sig.authPath.length, 1, "leaf-1 signature round-trips");
+        assertEq(ecdsaSig.length, 65, "owner co-signature round-trips");
     }
 }

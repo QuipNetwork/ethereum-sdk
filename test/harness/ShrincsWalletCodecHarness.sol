@@ -35,10 +35,26 @@ contract ShrincsWalletCodecHarness {
     function exposed_decodeUserOpSignature(bytes calldata sig)
         external
         pure
+        returns (
+            SHRINCS.PublicKey memory publicKey,
+            SHRINCS.Signature memory signature,
+            bytes memory ecdsaSig
+        )
+    {
+        (SHRINCS.PublicKey calldata _pk, SHRINCS.Signature calldata _sig, bytes calldata _es) =
+            Codec.decodeUserOpSignature(sig);
+        publicKey = _pk;
+        signature = _sig;
+        ecdsaSig = _es;
+    }
+
+    function exposed_decodeSponsorshipSignature(bytes calldata sig)
+        external
+        pure
         returns (SHRINCS.PublicKey memory publicKey, SHRINCS.Signature memory signature)
     {
         (SHRINCS.PublicKey calldata _pk, SHRINCS.Signature calldata _sig) =
-            Codec.decodeUserOpSignature(sig);
+            Codec.decodeSponsorshipSignature(sig);
         publicKey = _pk;
         signature = _sig;
     }
