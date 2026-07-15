@@ -56,7 +56,7 @@ import {
 import { createAnvil } from "@viem/anvil";
 import { mainnet } from "viem/chains";
 
-import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../v1/abi/WalletFactory.js";
 import { quipPaymasterAbi } from "../../../v1/abi/QuipPaymaster.js";
 import { entryPointV07Abi } from "../../../v1/abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../../v1/addresses.js";
@@ -68,7 +68,7 @@ import {
   parseExecutionSucceeded,
   parseKeyRotated,
   parseKeysetReset,
-  parseQuipCreated,
+  parseWalletDeployed,
   parseUserOpSponsored,
   parseWalletReceipt,
 } from "../events.js";
@@ -174,7 +174,7 @@ beforeAll(async () => {
     );
   }
 
-  // Deploy QuipFactory (UUPS impl + ERC-1967 proxy + initialize).
+  // Deploy WalletFactory (UUPS impl + ERC-1967 proxy + initialize).
   ({ factoryAddress } = await deployFactoryProxy(
     walletClient,
     publicClient,
@@ -218,7 +218,7 @@ beforeAll(async () => {
   const vetHash = await walletClient.writeContract({
     chain: mainnet,
     address: factoryAddress,
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     functionName: "vetImplementation",
     args: [walletImplAddress],
     account,
@@ -291,7 +291,7 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
       const createHash = await walletClient.writeContract({
         chain: mainnet,
         address: factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "deployLatestWalletProxy",
         args: [vaultId, account.address, init.payload],
         account,
@@ -301,7 +301,7 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
       });
 
       // Parser sanity on a real-chain receipt.
-      const createdEvents = parseQuipCreated(createReceipt);
+      const createdEvents = parseWalletDeployed(createReceipt);
       expect(createdEvents).toHaveLength(1);
       expect(createdEvents[0].creator.toLowerCase()).toBe(
         account.address.toLowerCase()

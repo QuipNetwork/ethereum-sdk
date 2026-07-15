@@ -736,19 +736,6 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
-    "name": "quipFactory",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address payable"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "quipSignedHashEcdsaTarget",
     "inputs": [
       {
@@ -1450,6 +1437,19 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "walletFactory",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address payable"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "withdrawDepositTo",
     "inputs": [
       {
@@ -2009,6 +2009,11 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "UpgradeFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "VerifierProfileMismatch",
     "inputs": []
   },
   {

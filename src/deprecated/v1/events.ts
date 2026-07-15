@@ -22,7 +22,7 @@ import {
   parseEventLogs,
 } from "viem";
 
-import { quipFactoryAbi } from "../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../v1/abi/WalletFactory.js";
 import { quipPaymasterAbi } from "../../v1/abi/QuipPaymaster.js";
 import { wotsPlusImplementationAbi } from "../../v1/abi/WOTSPlusImplementation.js";
 import {
@@ -277,10 +277,10 @@ export function parseUserOpValidationRejected(
 }
 
 /*  ───────────────────────────────────────────────────────────────────  *
- *  Factory events (IQuipFactory)                                        *
+ *  Factory events (IWalletFactory)                                        *
  *  ───────────────────────────────────────────────────────────────────  */
 
-export interface QuipCreatedEvent {
+export interface WalletDeployedEvent {
   amount: bigint;
   when: bigint;
   vaultId: Hex;
@@ -293,11 +293,11 @@ export interface QuipCreatedEvent {
   quip: Address;
 }
 
-export function parseQuipCreated(src: LogSource): QuipCreatedEvent[] {
+export function parseWalletDeployed(src: LogSource): WalletDeployedEvent[] {
   return parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: toLogs(src) as Log[],
-    eventName: "QuipCreated",
+    eventName: "WalletDeployed",
   }).map((l) => ({
     amount: l.args.amount,
     when: l.args.when,
@@ -317,7 +317,7 @@ export function parseCreationFeeUpdated(
   src: LogSource
 ): CreationFeeUpdatedEvent[] {
   return parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: toLogs(src) as Log[],
     eventName: "CreationFeeUpdated",
   }).map((l) => ({
@@ -335,7 +335,7 @@ export function parseExecuteFeeUpdated(
   src: LogSource
 ): ExecuteFeeUpdatedEvent[] {
   return parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: toLogs(src) as Log[],
     eventName: "ExecuteFeeUpdated",
   }).map((l) => ({
@@ -353,7 +353,7 @@ export function parseImplementationVetted(
   src: LogSource
 ): ImplementationVettedEvent[] {
   return parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: toLogs(src) as Log[],
     eventName: "ImplementationVetted",
   }).map((l) => ({
@@ -371,7 +371,7 @@ export function parseImplementationSunset(
   src: LogSource
 ): ImplementationSunsetEvent[] {
   return parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: toLogs(src) as Log[],
     eventName: "ImplementationSunset",
   }).map((l) => ({
@@ -389,7 +389,7 @@ export function parseImplementationUndeprecated(
   src: LogSource
 ): ImplementationUndeprecatedEvent[] {
   return parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: toLogs(src) as Log[],
     eventName: "ImplementationUndeprecated",
   }).map((l) => ({
@@ -409,7 +409,7 @@ export interface WithdrawnEvent {
 /// paymaster itself.)
 export function parseWithdrawn(src: LogSource): WithdrawnEvent[] {
   return parseEventLogs({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     logs: toLogs(src) as Log[],
     eventName: "Withdrawn",
   }).map((l) => ({

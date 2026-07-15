@@ -19,14 +19,14 @@ const ROOT = join(__dirname, "..");
 const OUT_DIR = join(ROOT, "out");
 const ABI_DIR = join(ROOT, "src", "v1", "abi");
 
-// camelCase helper: "QuipFactory" -> "quipFactoryAbi"
+// camelCase helper: "WalletFactory" -> "walletFactoryAbi"
 function toExportName(name) {
   return name.charAt(0).toLowerCase() + name.slice(1) + "Abi";
 }
 
 const CONTRACTS = [
   { name: "Deployer", path: "Deployer.sol/Deployer.json" },
-  { name: "QuipFactory", path: "QuipFactory.sol/QuipFactory.json" },
+  { name: "WalletFactory", path: "WalletFactory.sol/WalletFactory.json" },
   {
     name: "WOTSPlusImplementation",
     path: "WOTSPlusImplementation.sol/WOTSPlusImplementation.json",

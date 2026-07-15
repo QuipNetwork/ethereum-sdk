@@ -27,7 +27,7 @@ import {
 } from "viem";
 import { foundry } from "viem/chains";
 
-import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../v1/abi/WalletFactory.js";
 import { entryPointV07Abi } from "../../../v1/abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../../v1/addresses.js";
 import { QuipSigner } from "../signer.js";
@@ -326,7 +326,7 @@ describe("buildExecuteUserOp — inner-call revert pre-flight", () => {
   // registry, so it surfaces as `UnknownContractError`.
   function revertingInnerCallData(): Hex {
     return encodeFunctionData({
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: "setExecuteFee",
       args: [0n],
     });

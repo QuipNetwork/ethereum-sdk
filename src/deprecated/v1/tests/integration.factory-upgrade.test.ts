@@ -17,9 +17,9 @@
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
 import { foundry } from "viem/chains";
 
-import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../v1/abi/WalletFactory.js";
 import { computeVaultAddress } from "../../../v1/addresses.js";
-import { parseQuipCreated } from "../events.js";
+import { parseWalletDeployed } from "../events.js";
 import {
   ANVIL_PORTS,
   type AnvilStack,
@@ -53,7 +53,7 @@ describe("Factory UUPS upgrade continuity", () => {
     const pre = await createFreshWallet(stack, 0xd0);
     const preOwner = await stack.publicClient.readContract({
       address: stack.factoryAddress,
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: "walletOwner",
       args: [pre.walletAddress],
     });
@@ -64,7 +64,7 @@ describe("Factory UUPS upgrade continuity", () => {
     const { factoryBytecode } = loadForgeArtifacts();
     const newMaxFee = 2n * 10n ** 17n; // 0.2 ether vs the default 0.1
     const implHash = await stack.walletClient.deployContract({
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       bytecode: factoryBytecode,
       args: [newMaxFee],
       account: stack.account,
@@ -76,7 +76,7 @@ describe("Factory UUPS upgrade continuity", () => {
     const newImpl = implReceipt.contractAddress!;
     const upgradeHash = await stack.walletClient.writeContract({
       address: stack.factoryAddress,
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: "upgradeToAndCall",
       args: [newImpl, "0x"],
       account: stack.account,
@@ -87,7 +87,7 @@ describe("Factory UUPS upgrade continuity", () => {
     // The per-implementation immutable moved with the impl…
     const maxFee = await stack.publicClient.readContract({
       address: stack.factoryAddress,
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: "MAX_FEE",
     });
     expect(maxFee).toBe(newMaxFee);
@@ -95,7 +95,7 @@ describe("Factory UUPS upgrade continuity", () => {
     // …while the ERC-7201 registry state read back unchanged.
     const ownerAfter = await stack.publicClient.readContract({
       address: stack.factoryAddress,
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: "walletOwner",
       args: [pre.walletAddress],
     });
@@ -104,7 +104,7 @@ describe("Factory UUPS upgrade continuity", () => {
     );
     const registered = await stack.publicClient.readContract({
       address: stack.factoryAddress,
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: "wallets",
       args: [pre.vaultId],
     });
@@ -118,7 +118,7 @@ describe("Factory UUPS upgrade continuity", () => {
     );
 
     // The event parser keeps working and reports the NEW implementation…
-    const events = parseQuipCreated(post.creationReceipt);
+    const events = parseWalletDeployed(post.creationReceipt);
     expect(events).toHaveLength(1);
     // (wallet impl, not factory impl — the field identifies the WALLET
     // implementation the proxy was deployed with)

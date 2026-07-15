@@ -30,7 +30,7 @@ import {
 } from "viem";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 
-import { quipFactoryAbi } from "../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../v1/abi/WalletFactory.js";
 import {
   getVaultAddress,
   getNetworkAddresses,
@@ -123,7 +123,7 @@ export class QuipClient {
   private async initialize() {
     await this.detectNetwork();
     await this.setAccount();
-    await this.setQuipFactory();
+    await this.setWalletFactory();
   }
 
   private async setAccount() {
@@ -135,9 +135,9 @@ export class QuipClient {
     this.chainId = await this.publicClient.getChainId();
   }
 
-  private async setQuipFactory() {
+  private async setWalletFactory() {
     const addresses = getNetworkAddresses(this.chainId);
-    this.factoryAddress = addresses.QuipFactory;
+    this.factoryAddress = addresses.WalletFactory;
   }
 
   /**
@@ -173,7 +173,7 @@ export class QuipClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "creationFee",
       })
     );
@@ -238,7 +238,7 @@ export class QuipClient {
 
   /// Shared write pipeline behind every wallet-deployment factory method:
   /// generates the wallet's initial key material, packs the init payload,
-  /// preflights / sends / waits, decodes `QuipCreated` from the receipt,
+  /// preflights / sends / waits, decodes `WalletDeployed` from the receipt,
   /// and returns a bound `WOTSPlusImplementationClient`.
   private async deployWallet(
     vaultId: Hex,
@@ -268,7 +268,7 @@ export class QuipClient {
     const existingWalletAddress = await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "wallets",
         args: [vaultId],
       })
@@ -303,7 +303,7 @@ export class QuipClient {
 
     const contractCall: ContractCallParams = {
       address: this.factoryAddress!,
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: spec.functionName,
       args: [...spec.argsExceptInitPayload(), initPayload],
       value: creationFee,
@@ -332,9 +332,9 @@ export class QuipClient {
       await this.publicClient.waitForTransactionReceipt({ hash });
 
     const logs = parseEventLogs({
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       logs: receipt.logs,
-      eventName: "QuipCreated",
+      eventName: "WalletDeployed",
     });
     const newWalletAddress = logs[0].args.quip;
 
@@ -382,7 +382,7 @@ export class QuipClient {
     const walletAddress = await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "wallets",
         args: [vaultId],
       })
@@ -438,13 +438,13 @@ export class QuipClient {
       [
         {
           address: this.factoryAddress!,
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           functionName: "getVaultIds" as const,
           args: [account] as const,
         },
         {
           address: this.factoryAddress!,
-          abi: quipFactoryAbi,
+          abi: walletFactoryAbi,
           functionName: "getWallets" as const,
           args: [account] as const,
         },
@@ -480,7 +480,7 @@ export class QuipClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "getVettedCodeCount",
       })
     );
@@ -494,7 +494,7 @@ export class QuipClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "getVettedCodeAt",
         args: [index],
       })
@@ -508,7 +508,7 @@ export class QuipClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "getVettedCodeIndex",
         args: [codehash],
       })
@@ -525,7 +525,7 @@ export class QuipClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "vettedWalletImpls",
         args: [codehash],
       })
@@ -541,7 +541,7 @@ export class QuipClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "deprecatedImpls",
         args: [codehash],
       })
@@ -555,7 +555,7 @@ export class QuipClient {
     return await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress!,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "latestWalletImpl",
       })
     );
@@ -577,12 +577,12 @@ export class QuipClient {
   async getFactoryState(): Promise<FactoryState> {
     await this.initializationPromise;
     const calls = [
-      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "owner" as const },
-      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "creationFee" as const },
-      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "executeFee" as const },
-      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "MAX_FEE" as const },
-      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "latestWalletImpl" as const },
-      { address: this.factoryAddress!, abi: quipFactoryAbi, functionName: "getVettedCodeCount" as const },
+      { address: this.factoryAddress!, abi: walletFactoryAbi, functionName: "owner" as const },
+      { address: this.factoryAddress!, abi: walletFactoryAbi, functionName: "creationFee" as const },
+      { address: this.factoryAddress!, abi: walletFactoryAbi, functionName: "executeFee" as const },
+      { address: this.factoryAddress!, abi: walletFactoryAbi, functionName: "MAX_FEE" as const },
+      { address: this.factoryAddress!, abi: walletFactoryAbi, functionName: "latestWalletImpl" as const },
+      { address: this.factoryAddress!, abi: walletFactoryAbi, functionName: "getVettedCodeCount" as const },
     ];
 
     const results = await tryMulticall(this.publicClient, calls, {

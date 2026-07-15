@@ -28,7 +28,7 @@ import {
 } from "../../../v1/internal/decodeError.js";
 
 import { wotsPlusImplementationAbi } from "../../../v1/abi/WOTSPlusImplementation.js";
-import { quipFactoryAbi } from "../../../v1/abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../v1/abi/WalletFactory.js";
 import { quipPaymasterAbi } from "../../../v1/abi/QuipPaymaster.js";
 
 import {
@@ -267,16 +267,16 @@ const ROUND_TRIP_CASES: ReadonlyArray<{
   },
 
   // Factory — no args
-  { name: "EmptyCode", abi: quipFactoryAbi, klass: EmptyCodeError },
-  { name: "AlreadyVetted", abi: quipFactoryAbi, klass: AlreadyVettedError },
-  { name: "NotDeprecated", abi: quipFactoryAbi, klass: NotDeprecatedError },
-  { name: "NoActiveImplementation", abi: quipFactoryAbi, klass: NoActiveImplementationError },
-  { name: "ZeroMaxFee", abi: quipFactoryAbi, klass: ZeroMaxFeeError },
+  { name: "EmptyCode", abi: walletFactoryAbi, klass: EmptyCodeError },
+  { name: "AlreadyVetted", abi: walletFactoryAbi, klass: AlreadyVettedError },
+  { name: "NotDeprecated", abi: walletFactoryAbi, klass: NotDeprecatedError },
+  { name: "NoActiveImplementation", abi: walletFactoryAbi, klass: NoActiveImplementationError },
+  { name: "ZeroMaxFee", abi: walletFactoryAbi, klass: ZeroMaxFeeError },
 
   // Factory — parametric
   {
     name: "InsufficientBalance",
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     args: [100n, 50n],
     klass: InsufficientBalanceError,
     inspect: (e) => {
@@ -287,7 +287,7 @@ const ROUND_TRIP_CASES: ReadonlyArray<{
   },
   {
     name: "FeeExceedsMax",
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     args: [200n, 100n],
     klass: FeeExceedsMaxError,
     inspect: (e) => {
@@ -298,7 +298,7 @@ const ROUND_TRIP_CASES: ReadonlyArray<{
   },
   {
     name: "InsufficientCreationFee",
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     args: [1n, 7n],
     klass: InsufficientCreationFeeError,
     inspect: (e) => {
@@ -365,15 +365,15 @@ describe("decodeContractError selector round-trip", () => {
   });
 
   test("dedupe: shared error names (RenounceDisabled, ZeroAddressOwner, ImplementationNotVetted) decode regardless of source ABI", () => {
-    // RenounceDisabled appears in WOTSPlusImplementation, QuipFactory, QuipPaymaster.
+    // RenounceDisabled appears in WOTSPlusImplementation, WalletFactory, QuipPaymaster.
     // Same selector either way; should always decode to the single typed class.
     const fromWallet = fakeRevert(wotsPlusImplementationAbi, "RenounceDisabled");
-    const fromFactory = fakeRevert(quipFactoryAbi, "RenounceDisabled");
+    const fromFactory = fakeRevert(walletFactoryAbi, "RenounceDisabled");
     expect(decodeContractError(fromWallet)).toBeInstanceOf(RenounceDisabledError);
     expect(decodeContractError(fromFactory)).toBeInstanceOf(RenounceDisabledError);
 
     const ownerFromWallet = fakeRevert(wotsPlusImplementationAbi, "ZeroAddressOwner");
-    const ownerFromFactory = fakeRevert(quipFactoryAbi, "ZeroAddressOwner");
+    const ownerFromFactory = fakeRevert(walletFactoryAbi, "ZeroAddressOwner");
     const ownerFromPm = fakeRevert(quipPaymasterAbi, "ZeroAddressOwner");
     expect(decodeContractError(ownerFromWallet)).toBeInstanceOf(ZeroAddressOwnerError);
     expect(decodeContractError(ownerFromFactory)).toBeInstanceOf(ZeroAddressOwnerError);
@@ -381,7 +381,7 @@ describe("decodeContractError selector round-trip", () => {
   });
 
   test("decoded selector matches viem's toFunctionSelector for parametric error", () => {
-    const revert = fakeRevert(quipFactoryAbi, "FeeExceedsMax", [9n, 8n]);
+    const revert = fakeRevert(walletFactoryAbi, "FeeExceedsMax", [9n, 8n]);
     const decoded = decodeContractError(revert);
     expect(decoded).toBeInstanceOf(FeeExceedsMaxError);
     // Sanity-check: the on-chain selector for `FeeExceedsMax(uint256,uint256)`.
@@ -390,7 +390,7 @@ describe("decodeContractError selector round-trip", () => {
     // can decode against the supplied ABI — selector is implicit but we can
     // verify by re-encoding and matching the prefix.
     const encoded = encodeErrorResult({
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       errorName: "FeeExceedsMax",
       args: [9n, 8n],
     });

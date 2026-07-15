@@ -30,7 +30,7 @@ import {
 import { foundry } from "viem/chains";
 
 /// Deploy a Solady minimal ERC-1967 proxy pointing at `impl`. Initcode
-/// mirrors `QuipFactory._deployProxy`'s emission so the on-chain layout
+/// mirrors `WalletFactory._deployProxy`'s emission so the on-chain layout
 /// matches what the factory produces.
 export async function deployErc1967Proxy(
   walletClient: WalletClient,

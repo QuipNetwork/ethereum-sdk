@@ -17,7 +17,7 @@
 
 // Shrincs analog of `src/v1/tests/utils/anvilFixture.ts`: a hermetic anvil
 // stack that mirrors what an FE consumer of the Shrincs TS SDK deploys —
-// QuipFactory, a vetted ShrincsWallet implementation, and a ShrincsPaymaster
+// WalletFactory, a vetted ShrincsWallet implementation, and a ShrincsPaymaster
 // (UUPS impl + ERC-1967 proxy). Returns live clients + addresses so smoke
 // tests can drive the SDK against real on-chain contracts.
 
@@ -40,7 +40,7 @@ import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { quipFactoryAbi } from "../../../abi/QuipFactory.js";
+import { walletFactoryAbi } from "../../../abi/WalletFactory.js";
 import { entryPointV07Abi } from "../../../abi/EntryPointV07.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../../addresses.js";
 import { deployErc1967Proxy } from "../../../tests/utils/deployErc1967Proxy.js";
@@ -112,7 +112,7 @@ export interface SetupShrincsAnvilOptions {
 }
 
 /// Boot a hermetic anvil + Shrincs stack: start anvil, place the canonical
-/// EntryPoint v0.7 bytecode, deploy QuipFactory, deploy + vet a ShrincsWallet
+/// EntryPoint v0.7 bytecode, deploy WalletFactory, deploy + vet a ShrincsWallet
 /// implementation, and deploy a ShrincsPaymaster (impl + ERC-1967 proxy). The
 /// proxy is left UNinitialized — the smoke test exercises `initialize` itself.
 export async function setupShrincsAnvilStack(
@@ -121,7 +121,7 @@ export async function setupShrincsAnvilStack(
   const account = opts.account ?? DEFAULT_ACCOUNT;
   const maxFee = opts.maxFee ?? DEFAULT_MAX_FEE;
 
-  const factoryArtifact = readForgeArtifact("out/QuipFactory.sol/QuipFactory.json");
+  const factoryArtifact = readForgeArtifact("out/WalletFactory.sol/WalletFactory.json");
   const walletArtifact = readForgeArtifact(
     "out/ShrincsWallet.sol/ShrincsWallet.json"
   );
@@ -185,10 +185,10 @@ export async function setupShrincsAnvilStack(
   });
   const shrincsVerifier = verifierReceipt.contractAddress!;
 
-  // 1. QuipFactory: UUPS impl + ERC-1967 proxy + initialize. The PROXY
+  // 1. WalletFactory: UUPS impl + ERC-1967 proxy + initialize. The PROXY
   // address is the factory identity wallets bake in.
   const factoryImplHash = await walletClient.deployContract({
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     bytecode: factoryArtifact.bytecode.object as Hex,
     args: [maxFee],
     account,
@@ -206,7 +206,7 @@ export async function setupShrincsAnvilStack(
   const factoryInitHash = await walletClient.writeContract({
     chain: foundry,
     address: factoryAddress,
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     functionName: "initialize",
     args: [account.address],
     account,
@@ -230,7 +230,7 @@ export async function setupShrincsAnvilStack(
   const vetHash = await walletClient.writeContract({
     chain: foundry,
     address: factoryAddress,
-    abi: quipFactoryAbi,
+    abi: walletFactoryAbi,
     functionName: "vetImplementation",
     args: [shrincsWalletImpl],
     account,
