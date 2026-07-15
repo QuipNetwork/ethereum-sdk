@@ -214,12 +214,27 @@ describe("shrincsCodec", () => {
     const signature = mainKey.signStatefulRawAt(message, 3);
     expect(signature.authPath.length).toBe(3);
 
-    const blob = Codec.encodeUserOpSignature(mainKey.publicKey, signature);
+    // The hybrid blob carries the owner's co-signature as an opaque third field.
+    const ownerEcdsaSig = `0x${"22".repeat(65)}` as Hex;
+    const blob = Codec.encodeUserOpSignature(mainKey.publicKey, signature, ownerEcdsaSig);
     const decoded = Codec.decodeUserOpSignature(blob);
 
     expect(decoded.publicKey).toEqual(mainKey.publicKey);
     expect(decoded.signature).toEqual(signature);
+    expect(decoded.ecdsaSig).toBe(ownerEcdsaSig);
     // The decoded signature still verifies against the original message.
+    expect(mainKey.verifyStatefulRaw(message, decoded.signature)).toBe(true);
+  });
+
+  it("round-trips the paymaster sponsorship blob (plain pair, no co-signature)", () => {
+    const message = keccak256(toHex("sponsorship blob message"));
+    const signature = mainKey.signStatefulRawAt(message, 2);
+
+    const blob = Codec.encodeSponsorshipSignature(mainKey.publicKey, signature);
+    const decoded = Codec.decodeSponsorshipSignature(blob);
+
+    expect(decoded.publicKey).toEqual(mainKey.publicKey);
+    expect(decoded.signature).toEqual(signature);
     expect(mainKey.verifyStatefulRaw(message, decoded.signature)).toBe(true);
   });
 });

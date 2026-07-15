@@ -44,6 +44,10 @@ const seed = (s: string) => toHex(new TextEncoder().encode(s));
 
 const TARGET = "0x00000000000000000000000000000000000000b0" as Address;
 const SENDER = WALLET;
+// A fixed 65-byte co-signature: `signWalletUserOp` embeds it opaquely (the
+// wallet, not the SDK, verifies it recovers `owner()`), so a constant suffices
+// for these pure-function tests.
+const OWNER_ECDSA_SIG = `0x${"11".repeat(65)}` as Hex;
 
 describe("shrincs wallet userOp", () => {
   describe("buildUserOp", () => {
@@ -156,6 +160,7 @@ describe("shrincs wallet userOp", () => {
         keyVersion: 0n,
         leaf: 1,
         actionNonce: 0n,
+        ownerEcdsaSig: OWNER_ECDSA_SIG,
       });
 
       // userOpHash matches the canonical ERC-4337 v0.7 hash.
@@ -166,6 +171,8 @@ describe("shrincs wallet userOp", () => {
       expect(decoded.publicKey).toEqual(main.publicKey);
       // authPath length equals the signing leaf (stateful invariant).
       expect(decoded.signature.authPath.length).toBe(1);
+      // The owner co-signature rides the blob opaquely and round-trips.
+      expect(decoded.ecdsaSig).toBe(OWNER_ECDSA_SIG);
       // And the embedded signature verifies against the canonical action message
       // (domainSeparator ‖ erc4337 action ‖ erc4337PayloadHash(userOpHash) — no
       // fee word: the maxFee ceiling rides in callData under userOpHash).
@@ -196,6 +203,7 @@ describe("shrincs wallet userOp", () => {
         keyVersion: 0n,
         leaf: 2,
         actionNonce: 0n,
+        ownerEcdsaSig: OWNER_ECDSA_SIG,
       };
       const a = signWalletUserOp(args);
       const b = signWalletUserOp(args);
@@ -217,6 +225,7 @@ describe("shrincs wallet userOp", () => {
         wallet: WALLET,
         keyVersion: 0n,
         leaf: 2,
+        ownerEcdsaSig: OWNER_ECDSA_SIG,
       };
       const a = signWalletUserOp({ ...base, actionNonce: 0n });
       const b = signWalletUserOp({ ...base, actionNonce: 1n });
@@ -249,6 +258,7 @@ describe("shrincs wallet userOp", () => {
         keyVersion: 0n,
         leaf: 4,
         actionNonce: 0n,
+        ownerEcdsaSig: OWNER_ECDSA_SIG,
       };
       const a = signWalletUserOp({ ...base, userOp: userOp(callDataAt(0n)) });
       const b = signWalletUserOp({ ...base, userOp: userOp(callDataAt(1n)) });
@@ -270,6 +280,7 @@ describe("shrincs wallet userOp", () => {
         keyVersion: 0n,
         leaf: 3,
         actionNonce: 0n,
+        ownerEcdsaSig: OWNER_ECDSA_SIG,
       };
       const a = signWalletUserOp({ ...base, wallet: WALLET });
       const b = signWalletUserOp({
