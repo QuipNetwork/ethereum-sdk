@@ -81,7 +81,7 @@ Every digest includes: domain tag + `block.chainid` + wallet address + current p
 - `initializer` modifier prevents re-entry
 - Only `FACTORY` address can call `initialize`
 - `_verifyInitialState` asserts all post-init state is valid:
-  - `quipFactory != address(0)`
+  - `quipFactory != address(0)` (the WOTS+ wallet's stored factory pointer; ShrincsWallet's equivalent is `walletFactory`)
   - `ownershipKey.publicSeed != 0` and `ownershipKey.publicKeyHash != 0`
   - `disasterRecoveryKey.publicSeed != 0` and `disasterRecoveryKey.publicKeyHash != 0`
   - `transactionKeys.length() == MAX_KEYS` (exactly 10)
@@ -142,7 +142,7 @@ Protected slots:
 - Both `upgradeToAndCall` and `recoveryUpgrade` verify the target is vetted and not deprecated
 - A `verifyUpgrade` delegatecall to the new implementation provides scheme-specific validation
 
-**Contracts:** QuipFactory, QuipWallet
+**Contracts:** WalletFactory, QuipWallet
 
 **Violation consequence:** Upgrading to unvetted code means arbitrary code execution with wallet storage and balance.
 
@@ -157,7 +157,7 @@ Protected slots:
 - The fee value is included in the execute digest — the signer explicitly authorizes the fee amount
 - Fee transfer happens after successful execution (atomic with the call)
 
-**Contracts:** QuipFactory, QuipWallet
+**Contracts:** WalletFactory, QuipWallet
 
 **Violation consequence:** Uncapped fees let the factory owner drain wallets. Excluding fees from the digest lets the factory owner raise fees after signing, stealing value.
 
@@ -215,7 +215,7 @@ Hardcoded constant, enforced by `onlyEntryPoint` modifier inherited from the ERC
 
 Prevents accidental or social-engineered admin abandonment.
 
-**Contracts:** QuipWallet, QuipFactory, QuipPaymaster
+**Contracts:** QuipWallet, WalletFactory, QuipPaymaster
 
 **Violation consequence:** Renouncing factory ownership disables fee changes, implementation vetting, and fund withdrawal — permanently bricking the system.
 
@@ -255,11 +255,11 @@ Decoders use assembly pointer arithmetic to read exact offsets.
 
 **Each wallet's factory reference is immutable after initialization; the factory's ADDRESS is permanent even though its logic is upgradeable.**
 
-`FACTORY` is set in the constructor (immutable). `quipFactory` is stored in PQ-protected storage and guarded against writes. Only the factory can initialize the wallet.
+`FACTORY` is set in the constructor (immutable). The stored pointer (`walletFactory` on ShrincsWallet; `quipFactory` on the deprecated WOTS+ wallet, whose ABI is frozen) lives in PQ-protected storage and is guarded against writes. Only the factory can initialize the wallet.
 
 The referenced address is the factory's ERC-1967 PROXY — the permanent factory identity. The factory's logic is UUPS-upgradeable behind it (22), which is precisely what makes the wallet-side immutability safe to commit to: the one address wallets can never re-point survives every factory fix.
 
-**Contracts:** QuipWallet, ShrincsWallet, QuipFactory
+**Contracts:** QuipWallet, ShrincsWallet, WalletFactory
 
 **Violation consequence:** A mutable factory reference lets an attacker redirect fee transfers or bypass initialization checks.
 
@@ -281,7 +281,7 @@ The factory's per-owner registry tracks the wallet's CURRENT classical owner. `w
 
 The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are write-once in `_deployProxy` and never rotate; `walletOwner[wallet]` and `_vaultIds[owner]` are the only state that rotates on transfer.
 
-**Contracts:** QuipFactory, QuipWallet
+**Contracts:** WalletFactory, QuipWallet
 
 **Violation consequence:** A desynced registry would let off-chain enumeration (e.g. `getVaults` in the SDK) miss wallets a user owns or surface wallets they don't. The on-chain `owner()` remains the source of truth for authorization, so a desync confuses UI but does not steal funds.
 
@@ -360,10 +360,10 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 ## 21. Factory Implementation-Agnosticism & the Vetting Contract
 
-**The factory is agnostic to the signature scheme securing its wallets: it drives every wallet exclusively through the minimal `IQuipWallet` surface (`initialize` + `owner()`), treats the init payload as fully opaque, and echoes no wallet-family-typed data. Everything the factory cannot enforce in code is a behavioral obligation of vetting — the VETTING CONTRACT stated in `IQuipWallet`'s natspec.**
+**The factory is agnostic to the signature scheme securing its wallets: it drives every wallet exclusively through the minimal `IWallet` surface (`initialize` + `owner()`), treats the init payload as fully opaque, and echoes no wallet-family-typed data. Everything the factory cannot enforce in code is a behavioral obligation of vetting — the VETTING CONTRACT stated in `IWallet`'s natspec.**
 
-- **The `IQuipWallet` surface is the whole coupling.** `_deployProxy` calls `initialize(to, payload)`; `updateWalletOwner` reads `owner()`. Nothing else about a wallet family is visible to the factory — no key types, no payload layout (no minimum length either: each family's codec is the sole validator of its own encoding).
-- **`QuipCreated` carries the implementation address, not key material.** The impl identifies the wallet family/version for indexers; each family emits its own `WalletInitialized` event (indexed by factory and owner) with its typed key handles. The factory never slices the payload — an event field typed for one family would lie for every other (as the pre-decoupling `disasterRecoveryKey` field did for SHRINCS deployments).
+- **The `IWallet` surface is the whole coupling.** `_deployProxy` calls `initialize(to, payload)`; `updateWalletOwner` reads `owner()`. Nothing else about a wallet family is visible to the factory — no key types, no payload layout (no minimum length either: each family's codec is the sole validator of its own encoding).
+- **`WalletDeployed` carries the implementation address, not key material.** The impl identifies the wallet family/version for indexers; each family emits its own `WalletInitialized` event (indexed by factory and owner) with its typed key handles. The factory never slices the payload — an event field typed for one family would lie for every other (as the pre-decoupling `disasterRecoveryKey` field did for SHRINCS deployments).
 - **The vetting contract (behavioral obligations of every vetted implementation):**
   1. `initialize` callable only by the deploying factory, only once.
   2. `owner()` mutates ONLY inside the wallet's PQ-authenticated ownership-transfer flow, whose tail calls back `updateWalletOwner(newOwner)` in the same transaction, after the new owner commits. No arbitrary-call, delegatecall, or raw-storage-write path may change `owner()` without that callback.
@@ -371,7 +371,7 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 - **Registry Consistency (16) rests on the vetting contract, not on any family's internals.** The factory's `owner() == newOwner` pin proves the callback fires at the committed moment; that this moment is reachable only via the sanctioned flow is exactly rule 2 — enforced by review at `vetImplementation` time (Implementation Vetting, 7), per family: WOTS via its guard snapshots on `delegateExecute`/`storageStore`, SHRINCS by disabling those paths outright.
 - **Blast radius of a violating implementation is bounded:** it can desync its own wallets' registry entries (UI-level, per invariant 16's consequence), never other wallets, the vetted set, or factory funds.
 
-**Contracts:** QuipFactory, IQuipWallet (natspec), every vetted implementation
+**Contracts:** WalletFactory, IWallet (natspec), every vetted implementation
 
 **Violation consequence:** Vetting an implementation that breaks rule 2 silently desyncs the per-owner registry for its wallets. Re-typing the factory to one family's shapes re-creates the layout coupling that forced other families to contort their encodings and mislabel indexer data.
 
@@ -382,14 +382,14 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 **The factory is UUPS behind an ERC-1967 proxy: the PROXY address is the permanent identity, all mutable state lives in the `quip.storage.factory` ERC-7201 namespace with an append-only layout, and upgrades are owner-fiat (`_authorizeUpgrade` + `onlyOwner`).**
 
 - **Why the proxy address is permanent:** every wallet bakes it in as an immutable (15) — the `updateWalletOwner` callback, upgrade-gating reads (`getVettedCodeIndex`/`deprecatedImpls`), and live-fee reads all target it forever — and CREATE3 wallet addressing is a pure function of (proxy address, vaultId), independent of both wallet initcode and factory implementation. Counterfactual and cross-chain wallet addresses therefore survive factory upgrades. Pinned by tests: `test_upgrade_walletAddressesStableAcrossUpgrade`, SDK `integration.factory-upgrade`.
-- **Layout continuity across upgrades:** `QuipFactoryStorage.Layout` fields are never moved, retyped, or removed — append-only — and the ERC-7201 namespace string is never changed. No new implementation may write registry state outside the existing mutation paths (`_deployProxy`, `updateWalletOwner`, fee setters, vet/deprecate/undeprecate).
+- **Layout continuity across upgrades:** `WalletFactoryStorage.Layout` fields are never moved, retyped, or removed — append-only — and the ERC-7201 namespace string is never changed. No new implementation may write registry state outside the existing mutation paths (`_deployProxy`, `updateWalletOwner`, fee setters, vet/deprecate/undeprecate).
 - **`MAX_FEE` is per-implementation** (constructor immutable, lives in impl code): an upgrade can change the cap (8). This is a documented trust delta, not an accident — the wallet-side signed fee is the floor of protection.
 - **Owner-fiat upgrades, PQ-secured upstream:** the owner is expected to be a post-quantum wallet (same posture as the ShrincsPaymaster, 20). Solady Ownable with `transferOwnership` IMMEDIATE and two-step handover ENABLED (candidate requests, owner completes); renounce disabled. Deliberately unlike the wallets, which disable the whole classical ownership surface.
 - **Initialization is single-shot on the proxy** (Solady `initializer`) and locked on the raw implementation (`_disableInitializers` in the constructor).
 - **What upgrade power does NOT add:** forcing a wallet upgrade (still requires the wallet's own PQ signature choosing a vetted impl), moving wallet funds, or mutating any wallet's `owner()`. What it DOES add over curation+fees: the ability to DoS `updateWalletOwner` (bricking wallet ownership transfers), DoS the vetted-set views (bricking wallet upgrades), lift `MAX_FEE`, and corrupt registry views (UI-level, 16).
-- **Deploy shape:** impl + OZ `ERC1967Proxy` via Deployer/CREATE3, salts `QUIP:QuipFactory:{Impl,Proxy}:V2`. V2 is load-bearing — CREATE3 ignores initcode, so the V1.1 salt would silently resolve to any pre-existing non-upgradeable factory deployment and skip.
+- **Deploy shape:** impl + OZ `ERC1967Proxy` via Deployer/CREATE3, salts `QUIP:WalletFactory:{Impl,Proxy}:V2`. V2 is load-bearing — CREATE3 ignores initcode, so the V1.1 salt would silently resolve to any pre-existing non-upgradeable factory deployment and skip.
 
-**Contracts:** QuipFactory, QuipFactoryStorage
+**Contracts:** WalletFactory, WalletFactoryStorage
 
 **Violation consequence:** A moved or re-namespaced storage field silently corrupts the registry for every wallet ever deployed (reads return garbage from the new offsets — worse than a revert). A changed proxy address orphans all wallets' immutable factory pointers and shifts every counterfactual wallet address. Registry writes outside the sanctioned paths break invariant 16 without tripping its defense-in-depth checks.
 
