@@ -14,11 +14,12 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 /// @dev Behavior tests for the ERC-4337 `_validateSignature` stateful path, driven by live-signed
 ///      erc4337-context signatures.
 contract ShrincsWallet__validateSignature is ShrincsWalletTest {
-    /// @dev A userOp signed at `leaf` over a synthetic-but-fixed userOpHash.
+    /// @dev A userOp signed at `leaf` over a synthetic-but-fixed userOpHash, with the owner's
+    ///      ECDSA co-signature over the same hash (the hybrid blob).
     function _erc4337Op(uint32 leaf) internal view returns (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) {
         userOpHash = keccak256(abi.encodePacked("erc4337-userop", leaf));
         SHRINCS.Signature memory sig = _signErc4337(userOpHash, leaf);
-        op = _makeUserOp(abi.encode(_mainPk(), sig));
+        op = _makeUserOp(_userOpBlob(sig, userOpHash));
     }
 
     // NOTE: every signature binds the LIVE wrapper nonce, so consuming any signature supersedes
@@ -51,6 +52,8 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     }
 
     function test_validateSignature_revertsWhen_wrongUserOpHash() public {
+        // Both halves signed over the op's own hash, validated against a different one:
+        // rejected at the ECDSA gate (it runs first), leaf untouched.
         (ERC4337.PackedUserOperation memory op,) = _erc4337Op(1);
         uint256 result = wallet.exposed_validateSignature(op, keccak256("not-the-signed-hash"));
         assertEq(result, 1, "wrong message must be rejected");
@@ -83,7 +86,9 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     }
 
     function test_validateSignature_reason_leafZero() public {
-        ERC4337.PackedUserOperation memory op = _makeUserOp(abi.encode(_mainPk(), _statefulSigWithLeaf(0)));
+        // Valid co-signature so the op clears the ECDSA gate and reaches the leaf guard.
+        ERC4337.PackedUserOperation memory op =
+            _makeUserOp(_userOpBlob(_statefulSigWithLeaf(0), keccak256("x")));
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op, keccak256("x")), 1);
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.StatefulBudgetExhausted));
@@ -91,7 +96,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
 
     function test_validateSignature_reason_leafOverBudget() public {
         ERC4337.PackedUserOperation memory op =
-            _makeUserOp(abi.encode(_mainPk(), _statefulSigWithLeaf(uint256(MAX_SIG) + 1)));
+            _makeUserOp(_userOpBlob(_statefulSigWithLeaf(uint256(MAX_SIG) + 1), keccak256("x")));
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op, keccak256("x")), 1);
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.StatefulBudgetExhausted));
@@ -106,10 +111,83 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     }
 
     function test_validateSignature_reason_invalidSignature() public {
-        (ERC4337.PackedUserOperation memory op,) = _erc4337Op(1);
+        // Co-sign the VALIDATED hash but SHRINCS-sign a different one: the ECDSA gate passes
+        // and the SHRINCS verify is what fails.
+        bytes32 validatedHash = keccak256("not-the-signed-hash");
+        SHRINCS.Signature memory sig = _signErc4337(keccak256("some-other-hash"), 1);
+        ERC4337.PackedUserOperation memory op = _makeUserOp(_userOpBlob(sig, validatedHash));
         vm.recordLogs();
-        assertEq(wallet.exposed_validateSignature(op, keccak256("not-the-signed-hash")), 1);
+        assertEq(wallet.exposed_validateSignature(op, validatedHash), 1);
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidSignature));
+    }
+
+    /* ─────────────── hybrid gate: the owner ECDSA co-signature (matrix) ─────────────── */
+
+    function test_validateSignature_reason_invalidEcdsa_wrongSigner() public {
+        // A perfectly valid SHRINCS signature co-signed by a NON-owner key must be rejected
+        // BEFORE any SHRINCS work: leaf unconsumed, nonce unchanged. This is the hybrid gate —
+        // a stolen SHRINCS key alone cannot pass validation.
+        bytes32 userOpHash = keccak256("wrong-signer-op");
+        (, uint256 malloryPk) = makeAddrAndKey("mallory");
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(malloryPk, wallet.quipUserOpHashEcdsaTarget(userOpHash));
+        ERC4337.PackedUserOperation memory op = _makeUserOp(
+            abi.encode(_mainPk(), _signErc4337(userOpHash, 1), abi.encodePacked(r, s, v))
+        );
+        vm.recordLogs();
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "non-owner co-signer rejected");
+        assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
+        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on ECDSA rejection");
+        assertEq(wallet.actionNonce(), 0, "nonce unchanged on ECDSA rejection");
+    }
+
+    function test_validateSignature_reason_invalidEcdsa_missing() public {
+        // An empty co-signature decodes cleanly but recovers address(0).
+        bytes32 userOpHash = keccak256("missing-cosig-op");
+        ERC4337.PackedUserOperation memory op =
+            _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 1), bytes("")));
+        vm.recordLogs();
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "missing co-signature rejected");
+        assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
+        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed");
+    }
+
+    function test_validateSignature_reason_invalidEcdsa_malformed() public {
+        // 65 garbage bytes: tryRecover yields address(0) or a non-owner address.
+        bytes32 userOpHash = keccak256("malformed-cosig-op");
+        bytes memory garbage = new bytes(65);
+        ERC4337.PackedUserOperation memory op =
+            _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 1), garbage));
+        vm.recordLogs();
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "malformed co-signature rejected");
+        assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
+    }
+
+    function test_validateSignature_reason_invalidEcdsa_erc1271DomainSignature() public {
+        // THE domain-separation property: the owner's ERC-1271 message signature over the same
+        // 32 bytes must NOT double as the userOp co-signature — the two EIP-712 typehashes are
+        // deliberately distinct, so a dApp-harvested `QuipSignedHash` signature is useless here.
+        bytes32 userOpHash = keccak256("cross-domain-op");
+        bytes memory erc1271Sig = _ownerEcdsa(userOpHash); // signs QuipSignedHash(hash), not QuipUserOpHash
+        ERC4337.PackedUserOperation memory op =
+            _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 1), erc1271Sig));
+        vm.recordLogs();
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "1271-domain signature rejected");
+        assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
+        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed");
+    }
+
+    function test_validateSignature_legacyTwoTupleBlob_rejected() public {
+        // The pre-co-signature blob shape `abi.encode(pk, sig)` passes the length floor but its
+        // third head word is struct-tail data, yielding a garbage ecdsaSig that cannot recover
+        // the owner. Legacy blobs die at the ECDSA gate, never at the SHRINCS verify.
+        bytes32 userOpHash = keccak256("legacy-blob-op");
+        ERC4337.PackedUserOperation memory op =
+            _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 1)));
+        vm.recordLogs();
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "legacy 2-tuple blob rejected");
+        assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
+        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed");
     }
 
     function test_validateSignature_success_advancesActionNonce() public {
@@ -180,7 +258,9 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     ///      must never consume a leaf. Exercises the guard + verify-fail branches without a real sig.
     function testFuzz_validateSignature_rejectsSyntheticSignature(uint256 leaf, bytes32 userOpHash) public {
         leaf = bound(leaf, 0, 512); // `_statefulSigWithLeaf` allocates `new bytes32[](leaf)`
-        ERC4337.PackedUserOperation memory op = _makeUserOp(abi.encode(_mainPk(), _statefulSigWithLeaf(leaf)));
+        // Valid co-signature: the rejection must come from the leaf guards / SHRINCS verify.
+        ERC4337.PackedUserOperation memory op =
+            _makeUserOp(_userOpBlob(_statefulSigWithLeaf(leaf), userOpHash));
 
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "synthetic signature always rejected");
         assertEq(wallet.statefulLeavesUsed(), 0, "no leaf consumed on rejection");

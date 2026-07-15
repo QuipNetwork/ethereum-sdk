@@ -235,7 +235,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         // property the carve-out exists to provide.
         bytes32 userOpHash = keccak256("outstanding-user-op");
         ERC4337.PackedUserOperation memory op =
-            _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 5)));
+            _makeUserOp(_userOpBlob(_signErc4337(userOpHash, 5), userOpHash));
 
         uint32[] memory leaves = _targets(3);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
@@ -251,7 +251,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         // The inverse direction: revoking the op's own leaf kills exactly that op.
         bytes32 userOpHash = keccak256("doomed-user-op");
         ERC4337.PackedUserOperation memory op =
-            _makeUserOp(abi.encode(_mainPk(), _signErc4337(userOpHash, 5)));
+            _makeUserOp(_userOpBlob(_signErc4337(userOpHash, 5), userOpHash));
 
         uint32[] memory leaves = _targets(5);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);

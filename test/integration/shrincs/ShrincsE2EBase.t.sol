@@ -32,7 +32,7 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     string internal constant BASE_SEPOLIA_RPC_ENV = "API_URL_BASE_SEPOLIA";
 
     address internal ADMIN = makeAddr("admin");
-    address internal WALLET_OWNER = makeAddr("walletOwner");
+    // WALLET_OWNER (+ its ECDSA key) lives on the assembler: it co-signs every userOp.
     address payable internal BENEFICIARY = payable(makeAddr("beneficiary"));
 
     ShrincsWalletHarness internal wallet;

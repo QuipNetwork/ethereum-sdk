@@ -332,7 +332,7 @@ contract ShrincsPaymaster is
         (
             SHRINCS.PublicKey calldata pk,
             SHRINCS.Signature calldata sig
-        ) = Codec.decodeUserOpSignature(blob);
+        ) = Codec.decodeSponsorshipSignature(blob);
 
         uint256 epoch = $.keyVersion;
         uint32 leaf = uint32(sig.authPath.length);
