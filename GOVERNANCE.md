@@ -6,7 +6,7 @@ What an operator is trusted to do today, what they can't do, and where on-chain 
 
 ## TL;DR
 
-The QuipFactory and QuipPaymaster are owned by a single classical address. That owner can vet implementations, set fees, deprecate impls, withdraw factory ETH balance, and — since the factory became UUPS-upgradeable — **replace the factory's implementation** — all in a single transaction, with no on-chain timelock or staged approval. Wallet user funds are **not** at risk from a compromised factory owner; the blast radius is implementation policy, fee economics, accumulated factory revenue, and (via upgrade) denial-of-service on factory-mediated wallet flows.
+The WalletFactory and QuipPaymaster are owned by a single classical address. That owner can vet implementations, set fees, deprecate impls, withdraw factory ETH balance, and — since the factory became UUPS-upgradeable — **replace the factory's implementation** — all in a single transaction, with no on-chain timelock or staged approval. Wallet user funds are **not** at risk from a compromised factory owner; the blast radius is implementation policy, fee economics, accumulated factory revenue, and (via upgrade) denial-of-service on factory-mediated wallet flows.
 
 The intended production posture is: factory owner is a multisig (Safe or equivalent), and eventually that multisig is itself replaced by a governance contract with a timelock. Both transitions happen via the existing `transferOwnership` flow on each contract.
 
@@ -18,12 +18,12 @@ Every entry in this table is `onlyOwner`, single transaction, immediate effect:
 
 | Action | Contract / line | Effect |
 |---|---|---|
-| `vetImplementation(address)` | `QuipFactory.sol:86` | Adds a codehash to the vetted set. New wallets via `deployLatestWalletProxy` will use the newly-vetted impl; existing wallets can upgrade to it. |
-| `deprecateImplementation(address)` | `QuipFactory.sol:116` | Marks a vetted codehash deprecated. Stops new deployments + new upgrades to that impl. |
-| `undeprecateImplementation(address)` | `QuipFactory.sol:99` | Reverses a deprecation. |
-| `setCreationFee(uint256)` | `QuipFactory.sol:149` | Changes the per-wallet creation fee, bounded by the immutable `MAX_FEE`. |
-| `setExecuteFee(uint256)` | `QuipFactory.sol:157` | Changes the per-execute fee, bounded by `MAX_FEE`. |
-| `withdraw(uint256)` | `QuipFactory.sol` | Transfers up to the factory balance to the owner. Drains accumulated fee revenue. |
+| `vetImplementation(address)` | `WalletFactory.sol:86` | Adds a codehash to the vetted set. New wallets via `deployLatestWalletProxy` will use the newly-vetted impl; existing wallets can upgrade to it. |
+| `deprecateImplementation(address)` | `WalletFactory.sol:116` | Marks a vetted codehash deprecated. Stops new deployments + new upgrades to that impl. |
+| `undeprecateImplementation(address)` | `WalletFactory.sol:99` | Reverses a deprecation. |
+| `setCreationFee(uint256)` | `WalletFactory.sol:149` | Changes the per-wallet creation fee, bounded by the immutable `MAX_FEE`. |
+| `setExecuteFee(uint256)` | `WalletFactory.sol:157` | Changes the per-execute fee, bounded by `MAX_FEE`. |
+| `withdraw(uint256)` | `WalletFactory.sol` | Transfers up to the factory balance to the owner. Drains accumulated fee revenue. |
 | `upgradeToAndCall(address,bytes)` | Solady `UUPSUpgradeable` | Replaces the factory implementation behind the ERC-1967 proxy. THE trust-delta action — see below. |
 | `transferOwnership(address)` | Solady `Ownable` | Hands ownership to a new address IMMEDIATELY. The two-step alternative is Solady's handover: the candidate calls `requestOwnershipHandover()`, the owner calls `completeOwnershipHandover(candidate)`. |
 
@@ -47,7 +47,7 @@ So the blast radius of a single compromised owner key is: rogue impl entering th
 
 ## What new owners cannot be
 
-The factory's `updateWalletOwner` callback (`QuipFactory.sol:173–201`) validates only `newOwner != 0`. The factory doesn't enforce policy on what kind of address can own a wallet — that's an out-of-band decision (cold wallet, smart account, multisig, etc.).
+The factory's `updateWalletOwner` callback (`WalletFactory.sol:173–201`) validates only `newOwner != 0`. The factory doesn't enforce policy on what kind of address can own a wallet — that's an out-of-band decision (cold wallet, smart account, multisig, etc.).
 
 ## Recommended operator posture
 
