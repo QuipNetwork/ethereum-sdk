@@ -36,7 +36,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         bare.initialize(payable(OWNER), _validInitPayload());
 
         assertEq(bare.owner(), OWNER, "owner installed");
-        assertEq(bare.quipFactory(), address(factory), "factory installed");
+        assertEq(bare.walletFactory(), address(factory), "factory installed");
         assertEq(bare.getShrincsPublicKeyCommitment(), mainCommitment, "main commitment");
         assertEq(bare.getErc1271Commitment(), erc1271Commitment, "erc1271 commitment");
         assertEq(bare.getHashSuite(), HashSuite.HASH_SUITE_ID, "hash suite");

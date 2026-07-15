@@ -18,7 +18,7 @@ pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
-import {IQuipWallet} from "../../interfaces/IQuipWallet.sol";
+import {IWallet} from "../../interfaces/IWallet.sol";
 
 /// @title IShrincsWallet
 /// @notice A smart-contract wallet whose operations are authorized by SHRINCS
@@ -26,9 +26,9 @@ import {IQuipWallet} from "../../interfaces/IQuipWallet.sol";
 ///         and arbitrary calls. Normal operations use the cheap stateful path
 ///         (leaf-indexed, bounded by `maxSignatures`); break-glass recovery uses the
 ///         stateless path. A separate, dedicated stateless key backs ERC-1271.
-///         Extends `IQuipWallet` — the factory-facing surface whose natspec
+///         Extends `IWallet` — the factory-facing surface whose natspec
 ///         states the behavioral vetting contract this implementation upholds.
-interface IShrincsWallet is IQuipWallet {
+interface IShrincsWallet is IWallet {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -102,7 +102,7 @@ interface IShrincsWallet is IQuipWallet {
 
     /// @notice Thrown when a delegatecall body (the `upgradeToAndCall` verify probe) modified one
     ///         of the eight slots the upgrade path snapshots and re-checks.
-    /// @param slotIndex 0=owner, 1=ERC-1967 impl, 2=quipFactory, 3=shrincsPublicKeyCommitment,
+    /// @param slotIndex 0=owner, 1=ERC-1967 impl, 2=walletFactory, 3=shrincsPublicKeyCommitment,
     ///                  4=erc1271StatelessCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
     error GuardedSlotTampered(uint256 slotIndex);
     /// @notice Thrown when `storageStore` is called. Raw storage writes are disabled because they
@@ -125,7 +125,7 @@ interface IShrincsWallet is IQuipWallet {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @notice Emitted when a wallet is initialized with its factory, owner, and SHRINCS keys.
-    /// @param factory The QuipFactory that created this wallet.
+    /// @param factory The WalletFactory that created this wallet.
     /// @param owner The classical owner address (ERC-1271 ECDSA gate + factory registry only).
     /// @param shrincsPublicKeyCommitment The installed main-key bundle commitment.
     /// @param erc1271StatelessCommitment The installed ERC-1271 verifier-key commitment.
@@ -379,7 +379,7 @@ interface IShrincsWallet is IQuipWallet {
     function getExecuteFee() external view returns (uint256);
 
     /// @notice The immutable factory address.
-    function quipFactory() external view returns (address payable);
+    function walletFactory() external view returns (address payable);
 
     /// @notice The installed main-key bundle commitment.
     function getShrincsPublicKeyCommitment() external view returns (bytes32);

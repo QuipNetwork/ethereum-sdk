@@ -26,7 +26,7 @@ import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusIm
  * Environment:
  *   PRIVATE_KEY - Operations wallet private key
  *   DEPLOYER_ADDRESS - Deployer contract address
- *   FACTORY_ADDRESS - QuipFactory contract address (WOTSPlusImplementation constructor arg)
+ *   FACTORY_ADDRESS - WalletFactory contract address (WOTSPlusImplementation constructor arg)
  */
 contract DeployImplementation is Script {
     function run() external {

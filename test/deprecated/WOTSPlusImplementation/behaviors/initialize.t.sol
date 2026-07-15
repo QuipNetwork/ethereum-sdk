@@ -105,7 +105,7 @@ contract WOTSPlusImplementation_initialize is WOTSPlusImplementationTest {
         assertEq(vm.load(address(freshWallet), bytes32(uint256(STORAGE_BASE) + 4)), ownership.publicKeyHash);
     }
 
-    function test_initialize_setsQuipFactory() public view {
+    function test_initialize_setsWalletFactory() public view {
         assertEq(address(wallet.quipFactory()), address(factory));
     }
 

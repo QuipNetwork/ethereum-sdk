@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {QuipFactoryTest} from "../../QuipFactory/QuipFactory.t.sol";
+import {WalletFactoryTest} from "../../WalletFactory/WalletFactory.t.sol";
 import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {IWOTSPlusImplementation} from "../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
 /// @title WOTSPlusImplementation Base Test
-/// @dev Base contract for testing WOTSPlusImplementation. Inherits full stack from QuipFactoryTest
+/// @dev Base contract for testing WOTSPlusImplementation. Inherits full stack from WalletFactoryTest
 ///      and deploys a wallet for ALICE.
-contract WOTSPlusImplementationTest is QuipFactoryTest {
+contract WOTSPlusImplementationTest is WalletFactoryTest {
     WOTSPlusImplementation public wallet;
     /// @dev Primary active transaction key used by most tests (initially txn key 0).
     WOTSPlus.WinternitzAddress public alicePubkey;

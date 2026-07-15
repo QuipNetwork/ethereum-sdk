@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-/// @dev Minimal stand-in for QuipFactory exposing only the surface `ShrincsWallet` calls:
+/// @dev Minimal stand-in for WalletFactory exposing only the surface `ShrincsWallet` calls:
 ///      `executeFee`, `getVettedCodeIndex`, `deprecatedImpls`, and `updateWalletOwner`.
 contract MockShrincsFactory {
     uint256 public executeFee;
@@ -26,7 +26,7 @@ contract MockShrincsFactory {
         return stored == 0 ? type(uint256).max : stored - 1;
     }
 
-    /// @dev Records the callback; mirrors QuipFactory's `owner() == newOwner` pin loosely.
+    /// @dev Records the callback; mirrors WalletFactory's `owner() == newOwner` pin loosely.
     function updateWalletOwner(address newOwner) external {
         lastOwnerUpdate[msg.sender] = newOwner;
     }

@@ -116,7 +116,7 @@ deploy-wotsplus:
 	forge script script/deprecated/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-factory:
-	FOUNDRY_PROFILE=deploy forge script script/DeployQuipFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	FOUNDRY_PROFILE=deploy forge script script/DeployWalletFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-all:
 	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify
@@ -137,10 +137,10 @@ predict-addresses:
 #                           infra deploy, impl deploy, vetting)
 #   DEPLOYER_ADDRESS        bootstrapped Deployer contract address (e.g. the
 #                           canonical 0xA1A3990E… when bootstrapped via CreateX)
-#   FACTORY_OWNER           QuipFactory initial owner (deploy-all-* only)
-#   MAX_FEE                 QuipFactory creation fee in wei (deploy-all-* only)
+#   FACTORY_OWNER           WalletFactory initial owner (deploy-all-* only)
+#   MAX_FEE                 WalletFactory creation fee in wei (deploy-all-* only)
 #   PAYMASTER_OWNER         QuipPaymaster proxy initial owner (deploy-all-* only)
-#   FACTORY_ADDRESS         existing QuipFactory address (deploy-impl-*, vet-impl-*)
+#   FACTORY_ADDRESS         existing WalletFactory address (deploy-impl-*, vet-impl-*)
 #   IMPLEMENTATION          WOTSPlusImplementation impl address (vet-impl-* only)
 #   API_URL_BASE_SEPOLIA    https://… RPC endpoint
 #   ETHERSCAN_API_KEY       Etherscan v2 key (used for --verify)

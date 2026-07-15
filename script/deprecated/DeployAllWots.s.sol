@@ -9,13 +9,13 @@ import {IVettingFactory} from "../DeployHelpers.sol";
 /**
  * @title DeployAllWots
  * @dev Deploys the full WOTS+ family through the existing Deployer (CREATE3):
- *      WOTSPlus library, the shared QuipFactory, the WOTSPlusImplementation wallet
+ *      WOTSPlus library, the shared WalletFactory, the WOTSPlusImplementation wallet
  *      impl (vetted), and the QuipPaymaster (impl + proxy). Idempotent — re-runs
  *      skip already-deployed/vetted contracts. WOTS+ is vetted last, so
  *      `latestWalletImpl == WOTSPlusImplementation` afterward.
  *
- *      MUST run with `FOUNDRY_PROFILE=deploy` (QuipFactory + WOTSPlusImplementation
- *      link the WOTSPlus library). The PRIVATE_KEY must be the QuipFactory owner
+ *      MUST run with `FOUNDRY_PROFILE=deploy` (WalletFactory + WOTSPlusImplementation
+ *      link the WOTSPlus library). The PRIVATE_KEY must be the WalletFactory owner
  *      (vetting is owner-gated).
  *
  * Usage:
@@ -25,7 +25,7 @@ import {IVettingFactory} from "../DeployHelpers.sol";
  * Environment:
  *   PRIVATE_KEY      - Operations / factory-owner key
  *   DEPLOYER_ADDRESS - Deployer contract (bootstrapped via DeployDeployer)
- *   FACTORY_OWNER    - Initial QuipFactory owner
+ *   FACTORY_OWNER    - Initial WalletFactory owner
  *   MAX_FEE          - Max wallet-creation fee (wei)
  *   PAYMASTER_OWNER  - Initial QuipPaymaster proxy owner
  */
@@ -47,7 +47,7 @@ contract DeployAllWots is DeployWotsBase {
         address factory = _deployWotsAll(Deployer(deployerAddr), pk, factoryOwner, maxFee, paymasterOwner);
 
         console.log("=== Done ===");
-        console.log("QuipFactory:", factory);
+        console.log("WalletFactory:", factory);
         console.log("latestWalletImpl:", IVettingFactory(factory).latestWalletImpl());
     }
 }

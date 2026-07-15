@@ -15,7 +15,7 @@ contract ShrincsWallet_views is ShrincsWalletTest {
     }
 
     function test_quipFactory() public view {
-        assertEq(wallet.quipFactory(), address(factory));
+        assertEq(wallet.walletFactory(), address(factory));
     }
 
     function test_getExecuteFee_reflectsFactory() public {

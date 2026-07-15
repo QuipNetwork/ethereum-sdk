@@ -20,7 +20,7 @@ library ShrincsWalletStorage {
     /// @custom:storage-location erc7201:quip.storage.wallet.shrincs
     struct Layout {
         /// @dev Set once during `initialize`; effectively immutable after deployment.
-        address payable quipFactory;
+        address payable walletFactory;
         /// @dev Commitment to the installed SHRINCS public-key bundle that authorizes every
         ///      normal operation (stateful path) and break-glass recovery (stateless path).
         ///      Only the 32-byte commitment is stored; callers always supply the full
