@@ -260,14 +260,14 @@ export class ShrincsWalletClient {
     throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
   }
 
-  /// The QuipFactory that deployed this wallet (the remaining `IShrincsWallet`
+  /// The WalletFactory that deployed this wallet (the remaining `IShrincsWallet`
   /// view not bundled into `getWalletState`).
-  async quipFactory(): Promise<Address> {
+  async walletFactory(): Promise<Address> {
     return withDecodedError(
       this.publicClient.readContract({
         address: this.walletAddress,
         abi: shrincsWalletAbi,
-        functionName: "quipFactory",
+        functionName: "walletFactory",
       })
     ) as Promise<Address>;
   }

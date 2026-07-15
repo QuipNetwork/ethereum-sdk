@@ -35,9 +35,17 @@ import {
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "./interfaces/IShrincsWallet.sol";
-import {IQuipFactory} from "../interfaces/IQuipFactory.sol";
+import {IWalletFactory} from "../interfaces/IWalletFactory.sol";
 import {ShrincsWalletCodec as Codec} from "./ShrincsWalletCodec.sol";
 import {ShrincsWalletStorage as Storage} from "./ShrincsWalletStorage.sol";
+
+/// @dev Every concrete SHRINCS verifier exposes its compiled profile identity as a public
+///      constant (it cannot live on the abstract `SHRINCSVerifier` base — constants are not
+///      virtual/overridable there). Minimal profile-agnostic surface for the constructor's
+///      drift guard.
+interface ISHRINCSProfileTag {
+    function PROFILE_TAG() external view returns (bytes32);
+}
 
 /// @title ShrincsWallet
 /// @notice A post-quantum ERC-4337 smart-account wallet authorized by SHRINCS hash-based
@@ -54,7 +62,7 @@ import {ShrincsWalletStorage as Storage} from "./ShrincsWalletStorage.sol";
 //          model, ERC-7562 — is documented in SDK_README.md ("External verifier delegation") and
 //          INVARIANTS.md invariant 19.
 contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
-    /// @dev The immutable QuipFactory that deploys and registers this wallet.
+    /// @dev The immutable WalletFactory that deploys and registers this wallet.
     address payable public immutable FACTORY;
 
     /// @dev The pinned external SHRINCS verifier all signature cryptography is delegated to
@@ -93,6 +101,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     constructor(address payable factory_, address shrincsVerifier_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
         if (shrincsVerifier_ == address(0)) revert ZeroAddressVerifier();
+        // Profile drift guard: the wallet is compiled under SHRINCSParams (array sizes,
+        // digest layout) and its EIP-712 domain name embeds PROFILE_NAME — the pinned
+        // verifier must be the verifier for that exact profile.
+        if (
+            ISHRINCSProfileTag(shrincsVerifier_).PROFILE_TAG() !=
+            SHRINCSParams.PROFILE_ID
+        ) revert VerifierProfileMismatch();
         FACTORY = factory_;
         SHRINCS_VERIFIER = shrincsVerifier_;
         _disableInitializers();
@@ -102,15 +117,22 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /*                   INTERNAL OVERRIDES                   */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev EIP-712 domain name/version for the ERC-1271 ECDSA half. Distinct from the WOTS+
-    ///      wallet's "QuipWallet" so a classical owner signature cannot cross wallet families.
+    /// @dev EIP-712 domain name/version for the ERC-1271 ECDSA half. The name embeds the
+    ///      pinned verifier's profile identity (`SHRINCSParams.PROFILE_NAME`, whose keccak
+    ///      equals the verifier's `PROFILE_TAG` — enforced by the constructor guard), so a
+    ///      classical owner signature can cross neither wallet families (the WOTS+ wallet
+    ///      signs under "QuipWallet") nor SHRINCS profiles.
     function _domainNameAndVersion()
         internal
         pure
         override
         returns (string memory name, string memory version)
     {
-        name = "QuipShrincsWallet";
+        name = string.concat(
+            "QuipShrincsWallet/",
+            SHRINCSParams.PROFILE_NAME,
+            "/v1"
+        );
         version = "1";
     }
 
@@ -314,7 +336,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
-        $.quipFactory = FACTORY;
+        $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
         $.maxSignatures = decoded.maxSignatures;
@@ -378,7 +400,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ) public payable override(IShrincsWallet, UUPSUpgradeable) onlyOwner {
         // Vet implementation locally BEFORE any delegatecall.
         bytes32 implCodehash = newImplementation.codehash;
-        IQuipFactory factory = IQuipFactory(FACTORY);
+        IWalletFactory factory = IWalletFactory(FACTORY);
         if (factory.getVettedCodeIndex(implCodehash) == type(uint256).max) {
             revert ImplementationNotVetted();
         }
@@ -551,7 +573,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         $.statefulLeavesUsed = 0;
         _setOwner(newOwner);
         // Tail callback; factory pins the predicate `owner() == newOwner`.
-        IQuipFactory(FACTORY).updateWalletOwner(newOwner);
+        IWalletFactory(FACTORY).updateWalletOwner(newOwner);
         emit KeyRotated(prev, nextCommitment, $.keyVersion);
     }
 
@@ -870,17 +892,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @inheritdoc IShrincsWallet
     function version() external view returns (uint256) {
         address impl = _msgImplementation();
-        return IQuipFactory(FACTORY).getVettedCodeIndex(impl.codehash);
+        return IWalletFactory(FACTORY).getVettedCodeIndex(impl.codehash);
     }
 
     /// @inheritdoc IShrincsWallet
     function getExecuteFee() public view returns (uint256) {
-        return IQuipFactory(Storage.layout().quipFactory).executeFee();
+        return IWalletFactory(Storage.layout().walletFactory).executeFee();
     }
 
     /// @inheritdoc IShrincsWallet
-    function quipFactory() external view returns (address payable) {
-        return Storage.layout().quipFactory;
+    function walletFactory() external view returns (address payable) {
+        return Storage.layout().walletFactory;
     }
 
     /// @inheritdoc IShrincsWallet
@@ -1206,7 +1228,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint256 fee = getExecuteFee();
         if (fee > maxFee) revert ExecuteFeeExceedsCap(fee, maxFee);
         if (fee > 0) {
-            SafeTransferLib.safeTransferETH(Storage.layout().quipFactory, fee);
+            SafeTransferLib.safeTransferETH(Storage.layout().walletFactory, fee);
         }
     }
 

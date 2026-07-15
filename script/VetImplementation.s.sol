@@ -2,11 +2,11 @@
 pragma solidity ^0.8.33;
 
 import {Script, console} from "forge-std-1.14.0/Script.sol";
-import {QuipFactory} from "../contracts/QuipFactory.sol";
+import {WalletFactory} from "../contracts/WalletFactory.sol";
 
 /**
  * @title VetImplementation
- * @dev Vets an already-deployed WOTSPlusImplementation implementation on the QuipFactory.
+ * @dev Vets an already-deployed WOTSPlusImplementation implementation on the WalletFactory.
  *      The caller must be the factory owner.
  *
  * Usage:
@@ -14,7 +14,7 @@ import {QuipFactory} from "../contracts/QuipFactory.sol";
  *
  * Environment:
  *   PRIVATE_KEY - Factory owner private key
- *   FACTORY_ADDRESS - QuipFactory contract address
+ *   FACTORY_ADDRESS - WalletFactory contract address
  *   IMPLEMENTATION - Deployed WOTSPlusImplementation implementation address to vet
  */
 contract VetImplementation is Script {
@@ -26,7 +26,7 @@ contract VetImplementation is Script {
         require(factoryAddr.code.length > 0, "Factory not deployed");
         require(impl.code.length > 0, "Implementation not deployed");
 
-        QuipFactory factory = QuipFactory(payable(factoryAddr));
+        WalletFactory factory = WalletFactory(payable(factoryAddr));
 
         console.log("Factory:", factoryAddr);
         console.log("Factory owner:", factory.owner());

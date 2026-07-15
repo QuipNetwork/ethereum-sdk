@@ -68,7 +68,7 @@ gas:
 # Usage:
 #   make storage-layout-snapshot  # regenerate fixture (after intentional change)
 #   make storage-layout-check     # CI gate; fails on drift
-STORAGE_LAYOUT_FIXTURE := test/fixtures/WOTSPlusImplementation.storageLayout.json
+STORAGE_LAYOUT_FIXTURE := test/deprecated/fixtures/WOTSPlusImplementation.storageLayout.json
 STORAGE_LAYOUT_NORMALIZE := walk(if type == "object" and has("astId") then del(.astId) else . end) \
 	| walk(if type == "string" then gsub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage") else . end) \
 	| .types |= with_entries(.key |= sub("t_struct\\((?<n>[^)]+)\\)\\d+_storage"; "t_struct(\(.n))_storage"))
@@ -113,16 +113,16 @@ deploy-deployer:
 	forge script script/DeployDeployer.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-wotsplus:
-	forge script script/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	forge script script/deprecated/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-factory:
-	FOUNDRY_PROFILE=deploy forge script script/DeployQuipFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	FOUNDRY_PROFILE=deploy forge script script/DeployWalletFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-all:
 	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify
 
 deploy-impl:
-	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 vet-impl:
 	forge script script/VetImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
@@ -137,10 +137,10 @@ predict-addresses:
 #                           infra deploy, impl deploy, vetting)
 #   DEPLOYER_ADDRESS        bootstrapped Deployer contract address (e.g. the
 #                           canonical 0xA1A3990E… when bootstrapped via CreateX)
-#   FACTORY_OWNER           QuipFactory initial owner (deploy-all-* only)
-#   MAX_FEE                 QuipFactory creation fee in wei (deploy-all-* only)
+#   FACTORY_OWNER           WalletFactory initial owner (deploy-all-* only)
+#   MAX_FEE                 WalletFactory creation fee in wei (deploy-all-* only)
 #   PAYMASTER_OWNER         QuipPaymaster proxy initial owner (deploy-all-* only)
-#   FACTORY_ADDRESS         existing QuipFactory address (deploy-impl-*, vet-impl-*)
+#   FACTORY_ADDRESS         existing WalletFactory address (deploy-impl-*, vet-impl-*)
 #   IMPLEMENTATION          WOTSPlusImplementation impl address (vet-impl-* only)
 #   API_URL_BASE_SEPOLIA    https://… RPC endpoint
 #   ETHERSCAN_API_KEY       Etherscan v2 key (used for --verify)
@@ -161,7 +161,7 @@ deploy-all-base-sepolia:
 	  --broadcast --verify
 
 deploy-impl-base-sepolia:
-	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol \
+	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol \
 	  --rpc-url base_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
@@ -188,7 +188,7 @@ deploy-all-op-sepolia:
 	  --broadcast --verify
 
 deploy-impl-op-sepolia:
-	FOUNDRY_PROFILE=deploy forge script script/DeployImplementation.s.sol \
+	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol \
 	  --rpc-url op_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify

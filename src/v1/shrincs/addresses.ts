@@ -27,7 +27,7 @@ export { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "../addresses.js";
 /// addresses (see below).
 export interface ShrincsNetworkAddresses {
   EntryPoint: Address;
-  /// ShrincsWallet implementation singleton — the vetted code the QuipFactory
+  /// ShrincsWallet implementation singleton — the vetted code the WalletFactory
   /// clones per user (parallel to `WOTSPlusImplementation`).
   ShrincsWalletImplementation: Address;
   /// Canonical ShrincsPaymaster (UUPS proxy) — the sponsorship address operators

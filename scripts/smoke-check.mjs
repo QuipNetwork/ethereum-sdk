@@ -4,46 +4,64 @@
 //
 // What this catches that the in-repo tests don't:
 //   - Missing `dist/` files (the `files` glob in package.json drifts)
-//   - Broken subpath exports (`./v1/errors`, `./v1/events`, etc.)
+//   - Broken subpath exports (`./v1/errors`, `./deprecated/v1`, etc.)
 //   - ESM/CJS interop regressions
 //   - Type-import-only paths that vanish after tree-shaking
 //   - Re-exports referencing symbols that didn't make it into dist
 //   - Re-introduction of a root `.` export (the symmetric layout
 //     intentionally forbids one; a future change adding one back
 //     should fail this script)
+//   - Regression of the WOTS+ sunset split: WOTS+ classes must live at
+//     `./deprecated/v1`, NOT in the live `./v1` barrel; the old WOTS+
+//     subpaths must fail loudly.
 import assert from "node:assert/strict";
 
-console.log("  - v1 barrel...");
-const barrel = await import("@quip.network/ethereum-sdk/v1");
-assert(typeof barrel.QuipSigner === "function", "QuipSigner missing from v1 barrel");
+console.log("  - live v1 barrel (shared surface only)...");
+const live = await import("@quip.network/ethereum-sdk/v1");
+assert(Array.isArray(live.walletFactoryAbi), "walletFactoryAbi missing from v1 barrel");
+assert(typeof live.CANONICAL_ENTRYPOINT_V07 === "string", "CANONICAL_ENTRYPOINT_V07 missing");
+assert(typeof live.computeUserOpHash === "function", "computeUserOpHash missing (userOpCodec)");
+assert(typeof live.QuipError === "function", "QuipError missing from v1 barrel");
+assert(live.QuipSigner === undefined, "QuipSigner leaked into the live v1 barrel — WOTS+ surface must stay in ./deprecated/v1");
+assert(live.WotsCodec === undefined, "WotsCodec leaked into the live v1 barrel");
+
+console.log("  - live v1 subpath exports...");
+const liveErrors = await import("@quip.network/ethereum-sdk/v1/errors");
+assert(typeof liveErrors.InvalidSignatureError === "function", "InvalidSignatureError via subpath");
+const userOpCodec = await import("@quip.network/ethereum-sdk/v1/userOpCodec");
+assert(typeof userOpCodec.packAccountGasLimits === "function", "packAccountGasLimits via userOpCodec subpath");
+
+console.log("  - deprecated v1 barrel (WOTS+ surface)...");
+const barrel = await import("@quip.network/ethereum-sdk/deprecated/v1");
+assert(typeof barrel.QuipSigner === "function", "QuipSigner missing from deprecated/v1 barrel");
 assert(typeof barrel.WOTSPlusImplementationClient === "function", "WOTSPlusImplementationClient missing");
 assert(typeof barrel.QuipClient === "function", "QuipClient missing");
 assert(typeof barrel.QuipPaymasterClient === "function", "QuipPaymasterClient missing");
 assert(typeof barrel.WotsCodec === "object", "WotsCodec namespace missing");
 assert(typeof barrel.WotsCodec.encodeInit === "function", "WotsCodec.encodeInit missing");
 assert(barrel.KeyType.Transaction === 0, "KeyType enum wrong");
-assert(typeof barrel.CANONICAL_ENTRYPOINT_V07 === "string", "CANONICAL_ENTRYPOINT_V07 missing");
+assert(typeof barrel.CANONICAL_ENTRYPOINT_V07 === "string", "CANONICAL_ENTRYPOINT_V07 missing (shared re-export)");
 assert(typeof barrel.parseWalletReceipt === "function", "parseWalletReceipt missing");
-assert(typeof barrel.parseQuipCreated === "function", "parseQuipCreated missing");
+assert(typeof barrel.parseWalletDeployed === "function", "parseWalletDeployed missing");
 assert(typeof barrel.buildUserOp === "function", "buildUserOp missing");
+assert(typeof barrel.WotsCodec.computeUserOpHash === "function", "computeUserOpHash missing from WotsCodec re-export surface");
 
-console.log("  - v1 subpath exports...");
-const errors = await import("@quip.network/ethereum-sdk/v1/errors");
-assert(typeof errors.InvalidSignatureError === "function", "InvalidSignatureError via subpath");
-const events = await import("@quip.network/ethereum-sdk/v1/events");
-assert(typeof events.parseQuipCreated === "function", "parseQuipCreated via subpath");
-// `WotsCodec` is namespace-re-exported from the barrel; check it's the same
-// object referenced from a direct subpath import.
-const directCodec = await import("@quip.network/ethereum-sdk/v1").then((m) => m.WotsCodec);
+console.log("  - deprecated v1 subpath exports...");
+const errors = await import("@quip.network/ethereum-sdk/deprecated/v1/errors");
+assert(typeof errors.KeyAlreadyBurnedError === "function", "KeyAlreadyBurnedError via deprecated subpath");
+assert(typeof errors.InvalidSignatureError === "function", "shared error re-export via deprecated subpath");
+const events = await import("@quip.network/ethereum-sdk/deprecated/v1/events");
+assert(typeof events.parseWalletDeployed === "function", "parseWalletDeployed via subpath");
+const directCodec = await import("@quip.network/ethereum-sdk/deprecated/v1").then((m) => m.WotsCodec);
 assert(directCodec.WOTS_ELEMENTS_COUNT === 67, "codec constant wrong");
 
-console.log("  - v0 barrel...");
-const v0 = await import("@quip.network/ethereum-sdk/v0");
+console.log("  - deprecated v0 barrel...");
+const v0 = await import("@quip.network/ethereum-sdk/deprecated/v0");
 assert(typeof v0.QuipSigner === "function", "QuipSigner missing from v0 barrel");
 assert(typeof v0.QuipWalletClient === "function", "QuipWalletClient missing from v0 barrel");
 assert(typeof v0.QuipClient === "function", "QuipClient missing from v0 barrel");
 assert(typeof v0.QuipWallet__factory === "function", "QuipWallet__factory missing");
-assert(typeof v0.QuipFactory__factory === "function", "QuipFactory__factory missing");
+assert(typeof v0.QuipFactory__factory === "function", "QuipFactory__factory missing (v0 contract keeps its historical name)");
 assert(typeof v0.QuipWallet__factory.connect === "function", "QuipWallet__factory.connect missing");
 assert(v0.SUPPORTED_NETWORKS?.MAINNET === "mainnet", "v0 SUPPORTED_NETWORKS.MAINNET");
 assert(v0.CHAIN_IDS?.ETHEREUM_MAINNET === 1, "v0 CHAIN_IDS.ETHEREUM_MAINNET");
@@ -54,6 +72,15 @@ await assert.rejects(
   /ERR_PACKAGE_PATH_NOT_EXPORTED/,
   "root import should fail loudly after symmetric split"
 );
+
+console.log("  - retired WOTS+ subpaths rejected...");
+for (const retired of ["v1/signer", "v1/walletClient", "v1/wotsCodec", "v1/events", "v1/userOp", "v0"]) {
+  await assert.rejects(
+    () => import(`@quip.network/ethereum-sdk/${retired}`),
+    /ERR_PACKAGE_PATH_NOT_EXPORTED/,
+    `retired subpath ./${retired} should no longer resolve (moved to ./deprecated/*)`
+  );
+}
 
 console.log("  - signer + codec round-trip (no network)...");
 const { QuipSigner, WotsCodec, createInMemoryBurnSet } = barrel;

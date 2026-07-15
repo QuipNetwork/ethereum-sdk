@@ -3,14 +3,16 @@ pragma solidity ^0.8.33;
 
 import {console} from "forge-std-1.14.0/Script.sol";
 import {Deployer} from "../contracts/Deployer.sol";
-import {DeployWotsBase} from "./DeployWotsBase.sol";
+// Deliberate live->deprecated import: deploy-all still provisions the sunset WOTS+
+// family alongside SHRINCS (operational tooling, not runtime code).
+import {DeployWotsBase} from "./deprecated/DeployWotsBase.sol";
 import {DeployShrincsBase} from "./DeployShrincsBase.sol";
 import {IVettingFactory} from "./DeployHelpers.sol";
 
 /**
  * @title DeployAll
  * @dev Full Quip deployment through the existing Deployer (CREATE3): the shared
- *      WOTSPlus library + QuipFactory, BOTH wallet families (WOTSPlusImplementation
+ *      WOTSPlus library + WalletFactory, BOTH wallet families (WOTSPlusImplementation
  *      and ShrincsWallet, each vetted), and BOTH paymasters (QuipPaymaster and
  *      ShrincsPaymaster). Idempotent — re-runs skip already-deployed/vetted
  *      contracts.
@@ -22,8 +24,8 @@ import {IVettingFactory} from "./DeployHelpers.sol";
  *      instead make Shrincs the default `latest`, swap the two `*ImplAndVet` calls
  *      below (a deliberate policy change — WOTS+ `createWallet` would then revert).
  *
- *      MUST run with `FOUNDRY_PROFILE=deploy` (QuipFactory + WOTSPlusImplementation
- *      link the WOTSPlus library). PRIVATE_KEY must be the QuipFactory owner.
+ *      MUST run with `FOUNDRY_PROFILE=deploy` (WOTSPlusImplementation links the
+ *      WOTSPlus library). PRIVATE_KEY must be the WalletFactory owner.
  *
  * Usage:
  *   FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
@@ -53,7 +55,7 @@ contract DeployAll is DeployWotsBase, DeployShrincsBase {
         console.log("=== DeployAll (WOTS+ and Shrincs) ===");
         console.log("Deployer:", deployerAddr);
 
-        // 1. Shared infra: WOTSPlus library + QuipFactory.
+        // 1. Shared infra: WOTSPlus library + WalletFactory.
         console.log("-- shared infra --");
         _deployWotsPlusLib(deployer, pk);
         address factory = _deployFactory(deployer, pk, factoryOwner, maxFee);
@@ -72,7 +74,7 @@ contract DeployAll is DeployWotsBase, DeployShrincsBase {
         require(latest == wotsImpl, "latestWalletImpl is not WOTSPlusImplementation");
 
         console.log("=== Done ===");
-        console.log("QuipFactory:     ", factory);
+        console.log("WalletFactory:     ", factory);
         console.log("latestWalletImpl:", latest, "(WOTSPlusImplementation)");
     }
 }

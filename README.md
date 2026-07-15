@@ -14,13 +14,14 @@ Active Dev Branch : deploy/testnet
 
 | Path                   | Purpose                                                                                                     |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `contracts/`           | Solidity contracts: `QuipFactory`, `QuipWallet`, `QuipPaymaster`, `WOTSPlusCodec`, `Deployer`.              |
-| `script/`              | Foundry deployment scripts (`*.s.sol`).                                                                     |
+| `contracts/`           | Live Solidity contracts: `WalletFactory` (UUPS), the SHRINCS wallet family (`shrincs/`), `Deployer`.          |
+| `contracts/deprecated/` | Sunset WOTS+ wallet family (`wots/`) + `QuipPaymaster`. Fully functional, still tested; no new features.   |
+| `script/`              | Foundry deployment scripts (`*.s.sol`); sunset-family scripts under `script/deprecated/`.                   |
 | `scripts/`             | TypeScript operational scripts: `release.ts`, `fundDeployer.cts`, `drainDeployer.cts`, `balance.cts`, etc.  |
-| `src/v1/`              | Current TypeScript SDK. Public entry: `src/v1/index.ts`.                                                    |
-| `src/v0/`              | Legacy SDK kept for migration.                                                                              |
-| `test/`                | Foundry tests (Solidity).                                                                                   |
-| `src/v1/tests/`        | Jest tests (TypeScript).                                                                                    |
+| `src/v1/`              | Current TypeScript SDK: shared surface (`src/v1/index.ts`) + SHRINCS clients (`src/v1/shrincs/`).           |
+| `src/deprecated/`      | Sunset SDKs: the WOTS+ half of v1 (`v1/`) and the legacy v0 SDK (`v0/`).                                    |
+| `test/`                | Foundry tests (Solidity); sunset-family suites under `test/deprecated/`.                                    |
+| `src/v1/tests/`        | Jest tests (TypeScript). SHRINCS: `src/v1/shrincs/tests/`; WOTS+: `src/deprecated/v1/tests/`.               |
 | `deploy/midl_regtest/` | Hardhat deploy scripts for MIDL Bitcoin L2 only.                                                            |
 | `Makefile`             | The canonical interface for build / test / deploy.             |
 
@@ -122,7 +123,7 @@ anvil                      # local EVM node on :8545
 
 ### Storage layout drift gate
 
-The wallet uses ERC-7201 namespaced storage (`quip.storage.wallet.wotsplus`), which `forge inspect storageLayout` cannot see directly. A test-only probe contract surfaces the layout, and the canonical fixture is `test/fixtures/QuipWallet.storageLayout.json`:
+The WOTS+ wallet uses ERC-7201 namespaced storage (`quip.storage.wallet.wotsplus`), which `forge inspect storageLayout` cannot see directly. A test-only probe contract surfaces the layout, and the canonical fixture is `test/deprecated/fixtures/WOTSPlusImplementation.storageLayout.json`:
 
 ```bash
 make storage-layout-check       # CI gate — fails if layout drifted
@@ -156,7 +157,7 @@ bun run smoke:tarball      # verify the tarball before publishing
 npm publish
 ```
 
-`scripts/release.ts` reads Foundry artifacts from `out/`, computes CREATE3 addresses, links the WOTSPlus library into `QuipFactory` / `QuipWallet` bytecode, and snapshots each release under `deployments/bytecode/<Contract>.sol/` with the compiler settings recorded verbatim from each artifact's metadata. MIDL deploys consume those snapshots via `lib/deploy.cts::loadReleaseBytecode` so the bytecode actually deployed on MIDL matches what was compiled by Foundry for the EVM chains.
+`scripts/release.ts` reads Foundry artifacts from `out/`, computes CREATE3 addresses, links the WOTSPlus library into the `QuipWallet` (WOTS+ implementation) bytecode — the factory links no libraries since the WOTS+ decoupling — and snapshots each release under `deployments/bytecode/<Contract>.sol/` with the compiler settings recorded verbatim from each artifact's metadata. MIDL deploys consume those snapshots via `lib/deploy.cts::loadReleaseBytecode` so the bytecode actually deployed on MIDL matches what was compiled by Foundry for the EVM chains.
 
 ---
 
@@ -164,7 +165,7 @@ npm publish
 
 EVM deployments go through Foundry scripts in `script/`, driven by the Makefile. Each step writes a broadcast log to `broadcast/<Script>.s.sol/<chainId>/` for replay/inspection.
 
-> ⚠️ **Steps 2 and 4 are governance-sensitive.** `deploy-all-<chain>` sets the initial owners of the on-chain QuipFactory and QuipPaymaster on the target chain; `vet-impl-<chain>` requires the caller to already be the factory owner. 
+> ⚠️ **Steps 2 and 4 are governance-sensitive.** `deploy-all-<chain>` sets the initial owners of the on-chain WalletFactory and QuipPaymaster on the target chain; `vet-impl-<chain>` requires the caller to already be the factory owner. 
 > Double-check `FACTORY_OWNER` / `PAYMASTER_OWNER` are addresses you actually want as the long-term operators. Step 1 (bootstrap) and step 3 (impl deploy) don't require coordination — anyone with funds and `PRIVATE_KEY` can run them.
 
 ### Pipeline (per chain)
@@ -188,15 +189,15 @@ make deploy-deployer-base-sepolia
 
 Env: `PRIVATE_KEY` (any funded wallet on the target chain), `ETHERSCAN_API_KEY` (for `--verify`).
 
-**2. Deploy the shared infra — WOTSPlus library, QuipFactory (UUPS impl + ERC-1967 proxy), QuipPaymaster (impl + proxy).** ⚠️ **Governance-sensitive. Contact Rick first.** `FACTORY_OWNER` becomes the only address that can vet implementations, collect creation fees, and **upgrade the factory implementation** on this chain going forward; `PAYMASTER_OWNER` becomes the only address that can configure the Paymaster. These cannot be changed except by their current owners. The factory PROXY address is the permanent identity every wallet bakes in — the impl behind it is replaceable via `upgradeToAndCall`.
+**2. Deploy the shared infra — WOTSPlus library, WalletFactory (UUPS impl + ERC-1967 proxy), QuipPaymaster (impl + proxy).** ⚠️ **Governance-sensitive. Contact Rick first.** `FACTORY_OWNER` becomes the only address that can vet implementations, collect creation fees, and **upgrade the factory implementation** on this chain going forward; `PAYMASTER_OWNER` becomes the only address that can configure the Paymaster. These cannot be changed except by their current owners. The factory PROXY address is the permanent identity every wallet bakes in — the impl behind it is replaceable via `upgradeToAndCall`.
 
 ```bash
 make deploy-all-base-sepolia
 ```
 
-Env: `PRIVATE_KEY`, `DEPLOYER_ADDRESS` (canonical Deployer from step 1, e.g. `0xA1A3990E…` for the current `default` deployment), `FACTORY_OWNER`, `MAX_FEE` (QuipFactory creation fee in wei — `0` is valid), `PAYMASTER_OWNER`, `ETHERSCAN_API_KEY`.
+Env: `PRIVATE_KEY`, `DEPLOYER_ADDRESS` (canonical Deployer from step 1, e.g. `0xA1A3990E…` for the current `default` deployment), `FACTORY_OWNER`, `MAX_FEE` (WalletFactory creation fee in wei — `0` is valid), `PAYMASTER_OWNER`, `ETHERSCAN_API_KEY`.
 
-**3. Deploy a new QuipWallet implementation.** Can be run by anyone; deploying does not yet make the implementation usable for new wallets — vetting does (step 4).
+**3. Deploy a new QuipWallet (WOTS+ — sunset family) implementation.** Can be run by anyone; deploying does not yet make the implementation usable for new wallets — vetting does (step 4). The script lives under `script/deprecated/`; SHRINCS implementations deploy via their own flow.
 
 ```bash
 make deploy-impl-base-sepolia
@@ -253,13 +254,13 @@ forge verify-contract \
   0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e \
   @quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus
 
-# QuipFactory (constructor: address initialOwner, uint256 maxFee)
+# WalletFactory (constructor: address initialOwner, uint256 maxFee)
 forge verify-contract \
   --rpc-url base_sepolia \
   --chain base_sepolia \
   --constructor-args $(cast abi-encode "constructor(address,uint256)" "$FACTORY_OWNER" "$MAX_FEE") \
   0xE567d318819c067c26fC1E44D04beD2b4FE93BCC \
-  contracts/QuipFactory.sol:QuipFactory
+  contracts/WalletFactory.sol:WalletFactory
 ```
 
 The above addresses are the deterministic CREATE3 addresses currently registered in `src/v1/addresses.json` (the SDK's "default" entry, shared across the chains in `SHARED_DEPLOYMENT_CHAIN_IDS`). Pre-V2 CREATE2 mainnet addresses are listed separately in [DEPLOYMENTS.md](DEPLOYMENTS.md).

@@ -5,7 +5,7 @@ import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {Deployer} from "../contracts/Deployer.sol";
 
-/// Minimal QuipFactory surface used by the deploy orchestrators — kept as a local
+/// Minimal WalletFactory surface used by the deploy orchestrators — kept as a local
 /// interface so this generic helper carries no WOTSPlus-linked dependency.
 interface IVettingFactory {
     function vetImplementation(address impl) external;

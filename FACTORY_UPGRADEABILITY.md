@@ -1,4 +1,10 @@
-# QuipFactory Upgradeability — Scope
+# WalletFactory Upgradeability — Scope
+
+> Naming note: this work was designed and landed under the contract's original name,
+> `QuipFactory`; the contract was renamed `WalletFactory` in July 2026 (with
+> `IQuipWallet`→`IWallet` and event `QuipCreated`→`WalletDeployed`) and this record
+> was updated to the current names throughout. The ERC-7201 namespace remains
+> `quip.storage.factory` — a wire identifier, deliberately not renamed.
 
 Effort 2 of the factory rework (effort 1, WOTS+ decoupling, landed on `feat/factory-rework`).
 Status: **IMPLEMENTED** (July 2026, `feat/factory-rework`). This document is the design record;
@@ -10,7 +16,7 @@ the enforced rules live in [INVARIANTS.md §22](INVARIANTS.md), the trust delta 
 The factory address is permanently load-bearing in a way no other contract in the system is:
 
 1. **Every wallet bakes it in forever.** Both families set `FACTORY` as a constructor immutable
-   and store `quipFactory` in guarded storage at init. A wallet can never re-point: its
+   and store the factory pointer (`walletFactory` / WOTS+ `quipFactory`) in guarded storage at init. A wallet can never re-point: its
    `transferOwnership` tail MUST call back into that exact address (`updateWalletOwner`), its
    upgrade authorization reads that address's vetted set (`getVettedCodeIndex` /
    `deprecatedImpls`), and its execute fee is read from it.
@@ -32,7 +38,7 @@ immediately after the decoupling.
 
 1. **Solady UUPS behind an ERC-1967 proxy** — same stack as `ShrincsPaymaster`
    (`Ownable` + `UUPSUpgradeable` + `Initializable` from solady). No OZ mix-in.
-2. **ERC-7201 namespaced storage**: new `contracts/storage/QuipFactoryStorage.sol` mirroring
+2. **ERC-7201 namespaced storage**: new `contracts/storage/WalletFactoryStorage.sol` mirroring
    `ShrincsPaymasterStorage` (library + `Layout` struct + `@custom:storage-location
    erc7201:quip.storage.factory`). All current flat declarations move in: `creationFee`,
    `executeFee`, `wallets`, `vaultIdOf`, `walletOwner`, `_vaultIds`, `_vettedCode`,
@@ -88,9 +94,9 @@ wallet; two-step handover; upgrade events; (future option) timelock.
 
 ## Staged plan (house workflow: report + permission gate after each stage)
 
-1. **Solidity implementation** — `QuipFactoryStorage.sol`; convert `QuipFactory` to
+1. **Solidity implementation** — `WalletFactoryStorage.sol`; convert `WalletFactory` to
    solady UUPS + Ownable + Initializable; `initialize`; `_authorizeUpgrade` (onlyOwner);
-   keep every external signature byte-identical (interface `IQuipFactory` unchanged apart
+   keep every external signature byte-identical (interface `IWalletFactory` unchanged apart
    from added init/upgrade surface); deploy-script updates (`Deployer` + ERC-1967 proxy).
 2. **Solidity tests** — behaviors: initialize-once, upgrade auth (owner/non-owner), storage
    continuity across a mock V2 upgrade, CREATE3 address stability across upgrade (decision 7),
@@ -109,9 +115,9 @@ wallet; two-step handover; upgrade events; (future option) timelock.
 - **Handover semantics:** solady `Ownable` as-is — `transferOwnership` is IMMEDIATE (the OZ
   Ownable2Step pending/accept flow is gone) and the two-step handover (candidate
   `requestOwnershipHandover` → owner `completeOwnershipHandover`) stays ENABLED. Pinned by
-  `test/QuipFactory/behaviors/transferOwnership.t.sol`.
+  `test/WalletFactory/behaviors/transferOwnership.t.sol`.
 - **Testnet address break:** acknowledged in DEPLOYMENTS.md — the V1.1 factory on Base Sepolia
-  (`0xd175…`) is retired in place; V2 salts (`QUIP:QuipFactory:{Impl,Proxy}:V2`) give the UUPS
+  (`0xd175…`) is retired in place; V2 salts (`QUIP:WalletFactory:{Impl,Proxy}:V2`) give the UUPS
   factory a fresh address, REQUIRED because CREATE3 ignores initcode and the old salt would
   silently resolve to the old deployment.
 
@@ -120,15 +126,15 @@ wallet; two-step handover; upgrade events; (future option) timelock.
 - ✎ The proxy is OZ `ERC1967Proxy` with constructor initData (matching the QuipPaymaster deploy
   pattern), not a bare proxy + separate initialize tx, in the deploy scripts; test fixtures use
   `LibClone.deployERC1967` + explicit `initialize` (equivalent shape).
-- ✎ `IQuipFactory.renounceOwnership()` declaration was REMOVED from the interface (solady's is
+- ✎ `IWalletFactory.renounceOwnership()` declaration was REMOVED from the interface (solady's is
   payable; the wallets' interfaces set the precedent of declaring only the `RenounceDisabled`
   error). The override still reverts unconditionally.
 - ✎ SDK: `FactoryState.pendingOwner` removed from `QuipClient.getFactoryState` — no on-chain
   counterpart under solady (handover is keyed by candidate address). Only consumer-visible SDK
   break.
 - ✎ Bonus from effort 1: the factory links NO libraries anymore (WOTSPlus dependency deleted),
-  so `DeployQuipFactory.s.sol` no longer needs `FOUNDRY_PROFILE=deploy`.
-- Verification landed: `test/QuipFactory/behaviors/upgradeToAndCall.t.sol` (10 tests: auth,
+  so `DeployWalletFactory.s.sol` no longer needs `FOUNDRY_PROFILE=deploy`.
+- Verification landed: `test/WalletFactory/behaviors/upgradeToAndCall.t.sol` (10 tests: auth,
   onlyProxy, init-locking, storage continuity, per-impl `MAX_FEE`, CREATE3 stability) and SDK
   `src/v1/tests/integration.factory-upgrade.test.ts` (live mid-flight upgrade: registry,
   counterfactual addresses, event parsing, pre-upgrade wallet still executes).

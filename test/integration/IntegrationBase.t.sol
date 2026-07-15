@@ -5,11 +5,11 @@ import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {Deployer} from "../../contracts/Deployer.sol";
-import {QuipFactory} from "../../contracts/QuipFactory.sol";
-import {WOTSPlusImplementation} from "../../contracts/wots/WOTSPlusImplementation.sol";
-import {QuipPaymaster} from "../../contracts/QuipPaymaster.sol";
+import {WalletFactory} from "../../contracts/WalletFactory.sol";
+import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
+import {QuipPaymaster} from "../../contracts/deprecated/QuipPaymaster.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusCodec as Codec} from "../../contracts/wots/WOTSPlusCodec.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {
     IEntryPoint,
     IEntryPointStake,
@@ -34,7 +34,7 @@ contract IntegrationBase is Test {
     address payable public BENEFICIARY = payable(makeAddr("beneficiary"));
 
     Deployer public deployer;
-    QuipFactory public factory;
+    WalletFactory public factory;
     WOTSPlusImplementation public walletImpl;
     WOTSPlusImplementation public wallet;
     QuipPaymaster public paymaster;
@@ -133,10 +133,10 @@ contract IntegrationBase is Test {
     function _deployWalletStack() internal {
         deployer = new Deployer();
 
-        QuipFactory factoryImpl = new QuipFactory(0.1 ether);
+        WalletFactory factoryImpl = new WalletFactory(0.1 ether);
         bytes memory proxyInitcode = LibClone.initCodeERC1967(address(factoryImpl));
-        address factoryAddr = deployer.deploy(proxyInitcode, keccak256("QuipFactory-integration"));
-        factory = QuipFactory(payable(factoryAddr));
+        address factoryAddr = deployer.deploy(proxyInitcode, keccak256("WalletFactory-integration"));
+        factory = WalletFactory(payable(factoryAddr));
         factory.initialize(payable(ADMIN));
 
         walletImpl = new WOTSPlusImplementation(payable(address(factory)));

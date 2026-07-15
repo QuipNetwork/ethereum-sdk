@@ -29,7 +29,7 @@ import {
 } from "viem";
 import { randomBytes } from "@noble/ciphers/webcrypto";
 
-import { quipFactoryAbi } from "../abi/QuipFactory.js";
+import { walletFactoryAbi } from "../abi/WalletFactory.js";
 import { getNetworkAddresses } from "../addresses.js";
 import {
   NoVaultFoundError,
@@ -76,7 +76,7 @@ export interface ShrincsFactoryClientParams {
   walletClient: WalletClient;
   account: Address;
   chainId: number;
-  /// QuipFactory address. Defaults to the v1 per-chain registry entry.
+  /// WalletFactory address. Defaults to the v1 per-chain registry entry.
   factoryAddress?: Address;
   /// ShrincsWallet implementation singleton. Defaults to the Shrincs registry
   /// entry; the factory deploys a proxy against whichever vetted index this
@@ -97,7 +97,7 @@ export interface CreateShrincsWalletParams {
   erc1271: Erc1271KeySpec;
 }
 
-/// Deploys `ShrincsWallet` proxies via the shared `QuipFactory` (its
+/// Deploys `ShrincsWallet` proxies via the shared `WalletFactory` (its
 /// `deploySpecificWalletProxy` is impl-generic — the Shrincs implementation is
 /// chosen from the factory's vetted-codehash set) and resolves existing ones.
 /// Mirrors v1 `QuipClient.createWallet`, but builds the Shrincs init payload and
@@ -117,7 +117,7 @@ export class ShrincsFactoryClient {
     this.account = params.account;
     this.chainId = params.chainId;
     this.factoryAddress =
-      params.factoryAddress ?? getNetworkAddresses(params.chainId).QuipFactory;
+      params.factoryAddress ?? getNetworkAddresses(params.chainId).WalletFactory;
     this.walletImplementation =
       params.walletImplementation ??
       getShrincsAddresses(params.chainId).ShrincsWalletImplementation;
@@ -142,7 +142,7 @@ export class ShrincsFactoryClient {
     const existing = (await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "wallets",
         args: [vaultId],
       })
@@ -176,14 +176,14 @@ export class ShrincsFactoryClient {
     const creationFee = (await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "creationFee",
       })
     )) as bigint;
 
     const contractCall: ContractCallParams = {
       address: this.factoryAddress,
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       functionName: "deploySpecificWalletProxy",
       args: [vaultId, index, this.account, initPayload],
       value: creationFee,
@@ -208,9 +208,9 @@ export class ShrincsFactoryClient {
     const receipt: TransactionReceipt =
       await this.publicClient.waitForTransactionReceipt({ hash });
     const logs = parseEventLogs({
-      abi: quipFactoryAbi,
+      abi: walletFactoryAbi,
       logs: receipt.logs,
-      eventName: "QuipCreated",
+      eventName: "WalletDeployed",
     });
     const walletAddress = logs[0].args.quip as Address;
 
@@ -308,7 +308,7 @@ export class ShrincsFactoryClient {
     return withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "wallets",
         args: [vaultId],
       })
@@ -328,7 +328,7 @@ export class ShrincsFactoryClient {
     const index = (await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
-        abi: quipFactoryAbi,
+        abi: walletFactoryAbi,
         functionName: "getVettedCodeIndex",
         args: [keccak256(code)],
       })

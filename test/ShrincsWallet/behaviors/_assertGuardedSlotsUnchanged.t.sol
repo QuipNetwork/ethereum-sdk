@@ -12,7 +12,7 @@ contract ShrincsWallet__assertGuardedSlotsUnchanged is ShrincsWalletTest {
     function _slots() internal pure returns (bytes32[8] memory s) {
         s[0] = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff74873927; // owner (Solady)
         s[1] = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc; // ERC-1967 impl
-        s[2] = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00; // quipFactory
+        s[2] = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00; // walletFactory
         s[3] = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01; // main commitment
         s[4] = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc02; // erc1271 commitment
         s[5] = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03; // keyVersion

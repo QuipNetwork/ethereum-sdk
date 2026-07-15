@@ -19,14 +19,14 @@ const ROOT = join(__dirname, "..");
 const OUT_DIR = join(ROOT, "out");
 const ABI_DIR = join(ROOT, "src", "v1", "abi");
 
-// camelCase helper: "QuipFactory" -> "quipFactoryAbi"
+// camelCase helper: "WalletFactory" -> "walletFactoryAbi"
 function toExportName(name) {
   return name.charAt(0).toLowerCase() + name.slice(1) + "Abi";
 }
 
 const CONTRACTS = [
   { name: "Deployer", path: "Deployer.sol/Deployer.json" },
-  { name: "QuipFactory", path: "QuipFactory.sol/QuipFactory.json" },
+  { name: "WalletFactory", path: "WalletFactory.sol/WalletFactory.json" },
   {
     name: "WOTSPlusImplementation",
     path: "WOTSPlusImplementation.sol/WOTSPlusImplementation.json",
@@ -122,7 +122,8 @@ let bytecode = walletArtifact.bytecode.object;
 // Replace library placeholder (__$<hash>$__) with actual WOTSPlus address
 bytecode = bytecode.replace(/__\$[0-9a-fA-F]{34}\$__/g, wotsAddress);
 
-const bytecodeOut = join(ROOT, "src", "v1", "bytecode.json");
+// WOTS-only artifact — lives with the deprecated WOTS+ SDK tree.
+const bytecodeOut = join(ROOT, "src", "deprecated", "v1", "bytecode.json");
 writeFileSync(
   bytecodeOut,
   JSON.stringify({ wotsPlusImplementationCreationCode: bytecode }, null, 2) + "\n"

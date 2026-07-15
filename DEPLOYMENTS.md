@@ -25,15 +25,25 @@ with no env vars and no RPC.
 > would break the cross-chain pin without a corresponding redeploy
 > everywhere. Only the downstream contracts roll forward.
 
-> ⚠️ **Factory V2 (UUPS) supersedes the address above.** The QuipFactory
-> became UUPS-upgradeable (impl + ERC-1967 proxy, like the paymaster) on
-> fresh `V2` salts — the V1.1 salt is retired because CREATE3 ignores
-> initcode, so reusing it would resolve to the old non-upgradeable factory
-> on chains where it exists. The V2 proxy address (the permanent factory
-> identity — wallets bake it in, CREATE3 wallet addressing derives from
-> it) materializes on the next deploy; run `make predict-addresses` for
-> the canonical value. The `0xd175…` V1.1 factory above remains on Base
-> Sepolia as a retired artifact.
+> ⚠️ **The WOTS+ family is sunset** (July 2026). `WOTSPlus`, `QuipWallet`, and
+> `QuipPaymaster` above are the deprecated WOTS+ family — the deployed artifacts
+> remain live and fully functional, but the source now lives under
+> `contracts/deprecated/` (deploy scripts under `script/deprecated/`; SDK surface
+> under the `./deprecated/*` npm subpaths). SHRINCS (`ShrincsWallet` +
+> `ShrincsPaymaster`) is the go-forward family.
+
+> ⚠️ **Factory V2 (UUPS) supersedes the address above — and was renamed.**
+> The factory became UUPS-upgradeable (impl + ERC-1967 proxy, like the
+> paymaster) on fresh `V2` salts, and in July 2026 the contract was renamed
+> `QuipFactory` → **`WalletFactory`** (the V2 salts carry the new name; they
+> had never been broadcast, so no deployed address was orphaned). The V1.1
+> salt is retired because CREATE3 ignores initcode, so reusing it would
+> resolve to the old non-upgradeable factory on chains where it exists. The
+> V2 proxy address (the permanent factory identity — wallets bake it in,
+> CREATE3 wallet addressing derives from it) materializes on the next
+> deploy; run `make predict-addresses` for the canonical value. The
+> `0xd175…` V1.1 factory above remains on Base Sepolia as a retired
+> artifact under its historical name.
 
 ### Salts
 
@@ -41,8 +51,8 @@ with no env vars and no RPC.
 |---|---|
 | Deployer (via CreateX, unchanged) | `QUIP:Deployer:V1` |
 | WOTSPlus | `QUIP:WOTSPlus:V1.1` |
-| QuipFactory impl (UUPS) | `QUIP:QuipFactory:Impl:V2` |
-| QuipFactory proxy (canonical) | `QUIP:QuipFactory:Proxy:V2` |
+| WalletFactory impl (UUPS) | `QUIP:WalletFactory:Impl:V2` |
+| WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V2` |
 | QuipFactory (retired, non-upgradeable) | `QUIP:QuipFactory:V1.1` |
 | QuipWallet impl | `QUIP:QuipWallet:V1.1` |
 | QuipPaymaster impl | `QUIP:QuipPaymaster:Impl:V1.1` |
@@ -70,9 +80,10 @@ to deploy via solady CREATE3.
 
 ### Library linking
 
-`QuipWallet` calls into the `WOTSPlus` library at runtime — its compiled
+`QuipWallet` (the sunset WOTS+ implementation, `contracts/deprecated/wots/`)
+calls into the `WOTSPlus` library at runtime — its compiled
 bytecode contains a placeholder that must be replaced with WOTSPlus's
-address before deploy. (`QuipFactory` no longer links WOTSPlus: the
+address before deploy. (`WalletFactory` no longer links WOTSPlus: the
 WOTS+ decoupling removed its last dependency, so factory bytecode is
 link-free.) Foundry handles the wallet linking via the
 `[profile.deploy]` profile in `foundry.toml`:
@@ -99,11 +110,12 @@ automatically (harmless for the factory-only script).
                          # Skip if Deployer already at canonical address.
 
 3. Deploy infra          make deploy-all-<chain>
-                         # WOTSPlus + QuipFactory + QuipPaymaster (impl + proxy).
+                         # WOTSPlus + WalletFactory + QuipPaymaster (impl + proxy).
                          # Requires FACTORY_OWNER, MAX_FEE, PAYMASTER_OWNER in .env.
 
 4. Deploy wallet impl    make deploy-impl-<chain>
-                         # Per-release flow, runs under FOUNDRY_PROFILE=deploy.
+                         # WOTS+ (sunset family) flow, script under script/deprecated/.
+                         # Runs under FOUNDRY_PROFILE=deploy.
 
 5. Vet wallet impl       IMPLEMENTATION=0x... make vet-impl-<chain>
                          # Factory owner whitelists the new impl.
@@ -143,7 +155,7 @@ IMPLEMENTATION=0x...                           # filled in after deploy-impl
 
 ## v0.1.x — historical (CREATE2 via custom DeployDeployer at nonce=1)
 
-`@quip.network/ethereum-sdk@0.1.7` and earlier (now vendored at `/v0`).
+`@quip.network/ethereum-sdk@0.1.7` and earlier (now vendored at `src/deprecated/v0`, npm subpath `./deprecated/v0`).
 Deployer was bootstrapped via plain CREATE at nonce 1 from a fresh EOA;
 downstream contracts used `keccak256("QUIP")` as the salt with no
 per-contract versioning.

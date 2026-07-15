@@ -13,12 +13,12 @@ import {DeployHelpers} from "./DeployHelpers.sol";
 /**
  * @title DeployShrincsBase
  * @dev Shrincs family deploy steps (shared by `DeployAllShrincs` and `DeployAll`):
- *      the ShrincsWallet impl (+ vetting on the shared QuipFactory), and the
+ *      the ShrincsWallet impl (+ vetting on the shared WalletFactory), and the
  *      ShrincsPaymaster (impl + proxy, initialized with its verifier key).
  *
  *      The Shrincs contracts have NO library link references, so an inheritor that
  *      deploys ONLY Shrincs needs no `FOUNDRY_PROFILE=deploy`. The shared
- *      QuipFactory must already exist (it is WOTS+-family infra). Salts match
+ *      WalletFactory must already exist (it is WOTS+-family infra). Salts match
  *      `script/PredictAddresses.s.sol` (V1.1 — bumped for the external-verifier
  *      implementations; CREATE3 reuses an address per salt, so new impl code
  *      needs a new salt on chains that already hold the V1.0 deploys).
@@ -92,7 +92,7 @@ abstract contract DeployShrincsBase is DeployHelpers {
     /// `deployLatestWalletProxy` default, vet a WOTS+ impl AFTER this (the Shrincs
     /// SDK always uses `deploySpecificWalletProxy`, so it is order-independent).
     function _deployShrincsImplAndVet(Deployer deployer, uint256 pk, address factory) internal returns (address impl) {
-        _requireExists(factory, "QuipFactory");
+        _requireExists(factory, "WalletFactory");
         _requireExpectedVerifierScheme();
         bytes memory code =
             abi.encodePacked(type(ShrincsWallet).creationCode, abi.encode(factory, SHRINCS_EXTERNAL_VERIFIER));
