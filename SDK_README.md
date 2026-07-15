@@ -271,11 +271,14 @@ const userOp = client.buildExecuteUserOp({
   maxFee: state.executeFee,               // the signed fee ceiling (see above)
   nonce, maxFeePerGas, maxPriorityFeePerGas, // ERC-4337 envelope
 });
-const { userOp: signed, userOpHash, leaf } = await client.signExecuteUserOp({ userOp, entryPoint });
+const { userOp: signed, userOpHash, leaf } = await client.signExecuteUserOp({
+  userOp, entryPoint,
+  owner, // the wallet owner's LocalAccount — every userOp is hybrid-signed
+});
 // submit `signed` to your bundler; the SDK does not own bundler submission
 ```
 
-`signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`) and binds `userOpHash` — nothing else. Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `markLeavesUsed`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
+`signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`), binds `userOpHash`, and collects the owner's ECDSA co-signature. **Every userOp is hybrid**: `userOp.signature` is `abi.encode(PublicKey, StatefulSignature, bytes ecdsaSig)`, where the third field is the owner's signature over the wallet's `quipUserOpHashEcdsaTarget(userOpHash)` EIP-712 digest — the 4337 route requires BOTH the SHRINCS key and the classical owner, exactly like the `onlyOwner` direct path (INVARIANTS §24). The co-signature domain is deliberately distinct from the ERC-1271 `quipSignedHashEcdsaTarget`, so a dApp-harvested message signature can never authorize a userOp. The paymaster's sponsorship blob is unaffected (plain `(PublicKey, StatefulSignature)` pair — its admin authority is owner-fiat). Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `markLeavesUsed`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
 
 ### Sponsorship paymaster (`ShrincsPaymasterClient`)
 

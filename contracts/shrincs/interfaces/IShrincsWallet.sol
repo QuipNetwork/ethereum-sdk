@@ -202,7 +202,8 @@ interface IShrincsWallet is IWallet {
         BadSignatureLength,
         StaleStatefulLeaf,
         StatefulBudgetExhausted,
-        InvalidSignature
+        InvalidSignature,
+        InvalidEcdsaSignature
     }
 
     /// @notice Emitted on each `validationData == 1` exit of `_validateSignature`.
@@ -367,6 +368,17 @@ interface IShrincsWallet is IWallet {
     /// @notice The EIP-712 typed-data target the ERC-1271 ECDSA half must sign.
     function quipSignedHashEcdsaTarget(
         bytes32 hash
+    ) external view returns (bytes32);
+
+    /// @notice The EIP-712 typed-data target the owner's userOp ECDSA co-signature must sign.
+    /// @dev Every `userOp.signature` carries `(PublicKey, Signature, bytes ecdsaSig)`;
+    ///      `_validateSignature` requires `ecdsaSig` to recover `owner()` over this target
+    ///      BEFORE the SHRINCS verify — the two-key AND-gate holds on the EntryPoint route
+    ///      exactly as `onlyOwner` + SHRINCS holds on the direct route. The typehash domain is
+    ///      deliberately distinct from `quipSignedHashEcdsaTarget`'s so an ERC-1271 message
+    ///      signature can never double as a userOp co-signature.
+    function quipUserOpHashEcdsaTarget(
+        bytes32 userOpHash
     ) external view returns (bytes32);
 
     /// @notice The classical owner (ERC-1271 ECDSA gate + factory registry).

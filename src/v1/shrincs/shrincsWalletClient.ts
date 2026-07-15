@@ -77,6 +77,7 @@ import { type RotationTarget, type ShrincsPublicKey } from "./types.js";
 import {
   type PackedUserOperation,
   buildUserOp,
+  computeUserOpHash,
   signWalletUserOp,
 } from "./userOp.js";
 
@@ -337,6 +338,21 @@ export class ShrincsWalletClient {
         abi: shrincsWalletAbi,
         functionName: "quipSignedHashEcdsaTarget",
         args: [hash],
+      })
+    ) as Promise<Hex>;
+  }
+
+  /// The EIP-712 typed-data digest the owner's userOp ECDSA co-signature must
+  /// sign (deliberately a distinct domain from `quipSignedHashEcdsaTarget`, so
+  /// an ERC-1271 message signature can never double as a userOp co-signature).
+  /// Read from chain so it always matches the deployed domain.
+  async quipUserOpHashEcdsaTarget(userOpHash: Hex): Promise<Hex> {
+    return withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: shrincsWalletAbi,
+        functionName: "quipUserOpHashEcdsaTarget",
+        args: [userOpHash],
       })
     ) as Promise<Hex>;
   }
@@ -903,8 +919,12 @@ export class ShrincsWalletClient {
 
   /// Sign a `PackedUserOperation` for this wallet: read state, recover the key,
   /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + live
-  /// `actionNonce` into `ACTION_ERC4337_EXECUTE`, and return the userOp with
-  /// its `signature` field filled (plus the `userOpHash` and `leaf` used).
+  /// `actionNonce` into `ACTION_ERC4337_EXECUTE`, collect the owner's ECDSA
+  /// co-signature over `quipUserOpHashEcdsaTarget(userOpHash)` (every userOp is
+  /// hybrid — validation requires BOTH the owner key and the SHRINCS key), and
+  /// return the userOp with its `signature` field filled (plus the `userOpHash`
+  /// and `leaf` used). The `owner` must be a local signer matching the wallet's
+  /// on-chain `owner()`.
   ///
   /// FEE CAP: no fee enters the digest — the `maxFee` ceiling the build methods
   /// put into `callData` is covered by `userOpHash`, and validation reads no
@@ -917,11 +937,36 @@ export class ShrincsWalletClient {
   /// consumed, so ops must land in signing order — signing a second op before
   /// the first lands binds a stale nonce and it will be rejected (AA24).
   async signExecuteUserOp(
-    params: { userOp: PackedUserOperation; entryPoint: Address },
+    params: {
+      userOp: PackedUserOperation;
+      entryPoint: Address;
+      owner: LocalAccount;
+    },
     opts: ShrincsTxKeyOptions = {}
   ): Promise<{ userOp: PackedUserOperation; userOpHash: Hex; leaf: number }> {
     const { keypair, state, leaf } = await this.prepareStatefulOp(opts);
-    const { signature, userOpHash } = signWalletUserOp({
+
+    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+      throw new ZeroAddressOwnerError();
+    }
+    const sign = params.owner.sign;
+    if (!sign) {
+      throw new Error(
+        "owner account cannot sign a raw hash; pass a LocalAccount with a `sign` method"
+      );
+    }
+
+    // The co-signature target depends on the userOpHash, computed exactly as
+    // `signWalletUserOp` will recompute it below.
+    const userOpHash = computeUserOpHash(
+      params.userOp,
+      params.entryPoint,
+      BigInt(this.chainId)
+    );
+    const ecdsaTarget = await this.quipUserOpHashEcdsaTarget(userOpHash);
+    const ownerEcdsaSig = await sign({ hash: ecdsaTarget });
+
+    const { signature } = signWalletUserOp({
       keypair,
       userOp: params.userOp,
       entryPoint: params.entryPoint,
@@ -930,6 +975,7 @@ export class ShrincsWalletClient {
       keyVersion: state.keyVersion,
       leaf,
       actionNonce: state.actionNonce,
+      ownerEcdsaSig,
     });
     return { userOp: { ...params.userOp, signature }, userOpHash, leaf };
   }

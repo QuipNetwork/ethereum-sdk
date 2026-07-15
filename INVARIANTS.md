@@ -408,6 +408,22 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 **Violation consequence:** An ERC-1271 key signing far past 2^20 messages erodes its forgery resistance until approvals become forgeable — silently, with no on-chain symptom. A future rotation path that reuses the stateless root while consuming stateless signatures would silently break the main key's ≤1-use construction.
 
+---
+
+## 24. Shrincs Hybrid UserOp Validation (Owner ECDSA Co-Signature)
+
+**Every ERC-4337 userOp requires BOTH the owner's ECDSA co-signature and a stateful SHRINCS signature — the two-key AND-gate holds on the EntryPoint route exactly as `onlyOwner` + SHRINCS holds on the direct route. A stolen SHRINCS key alone, or a stolen owner key alone, cannot pass validation.**
+
+- `userOp.signature` is the ABI encoding of `(PublicKey, Signature, bytes ecdsaSig)`; `_validateSignature` requires `ecdsaSig` to recover `owner()` over `quipUserOpHashEcdsaTarget(userOpHash)` BEFORE the SHRINCS verify (cheap check first). An ECDSA failure rejects with reason `InvalidEcdsaSignature`, consuming nothing — leaf and action nonce untouched.
+- **The two ECDSA surfaces never share a domain.** The userOp target nests `userOpHash` under `QuipUserOpHash(bytes32 userOpHash)`; the ERC-1271 target nests under `QuipSignedHash(bytes32 hash)`. This is load-bearing: with a shared typehash, an owner's 1271 message signature over an attacker-chosen hash H (harvestable by any dApp requesting a "message signature") would double as the userOp co-signature for a userOp with `userOpHash == H`. Pinned by `test_validateSignature_reason_invalidEcdsa_erc1271DomainSignature`.
+- The co-signature binds the exact `userOpHash` (EntryPoint, chainid, nonce, full calldata), so it authorizes one specific op — no blanket delegation to the SHRINCS signer.
+- ERC-7562 clean: `ecrecover` is an allowed precompile; the owner slot is the wallet's own storage. The first op with `initCode` co-signs like any other (the EntryPoint runs `initialize` — which sets `owner()` — before `validateUserOp`).
+- The paymaster's sponsorship blob is exempt by design: it keeps the plain `(PublicKey, Signature)` pair (`decodeSponsorshipSignature`) — its admin authority is owner-fiat (20), and the sponsorship key co-signing with an operator ECDSA would add nothing (the paymaster's owner already gates rotation, not sponsorship).
+
+**Contracts:** ShrincsWallet, ShrincsWalletCodec
+
+**Violation consequence:** Dropping the co-signature (or verifying it over a shared domain) reduces the EntryPoint route to single-key PQ authorization — a stolen SHRINCS key could drain the wallet through any bundler while the direct path still demands the classical owner.
+
 These invariants form a security web — they depend on each other:
 
 1. **Key Rotation (1) + Reuse Prevention (2):** Rotation must happen AND the new key must differ. Either failing alone breaks WOTS+ security.

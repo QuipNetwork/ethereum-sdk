@@ -114,12 +114,40 @@ library ShrincsWalletCodec {
         }
     }
 
-    /// @dev Decodes the ERC-4337 `userOp.signature` field, which by convention carries *both*
-    ///      SHRINCS structs: it is the ABI encoding of `(PublicKey publicKey,
-    ///      SHRINCS.Signature signature)`. Note the name collision — the outer `signature` is
-    ///      ERC-4337's `userOp` field; the inner `signature` is the SHRINCS stateful signature
-    ///      that travels inside it alongside the public key.
+    /// @dev Decodes the ERC-4337 `userOp.signature` field, which by convention carries the
+    ///      SHRINCS structs plus the owner's ECDSA co-signature: it is the ABI encoding of
+    ///      `(PublicKey publicKey, SHRINCS.Signature signature, bytes ecdsaSig)`. Note the name
+    ///      collision — the outer `signature` is ERC-4337's `userOp` field; the inner
+    ///      `signature` is the SHRINCS stateful signature that travels inside it.
     function decodeUserOpSignature(
+        bytes calldata sig
+    )
+        internal
+        pure
+        returns (
+            SHRINCS.PublicKey calldata publicKey,
+            SHRINCS.Signature calldata signature,
+            bytes calldata ecdsaSig
+        )
+    {
+        // Head is three offset words (three dynamic tail types).
+        if (sig.length < 0x60) revert MalformedPayload(0x60, sig.length);
+        assembly {
+            let o := sig.offset
+            publicKey := add(o, calldataload(o))
+            signature := add(o, calldataload(add(o, 0x20)))
+            let eo := add(o, calldataload(add(o, 0x40)))
+            ecdsaSig.offset := add(eo, 0x20)
+            ecdsaSig.length := calldataload(eo)
+        }
+    }
+
+    /// @dev Decodes the paymaster's sponsorship blob (the tail of `paymasterAndData`), the ABI
+    ///      encoding of `(PublicKey publicKey, SHRINCS.Signature signature)`. The sponsorship
+    ///      key is the paymaster's global stateful key — there is no ECDSA co-signer on this
+    ///      blob (paymaster admin authority is owner-fiat), so it keeps the plain pair layout
+    ///      the wallet's `decodeUserOpSignature` had before the co-signature was added.
+    function decodeSponsorshipSignature(
         bytes calldata sig
     )
         internal
@@ -129,6 +157,7 @@ library ShrincsWalletCodec {
             SHRINCS.Signature calldata signature
         )
     {
+        // Head is two offset words (two dynamic tail types).
         if (sig.length < 0x40) revert MalformedPayload(0x40, sig.length);
         assembly {
             let o := sig.offset

@@ -343,8 +343,38 @@ export function encodeInitPayload(params: {
   );
 }
 
-/// ERC-4337 `userOp.signature` = `abi.encode(PublicKey, StatefulSignature)`.
+/// ERC-4337 `userOp.signature` = `abi.encode(PublicKey, StatefulSignature,
+/// bytes ecdsaSig)` — the SHRINCS structs plus the owner's ECDSA co-signature
+/// over the wallet's `quipUserOpHashEcdsaTarget(userOpHash)` (the hybrid gate:
+/// `_validateSignature` requires BOTH keys).
 export function encodeUserOpSignature(
+  publicKey: ShrincsPublicKey,
+  signature: StatefulSignature,
+  ecdsaSig: Hex
+): Hex {
+  return encodeAbiParameters(
+    [PUBLIC_KEY_TUPLE, STATEFUL_SIGNATURE_TUPLE, { name: "ecdsaSig", type: "bytes" }],
+    [publicKeyToAbi(publicKey), signature, ecdsaSig]
+  );
+}
+
+export function decodeUserOpSignature(blob: Hex): {
+  publicKey: ShrincsPublicKey;
+  signature: StatefulSignature;
+  ecdsaSig: Hex;
+} {
+  const [pk, signature, ecdsaSig] = decodeAbiParameters(
+    [PUBLIC_KEY_TUPLE, STATEFUL_SIGNATURE_TUPLE, { name: "ecdsaSig", type: "bytes" }],
+    blob
+  ) as unknown as [Parameters<typeof publicKeyFromAbi>[0], StatefulSignature, Hex];
+  return { publicKey: publicKeyFromAbi(pk), signature, ecdsaSig };
+}
+
+/// Paymaster sponsorship blob (the tail of `paymasterAndData`) =
+/// `abi.encode(PublicKey, StatefulSignature)`. The global sponsorship key has
+/// no ECDSA co-signer (paymaster admin authority is owner-fiat), so this keeps
+/// the plain pair layout — mirrors `Codec.decodeSponsorshipSignature`.
+export function encodeSponsorshipSignature(
   publicKey: ShrincsPublicKey,
   signature: StatefulSignature
 ): Hex {
@@ -354,7 +384,7 @@ export function encodeUserOpSignature(
   );
 }
 
-export function decodeUserOpSignature(blob: Hex): {
+export function decodeSponsorshipSignature(blob: Hex): {
   publicKey: ShrincsPublicKey;
   signature: StatefulSignature;
 } {

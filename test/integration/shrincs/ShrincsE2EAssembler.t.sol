@@ -45,6 +45,10 @@ abstract contract ShrincsE2EAssembler is Test {
     uint128 internal constant PM_POSTOP_GAS = 1_000_000;
     uint256 internal constant PRE_VERIFICATION_GAS = 100_000;
 
+    // The wallet's classical owner: co-signs every userOp (hybrid gate) and submits direct calls.
+    address internal WALLET_OWNER;
+    uint256 internal WALLET_OWNER_PK;
+
     // Keys: wallet main key, plus two paymaster verifier keys (the second for rotation cases).
     SHRINCS.SigningKey internal walletKey;
     SHRINCS.PublicKey internal walletPk;
@@ -57,6 +61,7 @@ abstract contract ShrincsE2EAssembler is Test {
     bytes32 internal verifierCommitment2;
 
     function setUp() public virtual {
+        (WALLET_OWNER, WALLET_OWNER_PK) = makeAddrAndKey("walletOwner");
         bool ok;
         (walletKey, walletPk, ok) = SHRINCSTestSigner.keygen("shrincs-e2e-wallet-key", MAX_SIG);
         assertTrue(ok, "wallet keygen");
@@ -152,7 +157,9 @@ abstract contract ShrincsE2EAssembler is Test {
         //    inside it via callData — the digest itself carries no fee word).
         SHRINCS.Signature memory walletSig =
             _signWalletErc4337(userOpHash, p.walletLeaf, p.walletKeyVersion, p.walletNonce);
-        op.signature = abi.encode(walletPk, walletSig);
+        // 5. The classical owner co-signs the same hash under the wallet's dedicated userOp
+        //    EIP-712 domain — the hybrid blob is (pk, sig, ecdsaSig).
+        op.signature = abi.encode(walletPk, walletSig, _ownerCoSign(userOpHash));
     }
 
     /// @dev Convenience: default sponsored op (see `_defaultOpParams`; wallet nonce 0 is only
@@ -248,6 +255,38 @@ abstract contract ShrincsE2EAssembler is Test {
     /// @dev Mirrors `ShrincsWallet._shrincsDomainSeparator()`.
     function _walletDomainSeparator() internal view returns (bytes32) {
         return keccak256(abi.encodePacked(WALLET_DOMAIN_TAG, block.chainid, uint256(uint160(WALLET))));
+    }
+
+    /// @dev Mirrors `ShrincsWallet.quipUserOpHashEcdsaTarget` (solady EIP-712: standard domain
+    ///      fields, name embeds the SHRINCS profile). Cross-checked against the live getter in
+    ///      `encodingCrossCheck.t.sol`.
+    function _userOpEcdsaTargetMirror(bytes32 userOpHash) internal view returns (bytes32) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256(
+                    bytes(string.concat("QuipShrincsWallet/", SHRINCSParams.PROFILE_NAME, "/v1"))
+                ),
+                keccak256("1"),
+                block.chainid,
+                WALLET
+            )
+        );
+        return keccak256(
+            abi.encodePacked(
+                hex"1901",
+                domainSeparator,
+                keccak256(abi.encode(keccak256("QuipUserOpHash(bytes32 userOpHash)"), userOpHash))
+            )
+        );
+    }
+
+    /// @dev The owner's userOp co-signature over the mirrored typed-data target.
+    function _ownerCoSign(bytes32 userOpHash) internal view returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(WALLET_OWNER_PK, _userOpEcdsaTargetMirror(userOpHash));
+        return abi.encodePacked(r, s, v);
     }
 
     /// @dev Mirrors `ShrincsPaymaster._domainSeparator()`.

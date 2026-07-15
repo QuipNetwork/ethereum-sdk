@@ -4,7 +4,7 @@
 
 import { type Address, type Hex, sliceHex, toHex } from "viem";
 
-import { decodeUserOpSignature, buildActionContext, domainSeparator } from "../shrincsCodec.js";
+import { decodeSponsorshipSignature, buildActionContext, domainSeparator } from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
   type PackedUserOperation,
@@ -96,9 +96,10 @@ describe("shrincs paymaster userOp", () => {
     // Prefix is the exact signed header.
     expect(sliceHex(paymasterAndData, 0, 64)).toBe(header64());
 
-    // Blob decodes to the verifier key + a leaf-shaped stateful signature.
+    // Blob decodes to the verifier key + a leaf-shaped stateful signature (the
+    // sponsorship blob keeps the plain pair layout — no ECDSA co-signer).
     const blob = sliceHex(paymasterAndData, 64);
-    const { publicKey, signature } = decodeUserOpSignature(blob);
+    const { publicKey, signature } = decodeSponsorshipSignature(blob);
     expect(publicKey).toEqual(verifier.publicKey);
     expect(signature.authPath.length).toBe(leaf);
 

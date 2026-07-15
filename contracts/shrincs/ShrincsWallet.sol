@@ -82,6 +82,15 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     bytes32 private constant _QUIP_SIGNED_HASH_TYPEHASH =
         keccak256("QuipSignedHash(bytes32 hash)");
 
+    /// @dev EIP-712 type hash nesting the ERC-4337 `userOpHash` before ECDSA recovery — the
+    ///      owner's userOp co-signature target. DELIBERATELY distinct from
+    ///      `_QUIP_SIGNED_HASH_TYPEHASH`: if the two ECDSA surfaces shared a domain, an owner's
+    ///      ERC-1271 message signature over an attacker-chosen hash H (harvestable by a dApp
+    ///      requesting a "message signature") would double as the userOp co-signature for any
+    ///      userOp with `userOpHash == H`.
+    bytes32 private constant _QUIP_USER_OP_HASH_TYPEHASH =
+        keccak256("QuipUserOpHash(bytes32 userOpHash)");
+
     /// @dev SHRINCS storage base slots, duplicated from `ShrincsWalletStorage` as numeric
     ///      literals because inline assembly cannot reference cross-library constants or `base+N`.
     ///      Kept in lock-step with `Layout` field order (pinned by the storage-layout fixture).
@@ -142,27 +151,30 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      `upgradeToAndCall`.
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    /// @dev ERC-4337 stateful validation with MonotonicIndex leaf advance. State is advanced
-    ///      during validation (the revealed stateful leaf is consumed regardless of whether the
-    ///      execution phase later succeeds). Never reverts on signature failure — returns 1 so
-    ///      the EntryPoint's refund accounting stays clean.
+    /// @dev ERC-4337 hybrid validation: owner-ECDSA co-signature AND stateful SHRINCS
+    ///      signature, with MonotonicIndex leaf advance. State is advanced during validation
+    ///      (the revealed stateful leaf is consumed regardless of whether the execution phase
+    ///      later succeeds). Never reverts on signature failure — returns 1 so the EntryPoint's
+    ///      refund accounting stays clean.
     ///
-    ///      By convention `userOp.signature` carries *both* SHRINCS structs — it is the ABI
-    ///      encoding of `(PublicKey publicKey, StatefulSignature signature)` — so the decode
-    ///      below hands back a public key alongside the signature.
+    ///      By convention `userOp.signature` is the ABI encoding of `(PublicKey publicKey,
+    ///      StatefulSignature signature, bytes ecdsaSig)` — the SHRINCS structs plus the
+    ///      owner's ECDSA co-signature over `quipUserOpHashEcdsaTarget(userOpHash)`. The ECDSA
+    ///      check runs FIRST (cheap check before the expensive SHRINCS verify), and its failure
+    ///      consumes nothing — leaf and nonce are untouched.
     function _validateSignature(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
     ) internal override returns (uint256) {
         // two reasons for check:
-        // 1. call would fail on decode (checks first 2 x bytes32 = 64 bytes)
+        // 1. call would fail on decode (checks first 3 x bytes32 = 96 bytes)
         //    if length check didn't exist
         // 2. solidity encodes offset as one word per dynamic type at the `head` of
-        //    the encoded data; two bytes32 words means two dynamic types at the `tail`
-        //    of the encded data - namely SHRINCS.PublicKey and SHRINCS.Signature
-        //    so this validation is an indication that two dyanmic types exist and the two bytes32
-        //    words contain their offset
-        if (userOp.signature.length < 0x40) {
+        //    the encoded data; three bytes32 words means three dynamic types at the `tail`
+        //    of the encoded data - namely SHRINCS.PublicKey, SHRINCS.Signature, and the
+        //    ECDSA co-signature bytes - so this validation is an indication that three
+        //    dynamic types exist and the three bytes32 words contain their offsets
+        if (userOp.signature.length < 0x60) {
             emit UserOpValidationRejected(
                 UserOpValidationFailure.BadSignatureLength
             );
@@ -170,8 +182,23 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         }
         (
             SHRINCS.PublicKey calldata pk,
-            SHRINCS.Signature calldata sig
+            SHRINCS.Signature calldata sig,
+            bytes calldata ecdsaSig
         ) = Codec.decodeUserOpSignature(userOp.signature);
+
+        // Hybrid gate half 1: the classical owner co-signs the exact userOpHash under the
+        // dedicated userOp EIP-712 domain (see _QUIP_USER_OP_HASH_TYPEHASH). ERC-7562 clean:
+        // ecrecover is an allowed precompile and the owner slot is the wallet's own storage.
+        address recovered = ECDSA.tryRecoverCalldata(
+            quipUserOpHashEcdsaTarget(userOpHash),
+            ecdsaSig
+        );
+        if (recovered == address(0) || recovered != owner()) {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.InvalidEcdsaSignature
+            );
+            return 1;
+        }
 
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
@@ -869,6 +896,16 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         return
             _hashTypedData(
                 keccak256(abi.encode(_QUIP_SIGNED_HASH_TYPEHASH, hash))
+            );
+    }
+
+    /// @inheritdoc IShrincsWallet
+    function quipUserOpHashEcdsaTarget(
+        bytes32 userOpHash
+    ) public view returns (bytes32) {
+        return
+            _hashTypedData(
+                keccak256(abi.encode(_QUIP_USER_OP_HASH_TYPEHASH, userOpHash))
             );
     }
 

@@ -29,6 +29,7 @@ import {
   ACTION_ERC4337_EXECUTE,
   buildActionContext,
   domainSeparator,
+  encodeSponsorshipSignature,
   encodeUserOpSignature,
   erc4337PayloadHash,
 } from "./shrincsCodec.js";
@@ -42,7 +43,7 @@ import {
 import { type ShrincsKeyPair } from "./shrincsSigner.js";
 import { type ShrincsPublicKey, type StatefulSignature } from "./types.js";
 
-export { type PackedUserOperation } from "../userOpCodec.js";
+export { type PackedUserOperation, computeUserOpHash } from "../userOpCodec.js";
 
 /// Paymaster sponsorship domain/action (mirror `ShrincsPaymaster.sol`).
 export const PAYMASTER_DOMAIN_TAG = keccak256(toBytes("quip-shrincs-paymaster-v1"));
@@ -103,6 +104,14 @@ export interface SignWalletUserOpParams {
   /// so ops must land in signing order — signing a second op before the first
   /// lands binds a stale nonce and it will be rejected (AA24).
   actionNonce: bigint;
+  /// The owner's ECDSA co-signature over the wallet's
+  /// `quipUserOpHashEcdsaTarget(userOpHash)` EIP-712 digest, where `userOpHash`
+  /// is `computeUserOpHash(userOp, entryPoint, chainId)`. Every userOp is
+  /// hybrid: `_validateSignature` requires this to recover `owner()` BEFORE the
+  /// SHRINCS verify. `ShrincsWalletClient.signExecuteUserOp` produces it via
+  /// the on-chain target getter; callers using this function directly must sign
+  /// the same digest.
+  ownerEcdsaSig: Hex;
 }
 
 export interface SignedWalletUserOp {
@@ -113,10 +122,11 @@ export interface SignedWalletUserOp {
 
 /// Sign a wallet ERC-4337 userOp: bind the EntryPoint `userOpHash` into the
 /// canonical `ACTION_ERC4337_EXECUTE` action, sign at `leaf`, and ABI pack
-/// `(PublicKey, StatefulSignature)` into the signature field. No fee is bound
-/// here: the signer's `maxFee` ceiling is a calldata parameter of the capped
-/// `execute`/`executeBatch` variants, covered by `userOpHash` via `callData`
-/// (ERC-7562: validation reads no fee).
+/// `(PublicKey, StatefulSignature, bytes ecdsaSig)` into the signature field —
+/// the SHRINCS half plus the owner's co-signature (hybrid gate). No fee is
+/// bound here: the signer's `maxFee` ceiling is a calldata parameter of the
+/// capped `execute`/`executeBatch` variants, covered by `userOpHash` via
+/// `callData` (ERC-7562: validation reads no fee).
 export function signWalletUserOp(
   params: SignWalletUserOpParams
 ): SignedWalletUserOp {
@@ -130,7 +140,11 @@ export function signWalletUserOp(
   });
   const signature = params.keypair.signStatefulActionAt(ctx, params.leaf);
   return {
-    signature: encodeUserOpSignature(params.keypair.publicKey, signature),
+    signature: encodeUserOpSignature(
+      params.keypair.publicKey,
+      signature,
+      params.ownerEcdsaSig
+    ),
     userOpHash,
   };
 }
@@ -184,7 +198,12 @@ export function packPaymasterAndData(params: {
   publicKey: ShrincsPublicKey;
   signature: StatefulSignature;
 }): Hex {
-  return concat([params.header64, encodeUserOpSignature(params.publicKey, params.signature)]);
+  // The sponsorship blob keeps the plain (PublicKey, StatefulSignature) pair —
+  // no ECDSA co-signer on the paymaster's global key.
+  return concat([
+    params.header64,
+    encodeSponsorshipSignature(params.publicKey, params.signature),
+  ]);
 }
 
 export interface SignPaymasterUserOpParams {

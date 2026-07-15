@@ -336,6 +336,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const signed = await walletClient.signExecuteUserOp({
       userOp,
       entryPoint: CANONICAL_ENTRYPOINT_V07,
+      owner: ownerAccount,
     });
 
     const handleHash = await stack.walletClient.writeContract({
@@ -567,6 +568,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const signed = await client.signExecuteUserOp({
       userOp,
       entryPoint: CANONICAL_ENTRYPOINT_V07,
+      owner: ownerAccount,
     });
     expect(signed.leaf).toBe(1);
 
@@ -786,6 +788,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const signed = await walletClient.signExecuteUserOp({
       userOp,
       entryPoint: CANONICAL_ENTRYPOINT_V07,
+      owner: ownerAccount,
     });
 
     const handleHash = await stack.walletClient.writeContract({

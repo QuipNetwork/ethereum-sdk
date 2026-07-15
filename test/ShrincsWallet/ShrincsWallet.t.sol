@@ -263,6 +263,24 @@ contract ShrincsWalletTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
+    /// @dev The owner's userOp co-signature: OWNER signs the wallet's dedicated userOp
+    ///      typed-data target (distinct domain from the ERC-1271 one).
+    function _ownerUserOpEcdsa(bytes32 userOpHash) internal view returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(OWNER_PK, wallet.quipUserOpHashEcdsaTarget(userOpHash));
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev The canonical hybrid `userOp.signature` blob: SHRINCS structs plus the owner's
+    ///      co-signature over `userOpHash`.
+    function _userOpBlob(SHRINCS.Signature memory sig, bytes32 userOpHash)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return abi.encode(_mainPk(), sig, _ownerUserOpEcdsa(userOpHash));
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    PAYLOAD BUILDERS                    */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
