@@ -126,21 +126,33 @@ exports it to child processes, so `make …` needs no `source`. Values must be
 **unquoted**. Raw `forge`/`cast` commands don't get this — run `source .env`
 first for those.
 
-| Variable | Required for | What it is |
-| --- | --- | --- |
-| `PRIVATE_KEY` | every broadcast | `0x`-prefixed key of the operations EOA. Pays gas; must be the factory owner for any step that vets (`deploy-all`, `vet-impl`). |
-| `DEPLOYER_ADDRESS` | `deploy-all`, impl/vet steps | Deployer **contract** (not the EOA). Canonical: `0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1`. Public, not a secret. |
-| `FACTORY_OWNER` | `deploy-all` | Initial `WalletFactory` owner — controls vetting, fees, UUPS upgrades. |
-| `MAX_FEE` | `deploy-all` | Max wallet-creation fee in wei (e.g. `1000000000000000` = 0.001 ETH). Non-zero. |
-| `PAYMASTER_OWNER` | `deploy-all` | Initial `QuipPaymaster` proxy owner (sunset family). |
-| `SHRINCS_PAYMASTER_OWNER` | `deploy-all`, shrincs-only | Initial `ShrincsPaymaster` proxy owner. |
-| `SHRINCS_VERIFIER_COMMITMENT` | `deploy-all`, shrincs-only | `bytes32` verifier key-bundle commitment. Non-zero (initialize reverts otherwise). |
-| `SHRINCS_VERIFIER_MAX_SIGNATURES` | `deploy-all`, shrincs-only | Verifier stateful signature budget (`uint32`, non-zero). |
-| `SHRINCS_VERIFIER_HASH_SUITE` | optional | Defaults to the keccak-256 suite — the only one the on-chain library verifies; leave unset. (The `DeployAll` header mentions `SHRINCS_VERIFIER_PARAM_SET_ID`; the code actually reads this variable.) |
-| `API_URL_<CHAIN>` | per chain | RPC URL, e.g. `API_URL_BASE_SEPOLIA`. Wired to the `[rpc_endpoints]` aliases in `foundry.toml`. |
-| `ETHERSCAN_API_KEY` | `--verify` | Etherscan v2 multichain key. |
-| `FACTORY_ADDRESS` | impl/vet steps, shrincs-only | Existing `WalletFactory` **proxy** address. |
-| `IMPLEMENTATION` | `vet-impl` | Freshly deployed wallet impl address to vet. |
+#### Required environment variables
+
+Put these in a project-local `.env` (Makefile auto-loads it). All
+addresses below are examples — substitute your actual operator wallets.
+
+```bash
+# Chain RPC + Etherscan
+API_URL_BASE_SEPOLIA=https://base-sepolia.g.alchemy.com/v2/<key>
+ETHERSCAN_API_KEY=<your-etherscan-v2-key>      # works across all chains
+
+# Wallet — one key for every step. The Makefile auto-loads .env, so
+# `make deploy-all-base-sepolia` etc. pick this up without any further
+# arguments. Forge derives the EOA address internally; no separate
+# "deployer EOA" var is required.
+PRIVATE_KEY=0x...
+
+# Deploy-time owners / params
+DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1
+FACTORY_OWNER=0x...                            # controls vetImplementation
+MAX_FEE=1000000000000000                       # wallet creation fee (wei)
+PAYMASTER_OWNER=0x...                          # controls paymaster
+
+# Per-release (only for deploy-impl-* / vet-impl-*)
+FACTORY_ADDRESS=0xd175378EC511e56BbffcC802375C6ad7d892c083
+IMPLEMENTATION=0x...                           # filled in after deploy-impl
+```
+
 
 ### Deployment workflow
 
@@ -172,33 +184,6 @@ per-chain targets.
 > [hashsigs-solidity](https://gitlab.com/quip.network/hashsigs-solidity), **not this
 > repo** — on a fresh chain it must exist before any SHRINCS deploy (the scripts
 > fail closed if it doesn't).
-
-### Required environment variables
-
-Put these in a project-local `.env` (Makefile auto-loads it). All
-addresses below are examples — substitute your actual operator wallets.
-
-```bash
-# Chain RPC + Etherscan
-API_URL_BASE_SEPOLIA=https://base-sepolia.g.alchemy.com/v2/<key>
-ETHERSCAN_API_KEY=<your-etherscan-v2-key>      # works across all chains
-
-# Wallet — one key for every step. The Makefile auto-loads .env, so
-# `make deploy-all-base-sepolia` etc. pick this up without any further
-# arguments. Forge derives the EOA address internally; no separate
-# "deployer EOA" var is required.
-PRIVATE_KEY=0x...
-
-# Deploy-time owners / params
-DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1
-FACTORY_OWNER=0x...                            # controls vetImplementation
-MAX_FEE=1000000000000000                       # wallet creation fee (wei)
-PAYMASTER_OWNER=0x...                          # controls paymaster
-
-# Per-release (only for deploy-impl-* / vet-impl-*)
-FACTORY_ADDRESS=0xd175378EC511e56BbffcC802375C6ad7d892c083
-IMPLEMENTATION=0x...                           # filled in after deploy-impl
-```
 
 ---
 
