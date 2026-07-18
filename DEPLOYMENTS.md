@@ -45,7 +45,10 @@ with no env vars and no RPC.
 > `0xd175…` V1.1 factory above remains on Base Sepolia as a retired
 > artifact under its historical name.
 
-### Salts
+### Salt 
+
+Preimages follow `QUIP:<Contract>[:Impl|:Proxy]:V<version>` 
+
 
 | Contract | Salt preimage |
 |---|---|
@@ -57,6 +60,18 @@ with no env vars and no RPC.
 | QuipWallet impl | `QUIP:QuipWallet:V1.1` |
 | QuipPaymaster impl | `QUIP:QuipPaymaster:Impl:V1.1` |
 | QuipPaymaster proxy | `QUIP:QuipPaymaster:Proxy:V1.1` |
+
+### Version Convention 
+
+```
+v1.0.0-alpha       (unstable, incomplete)
+v1.0.0-alpha.1
+v1.0.0-beta        (feature-complete, testing)
+v1.0.0-beta.2
+v1.0.0-rc.1        (release candidate, final testing)
+v1.0.0-rc.2
+v1.0.0             (release)
+```
 
 ### Deployer bootstrap
 
@@ -99,6 +114,34 @@ Every script that touches `QuipWallet` bytecode runs under
 `FOUNDRY_PROFILE=deploy`. The Makefile per-chain targets set this
 automatically (harmless for the factory-only script).
 
+### Environment
+
+```sh
+cp .env.example .env   # .env is gitignored — never commit keys
+```
+
+`.env.example` lists every variable below. `PRIVATE_KEY` must be `0x`-prefixed
+(forge scripts read it with `vm.envUint`). The Makefile auto-loads `.env` and
+exports it to child processes, so `make …` needs no `source`. Values must be
+**unquoted**. Raw `forge`/`cast` commands don't get this — run `source .env`
+first for those.
+
+| Variable | Required for | What it is |
+| --- | --- | --- |
+| `PRIVATE_KEY` | every broadcast | `0x`-prefixed key of the operations EOA. Pays gas; must be the factory owner for any step that vets (`deploy-all`, `vet-impl`). |
+| `DEPLOYER_ADDRESS` | `deploy-all`, impl/vet steps | Deployer **contract** (not the EOA). Canonical: `0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1`. Public, not a secret. |
+| `FACTORY_OWNER` | `deploy-all` | Initial `WalletFactory` owner — controls vetting, fees, UUPS upgrades. |
+| `MAX_FEE` | `deploy-all` | Max wallet-creation fee in wei (e.g. `1000000000000000` = 0.001 ETH). Non-zero. |
+| `PAYMASTER_OWNER` | `deploy-all` | Initial `QuipPaymaster` proxy owner (sunset family). |
+| `SHRINCS_PAYMASTER_OWNER` | `deploy-all`, shrincs-only | Initial `ShrincsPaymaster` proxy owner. |
+| `SHRINCS_VERIFIER_COMMITMENT` | `deploy-all`, shrincs-only | `bytes32` verifier key-bundle commitment. Non-zero (initialize reverts otherwise). |
+| `SHRINCS_VERIFIER_MAX_SIGNATURES` | `deploy-all`, shrincs-only | Verifier stateful signature budget (`uint32`, non-zero). |
+| `SHRINCS_VERIFIER_HASH_SUITE` | optional | Defaults to the keccak-256 suite — the only one the on-chain library verifies; leave unset. (The `DeployAll` header mentions `SHRINCS_VERIFIER_PARAM_SET_ID`; the code actually reads this variable.) |
+| `API_URL_<CHAIN>` | per chain | RPC URL, e.g. `API_URL_BASE_SEPOLIA`. Wired to the `[rpc_endpoints]` aliases in `foundry.toml`. |
+| `ETHERSCAN_API_KEY` | `--verify` | Etherscan v2 multichain key. |
+| `FACTORY_ADDRESS` | impl/vet steps, shrincs-only | Existing `WalletFactory` **proxy** address. |
+| `IMPLEMENTATION` | `vet-impl` | Freshly deployed wallet impl address to vet. |
+
 ### Deployment workflow
 
 ```
@@ -123,6 +166,12 @@ automatically (harmless for the factory-only script).
 
 `<chain>` is currently `base-sepolia`; see Makefile for the full list of
 per-chain targets.
+
+> ⚠️ The SHRINCS impls hard-pin the external `SHRINCS256sKeccak` ERC-7913 verifier at
+> `0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A`. That contract is deployed by
+> [hashsigs-solidity](https://gitlab.com/quip.network/hashsigs-solidity), **not this
+> repo** — on a fresh chain it must exist before any SHRINCS deploy (the scripts
+> fail closed if it doesn't).
 
 ### Required environment variables
 
