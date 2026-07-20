@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { type Address, type Hex, sliceHex, toHex } from "viem";
+import { type Address, type Hex, keccak256, sliceHex, toHex } from "viem";
 
 import { decodeSponsorshipSignature, buildActionContext, domainSeparator } from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
@@ -19,7 +19,8 @@ const PAYMASTER = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const SENDER = "0x00000000000000000000000000000000000A11cE" as Address;
 const CHAIN_ID = 31337n;
 const MAX_SIG = 8;
-const seed = (s: string) => toHex(new TextEncoder().encode(s));
+// rc1 enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT) — hash the label to 32 bytes.
+const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let verifier: ShrincsKeyPair;
 

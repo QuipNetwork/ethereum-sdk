@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { keccak_256 } from "@noble/hashes/sha3";
-import { toHex } from "viem";
+import { keccak256, toHex } from "viem";
 
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
@@ -17,7 +17,8 @@ const ACTION_ERC1271 = keccakStr("quip.shrincs.action.erc1271");
 const ZERO32 = ("0x" + "00".repeat(32)) as `0x${string}`;
 
 const MAX_SIG = 8;
-const seed = (s: string) => toHex(new TextEncoder().encode(s));
+// rc1 enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT) — hash the label to 32 bytes.
+const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let signer: ShrincsSigner;
 let main: ShrincsKeyPair;
