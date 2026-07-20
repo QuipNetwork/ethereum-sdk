@@ -15,6 +15,9 @@ cbor_metadata = false
 bytecode_hash = "none"
 extra_output = ["abi", "storageLayout"]
 extra_output_files = ["abi"]
+# CreateX pins solc 0.8.23, so tests load its shipped artifact via vm.getCode
+# instead of compiling the source (see test/script/DeployAll.t.sol).
+fs_permissions = [{ access = "read", path = "dependencies/pcaversaccio-createx-1.0.0/artifacts" }]
 
 # The in-Solidity SHRINCS test signer (dependency test/helpers) is hash- and memory-heavy:
 # keygen/stateless signing expand EVM memory far past the defaults (matches the dependency's

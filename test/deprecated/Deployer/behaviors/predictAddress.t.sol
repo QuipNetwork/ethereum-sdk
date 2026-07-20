@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {DeployerTest} from "../Deployer.t.sol";
-import {Deployer} from "../../../contracts/Deployer.sol";
+import {Deployer} from "../../../../contracts/deprecated/Deployer.sol";
 
 contract Deployer_predictAddress is DeployerTest {
     function test_predictAddress_matchesDeployedAddress() public {

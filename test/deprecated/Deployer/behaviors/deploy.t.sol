@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {DeployerTest} from "../Deployer.t.sol";
-import {Deployer} from "../../../contracts/Deployer.sol";
+import {Deployer} from "../../../../contracts/deprecated/Deployer.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 
 contract Deployer_deploy is DeployerTest {

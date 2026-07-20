@@ -3,11 +3,11 @@ pragma solidity ^0.8.33;
 
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {Deployer} from "../../contracts/Deployer.sol";
+import {Deployer} from "../../contracts/deprecated/Deployer.sol";
 import {WalletFactory} from "../../contracts/WalletFactory.sol";
 import {QuipPaymaster} from "../../contracts/deprecated/QuipPaymaster.sol";
 import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
-import {DeployHelpers} from "../DeployHelpers.sol";
+import {DeployerCreate3} from "./DeployerCreate3.sol";
 
 /**
  * @title DeployWotsBase
@@ -20,14 +20,14 @@ import {DeployHelpers} from "../DeployHelpers.sol";
  *      `FOUNDRY_PROFILE=deploy` (see foundry.toml `[profile.deploy].libraries`).
  *      Salts match `script/PredictAddresses.s.sol` (V1.1).
  */
-abstract contract DeployWotsBase is DeployHelpers {
+abstract contract DeployWotsBase is DeployerCreate3 {
     bytes32 internal constant WOTSPLUS_SALT = keccak256("QUIP:WOTSPlus:V1.1");
-    // V2: the factory became UUPS (impl + ERC-1967 proxy). Fresh salts are
-    // REQUIRED — CREATE3 addresses ignore initcode, so reusing the V1.1 salt
-    // on a chain that already has the non-upgradeable factory would silently
-    // skip deployment and leave the old factory in place.
-    bytes32 internal constant FACTORY_IMPL_SALT = keccak256("QUIP:WalletFactory:Impl:V2");
-    bytes32 internal constant FACTORY_PROXY_SALT = keccak256("QUIP:WalletFactory:Proxy:V2");
+    // LEGACY: the factory now deploys via CreateX sender-guarded salts
+    // (script/DeployFactoryBase.sol) — these Deployer-derived V2 salts and
+    // `_deployFactory` below remain only for historical reproduction of the
+    // Deployer-era derivation and are not called by any orchestrator.
+    bytes32 internal constant LEGACY_FACTORY_IMPL_SALT = keccak256("QUIP:WalletFactory:Impl:V2");
+    bytes32 internal constant LEGACY_FACTORY_PROXY_SALT = keccak256("QUIP:WalletFactory:Proxy:V2");
     bytes32 internal constant WOTS_IMPL_SALT = keccak256("QUIP:WOTSPlusImplementation:V1.1");
     bytes32 internal constant QUIP_PAYMASTER_IMPL_SALT = keccak256("QUIP:QuipPaymaster:Impl:V1.1");
     bytes32 internal constant QUIP_PAYMASTER_PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1.1");
@@ -45,10 +45,10 @@ abstract contract DeployWotsBase is DeployHelpers {
         returns (address factory)
     {
         bytes memory implCode = abi.encodePacked(type(WalletFactory).creationCode, abi.encode(maxFee));
-        address impl = _create3(deployer, pk, implCode, FACTORY_IMPL_SALT, "WalletFactory impl");
+        address impl = _create3(deployer, pk, implCode, LEGACY_FACTORY_IMPL_SALT, "WalletFactory impl");
         bytes memory initData = abi.encodeCall(WalletFactory.initialize, (payable(owner)));
         bytes memory proxyCode = abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
-        factory = _create3(deployer, pk, proxyCode, FACTORY_PROXY_SALT, "WalletFactory proxy");
+        factory = _create3(deployer, pk, proxyCode, LEGACY_FACTORY_PROXY_SALT, "WalletFactory proxy");
         require(WalletFactory(payable(factory)).owner() == owner, "WalletFactory owner mismatch");
     }
 

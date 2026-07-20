@@ -4,17 +4,17 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
-import {Deployer} from "../../contracts/Deployer.sol";
 import {WalletFactory} from "../../contracts/WalletFactory.sol";
 import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
 /// @title WalletFactory Base Test
-/// @dev Base contract for testing WalletFactory. Deploys full stack via CREATE3
-///      and vets an initial WOTSPlusImplementation implementation for proxy deployment.
+/// @dev Base contract for testing WalletFactory. Deploys the factory as impl +
+///      ERC-1967 proxy and vets an initial WOTSPlusImplementation implementation
+///      for proxy deployment. (Unit tests need no CREATE3 factory address —
+///      wallet CREATE3 addressing derives from whatever the factory address is.)
 contract WalletFactoryTest is Test {
-    Deployer public deployer;
     WalletFactory public factory;
     WOTSPlusImplementation public walletImplementation;
 
@@ -38,16 +38,11 @@ contract WalletFactoryTest is Test {
         vm.deal(ALICE, 100 ether);
         vm.deal(BOB, 100 ether);
 
-        // Deploy Deployer
-        deployer = new Deployer();
-
-        // Deploy the WalletFactory implementation, then its ERC-1967 proxy via
-        // CREATE3 — mirrors production: the PROXY address is the factory
-        // identity (CREATE3 wallet addressing derives from it).
+        // Deploy the WalletFactory implementation, then its ERC-1967 proxy —
+        // the PROXY address is the factory identity (CREATE3 wallet addressing
+        // derives from it, whatever address it lands at).
         WalletFactory factoryImpl = new WalletFactory(0.1 ether);
-        bytes memory proxyInitcode = LibClone.initCodeERC1967(address(factoryImpl));
-        bytes32 factorySalt = keccak256("WalletFactory");
-        address factoryAddr = deployer.deploy(proxyInitcode, factorySalt);
+        address factoryAddr = LibClone.deployERC1967(address(factoryImpl));
         factory = WalletFactory(payable(factoryAddr));
         factory.initialize(payable(ADMIN));
 

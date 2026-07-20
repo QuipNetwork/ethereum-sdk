@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {console} from "forge-std-1.14.0/Script.sol";
-import {Deployer} from "../../contracts/Deployer.sol";
+import {Deployer} from "../../contracts/deprecated/Deployer.sol";
 import {DeployWotsBase} from "./DeployWotsBase.sol";
 import {IVettingFactory} from "../DeployHelpers.sol";
 

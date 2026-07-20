@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {ICreateX} from "pcaversaccio-createx-1.0.0/src/ICreateX.sol";
-import {Deployer} from "../contracts/Deployer.sol";
+import {Deployer} from "../../contracts/deprecated/Deployer.sol";
 
 /**
  * @title DeployDeployer

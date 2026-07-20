@@ -1,76 +1,97 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {Script, console} from "forge-std-1.14.0/Script.sol";
+import {console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {CreateXHelpers} from "./CreateXHelpers.sol";
 
 /**
  * @title PredictAddresses
  * @dev Pure-view script: prints the CREATE3 address every Quip contract will
- *      land at on any chain — no env vars required.
+ *      land at on any chain. No RPC required.
  *
- *      The Deployer address itself is derived from CreateX + the
- *      `DEPLOYER_SALT`, matching how `DeployDeployer.s.sol` bootstraps it.
- *      All downstream addresses (WOTSPlus, WalletFactory, WOTSPlusImplementation impl,
- *      QuipPaymaster impl + proxy) are derived through that Deployer +
- *      their respective salts via solady's CREATE3.
+ *      LIVE contracts (WalletFactory, ShrincsWallet, ShrincsPaymaster) deploy
+ *      straight through CreateX with SENDER-GUARDED salts, so their addresses
+ *      are a function of (CreateX, DEPLOY_OPERATOR, salt) — set `DEPLOY_OPERATOR`
+ *      to compute them (without it those rows are skipped with a notice).
  *
- *      Override path: if you want predictions against a Deployer deployed
- *      with a non-canonical salt (e.g. an old v0 instance), set
- *      `DEPLOYER_ADDRESS` in the environment and the script uses that
- *      instead of recomputing.
+ *      SUNSET WOTS+-era contracts (WOTSPlus, WOTSPlusImplementation,
+ *      QuipPaymaster) keep their historical derivation through the deprecated
+ *      `Deployer` (itself CreateX-deployed on an unguarded salt) — those rows
+ *      need no env vars. `DEPLOYER_ADDRESS` overrides the canonical Deployer.
  *
  * Usage:
- *   forge script script/PredictAddresses.s.sol
- *   DEPLOYER_ADDRESS=0x... forge script script/PredictAddresses.s.sol  # override
+ *   DEPLOY_OPERATOR=0x... forge script script/PredictAddresses.s.sol
+ *   forge script script/PredictAddresses.s.sol            # WOTS+-era rows only
  */
-contract PredictAddresses is Script {
-    address internal constant CREATEX = 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed;
+contract PredictAddresses is CreateXHelpers {
     bytes32 internal constant DEPLOYER_SALT = keccak256("QUIP:Deployer:V1");
 
     function run() external view {
+        // -- live contracts: CreateX-direct, sender-guarded ------------------
+        address operator;
+        try vm.envAddress("DEPLOY_OPERATOR") returns (address op) {
+            operator = op;
+        } catch {
+            console.log("DEPLOY_OPERATOR not set - skipping live-contract rows");
+            console.log("(live canonical addresses are a function of the operator address)");
+        }
+        if (operator != address(0)) {
+            console.log("CreateX:        ", CREATEX);
+            console.log("Deploy operator:", operator);
+            _predictLive(operator, "WalletFactory (impl)", "QUIP:WalletFactory:Impl:V1.0.0-beta");
+            _predictLive(operator, "WalletFactory (proxy)", "QUIP:WalletFactory:Proxy:V1.0.0-beta");
+            // Impl salts bind the verifier scheme tag (the verifier's PROFILE_TAG ==
+            // SHRINCSParams.PROFILE_ID) — see DeployShrincsBase: a different
+            // cryptographic scheme must land at a different implementation address.
+            _predictLiveRaw(
+                operator,
+                "ShrincsWallet (impl)",
+                abi.encodePacked("QUIP:ShrincsWallet:V1.1:", SHRINCSParams.PROFILE_ID)
+            );
+            _predictLiveRaw(
+                operator,
+                "ShrincsPaymaster (impl)",
+                abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.1:", SHRINCSParams.PROFILE_ID)
+            );
+            _predictLive(operator, "ShrincsPaymaster (proxy)", "QUIP:ShrincsPaymaster:Proxy:V1.1");
+        }
+        console.log("");
+
+        // -- sunset WOTS+ era: derived through the deprecated Deployer -------
         address deployerAddr;
         try vm.envAddress("DEPLOYER_ADDRESS") returns (address override_) {
             deployerAddr = override_;
             console.log("Deployer (env override):  ", deployerAddr);
         } catch {
-            // CreateX uses the same proxy initcode as solady's CREATE3,
-            // so we can predict the Deployer's address purely off-chain
-            // via solady's predictor with `deployer = CreateX`.
+            // CreateX uses the same proxy initcode as solady's CREATE3, so the
+            // Deployer's address is predictable purely off-chain via solady's
+            // predictor with `deployer = CreateX` (unguarded-salt fallback:
+            // guardedSalt = keccak256(abi.encode(salt))).
             bytes32 guardedSalt = keccak256(abi.encode(DEPLOYER_SALT));
             deployerAddr = CREATE3.predictDeterministicAddress(guardedSalt, CREATEX);
             console.log("Deployer (canonical):     ", deployerAddr);
         }
-        console.log("");
+        _predictWots(deployerAddr, "WOTSPlus", keccak256("QUIP:WOTSPlus:V1.1"));
+        _predictWots(deployerAddr, "WOTSPlusImplementation (impl)", keccak256("QUIP:WOTSPlusImplementation:V1.1"));
+        _predictWots(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
+        _predictWots(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
 
-        _predict(deployerAddr, "WOTSPlus", keccak256("QUIP:WOTSPlus:V1.1"));
-        _predict(deployerAddr, "WalletFactory (impl)", keccak256("QUIP:WalletFactory:Impl:V2"));
-        _predict(deployerAddr, "WalletFactory (proxy)", keccak256("QUIP:WalletFactory:Proxy:V2"));
-        _predict(deployerAddr, "WOTSPlusImplementation (impl)", keccak256("QUIP:WOTSPlusImplementation:V1.1"));
-        _predict(deployerAddr, "QuipPaymaster (impl)", keccak256("QUIP:QuipPaymaster:Impl:V1.1"));
-        _predict(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
-        // Impl salts bind the verifier scheme tag (the verifier's PROFILE_TAG ==
-        // SHRINCSParams.PROFILE_ID) — see DeployShrincsBase: a different
-        // cryptographic scheme must land at a different implementation address.
-        _predict(
-            deployerAddr,
-            "ShrincsWallet (impl)",
-            keccak256(abi.encodePacked("QUIP:ShrincsWallet:V1.1:", SHRINCSParams.PROFILE_ID))
-        );
-        _predict(
-            deployerAddr,
-            "ShrincsPaymaster (impl)",
-            keccak256(abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.1:", SHRINCSParams.PROFILE_ID))
-        );
-        _predict(deployerAddr, "ShrincsPaymaster (proxy)", keccak256("QUIP:ShrincsPaymaster:Proxy:V1.1"));
         // Not deployed by this repo — the canonical hashsigs-solidity CREATE3
         // verifier the Shrincs impls pin (see DeployShrincsBase).
         console.log("SHRINCS256sKeccak (pinned):", 0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A);
     }
 
-    function _predict(address deployer, string memory name, bytes32 salt) internal pure {
-        address predicted = CREATE3.predictDeterministicAddress(salt, deployer);
-        console.log(string.concat(name, ":"), predicted);
+    function _predictLive(address operator, string memory name, string memory saltString) internal pure {
+        console.log(string.concat(name, ":"), _predictCreateX(operator, bytes(saltString)));
+    }
+
+    function _predictLiveRaw(address operator, string memory name, bytes memory saltPreimage) internal pure {
+        console.log(string.concat(name, ":"), _predictCreateX(operator, saltPreimage));
+    }
+
+    function _predictWots(address deployer, string memory name, bytes32 salt) internal pure {
+        console.log(string.concat(name, ":"), CREATE3.predictDeterministicAddress(salt, deployer));
     }
 }

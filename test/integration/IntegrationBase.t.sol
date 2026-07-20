@@ -4,7 +4,6 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
-import {Deployer} from "../../contracts/Deployer.sol";
 import {WalletFactory} from "../../contracts/WalletFactory.sol";
 import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {QuipPaymaster} from "../../contracts/deprecated/QuipPaymaster.sol";
@@ -33,7 +32,6 @@ contract IntegrationBase is Test {
     address public BOB = makeAddr("bob");
     address payable public BENEFICIARY = payable(makeAddr("beneficiary"));
 
-    Deployer public deployer;
     WalletFactory public factory;
     WOTSPlusImplementation public walletImpl;
     WOTSPlusImplementation public wallet;
@@ -131,11 +129,8 @@ contract IntegrationBase is Test {
 
     /// @dev Deploy factory + wallet implementation + ALICE's wallet.
     function _deployWalletStack() internal {
-        deployer = new Deployer();
-
         WalletFactory factoryImpl = new WalletFactory(0.1 ether);
-        bytes memory proxyInitcode = LibClone.initCodeERC1967(address(factoryImpl));
-        address factoryAddr = deployer.deploy(proxyInitcode, keccak256("WalletFactory-integration"));
+        address factoryAddr = LibClone.deployERC1967(address(factoryImpl));
         factory = WalletFactory(payable(factoryAddr));
         factory.initialize(payable(ADMIN));
 

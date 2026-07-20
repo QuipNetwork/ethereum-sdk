@@ -110,7 +110,7 @@ sdk:
 # ── Deploy (requires PRIVATE_KEY, RPC_URL env vars) ──────────────
 
 deploy-deployer:
-	forge script script/DeployDeployer.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	forge script script/deprecated/DeployDeployer.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-wotsplus:
 	forge script script/deprecated/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
@@ -149,7 +149,7 @@ predict-base-sepolia:
 	forge script script/PredictAddresses.s.sol --rpc-url base_sepolia
 
 deploy-deployer-base-sepolia:
-	forge script script/DeployDeployer.s.sol \
+	forge script script/deprecated/DeployDeployer.s.sol \
 	  --rpc-url base_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
@@ -176,7 +176,7 @@ predict-op-sepolia:
 	forge script script/PredictAddresses.s.sol --rpc-url op_sepolia
 
 deploy-deployer-op-sepolia:
-	forge script script/DeployDeployer.s.sol \
+	forge script script/deprecated/DeployDeployer.s.sol \
 	  --rpc-url op_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify

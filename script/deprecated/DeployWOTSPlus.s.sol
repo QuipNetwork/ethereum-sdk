@@ -4,7 +4,7 @@ pragma solidity ^0.8.33;
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {Deployer} from "../../contracts/Deployer.sol";
+import {Deployer} from "../../contracts/deprecated/Deployer.sol";
 
 /**
  * @title DeployWOTSPlus
