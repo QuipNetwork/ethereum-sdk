@@ -11,7 +11,7 @@ import { keccak256, toHex } from "viem";
 
 import { loadShrincsWasm } from "../wasm/index.js";
 
-// rc1 enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT), so derive via keccak.
+// hashsigs-wasm enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT), so derive via keccak.
 const seed32 = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 const HEX_RE = /^0x[0-9a-f]*$/;

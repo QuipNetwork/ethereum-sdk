@@ -41,7 +41,7 @@ const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const CHAIN_ID = 31337n;
 const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as const;
 const MAX_SIG = 8;
-// rc1 enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT) — hash the label to 32 bytes.
+// hashsigs-wasm enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT) — hash the label to 32 bytes.
 const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 const TARGET = "0x00000000000000000000000000000000000000b0" as Address;

@@ -19,7 +19,7 @@ const PAYMASTER = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const SENDER = "0x00000000000000000000000000000000000A11cE" as Address;
 const CHAIN_ID = 31337n;
 const MAX_SIG = 8;
-// rc1 enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT) — hash the label to 32 bytes.
+// hashsigs-wasm enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT) — hash the label to 32 bytes.
 const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let verifier: ShrincsKeyPair;
