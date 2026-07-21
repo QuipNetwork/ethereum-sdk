@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
 import {ShrincsPaymaster} from "../contracts/ShrincsPaymaster.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
@@ -42,26 +43,28 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         );
     }
 
-    /// Verifier-key parameters the ShrincsPaymaster bakes in at `initialize`
-    /// (a non-zero commitment + budget are REQUIRED — `initialize` reverts otherwise).
+    /// Verifier-key parameters the ShrincsPaymaster bakes in at `initialize`. The
+    /// full public-key bundle is required — `initialize` derives the commitment and
+    /// the stateful leaf budget from it on-chain (the budget is never a trusted
+    /// free parameter).
     struct ShrincsVerifier {
         address paymasterOwner;
-        bytes32 commitment;
+        SHRINCS.PublicKey publicKey;
         uint32 hashSuite;
-        uint32 maxSignatures;
     }
 
     /// Read the ShrincsPaymaster verifier-key config from the environment.
+    /// `SHRINCS_VERIFIER_PUBLIC_KEY` is the abi-encoded `SHRINCS.PublicKey` tuple
+    /// emitted by `scripts/gen-shrincs-paymaster-verifier.mjs`.
     /// `SHRINCS_VERIFIER_HASH_SUITE` defaults to `HASH_SUITE_KECCAK_256` (the only
     /// suite the on-chain library verifies).
     function _shrincsVerifierFromEnv() internal view returns (ShrincsVerifier memory v) {
         v = ShrincsVerifier({
             paymasterOwner: vm.envAddress("SHRINCS_PAYMASTER_OWNER"),
-            commitment: vm.envBytes32("SHRINCS_VERIFIER_COMMITMENT"),
+            publicKey: abi.decode(vm.envBytes("SHRINCS_VERIFIER_PUBLIC_KEY"), (SHRINCS.PublicKey)),
             hashSuite: uint32(
                 vm.envOr("SHRINCS_VERIFIER_HASH_SUITE", uint256(HashSuite.HASH_SUITE_ID))
-            ),
-            maxSignatures: uint32(vm.envUint("SHRINCS_VERIFIER_MAX_SIGNATURES"))
+            )
         });
     }
 
@@ -90,8 +93,10 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         returns (address proxy)
     {
         require(v.paymasterOwner != address(0), "SHRINCS paymaster owner zero");
-        require(v.commitment != bytes32(0), "SHRINCS verifier commitment zero");
-        require(v.maxSignatures != 0, "SHRINCS verifier maxSignatures zero");
+        // Shallow shape check only: `initialize` performs the deep validation
+        // (embedded-commitment recompute + budget decode) during forge's
+        // pre-broadcast simulation, so a malformed bundle fails before any tx.
+        require(v.publicKey.publicKeyCommitment.length == 32, "SHRINCS verifier public key malformed");
         _requireExpectedVerifierScheme();
 
         bytes memory implCode = abi.encodePacked(
@@ -107,7 +112,7 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         );
         bytes memory initData = abi.encodeCall(
             ShrincsPaymaster.initialize,
-            (v.paymasterOwner, v.commitment, v.hashSuite, v.maxSignatures)
+            (v.paymasterOwner, v.publicKey, v.hashSuite)
         );
         bytes memory proxyCode =
             abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));

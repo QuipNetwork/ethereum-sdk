@@ -3,8 +3,10 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
 import {SPHINCSPlusC256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC256sKeccak.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {IVettingFactory} from "../../script/DeployHelpers.sol";
 import {DeployShrincsBase} from "../../script/DeployShrincsBase.sol";
@@ -27,14 +29,13 @@ contract DeployHarness is DeployShrincsBase, DeployFactoryBase {
         address operator,
         uint256 pk,
         address owner,
-        bytes32 commitment,
-        uint32 hashSuite,
-        uint32 maxSig
+        SHRINCS.PublicKey memory verifierPk,
+        uint32 hashSuite
     ) public returns (address) {
         return _deployShrincsPaymaster(
             operator,
             pk,
-            ShrincsVerifier({paymasterOwner: owner, commitment: commitment, hashSuite: hashSuite, maxSignatures: maxSig})
+            ShrincsVerifier({paymasterOwner: owner, publicKey: verifierPk, hashSuite: hashSuite})
         );
     }
 
@@ -53,8 +54,12 @@ contract DeployHarness is DeployShrincsBase, DeployFactoryBase {
 contract DeployScriptsTest is Test {
     uint256 internal constant PK = uint256(keccak256("quip.deploy.test.owner"));
     uint256 internal constant MAX_FEE = 1e16;
-    bytes32 internal constant VERIFIER_COMMITMENT = keccak256("shrincs.verifier.commitment");
     uint32 internal constant VERIFIER_MAX_SIGS = 16;
+
+    // Real verifier bundle (keygen'd in setUp): `initialize` derives the
+    // commitment + leaf budget from the presented key material, so a synthetic
+    // commitment can no longer initialize the paymaster.
+    SHRINCS.PublicKey internal verifierPk;
 
     // Live-contract salt PREIMAGES (CreateX path), mirroring `DeployConstants`
     // as an INDEPENDENT copy: a typo/drift there fails the address asserts
@@ -70,6 +75,10 @@ contract DeployScriptsTest is Test {
         owner = vm.addr(PK);
         vm.deal(owner, 100 ether);
         h = new DeployHarness();
+
+        bool keygenOk;
+        (, verifierPk, keygenOk) = SHRINCSTestSigner.keygen("quip.deploy.test.verifier", VERIFIER_MAX_SIGS);
+        require(keygenOk, "verifier keygen failed");
 
         // Provision CreateX at its canonical address. A plain runtime etch is NOT
         // enough: CreateX bakes `_SELF = address(this)` into an immutable at
@@ -111,7 +120,7 @@ contract DeployScriptsTest is Test {
         address fAddr = h.factory(owner, PK, owner, MAX_FEE);
         address sImpl = h.shrincsImpl(owner, PK, fAddr);
         address sPm =
-            h.shrincsPaymaster(owner, PK, owner, VERIFIER_COMMITMENT, HashSuite.HASH_SUITE_ID, VERIFIER_MAX_SIGS);
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
 
         // Sender-guarded CreateX CREATE3, formula pinned by the independent
         // recomputation AND by the helper's own prediction. The factory-proxy
@@ -137,13 +146,13 @@ contract DeployScriptsTest is Test {
         address fAddr = h.factory(owner, PK, owner, MAX_FEE);
         address sImpl1 = h.shrincsImpl(owner, PK, fAddr);
         address sPm1 =
-            h.shrincsPaymaster(owner, PK, owner, VERIFIER_COMMITMENT, HashSuite.HASH_SUITE_ID, VERIFIER_MAX_SIGS);
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
 
         // Second pass — identical addresses, no revert.
         address fAddr2 = h.factory(owner, PK, owner, MAX_FEE);
         address sImpl2 = h.shrincsImpl(owner, PK, fAddr);
         address sPm2 =
-            h.shrincsPaymaster(owner, PK, owner, VERIFIER_COMMITMENT, HashSuite.HASH_SUITE_ID, VERIFIER_MAX_SIGS);
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
 
         assertEq(fAddr, fAddr2, "factory stable");
         assertEq(sImpl1, sImpl2, "shrincs impl stable");
