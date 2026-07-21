@@ -395,6 +395,13 @@ export function decodeSponsorshipSignature(blob: Hex): {
   return { publicKey: publicKeyFromAbi(pk), signature };
 }
 
+/// Standalone abi-encoded `SHRINCS.PublicKey` tuple — the `SHRINCS_VERIFIER_PUBLIC_KEY`
+/// env format the deploy scripts `abi.decode` into the Solidity struct
+/// (`ShrincsPaymaster.initialize` derives the commitment + leaf budget from it).
+export function encodePublicKeyBundle(publicKey: ShrincsPublicKey): Hex {
+  return encodeAbiParameters([PUBLIC_KEY_TUPLE], [publicKeyToAbi(publicKey)]);
+}
+
 /// UUPS `upgradeToAndCall` data = `abi.encode(PublicKey, StatefulSignature,
 /// bool shouldMigrate, bytes migratorPayload, uint256 nonce)`. The signed
 /// action nonce rides in the blob (5th head word) so the wallet's

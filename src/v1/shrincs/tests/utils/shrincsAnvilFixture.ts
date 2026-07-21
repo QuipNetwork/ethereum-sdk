@@ -46,6 +46,8 @@ import { CANONICAL_ENTRYPOINT_V07 } from "../../../addresses.js";
 import { deployErc1967Proxy } from "../../../tests/utils/deployErc1967Proxy.js";
 import { shrincsPaymasterAbi } from "../../abi/ShrincsPaymaster.js";
 import { HASH_SUITE_KECCAK_256 } from "../../constants.js";
+import { publicKeyToAbi } from "../../shrincsCodec.js";
+import { type ShrincsPublicKey } from "../../types.js";
 import { ShrincsFactoryClient } from "../../shrincsFactoryClient.js";
 import { ShrincsSigner } from "../../shrincsSigner.js";
 import { type ShrincsWalletClient } from "../../shrincsWalletClient.js";
@@ -383,17 +385,17 @@ export async function createFreshShrincsWallet(
 
 // ─── Paymaster helpers ──────────────────────────────────────────────
 
-/// Initialize the (already-deployed) paymaster proxy with `owner`, a verifier
-/// `commitment`, and a `maxSignatures` budget. `paymaster` overrides the
-/// target (default: the shared stack proxy) — pass a
-/// `deployFreshPaymasterProxy` address for tests that must own their proxy's
-/// whole verifier lifecycle.
+/// Initialize the (already-deployed) paymaster proxy with `owner` and the full
+/// verifier `publicKey` bundle — the contract derives the commitment and the
+/// `maxSignatures` budget from the presented key material (they are never
+/// trusted parameters). `paymaster` overrides the target (default: the shared
+/// stack proxy) — pass a `deployFreshPaymasterProxy` address for tests that
+/// must own their proxy's whole verifier lifecycle.
 export async function initializePaymaster(
   stack: ShrincsAnvilStack,
   params: {
     owner: Address;
-    commitment: Hex;
-    maxSignatures: number;
+    publicKey: ShrincsPublicKey;
     hashSuite?: number;
     paymaster?: Address;
   }
@@ -405,9 +407,8 @@ export async function initializePaymaster(
     functionName: "initialize",
     args: [
       params.owner,
-      params.commitment,
+      publicKeyToAbi(params.publicKey),
       params.hashSuite ?? HASH_SUITE_KECCAK_256,
-      params.maxSignatures,
     ],
     account: stack.account,
   });
