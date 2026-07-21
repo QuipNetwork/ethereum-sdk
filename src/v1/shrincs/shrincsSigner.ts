@@ -25,15 +25,13 @@ import {
   type RotationContext,
   type RotationTarget,
   type ShrincsPublicKey,
+  type ShrincsWasmModule,
   type StatefulRotationTarget,
   type StatefulSignature,
   type StatelessSignature,
-} from "./types.js";
-import {
-  loadShrincsWasm,
-  type ShrincsWasmModule,
   type WasmShrincsKeypair,
-} from "./wasm/index.js";
+} from "./types.js";
+import { loadShrincsWasm } from "@quip.network/hashsigs-wasm";
 
 const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
@@ -72,8 +70,10 @@ function graftHybridPublicKey(
   statefulInner: WasmShrincsKeypair,
   statelessInner: WasmShrincsKeypair
 ): ShrincsPublicKey {
-  const stateful = statefulInner.publicKey();
-  const stateless = statelessInner.publicKey();
+  // Raw wasm DTO (string leaves) → SDK DTO (Hex leaves): legal downcast; the
+  // wasm always emits 0x-lowercase hex (proven by hashsigsBoundary.test.ts).
+  const stateful = statefulInner.publicKey() as ShrincsPublicKey;
+  const stateless = statelessInner.publicKey() as ShrincsPublicKey;
   return {
     statefulPublicKey: stateful.statefulPublicKey,
     pkSeed: stateless.pkSeed,
@@ -111,7 +111,7 @@ export class ShrincsKeyPair {
     this.statelessInner = statelessInner;
     this.publicKey =
       statelessInner === statefulInner
-        ? statefulInner.publicKey()
+        ? (statefulInner.publicKey() as ShrincsPublicKey)
         : graftHybridPublicKey(statefulInner, statelessInner);
   }
 
@@ -203,11 +203,11 @@ export class ShrincsKeyPair {
   /// Deterministically sign a raw 32-byte message at `leaf`
   /// (`authPath.length === leaf`). Does not advance any internal counter.
   signStatefulRawAt(messageHex: Hex, leaf: number): StatefulSignature {
-    return this.statefulInner.signStatefulRawAt(messageHex, leaf);
+    return this.statefulInner.signStatefulRawAt(messageHex, leaf) as StatefulSignature;
   }
 
   signStatelessRaw(messageHex: Hex): StatelessSignature {
-    return this.statelessInner.signStatelessRaw(messageHex);
+    return this.statelessInner.signStatelessRaw(messageHex) as StatelessSignature;
   }
 
   // ── verification helpers (self-test / debugging) ───────────────────────────

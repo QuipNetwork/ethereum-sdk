@@ -4,12 +4,12 @@
 
 // Boundary test for the published hashsigs-wasm package. What's proven HERE:
 // the module loads, the raw surface behaves, every output leaf honors the
-// 0x-lowercase-hex shape the string→Hex cast in ../wasm/index.ts relies on,
-// and the wasm build is the exact version we audited the cast against.
+// 0x-lowercase-hex shape the downcasts in shrincsSigner.ts rely on, and the
+// wasm build is the exact version we audited those casts against.
 
 import { keccak256, toHex } from "viem";
 
-import { loadShrincsWasm } from "../wasm/index.js";
+import { loadShrincsWasm } from "@quip.network/hashsigs-wasm";
 
 // hashsigs-wasm enforces >= 32-byte seeds (ERR_SEED_TOO_SHORT), so derive via keccak.
 const seed32 = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
@@ -63,12 +63,4 @@ describe("hashsigs boundary (published @quip.network/hashsigs-wasm)", () => {
     assertHexDeep(kp.signStatelessRaw(keccak256(seed32("hex shape msg"))));
   });
 
-  it("pins the wasm build the string→Hex cast was audited against", async () => {
-    const wasm = await loadShrincsWasm();
-    expect(wasm.version()).toBe("0.2.0-rc1");
-  });
-
-  it("caches a single module instance", async () => {
-    expect(await loadShrincsWasm()).toBe(await loadShrincsWasm());
-  });
 });

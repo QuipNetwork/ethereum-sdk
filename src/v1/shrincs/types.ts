@@ -59,3 +59,15 @@ export type ActionContext = DeepHex<RawActionContext>;
 export type RotationContext = DeepHex<RawRotationContext>;
 export type StatefulRotationTarget = DeepHex<RawStatefulRotationTarget>;
 export type RotationTarget = DeepHex<RawRotationTarget>;
+
+// The wasm module + live-keypair handle types, re-exported from upstream
+// verbatim. rc.2 exports WasmShrincsKeypair directly, so this is a clean
+// re-export — no ReturnType<shrincsKeygen> proxy. These describe the RAW
+// wasm surface (hex leaves typed `string`); SDK code downcasts at each output
+// site (see shrincsSigner.ts). The Hex-typed DTO aliases above are what the
+// rest of the SDK uses. Upstream signature changes now surface as compile
+// errors at the call sites.
+export type {
+  ShrincsWasmModule,
+  WasmShrincsKeypair,
+} from "@quip.network/hashsigs-wasm";
