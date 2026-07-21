@@ -67,6 +67,7 @@ import {
   rotateKeyPayloadHash,
   rotationDomainSeparator,
   setErc1271KeyPayloadHash,
+  SHRINCS_PROFILE_NAME,
   toRotationTarget,
   transferOwnershipPayloadHash,
   upgradePayloadHash,
@@ -82,6 +83,45 @@ import {
 } from "./userOp.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+
+const shrincsWalletDomain = (chainId: number, walletAddress: Address) =>
+  ({
+    name: `QuipShrincsWallet/${SHRINCS_PROFILE_NAME}/v1`,
+    version: "1",
+    chainId,
+    verifyingContract: walletAddress,
+  }) as const;
+
+/// EIP-712 form of the owner userOp co-signature digest. Mirrors the contract's
+/// `quipUserOpHashEcdsaTarget`, but signable via `eth_signTypedData_v4` — so
+/// browser wallets can co-sign without the disabled `eth_sign`.
+export const quipUserOpHashTypedData = (
+  userOpHash: Hex,
+  chainId: number,
+  walletAddress: Address
+) =>
+  ({
+    domain: shrincsWalletDomain(chainId, walletAddress),
+    types: { QuipUserOpHash: [{ name: "userOpHash", type: "bytes32" }] },
+    primaryType: "QuipUserOpHash",
+    message: { userOpHash },
+  }) as const;
+
+/// EIP-712 form of the ERC-1271 owner-signature digest. Mirrors the contract's
+/// `quipSignedHashEcdsaTarget`, but signable via `eth_signTypedData_v4`. Its
+/// struct (`QuipSignedHash`) is deliberately distinct from `QuipUserOpHash`, so
+/// a dApp-harvested message signature can never double as a userOp co-signature.
+export const quipSignedHashTypedData = (
+  hash: Hex,
+  chainId: number,
+  walletAddress: Address
+) =>
+  ({
+    domain: shrincsWalletDomain(chainId, walletAddress),
+    types: { QuipSignedHash: [{ name: "hash", type: "bytes32" }] },
+    primaryType: "QuipSignedHash",
+    message: { hash },
+  }) as const;
 
 export interface ShrincsWalletState {
   owner: Address;
@@ -795,11 +835,13 @@ export class ShrincsWalletClient {
   /// `isValidSignature`. AND-gates two halves:
   ///   1. a SHRINCS **stateless** signature from the installed ERC-1271 verifier
   ///      key (no leaf consumed), over `ACTION_ERC1271` with `payloadHash == hash`;
-  ///   2. a classical ECDSA signature from the wallet's `owner` over the EIP-712
-  ///      `quipSignedHashEcdsaTarget(hash)` digest.
+  ///   2. a classical ECDSA signature from the wallet's `owner` over the
+  ///      `QuipSignedHash(hash)` EIP-712 target (collected as typed data, so a
+  ///      browser wallet can sign it via `eth_signTypedData_v4`).
   /// The ERC-1271 verifier key is a separate vault branch from the main key, so
   /// the caller supplies its recovered keypair (its commitment must match the
-  /// installed `erc1271Commitment`). The `owner` must be a local signer.
+  /// installed `erc1271Commitment`). The `owner` must sign for the wallet's
+  /// on-chain `owner()`.
   ///
   /// FRESHNESS: the blob binds the wallet's LIVE `actionNonce()`, so it is
   /// invalidated the moment ANY wallet signature is consumed (an execute, a
@@ -837,16 +879,10 @@ export class ShrincsWalletClient {
     });
     const statelessSignature = params.erc1271KeyPair.signStatelessAction(ctx);
 
-    // Sign the on-chain EIP-712 target digest directly (matches the contract's
-    // `ECDSA.tryRecoverCalldata(quipSignedHashEcdsaTarget(hash), ecdsaSig)`).
-    const sign = params.owner.sign;
-    if (!sign) {
-      throw new Error(
-        "owner account cannot sign a raw hash; pass a LocalAccount with a `sign` method"
-      );
-    }
-    const ecdsaTarget = await this.quipSignedHashEcdsaTarget(params.hash);
-    const ecdsaSig = await sign({ hash: ecdsaTarget });
+    // Owner ECDSA half, collected as typed data (see `quipSignedHashTypedData`).
+    const ecdsaSig = await params.owner.signTypedData(
+      quipSignedHashTypedData(params.hash, this.chainId, this.walletAddress)
+    );
 
     return encodeErc1271Signature({
       publicKey: params.erc1271KeyPair.publicKey,
@@ -920,11 +956,10 @@ export class ShrincsWalletClient {
   /// Sign a `PackedUserOperation` for this wallet: read state, recover the key,
   /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + live
   /// `actionNonce` into `ACTION_ERC4337_EXECUTE`, collect the owner's ECDSA
-  /// co-signature over `quipUserOpHashEcdsaTarget(userOpHash)` (every userOp is
-  /// hybrid — validation requires BOTH the owner key and the SHRINCS key), and
-  /// return the userOp with its `signature` field filled (plus the `userOpHash`
-  /// and `leaf` used). The `owner` must be a local signer matching the wallet's
-  /// on-chain `owner()`.
+  /// co-signature as EIP-712 typed data (every userOp is hybrid — validation
+  /// requires BOTH the owner key and the SHRINCS key), and return the userOp
+  /// with its `signature` field filled (plus the `userOpHash` and `leaf` used).
+  /// The `owner` must sign for the wallet's on-chain `owner()`.
   ///
   /// FEE CAP: no fee enters the digest — the `maxFee` ceiling the build methods
   /// put into `callData` is covered by `userOpHash`, and validation reads no
@@ -949,22 +984,16 @@ export class ShrincsWalletClient {
     if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
       throw new ZeroAddressOwnerError();
     }
-    const sign = params.owner.sign;
-    if (!sign) {
-      throw new Error(
-        "owner account cannot sign a raw hash; pass a LocalAccount with a `sign` method"
-      );
-    }
-
-    // The co-signature target depends on the userOpHash, computed exactly as
-    // `signWalletUserOp` will recompute it below.
+    // Recompute the userOpHash exactly as `signWalletUserOp` does below, then
+    // collect the owner co-signature over it as typed data.
     const userOpHash = computeUserOpHash(
       params.userOp,
       params.entryPoint,
       BigInt(this.chainId)
     );
-    const ecdsaTarget = await this.quipUserOpHashEcdsaTarget(userOpHash);
-    const ownerEcdsaSig = await sign({ hash: ecdsaTarget });
+    const ownerEcdsaSig = await params.owner.signTypedData(
+      quipUserOpHashTypedData(userOpHash, this.chainId, this.walletAddress)
+    );
 
     const { signature } = signWalletUserOp({
       keypair,
