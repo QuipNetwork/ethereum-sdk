@@ -67,6 +67,7 @@ import {
   rotateKeyPayloadHash,
   rotationDomainSeparator,
   setErc1271KeyPayloadHash,
+  SHRINCS_PROFILE_NAME,
   toRotationTarget,
   transferOwnershipPayloadHash,
   upgradePayloadHash,
@@ -82,6 +83,31 @@ import {
 } from "./userOp.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+
+/// EIP-712 typed data for the hybrid userOp owner co-signature. Its digest
+/// equals the wallet's on-chain `quipUserOpHashEcdsaTarget(userOpHash)`: the
+/// domain mirrors the contract's `_domainNameAndVersion`
+/// (`"QuipShrincsWallet/<profile>/v1"`, version `"1"`) and the struct is the
+/// contract's `_QUIP_USER_OP_HASH_TYPEHASH`. Signing this via
+/// `eth_signTypedData_v4` yields the exact signature the contract recovers to
+/// `owner()` — the browser-wallet-friendly path, since wallets have disabled the
+/// prefix-less `eth_sign` a raw digest would otherwise require.
+export const quipUserOpHashTypedData = (
+  userOpHash: Hex,
+  chainId: number,
+  walletAddress: Address
+) =>
+  ({
+    domain: {
+      name: `QuipShrincsWallet/${SHRINCS_PROFILE_NAME}/v1`,
+      version: "1",
+      chainId,
+      verifyingContract: walletAddress,
+    },
+    types: { QuipUserOpHash: [{ name: "userOpHash", type: "bytes32" }] },
+    primaryType: "QuipUserOpHash",
+    message: { userOpHash },
+  }) as const;
 
 export interface ShrincsWalletState {
   owner: Address;
@@ -920,11 +946,13 @@ export class ShrincsWalletClient {
   /// Sign a `PackedUserOperation` for this wallet: read state, recover the key,
   /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + live
   /// `actionNonce` into `ACTION_ERC4337_EXECUTE`, collect the owner's ECDSA
-  /// co-signature over `quipUserOpHashEcdsaTarget(userOpHash)` (every userOp is
-  /// hybrid — validation requires BOTH the owner key and the SHRINCS key), and
-  /// return the userOp with its `signature` field filled (plus the `userOpHash`
-  /// and `leaf` used). The `owner` must be a local signer matching the wallet's
-  /// on-chain `owner()`.
+  /// co-signature as an EIP-712 typed-data signature over
+  /// `QuipUserOpHash(bytes32 userOpHash)` (every userOp is hybrid — validation
+  /// requires BOTH the owner key and the SHRINCS key), and return the userOp
+  /// with its `signature` field filled (plus the `userOpHash` and `leaf` used).
+  /// The `owner` must sign for the wallet's on-chain `owner()`; because the
+  /// co-signature is typed data, a browser wallet can produce it via
+  /// `eth_signTypedData_v4` (no prefix-less `eth_sign` needed).
   ///
   /// FEE CAP: no fee enters the digest — the `maxFee` ceiling the build methods
   /// put into `callData` is covered by `userOpHash`, and validation reads no
@@ -949,22 +977,20 @@ export class ShrincsWalletClient {
     if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
       throw new ZeroAddressOwnerError();
     }
-    const sign = params.owner.sign;
-    if (!sign) {
-      throw new Error(
-        "owner account cannot sign a raw hash; pass a LocalAccount with a `sign` method"
-      );
-    }
-
-    // The co-signature target depends on the userOpHash, computed exactly as
-    // `signWalletUserOp` will recompute it below.
+    // The co-signature binds the userOpHash, computed exactly as
+    // `signWalletUserOp` will recompute it below. It is collected as an EIP-712
+    // typed-data signature over `QuipUserOpHash(bytes32 userOpHash)` — the same
+    // digest the contract recovers via `quipUserOpHashEcdsaTarget`, but signable
+    // by a browser wallet through `eth_signTypedData_v4` (raw-hash `eth_sign` is
+    // disabled by default in most wallets and being removed).
     const userOpHash = computeUserOpHash(
       params.userOp,
       params.entryPoint,
       BigInt(this.chainId)
     );
-    const ecdsaTarget = await this.quipUserOpHashEcdsaTarget(userOpHash);
-    const ownerEcdsaSig = await sign({ hash: ecdsaTarget });
+    const ownerEcdsaSig = await params.owner.signTypedData(
+      quipUserOpHashTypedData(userOpHash, this.chainId, this.walletAddress)
+    );
 
     const { signature } = signWalletUserOp({
       keypair,
