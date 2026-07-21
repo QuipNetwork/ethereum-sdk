@@ -157,7 +157,7 @@ function computeCreate3Address(deployer: Address, salt: Hex): Address {
 
 // ── Sender-guarded CreateX derivation (live contracts) ──────────────────
 // Mirrors script/CreateXHelpers.sol, pinned against the real CreateX
-// singleton by test/script/DeployAll.t.sol:
+// singleton by test/script/Deploy.t.sol:
 //   rawSalt     = bytes20(operator) ‖ 0x00 ‖ bytes11(keccak256(preimage))
 //                 (first 20 bytes == msg.sender → permissioned salt;
 //                  21st byte 0x00 → no chainid, chain-invariant)

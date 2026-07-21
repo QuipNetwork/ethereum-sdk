@@ -8,6 +8,7 @@ import {Script, console} from "forge-std-1.14.0/Script.sol";
 interface IVettingFactory {
     function vetImplementation(address impl) external;
     function getVettedCodeIndex(bytes32 codehash) external view returns (uint256);
+    function getVettedCodeCount() external view returns (uint256);
     function owner() external view returns (address);
     function latestWalletImpl() external view returns (address);
 }

@@ -1,9 +1,11 @@
 .PHONY: build test clean format lint lint-fix snapshot gas install update release \
-       deploy-deployer deploy-wotsplus deploy-factory deploy-all \
+       deploy-deployer deploy-wotsplus deploy-factory deploy-shrincs \
        deploy-impl vet-impl predict-addresses \
-       predict-base-sepolia deploy-deployer-base-sepolia deploy-all-base-sepolia \
+       predict-base-sepolia deploy-deployer-base-sepolia \
+       deploy-factory-base-sepolia deploy-shrincs-base-sepolia \
        deploy-impl-base-sepolia vet-impl-base-sepolia \
-       predict-op-sepolia deploy-deployer-op-sepolia deploy-all-op-sepolia \
+       predict-op-sepolia deploy-deployer-op-sepolia \
+       deploy-factory-op-sepolia deploy-shrincs-op-sepolia \
        deploy-impl-op-sepolia vet-impl-op-sepolia \
        fund-deployer drain-deployer balance \
        storage-layout-snapshot storage-layout-check
@@ -116,10 +118,10 @@ deploy-wotsplus:
 	forge script script/deprecated/DeployWOTSPlus.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-factory:
-	FOUNDRY_PROFILE=deploy forge script script/DeployWalletFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	forge script script/01_DeployFactory.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
-deploy-all:
-	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify
+deploy-shrincs:
+	forge script script/02_DeployShrincs.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-impl:
 	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
@@ -138,17 +140,19 @@ predict-addresses:
 #                           deploys this MUST be DEPLOY_OPERATOR's key.
 #   DEPLOY_OPERATOR         ⚠️ every LIVE canonical address (WalletFactory,
 #                           Shrincs*) is a function of this address — sender-
-#                           guarded CreateX salts; guard the key (deploy-all-*,
-#                           predict-*)
+#                           guarded CreateX salts; guard the key
+#                           (deploy-factory-*, deploy-shrincs-*, predict-*)
 #   DEPLOYER_ADDRESS        bootstrapped Deployer contract address (e.g. the
 #                           canonical 0xA1A3990E…) — sunset WOTS+ family only
-#   FACTORY_OWNER           WalletFactory initial owner (deploy-all-* only)
-#   MAX_FEE                 WalletFactory creation fee in wei (deploy-all-* only)
-#   PAYMASTER_OWNER         QuipPaymaster proxy initial owner (deploy-all-* only)
+#   FACTORY_OWNER           WalletFactory initial owner (deploy-factory-* only)
+#   MAX_FEE                 WalletFactory creation fee in wei (deploy-factory-* only)
+#   PAYMASTER_OWNER         QuipPaymaster proxy initial owner — sunset WOTS+ only
 #   SHRINCS_PAYMASTER_OWNER / SHRINCS_VERIFIER_COMMITMENT /
-#   SHRINCS_VERIFIER_MAX_SIGNATURES   ShrincsPaymaster init (deploy-all-* only)
-#   FACTORY_ADDRESS         existing WalletFactory address (deploy-impl-*, vet-impl-*)
-#   IMPLEMENTATION          WOTSPlusImplementation impl address (vet-impl-* only)
+#   SHRINCS_VERIFIER_MAX_SIGNATURES   ShrincsPaymaster init (deploy-shrincs-* only)
+#   FACTORY_ADDRESS         existing WalletFactory address (deploy-impl-*,
+#                           vet-impl-* ONLY — deploy-shrincs-* derives the
+#                           canonical address from DEPLOY_OPERATOR, no override)
+#   IMPLEMENTATION          wallet impl address to vet (vet-impl-* only)
 #   API_URL_BASE_SEPOLIA    https://… RPC endpoint
 #   ETHERSCAN_API_KEY       Etherscan v2 key (used for --verify)
 
@@ -161,8 +165,14 @@ deploy-deployer-base-sepolia:
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
 
-deploy-all-base-sepolia:
-	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
+deploy-factory-base-sepolia:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url base_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-shrincs-base-sepolia:
+	forge script script/02_DeployShrincs.s.sol \
 	  --rpc-url base_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
@@ -188,8 +198,14 @@ deploy-deployer-op-sepolia:
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
 
-deploy-all-op-sepolia:
-	FOUNDRY_PROFILE=deploy forge script script/DeployAll.s.sol \
+deploy-factory-op-sepolia:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-shrincs-op-sepolia:
+	forge script script/02_DeployShrincs.s.sol \
 	  --rpc-url op_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify

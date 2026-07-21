@@ -105,7 +105,7 @@ wallet; two-step handover; upgrade events; (future option) timelock.
    from added init/upgrade surface); deploy-script updates (`Deployer` + ERC-1967 proxy).
 2. **Solidity tests** — behaviors: initialize-once, upgrade auth (owner/non-owner), storage
    continuity across a mock V2 upgrade, CREATE3 address stability across upgrade (decision 7),
-   two-step handover, full-suite regression; update `DeployAll.t.sol` and integration bases to
+   two-step handover, full-suite regression; update `Deploy.t.sol` and integration bases to
    the proxy deployment shape.
 3. **SDK implementation** — fixture/deploy-path updates (proxy deployment in `anvilFixture` /
    `shrincsAnvilFixture` and any address-derivation helpers); `copy-abi` regen; no client API
@@ -138,7 +138,7 @@ wallet; two-step handover; upgrade events; (future option) timelock.
   counterpart under solady (handover is keyed by candidate address). Only consumer-visible SDK
   break.
 - ✎ Bonus from effort 1: the factory links NO libraries anymore (WOTSPlus dependency deleted),
-  so `DeployWalletFactory.s.sol` no longer needs `FOUNDRY_PROFILE=deploy`.
+  so `01_DeployFactory.s.sol` no longer needs `FOUNDRY_PROFILE=deploy`.
 - Verification landed: `test/WalletFactory/behaviors/upgradeToAndCall.t.sol` (10 tests: auth,
   onlyProxy, init-locking, storage continuity, per-impl `MAX_FEE`, CREATE3 stability) and SDK
   `src/v1/tests/integration.factory-upgrade.test.ts` (live mid-flight upgrade: registry,

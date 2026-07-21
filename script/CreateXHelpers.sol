@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {Script, console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {ICreateX} from "pcaversaccio-createx-1.0.0/src/ICreateX.sol";
+import {DeployConstants} from "./Constants.sol";
 
 /**
  * @title CreateXHelpers
@@ -36,9 +37,9 @@ import {ICreateX} from "pcaversaccio-createx-1.0.0/src/ICreateX.sol";
  *      real singleton and cross-check the predicted address.
  */
 abstract contract CreateXHelpers is Script {
-    /// @dev Canonical CreateX singleton. Same address on every chain
-    ///      (Nick's-method presigned deployment).
-    address internal constant CREATEX = 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed;
+    /// @dev Canonical CreateX singleton (see `DeployConstants`), re-exposed
+    ///      under its established name for inheritors.
+    address internal constant CREATEX = DeployConstants.CREATEX;
 
     /// @dev ERC-1967 implementation slot, for the proxy anti-squat assertion.
     bytes32 internal constant ERC1967_IMPL_SLOT =

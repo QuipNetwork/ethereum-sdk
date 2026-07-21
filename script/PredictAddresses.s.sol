@@ -3,7 +3,7 @@ pragma solidity ^0.8.33;
 
 import {console} from "forge-std-1.14.0/Script.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
-import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {DeployConstants} from "./Constants.sol";
 import {CreateXHelpers} from "./CreateXHelpers.sol";
 
 /**
@@ -40,22 +40,18 @@ contract PredictAddresses is CreateXHelpers {
         if (operator != address(0)) {
             console.log("CreateX:        ", CREATEX);
             console.log("Deploy operator:", operator);
-            _predictLive(operator, "WalletFactory (impl)", "QUIP:WalletFactory:Impl:V1.0.0-beta");
-            _predictLive(operator, "WalletFactory (proxy)", "QUIP:WalletFactory:Proxy:V1.0.0-beta");
+            _predictLive(operator, "WalletFactory (impl)", DeployConstants.FACTORY_IMPL_SALT);
+            _predictLive(operator, "WalletFactory (proxy)", DeployConstants.FACTORY_PROXY_SALT);
             // Impl salts bind the verifier scheme tag (the verifier's PROFILE_TAG ==
-            // SHRINCSParams.PROFILE_ID) — see DeployShrincsBase: a different
+            // SHRINCSParams.PROFILE_ID) — see DeployConstants: a different
             // cryptographic scheme must land at a different implementation address.
+            _predictLiveRaw(operator, "ShrincsWallet (impl)", DeployConstants.shrincsWalletSalt());
             _predictLiveRaw(
-                operator,
-                "ShrincsWallet (impl)",
-                abi.encodePacked("QUIP:ShrincsWallet:V1.1:", SHRINCSParams.PROFILE_ID)
+                operator, "ShrincsPaymaster (impl)", DeployConstants.shrincsPaymasterImplSalt()
             );
-            _predictLiveRaw(
-                operator,
-                "ShrincsPaymaster (impl)",
-                abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.1:", SHRINCSParams.PROFILE_ID)
+            _predictLive(
+                operator, "ShrincsPaymaster (proxy)", DeployConstants.SHRINCS_PAYMASTER_PROXY_SALT
             );
-            _predictLive(operator, "ShrincsPaymaster (proxy)", "QUIP:ShrincsPaymaster:Proxy:V1.1");
         }
         console.log("");
 
@@ -79,8 +75,8 @@ contract PredictAddresses is CreateXHelpers {
         _predictWots(deployerAddr, "QuipPaymaster (proxy)", keccak256("QUIP:QuipPaymaster:Proxy:V1.1"));
 
         // Not deployed by this repo — the canonical hashsigs-solidity CREATE3
-        // verifier the Shrincs impls pin (see DeployShrincsBase).
-        console.log("SHRINCS256sKeccak (pinned):", 0x9154dA0BA19600C543a8c5ed1B1c44af415B5688);
+        // verifier the Shrincs impls pin (see DeployConstants).
+        console.log("SHRINCS256sKeccak (pinned):", DeployConstants.SHRINCS_EXTERNAL_VERIFIER);
     }
 
     function _predictLive(address operator, string memory name, string memory saltString) internal pure {

@@ -7,67 +7,37 @@ import {ShrincsPaymaster} from "../contracts/ShrincsPaymaster.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWallet} from "../contracts/shrincs/ShrincsWallet.sol";
+import {DeployConstants} from "./Constants.sol";
 import {CreateXHelpers} from "./CreateXHelpers.sol";
 import {DeployHelpers} from "./DeployHelpers.sol";
 
 /**
  * @title DeployShrincsBase
- * @dev Shrincs family deploy steps (shared by `DeployAllShrincs` and `DeployAll`):
- *      the ShrincsWallet impl (+ vetting on the shared WalletFactory), and the
- *      ShrincsPaymaster (impl + proxy, initialized with its verifier key).
+ * @dev Shrincs family deploy steps (used by `02_DeployShrincs.s.sol` and the
+ *      deploy tests): the ShrincsWallet impl (+ vetting on the shared
+ *      WalletFactory), and the ShrincsPaymaster (impl + proxy, initialized with
+ *      its verifier key).
  *
  *      The Shrincs contracts have NO library link references, so an inheritor that
  *      deploys ONLY Shrincs needs no `FOUNDRY_PROFILE=deploy`. The shared
  *      WalletFactory must already exist. Deploys go straight through CreateX with
  *      sender-guarded salts (`CreateXHelpers`) — addresses are a function of
- *      (CreateX, DEPLOY_OPERATOR, salt preimage). Salt preimages match
- *      `script/PredictAddresses.s.sol` (V1.1 — bumped for the external-verifier
- *      implementations; CREATE3 reuses an address per salt, so new impl code
- *      needs a new salt on chains that already hold the V1.0 deploys).
+ *      (CreateX, DEPLOY_OPERATOR, salt preimage). Salts and the pinned external
+ *      verifier live in `DeployConstants` (V1.1 — bumped for the
+ *      external-verifier implementations; CREATE3 reuses an address per salt, so
+ *      new impl code needs a new salt on chains that already hold the V1.0
+ *      deploys).
  */
 abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
-    /// Canonical CREATE3 address of the deployed `SHRINCS256sKeccak` ERC-7913 verifier
-    /// (hashsigs-solidity `DEPLOYMENTS.md`; same address on every chain). Pinned as an
-    /// immutable by the ShrincsWallet and ShrincsPaymaster implementation constructors.
-    /// A fresh chain must FIRST run the dep's own CREATE3 deploys — sibling before
-    /// SHRINCS (`SHRINCSVerifier.verifyStateless` reverts on empty sibling code):
-    ///   FOUNDRY_PROFILE=production forge script script/DeploySPHINCSPlusC256sKeccak.s.sol ...
-    ///   FOUNDRY_PROFILE=production forge script script/DeploySHRINCS256sKeccak.s.sol ...
-    /// (full commands in the dep's `DEPLOYMENTS.md`).
-    address internal constant SHRINCS_EXTERNAL_VERIFIER = 0x9154dA0BA19600C543a8c5ed1B1c44af415B5688;
-
-    /// Both implementation salts bind the verifier scheme identifier — the
-    /// constant `PROFILE_TAG()` the deployed verifier exposes to differentiate
-    /// cryptographic schemes (== `SHRINCSParams.PROFILE_ID`, the hash of
-    /// "shrincs-256s-keccak" under this build's `shrincs-profile/` remapping).
-    /// The impls hard-pin the verifier as an immutable, so an impl built against
-    /// a different scheme MUST land at a different CREATE3 address; folding the
-    /// tag into the salt makes that structural instead of relying on a manual
-    /// version bump. `_requireExpectedVerifierScheme` cross-checks the live
-    /// verifier at deploy time.
-    function _shrincsWalletSalt() internal pure returns (bytes memory) {
-        return abi.encodePacked("QUIP:ShrincsWallet:V1.1:", SHRINCSParams.PROFILE_ID);
-    }
-
-    function _shrincsPaymasterImplSalt() internal pure returns (bytes memory) {
-        return abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.1:", SHRINCSParams.PROFILE_ID);
-    }
-
-    // Proxy salt bumped WITH the impl: SHRINCS is testnet-only, so a fresh proxy
-    // (re-initialized from env) is simpler than a UUPS upgrade of the V1.0 proxy.
-    // (No PROFILE_TAG: the ERC-1967 proxy is scheme-agnostic — schemes change
-    // under it via impl deploys.)
-    function _shrincsPaymasterProxySalt() internal pure returns (bytes memory) {
-        return bytes("QUIP:ShrincsPaymaster:Proxy:V1.1");
-    }
-
-    /// The hardcoded verifier address must actually host the scheme the impls
-    /// (and the salts above) were built for: read the deployed verifier's
-    /// constant `PROFILE_TAG()` and require it to match this build's profile.
+    /// The pinned verifier address must actually host the scheme the impls
+    /// (and the salts in `DeployConstants`) were built for: read the deployed
+    /// verifier's constant `PROFILE_TAG()` and require it to match this
+    /// build's profile.
     function _requireExpectedVerifierScheme() internal view {
-        _requireExists(SHRINCS_EXTERNAL_VERIFIER, "SHRINCS256sKeccak");
+        _requireExists(DeployConstants.SHRINCS_EXTERNAL_VERIFIER, "SHRINCS256sKeccak");
         require(
-            SHRINCS256sKeccak(SHRINCS_EXTERNAL_VERIFIER).PROFILE_TAG() == SHRINCSParams.PROFILE_ID,
+            SHRINCS256sKeccak(DeployConstants.SHRINCS_EXTERNAL_VERIFIER).PROFILE_TAG()
+                == SHRINCSParams.PROFILE_ID,
             "SHRINCS verifier scheme mismatch"
         );
     }
@@ -95,16 +65,23 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         });
     }
 
-    /// Deploy + vet the ShrincsWallet impl against `factory`. NOTE: vetting sets
-    /// `latestWalletImpl` to this impl, so on a chain where WOTS+ must remain the
-    /// `deployLatestWalletProxy` default, vet a WOTS+ impl AFTER this (the Shrincs
-    /// SDK always uses `deploySpecificWalletProxy`, so it is order-independent).
-    function _deployShrincsImplAndVet(address operator, uint256 pk, address factory) internal returns (address impl) {
+    /// Deploy + vet the ShrincsWallet impl against `factory`. Vetting sets
+    /// `latestWalletImpl` to this impl — the intended end state of a fresh
+    /// deploy now that the WOTS+ family is sunset. (The Shrincs SDK always
+    /// uses `deploySpecificWalletProxy`, so it is order-independent anyway.)
+    function _deployShrincsImplAndVet(address operator, uint256 pk, address factory)
+        internal
+        returns (address impl)
+    {
         _requireExists(factory, "WalletFactory");
         _requireExpectedVerifierScheme();
-        bytes memory code =
-            abi.encodePacked(type(ShrincsWallet).creationCode, abi.encode(factory, SHRINCS_EXTERNAL_VERIFIER));
-        impl = _createXDeploy(operator, pk, code, _shrincsWalletSalt(), "ShrincsWallet");
+        bytes memory code = abi.encodePacked(
+            type(ShrincsWallet).creationCode,
+            abi.encode(factory, DeployConstants.SHRINCS_EXTERNAL_VERIFIER)
+        );
+        impl = _createXDeploy(
+            operator, pk, code, DeployConstants.shrincsWalletSalt(), "ShrincsWallet"
+        );
         _vetIfNeeded(factory, pk, impl, "ShrincsWallet");
     }
 
@@ -117,20 +94,33 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         require(v.maxSignatures != 0, "SHRINCS verifier maxSignatures zero");
         _requireExpectedVerifierScheme();
 
-        bytes memory implCode =
-            abi.encodePacked(type(ShrincsPaymaster).creationCode, abi.encode(SHRINCS_EXTERNAL_VERIFIER));
-        address impl = _createXDeploy(operator, pk, implCode, _shrincsPaymasterImplSalt(), "ShrincsPaymaster impl");
-        bytes memory initData = abi.encodeCall(
-            ShrincsPaymaster.initialize, (v.paymasterOwner, v.commitment, v.hashSuite, v.maxSignatures)
+        bytes memory implCode = abi.encodePacked(
+            type(ShrincsPaymaster).creationCode,
+            abi.encode(DeployConstants.SHRINCS_EXTERNAL_VERIFIER)
         );
-        bytes memory proxyCode = abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
-        proxy = _createXDeploy(operator, pk, proxyCode, _shrincsPaymasterProxySalt(), "ShrincsPaymaster proxy");
-        require(ShrincsPaymaster(payable(proxy)).owner() == v.paymasterOwner, "ShrincsPaymaster owner mismatch");
-    }
-
-    /// Full Shrincs family deploy against an existing shared `factory`.
-    function _deployShrincsAll(address operator, uint256 pk, address factory, ShrincsVerifier memory v) internal {
-        _deployShrincsImplAndVet(operator, pk, factory);
-        _deployShrincsPaymaster(operator, pk, v);
+        address impl = _createXDeploy(
+            operator,
+            pk,
+            implCode,
+            DeployConstants.shrincsPaymasterImplSalt(),
+            "ShrincsPaymaster impl"
+        );
+        bytes memory initData = abi.encodeCall(
+            ShrincsPaymaster.initialize,
+            (v.paymasterOwner, v.commitment, v.hashSuite, v.maxSignatures)
+        );
+        bytes memory proxyCode =
+            abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
+        proxy = _createXDeploy(
+            operator,
+            pk,
+            proxyCode,
+            bytes(DeployConstants.SHRINCS_PAYMASTER_PROXY_SALT),
+            "ShrincsPaymaster proxy"
+        );
+        require(
+            ShrincsPaymaster(payable(proxy)).owner() == v.paymasterOwner,
+            "ShrincsPaymaster owner mismatch"
+        );
     }
 }

@@ -6,22 +6,15 @@ import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
 import {SPHINCSPlusC256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC256sKeccak.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
-import {Deployer} from "../../contracts/deprecated/Deployer.sol";
 import {IVettingFactory} from "../../script/DeployHelpers.sol";
-import {DeployWotsBase} from "../../script/deprecated/DeployWotsBase.sol";
 import {DeployShrincsBase} from "../../script/DeployShrincsBase.sol";
 import {DeployFactoryBase} from "../../script/DeployFactoryBase.sol";
 
 /// Public wrapper exposing the internal deploy-base helpers so a `Test` can drive
-/// them without inheriting `Script` (avoids the Test/Script diamond). Inherits both
-/// families + the factory base; constants + the `ShrincsVerifier` struct come along.
-/// Live contracts flow through CreateX (sender-guarded); the sunset WOTS+ family
-/// through the deprecated Deployer — mirroring `DeployAll.s.sol` exactly.
-contract DeployHarness is DeployWotsBase, DeployShrincsBase, DeployFactoryBase {
-    function wotsLib(Deployer d, uint256 pk) public returns (address) {
-        return _deployWotsPlusLib(d, pk);
-    }
-
+/// them without inheriting `Script` (avoids the Test/Script diamond). Inherits the
+/// Shrincs + factory bases — the same diamond as `02_DeployShrincs.s.sol` — so
+/// constants and the `ShrincsVerifier` struct come along.
+contract DeployHarness is DeployShrincsBase, DeployFactoryBase {
     function factory(address operator, uint256 pk, address owner, uint256 maxFee) public returns (address) {
         return _deployFactoryViaCreateX(operator, pk, owner, maxFee);
     }
@@ -45,14 +38,6 @@ contract DeployHarness is DeployWotsBase, DeployShrincsBase, DeployFactoryBase {
         );
     }
 
-    function wotsImpl(Deployer d, uint256 pk, address f) public returns (address) {
-        return _deployWotsImplAndVet(d, pk, f);
-    }
-
-    function quipPaymaster(Deployer d, uint256 pk, address owner) public returns (address) {
-        return _deployQuipPaymaster(d, pk, owner);
-    }
-
     function predictLive(address operator, bytes memory saltPreimage) public pure returns (address) {
         return _predictCreateX(operator, saltPreimage);
     }
@@ -62,36 +47,28 @@ contract DeployHarness is DeployWotsBase, DeployShrincsBase, DeployFactoryBase {
     }
 }
 
-/// @dev Run under the DEFAULT profile: a fresh local Deployer lands WOTSPlus at a
-///      non-canonical address, so the `[profile.deploy]` hardcoded link would not
-///      match. These tests exercise only deploy/vet/address/ordering — none of
-///      which call into the WOTSPlus library — so unlinked WOTS bytecode is fine.
-contract DeployAllTest is Test {
+/// @dev Exercises the live deploy sequence (`01_DeployFactory` → `02_DeployShrincs`)
+///      via the shared bases: deploy/vet/address/ordering only. The sunset WOTS+
+///      flow (`script/deprecated/`) is frozen and deliberately untested here.
+contract DeployScriptsTest is Test {
     uint256 internal constant PK = uint256(keccak256("quip.deploy.test.owner"));
     uint256 internal constant MAX_FEE = 1e16;
     bytes32 internal constant VERIFIER_COMMITMENT = keccak256("shrincs.verifier.commitment");
     uint32 internal constant VERIFIER_MAX_SIGS = 16;
 
-    // Salts mirror the deploy bases + PredictAddresses (independent copy: a typo
-    // here fails the address asserts, catching salt drift).
-    bytes32 internal constant WOTSPLUS_SALT = keccak256("QUIP:WOTSPlus:V1.1");
-    bytes32 internal constant WOTS_IMPL_SALT = keccak256("QUIP:WOTSPlusImplementation:V1.1");
-    bytes32 internal constant QUIP_PAYMASTER_PROXY_SALT = keccak256("QUIP:QuipPaymaster:Proxy:V1.1");
-
-    // Live-contract salt PREIMAGES (CreateX path). Impl salts bind the verifier
-    // scheme tag (PROFILE_TAG = the profile-name hash), spelled out literally per
-    // the independent-copy rule above.
+    // Live-contract salt PREIMAGES (CreateX path), mirroring `DeployConstants`
+    // as an INDEPENDENT copy: a typo/drift there fails the address asserts
+    // below. The factory-proxy preimage doubles as the derivation
+    // `02_DeployShrincs` uses to locate the factory.
     bytes internal constant FACTORY_PROXY_PREIMAGE = "QUIP:WalletFactory:Proxy:V1.0.0-beta";
     bytes internal constant SHRINCS_PM_PROXY_PREIMAGE = "QUIP:ShrincsPaymaster:Proxy:V1.1";
 
     address internal owner; // doubles as the DEPLOY_OPERATOR (sender-guarded salts)
-    Deployer internal deployer;
     DeployHarness internal h;
 
     function setUp() public {
         owner = vm.addr(PK);
         vm.deal(owner, 100 ether);
-        deployer = new Deployer();
         h = new DeployHarness();
 
         // Provision CreateX at its canonical address. A plain runtime etch is NOT
@@ -116,10 +93,6 @@ contract DeployAllTest is Test {
         vm.etch(0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A, address(new SPHINCSPlusC256sKeccak()).code);
     }
 
-    function _predictWots(bytes32 salt) internal view returns (address) {
-        return CREATE3.predictDeterministicAddress(salt, address(deployer));
-    }
-
     /// Independent mirror of the sender-guarded derivation (CreateX MsgSender+False
     /// branch): rawSalt = operator(20) ‖ 0x00 ‖ keccak(preimage)[0:11];
     /// guardedSalt = keccak(bytes32(operator) ‖ rawSalt); CREATE3 from CreateX.
@@ -129,51 +102,33 @@ contract DeployAllTest is Test {
         return CREATE3.predictDeterministicAddress(guarded, h.createx());
     }
 
-    /// DeployAll's ordering: factory (CreateX), Shrincs (CreateX, vetted first),
-    /// WOTS+ (Deployer, vetted last). Asserts every contract lands at its
-    /// predicted address — live ones under the sender-guarded CreateX derivation
+    /// The live sequence (01 factory → 02 shrincs impl + paymaster): every
+    /// contract lands at its predicted sender-guarded CreateX address
     /// (independently recomputed here, pinning our helper's formula against
-    /// CreateX's internal `_guard`), WOTS+ ones under the Deployer derivation —
-    /// both impls vet, and WOTS+ is `latest`.
-    function test_deployAll_predictedAddresses_bothVetted_wotsLatest() public {
+    /// CreateX's internal `_guard`), the Shrincs impl vets, and — with WOTS+
+    /// sunset — the Shrincs impl IS `latestWalletImpl`.
+    function test_deploySequence_predictedAddresses_shrincsVettedAndLatest() public {
         address fAddr = h.factory(owner, PK, owner, MAX_FEE);
         address sImpl = h.shrincsImpl(owner, PK, fAddr);
         address sPm =
             h.shrincsPaymaster(owner, PK, owner, VERIFIER_COMMITMENT, HashSuite.HASH_SUITE_ID, VERIFIER_MAX_SIGS);
-        address lib = h.wotsLib(deployer, PK);
-        address wImpl = h.wotsImpl(deployer, PK, fAddr);
-        address qPm = h.quipPaymaster(deployer, PK, owner);
 
-        // Live contracts: sender-guarded CreateX CREATE3, formula pinned by the
-        // independent recomputation AND by the helper's own prediction.
+        // Sender-guarded CreateX CREATE3, formula pinned by the independent
+        // recomputation AND by the helper's own prediction. The factory-proxy
+        // assert also pins the derivation `02_DeployShrincs` uses to locate
+        // the factory without a FACTORY_ADDRESS env var.
         assertEq(fAddr, _predictLiveIndependent(FACTORY_PROXY_PREIMAGE), "WalletFactory proxy addr");
         assertEq(fAddr, h.predictLive(owner, FACTORY_PROXY_PREIMAGE), "helper prediction agrees");
         assertEq(sPm, _predictLiveIndependent(SHRINCS_PM_PROXY_PREIMAGE), "ShrincsPaymaster proxy addr");
 
-        // Sunset WOTS+ era: Deployer-derived CREATE3.
-        assertEq(lib, _predictWots(WOTSPLUS_SALT), "WOTSPlus addr");
-        assertEq(wImpl, _predictWots(WOTS_IMPL_SALT), "WOTSPlusImplementation addr");
-        assertEq(qPm, _predictWots(QUIP_PAYMASTER_PROXY_SALT), "QuipPaymaster proxy addr");
-
         IVettingFactory f = IVettingFactory(fAddr);
         assertTrue(f.getVettedCodeIndex(sImpl.codehash) != type(uint256).max, "shrincs vetted");
-        assertTrue(f.getVettedCodeIndex(wImpl.codehash) != type(uint256).max, "wots vetted");
 
-        // WOTS+ vetted LAST -> it is the default `deployLatestWalletProxy` target.
-        assertEq(f.latestWalletImpl(), wImpl, "latest must be WOTS+");
+        // WOTS+ is sunset: the freshly vetted Shrincs impl is the
+        // `deployLatestWalletProxy` default.
+        assertEq(f.latestWalletImpl(), sImpl, "latest must be Shrincs");
 
         assertGt(sPm.code.length, 0, "shrincs paymaster code");
-        assertGt(qPm.code.length, 0, "quip paymaster code");
-    }
-
-    /// Standalone Shrincs (vetted after WOTS+) makes Shrincs `latest` — the
-    /// documented side effect of `DeployAllShrincs`.
-    function test_standaloneShrincs_makesShrincsLatest() public {
-        address fAddr = h.factory(owner, PK, owner, MAX_FEE);
-        h.wotsLib(deployer, PK);
-        h.wotsImpl(deployer, PK, fAddr); // WOTS+ vetted first -> latest
-        address sImpl = h.shrincsImpl(owner, PK, fAddr); // Shrincs vetted last -> latest
-        assertEq(IVettingFactory(fAddr).latestWalletImpl(), sImpl, "shrincs latest after standalone");
     }
 
     /// Re-running every step is a no-op (skip-if-deployed / skip-if-vetted), never
@@ -181,18 +136,18 @@ contract DeployAllTest is Test {
     function test_idempotent_reRunIsNoOp() public {
         address fAddr = h.factory(owner, PK, owner, MAX_FEE);
         address sImpl1 = h.shrincsImpl(owner, PK, fAddr);
-        h.wotsLib(deployer, PK);
-        address wImpl1 = h.wotsImpl(deployer, PK, fAddr);
+        address sPm1 =
+            h.shrincsPaymaster(owner, PK, owner, VERIFIER_COMMITMENT, HashSuite.HASH_SUITE_ID, VERIFIER_MAX_SIGS);
 
         // Second pass — identical addresses, no revert.
         address fAddr2 = h.factory(owner, PK, owner, MAX_FEE);
         address sImpl2 = h.shrincsImpl(owner, PK, fAddr);
-        h.wotsLib(deployer, PK);
-        address wImpl2 = h.wotsImpl(deployer, PK, fAddr);
+        address sPm2 =
+            h.shrincsPaymaster(owner, PK, owner, VERIFIER_COMMITMENT, HashSuite.HASH_SUITE_ID, VERIFIER_MAX_SIGS);
 
         assertEq(fAddr, fAddr2, "factory stable");
         assertEq(sImpl1, sImpl2, "shrincs impl stable");
-        assertEq(wImpl1, wImpl2, "wots impl stable");
+        assertEq(sPm1, sPm2, "shrincs paymaster stable");
     }
 
     /// Squat-proofing: a caller whose address does not match the salt's first 20

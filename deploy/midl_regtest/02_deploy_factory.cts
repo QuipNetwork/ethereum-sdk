@@ -44,7 +44,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Validate FACTORY_OWNER + MAX_FEE early — these are baked into the
   // creation bytecode at deploy time. Setting either to a placeholder would
   // ship a broken factory (vetImplementation reverts under onlyOwner if
-  // initialOwner = 0x0). Mirrors the env-var contract of DeployAll.s.sol.
+  // initialOwner = 0x0). Mirrors the env-var contract of 01_DeployFactory.s.sol.
   const factoryOwner = process.env.FACTORY_OWNER;
   if (!factoryOwner) {
     throw new Error("FACTORY_OWNER must be set in env / .env file");
@@ -116,7 +116,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   // Load QuipFactory linked creation bytecode from release. The release
   // snapshot stops at "linked creation code, no ctor args" so we encode
   // and append `(initialOwner, maxFee_)` here at deploy time — same
-  // contract as DeployAll.s.sol and 04_deploy_paymaster.cts.
+  // contract as 01_DeployFactory.s.sol and 04_deploy_paymaster.cts.
   const factoryRelease = loadReleaseBytecode("QuipFactory.sol");
   const expectedAddress = factoryRelease.address;
   const ctorArgs = hre.ethers.AbiCoder.defaultAbiCoder().encode(

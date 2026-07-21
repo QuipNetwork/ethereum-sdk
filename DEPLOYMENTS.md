@@ -143,38 +143,45 @@ libraries = [
 ]
 ```
 
-Every script that touches `QuipWallet` bytecode runs under
-`FOUNDRY_PROFILE=deploy`. The Makefile per-chain targets set this
-automatically (harmless for the factory-only script).
+Only the sunset WOTS+ scripts (under `script/deprecated/`) touch
+`QuipWallet` bytecode and run under `FOUNDRY_PROFILE=deploy`; the live
+numbered entrypoints link no libraries and need no profile.
 
 ### Deployment workflow
 
+The live flow is two numbered scripts, run in order (both idempotent —
+re-runs skip anything already deployed/vetted):
+
 ```
-1. Predict addresses     DEPLOY_OPERATOR=0x... make predict-addresses
+0. Predict addresses     DEPLOY_OPERATOR=0x... make predict-addresses
                          # No RPC needed. Live rows require DEPLOY_OPERATOR
                          # (they are a function of it); without it only the
                          # sunset WOTS+-era rows print.
 
-2. Bootstrap Deployer    make deploy-deployer-<chain>
-                         # SUNSET WOTS+ family only — live contracts need no
-                         # bootstrap (they deploy straight through CreateX).
-                         # Skip if Deployer already at canonical address, or
-                         # if not deploying the WOTS+ family at all.
+1. Deploy factory        make deploy-factory-<chain>
+                         # script/01_DeployFactory.s.sol: WalletFactory impl
+                         # + ERC-1967 proxy via CreateX. PRIVATE_KEY must be
+                         # DEPLOY_OPERATOR's key (sender-guarded salts).
+                         # Requires DEPLOY_OPERATOR, FACTORY_OWNER, MAX_FEE.
 
-3. Deploy infra          make deploy-all-<chain>
-                         # WalletFactory + both wallet families + both
-                         # paymasters. PRIVATE_KEY must be DEPLOY_OPERATOR's
-                         # key (live salts are sender-guarded). Requires
-                         # DEPLOY_OPERATOR, FACTORY_OWNER, MAX_FEE,
-                         # PAYMASTER_OWNER, SHRINCS_* in .env.
-
-4. Deploy wallet impl    make deploy-impl-<chain>
-                         # WOTS+ (sunset family) flow, script under script/deprecated/.
-                         # Runs under FOUNDRY_PROFILE=deploy.
-
-5. Vet wallet impl       IMPLEMENTATION=0x... make vet-impl-<chain>
-                         # Factory owner whitelists the new impl.
+2. Deploy Shrincs        make deploy-shrincs-<chain>
+                         # script/02_DeployShrincs.s.sol: ShrincsWallet impl
+                         # (vetted; becomes latestWalletImpl) + ShrincsPaymaster.
+                         # Locates the factory at its canonical derived address
+                         # only (no env override) and verifies it is an
+                         # operator-owned ERC-1967 proxy before broadcasting.
+                         # Requires SHRINCS_* in .env.
 ```
+
+Ops utility: `IMPLEMENTATION=0x... make vet-impl-<chain>` — the factory
+owner whitelists an already-deployed wallet impl (any family; idempotent).
+
+Sunset WOTS+ family (optional, frozen under `script/deprecated/`):
+`make deploy-deployer-<chain>` bootstraps the legacy `Deployer`, then
+`make deploy-impl-<chain>` deploys a WOTSPlusImplementation through it
+(`FOUNDRY_PROFILE=deploy`; per-chain targets set it automatically).
+Note that vetting a WOTS+ impl AFTER the Shrincs deploy would flip
+`latestWalletImpl` back to WOTS+ — the intended default is Shrincs.
 
 `<chain>` is currently `base-sepolia`; see Makefile for the full list of
 per-chain targets.
@@ -190,7 +197,7 @@ API_URL_BASE_SEPOLIA=https://base-sepolia.g.alchemy.com/v2/<key>
 ETHERSCAN_API_KEY=<your-etherscan-v2-key>      # works across all chains
 
 # Wallet — one key for every step. The Makefile auto-loads .env, so
-# `make deploy-all-base-sepolia` etc. pick this up without any further
+# `make deploy-factory-base-sepolia` etc. pick this up without any further
 # arguments. For live-contract deploys PRIVATE_KEY MUST be the key of
 # DEPLOY_OPERATOR (sender-guarded salts revert for any other sender).
 PRIVATE_KEY=0x...
@@ -202,13 +209,19 @@ PRIVATE_KEY=0x...
 DEPLOY_OPERATOR=0x...
 
 # Deploy-time owners / params
-DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1  # sunset WOTS+ era only
 FACTORY_OWNER=0x...                            # controls vetImplementation
 MAX_FEE=1000000000000000                       # wallet creation fee (wei)
-PAYMASTER_OWNER=0x...                          # controls paymaster
+SHRINCS_PAYMASTER_OWNER=0x...                  # 02_DeployShrincs
+SHRINCS_VERIFIER_COMMITMENT=0x...              # 02_DeployShrincs (gen script)
+SHRINCS_VERIFIER_MAX_SIGNATURES=1024           # 02_DeployShrincs
 
-# Per-release (only for deploy-impl-* / vet-impl-*)
-FACTORY_ADDRESS=0xd175378EC511e56BbffcC802375C6ad7d892c083
+# Sunset WOTS+ family only
+DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1
+PAYMASTER_OWNER=0x...                          # QuipPaymaster (WOTS+ era)
+
+# Per-release (deploy-impl-* / vet-impl-* ONLY — the live deploy scripts
+# derive the canonical factory address and accept no override)
+FACTORY_ADDRESS=0x...
 IMPLEMENTATION=0x...                           # filled in after deploy-impl
 ```
 
