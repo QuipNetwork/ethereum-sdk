@@ -84,14 +84,9 @@ import {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
-/// EIP-712 typed data for the hybrid userOp owner co-signature. Its digest
-/// equals the wallet's on-chain `quipUserOpHashEcdsaTarget(userOpHash)`: the
-/// domain mirrors the contract's `_domainNameAndVersion`
-/// (`"QuipShrincsWallet/<profile>/v1"`, version `"1"`) and the struct is the
-/// contract's `_QUIP_USER_OP_HASH_TYPEHASH`. Signing this via
-/// `eth_signTypedData_v4` yields the exact signature the contract recovers to
-/// `owner()` — the browser-wallet-friendly path, since wallets have disabled the
-/// prefix-less `eth_sign` a raw digest would otherwise require.
+/// EIP-712 form of the owner co-signature digest. Mirrors the contract's
+/// `quipUserOpHashEcdsaTarget`, but signable via `eth_signTypedData_v4` — so
+/// browser wallets can co-sign without the disabled `eth_sign`.
 export const quipUserOpHashTypedData = (
   userOpHash: Hex,
   chainId: number,
@@ -946,13 +941,10 @@ export class ShrincsWalletClient {
   /// Sign a `PackedUserOperation` for this wallet: read state, recover the key,
   /// pick the lowest unused leaf, bind the EntryPoint `userOpHash` + live
   /// `actionNonce` into `ACTION_ERC4337_EXECUTE`, collect the owner's ECDSA
-  /// co-signature as an EIP-712 typed-data signature over
-  /// `QuipUserOpHash(bytes32 userOpHash)` (every userOp is hybrid — validation
+  /// co-signature as EIP-712 typed data (every userOp is hybrid — validation
   /// requires BOTH the owner key and the SHRINCS key), and return the userOp
   /// with its `signature` field filled (plus the `userOpHash` and `leaf` used).
-  /// The `owner` must sign for the wallet's on-chain `owner()`; because the
-  /// co-signature is typed data, a browser wallet can produce it via
-  /// `eth_signTypedData_v4` (no prefix-less `eth_sign` needed).
+  /// The `owner` must sign for the wallet's on-chain `owner()`.
   ///
   /// FEE CAP: no fee enters the digest — the `maxFee` ceiling the build methods
   /// put into `callData` is covered by `userOpHash`, and validation reads no
@@ -977,12 +969,8 @@ export class ShrincsWalletClient {
     if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
       throw new ZeroAddressOwnerError();
     }
-    // The co-signature binds the userOpHash, computed exactly as
-    // `signWalletUserOp` will recompute it below. It is collected as an EIP-712
-    // typed-data signature over `QuipUserOpHash(bytes32 userOpHash)` — the same
-    // digest the contract recovers via `quipUserOpHashEcdsaTarget`, but signable
-    // by a browser wallet through `eth_signTypedData_v4` (raw-hash `eth_sign` is
-    // disabled by default in most wallets and being removed).
+    // Recompute the userOpHash exactly as `signWalletUserOp` does below, then
+    // collect the owner co-signature over it as typed data.
     const userOpHash = computeUserOpHash(
       params.userOp,
       params.entryPoint,
