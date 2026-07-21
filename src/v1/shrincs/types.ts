@@ -16,100 +16,58 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { type Hex } from "viem";
+import type {
+  ActionContext as RawActionContext,
+  ForsEntry as RawForsEntry,
+  ForsSignature as RawForsSignature,
+  HypertreeLayerSignature as RawHypertreeLayerSignature,
+  RotationContext as RawRotationContext,
+  RotationTarget as RawRotationTarget,
+  ShrincsPublicKey as RawShrincsPublicKey,
+  StatefulRotationTarget as RawStatefulRotationTarget,
+  StatefulSignature as RawStatefulSignature,
+  StatelessSignature as RawStatelessSignature,
+  WotsCSignature as RawWotsCSignature,
+} from "@quip.network/hashsigs-wasm";
 
-// SHRINCS data shapes. Field names + casing mirror the `hashsigs-rs` WASM JSON
-// surface (camelCase) exactly, so objects returned by the signer flow straight
-// into the WASM message-hash / verify entry points and into the codec's
-// ABI-encoders with no renaming. The same shapes mirror the Solidity
-// `ShrincsTypes` structs (`dependencies/@quip.network-hashsigs-solidity-0.1.0`).
+/// Re-types every string leaf of a wasm DTO as viem `Hex`, preserving
+/// structure; numbers/booleans pass through. Sound for the DTOs below:
+/// every string leaf the wasm emits in them is 0x-prefixed lowercase hex
+/// (audited upstream in hashsigs-ts internal/keys.ts; re-asserted at
+/// runtime by tests/hashsigsBoundary.test.ts). Do NOT apply to the module
+/// surface — e.g. `version()` returns a non-hex string.
+export type DeepHex<T> = T extends string
+  ? Hex
+  : T extends readonly (infer U)[]
+    ? DeepHex<U>[]
+    : T extends object
+      ? { [K in keyof T]: DeepHex<T[K]> }
+      : T;
 
-/// SHRINCS long-lived public key bundle (stateful subkey + stateless root).
-/// The hash suite (keccak-256) is fixed by the library and baked into every
-/// canonical message hash, so the bundle carries no suite/parameter-set field.
-export interface ShrincsPublicKey {
-  /// 68 bytes: stateful pkSeed (32) ‖ stateful root (32) ‖ maxSignatures (4 BE).
-  statefulPublicKey: Hex;
-  /// keccak256 over the full bundle; the on-chain installed-key identity.
-  publicKeyCommitment: Hex;
-  /// Stateless SPHINCS+ public seed (32 bytes).
-  pkSeed: Hex;
-  /// Stateless SPHINCS+ public hypertree root (32 bytes).
-  hypertreeRoot: Hex;
-}
+// The SDK's public data shapes — upstream's shapes, Hex-leaved. Upstream
+// changes (new/renamed fields) flow through automatically on version bump.
+// SDK invariant note: for StatefulSignature, `authPath.length === leaf`
+// (checked by the on-chain verifier for anti-replay).
+export type ShrincsPublicKey = DeepHex<RawShrincsPublicKey>;
+export type StatefulSignature = DeepHex<RawStatefulSignature>;
+export type StatelessSignature = DeepHex<RawStatelessSignature>;
+export type ForsSignature = DeepHex<RawForsSignature>;
+export type ForsEntry = DeepHex<RawForsEntry>;
+export type WotsCSignature = DeepHex<RawWotsCSignature>;
+export type HypertreeLayerSignature = DeepHex<RawHypertreeLayerSignature>;
+export type ActionContext = DeepHex<RawActionContext>;
+export type RotationContext = DeepHex<RawRotationContext>;
+export type StatefulRotationTarget = DeepHex<RawStatefulRotationTarget>;
+export type RotationTarget = DeepHex<RawRotationTarget>;
 
-/// Stateful (fast-path) WOTS-C signature. `authPath.length === leaf index`, the
-/// invariant the on-chain verifier checks for anti-replay.
-export interface StatefulSignature {
-  randomizer: Hex;
-  counter: number;
-  chains: Hex[];
-  authPath: Hex[];
-}
-
-/// Few-time FORS signature at the bottom of the stateless hypertree.
-export interface ForsSignature {
-  randomizer: Hex;
-  counter: number;
-  entries: ForsEntry[];
-}
-
-export interface ForsEntry {
-  secretLeaf: Hex;
-  authPath: Hex[];
-}
-
-/// One hypertree layer authenticating a WOTS-C public key up to its parent
-/// root. Tree coordinates are not carried: the verifier re-derives them from
-/// the message, so the wire shape is just the WOTS-C material + auth path.
-export interface HypertreeLayerSignature {
-  wotsCPkHash: Hex;
-  wotsCSignature: WotsCSignature;
-  authPath: Hex[];
-}
-
-export interface WotsCSignature {
-  randomizer: Hex;
-  counter: number;
-  chains: Hex[];
-}
-
-/// Stateless (recovery/rotation/ERC-1271) SPHINCS+-style signature.
-export interface StatelessSignature {
-  fors: ForsSignature;
-  hypertree: HypertreeLayerSignature[];
-}
-
-/// Canonical signing context for a normal (stateful or stateless) wallet
-/// action. All fields are 32-byte hex. `nonce` is the wallet's live
-/// `actionNonce()` — bound into every context and advanced on every consumed
-/// signature, so a landed action supersedes all outstanding signed material.
-/// (Exception: the paymaster's sponsorship context binds nonce 0.)
-export interface ActionContext {
-  domainSeparator: Hex;
-  nonce: Hex;
-  keyVersion: Hex;
-  actionType: Hex;
-  payloadHash: Hex;
-}
-
-/// Context bound by stateless recovery/rotation messages.
-export interface RotationContext {
-  domainSeparator: Hex;
-  nonce: Hex;
-  keyVersion: Hex;
-}
-
-/// Incoming stateful-only subkey for `rotateKey` (reuses the current stateless
-/// root, so it carries no pkSeed/hypertreeRoot).
-export interface StatefulRotationTarget {
-  statefulPublicKey: Hex;
-  publicKeyCommitment: Hex;
-}
-
-/// Incoming full key bundle for `recoverWallet` / `transferOwnership`.
-export interface RotationTarget {
-  statefulPublicKey: Hex;
-  publicKeyCommitment: Hex;
-  pkSeed: Hex;
-  hypertreeRoot: Hex;
-}
+// The wasm module + live-keypair handle types, re-exported from upstream
+// verbatim. rc.2 exports WasmShrincsKeypair directly, so this is a clean
+// re-export — no ReturnType<shrincsKeygen> proxy. These describe the RAW
+// wasm surface (hex leaves typed `string`); SDK code downcasts at each output
+// site (see shrincsSigner.ts). The Hex-typed DTO aliases above are what the
+// rest of the SDK uses. Upstream signature changes now surface as compile
+// errors at the call sites.
+export type {
+  ShrincsWasmModule,
+  WasmShrincsKeypair,
+} from "@quip.network/hashsigs-wasm";

@@ -2,15 +2,11 @@
   "name": "@quip.network/ethereum-sdk",
   "version": "0.3.0-beta.1",
   "type": "module",
-  "browser": {
-    "./dist/src/v1/shrincs/wasm/loader.node.js": "./dist/src/v1/shrincs/wasm/loader.browser.js"
-  },
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
-    "dist/**/*.json",
-    "dist/**/*.wasm"
+    "dist/**/*.json"
   ],
   "exports": {
     "./v1": {
@@ -93,9 +89,7 @@
   "scripts": {
     "clean": "rimraf dist out cache_forge",
     "copy-abi": "node scripts/copy-abi.js",
-    "copy-wasm": "node scripts/copy-wasm.js",
-    "gen-wasm-inline": "node scripts/gen-wasm-inline.mjs",
-    "build": "forge build && npm run copy-abi && npm run gen-wasm-inline && tsc -p tsconfig.build.json && npm run copy-wasm",
+    "build": "forge build && npm run copy-abi && tsc -p tsconfig.build.json",
     "smoke:fe": "node scripts/fe-smoke.mjs",
     "prepack": "npm run build",
     "format": "prettier --write \"**/*.{ts,js,json,sol}\"",
@@ -139,6 +133,7 @@
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@quip.network/hashsigs": "^0.1.0",
+    "@quip.network/hashsigs-wasm": "0.2.0-rc.2",
     "viem": "^2.21.0"
   }
 }

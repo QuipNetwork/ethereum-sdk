@@ -71,5 +71,5 @@ export type {
 } from "./types.js";
 
 // WASM loader (advanced; most callers go through `ShrincsSigner`).
-export { loadShrincsWasm } from "./wasm/index.js";
-export type { ShrincsWasmModule, WasmShrincsKeypair } from "./wasm/index.js";
+export { loadShrincsWasm } from "@quip.network/hashsigs-wasm";
+export type { ShrincsWasmModule, WasmShrincsKeypair } from "./types.js";
