@@ -112,7 +112,7 @@ contract DeployAllTest is Test {
         // Real-chain precondition mirrored locally: the deploy base's
         // `_requireExists` gate expects the canonical hashsigs-solidity CREATE3
         // deploys (sibling + SHRINCS verifier) to already exist.
-        vm.etch(0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A, address(new SHRINCS256sKeccak()).code);
+        vm.etch(0x9154dA0BA19600C543a8c5ed1B1c44af415B5688, address(new SHRINCS256sKeccak()).code);
         vm.etch(0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A, address(new SPHINCSPlusC256sKeccak()).code);
     }
 

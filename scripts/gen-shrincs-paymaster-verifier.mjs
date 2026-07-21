@@ -40,7 +40,7 @@ const kp = signer.recoverKeyPair(vaultId, { maxSignatures });
 console.log("\n=== ShrincsPaymaster verifier (set these in .env) ===");
 console.log(`SHRINCS_VERIFIER_COMMITMENT=${kp.publicKeyCommitment}`);
 console.log(`SHRINCS_VERIFIER_MAX_SIGNATURES=${maxSignatures}`);
-console.log(`SHRINCS_VERIFIER_PARAM_SET_ID=0`);
+console.log("# SHRINCS_VERIFIER_HASH_SUITE unset -> defaults to the keccak suite");
 console.log("\nKeep SECRET + back up (paymaster backend reuses these to sign):");
 console.log(`  SHRINCS_OPERATOR_SECRET  = ${secretHex.slice(0, 6)}…(hidden)`);
 console.log(`  SHRINCS_VERIFIER_VAULT_ID= ${vaultId}`);

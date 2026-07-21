@@ -44,7 +44,7 @@ import {IVettingFactory} from "./DeployHelpers.sol";
  * Environment:
  *   PRIVATE_KEY      DEPLOY_OPERATOR  DEPLOYER_ADDRESS  FACTORY_OWNER  MAX_FEE
  *   PAYMASTER_OWNER  SHRINCS_PAYMASTER_OWNER  SHRINCS_VERIFIER_COMMITMENT
- *   SHRINCS_VERIFIER_MAX_SIGNATURES  [SHRINCS_VERIFIER_PARAM_SET_ID=0]
+ *   SHRINCS_VERIFIER_MAX_SIGNATURES  [SHRINCS_VERIFIER_HASH_SUITE=<keccak>]
  */
 contract DeployAll is DeployWotsBase, DeployShrincsBase, DeployFactoryBase {
     function run() external {

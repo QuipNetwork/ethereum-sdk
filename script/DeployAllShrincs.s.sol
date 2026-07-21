@@ -36,7 +36,7 @@ import {IVettingFactory} from "./DeployHelpers.sol";
  *   SHRINCS_PAYMASTER_OWNER         - Initial ShrincsPaymaster proxy owner
  *   SHRINCS_VERIFIER_COMMITMENT     - Verifier key bundle commitment (bytes32, non-zero)
  *   SHRINCS_VERIFIER_MAX_SIGNATURES - Verifier stateful budget (non-zero)
- *   SHRINCS_VERIFIER_PARAM_SET_ID   - Parameter-set enum (uint8, default 0)
+ *   SHRINCS_VERIFIER_HASH_SUITE     - Optional; defaults to the keccak suite id
  */
 contract DeployAllShrincs is DeployShrincsBase {
     function run() external {

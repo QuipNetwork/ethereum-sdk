@@ -20,7 +20,7 @@ const EXPECTED = {
   ShrincsWalletImplementation: "0x2A4C7Cc9117a37dC9498A67637C9Fcf109C5b2aC",
   ShrincsPaymaster: "0x681B88b513D1ee3ee9bD4f3A4f6f2F6a8d4d6365",
   ShrincsPaymasterImpl: "0xC318894cb679EAc20e26Ad0762Cce5411A3B2386",
-  ShrincsVerifier: "0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A",
+  ShrincsVerifier: "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688",
 } as const;
 
 describe("shrincs addresses", () => {

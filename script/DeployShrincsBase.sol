@@ -34,7 +34,7 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
     ///   FOUNDRY_PROFILE=production forge script script/DeploySPHINCSPlusC256sKeccak.s.sol ...
     ///   FOUNDRY_PROFILE=production forge script script/DeploySHRINCS256sKeccak.s.sol ...
     /// (full commands in the dep's `DEPLOYMENTS.md`).
-    address internal constant SHRINCS_EXTERNAL_VERIFIER = 0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A;
+    address internal constant SHRINCS_EXTERNAL_VERIFIER = 0x9154dA0BA19600C543a8c5ed1B1c44af415B5688;
 
     /// Both implementation salts bind the verifier scheme identifier — the
     /// constant `PROFILE_TAG()` the deployed verifier exposes to differentiate

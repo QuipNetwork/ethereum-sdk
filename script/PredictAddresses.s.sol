@@ -80,7 +80,7 @@ contract PredictAddresses is CreateXHelpers {
 
         // Not deployed by this repo — the canonical hashsigs-solidity CREATE3
         // verifier the Shrincs impls pin (see DeployShrincsBase).
-        console.log("SHRINCS256sKeccak (pinned):", 0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A);
+        console.log("SHRINCS256sKeccak (pinned):", 0x9154dA0BA19600C543a8c5ed1B1c44af415B5688);
     }
 
     function _predictLive(address operator, string memory name, string memory saltString) internal pure {

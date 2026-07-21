@@ -38,8 +38,8 @@ export interface ShrincsNetworkAddresses {
   ShrincsPaymasterImpl: Address;
   /// The external `SHRINCS256sKeccak` ERC-7913 verifier both implementations
   /// pin as an immutable and delegate all signature crypto to. Deployed by
-  /// hashsigs-solidity's own CREATE3 scripts (its `DEPLOYMENTS.md`), not this
-  /// repo — same address on every chain.
+  /// hashsigs-solidity's own CreateX-based CREATE3 scripts (its
+  /// `DEPLOYMENTS.md`), not this repo — same address on every chain.
   ShrincsVerifier: Address;
 }
 
@@ -66,7 +66,7 @@ const SHRINCS_PAYMASTER_PROXY =
 const SHRINCS_PAYMASTER_IMPL =
   "0xC318894cb679EAc20e26Ad0762Cce5411A3B2386" as Address;
 const SHRINCS_VERIFIER =
-  "0xb76f5acfa4f1e993b36C9c72eD7514eC2c80F00A" as Address;
+  "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688" as Address;
 
 /// Registry keyed by chain id, with a deterministic `default` entry shared by
 /// every chain (CREATE3 addresses are chain-independent).
