@@ -14,7 +14,7 @@ Active Dev Branch : deploy/testnet
 
 | Path                   | Purpose                                                                                                     |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `contracts/`           | Live Solidity contracts: `WalletFactory` (UUPS), the SHRINCS wallet family (`shrincs/`), `Deployer`.          |
+| `contracts/`           | Live Solidity contracts: `WalletFactory` (UUPS), the SHRINCS wallet family (`shrincs/`); sunset code (incl. the `Deployer`) under `deprecated/`. |
 | `contracts/deprecated/` | Sunset WOTS+ wallet family (`wots/`) + `QuipPaymaster`. Fully functional, still tested; no new features.   |
 | `script/`              | Foundry deployment scripts (`*.s.sol`); sunset-family scripts under `script/deprecated/`.                   |
 | `scripts/`             | TypeScript operational scripts: `release.ts`, `fundDeployer.cts`, `drainDeployer.cts`, `balance.cts`, etc.  |
@@ -76,7 +76,8 @@ API_URL_BASE=https://base-mainnet.g.alchemy.com/v2/...
 API_URL_OPTIMISM=https://opt-mainnet.g.alchemy.com/v2/...
 
 # Operator wallet — signs any broadcast (deploys, vetting, utility scripts).
-# For test/build only, can be omitted.
+# For test/build only, can be omitted. For live-contract deploys this MUST
+# be the key of DEPLOY_OPERATOR (see the Deployment section).
 PRIVATE_KEY=0x...
 
 # Etherscan v2 — one key covers Ethereum, Base, Optimism, and their L2 testnets.
@@ -157,7 +158,7 @@ bun run smoke:tarball      # verify the tarball before publishing
 npm publish
 ```
 
-`scripts/release.ts` reads Foundry artifacts from `out/`, computes CREATE3 addresses, links the WOTSPlus library into the `QuipWallet` (WOTS+ implementation) bytecode — the factory links no libraries since the WOTS+ decoupling — and snapshots each release under `deployments/bytecode/<Contract>.sol/` with the compiler settings recorded verbatim from each artifact's metadata. MIDL deploys consume those snapshots via `lib/deploy.cts::loadReleaseBytecode` so the bytecode actually deployed on MIDL matches what was compiled by Foundry for the EVM chains.
+`scripts/release.ts` reads Foundry artifacts from `out/`, computes CREATE3 addresses (`DEPLOY_OPERATOR` is REQUIRED — live canonical addresses are sender-guarded CreateX deployments and therefore a function of the operator; sunset WOTS+-era rows keep their Deployer derivation), links the WOTSPlus library into the `QuipWallet` (WOTS+ implementation) bytecode — the factory links no libraries since the WOTS+ decoupling — and snapshots each release under `deployments/bytecode/<Contract>.sol/` with the compiler settings recorded verbatim from each artifact's metadata. MIDL deploys consume those snapshots via `lib/deploy.cts::loadReleaseBytecode` so the bytecode actually deployed on MIDL matches what was compiled by Foundry for the EVM chains.
 
 ---
 
@@ -166,7 +167,7 @@ npm publish
 EVM deployments go through Foundry scripts in `script/`, driven by the Makefile. Each step writes a broadcast log to `broadcast/<Script>.s.sol/<chainId>/` for replay/inspection.
 
 > ⚠️ **Steps 2 and 4 are governance-sensitive.** `deploy-all-<chain>` sets the initial owners of the on-chain WalletFactory and QuipPaymaster on the target chain; `vet-impl-<chain>` requires the caller to already be the factory owner. 
-> Double-check `FACTORY_OWNER` / `PAYMASTER_OWNER` are addresses you actually want as the long-term operators. Step 1 (bootstrap) and step 3 (impl deploy) don't require coordination — anyone with funds and `PRIVATE_KEY` can run them.
+> Double-check `FACTORY_OWNER` / `PAYMASTER_OWNER` are addresses you actually want as the long-term operators. Step 2 additionally requires `PRIVATE_KEY` to be **`DEPLOY_OPERATOR`'s key** — live canonical addresses are sender-guarded CreateX deployments, a function of the operator address, and no other key can consume the canonical salts. Steps 1 and 3 (sunset WOTS+ flow) don't require coordination — anyone with funds and `PRIVATE_KEY` can run them.
 
 ### Pipeline (per chain)
 
@@ -175,13 +176,13 @@ The numbered steps below also list the `.env` variables each one consumes. Set o
 **0. Predict the CREATE3 addresses for the current bytecode.**
 
 ```bash
-make predict-base-sepolia
-# or: forge script script/PredictAddresses.s.sol --rpc-url <alias>
+DEPLOY_OPERATOR=0x... make predict-addresses
+# or: DEPLOY_OPERATOR=0x... forge script script/PredictAddresses.s.sol
 ```
 
-No env vars beyond the RPC URL for the chain.
+No RPC needed. `DEPLOY_OPERATOR` is required for the live-contract rows (their addresses are a function of it — sender-guarded CreateX salts); without it only the sunset WOTS+-era rows print.
 
-**1. Bootstrap the `Deployer` contract.** One-time per chain. Idempotent — the script checks if the Deployer already exists at the expected address and skips if so. Anyone with a funded wallet can run this; the Deployer's address depends only on the CreateX salt, not on the operator.
+**1. Bootstrap the `Deployer` contract — SUNSET WOTS+ family only.** Live contracts deploy straight through the CreateX singleton and need no bootstrap; run this only when provisioning the deprecated WOTS+ family on a chain. One-time per chain, idempotent — the script checks if the Deployer already exists at the expected address and skips if so. Anyone with a funded wallet can run it (the Deployer sits on an *unguarded* CreateX salt — the permissionless/squattable property the live sender-guarded scheme deliberately closes).
 
 ```bash
 make deploy-deployer-base-sepolia
@@ -189,13 +190,13 @@ make deploy-deployer-base-sepolia
 
 Env: `PRIVATE_KEY` (any funded wallet on the target chain), `ETHERSCAN_API_KEY` (for `--verify`).
 
-**2. Deploy the shared infra — WOTSPlus library, WalletFactory (UUPS impl + ERC-1967 proxy), QuipPaymaster (impl + proxy).** ⚠️ **Governance-sensitive. Contact Rick first.** `FACTORY_OWNER` becomes the only address that can vet implementations, collect creation fees, and **upgrade the factory implementation** on this chain going forward; `PAYMASTER_OWNER` becomes the only address that can configure the Paymaster. These cannot be changed except by their current owners. The factory PROXY address is the permanent identity every wallet bakes in — the impl behind it is replaceable via `upgradeToAndCall`.
+**2. Deploy the full stack — WalletFactory (UUPS impl + ERC-1967 proxy), both wallet families (ShrincsWallet + WOTSPlusImplementation, vetted), and both paymasters.** Live contracts go straight through CreateX (sender-guarded); the sunset WOTS+ half goes through the Deployer from step 1. ⚠️ **Governance-sensitive. Contact Rick first.** `FACTORY_OWNER` becomes the only address that can vet implementations, collect creation fees, and **upgrade the factory implementation** on this chain going forward; `PAYMASTER_OWNER` becomes the only address that can configure the Paymaster. These cannot be changed except by their current owners. The factory PROXY address is the permanent identity every wallet bakes in — the impl behind it is replaceable via `upgradeToAndCall`.
 
 ```bash
 make deploy-all-base-sepolia
 ```
 
-Env: `PRIVATE_KEY`, `DEPLOYER_ADDRESS` (canonical Deployer from step 1, e.g. `0xA1A3990E…` for the current `default` deployment), `FACTORY_OWNER`, `MAX_FEE` (WalletFactory creation fee in wei — `0` is valid), `PAYMASTER_OWNER`, `ETHERSCAN_API_KEY`.
+Env: `PRIVATE_KEY` (must be `DEPLOY_OPERATOR`'s key), `DEPLOY_OPERATOR` (the operator every live canonical address derives from — guard that key), `DEPLOYER_ADDRESS` (canonical Deployer from step 1, e.g. `0xA1A3990E…`, consumed only by the sunset WOTS+ half), `FACTORY_OWNER`, `MAX_FEE` (WalletFactory creation fee in wei), `PAYMASTER_OWNER`, `SHRINCS_PAYMASTER_OWNER`, `SHRINCS_VERIFIER_COMMITMENT`, `SHRINCS_VERIFIER_MAX_SIGNATURES`, `ETHERSCAN_API_KEY`.
 
 **3. Deploy a new QuipWallet (WOTS+ — sunset family) implementation.** Can be run by anyone; deploying does not yet make the implementation usable for new wallets — vetting does (step 4). The script lives under `script/deprecated/`; SHRINCS implementations deploy via their own flow.
 

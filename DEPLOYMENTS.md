@@ -32,51 +32,99 @@ with no env vars and no RPC.
 > under the `./deprecated/*` npm subpaths). SHRINCS (`ShrincsWallet` +
 > `ShrincsPaymaster`) is the go-forward family.
 
-> ⚠️ **Factory V2 (UUPS) supersedes the address above — and was renamed.**
-> The factory became UUPS-upgradeable (impl + ERC-1967 proxy, like the
-> paymaster) on fresh `V2` salts, and in July 2026 the contract was renamed
-> `QuipFactory` → **`WalletFactory`** (the V2 salts carry the new name; they
-> had never been broadcast, so no deployed address was orphaned). The V1.1
-> salt is retired because CREATE3 ignores initcode, so reusing it would
-> resolve to the old non-upgradeable factory on chains where it exists. The
-> V2 proxy address (the permanent factory identity — wallets bake it in,
-> CREATE3 wallet addressing derives from it) materializes on the next
-> deploy; run `make predict-addresses` for the canonical value. The
-> `0xd175…` V1.1 factory above remains on Base Sepolia as a retired
+> ⚠️ **The go-forward factory (UUPS, renamed `WalletFactory`) supersedes the
+> address above — and deploys through a new mechanism.** The factory became
+> UUPS-upgradeable (impl + ERC-1967 proxy, like the paymaster), and in July
+> 2026 the contract was renamed `QuipFactory` → **`WalletFactory`** and the
+> deploy path moved to **CreateX-direct with sender-guarded salts** (see
+> below) on fresh `V1.0.0-beta` salts (the interim `V2` salt strings were
+> never broadcast, so no deployed address was orphaned). The V1.1 salt is
+> retired because CREATE3 ignores initcode, so reusing it would resolve to
+> the old non-upgradeable factory on chains where it exists. The new proxy
+> address (the permanent factory identity — wallets bake it in, CREATE3
+> wallet addressing derives from it) materializes on the next deploy; run
+> `DEPLOY_OPERATOR=0x... make predict-addresses` for the canonical value.
+> The `0xd175…` V1.1 factory above remains on Base Sepolia as a retired
 > artifact under its historical name.
 
 ### Salts
+
+**Live contracts** — sender-guarded CreateX preimages. The deployed address
+is a function of (CreateX, `DEPLOY_OPERATOR`, preimage); only the operator
+can consume the salt. The Shrincs *implementation* preimages append
+`SHRINCSParams.PROFILE_ID` (= `keccak256("shrincs-256s-keccak")`, the
+verifier's `PROFILE_TAG()`) so an impl built against a different
+cryptographic scheme structurally lands at a different address.
+
+| Contract | Salt preimage |
+|---|---|
+| WalletFactory impl (UUPS) | `QUIP:WalletFactory:Impl:V1.0.0-beta` |
+| WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V1.0.0-beta` |
+| ShrincsWallet impl | `QUIP:ShrincsWallet:V1.1:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.1:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.1` |
+
+**Sunset WOTS+ era** — unguarded salts (`keccak256(preimage)`) consumed
+through the deprecated Deployer; addresses depend only on (Deployer, salt).
 
 | Contract | Salt preimage |
 |---|---|
 | Deployer (via CreateX, unchanged) | `QUIP:Deployer:V1` |
 | WOTSPlus | `QUIP:WOTSPlus:V1.1` |
-| WalletFactory impl (UUPS) | `QUIP:WalletFactory:Impl:V2` |
-| WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V2` |
 | QuipFactory (retired, non-upgradeable) | `QUIP:QuipFactory:V1.1` |
 | QuipWallet impl | `QUIP:QuipWallet:V1.1` |
 | QuipPaymaster impl | `QUIP:QuipPaymaster:Impl:V1.1` |
 | QuipPaymaster proxy | `QUIP:QuipPaymaster:Proxy:V1.1` |
 
-### Deployer bootstrap
+### CreateX-direct (live contracts)
 
-The Deployer is the only contract not deployed via solady CREATE3 — it
-*hosts* solady CREATE3, so it can't deploy itself. Instead it's deployed
-via **CreateX** at `0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed`, which is
-itself pre-deployed on every chain via Nick's-method presigned tx.
+Live contracts (`WalletFactory`, `ShrincsWallet`, `ShrincsPaymaster`)
+deploy straight through the **CreateX** singleton at
+`0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed` (pre-deployed on every chain
+via Nick's-method presigned tx) — no in-repo deploy contract, no bootstrap
+step. `script/CreateXHelpers.sol` implements the scheme; the release/predict
+tooling (`scripts/release.ts`, `script/PredictAddresses.s.sol`) mirrors it.
 
-CreateX salt mode: the raw salt `keccak256("QUIP:Deployer:V1")` has its
-first 20 bytes as random hash output (neither `msg.sender` nor
-`address(0)`), so CreateX's guard hits the "other" branch:
-`guardedSalt = keccak256(abi.encode(salt))`. This means:
-- **Unguarded**: any funded wallet can broadcast `DeployDeployer.s.sol`.
-  No fresh-EOA / nonce-1 ritual.
-- **Cross-chain identical**: the guarded salt is deterministic from the
-  preimage, so CreateX deploys the Deployer at the same address on every
-  chain that has CreateX.
+Salt scheme (CreateX's `_parseSalt` layout, MsgSender + no-crosschain mode):
 
-Once the Deployer exists on a chain, every other Quip contract uses it
-to deploy via solady CREATE3.
+```
+rawSalt     = bytes20(DEPLOY_OPERATOR) ‖ 0x00 ‖ bytes11(keccak256(preimage))
+guardedSalt = keccak256(bytes32(uint160(DEPLOY_OPERATOR)) ‖ rawSalt)
+address     = CREATE3(CreateX, guardedSalt)
+```
+
+- **Sender-guarded (squat-proof):** the raw salt embeds the operator's
+  address, so CreateX only accepts it from `msg.sender == DEPLOY_OPERATOR`.
+  Nobody else can consume a canonical salt on a fresh chain. (CREATE3
+  ignores initcode — under the old permissionless Deployer, anyone could
+  have deployed arbitrary code at a canonical address first, and the
+  idempotent skip would have silently accepted it.)
+- **Chain-invariant:** the 21st byte `0x00` opts out of CreateX's chainid
+  binding, so the same (operator, preimage) lands at the same address on
+  every chain.
+- **API asymmetry to remember:** `CreateX.deployCreate3` consumes the RAW
+  salt (and guards internally); address *prediction* consumes the GUARDED
+  salt — offline via solady's `CREATE3.predictDeterministicAddress(guardedSalt,
+  CreateX)` (CreateX uses the same CREATE3 proxy initcode), no RPC needed.
+
+> ⚠️ **Every live canonical address is a function of `DEPLOY_OPERATOR`.**
+> The operator key must sign each canonical deploy on each chain, forever —
+> losing it means losing the ability to materialize the canonical addresses
+> on new chains. Guard that key accordingly.
+
+### Deployer bootstrap (sunset WOTS+ era)
+
+The historical flow for the WOTS+ family, kept only to reproduce the
+deployed artifacts (`contracts/deprecated/Deployer.sol`,
+`script/deprecated/DeployDeployer.s.sol`). The Deployer *hosts* solady
+CREATE3, so it can't deploy itself — it was bootstrapped via CreateX on an
+**unguarded** salt: `keccak256("QUIP:Deployer:V1")` has its first 20 bytes
+as random hash output (neither `msg.sender` nor `address(0)`), so CreateX's
+guard hits the fallback branch `guardedSalt = keccak256(abi.encode(salt))`.
+Any funded wallet can broadcast the bootstrap, and the address is the same
+on every chain — but that permissionlessness is exactly the squatting
+exposure the live sender-guarded scheme closes. Once the Deployer exists on
+a chain, the WOTS+-era contracts deploy through it via solady CREATE3.
 
 ### Library linking
 
@@ -102,16 +150,23 @@ automatically (harmless for the factory-only script).
 ### Deployment workflow
 
 ```
-1. Predict addresses     make predict-addresses
-                         # No env / RPC needed. Prints all canonical addresses.
+1. Predict addresses     DEPLOY_OPERATOR=0x... make predict-addresses
+                         # No RPC needed. Live rows require DEPLOY_OPERATOR
+                         # (they are a function of it); without it only the
+                         # sunset WOTS+-era rows print.
 
 2. Bootstrap Deployer    make deploy-deployer-<chain>
-                         # CreateX-based; any funded wallet works.
-                         # Skip if Deployer already at canonical address.
+                         # SUNSET WOTS+ family only — live contracts need no
+                         # bootstrap (they deploy straight through CreateX).
+                         # Skip if Deployer already at canonical address, or
+                         # if not deploying the WOTS+ family at all.
 
 3. Deploy infra          make deploy-all-<chain>
-                         # WOTSPlus + WalletFactory + QuipPaymaster (impl + proxy).
-                         # Requires FACTORY_OWNER, MAX_FEE, PAYMASTER_OWNER in .env.
+                         # WalletFactory + both wallet families + both
+                         # paymasters. PRIVATE_KEY must be DEPLOY_OPERATOR's
+                         # key (live salts are sender-guarded). Requires
+                         # DEPLOY_OPERATOR, FACTORY_OWNER, MAX_FEE,
+                         # PAYMASTER_OWNER, SHRINCS_* in .env.
 
 4. Deploy wallet impl    make deploy-impl-<chain>
                          # WOTS+ (sunset family) flow, script under script/deprecated/.
@@ -136,12 +191,18 @@ ETHERSCAN_API_KEY=<your-etherscan-v2-key>      # works across all chains
 
 # Wallet — one key for every step. The Makefile auto-loads .env, so
 # `make deploy-all-base-sepolia` etc. pick this up without any further
-# arguments. Forge derives the EOA address internally; no separate
-# "deployer EOA" var is required.
+# arguments. For live-contract deploys PRIVATE_KEY MUST be the key of
+# DEPLOY_OPERATOR (sender-guarded salts revert for any other sender).
 PRIVATE_KEY=0x...
 
+# ⚠️ The operator EVERY live canonical address derives from
+# (WalletFactory, ShrincsWallet, ShrincsPaymaster). This key must sign
+# each canonical deploy on each chain, forever — losing it means losing
+# the ability to materialize the canonical addresses on new chains.
+DEPLOY_OPERATOR=0x...
+
 # Deploy-time owners / params
-DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1
+DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1  # sunset WOTS+ era only
 FACTORY_OWNER=0x...                            # controls vetImplementation
 MAX_FEE=1000000000000000                       # wallet creation fee (wei)
 PAYMASTER_OWNER=0x...                          # controls paymaster

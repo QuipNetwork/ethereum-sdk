@@ -134,12 +134,19 @@ predict-addresses:
 # Each target maps to a [rpc_endpoints] alias in foundry.toml and reads
 # its env vars from .env. Required keys:
 #   PRIVATE_KEY             operator wallet (signs every broadcast — bootstrap,
-#                           infra deploy, impl deploy, vetting)
+#                           infra deploy, impl deploy, vetting). For live-contract
+#                           deploys this MUST be DEPLOY_OPERATOR's key.
+#   DEPLOY_OPERATOR         ⚠️ every LIVE canonical address (WalletFactory,
+#                           Shrincs*) is a function of this address — sender-
+#                           guarded CreateX salts; guard the key (deploy-all-*,
+#                           predict-*)
 #   DEPLOYER_ADDRESS        bootstrapped Deployer contract address (e.g. the
-#                           canonical 0xA1A3990E… when bootstrapped via CreateX)
+#                           canonical 0xA1A3990E…) — sunset WOTS+ family only
 #   FACTORY_OWNER           WalletFactory initial owner (deploy-all-* only)
 #   MAX_FEE                 WalletFactory creation fee in wei (deploy-all-* only)
 #   PAYMASTER_OWNER         QuipPaymaster proxy initial owner (deploy-all-* only)
+#   SHRINCS_PAYMASTER_OWNER / SHRINCS_VERIFIER_COMMITMENT /
+#   SHRINCS_VERIFIER_MAX_SIGNATURES   ShrincsPaymaster init (deploy-all-* only)
 #   FACTORY_ADDRESS         existing WalletFactory address (deploy-impl-*, vet-impl-*)
 #   IMPLEMENTATION          WOTSPlusImplementation impl address (vet-impl-* only)
 #   API_URL_BASE_SEPOLIA    https://… RPC endpoint

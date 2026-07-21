@@ -56,8 +56,13 @@ immediately after the decoupling.
    posture as the paymaster) — upgrade authorization is `_authorizeUpgrade` + `onlyOwner`, and
    the call is PQ-secured upstream by the owning wallet. A timelock on `_authorizeUpgrade` is
    explicitly out of scope for v1 but the decision is recorded as revisitable.
-6. **Proxy deployed via `Deployer` (CREATE3)** so the factory proxy address is chain-invariant.
+6. **Proxy deployed via CREATE3** so the factory proxy address is chain-invariant.
    The implementation address may differ per chain; only the proxy address matters.
+   *(✎ superseded July 2026: originally "via `Deployer`"; the live deploy path is now
+   sender-guarded CreateX-direct — the address is a function of (CreateX,
+   `DEPLOY_OPERATOR`, salt preimage), still chain-invariant, and the permissionless
+   `Deployer` hop is retired to `contracts/deprecated/`. See DEPLOYMENTS.md
+   "CreateX-direct".)*
 7. **CREATE3-behind-proxy determinism**: solady's `CREATE3.deployDeterministic` derives from
    `address(this)` — behind the proxy that is the proxy address, so wallet addresses stay
    deterministic, chain-invariant, and (usefully) stable across factory upgrades. Must be
