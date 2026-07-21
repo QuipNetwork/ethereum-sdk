@@ -21,23 +21,38 @@
  * release bytecode + salt via `lib/deploy.cts::loadReleaseBytecode` to
  * deploy the same compiled bytecode against the MIDL Hardhat toolchain.
  *
- * CREATE3 addresses depend only on (Deployer, salt); they're invariant
- * across chains. The bytecode snapshot exists so MIDL — which deploys
- * the same artifact through a different toolchain — can replay the
- * exact Foundry-compiled bytes.
+ * Address derivation is split (mirrors script/PredictAddresses.s.sol):
+ *
+ *   - LIVE contracts (WalletFactory, ShrincsWallet, ShrincsPaymaster)
+ *     deploy straight through CreateX with SENDER-GUARDED salts — the
+ *     address is f(CreateX, DEPLOY_OPERATOR, salt preimage), identical
+ *     on every chain for the same operator. `DEPLOY_OPERATOR` is
+ *     REQUIRED: there is no canonical live address without it.
+ *   - SUNSET WOTS+-era contracts (WOTSPlus, WOTSPlusImplementation,
+ *     QuipPaymaster) keep their historical derivation through the
+ *     deprecated `Deployer` (itself CreateX-deployed on an unguarded
+ *     salt); those addresses depend only on (Deployer, salt).
+ *
+ * In both cases addresses are invariant across chains. The bytecode
+ * snapshot exists so MIDL — which deploys the same artifact through a
+ * different toolchain — can replay the exact Foundry-compiled bytes.
  *
  * Usage:
  *   forge build
- *   npm run release   # or: make release
+ *   DEPLOY_OPERATOR=0x... npm run release   # or: make release
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import {
+  concatHex,
   encodeAbiParameters,
+  getAddress,
   getContractAddress,
   getCreate2Address,
+  isAddress,
   keccak256,
+  padHex,
   toHex,
   type Address,
   type Hex,
@@ -52,9 +67,27 @@ const OUT_DIR = path.join(ROOT, "out");
 const BYTECODE_DIR = path.join(ROOT, "deployments/bytecode");
 const ADDRESSES_FILE = path.join(ROOT, "src/v1/addresses.json");
 
-// CreateX deployer (https://github.com/pcaversaccio/createx). Bootstraps
-// the canonical Quip `Deployer` via its salt-guarded CREATE3 path.
+// CreateX singleton (https://github.com/pcaversaccio/createx) — the live
+// system's only deploy dependency. Live contracts deploy through its
+// sender-guarded CREATE3 path; it also (historically) bootstrapped the
+// now-deprecated Quip `Deployer` via an unguarded salt.
 const CREATEX_ADDRESS: Address = "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed";
+
+// The deploy operator. Live canonical addresses are a FUNCTION of this
+// address (sender-guarded salts), so the release cannot be computed
+// without it. Must match the `DEPLOY_OPERATOR` used by the Solidity
+// deploy scripts.
+const DEPLOY_OPERATOR: Address = (() => {
+  const raw = process.env.DEPLOY_OPERATOR;
+  if (!raw || !isAddress(raw)) {
+    throw new Error(
+      "DEPLOY_OPERATOR env var is required (checksummed 0x address). " +
+        "Live canonical addresses (WalletFactory, Shrincs*) are sender-guarded " +
+        "CreateX CREATE3 deployments — they are a function of the operator address.",
+    );
+  }
+  return getAddress(raw);
+})();
 
 // Solady CREATE3 proxy initcode hash:
 // keccak256(hex"67363d3d37363d34f03d5260086018f3").
@@ -62,31 +95,52 @@ const PROXY_INITCODE_HASH: Hex =
   "0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f";
 
 // ── Salts ───────────────────────────────────────────────────────────────
-// Mirror the Solidity deploy scripts (script/Deploy*.s.sol) exactly:
-//   keccak256("QUIP:<Name>:<Version>").
+
+// LIVE salt preimages — mirror script/DeployFactoryBase.sol and
+// script/DeployShrincsBase.sol exactly. The Shrincs implementation salts
+// bind the verifier scheme tag (`SHRINCSParams.PROFILE_ID`, the keccak of
+// the profile name) so an impl built against a different cryptographic
+// scheme structurally lands at a different address.
+const SHRINCS_PROFILE_ID = keccak256(toHex("shrincs-256s-keccak"));
+
+const LIVE_SALT_PREIMAGES = {
+  WalletFactoryImpl: toHex("QUIP:WalletFactory:Impl:V1.0.0-beta"),
+  WalletFactoryProxy: toHex("QUIP:WalletFactory:Proxy:V1.0.0-beta"),
+  ShrincsWalletImplementation: concatHex([
+    toHex("QUIP:ShrincsWallet:V1.1:"),
+    SHRINCS_PROFILE_ID,
+  ]),
+  ShrincsPaymasterImpl: concatHex([
+    toHex("QUIP:ShrincsPaymaster:Impl:V1.1:"),
+    SHRINCS_PROFILE_ID,
+  ]),
+  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.1"),
+} as const;
+
+// SUNSET WOTS+-era salts — mirror script/deprecated/DeployerCreate3.sol
+// consumers: keccak256("QUIP:<Name>:<Version>").
 //
-// The Deployer keeps its v1 salt — its on-chain address is the cross-chain
-// pin point, and bumping it would invalidate every downstream prediction
-// without a corresponding redeploy via CreateX everywhere. All other
-// contracts roll forward to V1.1 in lockstep with the deploy scripts.
+// The Deployer keeps its v1 salt — its on-chain address is the pin point
+// for the deployed WOTS+-era artifacts (Base Sepolia), and bumping it
+// would invalidate every downstream prediction. The WOTS+ contracts sit
+// at V1.1 and are frozen there.
 
 const DEPLOYER_SALT_PREIMAGE = "QUIP:Deployer:V1";
-const DOWNSTREAM_VERSION = "V1.1";
+const WOTS_ERA_VERSION = "V1.1";
 
-function downstreamSalt(name: string): Hex {
-  return keccak256(toHex(`QUIP:${name}:${DOWNSTREAM_VERSION}`));
+function wotsEraSalt(name: string): Hex {
+  return keccak256(toHex(`QUIP:${name}:${WOTS_ERA_VERSION}`));
 }
 
 const SALTS = {
   Deployer: keccak256(toHex(DEPLOYER_SALT_PREIMAGE)),
-  WOTSPlus: downstreamSalt("WOTSPlus"),
-  WalletFactory: downstreamSalt("WalletFactory"),
-  WOTSPlusImplementation: downstreamSalt("WOTSPlusImplementation"),
+  WOTSPlus: wotsEraSalt("WOTSPlus"),
+  WOTSPlusImplementation: wotsEraSalt("WOTSPlusImplementation"),
   QuipPaymasterImpl: keccak256(
-    toHex(`QUIP:QuipPaymaster:Impl:${DOWNSTREAM_VERSION}`),
+    toHex(`QUIP:QuipPaymaster:Impl:${WOTS_ERA_VERSION}`),
   ),
   QuipPaymasterProxy: keccak256(
-    toHex(`QUIP:QuipPaymaster:Proxy:${DOWNSTREAM_VERSION}`),
+    toHex(`QUIP:QuipPaymaster:Proxy:${WOTS_ERA_VERSION}`),
   ),
 } as const;
 
@@ -101,9 +155,58 @@ function computeCreate3Address(deployer: Address, salt: Hex): Address {
   return getContractAddress({ from: proxy, nonce: 1n });
 }
 
-// CreateX wraps the user-provided salt as keccak256(abi.encode(salt))
-// before passing it to its CREATE3 proxy. Matches the on-chain behaviour
-// of the canonical CreateX deployment used by `DeployDeployer.s.sol`.
+// ── Sender-guarded CreateX derivation (live contracts) ──────────────────
+// Mirrors script/CreateXHelpers.sol, pinned against the real CreateX
+// singleton by test/script/DeployAll.t.sol:
+//   rawSalt     = bytes20(operator) ‖ 0x00 ‖ bytes11(keccak256(preimage))
+//                 (first 20 bytes == msg.sender → permissioned salt;
+//                  21st byte 0x00 → no chainid, chain-invariant)
+//   guardedSalt = keccak256(bytes32(uint160(operator)) ‖ rawSalt)
+//   address     = CREATE3(CreateX, guardedSalt)
+// NOTE the CreateX API asymmetry: `deployCreate3` consumes the RAW salt
+// (and guards internally); address prediction consumes the GUARDED salt.
+
+function senderGuardedRawSalt(operator: Address, preimage: Hex): Hex {
+  const entropy11 = keccak256(preimage).slice(2, 2 + 22);
+  return `0x${operator.slice(2).toLowerCase()}00${entropy11}` as Hex;
+}
+
+function senderGuardedSalt(operator: Address, rawSalt: Hex): Hex {
+  return keccak256(concatHex([padHex(operator, { size: 32 }), rawSalt]));
+}
+
+function senderGuardedAddress(operator: Address, preimage: Hex): Address {
+  return computeCreate3Address(
+    CREATEX_ADDRESS,
+    senderGuardedSalt(operator, senderGuardedRawSalt(operator, preimage)),
+  );
+}
+
+const FACTORY_IMPL_ADDRESS = senderGuardedAddress(
+  DEPLOY_OPERATOR,
+  LIVE_SALT_PREIMAGES.WalletFactoryImpl,
+);
+const FACTORY_PROXY_ADDRESS = senderGuardedAddress(
+  DEPLOY_OPERATOR,
+  LIVE_SALT_PREIMAGES.WalletFactoryProxy,
+);
+const SHRINCS_WALLET_IMPL_ADDRESS = senderGuardedAddress(
+  DEPLOY_OPERATOR,
+  LIVE_SALT_PREIMAGES.ShrincsWalletImplementation,
+);
+const SHRINCS_PAYMASTER_IMPL_ADDRESS = senderGuardedAddress(
+  DEPLOY_OPERATOR,
+  LIVE_SALT_PREIMAGES.ShrincsPaymasterImpl,
+);
+const SHRINCS_PAYMASTER_PROXY_ADDRESS = senderGuardedAddress(
+  DEPLOY_OPERATOR,
+  LIVE_SALT_PREIMAGES.ShrincsPaymasterProxy,
+);
+
+// ── Deployer-derived addresses (sunset WOTS+ era) ───────────────────────
+// CreateX wraps an UNGUARDED user-provided salt as keccak256(abi.encode(salt))
+// before passing it to its CREATE3 proxy — the fallback branch the historical
+// `Deployer` bootstrap (script/deprecated/DeployDeployer.s.sol) went through.
 function createxGuard(salt: Hex): Hex {
   return keccak256(encodeAbiParameters([{ type: "bytes32" }], [salt]));
 }
@@ -113,10 +216,6 @@ const DEPLOYER_ADDRESS = computeCreate3Address(
   createxGuard(SALTS.Deployer),
 );
 const WOTS_ADDRESS = computeCreate3Address(DEPLOYER_ADDRESS, SALTS.WOTSPlus);
-const FACTORY_ADDRESS = computeCreate3Address(
-  DEPLOYER_ADDRESS,
-  SALTS.WalletFactory,
-);
 const WALLET_ADDRESS = computeCreate3Address(
   DEPLOYER_ADDRESS,
   SALTS.WOTSPlusImplementation,
@@ -183,7 +282,15 @@ interface ReleaseFile {
   network: string;
   deploymentMethod: string;
   deployer: Address;
+  /// Sender-guarded rows only: the DEPLOY_OPERATOR the address derives from.
+  operator?: Address;
+  /// Sender-guarded rows only: human-readable salt preimage (the raw salt in
+  /// `salt` is bytes20(operator) ‖ 0x00 ‖ bytes11(keccak256(preimage))).
+  saltPreimage?: string;
   salt: Hex;
+  /// Sender-guarded rows only: keccak256(bytes32(operator) ‖ rawSalt) — what
+  /// CREATE3 address prediction consumes (deploys consume the raw `salt`).
+  guardedSalt?: Hex;
   compiler: {
     version: string;
     evmVersion: string;
@@ -204,6 +311,9 @@ interface BuildArgs {
   creationBytecode: Hex;
   linkedLibraries?: Record<string, Address>;
   constructorArgsDescription?: string;
+  /// Set for live sender-guarded CreateX rows; WOTS+-era rows omit it and
+  /// default to the historical Deployer derivation.
+  senderGuarded?: { operator: Address; saltPreimage: string };
 }
 
 function writeRelease(artifact: FoundryArtifact, args: BuildArgs): void {
@@ -212,9 +322,22 @@ function writeRelease(artifact: FoundryArtifact, args: BuildArgs): void {
     address: args.address,
     chainId: "*",
     network: "all EVM networks (CREATE3-deterministic)",
-    deploymentMethod: "CREATE3 via Deployer",
-    deployer: DEPLOYER_ADDRESS,
+    deploymentMethod: args.senderGuarded
+      ? "CREATE3 via CreateX (sender-guarded salt)"
+      : "CREATE3 via Deployer (sunset WOTS+ era)",
+    deployer: args.senderGuarded ? CREATEX_ADDRESS : DEPLOYER_ADDRESS,
+    ...(args.senderGuarded
+      ? {
+          operator: args.senderGuarded.operator,
+          saltPreimage: args.senderGuarded.saltPreimage,
+        }
+      : {}),
     salt: args.salt,
+    ...(args.senderGuarded
+      ? {
+          guardedSalt: senderGuardedSalt(args.senderGuarded.operator, args.salt),
+        }
+      : {}),
     compiler: {
       version: artifact.metadata.compiler.version,
       evmVersion: artifact.metadata.settings.evmVersion,
@@ -254,12 +377,23 @@ function main(): void {
   console.log("=".repeat(60));
   console.log("Quip Network Release (Foundry-native)");
   console.log("=".repeat(60));
-  console.log(`Deployer:              ${DEPLOYER_ADDRESS}`);
-  console.log(`WOTSPlus:              ${WOTS_ADDRESS}`);
-  console.log(`WalletFactory:           ${FACTORY_ADDRESS}`);
-  console.log(`WOTSPlusImplementation (impl):     ${WALLET_ADDRESS}`);
-  console.log(`QuipPaymaster (impl):  ${PAYMASTER_IMPL_ADDRESS}`);
-  console.log(`QuipPaymaster (proxy): ${PAYMASTER_PROXY_ADDRESS}`);
+  console.log("Live (CreateX-direct, sender-guarded):");
+  console.log(`  Deploy operator:          ${DEPLOY_OPERATOR}`);
+  console.log(`  WalletFactory (impl):     ${FACTORY_IMPL_ADDRESS}`);
+  console.log(`  WalletFactory (proxy):    ${FACTORY_PROXY_ADDRESS}`);
+  console.log(`  ShrincsWallet (impl):     ${SHRINCS_WALLET_IMPL_ADDRESS}`);
+  console.log(`  ShrincsPaymaster (impl):  ${SHRINCS_PAYMASTER_IMPL_ADDRESS}`);
+  console.log(`  ShrincsPaymaster (proxy): ${SHRINCS_PAYMASTER_PROXY_ADDRESS}`);
+  console.log(
+    "  (Shrincs handles are hand-pinned in src/v1/shrincs/addresses.ts —",
+  );
+  console.log("   update them there if the rows above differ.)");
+  console.log("Sunset WOTS+ era (via deprecated Deployer):");
+  console.log(`  Deployer:                      ${DEPLOYER_ADDRESS}`);
+  console.log(`  WOTSPlus:                      ${WOTS_ADDRESS}`);
+  console.log(`  WOTSPlusImplementation (impl): ${WALLET_ADDRESS}`);
+  console.log(`  QuipPaymaster (impl):          ${PAYMASTER_IMPL_ADDRESS}`);
+  console.log(`  QuipPaymaster (proxy):         ${PAYMASTER_PROXY_ADDRESS}`);
   console.log("");
 
   // WOTSPlus: no constructor, no library deps.
@@ -273,26 +407,31 @@ function main(): void {
     creationBytecode: ensureHex(wots.bytecode.object),
   });
 
-  // WalletFactory: WOTSPlus-linked creation bytecode WITHOUT ctor args. The
-  // constructor `(address payable initialOwner, uint256 maxFee_)` is
-  // chain-specific (each chain picks its own factory owner + creation fee),
-  // so the deploy script must abi-encode and append these at deploy time.
-  // Same pattern as the QuipPaymaster proxy below — see DeployAll.s.sol's
-  // EVM-side encoding and deploy/midl_regtest/02_deploy_factory.cts for the
-  // MIDL-side encoding.
+  // WalletFactory: implementation creation bytecode WITHOUT ctor args (the
+  // factory no longer links WOTSPlus — it vets arbitrary wallet impls). The
+  // snapshotted bytecode is the UUPS IMPLEMENTATION; the canonical user-facing
+  // factory is the ERC-1967 proxy at FACTORY_PROXY_ADDRESS (recorded in
+  // addresses.json). The proxy is intentionally NOT snapshotted: its creation
+  // code embeds `initialize(owner)`, which varies per chain — deploy scripts
+  // compose it (see script/DeployFactoryBase.sol). CREATE3 addresses are
+  // invariant to constructor args either way.
   const factory = readArtifact("WalletFactory");
   writeRelease(factory, {
     contractDir: "WalletFactory.sol",
     comment:
-      "WalletFactory linked creation bytecode (no constructor args) for CREATE3 deployment. Generated by scripts/release.ts from Foundry artifacts.",
-    address: FACTORY_ADDRESS,
-    salt: SALTS.WalletFactory,
-    creationBytecode: ensureHex(
-      linkWotsPlus(factory.bytecode.object, WOTS_ADDRESS),
+      "WalletFactory implementation creation bytecode (no constructor args) for sender-guarded CREATE3 deployment via CreateX. Generated by scripts/release.ts from Foundry artifacts. NOTE: this is the implementation address — the canonical user-facing factory is the ERC-1967 proxy (see src/v1/addresses.json:WalletFactory).",
+    address: FACTORY_IMPL_ADDRESS,
+    salt: senderGuardedRawSalt(
+      DEPLOY_OPERATOR,
+      LIVE_SALT_PREIMAGES.WalletFactoryImpl,
     ),
-    linkedLibraries: { WOTSPlus: WOTS_ADDRESS },
+    senderGuarded: {
+      operator: DEPLOY_OPERATOR,
+      saltPreimage: "QUIP:WalletFactory:Impl:V1.0.0-beta",
+    },
+    creationBytecode: ensureHex(factory.bytecode.object),
     constructorArgsDescription:
-      "constructor(address payable initialOwner, uint256 maxFee_). NOT encoded into this snapshot. Deploy scripts must abi.encode (address, uint256) the per-chain values and append before calling Deployer.deploy. CREATE3 address is invariant to these args.",
+      "constructor(uint256 maxFee_). NOT encoded into this snapshot. Deploy scripts must abi.encode (uint256) the max execute-fee bound and append before calling CreateX.deployCreate3. The owner is set on the proxy via initialize(address payable).",
   });
 
   // WOTSPlusImplementation: WOTSPlus-linked creation bytecode WITHOUT ctor args. The
@@ -345,12 +484,15 @@ function main(): void {
   //
   // Shape must match `NetworkAddresses` in src/v1/addresses.ts (the SDK
   // reads this JSON at module load and asserts every field as `Address`).
-  // The wallet/paymaster impl entries are surfaced so tooling can verify
-  // which impls are vetted on a given chain without re-deriving from salts.
+  // WalletFactory is the LIVE ERC-1967 proxy (sender-guarded CreateX row —
+  // a function of DEPLOY_OPERATOR); the remaining keys are sunset WOTS+-era
+  // rows kept for the deployed Base Sepolia artifacts. The wallet/paymaster
+  // impl entries are surfaced so tooling can verify which impls are vetted
+  // on a given chain without re-deriving from salts.
   const addresses = {
     Deployer: DEPLOYER_ADDRESS,
     WOTSPlus: WOTS_ADDRESS,
-    WalletFactory: FACTORY_ADDRESS,
+    WalletFactory: FACTORY_PROXY_ADDRESS,
     WOTSPlusImplementation: WALLET_ADDRESS,
     QuipPaymaster: PAYMASTER_PROXY_ADDRESS,
     QuipPaymasterImpl: PAYMASTER_IMPL_ADDRESS,

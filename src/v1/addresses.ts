@@ -27,8 +27,15 @@ import { UnsupportedNetworkError } from "./errors.js";
  * Network-specific contract address configuration
  */
 export interface NetworkAddresses {
+  /// Sunset WOTS+-era CREATE3 bootstrap (now `contracts/deprecated/Deployer.sol`).
+  /// Kept because the deployed WOTS+-era artifacts derive their addresses from
+  /// it; LIVE contracts deploy straight through CreateX with sender-guarded
+  /// salts and do not touch it.
   Deployer: Address;
   WOTSPlus: Address;
+  /// LIVE WalletFactory ERC-1967 proxy — a sender-guarded CreateX CREATE3
+  /// deployment, so its address is a function of (CreateX, DEPLOY_OPERATOR,
+  /// salt), identical on every chain reached by the same operator.
   WalletFactory: Address;
   /// WOTSPlusImplementation implementation that the factory clones via CREATE3 on
   /// `createWallet`. The impl itself is never called directly (its
@@ -74,13 +81,16 @@ export const CHAIN_IDS = {
 } as const;
 
 /// Chains that share the deterministic CREATE3 deployment addresses captured
-/// under the `default` entry of `NETWORK_ADDRESSES`. Quip contracts deploy
-/// through the `Deployer` (see `contracts/Deployer.sol`), which calls
-/// solady's `CREATE3.deployDeterministic` — addresses depend only on
-/// (Deployer, salt), so any chain reached by the same operator with the same
-/// salts inherits the same addresses. Any chainId not in this list AND not
-/// explicitly registered in `NETWORK_ADDRESSES` is rejected by
-/// `getNetworkAddresses` with `UnsupportedNetworkError`.
+/// under the `default` entry of `NETWORK_ADDRESSES`. Live Quip contracts
+/// deploy straight through the CreateX singleton with SENDER-GUARDED salts —
+/// addresses depend only on (CreateX, DEPLOY_OPERATOR, salt); the sunset
+/// WOTS+-era contracts derive through the deprecated `Deployer`
+/// (`contracts/deprecated/Deployer.sol`), depending only on (Deployer, salt).
+/// Either way the derivation is chain-independent, so any chain reached by
+/// the same operator with the same salts inherits the same addresses. Any
+/// chainId not in this list AND not explicitly registered in
+/// `NETWORK_ADDRESSES` is rejected by `getNetworkAddresses` with
+/// `UnsupportedNetworkError`.
 const SHARED_DEPLOYMENT_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
   CHAIN_IDS.ETHEREUM_MAINNET,
   CHAIN_IDS.SEPOLIA,

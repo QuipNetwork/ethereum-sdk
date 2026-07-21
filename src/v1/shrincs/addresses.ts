@@ -43,16 +43,22 @@ export interface ShrincsNetworkAddresses {
   ShrincsVerifier: Address;
 }
 
-// Deterministic CREATE3 addresses produced by `script/PredictAddresses.s.sol`.
-// The implementation salts bind the verifier SCHEME tag on top of the version:
-// `keccak256("QUIP:ShrincsWallet:V1.1:" ‖ PROFILE_ID)` (and the paymaster-impl
+// Deterministic CREATE3 addresses produced by `script/PredictAddresses.s.sol`
+// (run with `DEPLOY_OPERATOR` set). Shrincs contracts deploy straight through
+// the CreateX singleton with SENDER-GUARDED salts, so each address is a
+// function of (CreateX, DEPLOY_OPERATOR, salt preimage) — not the bytecode —
+// and is identical on every chain reached by the same operator. The
+// implementation salt preimages bind the verifier SCHEME tag on top of the
+// version: `"QUIP:ShrincsWallet:V1.1:" ‖ PROFILE_ID` (and the paymaster-impl
 // analog) where PROFILE_ID = keccak256("shrincs-256s-keccak") — the deployed
 // verifier's constant `PROFILE_TAG()` — so implementations pinned to a
-// different cryptographic scheme land at different addresses. The proxy salt
-// is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1` (scheme-agnostic). CREATE3
-// makes the address depend only on (Deployer, salt) — not the bytecode — so
-// these are identical on every chain the canonical Deployer is bootstrapped
-// on, and are stable once the DeployShrincs* scripts deploy with these salts.
+// different cryptographic scheme land at different addresses. The proxy
+// preimage is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1` (scheme-agnostic).
+//
+// NOTE: the values below predate the sender-guarded CreateX migration (they
+// were derived through the now-deprecated `Deployer`). Regenerate them via
+// `DEPLOY_OPERATOR=0x... forge script script/PredictAddresses.s.sol` before
+// the first CreateX-direct deploy is broadcast.
 const SHRINCS_WALLET_IMPLEMENTATION =
   "0x2A4C7Cc9117a37dC9498A67637C9Fcf109C5b2aC" as Address;
 const SHRINCS_PAYMASTER_PROXY =

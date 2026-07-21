@@ -20,10 +20,11 @@
 // WOTSPlusImplementationClient, QuipClient, QuipPaymasterClient, WotsCodec,
 // …) moved to `./deprecated/v1` and is no longer exported from this barrel.
 
-// ABIs (generated). The WOTS-family ABIs still exist under the generated
-// `./v1/abi` subpath — the live decode registry needs them — but are only
-// re-exported from the `./deprecated/v1` barrel.
-export { deployerAbi } from "./abi/Deployer.js";
+// ABIs (generated). The WOTS-family ABIs — including the sunset `Deployer`
+// bootstrap (live deploys go straight through CreateX with sender-guarded
+// salts and need no in-repo deploy contract) — still exist under the
+// generated `./v1/abi` subpath, but are only re-exported from the
+// `./deprecated/v1` barrel.
 export { walletFactoryAbi } from "./abi/WalletFactory.js";
 export { entryPointV07Abi } from "./abi/EntryPointV07.js";
 

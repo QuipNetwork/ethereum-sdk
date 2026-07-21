@@ -24,6 +24,7 @@ assert(typeof live.computeUserOpHash === "function", "computeUserOpHash missing 
 assert(typeof live.QuipError === "function", "QuipError missing from v1 barrel");
 assert(live.QuipSigner === undefined, "QuipSigner leaked into the live v1 barrel — WOTS+ surface must stay in ./deprecated/v1");
 assert(live.WotsCodec === undefined, "WotsCodec leaked into the live v1 barrel");
+assert(live.deployerAbi === undefined, "deployerAbi leaked into the live v1 barrel — the Deployer is sunset WOTS+-era infra (live deploys go straight through CreateX)");
 
 console.log("  - live v1 subpath exports...");
 const liveErrors = await import("@quip.network/ethereum-sdk/v1/errors");
@@ -39,6 +40,7 @@ assert(typeof barrel.QuipClient === "function", "QuipClient missing");
 assert(typeof barrel.QuipPaymasterClient === "function", "QuipPaymasterClient missing");
 assert(typeof barrel.WotsCodec === "object", "WotsCodec namespace missing");
 assert(typeof barrel.WotsCodec.encodeInit === "function", "WotsCodec.encodeInit missing");
+assert(Array.isArray(barrel.deployerAbi), "deployerAbi missing from deprecated/v1 barrel (sunset Deployer ABI must stay reachable)");
 assert(barrel.KeyType.Transaction === 0, "KeyType enum wrong");
 assert(typeof barrel.CANONICAL_ENTRYPOINT_V07 === "string", "CANONICAL_ENTRYPOINT_V07 missing (shared re-export)");
 assert(typeof barrel.parseWalletReceipt === "function", "parseWalletReceipt missing");
