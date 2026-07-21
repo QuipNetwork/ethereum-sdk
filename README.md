@@ -196,7 +196,7 @@ Env: `PRIVATE_KEY` (must be `DEPLOY_OPERATOR`'s key), `DEPLOY_OPERATOR` (the ope
 make deploy-shrincs-base-sepolia
 ```
 
-Env: `PRIVATE_KEY`, `DEPLOY_OPERATOR`, `SHRINCS_PAYMASTER_OWNER`, `SHRINCS_VERIFIER_COMMITMENT`, `SHRINCS_VERIFIER_MAX_SIGNATURES`, `ETHERSCAN_API_KEY`.
+Env: `PRIVATE_KEY`, `DEPLOY_OPERATOR`, `SHRINCS_PAYMASTER_OWNER`, `SHRINCS_VERIFIER_PUBLIC_KEY` (abi-encoded verifier bundle from `scripts/gen-shrincs-paymaster-verifier.mjs` — the commitment and leaf budget are derived from it on-chain), `ETHERSCAN_API_KEY`.
 
 **Ops: vet an implementation on the factory.** ⚠️ **Requires the calling `PRIVATE_KEY` to be the factory's current owner.** The factory's `vetImplementation` is `onlyOwner`, so any other key produces a revert; a successful vet makes the impl the new `latestWalletImpl`. **Contact Rick** for coordination if you're not the registered factory owner on the target chain.
 

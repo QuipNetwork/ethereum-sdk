@@ -235,8 +235,11 @@ DEPLOY_OPERATOR=0x...
 FACTORY_OWNER=0x...                            # controls vetImplementation
 MAX_FEE=1000000000000000                       # wallet creation fee (wei)
 SHRINCS_PAYMASTER_OWNER=0x...                  # 02_DeployShrincs
-SHRINCS_VERIFIER_COMMITMENT=0x...              # 02_DeployShrincs (gen script)
-SHRINCS_VERIFIER_MAX_SIGNATURES=1024           # 02_DeployShrincs
+SHRINCS_VERIFIER_PUBLIC_KEY=0x...              # 02_DeployShrincs — abi-encoded
+                                               # SHRINCS.PublicKey bundle from
+                                               # gen-shrincs-paymaster-verifier.mjs;
+                                               # initialize derives the commitment
+                                               # + leaf budget from it on-chain
 
 # Sunset WOTS+ family only
 DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1
