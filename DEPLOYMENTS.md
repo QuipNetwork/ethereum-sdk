@@ -1,5 +1,29 @@
 # Deployments
 
+## Live — canonical addresses (CreateX-direct, sender-guarded)
+
+The go-forward lineage: WalletFactory (UUPS) + SHRINCS family, deployed by
+`script/01_DeployFactory.s.sol` → `script/02_DeployShrincs.s.sol`. Every
+address is a function of (CreateX, `DEPLOY_OPERATOR`, salt preimage) — see
+`script/Constants.sol` for the salts — and is identical on every chain the
+operator deploys to. Derived for the canonical operator below; verify locally
+with `DEPLOY_OPERATOR=0x... make predict-addresses`.
+
+| | Address |
+|---|---|
+| DEPLOY_OPERATOR (canonical) | `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` |
+| WalletFactory impl | `0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f` |
+| **WalletFactory proxy** (permanent factory identity) | `0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5` |
+| ShrincsWallet impl | `0xb84a596A6fB567FC4634b4f49212410D1193140e` |
+| ShrincsPaymaster impl | `0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59` |
+| **ShrincsPaymaster proxy** (canonical paymaster) | `0xE38420930EBD214FE8FEb403dd66F4887AEF76E8` |
+| SHRINCS256sKeccak verifier (external, pinned) | `0x9154dA0BA19600C543a8c5ed1B1c44af415B5688` |
+
+> The verifier is deployed by hashsigs-solidity's own CreateX scripts (its
+> `DEPLOYMENTS.md`), not this repo — the Shrincs implementations pin it as an
+> immutable, and `02_DeployShrincs` refuses to deploy unless the pinned
+> address hosts the expected scheme (`PROFILE_TAG`).
+
 ## v1.1 — canonical addresses (CREATE3 via the v1 Deployer)
 
 All v1.1 contracts share the same addresses on every chain where the v1
@@ -42,10 +66,9 @@ with no env vars and no RPC.
 > retired because CREATE3 ignores initcode, so reusing it would resolve to
 > the old non-upgradeable factory on chains where it exists. The new proxy
 > address (the permanent factory identity — wallets bake it in, CREATE3
-> wallet addressing derives from it) materializes on the next deploy; run
-> `DEPLOY_OPERATOR=0x... make predict-addresses` for the canonical value.
-> The `0xd175…` V1.1 factory above remains on Base Sepolia as a retired
-> artifact under its historical name.
+> wallet addressing derives from it) is recorded in the **Live** table at the
+> top of this file. The `0xd175…` V1.1 factory above remains on Base Sepolia
+> as a retired artifact under its historical name.
 
 ### Salts
 

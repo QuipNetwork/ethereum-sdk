@@ -55,16 +55,15 @@ export interface ShrincsNetworkAddresses {
 // different cryptographic scheme land at different addresses. The proxy
 // preimage is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1` (scheme-agnostic).
 //
-// NOTE: the values below predate the sender-guarded CreateX migration (they
-// were derived through the now-deprecated `Deployer`). Regenerate them via
-// `DEPLOY_OPERATOR=0x... forge script script/PredictAddresses.s.sol` before
-// the first CreateX-direct deploy is broadcast.
+// The values below are derived for the canonical DEPLOY_OPERATOR
+// `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` and deploy via
+// `script/02_DeployShrincs.s.sol` (see DEPLOYMENTS.md).
 const SHRINCS_WALLET_IMPLEMENTATION =
-  "0x2A4C7Cc9117a37dC9498A67637C9Fcf109C5b2aC" as Address;
+  "0xb84a596A6fB567FC4634b4f49212410D1193140e" as Address;
 const SHRINCS_PAYMASTER_PROXY =
-  "0x681B88b513D1ee3ee9bD4f3A4f6f2F6a8d4d6365" as Address;
+  "0xE38420930EBD214FE8FEb403dd66F4887AEF76E8" as Address;
 const SHRINCS_PAYMASTER_IMPL =
-  "0xC318894cb679EAc20e26Ad0762Cce5411A3B2386" as Address;
+  "0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59" as Address;
 const SHRINCS_VERIFIER =
   "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688" as Address;
 
