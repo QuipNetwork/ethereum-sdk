@@ -39,8 +39,9 @@ import {IVettingFactory} from "./DeployHelpers.sol";
  *   PRIVATE_KEY                     - Factory-owner key; MUST be DEPLOY_OPERATOR's
  *   DEPLOY_OPERATOR                 - Canonical deploy operator (sender-guarded salts)
  *   SHRINCS_PAYMASTER_OWNER         - Initial ShrincsPaymaster proxy owner
- *   SHRINCS_VERIFIER_COMMITMENT     - Verifier key bundle commitment (bytes32, non-zero)
- *   SHRINCS_VERIFIER_MAX_SIGNATURES - Verifier stateful budget (non-zero)
+ *   SHRINCS_VERIFIER_PUBLIC_KEY     - abi-encoded SHRINCS.PublicKey bundle (from
+ *                                     scripts/gen-shrincs-paymaster-verifier.mjs);
+ *                                     commitment + leaf budget are derived from it
  *   SHRINCS_VERIFIER_HASH_SUITE     - Optional; defaults to the keccak suite id
  */
 contract DeployShrincs is DeployShrincsBase, DeployFactoryBase {

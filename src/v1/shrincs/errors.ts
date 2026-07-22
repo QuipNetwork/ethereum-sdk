@@ -451,12 +451,6 @@ export class InvalidEntryPointError extends QuipError {
   }
 }
 
-export class ZeroCommitmentError extends QuipError {
-  constructor(opts?: QuipErrorOptions) {
-    super("SHRINCS_ZERO_COMMITMENT", "Verifier commitment is zero", opts);
-  }
-}
-
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                  GENERIC (solady/oz)                        */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

@@ -2,10 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Generates the ShrincsPaymaster verifier-key commitment to seal into the
-// paymaster's `initialize(...)` at deploy time. The SAME (secret, vaultId,
-// maxSignatures) MUST be held by the paymaster sponsorship backend afterward —
-// it is how `ShrincsPaymasterClient.sponsorUserOp` re-derives the signing key.
+// Generates the ShrincsPaymaster verifier public-key bundle to seal into the
+// paymaster's `initialize(...)` at deploy time (the contract derives the
+// commitment and the stateful leaf budget from the bundle — they are never
+// trusted parameters). The SAME (secret, vaultId, maxSignatures) MUST be held
+// by the paymaster sponsorship backend afterward — it is how
+// `ShrincsPaymasterClient.sponsorUserOp` re-derives the signing key.
 // Back them up securely; losing them bricks sponsorship for this verifier epoch.
 //
 // Usage (after `npm run build`):
@@ -15,7 +17,7 @@
 //     node scripts/gen-shrincs-paymaster-verifier.mjs
 
 import { hexToBytes, isHex } from "viem";
-import { ShrincsSigner } from "../dist/src/v1/shrincs/index.js";
+import { ShrincsSigner, ShrincsCodec } from "../dist/src/v1/shrincs/index.js";
 
 function req(name) {
   const v = process.env[name];
@@ -37,10 +39,12 @@ if (!Number.isInteger(maxSignatures) || maxSignatures <= 0)
 const signer = await ShrincsSigner.create(hexToBytes(secretHex));
 const kp = signer.recoverKeyPair(vaultId, { maxSignatures });
 
-console.log("\n=== ShrincsPaymaster verifier (set these in .env) ===");
-console.log(`SHRINCS_VERIFIER_COMMITMENT=${kp.publicKeyCommitment}`);
-console.log(`SHRINCS_VERIFIER_MAX_SIGNATURES=${maxSignatures}`);
+console.log("\n=== ShrincsPaymaster verifier (set this in .env) ===");
+console.log(`SHRINCS_VERIFIER_PUBLIC_KEY=${ShrincsCodec.encodePublicKeyBundle(kp.publicKey)}`);
 console.log("# SHRINCS_VERIFIER_HASH_SUITE unset -> defaults to the keccak suite");
+console.log("\nDerived on-chain from the bundle at initialize (informational):");
+console.log(`  commitment    = ${kp.publicKeyCommitment}`);
+console.log(`  maxSignatures = ${maxSignatures}`);
 console.log("\nKeep SECRET + back up (paymaster backend reuses these to sign):");
 console.log(`  SHRINCS_OPERATOR_SECRET  = ${secretHex.slice(0, 6)}…(hidden)`);
 console.log(`  SHRINCS_VERIFIER_VAULT_ID= ${vaultId}`);

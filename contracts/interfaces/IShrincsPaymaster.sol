@@ -39,8 +39,6 @@ interface IShrincsPaymaster is IPaymaster {
     error ZeroAddressVerifier();
     /// @notice Thrown when the caller is not the ERC-4337 EntryPoint.
     error InvalidEntryPoint();
-    /// @notice Thrown when registering a zero verifier commitment.
-    error ZeroCommitment();
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();
@@ -48,9 +46,11 @@ interface IShrincsPaymaster is IPaymaster {
     ///         compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this implementation
     ///         verifies; SHRINCS binds it into every canonical message hash).
     error UnsupportedHashSuite();
-    /// @notice Thrown by `rotateStatefulKey` when the presented current bundle does not match the
-    ///         installed commitment, the rotation target is malformed, or the target's declared
-    ///         commitment does not match the recomputed next-bundle commitment.
+    /// @notice Thrown by `initialize` when the presented bundle is malformed (field lengths, or an
+    ///         embedded commitment that does not recompute), and by `rotateStatefulKey` when the
+    ///         presented current bundle does not match the installed commitment, the rotation
+    ///         target is malformed, or the target's declared commitment does not match the
+    ///         recomputed next-bundle commitment.
     error CommitmentMismatch();
     /// @notice Thrown when `markLeavesUsed` is called with an empty target array (burning nothing
     ///         is almost certainly a client bug).
@@ -148,17 +148,20 @@ interface IShrincsPaymaster is IPaymaster {
 
     /// @notice Initializes the paymaster proxy with an owner AND its initial global SHRINCS verifier
     ///         key. Callable once. The paymaster always has a verifier from this point on — there is
-    ///         no way to unset it (only rotate via `rotateStatefulKey`).
+    ///         no way to unset it (only rotate via `rotateStatefulKey`). The full public-key bundle
+    ///         is required (not just its commitment) so the installed commitment and stateful leaf
+    ///         budget are DERIVED from validated key material, exactly like `rotateStatefulKey` and
+    ///         the wallet's `initialize` — the budget is never a trusted free parameter.
     /// @param owner_ The paymaster owner.
-    /// @param commitment The initial verifier-key bundle commitment.
+    /// @param publicKey The initial verifier public-key bundle. Its embedded commitment must
+    ///        recompute (`SHRINCS.validPublicKey`); the stateful leaf budget is decoded from
+    ///        `publicKey.statefulPublicKey`.
     /// @param hashSuite The verifier key's hash-suite id (client-agreement
     ///        check; must be `HASH_SUITE_KECCAK_256`).
-    /// @param maxSignatures The key's stateful leaf budget.
     function initialize(
         address owner_,
-        bytes32 commitment,
-        uint32 hashSuite,
-        uint32 maxSignatures
+        SHRINCS.PublicKey calldata publicKey,
+        uint32 hashSuite
     ) external;
 
     /// @notice Rotates ONLY the stateful subkey of the global SHRINCS verifier key, carrying the

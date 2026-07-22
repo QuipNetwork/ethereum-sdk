@@ -13,12 +13,12 @@ import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 
 /// @dev Behavior tests for `initialize`, which installs the owner AND the initial verifier atomically
-///      (the paymaster always has a verifier afterward). No signature is verified, so every branch is
-///      testable now. Uses a fresh etched harness whose constructor never ran, so the `initializer`
-///      path is reachable.
+///      (the paymaster always has a verifier afterward). The full public-key bundle is presented and
+///      the commitment + leaf budget are DERIVED from it (never trusted parameters), so these tests
+///      feed the real keygen bundle from the base and pin the derived values. Uses a fresh etched
+///      harness whose constructor never ran, so the `initializer` path is reachable.
 contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     ShrincsPaymasterHarness internal bare;
-    bytes32 internal constant COMMITMENT = keccak256("verifier-commitment");
     uint32 internal constant SUITE = HashSuite.HASH_SUITE_ID;
 
     function setUp() public override {
@@ -32,8 +32,8 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
         bare = ShrincsPaymasterHarness(payable(bareAddr));
     }
 
-    function test_initialize_setsOwnerAndVerifier() public {
-        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
+    function test_initialize_setsOwnerAndDerivedVerifier() public {
+        bare.initialize(OWNER, _pk(), SUITE);
 
         assertEq(bare.owner(), OWNER, "owner");
         (
@@ -43,16 +43,17 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
             uint32 maxSignatures,
             uint32 statefulLeavesUsed
         ) = bare.getShrincsVerifier();
-        assertEq(commitment, COMMITMENT, "commitment installed");
+        assertEq(commitment, verifierCommitment, "commitment derived from bundle");
         assertEq(keyVersion, 0, "initial epoch 0");
-        assertEq(maxSignatures, MAX_SIG, "budget cached");
+        assertEq(maxSignatures, MAX_SIG, "budget decoded from key bytes");
+        assertEq(bare.remainingStatefulSignatures(), MAX_SIG, "full budget remaining");
         assertEq(statefulLeavesUsed, 0, "no leaves used");
         assertFalse(bare.isStatefulLeafUsed(1), "fresh bitmap");
     }
 
     function test_initialize_emitsEvents() public {
         vm.recordLogs();
-        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
+        bare.initialize(OWNER, _pk(), SUITE);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool init;
@@ -69,7 +70,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
                 set = true;
                 assertEq(
                     logs[i].topics[1],
-                    COMMITMENT,
+                    verifierCommitment,
                     "newCommitment indexed"
                 );
             }
@@ -81,7 +82,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     /// @dev The hash suite is not stored (initialize rejects everything but keccak-256), so the
     ///      view must echo the constant.
     function test_initialize_reportsHashSuite() public {
-        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
+        bare.initialize(OWNER, _pk(), SUITE);
         (, uint32 hashSuite, , , ) = bare.getShrincsVerifier();
         assertEq(hashSuite, SUITE, "hashSuite reported");
     }
@@ -89,14 +90,14 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     /// @dev A hash suite the on-chain library does not verify must be rejected at install time.
     function test_initialize_revertsWhen_unsupportedHashSuite() public {
         vm.expectRevert(IShrincsPaymaster.UnsupportedHashSuite.selector);
-        bare.initialize(OWNER, COMMITMENT, SHRINCS.HASH_SUITE_UNSUPPORTED, MAX_SIG);
+        bare.initialize(OWNER, _pk(), SHRINCS.HASH_SUITE_UNSUPPORTED);
     }
 
     /// @dev Pins the FULL `ShrincsVerifierSet` payload at initialization: previousCommitment is zero
-    ///      (first registration), the hashSuite/maxSignatures echo the args, and the epoch is 0.
+    ///      (first registration), commitment/maxSignatures are the DERIVED values, and the epoch is 0.
     function test_initialize_emitsShrincsVerifierSetFullPayload() public {
         vm.recordLogs();
-        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
+        bare.initialize(OWNER, _pk(), SUITE);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
@@ -108,7 +109,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
                 found = true;
                 assertEq(
                     logs[i].topics[1],
-                    COMMITMENT,
+                    verifierCommitment,
                     "newCommitment indexed"
                 );
                 (
@@ -119,7 +120,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
                 ) = abi.decode(logs[i].data, (bytes32, uint32, uint32, uint256));
                 assertEq(previousCommitment, bytes32(0), "no prior commitment");
                 assertEq(hashSuite, SUITE, "hashSuite in data");
-                assertEq(maxSignatures, MAX_SIG, "maxSignatures in data");
+                assertEq(maxSignatures, MAX_SIG, "decoded maxSignatures in data");
                 assertEq(keyVersion, 0, "initial epoch in data");
             }
         }
@@ -128,22 +129,51 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
 
     function test_initialize_revertsWhen_zeroOwner() public {
         vm.expectRevert(IShrincsPaymaster.ZeroAddressOwner.selector);
-        bare.initialize(address(0), COMMITMENT, SUITE, MAX_SIG);
+        bare.initialize(address(0), _pk(), SUITE);
     }
 
-    function test_initialize_revertsWhen_zeroCommitment() public {
-        vm.expectRevert(IShrincsPaymaster.ZeroCommitment.selector);
-        bare.initialize(OWNER, bytes32(0), SUITE, MAX_SIG);
+    /// @dev A stateful subkey of the wrong fixed width fails `validPublicKey`'s shape check.
+    function test_initialize_revertsWhen_malformedStatefulKey() public {
+        SHRINCS.PublicKey memory pk = _pk();
+        bytes memory truncated = new bytes(SHRINCSParams.STATEFUL_PUBLIC_KEY_BYTES - 1);
+        for (uint256 i = 0; i < truncated.length; i++) {
+            truncated[i] = pk.statefulPublicKey[i];
+        }
+        pk.statefulPublicKey = truncated;
+        vm.expectRevert(IShrincsPaymaster.CommitmentMismatch.selector);
+        bare.initialize(OWNER, pk, SUITE);
     }
 
-    function test_initialize_revertsWhen_zeroMaxSignatures() public {
+    /// @dev An embedded commitment that does not recompute over the bundle is rejected — a typo'd
+    ///      bundle can never install a commitment nobody can sign for.
+    function test_initialize_revertsWhen_tamperedCommitment() public {
+        SHRINCS.PublicKey memory pk = _pk();
+        pk.publicKeyCommitment[0] ^= 0xff;
+        vm.expectRevert(IShrincsPaymaster.CommitmentMismatch.selector);
+        bare.initialize(OWNER, pk, SUITE);
+    }
+
+    /// @dev A bundle whose key bytes encode a zero leaf budget (bytes [64,68) of the stateful
+    ///      subkey) can never authorize a signature; the embedded commitment is recomputed so the
+    ///      bundle passes `validPublicKey` and the revert isolates the budget check.
+    function test_initialize_revertsWhen_zeroDecodedMaxSignatures() public {
+        SHRINCS.PublicKey memory pk = _pk();
+        for (uint256 i = 64; i < 68; i++) {
+            pk.statefulPublicKey[i] = 0;
+        }
+        bytes32 recomputed = SHRINCS.publicKeyCommitmentFromParts(
+            pk.statefulPublicKey,
+            pk.pkSeed,
+            pk.hypertreeRoot
+        );
+        pk.publicKeyCommitment = abi.encodePacked(recomputed);
         vm.expectRevert(IShrincsPaymaster.ZeroMaxSignatures.selector);
-        bare.initialize(OWNER, COMMITMENT, SUITE, 0);
+        bare.initialize(OWNER, pk, SUITE);
     }
 
     function test_initialize_revertsWhen_alreadyInitialized() public {
-        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
+        bare.initialize(OWNER, _pk(), SUITE);
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        bare.initialize(OWNER, COMMITMENT, SUITE, MAX_SIG);
+        bare.initialize(OWNER, _pk(), SUITE);
     }
 }

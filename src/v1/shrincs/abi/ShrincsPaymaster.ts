@@ -135,17 +135,34 @@ export const shrincsPaymasterAbi = [
         "internalType": "address"
       },
       {
-        "name": "commitment",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "publicKey",
+        "type": "tuple",
+        "internalType": "struct SHRINCS.PublicKey",
+        "components": [
+          {
+            "name": "statefulPublicKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "publicKeyCommitment",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "pkSeed",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "hypertreeRoot",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       },
       {
         "name": "hashSuite",
-        "type": "uint32",
-        "internalType": "uint32"
-      },
-      {
-        "name": "maxSignatures",
         "type": "uint32",
         "internalType": "uint32"
       }
@@ -847,11 +864,6 @@ export const shrincsPaymasterAbi = [
   {
     "type": "error",
     "name": "ZeroAddressVerifier",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ZeroCommitment",
     "inputs": []
   },
   {

@@ -59,7 +59,6 @@ import {
   DelegateExecuteDisabledError,
   // Paymaster
   InvalidEntryPointError,
-  ZeroCommitmentError,
   // Generic
   UnauthorizedError,
   AlreadyInitializedError,
@@ -131,7 +130,6 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
 
   // Paymaster
   InvalidEntryPoint: (_, o) => new InvalidEntryPointError(o),
-  ZeroCommitment: (_, o) => new ZeroCommitmentError(o),
 
   // Generic (solady/oz)
   Unauthorized: (_, o) => new UnauthorizedError(o),

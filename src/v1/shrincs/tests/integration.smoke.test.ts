@@ -264,12 +264,12 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxSignatures: MAX_SIGS,
     });
 
-    // Initialize the paymaster with the operator's verifier commitment, then
-    // fund its EntryPoint deposit + stake so it can sponsor.
+    // Initialize the paymaster with the operator's full verifier bundle (the
+    // contract derives the commitment + leaf budget from it), then fund its
+    // EntryPoint deposit + stake so it can sponsor.
     await initializePaymaster(stack, {
       owner: stack.account.address,
-      commitment: verifierKey.publicKeyCommitment,
-      maxSignatures: MAX_SIGS,
+      publicKey: verifierKey.publicKey,
       hashSuite: HASH_SUITE_KECCAK_256,
     });
 
@@ -631,8 +631,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     await initializePaymaster(stack, {
       owner: stack.account.address,
-      commitment: key1.publicKeyCommitment,
-      maxSignatures: MAX_SIGS,
+      publicKey: key1.publicKey,
       paymaster,
     });
 

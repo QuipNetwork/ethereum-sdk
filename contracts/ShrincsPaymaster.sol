@@ -115,15 +115,24 @@ contract ShrincsPaymaster is
     /// @inheritdoc IShrincsPaymaster
     function initialize(
         address owner_,
-        bytes32 commitment,
-        uint32 hashSuite,
-        uint32 maxSignatures
+        SHRINCS.PublicKey calldata publicKey,
+        uint32 hashSuite
     ) external initializer {
         if (owner_ == address(0)) revert ZeroAddressOwner();
-        if (commitment == bytes32(0)) revert ZeroCommitment();
+        // The SHRINCS library hardcodes HASH_SUITE_KECCAK_256 into every canonical message
+        // hash, so the declared suite is a client-agreement check, not a dispatch choice.
         if (hashSuite != HashSuite.HASH_SUITE_ID)
             revert UnsupportedHashSuite();
-        if (maxSignatures == 0) revert ZeroMaxSignatures();
+
+        // Validate the supplied bundle's fixed shape and its embedded commitment
+        // (validPublicKey checks the embedded commitment recomputes), then derive the
+        // leaf budget from the key bytes — like `rotateStatefulKey` and the wallet's
+        // `initialize`, the budget is never a trusted free parameter.
+        if (!SHRINCS.validPublicKey(publicKey)) revert CommitmentMismatch();
+        bytes32 commitment = bytes32(publicKey.publicKeyCommitment[:32]);
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(publicKey.statefulPublicKey);
+        if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
 
         _initializeOwner(owner_);
 
@@ -131,14 +140,14 @@ contract ShrincsPaymaster is
         // The initial verifier occupies epoch 0; the paymaster always has a verifier from here on.
         // statefulLeavesUsed and the leaf bitmap start empty by default.
         $.shrincsCommitment = commitment;
-        $.maxSignatures = maxSignatures;
+        $.maxSignatures = decoded.maxSignatures;
 
         emit PaymasterInitialized(owner_);
         emit ShrincsVerifierSet(
             bytes32(0),
             commitment,
             hashSuite,
-            maxSignatures,
+            decoded.maxSignatures,
             0
         );
     }
