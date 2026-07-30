@@ -41,7 +41,17 @@ library DeployConstants {
     // ── Versions ─────────────────────────────────────────────────────
 
     string internal constant FACTORY_VERSION = "V1.0.0-beta";
-    string internal constant SHRINCS_VERSION = "V1.1";
+
+    // The wallet and the paymaster version INDEPENDENTLY — each contract's salt
+    // moves only when its own bytecode does. The wallet is unchanged since its
+    // V1.1 deploy; the paymaster rolled to V1.0.1-beta when `initialize` began
+    // taking the full public-key bundle (the commitment + leaf budget are now
+    // derived on-chain rather than passed in), which changed its bytecode.
+    // V1.0.1-beta is NOT "newer than" V1.1 as a version string — it re-bases the
+    // paymaster onto the same `-beta` scheme the factory already uses. Salts are
+    // opaque preimages, so only uniqueness matters.
+    string internal constant SHRINCS_WALLET_VERSION = "V1.1";
+    string internal constant SHRINCS_PAYMASTER_VERSION = "V1.0.1-beta";
 
     // ── Salt preimages (sender-guarded CreateX CREATE3) ──────────────
     // The deployed address is a function of (CreateX, DEPLOY_OPERATOR,
@@ -51,10 +61,14 @@ library DeployConstants {
     string internal constant FACTORY_PROXY_SALT = "QUIP:WalletFactory:Proxy:V1.0.0-beta";
 
     // Proxy salt bumped WITH the impl: SHRINCS is testnet-only, so a fresh proxy
-    // (re-initialized from env) is simpler than a UUPS upgrade of the V1.0 proxy.
+    // (re-initialized from env) is simpler than a UUPS upgrade of the live one.
     // (No PROFILE_TAG: the ERC-1967 proxy is scheme-agnostic — schemes change
     // under it via impl deploys.)
-    string internal constant SHRINCS_PAYMASTER_PROXY_SALT = "QUIP:ShrincsPaymaster:Proxy:V1.1";
+    // The retired V1.1 pair stays live on Base Sepolia running the pre-rework
+    // code; see DEPLOYMENTS.md. Do NOT reuse those preimages — their CREATE3
+    // addresses are permanently occupied there.
+    string internal constant SHRINCS_PAYMASTER_PROXY_SALT =
+        "QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta";
 
     /// Both implementation salts bind the verifier scheme identifier — the
     /// constant `PROFILE_TAG()` the deployed verifier exposes to differentiate
@@ -70,6 +84,8 @@ library DeployConstants {
     }
 
     function shrincsPaymasterImplSalt() internal pure returns (bytes memory) {
-        return abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.1:", SHRINCSParams.PROFILE_ID);
+        return abi.encodePacked(
+            "QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:", SHRINCSParams.PROFILE_ID
+        );
     }
 }

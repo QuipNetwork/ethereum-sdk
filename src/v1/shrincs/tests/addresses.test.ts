@@ -15,13 +15,14 @@ import {
 // `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26`. The impl salts bind the
 // verifier scheme tag: `"QUIP:ShrincsWallet:V1.1:" ‖
 // keccak256("shrincs-256s-keccak")` (and the paymaster-impl analog); the proxy
-// salt is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1`. Pinned here so a
-// salt/operator drift is caught. `ShrincsVerifier` is the canonical
-// hashsigs-solidity CREATE3 deploy the implementations pin.
+// salt is the plain `QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta` — the paymaster
+// versions independently of the wallet. Pinned here so a salt/operator drift is
+// caught. `ShrincsVerifier` is the canonical hashsigs-solidity CREATE3 deploy
+// the implementations pin.
 const EXPECTED = {
   ShrincsWalletImplementation: "0xb84a596A6fB567FC4634b4f49212410D1193140e",
-  ShrincsPaymaster: "0xE38420930EBD214FE8FEb403dd66F4887AEF76E8",
-  ShrincsPaymasterImpl: "0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59",
+  ShrincsPaymaster: "0xd258BA8ddEACe7A74184f368B7FDb55DDa53DcC5",
+  ShrincsPaymasterImpl: "0x71c976A2FCed1B5e9C171BAf029a12fdaf391f49",
   ShrincsVerifier: "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688",
 } as const;
 

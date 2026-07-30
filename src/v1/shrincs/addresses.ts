@@ -53,7 +53,13 @@ export interface ShrincsNetworkAddresses {
 // analog) where PROFILE_ID = keccak256("shrincs-256s-keccak") — the deployed
 // verifier's constant `PROFILE_TAG()` — so implementations pinned to a
 // different cryptographic scheme land at different addresses. The proxy
-// preimage is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1` (scheme-agnostic).
+// preimage is the plain `QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta`
+// (scheme-agnostic).
+//
+// The wallet and the paymaster version independently. The paymaster pair moved
+// to V1.0.1-beta when `initialize` began taking the full public-key bundle; the
+// retired V1.1 pair (`0xfc5b4E75…` impl, `0xE38420…` proxy) is still live on
+// Base Sepolia running the pre-rework code and must NOT be used.
 //
 // The values below are derived for the canonical DEPLOY_OPERATOR
 // `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` and deploy via
@@ -61,9 +67,9 @@ export interface ShrincsNetworkAddresses {
 const SHRINCS_WALLET_IMPLEMENTATION =
   "0xb84a596A6fB567FC4634b4f49212410D1193140e" as Address;
 const SHRINCS_PAYMASTER_PROXY =
-  "0xE38420930EBD214FE8FEb403dd66F4887AEF76E8" as Address;
+  "0xd258BA8ddEACe7A74184f368B7FDb55DDa53DcC5" as Address;
 const SHRINCS_PAYMASTER_IMPL =
-  "0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59" as Address;
+  "0x71c976A2FCed1B5e9C171BAf029a12fdaf391f49" as Address;
 const SHRINCS_VERIFIER =
   "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688" as Address;
 

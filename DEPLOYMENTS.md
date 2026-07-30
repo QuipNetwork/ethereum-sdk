@@ -9,15 +9,31 @@ address is a function of (CreateX, `DEPLOY_OPERATOR`, salt preimage) — see
 operator deploys to. Derived for the canonical operator below; verify locally
 with `DEPLOY_OPERATOR=0x... make predict-addresses`.
 
+**Live on Base Sepolia (84532) and OP Sepolia (11155420) as of 2026-07-29.**
+OP Sepolia got the full stack; Base Sepolia's factory and wallet impl predate
+that day (2026-07-21) and were untouched — only the paymaster pair rolled, so
+both chains now run identical code at identical addresses.
+
 | | Address |
 |---|---|
 | DEPLOY_OPERATOR (canonical) | `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` |
 | WalletFactory impl | `0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f` |
 | **WalletFactory proxy** (permanent factory identity) | `0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5` |
 | ShrincsWallet impl | `0xb84a596A6fB567FC4634b4f49212410D1193140e` |
-| ShrincsPaymaster impl | `0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59` |
-| **ShrincsPaymaster proxy** (canonical paymaster) | `0xE38420930EBD214FE8FEb403dd66F4887AEF76E8` |
+| ShrincsPaymaster impl | `0x71c976A2FCed1B5e9C171BAf029a12fdaf391f49` |
+| **ShrincsPaymaster proxy** (canonical paymaster) | `0xd258BA8ddEACe7A74184f368B7FDb55DDa53DcC5` |
 | SHRINCS256sKeccak verifier (external, pinned) | `0x9154dA0BA19600C543a8c5ed1B1c44af415B5688` |
+
+> ⚠️ **Retired paymaster pair (V1.1).** `0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59`
+> (impl) and `0xE38420930EBD214FE8FEb403dd66F4887AEF76E8` (proxy) are still live
+> on Base Sepolia running the PRE-rework code, where `initialize` took a
+> commitment + leaf budget directly instead of deriving them from the full
+> public-key bundle. Their CREATE3 addresses are permanently occupied there, so
+> the V1.1 preimages can never be redeployed — hence the roll to `V1.0.1-beta`,
+> which also re-bases the paymaster onto the same `-beta` scheme the factory
+> uses. Withdraw the retired proxy's EntryPoint deposit/stake; nothing should
+> point at it. The wallet impl and the factory did NOT change and keep their
+> addresses.
 
 > The verifier is deployed by hashsigs-solidity's own CreateX scripts (its
 > `DEPLOYMENTS.md`), not this repo — the Shrincs implementations pin it as an
@@ -84,8 +100,14 @@ cryptographic scheme structurally lands at a different address.
 | WalletFactory impl (UUPS) | `QUIP:WalletFactory:Impl:V1.0.0-beta` |
 | WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V1.0.0-beta` |
 | ShrincsWallet impl | `QUIP:ShrincsWallet:V1.1:` ‖ `PROFILE_ID` |
-| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.1:` ‖ `PROFILE_ID` |
-| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.1` |
+| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta` |
+
+Each contract's salt moves only when its own bytecode does, so the wallet and
+the paymaster version independently — the wallet is unchanged since its V1.1
+deploy. Retired, permanently occupied on Base Sepolia (never reuse):
+`QUIP:ShrincsPaymaster:Impl:V1.1:` ‖ `PROFILE_ID` and
+`QUIP:ShrincsPaymaster:Proxy:V1.1`.
 
 **Sunset WOTS+ era** — unguarded salts (`keccak256(preimage)`) consumed
 through the deprecated Deployer; addresses depend only on (Deployer, salt).
@@ -206,8 +228,10 @@ Sunset WOTS+ family (optional, frozen under `script/deprecated/`):
 Note that vetting a WOTS+ impl AFTER the Shrincs deploy would flip
 `latestWalletImpl` back to WOTS+ — the intended default is Shrincs.
 
-`<chain>` is currently `base-sepolia`; see Makefile for the full list of
-per-chain targets.
+`<chain>` is `base-sepolia` or `op-sepolia`; see Makefile for the full list of
+per-chain targets. Step 1 is a no-op on a chain whose factory is already live
+(both scripts are idempotent per-contract), so rolling only the paymaster onto
+an existing chain is just step 2.
 
 ### Required environment variables
 

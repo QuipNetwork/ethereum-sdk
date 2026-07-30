@@ -66,7 +66,7 @@ contract DeployScriptsTest is Test {
     // below. The factory-proxy preimage doubles as the derivation
     // `02_DeployShrincs` uses to locate the factory.
     bytes internal constant FACTORY_PROXY_PREIMAGE = "QUIP:WalletFactory:Proxy:V1.0.0-beta";
-    bytes internal constant SHRINCS_PM_PROXY_PREIMAGE = "QUIP:ShrincsPaymaster:Proxy:V1.1";
+    bytes internal constant SHRINCS_PM_PROXY_PREIMAGE = "QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta";
 
     address internal owner; // doubles as the DEPLOY_OPERATOR (sender-guarded salts)
     DeployHarness internal h;

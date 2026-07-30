@@ -110,11 +110,13 @@ const LIVE_SALT_PREIMAGES = {
     toHex("QUIP:ShrincsWallet:V1.1:"),
     SHRINCS_PROFILE_ID,
   ]),
+  // The paymaster versions independently of the wallet — it rolled to
+  // V1.0.1-beta when `initialize` began taking the full public-key bundle.
   ShrincsPaymasterImpl: concatHex([
-    toHex("QUIP:ShrincsPaymaster:Impl:V1.1:"),
+    toHex("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:"),
     SHRINCS_PROFILE_ID,
   ]),
-  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.1"),
+  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta"),
 } as const;
 
 // SUNSET WOTS+-era salts — mirror script/deprecated/DeployerCreate3.sol
