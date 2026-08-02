@@ -118,7 +118,34 @@ export class QuipSigner {
     return this.wots.sign(key.privateKey, key.publicKey.publicSeed, message);
   }
 }
-
+/**
+ * buildTransferMessage constructs the packed message data used for
+ * transfer signature verification in the QuipWallet contract.
+ *
+ * @param currentPqOwner - The current post-quantum owner key pair
+ * @param nextPublicKey - The next post-quantum public key
+ * @param to - The recipient address
+ * @param value - The transfer amount in wei
+ * @returns The ABI-packed message bytes
+ */
+function buildTransferMessage(
+  currentPqOwner: { publicSeed: string; publicKeyHash: string },
+  nextPublicKey: WinternitzPublicKey,
+  to: ethers.AddressLike,
+  value: bigint
+): string {
+  return ethers.solidityPacked(
+    ["bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
+    [
+      currentPqOwner.publicSeed,
+      currentPqOwner.publicKeyHash,
+      nextPublicKey.publicSeed,
+      nextPublicKey.publicKeyHash,
+      to,
+      value,
+    ]
+  );
+}
 export class QuipWalletClient {
   private wallet: QuipWallet;
   private quipSigner: QuipSigner;
@@ -156,18 +183,12 @@ export class QuipWalletClient {
     const publicSeed = ethers.getBytes(currentPqOwner.publicSeed);
     const transferFee = await this.getTransferFee();
 
-    // TODO: Make a function that does this?
-    const packedMessageData = ethers.solidityPacked(
-      ["bytes32", "bytes32", "bytes32", "bytes32", "address", "uint256"],
-      [
-        currentPqOwner.publicSeed,
-        currentPqOwner.publicKeyHash,
-        nextPqOwner.publicKey.publicSeed,
-        nextPqOwner.publicKey.publicKeyHash,
-        to,
-        value,
-      ]
-    );
+    const packedMessageData = buildTransferMessage(
+  currentPqOwner,
+  nextPqOwner.publicKey,
+  to,
+  value
+);
 
     // FIXME: these are stupid in hindsight.
     const message = {
