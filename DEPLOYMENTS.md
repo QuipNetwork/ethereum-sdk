@@ -331,10 +331,17 @@ Sunset WOTS+ family (optional, frozen under `script/deprecated/`):
 Note that vetting a WOTS+ impl AFTER the Shrincs deploy would flip
 `latestWalletImpl` back to WOTS+ — the intended default is Shrincs.
 
-`<chain>` is `base-sepolia` or `op-sepolia`; see Makefile for the full list of
-per-chain targets. Step 1 is a no-op on a chain whose factory is already live
-(both scripts are idempotent per-contract), so rolling only the paymaster onto
-an existing chain is just step 2.
+`<chain>` is `base-sepolia`, `op-sepolia`, or `base` (mainnet); see Makefile for
+the full list of per-chain targets. Step 1 is a no-op on a chain whose factory
+is already live (both scripts are idempotent per-contract), so rolling only the
+paymaster onto an existing chain is just step 2.
+
+**Base mainnet** additionally has dry-run targets — `make dryrun-factory-base`
+and `make dryrun-shrincs-base` — which simulate against a fork with no key and
+no `--broadcast`. Run both before either `deploy-*-base` and confirm the printed
+addresses match the Live table above. `API_URL_BASE` must be a keyed provider: a
+public endpoint times out mid-simulation. The sunset WOTS+ targets are
+deliberately not mirrored for mainnet.
 
 ### Required environment variables
 

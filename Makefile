@@ -7,6 +7,8 @@
        predict-op-sepolia deploy-deployer-op-sepolia \
        deploy-factory-op-sepolia deploy-shrincs-op-sepolia \
        deploy-impl-op-sepolia vet-impl-op-sepolia \
+       predict-base dryrun-factory-base dryrun-shrincs-base \
+       deploy-factory-base deploy-shrincs-base vet-impl-base \
        fund-deployer drain-deployer balance \
        storage-layout-snapshot storage-layout-check
 
@@ -222,6 +224,50 @@ deploy-impl-op-sepolia:
 vet-impl-op-sepolia:
 	forge script script/VetImplementation.s.sol \
 	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast
+
+# ── Base MAINNET (8453) ───────────────────────────────────────────
+# Real funds. `API_URL_BASE` must be a keyed provider — a public endpoint
+# times out mid-simulation on a forked run and can strand a broadcast.
+#
+# Dry-run FIRST (no key, no --broadcast); the printed addresses must match the
+# Live table in DEPLOYMENTS.md exactly:
+#   make dryrun-factory-base
+#   make dryrun-shrincs-base
+#
+# The sunset WOTS+ targets (deploy-deployer-*, deploy-impl-*) are deliberately
+# NOT mirrored here: that family is frozen and must not reach mainnet. Vetting
+# a WOTS+ impl would also flip `latestWalletImpl` away from Shrincs.
+
+predict-base:
+	forge script script/PredictAddresses.s.sol --rpc-url base
+
+dryrun-factory-base:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url base \
+	  --sender $(DEPLOY_OPERATOR)
+
+dryrun-shrincs-base:
+	forge script script/02_DeployShrincs.s.sol \
+	  --rpc-url base \
+	  --sender $(DEPLOY_OPERATOR)
+
+deploy-factory-base:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url base \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-shrincs-base:
+	forge script script/02_DeployShrincs.s.sol \
+	  --rpc-url base \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+vet-impl-base:
+	forge script script/VetImplementation.s.sol \
+	  --rpc-url base \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast
 
