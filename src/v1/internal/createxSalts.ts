@@ -61,21 +61,26 @@ export const PROXY_INITCODE_HASH: Hex =
 /// Equals the deployed verifier's `PROFILE_TAG()`.
 export const SHRINCS_PROFILE_ID: Hex = keccak256(toHex("shrincs-256s-keccak"));
 
-/// Live salt preimages — mirror `script/Constants.sol` exactly. The wallet and
-/// the paymaster version independently; the strings are opaque, so only
-/// uniqueness matters (`V1.0.1-beta` is NOT "newer than" `V1.1`).
+/// Live salt preimages — mirror `script/Constants.sol` exactly.
+///
+/// One scheme, two suffixes: proxies are `V1.0.0` (the permanent public
+/// identity, meant never to move again — code changes under them via UUPS),
+/// implementations are `V1.0.0-beta` (the churning half, replaced when the
+/// verifier or the code changes). Salt strings are opaque preimages, so this
+/// split is legibility, not semantics — `V1.0.0` is not "newer than"
+/// `V1.0.0-beta`, they name different roles.
 export const LIVE_SALT_PREIMAGES = {
   WalletFactoryImpl: toHex("QUIP:WalletFactory:Impl:V1.0.0-beta"),
-  WalletFactoryProxy: toHex("QUIP:WalletFactory:Proxy:V1.0.0-beta"),
+  WalletFactoryProxy: toHex("QUIP:WalletFactory:Proxy:V1.0.0"),
   ShrincsWalletImplementation: concatHex([
-    toHex("QUIP:ShrincsWallet:V1.1:"),
+    toHex("QUIP:ShrincsWallet:Impl:V1.0.0-beta:"),
     SHRINCS_PROFILE_ID,
   ]),
   ShrincsPaymasterImpl: concatHex([
-    toHex("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:"),
+    toHex("QUIP:ShrincsPaymaster:Impl:V1.0.0-beta:"),
     SHRINCS_PROFILE_ID,
   ]),
-  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta"),
+  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.0.0"),
 } as const;
 
 /// CREATE3: CREATE2 the proxy, then the child at the proxy's nonce 1.

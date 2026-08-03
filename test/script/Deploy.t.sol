@@ -68,8 +68,8 @@ contract DeployScriptsTest is Test {
     // below. The factory-proxy preimage doubles as the derivation
     // `02_DeployShrincs` uses to locate the factory.
     bytes internal constant FACTORY_IMPL_PREIMAGE = "QUIP:WalletFactory:Impl:V1.0.0-beta";
-    bytes internal constant FACTORY_PROXY_PREIMAGE = "QUIP:WalletFactory:Proxy:V1.0.0-beta";
-    bytes internal constant SHRINCS_PM_PROXY_PREIMAGE = "QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta";
+    bytes internal constant FACTORY_PROXY_PREIMAGE = "QUIP:WalletFactory:Proxy:V1.0.0";
+    bytes internal constant SHRINCS_PM_PROXY_PREIMAGE = "QUIP:ShrincsPaymaster:Proxy:V1.0.0";
 
     // The two IMPLEMENTATION preimages bind the verifier scheme tag. Spelled out
     // from the profile STRING rather than importing `SHRINCSParams.PROFILE_ID`,
@@ -82,10 +82,10 @@ contract DeployScriptsTest is Test {
     // `test_publishedRegistry_matchesDerivation`.
     address internal constant CANONICAL_OPERATOR_PUBLISHED = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26;
     address internal constant PUBLISHED_FACTORY_IMPL = 0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f;
-    address internal constant PUBLISHED_FACTORY_PROXY = 0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5;
-    address internal constant PUBLISHED_SHRINCS_WALLET = 0xb84a596A6fB567FC4634b4f49212410D1193140e;
-    address internal constant PUBLISHED_SHRINCS_PM_IMPL = 0x71c976A2FCed1B5e9C171BAf029a12fdaf391f49;
-    address internal constant PUBLISHED_SHRINCS_PM_PROXY = 0xd258BA8ddEACe7A74184f368B7FDb55DDa53DcC5;
+    address internal constant PUBLISHED_FACTORY_PROXY = 0xdCD90563B912f82D2f23d5c7988B3Fec2da63471;
+    address internal constant PUBLISHED_SHRINCS_WALLET = 0x33d3949117c8Bba7A3637C96a564a817E00c5aE0;
+    address internal constant PUBLISHED_SHRINCS_PM_IMPL = 0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3;
+    address internal constant PUBLISHED_SHRINCS_PM_PROXY = 0x077C06913777777DfABf951a5A0F8CA665764ac9;
 
     address internal owner; // doubles as the DEPLOY_OPERATOR (sender-guarded salts)
     DeployHarness internal h;
@@ -117,8 +117,8 @@ contract DeployScriptsTest is Test {
         // Real-chain precondition mirrored locally: the deploy base's
         // `_requireExists` gate expects the canonical hashsigs-solidity CREATE3
         // deploys (sibling + SHRINCS verifier) to already exist.
-        vm.etch(0x9154dA0BA19600C543a8c5ed1B1c44af415B5688, address(new SHRINCS256sKeccak()).code);
-        vm.etch(0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A, address(new SPHINCSPlusC256sKeccak()).code);
+        vm.etch(0xE6F2970bA30d59e8288b7007bA755828372457c3, address(new SHRINCS256sKeccak()).code);
+        vm.etch(0x97B3726F44e3B7521199CE4e0fC160A32A597d31, address(new SPHINCSPlusC256sKeccak()).code);
     }
 
     /// Independent mirror of the raw-salt layout: operator(20) ‖ 0x00 ‖
@@ -154,8 +154,8 @@ contract DeployScriptsTest is Test {
     function _livePreimages() internal pure returns (bytes[5] memory p) {
         p[0] = FACTORY_IMPL_PREIMAGE;
         p[1] = FACTORY_PROXY_PREIMAGE;
-        p[2] = abi.encodePacked("QUIP:ShrincsWallet:V1.1:", PROFILE_ID_INDEPENDENT);
-        p[3] = abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:", PROFILE_ID_INDEPENDENT);
+        p[2] = abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.0-beta:", PROFILE_ID_INDEPENDENT);
+        p[3] = abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.0.0-beta:", PROFILE_ID_INDEPENDENT);
         p[4] = SHRINCS_PM_PROXY_PREIMAGE;
     }
 

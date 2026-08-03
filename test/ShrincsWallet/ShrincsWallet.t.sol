@@ -38,7 +38,7 @@ contract ShrincsWalletTest is Test {
     // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
     // sibling (`SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER`); the sibling's code must live
     // there or every stateless verification reverts on empty code.
-    address internal constant SPHINCS_SIBLING = 0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A;
+    address internal constant SPHINCS_SIBLING = 0x97B3726F44e3B7521199CE4e0fC160A32A597d31;
 
     ShrincsWalletHarness internal wallet;
     MockShrincsFactory internal factory;

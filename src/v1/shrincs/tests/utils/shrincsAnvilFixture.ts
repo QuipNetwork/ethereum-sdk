@@ -73,9 +73,11 @@ export const SHRINCS_ANVIL_PORTS = {
 /// The SPHINCSPlusC verifier address compile-time pinned inside
 /// `SHRINCS256sKeccak` (dep `DEPLOYMENTS.md`, CREATE3 — same on every chain).
 /// The fixture places its runtime bytecode here; stateless verification
-/// reverts on empty code at this address.
+/// reverts on empty code at this address. Moved with the sender-guarded
+/// re-scheme in hashsigs (was `0xf1Bd3aE9…`); it must track the dep pin, so
+/// re-read `SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER` after any dep bump.
 export const SPHINCS_PLUS_C_SIBLING =
-  "0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A" as const;
+  "0x97B3726F44e3B7521199CE4e0fC160A32A597d31" as const;
 
 // ─── Forge artifact loading ─────────────────────────────────────────
 

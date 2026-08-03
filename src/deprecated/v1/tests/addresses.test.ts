@@ -14,14 +14,16 @@ describe("Vault Address Functions", () => {
     "0x783e1393edc4a6dac846b6da7723acb50de92b51b66ccdbc69bcadfb3fd9da69";
 
   // Known-good CREATE3 address for (QUIP_FACTORY_ADDRESS, testVaultId).
-  // Updated for the CreateX-era WalletFactory proxy (0x6de121F7…, the
-  // v1.1 0xd175… lineage was abandoned pre-launch with nothing deployed),
-  // independently re-derived:
+  // Updated for the WalletFactory proxy at 0xdCD90563… — the factory proxy salt
+  // moved to `V1.0.0` with the new verifier generation, and because wallet
+  // addressing derives from the factory, EVERY vault address moved with it
+  // (previous value 0x800C361A…, against factory 0x6de121F7…).
+  // Independently re-derived:
   //   proxy = create2(factory, vaultId, keccak256(0x67363d3d37363d34f03d5260086018f3))
   //   vault = keccak256(0xd694 ++ proxy ++ 0x01)[12:]
   // Re-derive the same way if the factory address or testVaultId change again.
   const expectedAddress: Address =
-    "0x800C361A4cADf163d2e1C992fAA8BA77e52619c8";
+    "0x8259F3A647fF8196D6658C737052c0a3b0916636";
 
   it("should return the expected CREATE3 address", () => {
     expect(getVaultAddress(testVaultId)).toEqual(expectedAddress);

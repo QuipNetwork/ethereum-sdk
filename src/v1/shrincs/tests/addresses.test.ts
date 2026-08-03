@@ -26,11 +26,11 @@ import {
 // what catches a changed salt string, a changed operator, or drift in the guard
 // formula — the failures that put contracts at unpublished addresses.
 const PUBLISHED = {
-  WalletFactory: "0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5",
-  ShrincsWalletImplementation: "0xb84a596A6fB567FC4634b4f49212410D1193140e",
-  ShrincsPaymaster: "0xd258BA8ddEACe7A74184f368B7FDb55DDa53DcC5",
-  ShrincsPaymasterImpl: "0x71c976A2FCed1B5e9C171BAf029a12fdaf391f49",
-  ShrincsVerifier: "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688",
+  WalletFactory: "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471",
+  ShrincsWalletImplementation: "0x33d3949117c8Bba7A3637C96a564a817E00c5aE0",
+  ShrincsPaymaster: "0x077C06913777777DfABf951a5A0F8CA665764ac9",
+  ShrincsPaymasterImpl: "0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3",
+  ShrincsVerifier: "0xE6F2970bA30d59e8288b7007bA755828372457c3",
 } as const;
 
 // Every derived row: published address ← the preimage it must derive from. The
