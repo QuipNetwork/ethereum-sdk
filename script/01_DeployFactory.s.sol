@@ -39,7 +39,13 @@ contract DeployFactory is DeployFactoryBase {
         address factoryOwner = vm.envAddress("FACTORY_OWNER");
         uint256 maxFee = vm.envUint("MAX_FEE");
 
-        // Fail fast, before any deploy step runs half-way.
+        // Fail fast, before any deploy step runs half-way. The canonical-operator
+        // check comes FIRST: the key check below only proves the env var and the
+        // key agree with each other, which a stale operator would also satisfy.
+        require(
+            operator == DeployConstants.CANONICAL_OPERATOR,
+            "DEPLOY_OPERATOR is not the canonical operator"
+        );
         require(vm.addr(privateKey) == operator, "PRIVATE_KEY is not DEPLOY_OPERATOR's key");
         require(CREATEX.code.length > 0, "CreateX not deployed on this chain");
         require(factoryOwner != address(0), "FACTORY_OWNER must be non-zero");

@@ -13,8 +13,9 @@ import {CreateXHelpers} from "./CreateXHelpers.sol";
  *
  *      LIVE contracts (WalletFactory, ShrincsWallet, ShrincsPaymaster) deploy
  *      straight through CreateX with SENDER-GUARDED salts, so their addresses
- *      are a function of (CreateX, DEPLOY_OPERATOR, salt) — set `DEPLOY_OPERATOR`
- *      to compute them (without it those rows are skipped with a notice).
+ *      are a function of (CreateX, operator, salt). The operator is pinned as
+ *      `DeployConstants.CANONICAL_OPERATOR`, so these rows need no env vars; a
+ *      `DEPLOY_OPERATOR` that disagrees with the pin is rejected.
  *
  *      SUNSET WOTS+-era contracts (WOTSPlus, WOTSPlusImplementation,
  *      QuipPaymaster) keep their historical derivation through the deprecated
@@ -22,37 +23,36 @@ import {CreateXHelpers} from "./CreateXHelpers.sol";
  *      need no env vars. `DEPLOYER_ADDRESS` overrides the canonical Deployer.
  *
  * Usage:
- *   DEPLOY_OPERATOR=0x... forge script script/PredictAddresses.s.sol
- *   forge script script/PredictAddresses.s.sol            # WOTS+-era rows only
+ *   forge script script/PredictAddresses.s.sol            # all rows, no env vars
  */
 contract PredictAddresses is CreateXHelpers {
     bytes32 internal constant DEPLOYER_SALT = keccak256("QUIP:Deployer:V1");
 
     function run() external view {
         // -- live contracts: CreateX-direct, sender-guarded ------------------
-        address operator;
+        // The operator is PINNED, so the live rows always print with no env vars
+        // and always show the addresses `DEPLOYMENTS.md` publishes. An env
+        // override is accepted only if it AGREES — a disagreeing one is the
+        // silent-wrong-address bug this script exists to catch.
+        address operator = DeployConstants.CANONICAL_OPERATOR;
         try vm.envAddress("DEPLOY_OPERATOR") returns (address op) {
-            operator = op;
-        } catch {
-            console.log("DEPLOY_OPERATOR not set - skipping live-contract rows");
-            console.log("(live canonical addresses are a function of the operator address)");
-        }
-        if (operator != address(0)) {
-            console.log("CreateX:        ", CREATEX);
-            console.log("Deploy operator:", operator);
-            _predictLive(operator, "WalletFactory (impl)", DeployConstants.FACTORY_IMPL_SALT);
-            _predictLive(operator, "WalletFactory (proxy)", DeployConstants.FACTORY_PROXY_SALT);
-            // Impl salts bind the verifier scheme tag (the verifier's PROFILE_TAG ==
-            // SHRINCSParams.PROFILE_ID) — see DeployConstants: a different
-            // cryptographic scheme must land at a different implementation address.
-            _predictLiveRaw(operator, "ShrincsWallet (impl)", DeployConstants.shrincsWalletSalt());
-            _predictLiveRaw(
-                operator, "ShrincsPaymaster (impl)", DeployConstants.shrincsPaymasterImplSalt()
-            );
-            _predictLive(
-                operator, "ShrincsPaymaster (proxy)", DeployConstants.SHRINCS_PAYMASTER_PROXY_SALT
-            );
-        }
+            require(op == operator, "DEPLOY_OPERATOR disagrees with the pinned CANONICAL_OPERATOR");
+        } catch {}
+
+        console.log("CreateX:        ", CREATEX);
+        console.log("Deploy operator:", operator);
+        _predictLive(operator, "WalletFactory (impl)", DeployConstants.FACTORY_IMPL_SALT);
+        _predictLive(operator, "WalletFactory (proxy)", DeployConstants.FACTORY_PROXY_SALT);
+        // Impl salts bind the verifier scheme tag (the verifier's PROFILE_TAG ==
+        // SHRINCSParams.PROFILE_ID) — see DeployConstants: a different
+        // cryptographic scheme must land at a different implementation address.
+        _predictLiveRaw(operator, "ShrincsWallet (impl)", DeployConstants.shrincsWalletSalt());
+        _predictLiveRaw(
+            operator, "ShrincsPaymaster (impl)", DeployConstants.shrincsPaymasterImplSalt()
+        );
+        _predictLive(
+            operator, "ShrincsPaymaster (proxy)", DeployConstants.SHRINCS_PAYMASTER_PROXY_SALT
+        );
         console.log("");
 
         // -- sunset WOTS+ era: derived through the deprecated Deployer -------

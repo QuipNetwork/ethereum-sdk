@@ -25,9 +25,10 @@
  *
  *   - LIVE contracts (WalletFactory, ShrincsWallet, ShrincsPaymaster)
  *     deploy straight through CreateX with SENDER-GUARDED salts — the
- *     address is f(CreateX, DEPLOY_OPERATOR, salt preimage), identical
- *     on every chain for the same operator. `DEPLOY_OPERATOR` is
- *     REQUIRED: there is no canonical live address without it.
+ *     address is f(CreateX, operator, salt preimage), identical on every
+ *     chain for the same operator. The operator is PINNED as
+ *     `CANONICAL_OPERATOR` below; a `DEPLOY_OPERATOR` env var that
+ *     disagrees with it is rejected rather than silently honoured.
  *   - SUNSET WOTS+-era contracts (WOTSPlus, WOTSPlusImplementation,
  *     QuipPaymaster) keep their historical derivation through the
  *     deprecated `Deployer` (itself CreateX-deployed on an unguarded
@@ -39,7 +40,7 @@
  *
  * Usage:
  *   forge build
- *   DEPLOY_OPERATOR=0x... npm run release   # or: make release
+ *   npm run release   # or: make release
  */
 
 import fs from "node:fs";
@@ -77,16 +78,30 @@ const CREATEX_ADDRESS: Address = "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed";
 // address (sender-guarded salts), so the release cannot be computed
 // without it. Must match the `DEPLOY_OPERATOR` used by the Solidity
 // deploy scripts.
+// PINNED, mirroring `DeployConstants.CANONICAL_OPERATOR` in
+// script/Constants.sol. A release computed for the wrong operator would rewrite
+// `addresses.json` with a plausible-looking, entirely wrong address set.
+// `DEPLOY_OPERATOR` may still be supplied (the Makefile sets it) but must AGREE.
+export const CANONICAL_OPERATOR: Address = getAddress(
+  "0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26",
+);
+
 const DEPLOY_OPERATOR: Address = (() => {
   const raw = process.env.DEPLOY_OPERATOR;
-  if (!raw || !isAddress(raw)) {
+  if (raw === undefined || raw === "") return CANONICAL_OPERATOR;
+  if (!isAddress(raw)) {
+    throw new Error(`DEPLOY_OPERATOR is not a valid address: ${raw}`);
+  }
+  if (getAddress(raw) !== CANONICAL_OPERATOR) {
     throw new Error(
-      "DEPLOY_OPERATOR env var is required (checksummed 0x address). " +
-        "Live canonical addresses (WalletFactory, Shrincs*) are sender-guarded " +
-        "CreateX CREATE3 deployments — they are a function of the operator address.",
+      `DEPLOY_OPERATOR (${getAddress(raw)}) disagrees with the pinned ` +
+        `CANONICAL_OPERATOR (${CANONICAL_OPERATOR}). Live canonical addresses ` +
+        "(WalletFactory, Shrincs*) are a function of the operator — releasing " +
+        "under a different one publishes a wrong address set. Update the pin " +
+        "here and in script/Constants.sol together if the operator changed.",
     );
   }
-  return getAddress(raw);
+  return CANONICAL_OPERATOR;
 })();
 
 // Solady CREATE3 proxy initcode hash:

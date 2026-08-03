@@ -27,6 +27,22 @@ library DeployConstants {
     /// (Nick's-method presigned deployment).
     address internal constant CREATEX = 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed;
 
+    /// The one account every LIVE canonical address derives from (sender-guarded
+    /// salts: address = f(CreateX, operator, preimage)).
+    ///
+    /// PINNED, not read from the environment, on purpose. The scripts also check
+    /// `vm.addr(PRIVATE_KEY) == DEPLOY_OPERATOR`, but that only proves the key and
+    /// the env var agree with EACH OTHER: a stale or mistyped `DEPLOY_OPERATOR`
+    /// plus its matching key predicts, deploys, and self-asserts a perfectly
+    /// consistent result — at a DIFFERENT address than the one `DEPLOYMENTS.md`
+    /// and the SDK publish. Comparing against this constant is what makes that
+    /// failure loud instead of silent.
+    ///
+    /// Changing it re-derives EVERY live address: bump the constant, re-run
+    /// `PredictAddresses`, regenerate the SDK (`make release`), and update
+    /// `DEPLOYMENTS.md` + `src/v1/shrincs/addresses.ts` together.
+    address internal constant CANONICAL_OPERATOR = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26;
+
     /// Canonical CREATE3 address of the deployed `SHRINCS256sKeccak` ERC-7913
     /// verifier (hashsigs-solidity `DEPLOYMENTS.md`; same address on every
     /// chain). Pinned as an immutable by the ShrincsWallet and ShrincsPaymaster
