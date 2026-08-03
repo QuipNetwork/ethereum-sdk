@@ -141,7 +141,10 @@ predict-addresses:
 #   DEPLOY_OPERATOR         ⚠️ every LIVE canonical address (WalletFactory,
 #                           Shrincs*) is a function of this address — sender-
 #                           guarded CreateX salts; guard the key
-#                           (deploy-factory-*, deploy-shrincs-*, predict-*)
+#                           (deploy-factory-*, deploy-shrincs-*). PINNED as
+#                           DeployConstants.CANONICAL_OPERATOR: this var must
+#                           equal the pin or the run aborts. predict-* needs
+#                           no env vars at all.
 #   DEPLOYER_ADDRESS        bootstrapped Deployer contract address (e.g. the
 #                           canonical 0xA1A3990E…) — sunset WOTS+ family only
 #   FACTORY_OWNER           WalletFactory initial owner (deploy-factory-* only)

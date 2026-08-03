@@ -7,7 +7,7 @@ The go-forward lineage: WalletFactory (UUPS) + SHRINCS family, deployed by
 address is a function of (CreateX, `DEPLOY_OPERATOR`, salt preimage) — see
 `script/Constants.sol` for the salts — and is identical on every chain the
 operator deploys to. Derived for the canonical operator below; verify locally
-with `DEPLOY_OPERATOR=0x... make predict-addresses`.
+with `make predict-addresses` (the operator is pinned — no env vars needed).
 
 **Live on Base Sepolia (84532) and OP Sepolia (11155420) as of 2026-07-29.**
 OP Sepolia got the full stack; Base Sepolia's factory and wallet impl predate
@@ -144,9 +144,18 @@ address     = CREATE3(CreateX, guardedSalt)
   ignores initcode — under the old permissionless Deployer, anyone could
   have deployed arbitrary code at a canonical address first, and the
   idempotent skip would have silently accepted it.)
+- **A wrong caller does NOT revert.** CreateX's `_parseSalt` sees leading
+  bytes matching neither `msg.sender` nor `address(0)`, falls through to the
+  PERMISSIONLESS branch, and deploys *successfully* at a different address.
+  The canonical address stays untouched — that is the squat-proofing — but
+  the failure is silent, which is why `_createXDeploy` checks the broadcaster
+  itself. Verified against the real singleton by
+  `test_senderGuard_strangerLandsElsewhere_canonicalUntouched`.
 - **Chain-invariant:** the 21st byte `0x00` opts out of CreateX's chainid
   binding, so the same (operator, preimage) lands at the same address on
-  every chain.
+  every chain. `0x01` would bind `block.chainid` and give per-chain
+  addresses; `CreateXHelpers._rawSalt` writes the `0x00` explicitly and
+  `_assertSaltLayout` refuses anything else.
 - **API asymmetry to remember:** `CreateX.deployCreate3` consumes the RAW
   salt (and guards internally); address *prediction* consumes the GUARDED
   salt — offline via solady's `CREATE3.predictDeterministicAddress(guardedSalt,
@@ -156,6 +165,53 @@ address     = CREATE3(CreateX, guardedSalt)
 > The operator key must sign each canonical deploy on each chain, forever —
 > losing it means losing the ability to materialize the canonical addresses
 > on new chains. Guard that key accordingly.
+
+### The operator is pinned, not configured
+
+`DeployConstants.CANONICAL_OPERATOR` (mirrored in
+`src/v1/internal/createxSalts.ts`) hard-codes
+`0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26`. `DEPLOY_OPERATOR` is still read
+from the environment, but must equal the pin or the run aborts.
+
+This closes a silent failure. `require(vm.addr(PRIVATE_KEY) == DEPLOY_OPERATOR)`
+only proves the env var and the key agree with *each other* — a stale or
+mistyped operator plus its matching key predicts, deploys, and self-asserts a
+perfectly consistent result, at an address nothing in this file publishes.
+
+**Changing the operator re-derives every live address.** It is a four-part edit
+that must land together, or the SDK will publish addresses that do not exist:
+
+1. `DeployConstants.CANONICAL_OPERATOR` (`script/Constants.sol`)
+2. `CANONICAL_OPERATOR` (`src/v1/internal/createxSalts.ts`)
+3. the address tables in this file and the pins in `src/v1/shrincs/addresses.ts`
+4. `make release` to regenerate `src/v1/addresses.json`
+
+`test_publishedRegistry_matchesDerivation` and the SDK's `addresses.test.ts`
+fail until all four agree.
+
+> ⚠️ **A Safe/multisig operator is not a drop-in.** The broadcaster check reads
+> `vm.addr(PRIVATE_KEY)`, and it works only because the EOA calls CreateX
+> *directly*. Route the deploy through a Safe and CreateX sees the Safe as
+> `msg.sender` while the salt still embeds the EOA — the permissionless branch,
+> a different address. Moving the operator behind a contract means embedding the
+> **Safe's** address in the salt, which changes every canonical address.
+
+### Gates that run before any broadcast
+
+| Gate | Catches |
+|---|---|
+| `DEPLOY_OPERATOR == CANONICAL_OPERATOR` | stale/mistyped operator — the silent wrong-address deploy |
+| `vm.addr(PRIVATE_KEY) == DEPLOY_OPERATOR` | wrong signer; CreateX would take the permissionless branch without reverting |
+| `_assertSaltLayout` | salt bytes 0–19 not the operator, or byte 20 not `0x00` (chain-invariance) |
+| local prediction `==` `ICreateX.computeCreate3Address(guardedSalt)` | drift between our mirror of `_guard` and the singleton we are about to call |
+| identity view calls on occupied addresses | stale or foreign code adopted by the idempotent skip — `MAX_FEE()` for the factory impl, `FACTORY()`/`SHRINCS_VERIFIER()` for the Shrincs impls, a non-zero ERC-1967 slot for both proxies |
+| `deployed == expected` | any post-broadcast branch divergence |
+
+Runtime codehash is deliberately **not** pinned: all three live artifacts carry
+constructor-set immutables (`MAX_FEE`, `SHRINCS_VERIFIER`, `FACTORY`), so the
+codehash is a function of the deploy params and no static pin is knowable. The
+identity view calls read those same immutables directly instead. The codehash is
+logged on the skip path for forensics only.
 
 ### Deployer bootstrap (sunset WOTS+ era)
 
@@ -198,10 +254,12 @@ The live flow is two numbered scripts, run in order (both idempotent —
 re-runs skip anything already deployed/vetted):
 
 ```
-0. Predict addresses     DEPLOY_OPERATOR=0x... make predict-addresses
-                         # No RPC needed. Live rows require DEPLOY_OPERATOR
-                         # (they are a function of it); without it only the
-                         # sunset WOTS+-era rows print.
+0. Predict addresses     make predict-addresses
+                         # No RPC and no env vars needed — the operator is
+                         # pinned (CANONICAL_OPERATOR). Every row must match
+                         # the Live table above; a DEPLOY_OPERATOR that
+                         # disagrees with the pin aborts instead of printing
+                         # a plausible wrong address set.
 
 1. Deploy factory        make deploy-factory-<chain>
                          # script/01_DeployFactory.s.sol: WalletFactory impl

@@ -112,9 +112,15 @@ abstract contract CreateXHelpers is Script {
     ///      already exists at the canonical address — the skip proves only that
     ///      SOMETHING has code there, so every caller must follow up with an
     ///      identity check (`_assertErc1967Proxy` for proxies, a view call on a
-    ///      constructor-set immutable for implementations). Requires the
-    ///      broadcaster to BE the operator (CreateX reverts `InvalidSalt`
-    ///      otherwise; we check first for a clearer error).
+    ///      constructor-set immutable for implementations).
+    ///
+    ///      Requires the broadcaster to BE the operator, and that check is
+    ///      load-bearing rather than cosmetic: CreateX does NOT revert for a wrong
+    ///      caller. `_parseSalt` sees leading bytes matching neither `msg.sender`
+    ///      nor `address(0)`, falls through to the PERMISSIONLESS branch, and
+    ///      deploys SUCCESSFULLY at a different address. Verified against the real
+    ///      singleton by
+    ///      `test_senderGuard_strangerLandsElsewhere_canonicalUntouched`.
     function _createXDeploy(
         address operator,
         uint256 privateKey,
