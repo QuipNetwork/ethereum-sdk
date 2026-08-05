@@ -9,11 +9,11 @@ address is a function of (CreateX, `CANONICAL_OPERATOR`, salt preimage) — see
 operator deploys to. Verify locally with `make predict-addresses` (the operator
 is pinned — no env vars needed).
 
-**Not yet deployed on any chain**, with one exception: the WalletFactory *impl*
-keeps its address across the generation boundary (its salt never moved and its
-bytecode never referenced the verifier), so it is already live on Base Sepolia
-and OP Sepolia. Everything else below is a fresh address. The prior generation
-remains live on those two chains — see *Superseded generation*.
+**Live on Base mainnet (8453) as of 2026-08-03**, all five contracts verified on
+Basescan. The WalletFactory *impl* additionally keeps its address across the
+generation boundary (its salt never moved and its bytecode never referenced the
+verifier), so it is also live on Base Sepolia and OP Sepolia. The prior
+generation remains on those two chains — see *Superseded generation*.
 
 | | Address |
 |---|---|
@@ -35,6 +35,42 @@ remains live on those two chains — see *Superseded generation*.
 > `dependencies/@quip.network/hashsigs-solidity` is pinned to rev `dd6fa9e`, the
 > commit that build came from, so the artifact we compile matches the bytes on
 > chain.
+
+### Deployed transactions (Base mainnet, 8453)
+
+Broadcast by `CANONICAL_OPERATOR` through CreateX's permissioned mode, so these
+addresses were reachable by no other account. Two blocks, one per script.
+
+| Artifact | Address | Tx | Block | Gas |
+|---|---|---|---|---|
+| WalletFactory impl | `0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f` | `0x6803e47686aaec35f4c159e720b383743609d9f868a8f918433b83127c8cd64d` | 49485171 | 1,786,028 |
+| WalletFactory proxy | `0xdCD90563B912f82D2f23d5c7988B3Fec2da63471` | `0xdc65e84bb3be3bb35edca6a3008a72768c42a23454fd568a83005d2f3a03cec9` | 49485171 | 195,629 |
+| ShrincsWallet impl | `0x33d3949117c8Bba7A3637C96a564a817E00c5aE0` | `0x0bf64af71bd74bd501a35e5261588260c466a578c83669156f8f171060167b1e` | 49485205 | 3,883,195 |
+| ↳ `vetImplementation` | (call on the factory) | `0x17bc8fd942bc364da2cefa5df73aea247463407b38a2c7ad245a189d71ee4813` | 49485205 | 101,824 |
+| ShrincsPaymaster impl | `0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3` | `0x54a63c3f55b630baa857d6d6d5062309f5eb0a237eb8bb2bea424ebed7b747e6` | 49485205 | 1,742,504 |
+| ShrincsPaymaster proxy | `0x077C06913777777DfABf951a5A0F8CA665764ac9` | `0x9a54e7f927fd39ceabf3191682e121df020bc23bb3c3d1fe96d79111b82478f6` | 49485205 | 251,696 |
+
+Total 7,960,876 gas. Block 49485171 (`01_DeployFactory`) and 49485205
+(`02_DeployShrincs`), 2026-08-03 12:21–12:22 UTC. All five contracts are
+verified on Basescan.
+
+> ⚠️ Do NOT read the per-transaction mapping out of
+> `broadcast/*/8453/run-latest.json` — its `additionalContracts` field pairs
+> hashes with the wrong addresses here, because every CreateX deploy is a `CALL`
+> to the singleton rather than a `CREATE`. The table above was reconstructed
+> from on-chain receipt logs and cross-checked against contract sizes.
+
+Installed verifier state at deploy (`getShrincsVerifier()`): commitment
+`0xd2f83c7986abe791212b6d399929aa7f17977d059d6d5d047bf3010072fbae72`,
+`keyVersion` 0, `maxSignatures` 4096 (the hashsigs keygen ceiling),
+`statefulLeavesUsed` 0.
+
+> ⚠️ **Post-deploy state — not yet production-ready.** Both the factory and the
+> paymaster are still owned by the deploy EOA and have NOT been handed over to a
+> post-quantum wallet, so a single ECDSA key can rotate the verifier, drain the
+> deposit, and upgrade either implementation. The paymaster has no EntryPoint
+> deposit and no stake, so it cannot sponsor anything and conformant bundlers
+> will reject it. `creationFee` and `executeFee` are both 0.
 
 ### Superseded generation (Base Sepolia 84532, OP Sepolia 11155420)
 
