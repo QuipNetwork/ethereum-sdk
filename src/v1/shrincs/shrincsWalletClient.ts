@@ -40,7 +40,8 @@ import {
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
 } from "./errors.js";
-import { prepareTx, type TxOptions } from "./gas.js";
+import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
+import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
   ACTION_ERC1271,
@@ -136,6 +137,17 @@ export interface ShrincsWalletState {
   maxSignatures: number;
   statefulLeavesUsed: number;
   remainingStatefulSignatures: number;
+}
+
+export interface ExecuteParams {
+  target: Address;
+  value?: bigint;
+  data?: Hex;
+  maxFee?: bigint;
+}
+
+export interface ExecuteCostEstimate extends CostEstimate {
+  executeFee: bigint;
 }
 
 export interface ShrincsTxKeyOptions {
@@ -480,13 +492,12 @@ export class ShrincsWalletClient {
     });
   }
 
-  private async submit(
+  private buildContractCall(
     functionName: string,
     args: readonly unknown[],
-    value: bigint,
-    opts: TxOptions
-  ): Promise<TransactionReceipt> {
-    const contractCall = {
+    value: bigint
+  ): ContractCallParams {
+    return {
       address: this.walletAddress,
       abi: shrincsWalletAbi as readonly unknown[],
       functionName,
@@ -494,10 +505,30 @@ export class ShrincsWalletClient {
       value,
       account: this.account as Account | Address,
     };
+  }
+
+  private async submit(
+    functionName: string,
+    args: readonly unknown[],
+    value: bigint,
+    opts: TxOptions
+  ): Promise<TransactionReceipt> {
+    return this.send(
+      this.buildContractCall(functionName, args, value),
+      value,
+      opts
+    );
+  }
+
+  private async send(
+    contractCall: ContractCallParams,
+    totalValue: bigint,
+    opts: TxOptions
+  ): Promise<TransactionReceipt> {
     const prepared = await prepareTx({
       publicClient: this.publicClient,
       contractParams: contractCall,
-      totalValue: value,
+      totalValue,
       opts,
     });
     const writeParams = {
@@ -522,31 +553,81 @@ export class ShrincsWalletClient {
   /// fee decrease between signing and landing succeeds at the lower price; pass
   /// a higher `maxFee` for headroom against increases.
   async execute(
-    params: { target: Address; value?: bigint; data?: Hex; maxFee?: bigint },
+    params: ExecuteParams,
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
+    const { contractCall, totalValue } = await this.buildExecuteCall(
+      params,
+      opts
+    );
+    return this.send(contractCall, totalValue, opts);
+  }
+
+  async estimateExecuteCost(
+    params: ExecuteParams,
+    opts: TxOptions & ShrincsTxKeyOptions = {}
+  ): Promise<ExecuteCostEstimate> {
+    const { contractCall, totalValue, executeFee } =
+      await this.buildExecuteCall(params, opts);
+    const estimate = await estimateTxCost({
+      publicClient: this.publicClient,
+      account: this.account,
+      contractCall,
+      totalValue,
+      opts,
+    });
+    return { ...estimate, executeFee };
+  }
+
+  private async buildExecuteCall(
+    params: ExecuteParams,
+    opts: TxOptions & ShrincsTxKeyOptions
+  ): Promise<{
+    contractCall: ContractCallParams;
+    totalValue: bigint;
+    executeFee: bigint;
+  }> {
     const value = params.value ?? 0n;
     const data = params.data ?? "0x";
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const maxFee = params.maxFee ?? state.executeFee;
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_EXECUTE,
-      payloadHash: executePayloadHash(params.target, value, keccakData(data), maxFee),
+      payloadHash: executePayloadHash(
+        params.target,
+        value,
+        keccakData(data),
+        maxFee
+      ),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     // msg.value funds the ceiling; any excess over the live fee stays in the
     // wallet (the user's own funds), and the call cannot underfund a fee move
     // within the cap.
-    return this.submit(
-      "execute",
-      [publicKeyToAbi(keypair.publicKey), signature, params.target, value, data, maxFee],
-      value + maxFee,
-      opts
-    );
+    return {
+      contractCall: this.buildContractCall(
+        "execute",
+        [
+          publicKeyToAbi(keypair.publicKey),
+          signature,
+          params.target,
+          value,
+          data,
+          maxFee,
+        ],
+        value + maxFee
+      ),
+      totalValue: value + maxFee,
+      executeFee: state.executeFee,
+    };
   }
 
   /// Withdraw from the wallet's EntryPoint deposit.
@@ -554,8 +635,12 @@ export class ShrincsWalletClient {
     params: { to: Address; amount: bigint },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -589,15 +674,16 @@ export class ShrincsWalletClient {
     params: { newCommitment: Hex; newHashSuite?: number },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    if (
-      !params.newCommitment ||
-      /^0x0+$/.test(params.newCommitment)
-    ) {
+    if (!params.newCommitment || /^0x0+$/.test(params.newCommitment)) {
       throw new ZeroErc1271CommitmentError();
     }
     const hashSuite = params.newHashSuite ?? HASH_SUITE_KECCAK_256;
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -608,7 +694,12 @@ export class ShrincsWalletClient {
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     return this.submit(
       "setErc1271Key",
-      [publicKeyToAbi(keypair.publicKey), signature, params.newCommitment, hashSuite],
+      [
+        publicKeyToAbi(keypair.publicKey),
+        signature,
+        params.newCommitment,
+        hashSuite,
+      ],
       state.executeFee,
       opts
     );
@@ -621,8 +712,12 @@ export class ShrincsWalletClient {
     params: { nextStatefulPublicKey: Hex },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const nextStatefulKey = buildStatefulRotationTarget({
       nextStatefulPublicKey: params.nextStatefulPublicKey,
       currentPkSeed: keypair.publicKey.pkSeed,
@@ -676,8 +771,12 @@ export class ShrincsWalletClient {
     if (opts.leaf !== undefined && targetSet.has(opts.leaf)) {
       throw new AuthLeafInTargetsError(opts.leaf);
     }
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts, targetSet);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts, targetSet);
     // All guards run BEFORE signing: a signed-then-aborted call would itself
     // leave a leaf needing revocation.
     for (const target of leaves) {
@@ -716,8 +815,12 @@ export class ShrincsWalletClient {
   ): Promise<TransactionReceipt> {
     const shouldMigrate = params.shouldMigrate ?? false;
     const migratorPayload = params.migratorPayload ?? "0x";
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -757,8 +860,12 @@ export class ShrincsWalletClient {
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
     if (params.newOwner === ZERO_ADDRESS) throw new ZeroAddressOwnerError();
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const rotationTarget = toRotationTarget(params.nextKey);
 
     const ownerCtx = buildActionContext({
@@ -823,7 +930,11 @@ export class ShrincsWalletClient {
     const recoverySignature = keypair.signFullRotation(rctx, rotationTarget);
     return this.submit(
       "recoverWallet",
-      [publicKeyToAbi(keypair.publicKey), recoverySignature, publicKeyToAbi(params.nextKey)],
+      [
+        publicKeyToAbi(keypair.publicKey),
+        recoverySignature,
+        publicKeyToAbi(params.nextKey),
+      ],
       state.executeFee,
       opts
     );
@@ -905,7 +1016,12 @@ export class ShrincsWalletClient {
     const callData = encodeFunctionData({
       abi: shrincsWalletAbi,
       functionName: "execute",
-      args: [params.target, params.value ?? 0n, params.data ?? "0x", params.maxFee],
+      args: [
+        params.target,
+        params.value ?? 0n,
+        params.data ?? "0x",
+        params.maxFee,
+      ],
     });
     return this.assembleUserOp(callData, params);
   }

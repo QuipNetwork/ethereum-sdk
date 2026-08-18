@@ -68,6 +68,7 @@ export const DEFAULT_MAX_FEE = 10n ** 16n;
 /// New port range, distinct from the v1 fixture's `ANVIL_PORTS` (8547-8558).
 export const SHRINCS_ANVIL_PORTS = {
   smoke: 8560,
+  estimate: 8562,
 } as const;
 
 /// The SPHINCSPlusC verifier address compile-time pinned inside
@@ -78,6 +79,18 @@ export const SHRINCS_ANVIL_PORTS = {
 /// re-read `SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER` after any dep bump.
 export const SPHINCS_PLUS_C_SIBLING =
   "0x97B3726F44e3B7521199CE4e0fC160A32A597d31" as const;
+
+function assertVerifierPinMatches(verifierArtifact: {
+  deployedBytecode: { object: string };
+}): void {
+  const pin = SPHINCS_PLUS_C_SIBLING.slice(2).toLowerCase();
+  if (!verifierArtifact.deployedBytecode.object.toLowerCase().includes(pin)) {
+    throw new Error(
+      `Built SHRINCS verifier does not reference ${SPHINCS_PLUS_C_SIBLING}. ` +
+        "The ./dependencies checkout is stale — run `./run setup` then rebuild."
+    );
+  }
+}
 
 // ─── Forge artifact loading ─────────────────────────────────────────
 
@@ -144,6 +157,8 @@ export async function setupShrincsAnvilStack(
       "utf8"
     )
   ) as { deployedBytecode: Hex };
+
+  assertVerifierPinMatches(shrincsVerifierArtifact);
 
   const anvil = createAnvil({ port: opts.port });
   await anvil.start();
