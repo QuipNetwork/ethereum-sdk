@@ -34,9 +34,12 @@ export { ShrincsWalletClient, fetchShrincsWalletState } from "./shrincsWalletCli
 export type {
   ShrincsWalletState,
   ShrincsTxKeyOptions,
+  ExecuteParams,
+  ExecuteCostEstimate,
   ShrincsCall,
   UserOpEnvelope,
 } from "./shrincsWalletClient.js";
+export type { CostEstimate } from "./estimateCost.js";
 export { ShrincsPaymasterClient } from "./shrincsPaymasterClient.js";
 export type { ShrincsVerifierState } from "./shrincsPaymasterClient.js";
 export {
@@ -46,6 +49,8 @@ export {
 export type {
   ShrincsFactoryClientParams,
   CreateShrincsWalletParams,
+  EstimateCreationCostParams,
+  CreationCostEstimate,
   Erc1271KeySpec,
 } from "./shrincsFactoryClient.js";
 

@@ -31,10 +31,7 @@ import { randomBytes } from "@noble/ciphers/webcrypto";
 
 import { walletFactoryAbi } from "../abi/WalletFactory.js";
 import { getNetworkAddresses } from "../addresses.js";
-import {
-  NoVaultFoundError,
-  WalletAlreadyExistsError,
-} from "../errors.js";
+import { NoVaultFoundError, WalletAlreadyExistsError } from "../errors.js";
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { getShrincsAddresses } from "./addresses.js";
 import {
@@ -42,8 +39,9 @@ import {
   ImplementationNotVettedError,
 } from "./errors.js";
 import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
+import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
 import { withDecodedError } from "./internal/decodeError.js";
-import { encodeInitPayload } from "./shrincsCodec.js";
+import { encodeInitPayload, publicKeyCommitment } from "./shrincsCodec.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
   ShrincsWalletClient,
@@ -56,6 +54,28 @@ import {
 /// front-runnable across users and chains; random is the only safe default.
 export function randomVaultId(): Hex {
   return toHex(randomBytes(32));
+}
+
+const SHRINCS_PARAMS_STATEFUL_PUBLIC_KEY_BYTES = 68;
+const COMMITMENT_BYTES = 32;
+
+const nonZeroKeyMaterial = (bytes: number): Hex => `0x${"ff".repeat(bytes)}`;
+
+export function placeholderInitPayload(): Hex {
+  const bundleWithoutCommitment = {
+    statefulPublicKey: nonZeroKeyMaterial(
+      SHRINCS_PARAMS_STATEFUL_PUBLIC_KEY_BYTES
+    ),
+    pkSeed: nonZeroKeyMaterial(COMMITMENT_BYTES),
+    hypertreeRoot: nonZeroKeyMaterial(COMMITMENT_BYTES),
+  };
+  return encodeInitPayload({
+    mainBundle: {
+      ...bundleWithoutCommitment,
+      publicKeyCommitment: publicKeyCommitment(bundleWithoutCommitment),
+    },
+    erc1271Commitment: nonZeroKeyMaterial(COMMITMENT_BYTES),
+  });
 }
 
 /// How the wallet's dedicated ERC-1271 verifier key is specified at creation.
@@ -82,6 +102,14 @@ export interface ShrincsFactoryClientParams {
   /// entry; the factory deploys a proxy against whichever vetted index this
   /// implementation occupies.
   walletImplementation?: Address;
+}
+
+export interface EstimateCreationCostParams {
+  vaultId?: Hex;
+}
+
+export interface CreationCostEstimate extends CostEstimate {
+  creationFee: bigint;
 }
 
 export interface CreateShrincsWalletParams {
@@ -117,7 +145,8 @@ export class ShrincsFactoryClient {
     this.account = params.account;
     this.chainId = params.chainId;
     this.factoryAddress =
-      params.factoryAddress ?? getNetworkAddresses(params.chainId).WalletFactory;
+      params.factoryAddress ??
+      getNetworkAddresses(params.chainId).WalletFactory;
     this.walletImplementation =
       params.walletImplementation ??
       getShrincsAddresses(params.chainId).ShrincsWalletImplementation;
@@ -139,17 +168,7 @@ export class ShrincsFactoryClient {
 
     const vaultId = params.vaultId ?? randomVaultId();
 
-    const existing = (await withDecodedError(
-      this.publicClient.readContract({
-        address: this.factoryAddress,
-        abi: walletFactoryAbi,
-        functionName: "wallets",
-        args: [vaultId],
-      })
-    )) as Address;
-    if (existing !== zeroAddress) {
-      throw new WalletAlreadyExistsError(vaultId);
-    }
+    await this.assertVaultIdUnclaimed(vaultId);
 
     const mainKey = params.signer.recoverKeyPair(vaultId, {
       maxSignatures: params.maxSignatures,
@@ -172,23 +191,10 @@ export class ShrincsFactoryClient {
       erc1271Commitment,
     });
 
-    const index = await this.resolveImplementationIndex();
-    const creationFee = (await withDecodedError(
-      this.publicClient.readContract({
-        address: this.factoryAddress,
-        abi: walletFactoryAbi,
-        functionName: "creationFee",
-      })
-    )) as bigint;
-
-    const contractCall: ContractCallParams = {
-      address: this.factoryAddress,
-      abi: walletFactoryAbi,
-      functionName: "deploySpecificWalletProxy",
-      args: [vaultId, index, this.account, initPayload],
-      value: creationFee,
-      account: this.account as Account | Address,
-    };
+    const { contractCall, creationFee } = await this.buildDeploymentCall(
+      vaultId,
+      initPayload
+    );
     const prepared = await prepareTx({
       publicClient: this.publicClient,
       contractParams: contractCall,
@@ -223,6 +229,33 @@ export class ShrincsFactoryClient {
       chainId: this.chainId,
       account: this.account,
     });
+  }
+
+  async estimateCreationCost(
+    params: EstimateCreationCostParams = {},
+    opts: TxOptions = {}
+  ): Promise<CreationCostEstimate> {
+    await assertProviderState({
+      publicClient: this.publicClient,
+      expectedChainId: this.chainId,
+    });
+
+    const vaultId = params.vaultId ?? randomVaultId();
+    await this.assertVaultIdUnclaimed(vaultId);
+
+    const { contractCall, creationFee } = await this.buildDeploymentCall(
+      vaultId,
+      placeholderInitPayload()
+    );
+    const estimate = await estimateTxCost({
+      publicClient: this.publicClient,
+      account: this.account,
+      contractCall,
+      totalValue: creationFee,
+      opts,
+    });
+
+    return { ...estimate, creationFee };
   }
 
   /// Resolve an existing wallet by `vaultId`, asserting `signer` reproduces the
@@ -270,7 +303,10 @@ export class ShrincsFactoryClient {
   } | null> {
     const walletAddress = await this.getShrincsWalletAddress(vaultId);
     if (walletAddress === zeroAddress) return null;
-    const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
+    const state = await fetchShrincsWalletState(
+      this.publicClient,
+      walletAddress
+    );
     return {
       keyVersion: Number(state.keyVersion),
       shrincsPublicKeyCommitment: state.shrincsPublicKeyCommitment,
@@ -285,7 +321,10 @@ export class ShrincsFactoryClient {
   }): Promise<ShrincsWalletClient | null> {
     const walletAddress = await this.getShrincsWalletAddress(params.vaultId);
     if (walletAddress === zeroAddress) return null;
-    const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
+    const state = await fetchShrincsWalletState(
+      this.publicClient,
+      walletAddress
+    );
     if (
       params.keypair.publicKeyCommitment.toLowerCase() !==
       state.shrincsPublicKeyCommitment.toLowerCase()
@@ -313,6 +352,39 @@ export class ShrincsFactoryClient {
         args: [vaultId],
       })
     ) as Promise<Address>;
+  }
+
+  private async assertVaultIdUnclaimed(vaultId: Hex): Promise<void> {
+    const existing = await this.getShrincsWalletAddress(vaultId);
+    if (existing !== zeroAddress) {
+      throw new WalletAlreadyExistsError(vaultId);
+    }
+  }
+
+  private async buildDeploymentCall(
+    vaultId: Hex,
+    initPayload: Hex
+  ): Promise<{ contractCall: ContractCallParams; creationFee: bigint }> {
+    const index = await this.resolveImplementationIndex();
+    const creationFee = (await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress,
+        abi: walletFactoryAbi,
+        functionName: "creationFee",
+      })
+    )) as bigint;
+
+    return {
+      creationFee,
+      contractCall: {
+        address: this.factoryAddress,
+        abi: walletFactoryAbi,
+        functionName: "deploySpecificWalletProxy",
+        args: [vaultId, index, this.account, initPayload],
+        value: creationFee,
+        account: this.account as Account | Address,
+      },
+    };
   }
 
   /// Vetted-set index of the Shrincs implementation, resolved from its on-chain
