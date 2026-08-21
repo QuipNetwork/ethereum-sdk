@@ -41,6 +41,7 @@ import {
   ZeroErc1271CommitmentError,
 } from "./errors.js";
 import { prepareTx, type TxOptions } from "./gas.js";
+import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
   ACTION_ERC1271,
@@ -508,7 +509,8 @@ export class ShrincsWalletClient {
       ...(prepared.nonce !== undefined && { nonce: prepared.nonce }),
     } as unknown as Parameters<WalletClient["writeContract"]>[0];
     const hash = await withDecodedError(this.walletClient.writeContract(writeParams));
-    return this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    return assertReceiptSuccess(receipt);
   }
 
   /*  ── stateful writes ─────────────────────────────────────────────────  */

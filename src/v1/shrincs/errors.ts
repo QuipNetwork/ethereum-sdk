@@ -126,6 +126,20 @@ export class UnknownContractError extends QuipError {
   }
 }
 
+/// `waitForTransactionReceipt` resolved with `status === "reverted"` — the
+/// transaction landed but the call reverted on chain.
+export class TransactionRevertedError extends QuipError {
+  readonly transactionHash: Hex;
+  constructor(transactionHash: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_TRANSACTION_REVERTED",
+      `Transaction ${transactionHash} reverted`,
+      opts
+    );
+    this.transactionHash = transactionHash;
+  }
+}
+
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                      WALLET ERRORS                          */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
