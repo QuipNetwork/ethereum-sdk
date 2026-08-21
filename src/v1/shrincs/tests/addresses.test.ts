@@ -9,6 +9,7 @@ import {
   NETWORK_ADDRESSES,
   getShrincsAddresses,
 } from "../addresses.js";
+import { UnsupportedNetworkError } from "../errors.js";
 
 // Deterministic sender-guarded CreateX CREATE3 addresses from
 // `script/PredictAddresses.s.sol`, derived for the canonical DEPLOY_OPERATOR
@@ -44,6 +45,18 @@ describe("shrincs addresses", () => {
   it("getShrincsAddresses falls back to the default entry for any chain", () => {
     expect(getShrincsAddresses(1)).toEqual(NETWORK_ADDRESSES.default);
     expect(getShrincsAddresses(8453)).toEqual(NETWORK_ADDRESSES.default);
+    expect(getShrincsAddresses()).toEqual(NETWORK_ADDRESSES.default);
+  });
+
+  it("getShrincsAddresses throws UnsupportedNetworkError for unknown chain ids", () => {
+    expect(() => getShrincsAddresses(999999)).toThrow(UnsupportedNetworkError);
+  });
+
+  it("getShrincsAddresses returns the default entry for BASE_SEPOLIA", () => {
+    expect(getShrincsAddresses(84532)).toEqual(NETWORK_ADDRESSES.default);
+  });
+
+  it("getShrincsAddresses returns the default entry when chainId is omitted", () => {
     expect(getShrincsAddresses()).toEqual(NETWORK_ADDRESSES.default);
   });
 });

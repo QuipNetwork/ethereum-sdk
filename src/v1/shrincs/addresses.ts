@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { type Address } from "viem";
 
-import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "../addresses.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
 // Chain ids and the canonical EntryPoint are shared with the v1 SDK.
@@ -67,6 +67,17 @@ const SHRINCS_PAYMASTER_IMPL =
 const SHRINCS_VERIFIER =
   "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688" as Address;
 
+/// Chains that share the CREATE3-deterministic (chain-independent) Shrincs
+/// addresses captured under the `default` entry of `NETWORK_ADDRESSES`.
+const SHRINCS_SUPPORTED_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
+  CHAIN_IDS.ETHEREUM_MAINNET,
+  CHAIN_IDS.SEPOLIA,
+  CHAIN_IDS.BASE,
+  CHAIN_IDS.BASE_SEPOLIA,
+  CHAIN_IDS.OPTIMISM,
+  CHAIN_IDS.OPTIMISM_SEPOLIA,
+]);
+
 /// Registry keyed by chain id, with a deterministic `default` entry shared by
 /// every chain (CREATE3 addresses are chain-independent).
 export const NETWORK_ADDRESSES: Record<number | "default", ShrincsNetworkAddresses> = {
@@ -79,13 +90,12 @@ export const NETWORK_ADDRESSES: Record<number | "default", ShrincsNetworkAddress
   },
 };
 
-/// Resolve the Shrincs addresses for `chainId`, falling back to the shared
-/// `default` entry. Throws `UnsupportedNetworkError` only when an explicit,
-/// unknown chain id is requested and no default applies.
+/// Resolve the Shrincs addresses for `chainId`. Undefined → default;
+/// registered entry → that entry; allowlisted shared-deployment chain →
+/// default; otherwise throws `UnsupportedNetworkError`.
 export function getShrincsAddresses(chainId?: number): ShrincsNetworkAddresses {
-  if (chainId !== undefined && chainId in NETWORK_ADDRESSES) {
-    return NETWORK_ADDRESSES[chainId];
-  }
-  if (NETWORK_ADDRESSES.default) return NETWORK_ADDRESSES.default;
-  throw new UnsupportedNetworkError(chainId ?? -1);
+  if (chainId === undefined) return NETWORK_ADDRESSES.default;
+  if (chainId in NETWORK_ADDRESSES) return NETWORK_ADDRESSES[chainId];
+  if (SHRINCS_SUPPORTED_CHAIN_IDS.has(chainId)) return NETWORK_ADDRESSES.default;
+  throw new UnsupportedNetworkError(chainId);
 }
