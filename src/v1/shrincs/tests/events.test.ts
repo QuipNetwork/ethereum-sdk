@@ -24,6 +24,8 @@ import {
   parseExecutionSucceeded,
   parseKeyRotated,
   parseLeafConsumedOnly,
+  parseLeafRevocationSkipped,
+  parseLeafRevoked,
   parsePaymasterInitialized,
   parsePaymasterValidationRejected,
   parseShrincsVerifierSet,
@@ -115,6 +117,38 @@ describe("shrincs event parsers", () => {
       const [out] = parseLeafConsumedOnly([log]);
       expect(out).toEqual({ leaf: 3 });
       expect(typeof out.leaf).toBe("number");
+    });
+
+    it("parseLeafRevoked coerces leaf->number, keyVersion->bigint", () => {
+      const log = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 5,
+        keyVersion: 9n,
+      });
+      const [out] = parseLeafRevoked([log]);
+      expect(out).toEqual({ leaf: 5, keyVersion: 9n });
+      expect(typeof out.leaf).toBe("number");
+      expect(typeof out.keyVersion).toBe("bigint");
+    });
+
+    it("parseLeafRevoked returns [] for an empty source", () => {
+      expect(parseLeafRevoked([])).toEqual([]);
+    });
+
+    it("parseLeafRevocationSkipped coerces leaf->number, keyVersion->bigint", () => {
+      const log = makeLog(
+        shrincsWalletAbi as Abi,
+        ADDR_A,
+        "LeafRevocationSkipped",
+        { leaf: 7, keyVersion: 2n }
+      );
+      const [out] = parseLeafRevocationSkipped([log]);
+      expect(out).toEqual({ leaf: 7, keyVersion: 2n });
+      expect(typeof out.leaf).toBe("number");
+      expect(typeof out.keyVersion).toBe("bigint");
+    });
+
+    it("parseLeafRevocationSkipped returns [] for an empty source", () => {
+      expect(parseLeafRevocationSkipped([])).toEqual([]);
     });
 
     it("parseExecutionSucceeded", () => {
