@@ -180,6 +180,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             );
             return 1;
         }
+        // Fail-closed policy for a malformed signature. Two failure classes are
+        // handled differently on purpose:
+        //   - Too short to hold the three offsets: SOFT fail (the `return 1`
+        //     above). The bundler drops the op as SIG_VALIDATION_FAILED without
+        //     penalising the sender.
+        //   - Long enough to pass that check but carrying an offset that runs
+        //     past the payload: HARD `MalformedPayload` revert from the codec
+        //     below. Such an offset cannot come from an honest client, and
+        //     decoding it could read adjacent calldata, so reverting to reject
+        //     the op outright is the intended fail-closed behaviour, not a soft
+        //     rejection.
         (
             SHRINCS.PublicKey calldata pk,
             SHRINCS.Signature calldata sig,
