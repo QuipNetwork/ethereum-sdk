@@ -103,7 +103,9 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
         $.deprecatedImpls[codehash] = true;
         emit ImplementationSunset(impl, codehash);
-        if ($.latestWalletImpl == impl) {
+        // Deprecation is codehash-scoped, and the same codehash may live at
+        // multiple addresses, so compare the stored latest's EXTCODEHASH.
+        if ($.latestWalletImpl.codehash == codehash) {
             $.latestWalletImpl = _findLatestActive();
         }
     }
