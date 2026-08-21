@@ -36,8 +36,6 @@ import type { QuipWallet } from "./typechain-types/contracts/QuipWallet.js";
 import {
   computeVaultAddress,
   getNetworkAddresses,
-  QUIP_FACTORY_ADDRESS,
-  WOTS_PLUS_ADDRESS,
   CHAIN_IDS,
 } from "./addresses.js";
 
@@ -518,7 +516,7 @@ export class QuipClient {
         }
         vaultMap.set(ethers.hexlify(vaultId), walletAddress);
         index++;
-      } catch (error) {
+      } catch {
         // We've reached the end of the array
         break;
       }

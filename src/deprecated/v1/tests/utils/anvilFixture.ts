@@ -32,7 +32,6 @@ import {
   createTestClient,
   http,
   toHex,
-  concat,
   parseEther,
   parseEventLogs,
 } from "viem";

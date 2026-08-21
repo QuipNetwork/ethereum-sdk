@@ -14,7 +14,6 @@
 // consumers staticcall this; a revert would be a DoS on the relying contract.
 
 import { type Address, type Hex, keccak256, toHex } from "viem";
-import { foundry } from "viem/chains";
 
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { encodeErc1271Signature } from "../shrincsCodec.js";

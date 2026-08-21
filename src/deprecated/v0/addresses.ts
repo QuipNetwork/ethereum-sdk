@@ -14,7 +14,6 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { NetworkType, QuipWallet__factory, SUPPORTED_NETWORKS } from "./index.js";
 import addresses from "./addresses.json" with { type: "json" };
 import { ethers } from "ethers";
 
@@ -116,14 +115,14 @@ export function getVaultAddress(
  * computeVaultAddress allows calculating a vault address with custom contract addresses
  * @param initialOwnerAddress - The Ethereum address of the initial vault owner
  * @param vaultId - The unique identifier for this vault as a Uint8Array
- * @param wotsLibraryAddress - The address of the WOTSPlus library contract
+ * @param _wotsLibraryAddress - The address of the WOTSPlus library contract
  * @param quipFactoryAddress - The address of the QuipFactory contract
  * @returns The Ethereum address where the vault contract would be deployed
  */
 export function computeVaultAddress(
   initialOwnerAddress: string,
   vaultId: string | Uint8Array,
-  wotsLibraryAddress: string,
+  _wotsLibraryAddress: string,
   quipFactoryAddress: string
 ): string {
   // Ensure addresses are checksummed

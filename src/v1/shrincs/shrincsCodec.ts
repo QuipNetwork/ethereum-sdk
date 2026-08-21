@@ -82,8 +82,6 @@ export const ROTATION_DOMAIN_TRANSFER_OWNERSHIP = keccakUtf8(
   "quip.shrincs.rotation.transferOwnership"
 );
 
-const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
-
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    WORD / HASH HELPERS                      */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

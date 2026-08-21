@@ -41,15 +41,11 @@ import {
   type Address,
   type Hex,
   type PublicClient,
-  type TestClient,
   type WalletClient,
   createPublicClient,
-  createTestClient,
   createWalletClient,
-  encodeFunctionData,
   http,
   parseEther,
-  parseEventLogs,
   toHex,
   zeroAddress,
 } from "viem";
@@ -74,7 +70,6 @@ import {
 } from "../events.js";
 import {
   encodeInit,
-  type WinternitzAddress,
   MAX_KEYS,
 } from "../wotsCodec.js";
 import {
@@ -113,7 +108,6 @@ const anvil = createAnvil({
 
 let publicClient: PublicClient;
 let walletClient: WalletClient;
-let testClient: TestClient;
 let factoryAddress: Address;
 let walletImplAddress: Address;
 let paymasterAddress: Address;
@@ -151,7 +145,6 @@ beforeAll(async () => {
   const transport = http(`http://127.0.0.1:${anvil.port}`);
   publicClient = createPublicClient({ chain: mainnet, transport });
   walletClient = createWalletClient({ chain: mainnet, transport, account });
-  testClient = createTestClient({ chain: mainnet, mode: "anvil", transport });
 
   // Sanity: the canonical v0.7 EntryPoint is already deployed on real
   // mainnet. The fork should expose it without any setCode work.
