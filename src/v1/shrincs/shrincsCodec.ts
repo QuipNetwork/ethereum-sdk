@@ -56,6 +56,13 @@ export const DOMAIN_TAG = keccakUtf8("quip-shrincs-wallet-v1");
 /// sponsorship `ActionContext.domainSeparator`).
 export const PAYMASTER_DOMAIN_TAG = keccakUtf8("quip-shrincs-paymaster-v1");
 
+/// Deploy signing-domain tag (combined with chainId + the FACTORY address into
+/// the deploy `ActionContext.domainSeparator`). The deploy authorization is
+/// bound to the factory — the authority that supplies the chainId and
+/// `quipDeployChainIndex` — because the wallet address does not yet exist when
+/// the deploy signature is produced. See `e3r`.
+export const DEPLOY_DOMAIN_TAG = keccakUtf8("quip-shrincs-deploy-v1");
+
 /// Per-operation `ActionContext.actionType` discriminators.
 export const ACTION_ERC4337_EXECUTE = keccakUtf8(
   "quip.shrincs.action.erc4337Execute"
@@ -77,6 +84,9 @@ export const ACTION_ERC1271 = keccakUtf8("quip.shrincs.action.erc1271");
 export const ACTION_PAYMASTER_APPROVE = keccakUtf8(
   "quip.shrincs.action.paymasterApprove"
 );
+/// Deploy authorization action type. Proves the main-key holder authorizes
+/// deploying this key at `(vaultId, owner)` on the factory's chain. See `e3r`.
+export const ACTION_DEPLOY = keccakUtf8("quip.shrincs.action.deploy");
 
 /// Per-path tags folded into `RotationContext.domainSeparator` (see
 /// `rotationDomainSeparator`). `RotationContext` carries no action
@@ -212,6 +222,24 @@ export const leavesHash = (leaves: readonly number[]): Hex =>
 /// the `leavesHash` commitment over the exact target array.
 export const markLeavesUsedPayloadHash = (leavesHashValue: Hex): Hex =>
   hashWords(leavesHashValue);
+
+/// `payloadHash` for the deploy authorization (`e3r`). Binds the vault, the
+/// intended owner, the ERC-1271 commitment, and the `quipDeployChainIndex` so a
+/// deploy signature authorizes exactly one `(vaultId, owner, erc1271, chainIndex)`
+/// tuple. The main-key commitment is authenticated by the signature itself; the
+/// chain and factory are bound through the deploy `domainSeparator`.
+export const deployPayloadHash = (
+  vaultId: Hex,
+  owner: Address,
+  erc1271Commitment: Hex,
+  quipDeployChainIndex: number
+): Hex =>
+  hashWords(
+    vaultId,
+    addressWord(owner),
+    erc1271Commitment,
+    word(quipDeployChainIndex)
+  );
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    CONTEXT BUILDERS                         */

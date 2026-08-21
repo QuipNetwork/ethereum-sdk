@@ -6,9 +6,12 @@ import { getAddress } from "viem";
 
 import {
   CANONICAL_ENTRYPOINT_V07,
+  DEPLOY_CHAIN_ORDER,
   NETWORK_ADDRESSES,
   getShrincsAddresses,
+  quipDeployChainIndex,
 } from "../addresses.js";
+import { MAX_DEPLOY_CHAINS } from "../constants.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
 // Deterministic sender-guarded CreateX CREATE3 addresses from
@@ -61,5 +64,30 @@ describe("shrincs addresses", () => {
 
   it("getShrincsAddresses returns the default entry when chainId is omitted", () => {
     expect(getShrincsAddresses()).toEqual(NETWORK_ADDRESSES.default);
+  });
+});
+
+describe("quipDeployChainIndex", () => {
+  it("returns the 1-based position in the committed deploy list", () => {
+    // Never 0 — leaf 0 is invalid, so the first chain maps to deploy leaf 1.
+    expect(quipDeployChainIndex(DEPLOY_CHAIN_ORDER[0]!)).toBe(1);
+    expect(quipDeployChainIndex(DEPLOY_CHAIN_ORDER[6]!)).toBe(7); // MIDL, last
+  });
+
+  it("assigns a distinct index to every listed chain", () => {
+    const indices = DEPLOY_CHAIN_ORDER.map((c) => quipDeployChainIndex(c));
+    expect(new Set(indices).size).toBe(DEPLOY_CHAIN_ORDER.length);
+  });
+
+  it("throws UnsupportedNetworkError for a chain not on the deploy list", () => {
+    expect(() => quipDeployChainIndex(999999)).toThrow(UnsupportedNetworkError);
+  });
+
+  it("keeps the committed list within the reserved deploy-leaf range", () => {
+    expect(DEPLOY_CHAIN_ORDER.length).toBeLessThanOrEqual(MAX_DEPLOY_CHAINS);
+  });
+
+  it("holds no duplicate chain (each maps to one deploy leaf)", () => {
+    expect(new Set(DEPLOY_CHAIN_ORDER).size).toBe(DEPLOY_CHAIN_ORDER.length);
   });
 });

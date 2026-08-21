@@ -17,6 +17,7 @@
 import { type Address } from "viem";
 
 import { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "../addresses.js";
+import { MAX_DEPLOY_CHAINS } from "./constants.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
 // Chain ids and the canonical EntryPoint are shared with the v1 SDK.
@@ -78,6 +79,49 @@ const SHRINCS_SUPPORTED_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
   CHAIN_IDS.OPTIMISM_SEPOLIA,
   CHAIN_IDS.MIDL_TESTNET,
 ]);
+
+/// Committed, APPEND-ONLY deploy list (`e3r`). A chain's `quipDeployChainIndex`
+/// is its 1-based position here (index 0 in the array → deploy leaf 1, never
+/// leaf 0). The index binds each chain's deploy authorization to a distinct
+/// reserved deploy leaf, so a deploy signature revealed on one chain never
+/// enables a deploy on another.
+///
+/// PROCEDURE for a new chain: APPEND it to the END of this array (it takes the
+/// next index), configure that chain's factory with the matching index at
+/// setup, and release the new SDK version. NEVER reorder or remove an entry —
+/// existing indices are permanent, so an append never reassigns an already
+/// deployed wallet's deploy leaf. The list length must stay within
+/// `MAX_DEPLOY_CHAINS` (the reserved deploy-leaf range).
+export const DEPLOY_CHAIN_ORDER: readonly number[] = [
+  CHAIN_IDS.ETHEREUM_MAINNET,
+  CHAIN_IDS.SEPOLIA,
+  CHAIN_IDS.BASE,
+  CHAIN_IDS.BASE_SEPOLIA,
+  CHAIN_IDS.OPTIMISM,
+  CHAIN_IDS.OPTIMISM_SEPOLIA,
+  CHAIN_IDS.MIDL_TESTNET,
+];
+
+/// Resolve the `quipDeployChainIndex` (1-based reserved deploy-leaf index) for
+/// `chainId` from the committed deploy list. Throws `UnsupportedNetworkError`
+/// for a chain not on the list.
+export function quipDeployChainIndex(chainId: number): number {
+  const pos = DEPLOY_CHAIN_ORDER.indexOf(chainId);
+  if (pos === -1) throw new UnsupportedNetworkError(chainId);
+  return pos + 1;
+}
+
+// Load-time invariants on the committed deploy list: it must fit the reserved
+// deploy-leaf range and hold no duplicate chain (a duplicate would map two
+// chains to one deploy leaf).
+if (DEPLOY_CHAIN_ORDER.length > MAX_DEPLOY_CHAINS) {
+  throw new Error(
+    `DEPLOY_CHAIN_ORDER (${DEPLOY_CHAIN_ORDER.length}) exceeds MAX_DEPLOY_CHAINS (${MAX_DEPLOY_CHAINS})`
+  );
+}
+if (new Set(DEPLOY_CHAIN_ORDER).size !== DEPLOY_CHAIN_ORDER.length) {
+  throw new Error("DEPLOY_CHAIN_ORDER contains a duplicate chain id");
+}
 
 /// Registry keyed by chain id, with a deterministic `default` entry shared by
 /// every chain (CREATE3 addresses are chain-independent).
