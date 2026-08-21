@@ -14,9 +14,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { type Address } from "viem";
+import { type Address, type Hex, encodeAbiParameters, keccak256 } from "viem";
 
-import { CANONICAL_ENTRYPOINT_V07, CHAIN_IDS } from "../addresses.js";
+import {
+  CANONICAL_ENTRYPOINT_V07,
+  CHAIN_IDS,
+  computeCreate3Address,
+} from "../addresses.js";
 import { MAX_DEPLOY_CHAINS } from "./constants.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
@@ -109,6 +113,34 @@ export function quipDeployChainIndex(chainId: number): number {
   const pos = DEPLOY_CHAIN_ORDER.indexOf(chainId);
   if (pos === -1) throw new UnsupportedNetworkError(chainId);
   return pos + 1;
+}
+
+/// The CREATE3 deploy salt for a SHRINCS wallet (`e3r`). Binds the vault to the
+/// main-key commitment, so the counterfactual address is a function of the key.
+/// An attacker cannot land a different key at the same address, and the deploy
+/// signature (verified in `initialize`) ensures only the key holder can deploy
+/// there. MUST match the on-chain `keccak256(abi.encode(vaultId, commitment))`.
+export function deployVaultSalt(vaultId: Hex, mainCommitment: Hex): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "bytes32" }],
+      [vaultId, mainCommitment]
+    )
+  );
+}
+
+/// Predict the counterfactual SHRINCS wallet address for
+/// `(factory, vaultId, mainCommitment)`. Use this before deploy to know where to
+/// prefund. The address is bound to the key commitment (`e3r`).
+export function getShrincsWalletAddress(
+  factoryAddress: Address,
+  vaultId: Hex,
+  mainCommitment: Hex
+): Address {
+  return computeCreate3Address(
+    factoryAddress,
+    deployVaultSalt(vaultId, mainCommitment)
+  );
 }
 
 // Load-time invariants on the committed deploy list: it must fit the reserved

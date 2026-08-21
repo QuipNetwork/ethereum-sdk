@@ -4,11 +4,15 @@
 
 import { getAddress } from "viem";
 
+import { keccak256, toHex } from "viem";
+
 import {
   CANONICAL_ENTRYPOINT_V07,
   DEPLOY_CHAIN_ORDER,
   NETWORK_ADDRESSES,
+  deployVaultSalt,
   getShrincsAddresses,
+  getShrincsWalletAddress,
   quipDeployChainIndex,
 } from "../addresses.js";
 import { MAX_DEPLOY_CHAINS } from "../constants.js";
@@ -89,5 +93,33 @@ describe("quipDeployChainIndex", () => {
 
   it("holds no duplicate chain (each maps to one deploy leaf)", () => {
     expect(new Set(DEPLOY_CHAIN_ORDER).size).toBe(DEPLOY_CHAIN_ORDER.length);
+  });
+});
+
+describe("SHRINCS deploy salt / address (e3r)", () => {
+  const FACTORY = "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC" as const;
+  const vaultId = keccak256(toHex("vault-1"));
+  const commitment = keccak256(toHex("main-commitment"));
+
+  it("deployVaultSalt is deterministic for the same (vaultId, commitment)", () => {
+    expect(deployVaultSalt(vaultId, commitment)).toBe(
+      deployVaultSalt(vaultId, commitment)
+    );
+  });
+
+  it("deployVaultSalt binds BOTH the vault and the commitment", () => {
+    const base = deployVaultSalt(vaultId, commitment);
+    expect(deployVaultSalt(keccak256(toHex("vault-2")), commitment)).not.toBe(base);
+    expect(deployVaultSalt(vaultId, keccak256(toHex("other")))).not.toBe(base);
+  });
+
+  it("getShrincsWalletAddress is deterministic and commitment-bound", () => {
+    const addr = getShrincsWalletAddress(FACTORY, vaultId, commitment);
+    expect(getShrincsWalletAddress(FACTORY, vaultId, commitment)).toBe(addr);
+    // A different key commitment => a different counterfactual address, which is
+    // exactly what stops an attacker taking the victim's address (e3r).
+    expect(
+      getShrincsWalletAddress(FACTORY, vaultId, keccak256(toHex("attacker-key")))
+    ).not.toBe(addr);
   });
 });

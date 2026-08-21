@@ -215,10 +215,28 @@ export function computeVaultAddress(
   factoryAddress: Address,
   vaultId: Hex
 ): Address {
+  return computeCreate3Address(factoryAddress, vaultId);
+}
+
+/**
+ * Compute a Solady CREATE3 address from a factory and a 32-byte salt. The
+ * address depends only on (factory, salt) — never on the deployed bytecode — so
+ * it is chain-independent and shared by both wallet families. Callers derive the
+ * salt (a raw vaultId for the sunset family, or a commitment-bound salt for the
+ * live SHRINCS deploy — see `e3r`).
+ *
+ * @param factoryAddress - The factory that runs CREATE3
+ * @param salt - The 32-byte CREATE3 salt
+ * @returns The deterministic deployment address
+ */
+export function computeCreate3Address(
+  factoryAddress: Address,
+  salt: Hex
+): Address {
   // CREATE3 Step 1: Proxy address via CREATE2 (fixed proxy bytecode)
   const proxyAddress = getCreate2Address({
     from: factoryAddress,
-    salt: vaultId,
+    salt,
     bytecodeHash: PROXY_INITCODE_HASH,
   });
 
