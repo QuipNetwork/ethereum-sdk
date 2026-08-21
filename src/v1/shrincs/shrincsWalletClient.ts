@@ -91,6 +91,7 @@ import {
 } from "./userOp.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
 const shrincsWalletDomain = (chainId: number, walletAddress: Address) =>
   ({
@@ -656,7 +657,7 @@ export class ShrincsWalletClient {
   ): Promise<TransactionReceipt> {
     if (
       !params.newCommitment ||
-      /^0x0+$/.test(params.newCommitment)
+      params.newCommitment.toLowerCase() === ZERO32
     ) {
       throw new ZeroErc1271CommitmentError();
     }

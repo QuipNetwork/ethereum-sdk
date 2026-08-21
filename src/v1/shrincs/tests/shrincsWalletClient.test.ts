@@ -17,6 +17,7 @@ import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   OwnerMismatchError,
   ZeroAddressOwnerError,
+  ZeroErc1271CommitmentError,
 } from "../errors.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
@@ -241,5 +242,21 @@ describe("ShrincsWalletClient owner mismatch", () => {
         owner: localAccount(WRONG_OWNER),
       })
     ).rejects.toThrow(OwnerMismatchError);
+  });
+});
+
+describe("ShrincsWalletClient setErc1271Key", () => {
+  it("throws ZeroErc1271CommitmentError for the 32-byte zero word", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.setErc1271Key({ newCommitment: ZERO32 })
+    ).rejects.toThrow(ZeroErc1271CommitmentError);
+  });
+
+  it("throws ZeroErc1271CommitmentError for an empty commitment", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.setErc1271Key({ newCommitment: "" as Hex })
+    ).rejects.toThrow(ZeroErc1271CommitmentError);
   });
 });
