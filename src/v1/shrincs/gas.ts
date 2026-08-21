@@ -14,14 +14,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { type PublicClient } from "viem";
-
-import { GasEstimationError, QuipError } from "./errors.js";
+import { QuipError } from "./errors.js";
 import { decodeContractError } from "./internal/decodeError.js";
+import { prepareTxCore } from "../gas.js";
 
 // The transaction-shaping primitives (multiplier clamp, fee resolution, balance
 // preflight) are contract-agnostic, so the Shrincs SDK reuses the v1
-// implementations verbatim. Only `prepareTx` is reimplemented here, because its
+// implementations verbatim. Only `prepareTx` is rebound here, because its
 // revert decoding must run through the SHRINCS error registry rather than the
 // WOTS+ one.
 export {
@@ -41,9 +40,6 @@ export {
 export { QuipError };
 
 import {
-  applyGasMultiplier,
-  preflightBalanceCheck,
-  resolveFeeOptions,
   type PrepareTxParams,
   type PreparedTx,
 } from "../gas.js";
@@ -55,36 +51,5 @@ import {
 ///      recognized contract error.
 ///   3. `GasEstimationError` — estimation failed for a non-contract reason.
 export async function prepareTx(params: PrepareTxParams): Promise<PreparedTx> {
-  const { publicClient, contractParams, totalValue, opts } = params;
-
-  if (!opts?.skipPreflightChecks) {
-    const acctAddr =
-      typeof contractParams.account === "string"
-        ? contractParams.account
-        : contractParams.account.address;
-    await preflightBalanceCheck(publicClient, acctAddr, totalValue);
-  }
-
-  let estimate: bigint;
-  if (opts?.gas !== undefined) {
-    estimate = opts.gas;
-  } else {
-    try {
-      estimate = await publicClient.estimateContractGas(
-        contractParams as Parameters<PublicClient["estimateContractGas"]>[0]
-      );
-    } catch (err) {
-      const decoded = decodeContractError(err);
-      if (decoded) throw decoded;
-      const message = err instanceof Error ? err.message : String(err);
-      throw new GasEstimationError(message, { cause: err });
-    }
-  }
-
-  const gas =
-    opts?.gas !== undefined ? opts.gas : applyGasMultiplier(estimate, opts);
-
-  const prepared: PreparedTx = { gas, fees: resolveFeeOptions(opts) };
-  if (opts?.nonce !== undefined) prepared.nonce = opts.nonce;
-  return prepared;
+  return prepareTxCore(params, decodeContractError);
 }
