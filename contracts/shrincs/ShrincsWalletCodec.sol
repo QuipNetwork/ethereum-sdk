@@ -96,7 +96,9 @@ library ShrincsWalletCodec {
     ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
     ///      The payload is opaque to the factory; `commitment`/`pkSeed` landing at
     ///      `payload[0:32]` / `[32:64]` is just natural ABI head-word order, not a
-    ///      layout constraint.
+    ///      layout constraint. The `initialize` payload appends a trailing
+    ///      `bytes deployAuth` (7th head word) read separately by `decodeInitDeployAuth`;
+    ///      this decoder ignores it (and `migrate` payloads omit it entirely).
     function decodeInit(
         bytes calldata payload
     )
@@ -139,6 +141,45 @@ library ShrincsWalletCodec {
             hashSuite := and(calldataload(add(o, 0x60)), 0xffffffff)
             erc1271Commitment := calldataload(add(o, 0x80))
             erc1271HashSuite := and(calldataload(add(o, 0xa0)), 0xffffffff)
+        }
+    }
+
+    /// @dev Decodes the deploy authorization embedded in the `initialize` payload (e3r) — the
+    ///      7th ABI head word of the init tuple (see `decodeInit`; the init payload gains a
+    ///      trailing `bytes deployAuth`). `deployAuth` is itself the verify envelope
+    ///      `abi.encode(SHRINCS.PublicKey pk, sig)` where `sig` is a `SHRINCS.Signature`
+    ///      (stateful mode) or a `SPHINCSPlusC.Signature` (stateless mode); the wallet passes
+    ///      it straight to the pinned verifier. Returns a calldata slice into `payload`.
+    function decodeInitDeployAuth(
+        bytes calldata payload
+    ) internal pure returns (bytes calldata deployAuth) {
+        // Head is seven 32-byte words; the 7th (index 6, offset 0xc0) is the `bytes` tail offset.
+        if (payload.length < 0xe0)
+            revert MalformedPayload(0xe0, payload.length);
+        bytes4 malformed = MalformedPayload.selector;
+        assembly {
+            let o := payload.offset
+            let len := payload.length
+            let da := calldataload(add(o, 0xc0))
+            // The length word must sit inside the slice: da + 0x20 <= len. `len >= 0xe0` here so
+            // `sub(len, 0x20)` never underflows.
+            if gt(da, sub(len, 0x20)) {
+                mstore(0x00, malformed)
+                mstore(0x04, add(da, 0x20))
+                mstore(0x24, len)
+                revert(0x00, 0x44)
+            }
+            let daLen := calldataload(add(o, da))
+            // The deployAuth bytes must fit: da + 0x20 + daLen <= len. `da <= len - 0x20` was just
+            // proven, so `sub(sub(len, 0x20), da)` cannot underflow.
+            if gt(daLen, sub(sub(len, 0x20), da)) {
+                mstore(0x00, malformed)
+                mstore(0x04, add(add(da, 0x20), daLen))
+                mstore(0x24, len)
+                revert(0x00, 0x44)
+            }
+            deployAuth.offset := add(o, add(da, 0x20))
+            deployAuth.length := daLen
         }
     }
 

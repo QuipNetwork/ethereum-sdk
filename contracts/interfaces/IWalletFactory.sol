@@ -27,6 +27,22 @@ pragma solidity ^0.8.33;
 ///         addressing both derive from it and survive logic upgrades).
 interface IWalletFactory {
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                          TYPES                          */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @notice Deploy-authorization mode a factory requires (e3r). Declared at factory setup
+    ///         via `setDeployConfig`; the wallet's `initialize` reads it and enforces exactly
+    ///         that form for the deploy signature.
+    ///           - `Stateful`: a main-key stateful signature at the reserved deploy leaf
+    ///             `quipDeployChainIndex`. One-time, distinct leaf per chain.
+    ///           - `Stateless`: a main-key stateless signature bound to the chainId. No leaf
+    ///             consumed; the chainId binding is what prevents cross-chain reuse.
+    enum DeployMode {
+        Stateful,
+        Stateless
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         ERRORS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
@@ -88,6 +104,12 @@ interface IWalletFactory {
     ///         set has diverged from the factory's `walletOwner` source of
     ///         truth — a "this should never happen" defense-in-depth revert.
     error RegistryDesync();
+    /// @notice Thrown when `setDeployConfig` is given a `quipDeployChainIndex` outside the
+    ///         reserved deploy-leaf range `[1..MAX_DEPLOY_CHAINS]` (e3r). Index 0 is reserved
+    ///         (leaf 0 is never a valid signature); an index above the range would overlap the
+    ///         signing budget.
+    /// @param quipDeployChainIndex The rejected index.
+    error InvalidDeployChainIndex(uint16 quipDeployChainIndex);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
@@ -125,6 +147,11 @@ interface IWalletFactory {
     /// @param oldFee The previous execute fee.
     /// @param newFee The new execute fee.
     event ExecuteFeeUpdated(uint256 oldFee, uint256 newFee);
+
+    /// @notice Emitted when the factory's deploy authorization config is set (e3r).
+    /// @param quipDeployChainIndex The reserved per-chain deploy leaf index.
+    /// @param deployMode The required deploy-signature mode.
+    event DeployConfigSet(uint16 quipDeployChainIndex, DeployMode deployMode);
 
     /// @notice Emitted when a new wallet proxy is created.
     /// @param amount The ETH value sent with the creation transaction.
@@ -209,7 +236,11 @@ interface IWalletFactory {
     ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
     /// @dev Iterates backwards through the vetted set to find the most recently added
     ///      non-deprecated implementation. Uses CREATE3 for deterministic addressing.
-    /// @param vaultId The salt used to derive the wallet's deterministic address.
+    /// @param vaultId The vault identifier; combined with `commitment` into the CREATE3 salt.
+    /// @param commitment The main-key commitment the address is bound to (e3r). Used only to
+    ///                derive the salt `keccak256(abi.encode(vaultId, commitment))`; the wallet's
+    ///                `initialize` reverts unless it equals the main commitment inside `payload`,
+    ///                so it cannot disagree with the installed key.
     /// @param to The classical address that will own the new wallet.
     /// @param payload Implementation-defined init data, passed to the wallet's
     ///                `initialize` verbatim. Opaque to the factory: layout and
@@ -218,6 +249,7 @@ interface IWalletFactory {
     /// @return The address of the newly deployed wallet proxy.
     function deployLatestWalletProxy(
         bytes32 vaultId,
+        bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) external payable returns (address);
@@ -227,7 +259,9 @@ interface IWalletFactory {
     ///         fee) to the wallet.
     /// @dev The index corresponds to insertion order in the vetted set. Reverts if the
     ///      implementation at the given index is deprecated.
-    /// @param vaultId The salt used to derive the wallet's deterministic address.
+    /// @param vaultId The vault identifier; combined with `commitment` into the CREATE3 salt.
+    /// @param commitment The main-key commitment the address is bound to (e3r); see
+    ///                `deployLatestWalletProxy`.
     /// @param index The index into the vetted implementation set.
     /// @param to The classical address that will own the new wallet.
     /// @param payload Implementation-defined init data, passed to the wallet's
@@ -237,6 +271,7 @@ interface IWalletFactory {
     /// @return The address of the newly deployed wallet proxy.
     function deploySpecificWalletProxy(
         bytes32 vaultId,
+        bytes32 commitment,
         uint256 index,
         address payable to,
         bytes calldata payload
@@ -277,6 +312,18 @@ interface IWalletFactory {
     /// @param newFee The new execute fee in wei.
     function setExecuteFee(uint256 newFee) external;
 
+    /// @notice Sets the factory's deploy authorization config (e3r). Factory setup, owner-only.
+    /// @dev The wallet's `initialize` reads both values from the factory (`msg.sender`) to
+    ///      rebuild and verify the deploy authorization. `quipDeployChainIndex` MUST be this
+    ///      chain's committed 1-based deploy-list position and MUST stay in
+    ///      `[1..MAX_DEPLOY_CHAINS]` (else `InvalidDeployChainIndex`).
+    /// @param quipDeployChainIndex The reserved per-chain deploy leaf index.
+    /// @param deployMode The deploy-signature mode required at `initialize`.
+    function setDeployConfig(
+        uint16 quipDeployChainIndex,
+        DeployMode deployMode
+    ) external;
+
     /// @notice Withdraws accumulated fees from the factory to the admin.
     /// @dev Only callable by the current admin. Reverts if the factory balance is insufficient.
     /// @param amount The amount of ETH in wei to withdraw.
@@ -299,17 +346,29 @@ interface IWalletFactory {
     /// @return The maximum fee in wei.
     function MAX_FEE() external view returns (uint256);
 
-    /// @notice Returns the wallet address deployed at `vaultId` on this
-    ///         factory.
-    /// @dev `vaultId` is a GLOBAL CREATE3 salt — same vaultId on every chain
-    ///      resolves to the same deterministic address. The outer
-    ///      `(owner, vaultId) → wallet` shape from earlier versions was
-    ///      misleading: the registry never gated lookup by owner, and the
-    ///      address is a pure function of the salt. Off-chain integrators
-    ///      MUST treat `vaultId` as a first-come-first-served global resource.
-    /// @param vaultId The vaultId used as CREATE3 salt.
-    /// @return The wallet address, or `address(0)` if none deployed here.
-    function wallets(bytes32 vaultId) external view returns (address);
+    /// @notice Returns the factory's reserved per-chain deploy leaf index (e3r).
+    /// @dev Read by the wallet's `initialize` to rebuild the deploy context. Zero until
+    ///      `setDeployConfig` runs.
+    function quipDeployChainIndex() external view returns (uint16);
+
+    /// @notice Returns the factory's required deploy-signature mode (e3r).
+    /// @dev Read by the wallet's `initialize`. Defaults to `Stateful` (0) until configured.
+    function deployMode() external view returns (DeployMode);
+
+    /// @notice Returns the main-key commitment the in-flight deploy salted its address with
+    ///         (e3r). Backed by transient storage: meaningful ONLY while a `_deployProxy` call
+    ///         is on the stack (the wallet reads it during `initialize`), and `bytes32(0)`
+    ///         otherwise. The wallet reverts unless it equals the commitment inside `payload`.
+    function pendingDeployCommitment() external view returns (bytes32);
+
+    /// @notice Returns the wallet address registered under a CREATE3 salt on this factory.
+    /// @dev Keyed by the derived salt `keccak256(abi.encode(vaultId, commitment))` (e3r), NOT by
+    ///      the raw `vaultId`: with the main-key commitment folded into the salt, two commitments
+    ///      under one `vaultId` resolve to two distinct addresses and no longer collide in this
+    ///      registry. Same salt on every chain resolves to the same deterministic address.
+    /// @param salt The CREATE3 salt `keccak256(abi.encode(vaultId, commitment))`.
+    /// @return The wallet address, or `address(0)` if none registered here.
+    function wallets(bytes32 salt) external view returns (address);
 
     /// @notice Returns the vaultId of a wallet deployed by this factory.
     /// @dev Used by `updateWalletOwner` to authenticate the calling wallet
