@@ -333,6 +333,14 @@ contract ShrincsPaymaster is
     /*                  INTERNAL FUNCTIONS                    */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @dev The stateful leaf index a SHRINCS signature reveals is encoded as its
+    ///      authentication-path length.
+    function _leafIndex(
+        SHRINCS.Signature calldata sig
+    ) internal pure returns (uint32) {
+        return uint32(sig.authPath.length);
+    }
+
     /// @dev Verifies the global SHRINCS stateful sponsorship signature and consumes its leaf in the
     ///      used-leaf bitmap. The consume is committed immediately (the anti-replay Effect), so the
     ///      leaf is spent regardless of whether execution later succeeds. No wrapper
@@ -356,7 +364,7 @@ contract ShrincsPaymaster is
         ) = Codec.decodeSponsorshipSignature(blob);
 
         uint256 epoch = $.keyVersion;
-        uint32 leaf = uint32(sig.authPath.length);
+        uint32 leaf = _leafIndex(sig);
         if (leaf == 0 || leaf > $.maxSignatures) {
             emit PaymasterValidationRejected(
                 userOp.sender,
