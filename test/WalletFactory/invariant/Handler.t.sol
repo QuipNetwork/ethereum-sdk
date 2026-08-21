@@ -118,19 +118,31 @@ contract WalletFactoryInvariantHandler is Test {
 
     /// @dev Deprecate one of the codehashes currently in the vetted set.
     ///      Picks by index into the handler's mirror (which mirrors the
-    ///      factory's insertion order), then resolves the current
-    ///      registered address for that codehash. Double-deprecation is
-    ///      not a contract revert today — the factory just sets the bool
-    ///      idempotently — so success here is monotone with respect to
-    ///      "ever deprecated."
-    function fuzzDeprecateImplementation(uint256 idx) external {
+    ///      factory's insertion order). When `useTwin` is true, targets
+    ///      the same-codehash twin rather than the currently-registered
+    ///      address so the address-mismatch branch of
+    ///      `deprecateImplementation` (latest pointer vs a redeploy of
+    ///      identical bytecode) is reachable; falls back to the registered
+    ///      address when no twin exists (e.g. the seed impl).
+    ///      Double-deprecation is not a contract revert today — the
+    ///      factory just sets the bool idempotently — so success here is
+    ///      monotone with respect to "ever deprecated."
+    function fuzzDeprecateImplementation(uint256 idx, bool useTwin) external {
         if (everVettedCodehashes.length == 0) {
             revertCount++;
             return;
         }
         idx = bound(idx, 0, everVettedCodehashes.length - 1);
         bytes32 codehash = everVettedCodehashes[idx];
-        address impl = factory.vettedWalletImpls(codehash);
+        address impl;
+        if (useTwin) {
+            impl = _findTwinForCodehash(codehash);
+            if (impl == address(0)) {
+                impl = factory.vettedWalletImpls(codehash);
+            }
+        } else {
+            impl = factory.vettedWalletImpls(codehash);
+        }
         try factory.deprecateImplementation(impl) {
             callsDeprecate++;
         } catch {
