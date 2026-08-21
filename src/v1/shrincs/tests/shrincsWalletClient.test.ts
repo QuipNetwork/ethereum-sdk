@@ -85,7 +85,10 @@ function walletRead(
 }
 
 describe("ShrincsWalletClient fee-free writes", () => {
-  it("markLeavesUsed submits with value 0n even when executeFee is non-zero", async () => {
+  function makeFeeFreeWriteClient(): {
+    client: ShrincsWalletClient;
+    capturedValue: () => bigint | undefined;
+  } {
     let writeValue: bigint | undefined;
     const publicClient = {
       getChainId: async () => CHAIN_ID,
@@ -114,7 +117,6 @@ describe("ShrincsWalletClient fee-free writes", () => {
         return TX_HASH;
       },
     } as unknown as WalletClient;
-
     const client = new ShrincsWalletClient({
       walletAddress: WALLET,
       publicClient,
@@ -124,14 +126,38 @@ describe("ShrincsWalletClient fee-free writes", () => {
       chainId: CHAIN_ID,
       account: ACCOUNT,
     });
+    return { client, capturedValue: () => writeValue };
+  }
 
-    await client.markLeavesUsed(
-      { leaves: [2] },
-      { gas: 100_000n, skipPreflightChecks: true }
-    );
+  const feeFreeOpts = { gas: 100_000n, skipPreflightChecks: true } as const;
 
-    expect(writeValue).toBe(0n);
-    expect(writeValue).not.toBe(EXECUTE_FEE);
+  it("markLeavesUsed submits with value 0n even when executeFee is non-zero", async () => {
+    const { client, capturedValue } = makeFeeFreeWriteClient();
+
+    await client.markLeavesUsed({ leaves: [2] }, feeFreeOpts);
+
+    expect(capturedValue()).toBe(0n);
+    expect(capturedValue()).not.toBe(EXECUTE_FEE);
+  });
+
+  it("withdrawDepositTo submits with value 0n even when executeFee is non-zero", async () => {
+    const { client, capturedValue } = makeFeeFreeWriteClient();
+
+    await client.withdrawDepositTo({ to: ACCOUNT, amount: 1n }, feeFreeOpts);
+
+    expect(capturedValue()).toBe(0n);
+    expect(capturedValue()).not.toBe(EXECUTE_FEE);
+  });
+
+  it("upgradeToAndCall submits with value 0n even when executeFee is non-zero", async () => {
+    const { client, capturedValue } = makeFeeFreeWriteClient();
+    const newImplementation =
+      "0x00000000000000000000000000000000000000c3" as Address;
+
+    await client.upgradeToAndCall({ newImplementation }, feeFreeOpts);
+
+    expect(capturedValue()).toBe(0n);
+    expect(capturedValue()).not.toBe(EXECUTE_FEE);
   });
 });
 
