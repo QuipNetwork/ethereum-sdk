@@ -36,6 +36,7 @@ import {
   EmptyLeavesError,
   Erc1271ValidationResult,
   LeafOutOfRangeError,
+  ExecuteTargetHasNoCodeError,
   OwnerMismatchError,
   StatefulBudgetExhaustedError,
   ZeroAddressOwnerError,
@@ -572,6 +573,13 @@ export class ShrincsWalletClient {
   ): Promise<TransactionReceipt> {
     const value = params.value ?? 0n;
     const data = params.data ?? "0x";
+    // A call with calldata to a codeless target is a phantom no-op that still
+    // consumes a leaf (solady's `execute` has no `extcodesize` guard). Pure
+    // value transfers (empty calldata) to an EOA are legitimate, so guard only
+    // when calldata is present.
+    if (data !== "0x") {
+      await this.assertExecuteTargetHasCode(params.target);
+    }
     const { keypair, state, leaf, domainSeparator: ds } =
       await this.prepareStatefulOp(opts);
     const maxFee = params.maxFee ?? state.executeFee;
@@ -592,6 +600,18 @@ export class ShrincsWalletClient {
       value + maxFee,
       opts
     );
+  }
+
+  /// Assert an `execute` target holds code, throwing `ExecuteTargetHasNoCodeError`
+  /// if it does not. The direct `execute` path calls this automatically for
+  /// calls that carry calldata; callers that assemble a userOp through
+  /// `buildExecuteUserOp` / `buildExecuteBatchUserOp` should call it themselves
+  /// before signing, since a call to a codeless target still consumes a leaf.
+  async assertExecuteTargetHasCode(target: Address): Promise<void> {
+    const code = await this.publicClient.getCode({ address: target });
+    if (code === undefined || code === "0x") {
+      throw new ExecuteTargetHasNoCodeError(target);
+    }
   }
 
   /// Withdraw from the wallet's EntryPoint deposit.

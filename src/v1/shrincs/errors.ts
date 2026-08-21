@@ -172,6 +172,23 @@ export class OwnerMismatchError extends QuipError {
   }
 }
 
+/// An `execute` call carries calldata but its target holds no code. Solady's
+/// `execute` is a raw call with no `extcodesize` guard, so a call to a codeless
+/// target is a phantom no-op that still consumes a leaf, nonce, fee, and gas
+/// while reporting success. Pure value transfers (empty calldata) are exempt —
+/// sending ETH to an EOA is legitimate.
+export class ExecuteTargetHasNoCodeError extends QuipError {
+  readonly target: Address;
+  constructor(target: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EXECUTE_TARGET_NO_CODE",
+      `execute target ${target} has no code; a call to a codeless target is a phantom no-op that consumes a leaf`,
+      opts
+    );
+    this.target = target;
+  }
+}
+
 export class ZeroAddressVerifierError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
