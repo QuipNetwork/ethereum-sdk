@@ -11,7 +11,10 @@ import {
   zeroAddress,
 } from "viem";
 
-import { TransactionRevertedError } from "../errors.js";
+import {
+  ImplementationDeprecatedError,
+  TransactionRevertedError,
+} from "../errors.js";
 import { ShrincsFactoryClient } from "../shrincsFactoryClient.js";
 import { type ShrincsSigner } from "../shrincsSigner.js";
 import { type ShrincsPublicKey } from "../types.js";
@@ -48,7 +51,11 @@ function dummySigner(): ShrincsSigner {
   } as unknown as ShrincsSigner;
 }
 
-function factoryReads(functionName: string): unknown {
+function factoryReads(
+  functionName: string,
+  overrides: Record<string, unknown> = {}
+): unknown {
+  if (functionName in overrides) return overrides[functionName];
   switch (functionName) {
     case "wallets":
       return zeroAddress;
@@ -63,17 +70,20 @@ function factoryReads(functionName: string): unknown {
   }
 }
 
-function makeFactory(opts: {
-  receiptStatus: TransactionReceipt["status"];
-}): ShrincsFactoryClient {
+function makeFactory(
+  opts: {
+    receiptStatus?: TransactionReceipt["status"];
+    reads?: Record<string, unknown>;
+  } = {}
+): ShrincsFactoryClient {
   const publicClient = {
     getChainId: async () => CHAIN_ID,
     getCode: async () => CODE,
     readContract: async ({ functionName }: { functionName: string }) =>
-      factoryReads(functionName),
+      factoryReads(functionName, opts.reads),
     waitForTransactionReceipt: async () =>
       ({
-        status: opts.receiptStatus,
+        status: opts.receiptStatus ?? "success",
         transactionHash: TX_HASH,
         logs: [],
       }) as unknown as TransactionReceipt,
@@ -106,5 +116,27 @@ describe("ShrincsFactoryClient.createShrincsWallet", () => {
         { gas: 100_000n, skipPreflightChecks: true }
       )
     ).rejects.toThrow(TransactionRevertedError);
+  });
+});
+
+type ResolveImplementationIndex = () => Promise<bigint>;
+
+function resolveImplementationIndex(
+  factory: ShrincsFactoryClient
+): Promise<bigint> {
+  const fn = (
+    factory as unknown as {
+      resolveImplementationIndex: ResolveImplementationIndex;
+    }
+  ).resolveImplementationIndex;
+  return fn.call(factory);
+}
+
+describe("ShrincsFactoryClient.resolveImplementationIndex", () => {
+  it("throws ImplementationDeprecatedError when the resolved implementation is deprecated", async () => {
+    const factory = makeFactory({ reads: { deprecatedImpls: true } });
+    await expect(resolveImplementationIndex(factory)).rejects.toThrow(
+      ImplementationDeprecatedError
+    );
   });
 });

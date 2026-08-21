@@ -39,6 +39,7 @@ import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { getShrincsAddresses } from "./addresses.js";
 import {
   CommitmentMismatchError,
+  ImplementationDeprecatedError,
   ImplementationNotVettedError,
 } from "./errors.js";
 import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
@@ -319,7 +320,8 @@ export class ShrincsFactoryClient {
 
   /// Vetted-set index of the Shrincs implementation, resolved from its on-chain
   /// codehash. Throws `ImplementationNotVettedError` if the implementation is not
-  /// in the factory's vetted set (or not deployed on this chain).
+  /// in the factory's vetted set (or not deployed on this chain). Throws
+  /// `ImplementationDeprecatedError` if the vetted codehash has been sunset.
   private async resolveImplementationIndex(): Promise<bigint> {
     const code = await this.publicClient.getCode({
       address: this.walletImplementation,
@@ -327,16 +329,28 @@ export class ShrincsFactoryClient {
     if (!code || code === "0x") {
       throw new ImplementationNotVettedError();
     }
+    const codehash = keccak256(code);
     const index = (await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
         abi: walletFactoryAbi,
         functionName: "getVettedCodeIndex",
-        args: [keccak256(code)],
+        args: [codehash],
       })
     )) as bigint;
     if (index === maxUint256) {
       throw new ImplementationNotVettedError();
+    }
+    const deprecated = (await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress,
+        abi: walletFactoryAbi,
+        functionName: "deprecatedImpls",
+        args: [codehash],
+      })
+    )) as boolean;
+    if (deprecated) {
+      throw new ImplementationDeprecatedError();
     }
     return index;
   }
