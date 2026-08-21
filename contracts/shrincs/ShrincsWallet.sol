@@ -1001,6 +1001,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @inheritdoc IShrincsWallet
     function remainingStatefulSignatures() external view returns (uint32) {
         Storage.Layout storage $ = Storage.layout();
+        // Saturating: the leaf bitmap is the real anti-replay mechanism; this
+        // counter is advisory, so it must never revert even if it ever drifts
+        // above `maxSignatures`.
+        if ($.statefulLeavesUsed >= $.maxSignatures) return 0;
         return $.maxSignatures - $.statefulLeavesUsed;
     }
 

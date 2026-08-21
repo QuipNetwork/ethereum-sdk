@@ -52,6 +52,20 @@ contract ShrincsWallet_views is ShrincsWalletTest {
         assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - 1);
     }
 
+    /// @dev The advisory counter must never underflow/revert if it ever drifts above
+    ///      `maxSignatures`; the leaf bitmap is the real anti-replay mechanism.
+    function test_remainingStatefulSignatures_saturatesOnDrift() public {
+        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(2);
+        assertEq(wallet.statefulLeavesUsed(), 2);
+        // Force the counter above max: drop max below the used count.
+        wallet.harness_setMaxSignatures(1);
+        assertEq(wallet.remainingStatefulSignatures(), 0);
+        // Equal counts also saturate to zero.
+        wallet.harness_setMaxSignatures(2);
+        assertEq(wallet.remainingStatefulSignatures(), 0);
+    }
+
     function test_isStatefulLeafUsed_reflectsBitmap() public {
         assertFalse(wallet.isStatefulLeafUsed(1));
         wallet.harness_markLeafUsed(1);
