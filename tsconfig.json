@@ -13,10 +13,8 @@
     "types": ["node", "jest"]
   },
   "include": [
-    "hardhat.config.cts",
     "src/**/*",
-    "test/**/*.ts",
-    "scripts/**/*"
+    "test/**/*.ts"
   ],
   "exclude": [
     "node_modules",
