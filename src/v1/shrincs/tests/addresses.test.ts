@@ -42,9 +42,12 @@ describe("shrincs addresses", () => {
     }
   });
 
-  it("getShrincsAddresses falls back to the default entry for any chain", () => {
-    expect(getShrincsAddresses(1)).toEqual(NETWORK_ADDRESSES.default);
-    expect(getShrincsAddresses(8453)).toEqual(NETWORK_ADDRESSES.default);
+  it("getShrincsAddresses returns the default entry for every supported chain", () => {
+    // The Shrincs contracts share one CREATE3-deterministic address set across
+    // every supported chain, so each resolves to the same `default` entry.
+    expect(getShrincsAddresses(1)).toEqual(NETWORK_ADDRESSES.default); // mainnet
+    expect(getShrincsAddresses(8453)).toEqual(NETWORK_ADDRESSES.default); // Base
+    expect(getShrincsAddresses(777)).toEqual(NETWORK_ADDRESSES.default); // MIDL testnet
     expect(getShrincsAddresses()).toEqual(NETWORK_ADDRESSES.default);
   });
 

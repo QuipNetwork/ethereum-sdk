@@ -76,6 +76,7 @@ const SHRINCS_SUPPORTED_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
   CHAIN_IDS.BASE_SEPOLIA,
   CHAIN_IDS.OPTIMISM,
   CHAIN_IDS.OPTIMISM_SEPOLIA,
+  CHAIN_IDS.MIDL_TESTNET,
 ]);
 
 /// Registry keyed by chain id, with a deterministic `default` entry shared by
