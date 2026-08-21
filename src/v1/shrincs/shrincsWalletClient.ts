@@ -41,6 +41,11 @@ import {
   ZeroErc1271CommitmentError,
 } from "./errors.js";
 import { prepareTx, type TxOptions } from "./gas.js";
+import {
+  LeafReservationStore,
+  reserveExplicitLeaf,
+  reserveLowestLeaf,
+} from "./leafReservation.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
@@ -240,6 +245,10 @@ export class ShrincsWalletClient {
   private readonly walletClient: WalletClient;
   private readonly signer?: ShrincsSigner;
   private readonly keypair?: ShrincsKeyPair;
+  /// Per-instance record of leaves already handed out for signing this session,
+  /// so a sign-then-retry (changed payload, first tx not yet landed) cannot pick
+  /// the same leaf twice and reuse a one-time signature.
+  private readonly leafReservations = new LeafReservationStore();
 
   constructor(params: ShrincsWalletClientParams) {
     this.walletAddress = params.walletAddress;
@@ -284,6 +293,18 @@ export class ShrincsWalletClient {
     if (statefulLeavesUsed >= maxSignatures) {
       throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
     }
+    const used = await this.fetchUsedLeaves(maxSignatures);
+    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
+      if (exclude?.has(leaf)) continue;
+      if (!used.has(leaf)) return leaf;
+    }
+    throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
+  }
+
+  /// The set of `1..maxSignatures` leaves the on-chain bitmap reports as used,
+  /// read in one multicall. A leaf whose status could not be read is treated as
+  /// used: never sign at a leaf that is not confirmed free.
+  private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
     const calls = [];
     for (let leaf = 1; leaf <= maxSignatures; leaf++) {
       calls.push({
@@ -294,12 +315,12 @@ export class ShrincsWalletClient {
       });
     }
     const results = await tryMulticall(this.publicClient, calls);
+    const used = new Set<number>();
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      if (exclude?.has(i + 1)) continue;
-      if (r && r.status === "success" && r.result === false) return i + 1;
+      if (!(r && r.status === "success" && r.result === false)) used.add(i + 1);
     }
-    throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
+    return used;
   }
 
   /// The WalletFactory that deployed this wallet (the remaining `IShrincsWallet`
@@ -457,13 +478,34 @@ export class ShrincsWalletClient {
       state.maxSignatures,
       state.shrincsPublicKeyCommitment
     );
-    const leaf =
-      keyOpts?.leaf ??
-      (await this.lowestUnusedLeaf(
-        state.maxSignatures,
-        state.statefulLeavesUsed,
-        excludeLeaves
-      ));
+    // Reserve the leaf in-process before signing so a sign-then-retry with a
+    // changed payload (first tx not yet landed, bitmap still shows the leaf
+    // free) cannot sign a second message at the same one-time leaf. An explicit
+    // override is reserved too, so a later automatic pick cannot collide with it.
+    const reservationKey = {
+      commitment: state.shrincsPublicKeyCommitment,
+      keyVersion: state.keyVersion,
+    };
+    let leaf: number;
+    if (keyOpts?.leaf !== undefined) {
+      leaf = keyOpts.leaf;
+      await reserveExplicitLeaf(this.leafReservations, reservationKey, leaf);
+    } else {
+      if (state.statefulLeavesUsed >= state.maxSignatures) {
+        throw new StatefulBudgetExhaustedError(
+          state.maxSignatures,
+          state.statefulLeavesUsed
+        );
+      }
+      const used = await this.fetchUsedLeaves(state.maxSignatures);
+      leaf = await reserveLowestLeaf(
+        this.leafReservations,
+        reservationKey,
+        (candidate) =>
+          used.has(candidate) || (excludeLeaves?.has(candidate) ?? false),
+        state.maxSignatures
+      );
+    }
     return {
       keypair,
       state,
