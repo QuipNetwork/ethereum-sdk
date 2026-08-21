@@ -14,9 +14,22 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { QuipError } from "./errors.js";
 import { decodeContractError } from "./internal/decodeError.js";
-import { prepareTxCore } from "../gas.js";
+import {
+  DEFAULT_GAS_MULTIPLIER,
+  MIN_GAS_MULTIPLIER,
+  MAX_GAS_MULTIPLIER,
+  applyGasMultiplier,
+  resolveGasMultiplier,
+  resolveFeeOptions,
+  preflightBalanceCheck,
+  prepareTxCore,
+  type TxOptions,
+  type FeeOverrides,
+  type PreparedTx,
+  type ContractCallParams,
+  type PrepareTxParams,
+} from "../gas.js";
 
 // The transaction-shaping primitives (multiplier clamp, fee resolution, balance
 // preflight) are contract-agnostic, so the Shrincs SDK reuses the v1
@@ -36,13 +49,8 @@ export {
   type PreparedTx,
   type ContractCallParams,
   type PrepareTxParams,
-} from "../gas.js";
-export { QuipError };
-
-import {
-  type PrepareTxParams,
-  type PreparedTx,
-} from "../gas.js";
+};
+export { QuipError } from "./errors.js";
 
 /// Run pre-flight balance + gas estimation, surfacing distinct typed errors per
 /// stage (mirrors v1 `prepareTx`):
