@@ -41,6 +41,19 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "MAX_DEPLOY_CHAINS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "SHRINCS_VERIFIER",
     "inputs": [],
     "outputs": [
@@ -1900,6 +1913,11 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "ImplementationNotVetted",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDeployAuthorization",
     "inputs": []
   },
   {

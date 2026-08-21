@@ -46,6 +46,7 @@ import {
   createWalletClient,
   http,
   parseEther,
+  keccak256,
   toHex,
   zeroAddress,
 } from "viem";
@@ -286,7 +287,7 @@ maybeDescribe("Forked-mainnet smoke (FORK_RPC_URL set)", () => {
         address: factoryAddress,
         abi: walletFactoryAbi,
         functionName: "deployLatestWalletProxy",
-        args: [vaultId, account.address, init.payload],
+        args: [vaultId, keccak256(vaultId), account.address, init.payload],
         account,
       });
       const createReceipt = await publicClient.waitForTransactionReceipt({

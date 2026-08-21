@@ -353,27 +353,34 @@ export function encodeInitPayload(params: {
   erc1271Commitment: Hex;
   hashSuite?: number;
   erc1271HashSuite?: number;
+  /// e3r: the deploy-authorization envelope (from `encodeDeployAuth`). Present
+  /// for `initialize` payloads (a trailing 7th ABI field the wallet reads via
+  /// `decodeInitDeployAuth`); OMIT for `migrate` payloads, which stay 6-field.
+  deployAuth?: Hex;
 }): Hex {
   const commitment = params.mainBundle.publicKeyCommitment;
   const pkSeed = params.mainBundle.pkSeed;
-  return encodeAbiParameters(
-    [
-      { name: "commitment", type: "bytes32" },
-      { name: "pkSeed", type: "bytes32" },
-      PUBLIC_KEY_TUPLE,
-      { name: "hashSuite", type: "uint32" },
-      { name: "erc1271Commitment", type: "bytes32" },
-      { name: "erc1271HashSuite", type: "uint32" },
-    ],
-    [
-      commitment,
-      pkSeed,
-      publicKeyToAbi(params.mainBundle),
-      params.hashSuite ?? HASH_SUITE_KECCAK_256,
-      params.erc1271Commitment,
-      params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
-    ]
-  );
+  const fields = [
+    { name: "commitment", type: "bytes32" },
+    { name: "pkSeed", type: "bytes32" },
+    PUBLIC_KEY_TUPLE,
+    { name: "hashSuite", type: "uint32" },
+    { name: "erc1271Commitment", type: "bytes32" },
+    { name: "erc1271HashSuite", type: "uint32" },
+  ];
+  const values: unknown[] = [
+    commitment,
+    pkSeed,
+    publicKeyToAbi(params.mainBundle),
+    params.hashSuite ?? HASH_SUITE_KECCAK_256,
+    params.erc1271Commitment,
+    params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
+  ];
+  if (params.deployAuth !== undefined) {
+    fields.push({ name: "deployAuth", type: "bytes" });
+    values.push(params.deployAuth);
+  }
+  return encodeAbiParameters(fields, values);
 }
 
 /// ERC-4337 `userOp.signature` = `abi.encode(PublicKey, StatefulSignature,
@@ -413,6 +420,24 @@ export function encodeSponsorshipSignature(
 ): Hex {
   return encodeAbiParameters(
     [PUBLIC_KEY_TUPLE, STATEFUL_SIGNATURE_TUPLE],
+    [publicKeyToAbi(publicKey), signature]
+  );
+}
+
+/// The deploy-authorization envelope carried in the `initialize` payload (e3r) —
+/// `abi.encode(PublicKey, Signature)`, the same pair shape the SHRINCS verifier
+/// consumes. The signature tuple is stateful (`SHRINCS.Signature`) or stateless
+/// (`SPHINCSPlusC.Signature`) per the factory's deploy mode; `pk` is the main
+/// bundle. The wallet decodes this with `ShrincsWalletCodec.decodeInitDeployAuth`.
+export function encodeDeployAuth(
+  publicKey: ShrincsPublicKey,
+  signature: StatefulSignature | StatelessSignature,
+  mode: "stateful" | "stateless"
+): Hex {
+  const sigTuple =
+    mode === "stateful" ? STATEFUL_SIGNATURE_TUPLE : STATELESS_SIGNATURE_TUPLE;
+  return encodeAbiParameters(
+    [PUBLIC_KEY_TUPLE, sigTuple],
     [publicKeyToAbi(publicKey), signature]
   );
 }

@@ -8,6 +8,8 @@ import {
   type PublicClient,
   type TransactionReceipt,
   type WalletClient,
+  keccak256,
+  toHex,
   zeroAddress,
 } from "viem";
 
@@ -18,8 +20,23 @@ import {
 } from "../errors.js";
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import { ShrincsFactoryClient } from "../shrincsFactoryClient.js";
-import { type ShrincsKeyPair, type ShrincsSigner } from "../shrincsSigner.js";
-import { type ShrincsPublicKey } from "../types.js";
+import {
+  ShrincsSigner,
+  type ShrincsKeyPair,
+} from "../shrincsSigner.js";
+
+// A real main keypair so `createShrincsWallet` can produce a genuine e3r deploy
+// signature (the dummy signer below hands it back from `recoverKeyPair`).
+let realKeypair: ShrincsKeyPair;
+beforeAll(async () => {
+  const signer = await ShrincsSigner.create(
+    new TextEncoder().encode("factory-client-test")
+  );
+  realKeypair = signer.keygenFromSeedHex(
+    keccak256(toHex("factory client seed")),
+    { maxSignatures: 40 }
+  );
+});
 
 const FACTORY = "0x00000000000000000000000000000000000000f1" as Address;
 const IMPL = "0x00000000000000000000000000000000000000f2" as Address;
@@ -33,23 +50,9 @@ const VAULT_ID =
 const ERC1271_COMMITMENT =
   "0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
 
-function dummyPublicKey(): ShrincsPublicKey {
-  const h32 = (n: string) => (`0x${n.repeat(32)}`) as Hex;
-  return {
-    publicKeyCommitment: h32("11"),
-    pkSeed: h32("22"),
-    hypertreeRoot: h32("33"),
-    statefulPublicKey: h32("44"),
-  };
-}
-
 function dummySigner(): ShrincsSigner {
-  const publicKey = dummyPublicKey();
   return {
-    recoverKeyPair: () => ({
-      publicKey,
-      publicKeyCommitment: publicKey.publicKeyCommitment,
-    }),
+    recoverKeyPair: () => realKeypair,
   } as unknown as ShrincsSigner;
 }
 
@@ -67,6 +70,10 @@ function factoryReads(
       return false;
     case "creationFee":
       return 0n;
+    case "deployMode":
+      return 0; // Stateful
+    case "quipDeployChainIndex":
+      return 1;
     default:
       throw new Error(`unexpected factory read: ${functionName}`);
   }
