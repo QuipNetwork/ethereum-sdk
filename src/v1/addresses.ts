@@ -158,6 +158,11 @@ export const NETWORK_ADDRESSES: Record<number | "default", WotsNetworkAddresses>
  *      from the prior silent fall-through, which would have returned the
  *      mainnet addresses for any chainId outside the supported set.
  *
+ * The returned addresses are deterministic CREATE3/CREATE2 *predictions*.
+ * Membership in the supported set means the address is derivable on that
+ * chain, not that the contracts are live there — a caller that needs live
+ * deployment must confirm on-chain (`getCode`) before use.
+ *
  * @param chainId - The chain ID of the network (e.g., 777 for MIDL testnet)
  * @returns WotsNetworkAddresses for the specified chain
  * @throws UnsupportedNetworkError when `chainId` is provided and unsupported.

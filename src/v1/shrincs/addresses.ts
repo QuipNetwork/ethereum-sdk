@@ -94,6 +94,11 @@ export const NETWORK_ADDRESSES: Record<number | "default", ShrincsNetworkAddress
 /// Resolve the Shrincs addresses for `chainId`. Undefined → default;
 /// registered entry → that entry; allowlisted shared-deployment chain →
 /// default; otherwise throws `UnsupportedNetworkError`.
+///
+/// The returned addresses are deterministic CREATE3 *predictions*. Membership
+/// in the supported set means the address is derivable on that chain, not that
+/// the contracts are live there. A caller that needs a live deployment must
+/// confirm on-chain (`getCode`) before use.
 export function getShrincsAddresses(chainId?: number): ShrincsNetworkAddresses {
   if (chainId === undefined) return NETWORK_ADDRESSES.default;
   if (chainId in NETWORK_ADDRESSES) return NETWORK_ADDRESSES[chainId];
