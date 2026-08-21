@@ -111,11 +111,37 @@ export interface LeafRevokedEvent {
   keyVersion: bigint;
 }
 
+// `LeafRevoked` and `LeafRevocationSkipped` are emitted by BOTH the wallet and
+// the paymaster (each consumes stateful leaves). Decode under both ABIs and
+// dedup by (address, logIndex): when the two ABIs share the event signature a
+// single physical log decodes under both, so dedup keeps it once; if the ABIs
+// ever diverge, each log decodes only under its emitter's ABI, so both sources
+// stay covered instead of one silently misparsing under the other's ABI.
+function mergeLeafLogs(
+  ...groups: readonly {
+    address: Address;
+    logIndex: number | null;
+    args: { leaf: number | bigint; keyVersion: bigint };
+  }[][]
+): LeafRevokedEvent[] {
+  const seen = new Set<string>();
+  const out: LeafRevokedEvent[] = [];
+  for (const group of groups) {
+    for (const l of group) {
+      const key = `${l.address}:${l.logIndex}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ leaf: Number(l.args.leaf), keyVersion: l.args.keyVersion });
+    }
+  }
+  return out;
+}
+
 export function parseLeafRevoked(src: LogSource): LeafRevokedEvent[] {
-  return walletLogs(src, "LeafRevoked").map((l) => ({
-    leaf: Number(l.args.leaf),
-    keyVersion: l.args.keyVersion,
-  }));
+  return mergeLeafLogs(
+    walletLogs(src, "LeafRevoked"),
+    paymasterLogs(src, "LeafRevoked")
+  );
 }
 
 export interface LeafRevocationSkippedEvent {
@@ -126,10 +152,10 @@ export interface LeafRevocationSkippedEvent {
 export function parseLeafRevocationSkipped(
   src: LogSource
 ): LeafRevocationSkippedEvent[] {
-  return walletLogs(src, "LeafRevocationSkipped").map((l) => ({
-    leaf: Number(l.args.leaf),
-    keyVersion: l.args.keyVersion,
-  }));
+  return mergeLeafLogs(
+    walletLogs(src, "LeafRevocationSkipped"),
+    paymasterLogs(src, "LeafRevocationSkipped")
+  );
 }
 
 export interface ExecutionSucceededEvent {
