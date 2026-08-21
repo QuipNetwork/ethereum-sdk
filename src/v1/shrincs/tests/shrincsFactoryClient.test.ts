@@ -12,11 +12,13 @@ import {
 } from "viem";
 
 import {
+  CommitmentMismatchError,
   ImplementationDeprecatedError,
   TransactionRevertedError,
 } from "../errors.js";
+import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import { ShrincsFactoryClient } from "../shrincsFactoryClient.js";
-import { type ShrincsSigner } from "../shrincsSigner.js";
+import { type ShrincsKeyPair, type ShrincsSigner } from "../shrincsSigner.js";
 import { type ShrincsPublicKey } from "../types.js";
 
 const FACTORY = "0x00000000000000000000000000000000000000f1" as Address;
@@ -138,5 +140,61 @@ describe("ShrincsFactoryClient.resolveImplementationIndex", () => {
     await expect(resolveImplementationIndex(factory)).rejects.toThrow(
       ImplementationDeprecatedError
     );
+  });
+});
+
+describe("ShrincsFactoryClient.openShrincsWallet", () => {
+  it("throws CommitmentMismatchError when the keypair does not match the installed commitment", async () => {
+    const walletAddress =
+      "0x00000000000000000000000000000000000000aa" as Address;
+    const onChainCommitment = (`0x${"aa".repeat(32)}`) as Hex;
+    const suppliedCommitment = (`0x${"bb".repeat(32)}`) as Hex;
+    const walletReads: Record<string, unknown> = {
+      owner: ACCOUNT,
+      version: 1n,
+      getExecuteFee: 0n,
+      getShrincsPublicKeyCommitment: onChainCommitment,
+      getErc1271Commitment: (`0x${"00".repeat(32)}`) as Hex,
+      getHashSuite: HASH_SUITE_KECCAK_256,
+      getErc1271HashSuite: HASH_SUITE_KECCAK_256,
+      keyVersion: 0n,
+      actionNonce: 0n,
+      maxSignatures: 8,
+      statefulLeavesUsed: 0,
+      remainingStatefulSignatures: 8,
+    };
+    const publicClient = {
+      getChainId: async () => CHAIN_ID,
+      getCode: async () => "0x6000" as Hex,
+      multicall: async ({
+        contracts,
+      }: {
+        contracts: readonly { functionName: string }[];
+      }) =>
+        contracts.map((c) => ({
+          status: "success" as const,
+          result: walletReads[c.functionName],
+        })),
+      readContract: async ({ functionName }: { functionName: string }) => {
+        if (functionName === "wallets") return walletAddress;
+        if (functionName in walletReads) return walletReads[functionName];
+        throw new Error(`unexpected factory read: ${functionName}`);
+      },
+    } as unknown as PublicClient;
+    const factory = new ShrincsFactoryClient({
+      publicClient,
+      walletClient: { getAddresses: async () => [ACCOUNT] } as unknown as WalletClient,
+      account: ACCOUNT,
+      chainId: CHAIN_ID,
+      factoryAddress: FACTORY,
+      walletImplementation: IMPL,
+    });
+    const keypair = {
+      publicKeyCommitment: suppliedCommitment,
+    } as unknown as ShrincsKeyPair;
+
+    await expect(
+      factory.openShrincsWallet({ vaultId: VAULT_ID, keypair })
+    ).rejects.toThrow(CommitmentMismatchError);
   });
 });

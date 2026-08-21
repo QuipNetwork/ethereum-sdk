@@ -5,6 +5,7 @@
 import {
   type Address,
   type Hex,
+  type LocalAccount,
   type PublicClient,
   type TransactionReceipt,
   type WalletClient,
@@ -13,8 +14,13 @@ import {
 } from "viem";
 
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
+import {
+  OwnerMismatchError,
+  ZeroAddressOwnerError,
+} from "../errors.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
+import { type PackedUserOperation } from "../../userOpCodec.js";
 
 const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const ACCOUNT = "0x00000000000000000000000000000000000000a1" as Address;
@@ -24,6 +30,10 @@ const EXECUTE_FEE = 10_000_000n;
 const TX_HASH =
   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
 const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
+const ZERO_ADDRESS =
+  "0x0000000000000000000000000000000000000000" as Address;
+const WRONG_OWNER = "0x00000000000000000000000000000000000000b2" as Address;
+const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as Address;
 const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let keypair: ShrincsKeyPair;
@@ -35,7 +45,13 @@ beforeAll(async () => {
   });
 });
 
-function walletRead(functionName: string): unknown {
+function walletRead(
+  functionName: string,
+  overrides: Record<string, unknown> = {}
+): unknown {
+  if (Object.prototype.hasOwnProperty.call(overrides, functionName)) {
+    return overrides[functionName];
+  }
   switch (functionName) {
     case "owner":
       return ACCOUNT;
@@ -116,5 +132,88 @@ describe("ShrincsWalletClient fee-free writes", () => {
 
     expect(writeValue).toBe(0n);
     expect(writeValue).not.toBe(EXECUTE_FEE);
+  });
+});
+
+function makeWalletClient(
+  overrides: Record<string, unknown> = {}
+): ShrincsWalletClient {
+  const publicClient = {
+    getChainId: async () => CHAIN_ID,
+    getCode: async () => "0x6000" as Hex,
+    multicall: async ({
+      contracts,
+    }: {
+      contracts: readonly { functionName: string }[];
+    }) =>
+      contracts.map((c) => ({
+        status: "success" as const,
+        result: walletRead(c.functionName, overrides),
+      })),
+    readContract: async ({ functionName }: { functionName: string }) =>
+      walletRead(functionName, overrides),
+  } as unknown as PublicClient;
+  const walletClient = {
+    getAddresses: async () => [ACCOUNT],
+  } as unknown as WalletClient;
+  return new ShrincsWalletClient({
+    walletAddress: WALLET,
+    publicClient,
+    walletClient,
+    keypair,
+    vaultId: seed("vault"),
+    chainId: CHAIN_ID,
+    account: ACCOUNT,
+  });
+}
+
+function localAccount(address: Address): LocalAccount {
+  return { address } as LocalAccount;
+}
+
+describe("ShrincsWalletClient owner mismatch", () => {
+  it("signErc1271 throws OwnerMismatchError when the owner is non-zero but wrong", async () => {
+    const client = makeWalletClient({
+      getErc1271Commitment: keypair.publicKeyCommitment,
+    });
+    const err = await client
+      .signErc1271({
+        hash: ZERO32,
+        erc1271KeyPair: keypair,
+        owner: localAccount(WRONG_OWNER),
+      })
+      .then(
+        () => {
+          throw new Error("expected OwnerMismatchError");
+        },
+        (e: unknown) => e
+      );
+    expect(err).toBeInstanceOf(OwnerMismatchError);
+    expect((err as OwnerMismatchError).expected).toBe(ACCOUNT);
+    expect((err as OwnerMismatchError).actual).toBe(WRONG_OWNER);
+  });
+
+  it("signErc1271 throws ZeroAddressOwnerError when the owner address is zero", async () => {
+    const client = makeWalletClient({
+      getErc1271Commitment: keypair.publicKeyCommitment,
+    });
+    await expect(
+      client.signErc1271({
+        hash: ZERO32,
+        erc1271KeyPair: keypair,
+        owner: localAccount(ZERO_ADDRESS),
+      })
+    ).rejects.toThrow(ZeroAddressOwnerError);
+  });
+
+  it("signExecuteUserOp throws OwnerMismatchError when the owner is non-zero but wrong", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.signExecuteUserOp({
+        userOp: {} as PackedUserOperation,
+        entryPoint: ENTRY_POINT,
+        owner: localAccount(WRONG_OWNER),
+      })
+    ).rejects.toThrow(OwnerMismatchError);
   });
 });

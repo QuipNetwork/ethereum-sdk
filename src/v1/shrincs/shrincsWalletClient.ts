@@ -36,6 +36,7 @@ import {
   EmptyLeavesError,
   Erc1271ValidationResult,
   LeafOutOfRangeError,
+  OwnerMismatchError,
   StatefulBudgetExhaustedError,
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
@@ -908,8 +909,11 @@ export class ShrincsWalletClient {
         state.erc1271Commitment
       );
     }
-    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+    if (params.owner.address.toLowerCase() === ZERO_ADDRESS) {
       throw new ZeroAddressOwnerError();
+    }
+    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+      throw new OwnerMismatchError(state.owner, params.owner.address);
     }
 
     // The stateless context mirrors `_checkErc1271Signature`: the LIVE action
@@ -1025,8 +1029,11 @@ export class ShrincsWalletClient {
   ): Promise<{ userOp: PackedUserOperation; userOpHash: Hex; leaf: number }> {
     const { keypair, state, leaf } = await this.prepareStatefulOp(opts);
 
-    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+    if (params.owner.address.toLowerCase() === ZERO_ADDRESS) {
       throw new ZeroAddressOwnerError();
+    }
+    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+      throw new OwnerMismatchError(state.owner, params.owner.address);
     }
     // Recompute the userOpHash exactly as `signWalletUserOp` does below, then
     // collect the owner co-signature over it as typed data.

@@ -38,9 +38,16 @@ describe("shrincs SDK barrel exports", () => {
   it("exports the typed error classes", () => {
     expect(typeof SDK.StaleStatefulLeafError).toBe("function");
     expect(typeof SDK.CommitmentMismatchError).toBe("function");
+    expect(typeof SDK.OwnerMismatchError).toBe("function");
     // They are constructible QuipError subclasses.
     expect(new SDK.StaleStatefulLeafError(2)).toBeInstanceOf(SDK.QuipError);
     expect(new SDK.CommitmentMismatchError()).toBeInstanceOf(SDK.QuipError);
+    expect(
+      new SDK.OwnerMismatchError(
+        "0x00000000000000000000000000000000000000a1",
+        "0x00000000000000000000000000000000000000b2"
+      )
+    ).toBeInstanceOf(SDK.QuipError);
   });
 
   it("exports the hash-suite constant", () => {

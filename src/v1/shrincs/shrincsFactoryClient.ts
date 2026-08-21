@@ -293,7 +293,10 @@ export class ShrincsFactoryClient {
       params.keypair.publicKeyCommitment.toLowerCase() !==
       state.shrincsPublicKeyCommitment.toLowerCase()
     ) {
-      return null;
+      throw new CommitmentMismatchError(
+        params.keypair.publicKeyCommitment,
+        state.shrincsPublicKeyCommitment
+      );
     }
     return new ShrincsWalletClient({
       walletAddress,

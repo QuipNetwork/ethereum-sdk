@@ -15,7 +15,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { type Hex } from "viem";
+import { type Address, type Hex } from "viem";
 
 // Shrincs SDK errors extend the shared `QuipError` base from the v1 SDK so that
 // `instanceof QuipError` and the `.code` discriminator work uniformly across
@@ -153,6 +153,22 @@ export class ZeroAddressFactoryError extends QuipError {
 export class ZeroAddressOwnerError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_ZERO_ADDRESS_OWNER", "Owner address is zero", opts);
+  }
+}
+
+/// Client-side only (never a contract revert): the supplied owner is non-zero
+/// but does not match the wallet's on-chain `owner()`.
+export class OwnerMismatchError extends QuipError {
+  readonly expected: Address;
+  readonly actual: Address;
+  constructor(expected: Address, actual: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_OWNER_MISMATCH",
+      `Owner ${actual} does not match the installed owner ${expected}`,
+      opts
+    );
+    this.expected = expected;
+    this.actual = actual;
   }
 }
 
