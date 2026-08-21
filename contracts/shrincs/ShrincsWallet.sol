@@ -417,6 +417,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
 
         Storage.Layout storage $ = Storage.layout();
+        // No-drift invariant: re-establish the guarded `_PQ_FACTORY_SLOT` snapshot to this (the new)
+        // implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so `FACTORY`
+        // is the new source of truth; pinning storage to it keeps the snapshot slot and the
+        // `walletFactory()` getter from ever diverging from the immutable after an upgrade.
+        $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
         $.maxSignatures = decoded.maxSignatures;
@@ -945,11 +950,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function getExecuteFee() public view returns (uint256) {
-        return IWalletFactory(Storage.layout().walletFactory).executeFee();
+        // The immutable `FACTORY` is the single source of truth for the factory address (same
+        // anchor as `msg.sender == FACTORY` access control and upgrade vetting), so fees are read
+        // from and paid to it — never the mutable `$.walletFactory` snapshot slot, which could
+        // diverge from the immutable after an upgrade to a differently-compiled implementation.
+        return IWalletFactory(FACTORY).executeFee();
     }
 
     /// @inheritdoc IShrincsWallet
     function walletFactory() external view returns (address payable) {
+        // Exposes the guarded `_PQ_FACTORY_SLOT` snapshot value, which `initialize`/`migrate`
+        // re-establish to `FACTORY`, so it is invariantly equal to the immutable source of truth.
         return Storage.layout().walletFactory;
     }
 
@@ -1280,7 +1291,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint256 fee = getExecuteFee();
         if (fee > maxFee) revert ExecuteFeeExceedsCap(fee, maxFee);
         if (fee > 0) {
-            SafeTransferLib.safeTransferETH(Storage.layout().walletFactory, fee);
+            // Paid to the immutable `FACTORY` — the single source of truth — matching the fee
+            // read in `getExecuteFee`, so the amount charged and its recipient can never diverge.
+            SafeTransferLib.safeTransferETH(FACTORY, fee);
         }
     }
 
