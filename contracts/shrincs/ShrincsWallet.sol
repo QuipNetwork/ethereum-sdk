@@ -380,8 +380,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ) = _decodeAndValidateInstall(payload);
 
         Storage.Layout storage $ = Storage.layout();
-        // No-drift invariant: re-establish the guarded `_SHRINCS_FACTORY_SLOT` snapshot to this (the
-        // new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
+        // No-drift invariant: re-establish the guarded `_SHRINCS_FACTORY_SLOT` snapshot to this
+        // (the new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
         // `FACTORY` is the new source of truth; pinning storage to it keeps the snapshot slot and
         // the `walletFactory()` getter from ever diverging from the immutable after an upgrade.
         $.walletFactory = FACTORY;
