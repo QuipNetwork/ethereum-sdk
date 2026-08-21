@@ -169,11 +169,6 @@ export function isMidlNetwork(chainId: number): boolean {
   return chainId === CHAIN_IDS.MIDL_TESTNET;
 }
 
-// Backwards-compatible exports (use default addresses for existing integrations)
-export const DEPLOYER_ADDRESS = NETWORK_ADDRESSES.default.Deployer;
-export const WOTS_PLUS_ADDRESS = NETWORK_ADDRESSES.default.WOTSPlus;
-export const QUIP_FACTORY_ADDRESS = NETWORK_ADDRESSES.default.WalletFactory;
-
 // Solady CREATE3 proxy initcode hash: keccak256(0x67363d3d37363d34f03d5260086018f3)
 const PROXY_INITCODE_HASH: Hex =
   "0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f";

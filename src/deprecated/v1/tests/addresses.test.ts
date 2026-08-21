@@ -5,15 +5,16 @@ import {
   getNetworkAddresses,
   getVaultAddress,
   computeVaultAddress,
-  QUIP_FACTORY_ADDRESS,
 } from "../../../v1/addresses.js";
 import { UnsupportedNetworkError } from "../errors.js";
+
+const defaultFactory = NETWORK_ADDRESSES.default.WalletFactory;
 
 describe("Vault Address Functions", () => {
   const testVaultId: Hex =
     "0x783e1393edc4a6dac846b6da7723acb50de92b51b66ccdbc69bcadfb3fd9da69";
 
-  // Known-good CREATE3 address for (QUIP_FACTORY_ADDRESS, testVaultId).
+  // Known-good CREATE3 address for (default WalletFactory, testVaultId).
   // Updated for the CreateX-era WalletFactory proxy (0x6de121F7…, the
   // v1.1 0xd175… lineage was abandoned pre-launch with nothing deployed),
   // independently re-derived:
@@ -29,7 +30,7 @@ describe("Vault Address Functions", () => {
 
   it("should match between getVaultAddress and computeVaultAddress", () => {
     const fromGet = getVaultAddress(testVaultId);
-    const fromCompute = computeVaultAddress(QUIP_FACTORY_ADDRESS, testVaultId);
+    const fromCompute = computeVaultAddress(defaultFactory, testVaultId);
     expect(fromGet).toEqual(fromCompute);
   });
 });
@@ -37,7 +38,7 @@ describe("Vault Address Functions", () => {
 describe("getNetworkAddresses", () => {
   it("returns default addresses when chainId is omitted", () => {
     const addrs = getNetworkAddresses();
-    expect(addrs.WalletFactory).toEqual(QUIP_FACTORY_ADDRESS);
+    expect(addrs.WalletFactory).toEqual(defaultFactory);
   });
 
   it("returns the registered entry for chains explicitly listed in NETWORK_ADDRESSES (MIDL)", () => {
@@ -58,7 +59,7 @@ describe("getNetworkAddresses", () => {
       CHAIN_IDS.OPTIMISM_SEPOLIA,
     ]) {
       const addrs = getNetworkAddresses(chainId);
-      expect(addrs.WalletFactory).toEqual(QUIP_FACTORY_ADDRESS);
+      expect(addrs.WalletFactory).toEqual(defaultFactory);
     }
   });
 
