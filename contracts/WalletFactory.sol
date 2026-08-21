@@ -54,6 +54,19 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
 
     receive() external payable {}
 
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   INTERNAL OVERRIDES                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Guard owner initialization to prevent re-initialization. The factory inherits Solady
+    ///      `Ownable` directly (not the `ERC4337` base that supplies this override), so it MUST
+    ///      override `_guardInitializeOwner => true` itself: `_initializeOwner` then reverts
+    ///      `AlreadyInitialized` on a second call (defence in depth alongside the `initializer`
+    ///      modifier).
+    function _guardInitializeOwner() internal pure override returns (bool) {
+        return true;
+    }
+
     /// @inheritdoc IWalletFactory
     function initialize(address payable initialOwner) external initializer {
         if (initialOwner == address(0)) revert ZeroAddressOwner();
