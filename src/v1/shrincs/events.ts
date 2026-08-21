@@ -113,14 +113,21 @@ export interface LeafRevokedEvent {
 
 // `LeafRevoked` and `LeafRevocationSkipped` are emitted by BOTH the wallet and
 // the paymaster (each consumes stateful leaves). Decode under both ABIs and
-// dedup by (address, logIndex): when the two ABIs share the event signature a
-// single physical log decodes under both, so dedup keeps it once; if the ABIs
-// ever diverge, each log decodes only under its emitter's ABI, so both sources
-// stay covered instead of one silently misparsing under the other's ABI.
+// dedup: when the two ABIs share the event signature a single physical log
+// decodes under both, so it must be kept once; if the ABIs ever diverge, each
+// log decodes only under its emitter's ABI, so both sources stay covered
+// instead of one silently misparsing under the other's ABI.
+//
+// The dedup key is the log's full on-chain identity (emitter, position, and raw
+// payload), not just (address, logIndex): a re-decode of one physical log has an
+// identical identity and collapses, while two genuinely distinct emissions keep
+// their own entries even when a synthetic source reuses a logIndex.
 function mergeLeafLogs(
   ...groups: readonly {
     address: Address;
     logIndex: number | null;
+    data: Hex;
+    topics: readonly Hex[];
     args: { leaf: number | bigint; keyVersion: bigint };
   }[][]
 ): LeafRevokedEvent[] {
@@ -128,7 +135,7 @@ function mergeLeafLogs(
   const out: LeafRevokedEvent[] = [];
   for (const group of groups) {
     for (const l of group) {
-      const key = `${l.address}:${l.logIndex}`;
+      const key = `${l.address}:${l.logIndex}:${l.data}:${l.topics.join(",")}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push({ leaf: Number(l.args.leaf), keyVersion: l.args.keyVersion });

@@ -169,6 +169,23 @@ describe("shrincs event parsers", () => {
       ]);
     });
 
+    it("keeps two distinct wallet leaves even when the source reuses a logIndex", () => {
+      // makeLog stamps logIndex 0 on every synthetic log, so an (address,
+      // logIndex) key would wrongly collapse these two distinct emissions.
+      const a = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 3,
+        keyVersion: 0n,
+      });
+      const b = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 4,
+        keyVersion: 0n,
+      });
+      expect(parseLeafRevoked([a, b])).toEqual([
+        { leaf: 3, keyVersion: 0n },
+        { leaf: 4, keyVersion: 0n },
+      ]);
+    });
+
     it("parseLeafRevocationSkipped captures a paymaster-emitted event", () => {
       const log = makeLog(
         shrincsPaymasterAbi as Abi,
