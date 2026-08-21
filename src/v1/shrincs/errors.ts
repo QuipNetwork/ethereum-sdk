@@ -273,6 +273,23 @@ export class StatefulBudgetExhaustedError extends QuipError {
   }
 }
 
+/// A used-leaf bitmap word could not be read from chain while scanning for the
+/// lowest unused leaf. Raised instead of silently treating the unreadable
+/// leaves as used: a transport failure must never be confused with an exhausted
+/// budget, because that would either waste a still-free leaf or falsely report
+/// exhaustion. Retry the read; do not sign.
+export class LeafBitmapReadError extends QuipError {
+  readonly wordIndex: number;
+  constructor(wordIndex: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_LEAF_BITMAP_READ_FAILED",
+      `Could not read used-leaf bitmap word ${wordIndex}; cannot determine the lowest unused leaf`,
+      opts
+    );
+    this.wordIndex = wordIndex;
+  }
+}
+
 /// `markLeavesUsed` was called with an empty target array. Burning the
 /// authorizing leaf for nothing is almost certainly a mistake; a deliberate
 /// single-leaf burn already exists via the empty `execute` path.

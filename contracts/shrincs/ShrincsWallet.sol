@@ -978,6 +978,14 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
+    function statefulLeafBitmapWord(
+        uint256 wordIndex
+    ) external view returns (uint256) {
+        Storage.Layout storage $ = Storage.layout();
+        return $.usedStatefulLeafBitmap[$.keyVersion][wordIndex];
+    }
+
+    /// @inheritdoc IShrincsWallet
     function statefulLeavesUsed() external view returns (uint32) {
         return Storage.layout().statefulLeavesUsed;
     }

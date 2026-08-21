@@ -24,6 +24,7 @@ import {
 } from "viem";
 
 import { assertProviderState, boundChain } from "../internal/providerState.js";
+import { tryMulticall } from "../internal/multicall.js";
 import { shrincsPaymasterAbi } from "./abi/ShrincsPaymaster.js";
 import {
   EmptyLeavesError,
@@ -41,6 +42,11 @@ import {
 } from "./shrincsCodec.js";
 import { prepareTx, type TxOptions } from "./gas.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
+import {
+  bitmapWordCount,
+  usedLeavesFromWords,
+  wordsFromResults,
+} from "./internal/leafBitmap.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
@@ -156,8 +162,29 @@ export class ShrincsPaymasterClient {
     ) as Promise<boolean>;
   }
 
+  /// The set of `1..maxSignatures` leaves the on-chain bitmap reports as used,
+  /// read one 256-bit word per call via `statefulLeafBitmapWord` (256 leaves per
+  /// call instead of one). Throws `LeafBitmapReadError` if any word cannot be
+  /// read: an unread word leaves the used state of its 256 leaves unknown, and
+  /// signing at a leaf that is not confirmed free risks one-time-signature reuse.
+  private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
+    const wordCount = bitmapWordCount(maxSignatures);
+    if (wordCount === 0) return new Set();
+    const calls = [];
+    for (let word = 0; word < wordCount; word++) {
+      calls.push({
+        address: this.paymasterAddress,
+        abi: shrincsPaymasterAbi,
+        functionName: "statefulLeafBitmapWord" as const,
+        args: [BigInt(word)] as const,
+      });
+    }
+    const results = await tryMulticall(this.publicClient, calls);
+    return usedLeavesFromWords(wordsFromResults(results), maxSignatures);
+  }
+
   /// Lowest unused sponsorship leaf in `1..maxSignatures` for the current
-  /// verifier epoch. Sequential reads (the paymaster has no packed getter).
+  /// verifier epoch. Reads the bitmap by word (shared with the wallet client).
   async lowestUnusedLeaf(verifier: ShrincsVerifierState): Promise<number> {
     if (verifier.statefulLeavesUsed >= verifier.maxSignatures) {
       throw new StatefulBudgetExhaustedError(
@@ -165,8 +192,9 @@ export class ShrincsPaymasterClient {
         verifier.statefulLeavesUsed
       );
     }
+    const used = await this.fetchUsedLeaves(verifier.maxSignatures);
     for (let leaf = 1; leaf <= verifier.maxSignatures; leaf++) {
-      if (!(await this.isStatefulLeafUsed(leaf))) return leaf;
+      if (!used.has(leaf)) return leaf;
     }
     throw new StatefulBudgetExhaustedError(
       verifier.maxSignatures,
@@ -217,10 +245,11 @@ export class ShrincsPaymasterClient {
           verifier.statefulLeavesUsed
         );
       }
+      const used = await this.fetchUsedLeaves(verifier.maxSignatures);
       leaf = await reserveLowestLeaf(
         this.leafReservations,
         reservationKey,
-        (candidate) => this.isStatefulLeafUsed(candidate),
+        (candidate) => used.has(candidate),
         verifier.maxSignatures
       );
     }

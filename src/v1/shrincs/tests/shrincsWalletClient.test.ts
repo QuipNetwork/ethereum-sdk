@@ -63,6 +63,8 @@ function walletRead(functionName: string): unknown {
       return MAX_SIG;
     case "isStatefulLeafUsed":
       return false;
+    case "statefulLeafBitmapWord":
+      return 0n;
     default:
       throw new Error(`unexpected wallet read: ${functionName}`);
   }

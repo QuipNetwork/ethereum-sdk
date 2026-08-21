@@ -47,6 +47,11 @@ import {
   reserveLowestLeaf,
 } from "./leafReservation.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
+import {
+  bitmapWordCount,
+  usedLeavesFromWords,
+  wordsFromResults,
+} from "./internal/leafBitmap.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
   ACTION_ERC1271,
@@ -302,25 +307,24 @@ export class ShrincsWalletClient {
   }
 
   /// The set of `1..maxSignatures` leaves the on-chain bitmap reports as used,
-  /// read in one multicall. A leaf whose status could not be read is treated as
-  /// used: never sign at a leaf that is not confirmed free.
+  /// read one 256-bit word per call via `statefulLeafBitmapWord` (256 leaves per
+  /// call instead of one). Throws `LeafBitmapReadError` if any word cannot be
+  /// read: an unread word leaves the used state of its 256 leaves unknown, and
+  /// signing at a leaf that is not confirmed free risks one-time-signature reuse.
   private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
+    const wordCount = bitmapWordCount(maxSignatures);
+    if (wordCount === 0) return new Set();
     const calls = [];
-    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
+    for (let word = 0; word < wordCount; word++) {
       calls.push({
         address: this.walletAddress,
         abi: shrincsWalletAbi,
-        functionName: "isStatefulLeafUsed" as const,
-        args: [BigInt(leaf)] as const,
+        functionName: "statefulLeafBitmapWord" as const,
+        args: [BigInt(word)] as const,
       });
     }
     const results = await tryMulticall(this.publicClient, calls);
-    const used = new Set<number>();
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (!(r && r.status === "success" && r.result === false)) used.add(i + 1);
-    }
-    return used;
+    return usedLeavesFromWords(wordsFromResults(results), maxSignatures);
   }
 
   /// The WalletFactory that deployed this wallet (the remaining `IShrincsWallet`

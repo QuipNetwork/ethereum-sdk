@@ -231,6 +231,14 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Whether stateful `leaf` has been consumed in the current verifier epoch.
     function isStatefulLeafUsed(uint256 leaf) external view returns (bool);
 
+    /// @notice The raw 256-bit used-leaf bitmap word `wordIndex` for the current verifier epoch.
+    ///         Bit `b` (0..255) of the returned word is leaf `wordIndex * 256 + b`; a set bit
+    ///         means that leaf is consumed. Lets a client read 256 leaves per call instead of
+    ///         one leaf per call. Out-of-range or all-free words read as 0.
+    function statefulLeafBitmapWord(
+        uint256 wordIndex
+    ) external view returns (uint256);
+
     /// @notice Sponsorship signatures remaining before the verifier key must be rotated.
     function remainingStatefulSignatures() external view returns (uint32);
 

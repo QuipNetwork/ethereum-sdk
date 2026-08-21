@@ -42,4 +42,16 @@ contract ShrincsPaymaster_views is ShrincsPaymasterTest {
         assertTrue(paymaster.isStatefulLeafUsed(3));
         assertFalse(paymaster.isStatefulLeafUsed(4));
     }
+
+    function test_statefulLeafBitmapWord_packsConsumedLeaves() public {
+        assertEq(paymaster.statefulLeafBitmapWord(0), 0, "word 0 starts empty");
+        paymaster.harness_markLeafUsed(3);
+        paymaster.harness_markLeafUsed(7);
+        assertEq(
+            paymaster.statefulLeafBitmapWord(0),
+            (uint256(1) << 3) | (uint256(1) << 7),
+            "word 0 packs consumed leaves 3 and 7"
+        );
+        assertEq(paymaster.statefulLeafBitmapWord(1), 0, "untouched word reads zero");
+    }
 }

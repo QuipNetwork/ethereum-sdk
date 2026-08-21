@@ -422,6 +422,14 @@ interface IShrincsWallet is IWallet {
     /// @notice Whether stateful `leafIndex` has been consumed in the current key epoch.
     function isStatefulLeafUsed(uint256 leafIndex) external view returns (bool);
 
+    /// @notice The raw 256-bit used-leaf bitmap word `wordIndex` for the current key epoch.
+    ///         Bit `b` (0..255) of the returned word is leaf `wordIndex * 256 + b`; a set bit
+    ///         means that leaf is consumed. Lets a client read 256 leaves per call instead of
+    ///         one leaf per call. Out-of-range or all-free words read as 0.
+    function statefulLeafBitmapWord(
+        uint256 wordIndex
+    ) external view returns (uint256);
+
     /// @notice Count of stateful leaves consumed in the current key epoch.
     function statefulLeavesUsed() external view returns (uint32);
 
