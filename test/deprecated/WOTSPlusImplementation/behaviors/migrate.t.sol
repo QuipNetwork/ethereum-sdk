@@ -32,7 +32,7 @@ contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
 
         vm.prank(ALICE);
         address proxyAddr =
-            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-mig-vault"), payable(ALICE), payload);
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-mig-vault"), COMMITMENT, payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 

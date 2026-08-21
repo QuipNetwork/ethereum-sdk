@@ -29,8 +29,7 @@ contract WOTSPlusImplementation_replaceKeys_Recovery is WOTSPlusImplementationTe
         bytes memory payload = _encodeInitPayload(alicePubkey, recoveryPubkeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(
-            keccak256("replaceKeys-recovery-vault"), payable(ALICE), payload
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("replaceKeys-recovery-vault"), COMMITMENT, payable(ALICE), payload
         );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }

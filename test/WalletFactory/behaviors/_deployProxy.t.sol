@@ -46,24 +46,24 @@ contract WalletFactory__deployProxy is WalletFactoryTest {
     function test_exposed_deployProxy_deploysAndInitializes() public {
         bytes memory payload = _buildPayload();
         address proxy =
-            harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v1"), payable(ALICE), payload);
+            harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v1"), COMMITMENT, payable(ALICE), payload);
         assertEq(WOTSPlusImplementation(payable(proxy)).owner(), ALICE);
     }
 
     function test_exposed_deployProxy_storesQuipMapping() public {
         bytes32 vaultId = keccak256("v2");
         bytes memory payload = _buildPayload();
-        address proxy = harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, payable(ALICE), payload);
-        assertEq(harness.wallets(vaultId), proxy);
+        address proxy = harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, COMMITMENT, payable(ALICE), payload);
+        assertEq(harness.wallets(_salt(vaultId)), proxy);
         assertEq(harness.vaultIdOf(proxy), vaultId);
     }
 
     function test_exposed_deployProxy_pushesVaultId() public {
         bytes32 vaultId = keccak256("v3");
         bytes memory payload = _buildPayload();
-        harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, payable(ALICE), payload);
+        harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, COMMITMENT, payable(ALICE), payload);
         assertEq(harness.getVaultIdCount(ALICE), 1);
-        assertNotEq(harness.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
+        assertNotEq(harness.getVaultIdIndex(ALICE, _salt(vaultId)), type(uint256).max);
     }
 
     function test_exposed_deployProxy_emitsWalletDeployed() public {
@@ -71,7 +71,7 @@ contract WalletFactory__deployProxy is WalletFactoryTest {
         bytes32 vaultId = keccak256("v-event");
 
         vm.recordLogs();
-        address proxy = harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, payable(ALICE), payload);
+        address proxy = harness.exposed_deployProxy{value: 1 ether}(address(impl), vaultId, COMMITMENT, payable(ALICE), payload);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         bool found;
@@ -103,7 +103,7 @@ contract WalletFactory__deployProxy is WalletFactoryTest {
 
         bytes memory payload = _buildPayload();
         address proxy =
-            harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v4"), payable(ALICE), payload);
+            harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v4"), COMMITMENT, payable(ALICE), payload);
         // 1 ether - 0.01 fee = 0.99 ether forwarded to proxy
         assertEq(proxy.balance, 0.99 ether);
     }
@@ -111,7 +111,7 @@ contract WalletFactory__deployProxy is WalletFactoryTest {
     function test_exposed_deployProxy_revertsWhen_zeroAddressOwner() public {
         bytes memory payload = _buildPayload();
         vm.expectRevert(IWOTSPlusImplementation.ZeroAddressOwner.selector);
-        harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v5"), payable(address(0)), payload);
+        harness.exposed_deployProxy{value: 1 ether}(address(impl), keccak256("v5"), COMMITMENT, payable(address(0)), payload);
     }
 
     function test_exposed_deployProxy_revertsWhen_insufficientFee() public {
@@ -120,6 +120,6 @@ contract WalletFactory__deployProxy is WalletFactoryTest {
 
         bytes memory payload = _buildPayload();
         vm.expectRevert(abi.encodeWithSelector(IWalletFactory.InsufficientCreationFee.selector, 0.005 ether, 0.01 ether));
-        harness.exposed_deployProxy{value: 0.005 ether}(address(impl), keccak256("v6"), payable(ALICE), payload);
+        harness.exposed_deployProxy{value: 0.005 ether}(address(impl), keccak256("v6"), COMMITMENT, payable(ALICE), payload);
     }
 }

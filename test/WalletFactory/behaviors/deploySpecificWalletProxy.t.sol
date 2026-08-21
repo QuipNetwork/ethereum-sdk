@@ -25,15 +25,15 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         address expectedAddr = _computeWalletAddress(vaultId, ALICE);
 
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy(vaultId, 0, payable(ALICE), payload);
+        address walletAddr = factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(ALICE), payload);
 
         assertEq(walletAddr, expectedAddr);
         assertTrue(walletAddr.code.length > 0);
 
         // Check factory state
-        assertEq(factory.wallets(vaultId), walletAddr);
+        assertEq(factory.wallets(_salt(vaultId)), walletAddr);
         assertEq(factory.vaultIdOf(walletAddr), vaultId);
-        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
+        assertNotEq(factory.getVaultIdIndex(ALICE, _salt(vaultId)), type(uint256).max);
 
         // Check wallet state
         WOTSPlusImplementation wallet = WOTSPlusImplementation(payable(walletAddr));
@@ -50,7 +50,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         vm.prank(ALICE);
         address walletAddr =
-            factory.deploySpecificWalletProxy{value: INITIAL_DEPOSIT}(vaultId, 0, payable(ALICE), payload);
+            factory.deploySpecificWalletProxy{value: INITIAL_DEPOSIT}(vaultId, COMMITMENT, 0, payable(ALICE), payload);
 
         assertEq(walletAddr.balance, INITIAL_DEPOSIT);
 
@@ -67,7 +67,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         vm.prank(ALICE);
         vm.recordLogs();
-        factory.deploySpecificWalletProxy{value: INITIAL_DEPOSIT}(vaultId, 0, payable(ALICE), payload);
+        factory.deploySpecificWalletProxy{value: INITIAL_DEPOSIT}(vaultId, COMMITMENT, 0, payable(ALICE), payload);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found = false;
@@ -92,13 +92,13 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         WOTSPlus.WinternitzAddress[] memory rKeys2 = _generateRecoveryKeys(privateKey2, 10);
 
         vm.startPrank(ALICE);
-        factory.deploySpecificWalletProxy(vaultId1, 0, payable(ALICE), _encodeInitPayload(pubkey1, rKeys1));
-        factory.deploySpecificWalletProxy(vaultId2, 0, payable(ALICE), _encodeInitPayload(pubkey2, rKeys2));
+        factory.deploySpecificWalletProxy(vaultId1, COMMITMENT, 0, payable(ALICE), _encodeInitPayload(pubkey1, rKeys1));
+        factory.deploySpecificWalletProxy(vaultId2, COMMITMENT, 0, payable(ALICE), _encodeInitPayload(pubkey2, rKeys2));
         vm.stopPrank();
 
         assertEq(factory.getVaultIdCount(ALICE), 2);
-        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId1), type(uint256).max);
-        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId2), type(uint256).max);
+        assertNotEq(factory.getVaultIdIndex(ALICE, _salt(vaultId1)), type(uint256).max);
+        assertNotEq(factory.getVaultIdIndex(ALICE, _salt(vaultId2)), type(uint256).max);
     }
 
     function test_deploySpecificWalletProxy_deploysWithSpecificImpl() public {
@@ -114,7 +114,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         // Deploy using the second implementation (index 1)
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy(vaultId, 1, payable(ALICE), payload);
+        address walletAddr = factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 1, payable(ALICE), payload);
 
         assertTrue(walletAddr.code.length > 0);
         WOTSPlusImplementation wallet = WOTSPlusImplementation(payable(walletAddr));
@@ -128,7 +128,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy(vaultId, 0, payable(ALICE), payload);
+        address walletAddr = factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(ALICE), payload);
 
         assertEq(walletAddr.balance, 0);
         assertTrue(walletAddr.code.length > 0);
@@ -149,7 +149,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         uint256 deposit = INITIAL_DEPOSIT + CREATION_FEE;
 
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy{value: deposit}(vaultId, 0, payable(ALICE), payload);
+        address walletAddr = factory.deploySpecificWalletProxy{value: deposit}(vaultId, COMMITMENT, 0, payable(ALICE), payload);
 
         assertEq(address(factory).balance, factoryBalBefore + CREATION_FEE);
         assertEq(walletAddr.balance, INITIAL_DEPOSIT);
@@ -165,7 +165,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy{value: CREATION_FEE}(vaultId, 0, payable(ALICE), payload);
+        address walletAddr = factory.deploySpecificWalletProxy{value: CREATION_FEE}(vaultId, COMMITMENT, 0, payable(ALICE), payload);
 
         assertEq(walletAddr.balance, 0);
     }
@@ -177,12 +177,12 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy(vaultId, 0, payable(BOB), payload);
+        address walletAddr = factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(BOB), payload);
 
         WOTSPlusImplementation w = WOTSPlusImplementation(payable(walletAddr));
         assertEq(w.owner(), BOB);
-        assertEq(factory.wallets(vaultId), walletAddr);
-        assertNotEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);
+        assertEq(factory.wallets(_salt(vaultId)), walletAddr);
+        assertNotEq(factory.getVaultIdIndex(BOB, _salt(vaultId)), type(uint256).max);
     }
 
     // ── Reverts ──────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         vm.prank(ALICE);
         vm.expectRevert(EnumerableSetLib.IndexOutOfBounds.selector);
-        factory.deploySpecificWalletProxy(vaultId, 999, payable(ALICE), payload);
+        factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 999, payable(ALICE), payload);
     }
 
     function test_deploySpecificWalletProxy_revertsWhen_deprecated() public {
@@ -209,7 +209,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IWalletFactory.ImplementationDeprecated.selector);
-        factory.deploySpecificWalletProxy(vaultId, 0, payable(ALICE), payload);
+        factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(ALICE), payload);
     }
 
     function test_deploySpecificWalletProxy_revertsWhen_insufficientCreationFee() public {
@@ -224,7 +224,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         uint256 sent = CREATION_FEE - 1;
         vm.prank(ALICE);
         vm.expectRevert(abi.encodeWithSelector(IWalletFactory.InsufficientCreationFee.selector, sent, CREATION_FEE));
-        factory.deploySpecificWalletProxy{value: sent}(vaultId, 0, payable(ALICE), payload);
+        factory.deploySpecificWalletProxy{value: sent}(vaultId, COMMITMENT, 0, payable(ALICE), payload);
     }
 
     function test_deploySpecificWalletProxy_revertsWhen_duplicateVaultId() public {
@@ -234,7 +234,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         bytes memory payload1 = _encodeInitPayload(pubkey1, rKeys1);
 
         vm.prank(ALICE);
-        factory.deploySpecificWalletProxy(vaultId, 0, payable(ALICE), payload1);
+        factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(ALICE), payload1);
 
         // Second deploy with same vaultId should revert (CREATE3 collision)
         (WOTSPlus.WinternitzAddress memory pubkey2, bytes32 pk2) = _generateKeyPair("seed2");
@@ -243,7 +243,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         vm.prank(ALICE);
         vm.expectRevert(CREATE3.DeploymentFailed.selector);
-        factory.deploySpecificWalletProxy(vaultId, 0, payable(ALICE), payload2);
+        factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(ALICE), payload2);
     }
 
     function test_deploySpecificWalletProxy_revertsWhen_sameVaultIdDifferentSenders() public {
@@ -253,7 +253,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         bytes memory payload1 = _encodeInitPayload(pubkey1, rKeys1);
 
         vm.prank(ALICE);
-        factory.deploySpecificWalletProxy(vaultId, 0, payable(ALICE), payload1);
+        factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(ALICE), payload1);
 
         // Bob tries same vaultId — CREATE3 collision
         (WOTSPlus.WinternitzAddress memory pubkey2, bytes32 pk2) = _generateKeyPair("seed-bob");
@@ -262,7 +262,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         vm.prank(BOB);
         vm.expectRevert(CREATE3.DeploymentFailed.selector);
-        factory.deploySpecificWalletProxy(vaultId, 0, payable(BOB), payload2);
+        factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(BOB), payload2);
     }
 
     function test_deploySpecificWalletProxy_revertsWhen_toIsZeroAddress() public {
@@ -273,6 +273,6 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IWalletFactory.ZeroAddressOwner.selector);
-        factory.deploySpecificWalletProxy(vaultId, 0, payable(address(0)), payload);
+        factory.deploySpecificWalletProxy(vaultId, COMMITMENT, 0, payable(address(0)), payload);
     }
 }

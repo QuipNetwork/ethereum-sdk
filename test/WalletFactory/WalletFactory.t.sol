@@ -31,6 +31,18 @@ contract WalletFactoryTest is Test {
     uint256 public constant CREATION_FEE = 0.01 ether;
     uint256 public constant EXECUTE_FEE = 0.002 ether;
 
+    /// @dev Fixed main-key commitment for deploy calls (e3r). The vetted WOTS+ implementation's
+    ///      `initialize` ignores it, so its value only needs to be stable across a test so the
+    ///      derived CREATE3 salt is reproducible. The registry is keyed by
+    ///      `keccak256(abi.encode(vaultId, commitment))` — see `_salt`.
+    bytes32 public constant COMMITMENT =
+        keccak256("wallet-factory-test-commitment");
+
+    /// @dev The CREATE3 salt / registry key for `vaultId` under the shared `COMMITMENT`.
+    function _salt(bytes32 vaultId) internal pure returns (bytes32) {
+        return keccak256(abi.encode(vaultId, COMMITMENT));
+    }
+
     function setUp() public virtual {
         (ALICE, ALICE_KEY) = makeAddrAndKey("alice");
         // Fund test accounts
@@ -204,7 +216,7 @@ contract WalletFactoryTest is Test {
         returns (address)
     {
         vm.prank(owner);
-        return factory.deployLatestWalletProxy{value: deposit}(vaultId, payable(owner), payload);
+        return factory.deployLatestWalletProxy{value: deposit}(vaultId, COMMITMENT, payable(owner), payload);
     }
 
     /// @dev Encode init payload from a single "pqOwner" key (legacy shim).
@@ -245,7 +257,8 @@ contract WalletFactoryTest is Test {
 
     /// @dev Compute the expected CREATE3 address for a WOTSPlusImplementation
     function _computeWalletAddress(bytes32 vaultId, address) internal view returns (address) {
-        return CREATE3.predictDeterministicAddress(vaultId, address(factory));
+        // e3r: the CREATE3 salt now binds the main-key commitment.
+        return CREATE3.predictDeterministicAddress(_salt(vaultId), address(factory));
     }
 
     /// @dev Deploy a fresh uninitialized WOTSPlusImplementation proxy via CREATE3.

@@ -28,7 +28,7 @@ contract WalletFactory_setCreationFee is WalletFactoryTest {
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(vaultId, payable(ALICE), payload);
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(vaultId, COMMITMENT, payable(ALICE), payload);
 
         assertEq(address(factory).balance, factoryBalBefore + CREATION_FEE);
     }

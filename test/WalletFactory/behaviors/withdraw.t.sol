@@ -22,7 +22,7 @@ contract WalletFactory_withdraw is WalletFactoryTest {
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(vaultId, payable(ALICE), payload);
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(vaultId, COMMITMENT, payable(ALICE), payload);
     }
 
     function test_setUp() public view override {
