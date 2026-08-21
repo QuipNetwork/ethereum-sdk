@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import * as SDK from "../index.js";
+import type {
+  ShrincsPaymasterClientParams,
+  ShrincsWalletClientParams,
+} from "../index.js";
 
 // Barrel smoke test: guards the front-end consumer surface. If a key export is
 // dropped or renamed in `index.ts`, this fails loudly at the SDK boundary.
@@ -48,5 +52,13 @@ describe("shrincs SDK barrel exports", () => {
     expect(typeof SDK.parseUserOpSponsored).toBe("function");
     expect(typeof SDK.buildUserOp).toBe("function");
     expect(typeof SDK.signWalletUserOp).toBe("function");
+  });
+
+  it("exports the wallet and paymaster client constructor param types", () => {
+    // Compile-time smoke: tsc fails if the barrel does not re-export these names.
+    const walletParams: ShrincsWalletClientParams | null = null;
+    const paymasterParams: ShrincsPaymasterClientParams | null = null;
+    expect(walletParams).toBeNull();
+    expect(paymasterParams).toBeNull();
   });
 });
