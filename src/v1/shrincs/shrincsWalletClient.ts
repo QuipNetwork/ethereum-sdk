@@ -611,7 +611,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "withdrawDepositTo",
       [publicKeyToAbi(keypair.publicKey), signature, params.to, params.amount],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -653,7 +653,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "setErc1271Key",
       [publicKeyToAbi(keypair.publicKey), signature, params.newCommitment, hashSuite],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -690,7 +690,7 @@ export class ShrincsWalletClient {
           publicKeyCommitment: nextStatefulKey.publicKeyCommitment,
         },
       ],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -744,7 +744,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "markLeavesUsed",
       [publicKeyToAbi(keypair.publicKey), signature, [...leaves]],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -786,7 +786,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "upgradeToAndCall",
       [params.newImplementation, data],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -838,7 +838,7 @@ export class ShrincsWalletClient {
         publicKeyToAbi(params.nextKey),
         params.newOwner,
       ],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -868,7 +868,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "recoverWallet",
       [publicKeyToAbi(keypair.publicKey), recoverySignature, publicKeyToAbi(params.nextKey)],
-      state.executeFee,
+      0n,
       opts
     );
   }
