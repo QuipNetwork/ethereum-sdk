@@ -42,6 +42,7 @@ import {
   ImplementationNotVettedError,
 } from "./errors.js";
 import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
+import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { encodeInitPayload } from "./shrincsCodec.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
@@ -205,8 +206,9 @@ export class ShrincsFactoryClient {
       } as unknown as Parameters<WalletClient["writeContract"]>[0])
     );
 
-    const receipt: TransactionReceipt =
-      await this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt: TransactionReceipt = assertReceiptSuccess(
+      await this.publicClient.waitForTransactionReceipt({ hash })
+    );
     const logs = parseEventLogs({
       abi: walletFactoryAbi,
       logs: receipt.logs,
