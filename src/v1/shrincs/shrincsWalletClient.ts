@@ -442,11 +442,11 @@ export class ShrincsWalletClient {
     maxSignatures: number,
     installedCommitment: Hex
   ): ShrincsKeyPair {
-    if (this.keypair) return this.keypair;
-    if (!this.signer) {
+    const keypair =
+      this.keypair ?? this.signer?.recoverKeyPair(this.vaultId, { maxSignatures });
+    if (!keypair) {
       throw new Error("ShrincsWalletClient has no signer or keypair to sign with");
     }
-    const keypair = this.signer.recoverKeyPair(this.vaultId, { maxSignatures });
     if (
       keypair.publicKeyCommitment.toLowerCase() !==
       installedCommitment.toLowerCase()
