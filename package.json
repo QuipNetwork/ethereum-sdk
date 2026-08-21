@@ -122,6 +122,7 @@
     "copyfiles": "^2.4.1",
     "dotenv": "^16.4.7",
     "ecpair": "^3.0.0",
+    "esbuild": "0.27.2",
     "ethers": "^6.0.0",
     "hardhat": "^2.22.19",
     "hardhat-deploy": "^0.14.0",
