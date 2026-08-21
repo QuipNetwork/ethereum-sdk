@@ -42,6 +42,13 @@ library ShrincsWalletCodec {
     ///      `ActionContext.domainSeparator` so signatures cannot replay across chains/wallets.
     bytes32 internal constant DOMAIN_TAG = keccak256("quip-shrincs-wallet-v1");
 
+    /// @dev Deploy signing-domain tag (e3r). Combined with chainId + the FACTORY
+    ///      address into the deploy `ActionContext.domainSeparator`. The deploy
+    ///      authorization binds the factory (the authority that supplies the chainId
+    ///      and quipDeployChainIndex) because the wallet address does not yet exist.
+    bytes32 internal constant DEPLOY_DOMAIN_TAG =
+        keccak256("quip-shrincs-deploy-v1");
+
     /// @dev `ActionContext.actionType` discriminators — one per operation family. The SHRINCS
     ///      library binds `actionType` into `statefulActionMessageHash` /
     ///      `statelessActionMessageHash`, so a distinct constant per operation is the
@@ -64,6 +71,10 @@ library ShrincsWalletCodec {
         keccak256("quip.shrincs.action.markLeavesUsed");
     bytes32 internal constant ACTION_ERC1271 =
         keccak256("quip.shrincs.action.erc1271");
+    /// @dev Deploy authorization action type (e3r). Proves the main-key holder
+    ///      authorizes deploying this key at (vaultId, owner) on the factory's chain.
+    bytes32 internal constant ACTION_DEPLOY =
+        keccak256("quip.shrincs.action.deploy");
 
     /// @dev Per-path tags folded into `RotationContext.domainSeparator` (see
     ///      `rotationDomainSeparator`). `RotationContext` carries no action discriminator, so
@@ -496,5 +507,26 @@ library ShrincsWalletCodec {
         bytes32 leavesHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(leavesHash);
+    }
+
+    /// @dev `payloadHash` for the deploy authorization (e3r). Binds the vault, the
+    ///      intended owner, the ERC-1271 commitment, and the quipDeployChainIndex so a
+    ///      deploy signature authorizes exactly one (vaultId, owner, erc1271, chainIndex)
+    ///      tuple. The main-key commitment is authenticated by the signature itself; the
+    ///      chain and factory are bound through the deploy `domainSeparator`. Mirrors the
+    ///      SDK `deployPayloadHash` word-for-word.
+    function deployPayloadHash(
+        bytes32 vaultId,
+        address owner,
+        bytes32 erc1271Commitment,
+        uint256 quipDeployChainIndex
+    ) internal pure returns (bytes32) {
+        return
+            EfficientHashLib.hash(
+                vaultId,
+                bytes32(uint256(uint160(owner))),
+                erc1271Commitment,
+                bytes32(quipDeployChainIndex)
+            );
     }
 }
