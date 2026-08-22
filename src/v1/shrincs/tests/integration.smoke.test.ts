@@ -42,7 +42,7 @@ import { walletFactoryAbi } from "../../abi/WalletFactory.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
-import { HASH_SUITE_KECCAK_256 } from "../constants.js";
+import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "../constants.js";
 import {
   AuthLeafInTargetsError,
   EmptyLeavesError,
@@ -73,7 +73,18 @@ const OWNER_PRIV =
 const ownerAccount = privateKeyToAccount(OWNER_PRIV);
 
 const RECIPIENT = "0x000000000000000000000000000000000000d00d" as Address;
-const MAX_SIGS = 4;
+// The main-key hypertree reserves leaves `[1..MAX_DEPLOY_CHAINS]` for deploy
+// authorizations (`e3r`); signing uses `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
+// So a wallet with SIGNING_BUDGET usable signatures needs a tree of
+// `MAX_DEPLOY_CHAINS + SIGNING_BUDGET` leaves, and its first signing leaf is
+// `MAX_DEPLOY_CHAINS + 1`.
+const SIGNING_BUDGET = 4;
+const MAX_SIGS = MAX_DEPLOY_CHAINS + SIGNING_BUDGET;
+// The first four signing leaves, named by their position in the signing budget.
+const LEAF_1 = MAX_DEPLOY_CHAINS + 1;
+const LEAF_2 = MAX_DEPLOY_CHAINS + 2;
+const LEAF_3 = MAX_DEPLOY_CHAINS + 3;
+const LEAF_4 = MAX_DEPLOY_CHAINS + 4;
 
 let stack: ShrincsAnvilStack;
 
@@ -98,7 +109,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(getAddress(state.owner)).toBe(getAddress(stack.account.address));
     expect(state.maxSignatures).toBe(MAX_SIGS);
     expect(state.statefulLeavesUsed).toBe(0);
-    expect(state.remainingStatefulSignatures).toBe(MAX_SIGS);
+    expect(state.remainingStatefulSignatures).toBe(SIGNING_BUDGET);
 
     // Commitment installed on-chain reproduces from the signer.
     const mainKey = signer.recoverKeyPair(vaultId, { maxSignatures: MAX_SIGS });
@@ -114,7 +125,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     // getShrincsWallet resolves the same address and validates the commitment.
     const factory = makeShrincsFactoryClient(stack);
-    const resolved = await factory.getShrincsWallet(vaultId, signer);
+    const resolved = await factory.getShrincsWallet(vaultId, signer, MAX_SIGS);
     expect(getAddress(resolved.walletAddress)).toBe(getAddress(walletAddress));
   }, 120_000);
 
@@ -138,7 +149,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     const stateAfter = await client.getWalletState();
     expect(stateAfter.statefulLeavesUsed).toBe(1);
-    expect(await client.isStatefulLeafUsed(1)).toBe(true);
+    expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(true);
     expect(stateAfter.actionNonce).toBe(1n);
   }, 120_000);
 
@@ -155,7 +166,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       eventName: "StatefulSignatureVerified",
     });
     expect(leaves1.length).toBe(1);
-    expect(Number(leaves1[0].args.leaf)).toBe(1);
+    expect(Number(leaves1[0].args.leaf)).toBe(LEAF_1);
 
     const r2 = await client.execute({ target: RECIPIENT, value: parseEther("0.1") });
     const leaves2 = parseEventLogs({
@@ -164,7 +175,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       eventName: "StatefulSignatureVerified",
     });
     expect(leaves2.length).toBe(1);
-    expect(Number(leaves2[0].args.leaf)).toBe(2);
+    expect(Number(leaves2[0].args.leaf)).toBe(LEAF_2);
 
     const state = await client.getWalletState();
     expect(state.statefulLeavesUsed).toBe(2);
@@ -179,16 +190,19 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxSignatures: MAX_SIGS,
     });
 
-    // Force leaf 1, succeed.
-    await client.execute({ target: RECIPIENT, value: parseEther("0.05") }, { leaf: 1 });
-    expect(await client.isStatefulLeafUsed(1)).toBe(true);
+    // Force the first signing leaf, succeed.
+    await client.execute(
+      { target: RECIPIENT, value: parseEther("0.05") },
+      { leaf: LEAF_1 }
+    );
+    expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(true);
 
-    // Reuse leaf 1 — must revert. The decoded error should be StaleStatefulLeaf.
+    // Reuse the leaf — must revert. The decoded error should be StaleStatefulLeaf.
     let caught: unknown = null;
     try {
       await client.execute(
         { target: RECIPIENT, value: parseEther("0.05") },
-        { leaf: 1 }
+        { leaf: LEAF_1 }
       );
     } catch (e) {
       caught = e;
@@ -414,9 +428,12 @@ describe("Shrincs SDK live-anvil smoke", () => {
     try {
       await setExecuteFee(parseEther("0.002"));
 
-      // Live fee above the signed ceiling: the pre-flight simulation reverts
-      // and the SDK decodes it into the typed cap error — no broadcast, no
-      // leaf consumed (direct path rolls everything back).
+      // Live fee above the signed ceiling: the op signs at LEAF_1, then the
+      // pre-flight simulation reverts and the SDK decodes it into the typed cap
+      // error. Nothing broadcasts, so the on-chain bitmap shows LEAF_1 unused.
+      // The one-time key at LEAF_1 has already signed in-process, so the client
+      // burns it (never reuse an exposed OTS leaf) and the retry below takes
+      // LEAF_2.
       let caught: unknown = null;
       try {
         await client.execute({
@@ -430,10 +447,11 @@ describe("Shrincs SDK live-anvil smoke", () => {
       expect(caught).toBeInstanceOf(ExecuteFeeExceedsCapError);
       expect((caught as ExecuteFeeExceedsCapError).fee).toBe(parseEther("0.002"));
       expect((caught as ExecuteFeeExceedsCapError).maxFee).toBe(parseEther("0.001"));
-      expect(await client.isStatefulLeafUsed(1)).toBe(false);
+      expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(false);
 
-      // Ceiling with headroom above the live fee: lands, and the factory is
-      // credited the LIVE fee — not the signed ceiling.
+      // Ceiling with headroom above the live fee: lands at LEAF_2 (LEAF_1 was
+      // burned above), and the factory is credited the LIVE fee — not the
+      // signed ceiling.
       const factoryBefore = await stack.publicClient.getBalance({
         address: stack.factoryAddress,
       });
@@ -453,7 +471,8 @@ describe("Shrincs SDK live-anvil smoke", () => {
       });
       expect(factoryAfter - factoryBefore).toBe(parseEther("0.002"));
       expect(recipientAfter - recipientBefore).toBe(parseEther("0.01"));
-      expect(await client.isStatefulLeafUsed(1)).toBe(true);
+      expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(false);
+      expect(await client.isStatefulLeafUsed(LEAF_2)).toBe(true);
     } finally {
       // The factory fee is global to the shared anvil stack — restore it.
       await setExecuteFee(0n);
@@ -471,38 +490,46 @@ describe("Shrincs SDK live-anvil smoke", () => {
       EmptyLeavesError
     );
     await expect(
-      client.markLeavesUsed({ leaves: [2, 3] }, { leaf: 2 })
+      client.markLeavesUsed({ leaves: [LEAF_2, LEAF_3] }, { leaf: LEAF_2 })
     ).rejects.toBeInstanceOf(AuthLeafInTargetsError);
     await expect(
       client.markLeavesUsed({ leaves: [0] })
+    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
+    // A reserved deploy leaf is out of the signing range (`e3r`).
+    await expect(
+      client.markLeavesUsed({ leaves: [MAX_DEPLOY_CHAINS] })
     ).rejects.toBeInstanceOf(LeafOutOfRangeError);
     await expect(
       client.markLeavesUsed({ leaves: [MAX_SIGS + 1] })
     ).rejects.toBeInstanceOf(LeafOutOfRangeError);
     expect((await client.getWalletState()).statefulLeavesUsed).toBe(0);
 
-    // Burn [1, 3]. Leaf 1 is the lowest FREE leaf, so this proves the auto-pick
-    // excludes the target set: the authorizing leaf must be 2.
-    const receipt = await client.markLeavesUsed({ leaves: [1, 3] });
+    // Burn [LEAF_1, LEAF_3]. LEAF_1 is the lowest FREE signing leaf, so this
+    // proves the auto-pick excludes the target set: the authorizing leaf must
+    // be LEAF_2.
+    const receipt = await client.markLeavesUsed({ leaves: [LEAF_1, LEAF_3] });
 
     const revoked = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: receipt.logs,
       eventName: "LeafRevoked",
     });
-    expect(revoked.map((l) => Number(l.args.leaf)).sort()).toEqual([1, 3]);
+    expect(revoked.map((l) => Number(l.args.leaf)).sort((a, b) => a - b)).toEqual([
+      LEAF_1,
+      LEAF_3,
+    ]);
     const verified = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: receipt.logs,
       eventName: "StatefulSignatureVerified",
     });
     expect(verified.length).toBe(1);
-    expect(Number(verified[0].args.leaf)).toBe(2);
+    expect(Number(verified[0].args.leaf)).toBe(LEAF_2);
 
     const state = await client.getWalletState();
-    expect(await client.isStatefulLeafUsed(1)).toBe(true);
-    expect(await client.isStatefulLeafUsed(2)).toBe(true); // authorizing leaf
-    expect(await client.isStatefulLeafUsed(3)).toBe(true);
+    expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(true);
+    expect(await client.isStatefulLeafUsed(LEAF_2)).toBe(true); // authorizing leaf
+    expect(await client.isStatefulLeafUsed(LEAF_3)).toBe(true);
     expect(state.statefulLeavesUsed).toBe(3);
     // SURGICAL: unlike every other landed action, revocation must NOT advance
     // the action nonce.
@@ -514,16 +541,18 @@ describe("Shrincs SDK live-anvil smoke", () => {
     try {
       await client.execute(
         { target: RECIPIENT, value: parseEther("0.01") },
-        { leaf: 3 }
+        { leaf: LEAF_3 }
       );
     } catch (e) {
       caught = e;
     }
     expect(caught).toBeInstanceOf(StaleStatefulLeafError);
 
-    // The untouched leaf 4 still works normally afterward.
+    // The untouched LEAF_4 still works normally afterward: it is the lowest free
+    // signing leaf, so the auto-pick lands there.
     await client.execute({ target: RECIPIENT, value: parseEther("0.01") });
     const final = await client.getWalletState();
+    expect(await client.isStatefulLeafUsed(LEAF_4)).toBe(true);
     expect(final.statefulLeavesUsed).toBe(4);
     expect(final.actionNonce).toBe(1n); // only the execute advanced it
   }, 120_000);
@@ -564,19 +593,20 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxFeePerGas,
       maxPriorityFeePerGas,
     });
-    // Signed at leaf 1 (lowest unused), binding actionNonce 0 — now OUTSTANDING.
+    // Signed at LEAF_1 (lowest unused signing leaf), binding actionNonce 0 —
+    // now OUTSTANDING.
     const signed = await client.signExecuteUserOp({
       userOp,
       entryPoint: CANONICAL_ENTRYPOINT_V07,
       owner: ownerAccount,
     });
-    expect(signed.leaf).toBe(1);
+    expect(signed.leaf).toBe(LEAF_1);
 
-    // Revoke leaf 3 while the op is in flight. The auth leaf must be forced
-    // OFF leaf 1: the bitmap still shows leaf 1 free (the op hasn't landed),
+    // Revoke LEAF_3 while the op is in flight. The auth leaf must be forced
+    // OFF LEAF_1: the bitmap still shows LEAF_1 free (the op hasn't landed),
     // and the client cannot know it signed off-chain — this is the documented
     // client-side leaf discipline.
-    await client.markLeavesUsed({ leaves: [3] }, { leaf: 2 });
+    await client.markLeavesUsed({ leaves: [LEAF_3] }, { leaf: LEAF_2 });
     expect((await client.getWalletState()).actionNonce).toBe(0n);
 
     // The pre-signed op still lands: revocation superseded nothing.
@@ -609,9 +639,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(recipientAfter - recipientBefore).toBe(value);
 
     const final = await client.getWalletState();
-    expect(await client.isStatefulLeafUsed(1)).toBe(true); // the landed op
-    expect(await client.isStatefulLeafUsed(2)).toBe(true); // revocation auth
-    expect(await client.isStatefulLeafUsed(3)).toBe(true); // revoked target
+    expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(true); // the landed op
+    expect(await client.isStatefulLeafUsed(LEAF_2)).toBe(true); // revocation auth
+    expect(await client.isStatefulLeafUsed(LEAF_3)).toBe(true); // revoked target
     expect(final.actionNonce).toBe(1n); // only the landed op advanced it
   }, 180_000);
 

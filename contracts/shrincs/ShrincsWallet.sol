@@ -991,11 +991,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @inheritdoc IShrincsWallet
     function remainingStatefulSignatures() external view returns (uint32) {
         Storage.Layout storage $ = Storage.layout();
+        // Signing budget excludes the reserved deploy-leaf range
+        // `[1..MAX_DEPLOY_CHAINS]` (e3r): usable signing leaves are
+        // `(MAX_DEPLOY_CHAINS .. maxSignatures]`.
+        uint32 budget = $.maxSignatures > MAX_DEPLOY_CHAINS
+            ? $.maxSignatures - MAX_DEPLOY_CHAINS
+            : 0;
         // Saturating: the leaf bitmap is the real anti-replay mechanism; this
         // counter is advisory, so it must never revert even if it ever drifts
-        // above `maxSignatures`.
-        if ($.statefulLeavesUsed >= $.maxSignatures) return 0;
-        return $.maxSignatures - $.statefulLeavesUsed;
+        // above the signing budget.
+        if ($.statefulLeavesUsed >= budget) return 0;
+        return budget - $.statefulLeavesUsed;
     }
 
     /// @inheritdoc IShrincsWallet

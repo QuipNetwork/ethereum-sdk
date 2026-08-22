@@ -36,7 +36,7 @@ import {
   WalletAlreadyExistsError,
 } from "../errors.js";
 import { assertProviderState, boundChain } from "../internal/providerState.js";
-import { getShrincsAddresses } from "./addresses.js";
+import { deployVaultSalt, getShrincsAddresses } from "./addresses.js";
 import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
@@ -142,21 +142,19 @@ export class ShrincsFactoryClient {
 
     const vaultId = params.vaultId ?? randomVaultId();
 
-    const existing = (await withDecodedError(
-      this.publicClient.readContract({
-        address: this.factoryAddress,
-        abi: walletFactoryAbi,
-        functionName: "wallets",
-        args: [vaultId],
-      })
-    )) as Address;
-    if (existing !== zeroAddress) {
-      throw new WalletAlreadyExistsError(vaultId);
-    }
-
     const mainKey = params.signer.recoverKeyPair(vaultId, {
       maxSignatures: params.maxSignatures,
     });
+
+    // The factory keys its registry by the commitment-bound deploy salt (`e3r`),
+    // so an existing-wallet check must look up `(vaultId, mainCommitment)`.
+    const existing = await this.getShrincsWalletAddress(
+      vaultId,
+      mainKey.publicKeyCommitment
+    );
+    if (existing !== zeroAddress) {
+      throw new WalletAlreadyExistsError(vaultId);
+    }
 
     // Resolve the ERC-1271 verifier commitment from whichever explicit form the
     // caller chose — never inferred from the main key/vaultId.
@@ -264,14 +262,22 @@ export class ShrincsFactoryClient {
     });
   }
 
-  /// Resolve an existing wallet by `vaultId`, asserting `signer` reproduces the
-  /// installed main-key commitment (`CommitmentMismatchError` otherwise), and
-  /// return a bound `ShrincsWalletClient`.
+  /// Resolve an existing wallet by `(vaultId, maxSignatures)`, asserting `signer`
+  /// reproduces the installed main-key commitment (`CommitmentMismatchError`
+  /// otherwise), and return a bound `ShrincsWalletClient`. `maxSignatures` is
+  /// required: under `e3r` the wallet address binds to the main-key commitment,
+  /// which depends on the key's leaf budget, so it cannot be recovered from the
+  /// vault id alone.
   async getShrincsWallet(
     vaultId: Hex,
-    signer: ShrincsSigner
+    signer: ShrincsSigner,
+    maxSignatures: number
   ): Promise<ShrincsWalletClient> {
-    const walletAddress = await this.getShrincsWalletAddress(vaultId);
+    const keypair = signer.recoverKeyPair(vaultId, { maxSignatures });
+    const walletAddress = await this.getShrincsWalletAddress(
+      vaultId,
+      keypair.publicKeyCommitment
+    );
     if (walletAddress === zeroAddress) {
       throw new NoVaultFoundError(vaultId);
     }
@@ -286,9 +292,6 @@ export class ShrincsFactoryClient {
     });
 
     const state = await client.getWalletState();
-    const keypair = signer.recoverKeyPair(vaultId, {
-      maxSignatures: state.maxSignatures,
-    });
     if (
       keypair.publicKeyCommitment.toLowerCase() !==
       state.shrincsPublicKeyCommitment.toLowerCase()
@@ -301,13 +304,19 @@ export class ShrincsFactoryClient {
     return client;
   }
 
-  async getWalletState(vaultId: Hex): Promise<{
+  async getWalletState(
+    vaultId: Hex,
+    mainCommitment: Hex
+  ): Promise<{
     keyVersion: number;
     shrincsPublicKeyCommitment: Hex;
     maxSignatures: number;
     hashSuite: number;
   } | null> {
-    const walletAddress = await this.getShrincsWalletAddress(vaultId);
+    const walletAddress = await this.getShrincsWalletAddress(
+      vaultId,
+      mainCommitment
+    );
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
     return {
@@ -322,7 +331,10 @@ export class ShrincsFactoryClient {
     vaultId: Hex;
     keypair: ShrincsKeyPair;
   }): Promise<ShrincsWalletClient | null> {
-    const walletAddress = await this.getShrincsWalletAddress(params.vaultId);
+    const walletAddress = await this.getShrincsWalletAddress(
+      params.vaultId,
+      params.keypair.publicKeyCommitment
+    );
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
     if (
@@ -345,14 +357,20 @@ export class ShrincsFactoryClient {
     });
   }
 
-  /// The factory-registered wallet address for `vaultId` (`zeroAddress` if none).
-  async getShrincsWalletAddress(vaultId: Hex): Promise<Address> {
+  /// The factory-registered wallet address for `(vaultId, mainCommitment)`
+  /// (`zeroAddress` if none). Under `e3r` the factory keys its registry by the
+  /// commitment-bound deploy salt, so resolving a wallet requires the main-key
+  /// commitment, not the vault id alone.
+  async getShrincsWalletAddress(
+    vaultId: Hex,
+    mainCommitment: Hex
+  ): Promise<Address> {
     return withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
         abi: walletFactoryAbi,
         functionName: "wallets",
-        args: [vaultId],
+        args: [deployVaultSalt(vaultId, mainCommitment)],
       })
     ) as Promise<Address>;
   }

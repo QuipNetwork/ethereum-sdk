@@ -29,7 +29,7 @@ import {
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { tryMulticall } from "../internal/multicall.js";
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
-import { HASH_SUITE_KECCAK_256 } from "./constants.js";
+import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "./constants.js";
 import {
   AuthLeafInTargetsError,
   CommitmentMismatchError,
@@ -282,34 +282,38 @@ export class ShrincsWalletClient {
     ) as Promise<boolean>;
   }
 
-  /// Lowest unused stateful leaf in `1..maxSignatures` for the current key
-  /// epoch, found by scanning the on-chain bitmap via multicall. Throws
-  /// `StatefulBudgetExhaustedError` if every leaf is consumed (or every free
-  /// leaf is excluded). `exclude` skips leaves the bitmap considers free but
-  /// that must not sign — e.g. `markLeavesUsed` targets, whose one-time keys
+  /// Lowest unused stateful signing leaf in `MAX_DEPLOY_CHAINS + 1 ..
+  /// maxSignatures` for the current key epoch, found by scanning the on-chain
+  /// bitmap via multicall. Leaves `[1..MAX_DEPLOY_CHAINS]` are reserved for
+  /// deploy authorizations (`e3r`) and never sign. Throws
+  /// `StatefulBudgetExhaustedError` if every signing leaf is consumed (or every
+  /// free leaf is excluded). `exclude` skips leaves the bitmap considers free
+  /// but that must not sign — e.g. `markLeavesUsed` targets, whose one-time keys
   /// have typically already signed an off-chain message.
   async lowestUnusedLeaf(
     maxSignatures: number,
     statefulLeavesUsed: number,
     exclude?: ReadonlySet<number>
   ): Promise<number> {
-    if (statefulLeavesUsed >= maxSignatures) {
+    const signingBudget = Math.max(0, maxSignatures - MAX_DEPLOY_CHAINS);
+    if (statefulLeavesUsed >= signingBudget) {
       throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
     }
     const used = await this.fetchUsedLeaves(maxSignatures);
-    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
+    for (let leaf = MAX_DEPLOY_CHAINS + 1; leaf <= maxSignatures; leaf++) {
       if (exclude?.has(leaf)) continue;
       if (!used.has(leaf)) return leaf;
     }
     throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
   }
 
-  /// The set of `1..maxSignatures` leaves the on-chain bitmap reports as used,
-  /// read in one multicall. A leaf whose status could not be read is treated as
-  /// used: never sign at a leaf that is not confirmed free.
+  /// The set of signing leaves in `MAX_DEPLOY_CHAINS + 1 .. maxSignatures` the
+  /// on-chain bitmap reports as used, read in one multicall. A leaf whose status
+  /// could not be read is treated as used: never sign at a leaf that is not
+  /// confirmed free. The reserved deploy-leaf range is never scanned (`e3r`).
   private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
     const calls = [];
-    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
+    for (let leaf = MAX_DEPLOY_CHAINS + 1; leaf <= maxSignatures; leaf++) {
       calls.push({
         address: this.walletAddress,
         abi: shrincsWalletAbi,
@@ -321,7 +325,9 @@ export class ShrincsWalletClient {
     const used = new Set<number>();
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      if (!(r && r.status === "success" && r.result === false)) used.add(i + 1);
+      // Result index `i` maps to the signing leaf `MAX_DEPLOY_CHAINS + 1 + i`.
+      const leaf = MAX_DEPLOY_CHAINS + 1 + i;
+      if (!(r && r.status === "success" && r.result === false)) used.add(leaf);
     }
     return used;
   }
@@ -481,6 +487,22 @@ export class ShrincsWalletClient {
       state.maxSignatures,
       state.shrincsPublicKeyCommitment
     );
+    // Validate the excluded leaves BEFORE reserving. `excludeLeaves` carries the
+    // revocation targets (`markLeavesUsed`), which must be valid signing leaves
+    // `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]` (`e3r`). Rejecting a malformed
+    // target here — before any leaf is reserved or signed — means a rejected
+    // call never burns a one-time signing leaf.
+    if (excludeLeaves) {
+      for (const target of excludeLeaves) {
+        if (
+          !Number.isInteger(target) ||
+          target <= MAX_DEPLOY_CHAINS ||
+          target > state.maxSignatures
+        ) {
+          throw new LeafOutOfRangeError(target, state.maxSignatures);
+        }
+      }
+    }
     // Reserve the leaf in-process before signing so a sign-then-retry with a
     // changed payload (first tx not yet landed, bitmap still shows the leaf
     // free) cannot sign a second message at the same one-time leaf. An explicit
@@ -494,7 +516,14 @@ export class ShrincsWalletClient {
       leaf = keyOpts.leaf;
       await reserveExplicitLeaf(this.leafReservations, reservationKey, leaf);
     } else {
-      if (state.statefulLeavesUsed >= state.maxSignatures) {
+      // The signing budget excludes the reserved deploy-leaf range
+      // `[1..MAX_DEPLOY_CHAINS]` (`e3r`); usable signing leaves are
+      // `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
+      const signingBudget = Math.max(
+        0,
+        state.maxSignatures - MAX_DEPLOY_CHAINS
+      );
+      if (state.statefulLeavesUsed >= signingBudget) {
         throw new StatefulBudgetExhaustedError(
           state.maxSignatures,
           state.statefulLeavesUsed
@@ -506,7 +535,8 @@ export class ShrincsWalletClient {
         reservationKey,
         (candidate) =>
           used.has(candidate) || (excludeLeaves?.has(candidate) ?? false),
-        state.maxSignatures
+        state.maxSignatures,
+        MAX_DEPLOY_CHAINS + 1
       );
     }
     return {
@@ -742,19 +772,11 @@ export class ShrincsWalletClient {
     if (opts.leaf !== undefined && targetSet.has(opts.leaf)) {
       throw new AuthLeafInTargetsError(opts.leaf);
     }
+    // `prepareStatefulOp` validates the target leaves (its `excludeLeaves`) and
+    // reserves the authorizing leaf only after they pass, so a malformed target
+    // never burns a signing leaf. All guards run BEFORE signing.
     const { keypair, state, leaf, domainSeparator: ds } =
       await this.prepareStatefulOp(opts, targetSet);
-    // All guards run BEFORE signing: a signed-then-aborted call would itself
-    // leave a leaf needing revocation.
-    for (const target of leaves) {
-      if (
-        !Number.isInteger(target) ||
-        target < 1 ||
-        target > state.maxSignatures
-      ) {
-        throw new LeafOutOfRangeError(target, state.maxSignatures);
-      }
-    }
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
