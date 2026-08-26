@@ -122,31 +122,33 @@ contract ShrincsWalletCodec_boundsCheck is ShrincsWalletCodecTest {
         codec.exposed_decodeUpgradeAuth(data);
     }
 
-    /* ─────────────────────────── decodeErc1271Signature ────────────────────────── */
+    /* ───────────────────────── tryDecodeErc1271Signature ───────────────────────── */
 
-    function test_decodeErc1271Signature_boundsHappyPath() public view {
+    // The ERC-1271 decoder is non-reverting (`tryDecodeErc1271Signature`): out-of-bounds tail
+    // offsets return `ok == false` instead of reverting, so a staticcalling relying contract is
+    // never DoS'd. The same bounds are still enforced — a malformed blob never decodes.
+    function test_tryDecodeErc1271Signature_boundsHappyPath() public view {
         SHRINCS.PublicKey memory pk = _samplePublicKey();
         bytes memory blob = abi.encode(pk, _sampleStatelessSig(), hex"1b");
-        (SHRINCS.PublicKey memory dpk,,) = codec.exposed_decodeErc1271Signature(blob);
+        (bool ok, SHRINCS.PublicKey memory dpk,,) = codec.exposed_tryDecodeErc1271Signature(blob);
+        assertTrue(ok, "well-formed blob decodes");
         _assertPkEq(dpk, pk);
     }
 
-    function test_decodeErc1271Signature_revertsWhen_tailOffsetOutOfBounds() public {
+    function test_tryDecodeErc1271Signature_notOkWhen_tailOffsetOutOfBounds() public view {
         // Head is 0x60 (three offset words); point the first past the slice end.
         bytes memory blob = bytes.concat(bytes32(uint256(0x60)), bytes32(0), bytes32(0));
         // Reading the pointed-to head word needs 0x60 + 0x20 = 0x80 bytes; the slice is 0x60.
-        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0x80, 0x60));
-        codec.exposed_decodeErc1271Signature(blob);
+        (bool ok,,,) = codec.exposed_tryDecodeErc1271Signature(blob);
+        assertFalse(ok, "out-of-bounds tail offset rejected without reverting");
     }
 
-    function test_decodeErc1271Signature_revertsWhen_ecdsaSigLengthOversized() public {
+    function test_tryDecodeErc1271Signature_notOkWhen_ecdsaSigLengthOversized() public view {
         // All three offsets in range, but the ecdsaSig length word is oversized.
         bytes memory blob = bytes.concat(
             bytes32(uint256(0x60)), bytes32(uint256(0x60)), bytes32(uint256(0x60)), bytes32(type(uint256).max)
         );
-        // Diagnostic `expected` = off + 0x20 + length wraps mod 2^256 for the max-value length;
-        // the revert still carries MalformedPayload with the real slice length as `actual`.
-        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0x7f, 0x80));
-        codec.exposed_decodeErc1271Signature(blob);
+        (bool ok,,,) = codec.exposed_tryDecodeErc1271Signature(blob);
+        assertFalse(ok, "oversized ecdsaSig length rejected without reverting");
     }
 }
