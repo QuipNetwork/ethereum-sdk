@@ -14,7 +14,14 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { type Address, type Hex, encodeAbiParameters, keccak256 } from "viem";
+import {
+  type Address,
+  type Hex,
+  concat,
+  encodeAbiParameters,
+  keccak256,
+  slice,
+} from "viem";
 
 import {
   CANONICAL_ENTRYPOINT_V07,
@@ -113,6 +120,40 @@ export function quipDeployChainIndex(chainId: number): number {
   const pos = DEPLOY_CHAIN_ORDER.indexOf(chainId);
   if (pos === -1) throw new UnsupportedNetworkError(chainId);
   return pos + 1;
+}
+
+/// The 6-byte `QSalt1` marker (ASCII "QSalt1") that prefixes a QSalt1 vault id.
+/// Mirrors the Solidity `QSALT1_PREFIX`. A salt carrying this prefix is a
+/// commitment-identity salt whose low 26 bytes are `qsalt1Tail`.
+export const QSALT1_PREFIX = "0x5153616c7431" as Hex;
+
+/// The identity-binding vault id (`QSalt1`): 32 bytes =
+/// `QSALT1_PREFIX(6) ‖ tail(26)`, where `tail` is the LOW 26 bytes of
+/// `keccak256(abi.encode(statefulC, statelessC, owner))`. Binds the vault id to
+/// the stateful/stateless commitments and the intended owner, so the
+/// counterfactual address is a function of the wallet's identity. MUST match the
+/// on-chain `ShrincsWalletCodec.qsalt1VaultId` byte-for-byte.
+export function qsalt1VaultId(
+  statefulC: Hex,
+  statelessC: Hex,
+  owner: Address
+): Hex {
+  const digest = keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "bytes32" }, { type: "address" }],
+      [statefulC, statelessC, owner]
+    )
+  );
+  // Low 26 bytes: keccak bytes [6..32). The high 6 bytes are dropped so the
+  // prefix occupies [0..6) — matching Solidity `keccak256(...) << 48` truncated
+  // to `bytes26`.
+  return concat([QSALT1_PREFIX, slice(digest, 6, 32)]);
+}
+
+/// True when `salt` carries the `QSalt1` marker in its high 6 bytes. Mirrors the
+/// Solidity `isQSalt1Salt` (`bytes6(salt) == QSALT1_PREFIX`).
+export function isQSalt1Salt(salt: Hex): boolean {
+  return slice(salt, 0, 6).toLowerCase() === QSALT1_PREFIX.toLowerCase();
 }
 
 /// The CREATE3 deploy salt for a SHRINCS wallet (`e3r`). Binds the vault to the

@@ -10,9 +10,12 @@ import {
   CANONICAL_ENTRYPOINT_V07,
   DEPLOY_CHAIN_ORDER,
   NETWORK_ADDRESSES,
+  QSALT1_PREFIX,
   deployVaultSalt,
   getShrincsAddresses,
   getShrincsWalletAddress,
+  isQSalt1Salt,
+  qsalt1VaultId,
   quipDeployChainIndex,
 } from "../addresses.js";
 import { MAX_DEPLOY_CHAINS } from "../constants.js";
@@ -93,6 +96,54 @@ describe("quipDeployChainIndex", () => {
 
   it("holds no duplicate chain (each maps to one deploy leaf)", () => {
     expect(new Set(DEPLOY_CHAIN_ORDER).size).toBe(DEPLOY_CHAIN_ORDER.length);
+  });
+});
+
+describe("QSalt1 identity codec (byte-exact with Solidity)", () => {
+  // Fixed fixture shared with the Solidity golden test
+  // (test/ShrincsWallet/behaviors/identity.t.sol).
+  const statefulC = `0x${"11".repeat(32)}` as const;
+  const statelessC = `0x${"22".repeat(32)}` as const;
+  const owner = "0x00000000000000000000000000000000000000AA" as const;
+
+  // The 32-byte vault id for the fixture, pinned. BOTH sides must return this
+  // exact value — it is what proves the truncation and the ABI encoding agree.
+  const GOLDEN =
+    "0x5153616c743187fa095d9004d2c66b2770cce3714f8805f2484e9083e41b0764";
+
+  it("QSALT1_PREFIX is the 6 ASCII bytes of \"QSalt1\"", () => {
+    expect(QSALT1_PREFIX).toBe("0x5153616c7431");
+  });
+
+  it("qsalt1VaultId matches the cross-language golden", () => {
+    expect(qsalt1VaultId(statefulC, statelessC, owner)).toBe(GOLDEN);
+  });
+
+  it("qsalt1VaultId is 32 bytes prefixed by QSALT1_PREFIX", () => {
+    const id = qsalt1VaultId(statefulC, statelessC, owner);
+    expect((id.length - 2) / 2).toBe(32);
+    expect(id.slice(0, 14)).toBe(QSALT1_PREFIX);
+  });
+
+  it("qsalt1VaultId binds each input", () => {
+    const base = qsalt1VaultId(statefulC, statelessC, owner);
+    expect(qsalt1VaultId(`0x${"33".repeat(32)}`, statelessC, owner)).not.toBe(base);
+    expect(qsalt1VaultId(statefulC, `0x${"44".repeat(32)}`, owner)).not.toBe(base);
+    expect(
+      qsalt1VaultId(statefulC, statelessC, "0x00000000000000000000000000000000000000bb")
+    ).not.toBe(base);
+  });
+
+  it("isQSalt1Salt is true for a QSalt1 vault id", () => {
+    expect(isQSalt1Salt(GOLDEN)).toBe(true);
+    expect(isQSalt1Salt(qsalt1VaultId(statefulC, statelessC, owner))).toBe(true);
+  });
+
+  it("isQSalt1Salt is false for a non-prefixed 32-byte value", () => {
+    expect(isQSalt1Salt(keccak256(toHex("not-a-qsalt1-salt")))).toBe(false);
+    expect(
+      isQSalt1Salt("0x0000000000000000000000000000000000000000000000000000000000000001")
+    ).toBe(false);
   });
 });
 
