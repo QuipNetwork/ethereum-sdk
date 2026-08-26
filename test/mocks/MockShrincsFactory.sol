@@ -8,18 +8,18 @@ contract MockShrincsFactory {
     mapping(bytes32 codehash => uint256 index) internal _vettedIndex;
     mapping(bytes32 codehash => bool deprecated) public deprecatedImpls;
     mapping(address wallet => address owner) public lastOwnerUpdate;
-    mapping(address => bytes32) private _vaultId;
+    mapping(address => bytes32) private _commitment;
 
     function setExecuteFee(uint256 fee) external {
         executeFee = fee;
     }
 
-    function setVaultId(address w, bytes32 id) external {
-        _vaultId[w] = id;
+    function setCommitment(address w, bytes32 id) external {
+        _commitment[w] = id;
     }
 
-    function vaultIdOf(address w) external view returns (bytes32) {
-        return _vaultId[w];
+    function commitmentOf(address w) external view returns (bytes32) {
+        return _commitment[w];
     }
 
     function vet(bytes32 codehash, uint256 index) external {

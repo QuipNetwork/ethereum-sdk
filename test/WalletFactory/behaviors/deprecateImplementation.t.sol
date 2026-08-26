@@ -94,7 +94,7 @@ contract WalletFactory_deprecateImplementation is WalletFactoryTest {
 
         vm.prank(ALICE);
         vm.expectRevert(IWalletFactory.NoActiveImplementation.selector);
-        factory.deployLatestWalletProxy(keccak256("same-codehash vault"), COMMITMENT, payable(ALICE), "");
+        factory.deployLatestWalletProxy(keccak256("same-codehash vault"), payable(ALICE), "");
     }
 
     // ── Reverts ──────────────────────────────────────────────────────

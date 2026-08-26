@@ -77,19 +77,18 @@ library ShrincsWalletCodec {
         keccak256("quip.shrincs.rotation.transferOwnership");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*                    IDENTITY (QSalt1)                   */
+    /*                    IDENTITY (V1)                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev The 6-byte `QSalt1` marker (ASCII "QSalt1") that prefixes a QSalt1
-    ///      vault id. A CREATE3 salt carrying this prefix is a commitment-identity
-    ///      salt whose low 26 bytes are `qsalt1Tail`.
-    bytes6 internal constant QSALT1_PREFIX = 0x5153616c7431;
+    /// @dev 6-byte historical marker (0x5153616c7431). On-wire format is unchanged;
+    ///      only the Solidity identifier is renamed.
+    bytes6 internal constant V1_PREFIX = 0x5153616c7431;
 
     /// @dev The low 26 bytes of `keccak256(abi.encode(statefulC, statelessC, owner))`.
     ///      Left-shifting by 48 bits drops the high 6 bytes, so `bytes26` keeps
     ///      keccak bytes [6..32) — the segment that follows the prefix in a
-    ///      `qsalt1VaultId`.
-    function qsalt1Tail(
+    ///      `v1Commitment`.
+    function v1CommitmentTail(
         bytes32 statefulC,
         bytes32 statelessC,
         address owner
@@ -100,12 +99,12 @@ library ShrincsWalletCodec {
             );
     }
 
-    /// @dev The identity-binding vault id (`QSalt1`): 32 bytes =
-    ///      `QSALT1_PREFIX(6) ‖ qsalt1Tail(26)`. Binds the vault id to the
-    ///      stateful/stateless commitments and the intended owner, so the
+    /// @dev The identity-binding V1 commitment: 32 bytes =
+    ///      `V1_PREFIX(6) ‖ v1CommitmentTail(26)`. Binds the commitment to the
+    ///      stateful/stateless public-key commitments and the intended owner, so the
     ///      counterfactual address is a function of the wallet's identity. Mirrors
-    ///      the SDK `qsalt1VaultId` byte-for-byte.
-    function qsalt1VaultId(
+    ///      the SDK identity helper byte-for-byte.
+    function v1Commitment(
         bytes32 statefulC,
         bytes32 statelessC,
         address owner
@@ -113,15 +112,15 @@ library ShrincsWalletCodec {
         return
             bytes32(
                 abi.encodePacked(
-                    QSALT1_PREFIX,
-                    qsalt1Tail(statefulC, statelessC, owner)
+                    V1_PREFIX,
+                    v1CommitmentTail(statefulC, statelessC, owner)
                 )
             );
     }
 
-    /// @dev True when `salt` carries the `QSalt1` marker in its high 6 bytes.
-    function isQSalt1Salt(bytes32 salt) internal pure returns (bool) {
-        return bytes6(salt) == QSALT1_PREFIX;
+    /// @dev True when `salt` carries the V1 marker in its high 6 bytes.
+    function isV1Commitment(bytes32 salt) internal pure returns (bool) {
+        return bytes6(salt) == V1_PREFIX;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

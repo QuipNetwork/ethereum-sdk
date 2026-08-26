@@ -28,7 +28,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         address bareAddr = address(uint160(uint256(keccak256("bare-shrincs-wallet"))));
         vm.etch(bareAddr, address(impl).code);
         bare = ShrincsWalletHarness(payable(bareAddr));
-        factory.setVaultId(bareAddr, Codec.qsalt1VaultId(mainCommitment, erc1271Commitment, OWNER));
+        factory.setCommitment(bareAddr, Codec.v1Commitment(mainCommitment, erc1271Commitment, OWNER));
     }
 
     function test_initialize_setsState() public {

@@ -6,9 +6,9 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
-/// @dev Identity-binding checks in `initialize`: QSalt1 recompute-and-match, and
+/// @dev Identity-binding checks in `initialize`: V1 recompute-and-match, and
 ///      revert on a non-V1 salt.
-contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
+contract ShrincsWallet_initialize_v1 is ShrincsWalletTest {
     /// @dev Runtime code of a harness whose immutable FACTORY is the mock factory.
     bytes internal _implCode;
     uint256 internal _bareNonce;
@@ -27,17 +27,17 @@ contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
         returns (ShrincsWalletHarness w, address addr)
     {
         addr = address(
-            uint160(uint256(keccak256(abi.encode("bare-qsalt1", ++_bareNonce))))
+            uint160(uint256(keccak256(abi.encode("bare-v1", ++_bareNonce))))
         );
         vm.etch(addr, _implCode);
         w = ShrincsWalletHarness(payable(addr));
     }
 
-    function test_initialize_qsalt1MatchingIdentitySucceeds() public {
+    function test_initialize_v1MatchingIdentitySucceeds() public {
         (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setVaultId(
+        factory.setCommitment(
             bareAddr,
-            Codec.qsalt1VaultId(mainCommitment, erc1271Commitment, OWNER)
+            Codec.v1Commitment(mainCommitment, erc1271Commitment, OWNER)
         );
 
         vm.prank(address(factory));
@@ -56,11 +56,11 @@ contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
         );
     }
 
-    function test_initialize_revertsWhen_qsalt1OwnerMismatch() public {
+    function test_initialize_revertsWhen_v1OwnerMismatch() public {
         (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setVaultId(
+        factory.setCommitment(
             bareAddr,
-            Codec.qsalt1VaultId(mainCommitment, erc1271Commitment, OWNER)
+            Codec.v1Commitment(mainCommitment, erc1271Commitment, OWNER)
         );
         address other = makeAddr("otherOwner");
 
@@ -69,11 +69,11 @@ contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
         bare.initialize(payable(other), _validInitPayload());
     }
 
-    function test_initialize_revertsWhen_qsalt1StatelessMismatch() public {
+    function test_initialize_revertsWhen_v1StatelessMismatch() public {
         (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setVaultId(
+        factory.setCommitment(
             bareAddr,
-            Codec.qsalt1VaultId(mainCommitment, bytes32(uint256(0xdead)), OWNER)
+            Codec.v1Commitment(mainCommitment, bytes32(uint256(0xdead)), OWNER)
         );
 
         vm.prank(address(factory));
@@ -83,7 +83,7 @@ contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
 
     function test_initialize_revertsWhen_nonV1Salt() public {
         (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setVaultId(bareAddr, bytes32(uint256(1)));
+        factory.setCommitment(bareAddr, bytes32(uint256(1)));
 
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.NotV1Commitment.selector);

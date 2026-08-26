@@ -26,7 +26,7 @@ contract WOTSPlusImplementation__verifyInitialState is WOTSPlusImplementationTes
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-verify-vault"), COMMITMENT, payable(ALICE), payload
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-verify-vault"), payable(ALICE), payload
         );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }

@@ -424,7 +424,7 @@ contract Integration_sponsoredTransaction is IntegrationBase {
         vm.deal(BOB, 2 ether);
         vm.prank(BOB);
         address bobWalletAddr =
-            factory.deployLatestWalletProxy{value: 1 ether}(keccak256("bob-vault"), keccak256("e3r-wots-commitment"), payable(BOB), bobInit);
+            factory.deployLatestWalletProxy{value: 1 ether}(keccak256("bob-vault"), payable(BOB), bobInit);
 
         (WOTSPlus.WinternitzAddress memory nextBobPq,) = _generateKeyPair("bob-next-key");
         (WOTSPlus.WinternitzAddress memory nextVerifier,) = _generateKeyPair("bob-next-verifier");

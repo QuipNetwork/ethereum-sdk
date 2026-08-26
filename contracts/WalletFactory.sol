@@ -91,11 +91,11 @@ contract WalletFactory is
     /// @inheritdoc IWalletFactory
     function vetImplementationWithPolicy(
         address impl,
-        bool requiresQSalt1_
+        bool requiresV1_
     ) external onlyOwner {
         bytes32 codehash = _vetImplementation(impl);
-        Storage.layout().requiresQSalt1[codehash] = requiresQSalt1_;
-        emit ImplementationPolicySet(codehash, requiresQSalt1_);
+        Storage.layout().requiresV1[codehash] = requiresV1_;
+        emit ImplementationPolicySet(codehash, requiresV1_);
     }
 
     /// @inheritdoc IWalletFactory
@@ -132,19 +132,17 @@ contract WalletFactory is
 
     /// @inheritdoc IWalletFactory
     function deployLatestWalletProxy(
-        bytes32 vaultId,
         bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) external payable returns (address) {
         address impl = Storage.layout().latestWalletImpl;
         if (impl == address(0)) revert NoActiveImplementation();
-        return _deployProxy(impl, vaultId, commitment, to, payload);
+        return _deployProxy(impl, commitment, to, payload);
     }
 
     /// @inheritdoc IWalletFactory
     function deploySpecificWalletProxy(
-        bytes32 vaultId,
         bytes32 commitment,
         uint256 index,
         address payable to,
@@ -156,7 +154,6 @@ contract WalletFactory is
         return
             _deployProxy(
                 $.vettedWalletImpls[codehash],
-                vaultId,
                 commitment,
                 to,
                 payload
@@ -193,8 +190,8 @@ contract WalletFactory is
     /// @inheritdoc IWalletFactory
     function updateWalletOwner(address newOwner) external {
         Storage.Layout storage $ = Storage.layout();
-        bytes32 vaultId = $.vaultIdOf[msg.sender];
-        if (vaultId == bytes32(0)) revert OnlyWallet();
+        bytes32 commitment = $.commitmentOf[msg.sender];
+        if (commitment == bytes32(0)) revert OnlyWallet();
         if (newOwner == address(0)) revert ZeroAddressOwner();
         // Authoritative read — the factory's own source of truth for
         // who currently owns this wallet. The wallet does not get to pass
@@ -211,15 +208,15 @@ contract WalletFactory is
         }
 
         $.walletOwner[msg.sender] = newOwner;
-        // The per-owner set is keyed by the vaultId (which is the CREATE3 salt). Both
+        // The per-owner set is keyed by the commitment (which is the CREATE3 salt). Both
         // mutations MUST succeed: `salt` is in `oldOwner`'s set (it went there at deploy
         // and moves only here), and `newOwner` cannot already hold it because a salt is
         // globally unique (CREATE3) and lives in at most one owner's set at a time. A
         // `false` return means the registry diverged from `walletOwner` — revert loudly.
         bytes32 salt = $.saltOf[msg.sender];
-        if (!$.vaultIds[oldOwner].remove(salt)) revert RegistryDesync();
-        if (!$.vaultIds[newOwner].add(salt)) revert RegistryDesync();
-        emit WalletOwnerChanged(vaultId, oldOwner, newOwner);
+        if (!$.commitments[oldOwner].remove(salt)) revert RegistryDesync();
+        if (!$.commitments[newOwner].add(salt)) revert RegistryDesync();
+        emit WalletOwnerChanged(commitment, oldOwner, newOwner);
     }
 
     /// @notice Disabled; always reverts with `RenounceDisabled`.
@@ -242,13 +239,13 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-    function wallets(bytes32 vaultId) external view returns (address) {
-        return Storage.layout().wallets[vaultId];
+    function wallets(bytes32 salt) external view returns (address) {
+        return Storage.layout().wallets[salt];
     }
 
     /// @inheritdoc IWalletFactory
-    function vaultIdOf(address wallet) external view returns (bytes32) {
-        return Storage.layout().vaultIdOf[wallet];
+    function commitmentOf(address wallet) external view returns (bytes32) {
+        return Storage.layout().commitmentOf[wallet];
     }
 
     /// @inheritdoc IWalletFactory
@@ -293,31 +290,31 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIdCount(address owner_) external view returns (uint256) {
-        return Storage.layout().vaultIds[owner_].length();
+    function getCommitmentCount(address owner_) external view returns (uint256) {
+        return Storage.layout().commitments[owner_].length();
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIdAt(
+    function getCommitmentAt(
         address owner_,
         uint256 index
     ) external view returns (bytes32) {
-        return Storage.layout().vaultIds[owner_].at(index);
+        return Storage.layout().commitments[owner_].at(index);
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIdIndex(
+    function getCommitmentIndex(
         address owner_,
-        bytes32 vaultId
+        bytes32 commitment
     ) external view returns (uint256) {
-        return Storage.layout().vaultIds[owner_].indexOf(vaultId);
+        return Storage.layout().commitments[owner_].indexOf(commitment);
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIds(
+    function getCommitments(
         address owner_
     ) external view returns (bytes32[] memory) {
-        return Storage.layout().vaultIds[owner_].values();
+        return Storage.layout().commitments[owner_].values();
     }
 
     /// @inheritdoc IWalletFactory
@@ -325,7 +322,7 @@ contract WalletFactory is
         address owner_
     ) external view returns (address[] memory walletAddrs) {
         Storage.Layout storage $ = Storage.layout();
-        bytes32[] memory ids = $.vaultIds[owner_].values();
+        bytes32[] memory ids = $.commitments[owner_].values();
         walletAddrs = new address[](ids.length);
         for (uint256 i = 0; i < ids.length; i++) {
             walletAddrs[i] = $.wallets[ids[i]];
@@ -366,8 +363,7 @@ contract WalletFactory is
     ///      upgrades.
     function _deployProxy(
         address impl,
-        bytes32 vaultId,
-        bytes32, // commitment: folded into the vaultId under QSalt1; retained in the deploy ABI for a later SDK task to remove
+        bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) internal returns (address) {
@@ -382,40 +378,40 @@ contract WalletFactory is
         );
 
         if (to == address(0)) revert ZeroAddressOwner();
-        if (vaultId == bytes32(0)) revert ZeroVaultId();
+        if (commitment == bytes32(0)) revert ZeroCommitment();
         Storage.Layout storage $ = Storage.layout();
         if (msg.value < $.creationFee) {
             revert InsufficientCreationFee(msg.value, $.creationFee);
         }
         uint256 contractValue = msg.value - $.creationFee;
 
-        // CREATE3 salt is the vaultId.
-        bytes32 salt = vaultId;
+        // CREATE3 salt is the commitment.
+        bytes32 salt = commitment;
         // Fail fast: a V1-required impl only deploys at an identity-bound V1 commitment. The wallet's
         // own initialize re-checks this, so non-V1 salts can never take a V1 impl address.
-        if ($.requiresQSalt1[impl.codehash] && !Codec.isQSalt1Salt(vaultId)) {
+        if ($.requiresV1[impl.codehash] && !Codec.isV1Commitment(commitment)) {
             revert NotV1Commitment();
         }
         address contractAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
 
-        // Publish the reverse `vaultIdOf` entry (also the `OnlyWallet` gate for the ownership
+        // Publish the reverse `commitmentOf` entry (also the `OnlyWallet` gate for the ownership
         // callback) BEFORE the call, keyed by address.
-        $.vaultIdOf[contractAddr] = vaultId;
+        $.commitmentOf[contractAddr] = commitment;
         $.saltOf[contractAddr] = salt;
 
         IWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
-        // The registry is keyed by salt, which equals vaultId.
+        // The registry is keyed by salt, which equals commitment.
         $.wallets[salt] = contractAddr;
         $.walletOwner[contractAddr] = to;
         // `.add` cannot return false here: the salt is unique per CREATE3, and a fresh contract
         // address never appeared in any set before. Guard anyway against future Solady changes.
-        if (!$.vaultIds[to].add(salt)) revert RegistryDesync();
+        if (!$.commitments[to].add(salt)) revert RegistryDesync();
 
         emit WalletDeployed(
             msg.value,
             block.timestamp,
-            vaultId,
+            commitment,
             to,
             impl,
             contractAddr

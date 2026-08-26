@@ -31,14 +31,9 @@ contract WalletFactoryTest is Test {
     uint256 public constant CREATION_FEE = 0.01 ether;
     uint256 public constant EXECUTE_FEE = 0.002 ether;
 
-    /// @dev Fixed main-key commitment for deploy calls. Retained in the deploy ABI;
-    ///      the CREATE3 salt is the vaultId (see `_salt`).
-    bytes32 public constant COMMITMENT =
-        keccak256("wallet-factory-test-commitment");
-
-    /// @dev The CREATE3 salt / registry key equals `vaultId`.
-    function _salt(bytes32 vaultId) internal pure returns (bytes32) {
-        return vaultId;
+    /// @dev The CREATE3 salt / registry key equals `commitment`.
+    function _salt(bytes32 commitment) internal pure returns (bytes32) {
+        return commitment;
     }
 
     function setUp() public virtual {
@@ -209,12 +204,12 @@ contract WalletFactoryTest is Test {
         return Codec.encodeInit(disasterKey, ownershipKey, txnPubkeys, recFixed, verifPubkeys);
     }
 
-    function _deployProxyAs(address owner, bytes32 vaultId, bytes memory payload, uint256 deposit)
+    function _deployProxyAs(address owner, bytes32 commitment, bytes memory payload, uint256 deposit)
         internal
         returns (address)
     {
         vm.prank(owner);
-        return factory.deployLatestWalletProxy{value: deposit}(vaultId, COMMITMENT, payable(owner), payload);
+        return factory.deployLatestWalletProxy{value: deposit}(commitment, payable(owner), payload);
     }
 
     /// @dev Encode init payload from a single "pqOwner" key (legacy shim).
@@ -254,9 +249,9 @@ contract WalletFactoryTest is Test {
     }
 
     /// @dev Compute the expected CREATE3 address for a WOTSPlusImplementation
-    function _computeWalletAddress(bytes32 vaultId, address) internal view returns (address) {
-        // CREATE3 salt is the vaultId.
-        return CREATE3.predictDeterministicAddress(_salt(vaultId), address(factory));
+    function _computeWalletAddress(bytes32 commitment, address) internal view returns (address) {
+        // CREATE3 salt is the commitment.
+        return CREATE3.predictDeterministicAddress(_salt(commitment), address(factory));
     }
 
     /// @dev Deploy a fresh uninitialized WOTSPlusImplementation proxy via CREATE3.

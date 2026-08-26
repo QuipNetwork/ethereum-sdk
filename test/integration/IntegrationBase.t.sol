@@ -146,7 +146,7 @@ contract IntegrationBase is Test {
         bytes memory initPayload = _encodeInitPayload(alicePubkey, recoveryKeys);
 
         vm.prank(ALICE);
-        address walletAddr = factory.deployLatestWalletProxy{value: 1 ether}(keccak256("integration-vault"), keccak256("e3r-wots-commitment"), payable(ALICE), initPayload
+        address walletAddr = factory.deployLatestWalletProxy{value: 1 ether}(keccak256("integration-vault"), payable(ALICE), initPayload
         );
         wallet = WOTSPlusImplementation(payable(walletAddr));
 

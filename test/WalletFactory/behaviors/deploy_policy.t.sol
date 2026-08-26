@@ -82,9 +82,9 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         return payload;
     }
 
-    function test_deploySpecificWalletProxy_qsalt1VaultIdSucceeds() public {
-        address to = makeAddr("to-qsalt1");
-        bytes32 vaultId = Codec.qsalt1VaultId(
+    function test_deploySpecificWalletProxy_v1CommitmentSucceeds() public {
+        address to = makeAddr("to-v1");
+        bytes32 commitment = Codec.v1Commitment(
             bytes32(uint256(0x11)),
             bytes32(uint256(0x22)),
             to
@@ -92,43 +92,41 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
 
         address wallet = harness.deploySpecificWalletProxy{
             value: harness.creationFee()
-        }(vaultId, bytes32(uint256(1)), mockIndex, payable(to), "");
+        }(commitment, mockIndex, payable(to), "");
 
         assertTrue(wallet != address(0));
-        assertEq(harness.wallets(vaultId), wallet);
-        assertEq(harness.vaultIdOf(wallet), vaultId);
+        assertEq(harness.wallets(commitment), wallet);
+        assertEq(harness.commitmentOf(wallet), commitment);
     }
 
-    function test_deploySpecificWalletProxy_wotsNonQSalt1Succeeds() public {
+    function test_deploySpecificWalletProxy_wotsNonV1Succeeds() public {
         address to = makeAddr("to-wots");
-        bytes32 vaultId = bytes32(uint256(2));
+        bytes32 commitment = bytes32(uint256(2));
 
         address wallet = harness.deploySpecificWalletProxy{
             value: harness.creationFee()
         }(
-            vaultId,
-            bytes32(uint256(1)),
+            commitment,
             wotsIndex,
             payable(to),
             _buildPayload()
         );
 
         assertTrue(wallet != address(0));
-        assertEq(harness.wallets(vaultId), wallet);
-        assertEq(harness.vaultIdOf(wallet), vaultId);
+        assertEq(harness.wallets(commitment), wallet);
+        assertEq(harness.commitmentOf(wallet), commitment);
     }
 
     function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnV1Impl()
         public
     {
         address to = makeAddr("to-nonv1");
-        bytes32 vaultId = bytes32(uint256(1));
+        bytes32 commitment = bytes32(uint256(1));
         uint256 fee = harness.creationFee();
 
         vm.expectRevert(IWalletFactory.NotV1Commitment.selector);
         harness.deploySpecificWalletProxy{value: fee}(
-            vaultId,
-            bytes32(uint256(1)),
+            commitment,
             mockIndex,
             payable(to),
             ""
