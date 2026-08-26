@@ -194,10 +194,10 @@ contract ShrincsWalletTest is Test {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Signs the wallet's canonical STATEFUL action message with the main key at signing
-    ///      slot `leaf`. The `leaf` argument is a 1-based SIGNING slot: it is offset past the
-    ///      reserved deploy-leaf range (e3r), so slot `k` consumes actual leaf `SIGN_BASE + k`.
-    ///      Callers pass small slot numbers; the wallet consumes/reports `SIGN_BASE + k`, which is
-    ///      why bitmap/event assertions are written as `SIGN_BASE + k`.
+    ///      slot `leaf`. The `leaf` argument is a slot number offset by the arbitrary `SIGN_BASE`,
+    ///      so slot `k` consumes actual leaf `SIGN_BASE + k` (any leaf in `[1..maxSignatures]` is
+    ///      valid). Callers pass small slot numbers; the wallet consumes/reports `SIGN_BASE + k`,
+    ///      which is why bitmap/event assertions are written as `SIGN_BASE + k`.
     function _signStatefulAction(bytes32 actionType, bytes32 payloadHash, uint32 leaf)
         internal
         view
