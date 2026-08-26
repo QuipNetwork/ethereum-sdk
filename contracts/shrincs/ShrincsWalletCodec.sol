@@ -80,27 +80,24 @@ library ShrincsWalletCodec {
     /*                    IDENTITY (V1)                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev 6-byte historical marker (0x5153616c7431). On-wire format is unchanged;
-    ///      only the Solidity identifier is renamed.
-    bytes6 internal constant V1_PREFIX = 0x5153616c7431;
+    /// @dev 4-byte identity marker (ASCII "QV01", 0x51563031) prefixing a V1 commitment.
+    bytes4 internal constant V1_PREFIX = 0x51563031;
 
-    /// @dev The low 26 bytes of `keccak256(abi.encode(statefulC, statelessC, owner))`.
-    ///      Left-shifting by 48 bits drops the high 6 bytes, so `bytes26` keeps
-    ///      keccak bytes [6..32) — the segment that follows the prefix in a
-    ///      `v1Commitment`.
+    /// @dev keccak bytes [4..32) of `keccak256(abi.encode(statefulC, statelessC, owner))` —
+    ///      the 28-byte segment that follows the 4-byte prefix in a `v1Commitment`.
     function v1CommitmentTail(
         bytes32 statefulC,
         bytes32 statelessC,
         address owner
-    ) internal pure returns (bytes26) {
+    ) internal pure returns (bytes28) {
         return
-            bytes26(
-                keccak256(abi.encode(statefulC, statelessC, owner)) << 48
+            bytes28(
+                keccak256(abi.encode(statefulC, statelessC, owner)) << 32
             );
     }
 
     /// @dev The identity-binding V1 commitment: 32 bytes =
-    ///      `V1_PREFIX(6) ‖ v1CommitmentTail(26)`. Binds the commitment to the
+    ///      `V1_PREFIX(4) ‖ v1CommitmentTail(28)`. Binds the commitment to the
     ///      stateful/stateless public-key commitments and the intended owner, so the
     ///      counterfactual address is a function of the wallet's identity. Mirrors
     ///      the SDK identity helper byte-for-byte.
@@ -118,9 +115,9 @@ library ShrincsWalletCodec {
             );
     }
 
-    /// @dev True when `salt` carries the V1 marker in its high 6 bytes.
+    /// @dev True when `salt` carries the V1 marker in its high 4 bytes.
     function isV1Commitment(bytes32 salt) internal pure returns (bool) {
-        return bytes6(salt) == V1_PREFIX;
+        return bytes4(salt) == V1_PREFIX;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

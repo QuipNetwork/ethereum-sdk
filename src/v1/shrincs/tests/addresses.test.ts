@@ -81,10 +81,10 @@ describe("V1 identity codec (byte-exact with Solidity)", () => {
   // The 32-byte commitment for the fixture, pinned. BOTH sides must return this
   // exact value — it is what proves the truncation and the ABI encoding agree.
   const GOLDEN =
-    "0x5153616c743187fa095d9004d2c66b2770cce3714f8805f2484e9083e41b0764";
+    "0x515630318f6887fa095d9004d2c66b2770cce3714f8805f2484e9083e41b0764";
 
-  it("V1_PREFIX is the 6 bytes 0x5153616c7431", () => {
-    expect(V1_PREFIX).toBe("0x5153616c7431");
+  it("V1_PREFIX is the 4 bytes 0x51563031", () => {
+    expect(V1_PREFIX).toBe("0x51563031");
   });
 
   it("v1Commitment matches the cross-language golden", () => {
@@ -94,7 +94,7 @@ describe("V1 identity codec (byte-exact with Solidity)", () => {
   it("v1Commitment is 32 bytes prefixed by V1_PREFIX", () => {
     const id = v1Commitment(statefulC, statelessC, owner);
     expect((id.length - 2) / 2).toBe(32);
-    expect(id.slice(0, 14)).toBe(V1_PREFIX);
+    expect(id.slice(0, 10)).toBe(V1_PREFIX);
   });
 
   it("v1Commitment binds each input", () => {

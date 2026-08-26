@@ -90,12 +90,12 @@ const SHRINCS_SUPPORTED_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
   CHAIN_IDS.MIDL_TESTNET,
 ]);
 
-/// The 6-byte marker (`0x5153616c7431`) that prefixes a V1 commitment.
+/// The 4-byte marker (ASCII "QV01", `0x51563031`) that prefixes a V1 commitment.
 /// Mirrors the Solidity `V1_PREFIX`. A salt carrying this prefix is a
-/// commitment-identity salt whose low 26 bytes are `v1CommitmentTail`.
-export const V1_PREFIX = "0x5153616c7431" as Hex;
+/// commitment-identity salt whose low 28 bytes are `v1CommitmentTail`.
+export const V1_PREFIX = "0x51563031" as Hex;
 
-/// The low 26 bytes of `keccak256(abi.encode(statefulC, statelessC, owner))`.
+/// keccak bytes [4..32) of `keccak256(abi.encode(statefulC, statelessC, owner))`.
 /// MUST match on-chain `ShrincsWalletCodec.v1CommitmentTail` byte-for-byte.
 export function v1CommitmentTail(
   statefulC: Hex,
@@ -108,13 +108,13 @@ export function v1CommitmentTail(
       [statefulC, statelessC, owner]
     )
   );
-  // keccak bytes [6..32). The high 6 bytes are dropped so the prefix occupies
-  // [0..6) — matching Solidity `keccak256(...) << 48` truncated to `bytes26`.
-  return slice(digest, 6, 32);
+  // keccak bytes [4..32). The high 4 bytes are dropped so the prefix occupies
+  // [0..4) — matching Solidity `keccak256(...) << 32` truncated to `bytes28`.
+  return slice(digest, 4, 32);
 }
 
 /// The identity-binding V1 commitment: 32 bytes =
-/// `V1_PREFIX(6) ‖ v1CommitmentTail(26)`. Binds the commitment to the
+/// `V1_PREFIX(4) ‖ v1CommitmentTail(28)`. Binds the commitment to the
 /// stateful/stateless public-key commitments and the intended owner, so the
 /// counterfactual address is a function of the wallet's identity. MUST match the
 /// on-chain `ShrincsWalletCodec.v1Commitment` byte-for-byte.
@@ -126,10 +126,10 @@ export function v1Commitment(
   return concat([V1_PREFIX, v1CommitmentTail(statefulC, statelessC, owner)]);
 }
 
-/// True when `salt` carries the V1 marker in its high 6 bytes. Mirrors the
-/// Solidity `isV1Commitment` (`bytes6(salt) == V1_PREFIX`).
+/// True when `salt` carries the V1 marker in its high 4 bytes. Mirrors the
+/// Solidity `isV1Commitment` (`bytes4(salt) == V1_PREFIX`).
 export function isV1Commitment(salt: Hex): boolean {
-  return slice(salt, 0, 6).toLowerCase() === V1_PREFIX.toLowerCase();
+  return slice(salt, 0, 4).toLowerCase() === V1_PREFIX.toLowerCase();
 }
 
 /// Predict the counterfactual SHRINCS wallet address for

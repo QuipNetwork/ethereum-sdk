@@ -354,11 +354,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ) = _decodeAndValidateInstall(payload);
 
         bytes32 walletCommitment = IWalletFactory(FACTORY).commitmentOf(address(this));
-        // The salt's low 26 bytes are the identity tail. The factory already rejected any salt
+        // The salt's low 28 bytes are the identity tail. The factory already rejected any salt
         // without the V01 prefix, so the wallet only verifies the tail binds its own key-set.
-        // Left-shift drops the 6-byte prefix; bytes26 keeps the 26-byte identity tail.
+        // Left-shift drops the 4-byte prefix; bytes28 keeps the 28-byte identity tail.
         // forge-lint: disable-next-line(unsafe-typecast)
-        if (bytes26(walletCommitment << 48) != Codec.v1CommitmentTail(commitment, erc1271Commitment, newOwner)) {
+        if (bytes28(walletCommitment << 32) != Codec.v1CommitmentTail(commitment, erc1271Commitment, newOwner)) {
             revert IdentityMismatch();
         }
 
