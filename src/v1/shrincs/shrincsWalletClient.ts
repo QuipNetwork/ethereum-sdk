@@ -159,6 +159,26 @@ export interface ExecuteCostEstimate extends CostEstimate {
   executeFee: bigint;
 }
 
+/// An `execute` that has been signed ONCE and priced, but not sent. The leaf
+/// is reserved in this client instance and the signature exists only in
+/// memory until `send()` broadcasts exactly those bytes. See `prepareExecute`.
+export interface PreparedExecute {
+  /// The one-time leaf this op is signed at.
+  leaf: number;
+  /// The signed fee ceiling (`params.maxFee`, or the live fee at prepare time).
+  maxFee: bigint;
+  /// The live `executeFee` read at prepare time.
+  executeFee: bigint;
+  /// ETH the sender attaches: `value + maxFee`.
+  totalValue: bigint;
+  /// `eth_estimateGas` of the signed call with the sender's balance overridden,
+  /// so the quote does not depend on the account currently being funded.
+  estimate: ExecuteCostEstimate;
+  /// Broadcast the prepared call and wait for its receipt. One-shot: a second
+  /// call throws rather than re-signing or re-sending.
+  send(): Promise<TransactionReceipt>;
+}
+
 export interface ShrincsTxKeyOptions {
   /// Override the leaf to sign at. Default: the lowest unused leaf read from the
   /// on-chain bitmap (the bitmap is authoritative — no in-memory burn set).
@@ -640,20 +660,49 @@ export class ShrincsWalletClient {
     return this.send(contractCall, totalValue, opts);
   }
 
-  async estimateExecuteCost(
+  /// Sign an `execute` once, price it, and hand back a `send()` that broadcasts
+  /// those exact bytes. This is the quote-then-send path.
+  ///
+  /// Why not a separate estimate call: a stateful leaf may sign ONE message.
+  /// Quoting by signing, then signing again at send time — with any change to
+  /// the params — would put two different messages under one leaf, which is
+  /// forgeable. Here there is exactly one signature; the estimate is computed
+  /// over it and `send()` reuses it unchanged, so nothing is ever re-signed.
+  ///
+  /// The reservation is per client instance and has no release: a prepared op
+  /// that is never sent leaves its leaf unused on-chain (the bitmap is
+  /// authoritative) but not re-issued by this client, so a later prepare in the
+  /// same process cannot sign a second message at it.
+  async prepareExecute(
     params: ExecuteParams,
     opts: TxOptions & ShrincsTxKeyOptions = {}
-  ): Promise<ExecuteCostEstimate> {
-    const { contractCall, totalValue, executeFee } =
+  ): Promise<PreparedExecute> {
+    const { contractCall, totalValue, executeFee, maxFee, leaf } =
       await this.buildExecuteCall(params, opts);
-    const estimate = await estimateTxCost({
+    const cost = await estimateTxCost({
       publicClient: this.publicClient,
       account: this.account,
       contractCall,
       totalValue,
       opts,
     });
-    return { ...estimate, executeFee };
+    let sent = false;
+    return {
+      leaf,
+      maxFee,
+      executeFee,
+      totalValue,
+      estimate: { ...cost, executeFee },
+      send: () => {
+        if (sent) {
+          return Promise.reject(
+            new Error("prepared execute already sent: prepare a new one")
+          );
+        }
+        sent = true;
+        return this.send(contractCall, totalValue, opts);
+      },
+    };
   }
 
   private async buildExecuteCall(
@@ -663,6 +712,8 @@ export class ShrincsWalletClient {
     contractCall: ContractCallParams;
     totalValue: bigint;
     executeFee: bigint;
+    maxFee: bigint;
+    leaf: number;
   }> {
     const value = params.value ?? 0n;
     const data = params.data ?? "0x";
@@ -707,6 +758,8 @@ export class ShrincsWalletClient {
       ),
       totalValue: value + maxFee,
       executeFee: state.executeFee,
+      maxFee,
+      leaf,
     };
   }
 

@@ -7,16 +7,14 @@ import {
   type Hex,
   type PublicClient,
   type WalletClient,
-  decodeAbiParameters,
   zeroAddress,
 } from "viem";
 
 import {
+  type CreateShrincsWalletParams,
   ShrincsFactoryClient,
-  placeholderInitPayload,
-  placeholderMainCommitment,
 } from "../shrincsFactoryClient.js";
-import { abiTuples, publicKeyCommitment } from "../shrincsCodec.js";
+import { ShrincsSigner } from "../shrincsSigner.js";
 import { ChainChangedError, WalletAlreadyExistsError } from "../../errors.js";
 import { applyGasMultiplier } from "../gas.js";
 import { ImplementationNotVettedError } from "../errors.js";
@@ -27,7 +25,27 @@ const FACTORY = "0x00000000000000000000000000000000000000f1" as Address;
 const IMPLEMENTATION = "0x00000000000000000000000000000000000000e1" as Address;
 const CREATION_FEE = 1_000_000_000_000_000n;
 const VAULT_ID = ("0x" + "77".repeat(32)) as Hex;
-const STATEFUL_PUBLIC_KEY_BYTES = 68;
+const ERC1271_COMMITMENT = ("0x" + "22".repeat(32)) as Hex;
+const MAX_SIGS = 40;
+
+let signer: ShrincsSigner;
+beforeAll(async () => {
+  signer = await ShrincsSigner.create(
+    new TextEncoder().encode("factory-estimate-test")
+  );
+});
+
+function createParams(
+  overrides: Partial<CreateShrincsWalletParams> = {}
+): CreateShrincsWalletParams {
+  return {
+    signer,
+    maxSignatures: MAX_SIGS,
+    vaultId: VAULT_ID,
+    erc1271: { commitment: ERC1271_COMMITMENT },
+    ...overrides,
+  };
+}
 
 interface EstimatedCall {
   address: Address;
@@ -39,7 +57,8 @@ interface EstimatedCall {
 }
 
 interface FakeChainState {
-  wallets: Record<string, Address>;
+  /// Address the factory reports for ANY `wallets(salt)` lookup.
+  existingWallet: Address;
   vettedIndex: bigint;
   implementationCode: Hex;
   gasEstimate: bigint;
@@ -51,7 +70,7 @@ interface FakeChainState {
 
 function fakeChain(overrides: Partial<FakeChainState> = {}) {
   const state: FakeChainState = {
-    wallets: {},
+    existingWallet: zeroAddress,
     vettedIndex: 3n,
     implementationCode: "0xfe01",
     gasEstimate: 400_000n,
@@ -63,8 +82,8 @@ function fakeChain(overrides: Partial<FakeChainState> = {}) {
   };
 
   const estimatedCalls: EstimatedCall[] = [];
+  const writtenCalls: EstimatedCall[] = [];
   let balanceReads = 0;
-  let writes = 0;
 
   const publicClient = {
     getChainId: async () => CHAIN_ID,
@@ -73,20 +92,23 @@ function fakeChain(overrides: Partial<FakeChainState> = {}) {
       balanceReads += 1;
       return 0n;
     },
-    readContract: async ({
-      functionName,
-      args,
-    }: {
-      functionName: string;
-      args?: unknown[];
-    }) => {
-      if (functionName === "wallets") {
-        return state.wallets[String(args?.[0]).toLowerCase()] ?? zeroAddress;
+    readContract: async ({ functionName }: { functionName: string }) => {
+      switch (functionName) {
+        case "wallets":
+          return state.existingWallet;
+        case "getVettedCodeIndex":
+          return state.vettedIndex;
+        case "deprecatedImpls":
+          return false;
+        case "creationFee":
+          return CREATION_FEE;
+        case "deployMode":
+          return 0; // Stateful
+        case "quipDeployChainIndex":
+          return 1;
+        default:
+          throw new Error(`unexpected read: ${functionName}`);
       }
-      if (functionName === "getVettedCodeIndex") return state.vettedIndex;
-      if (functionName === "deprecatedImpls") return false;
-      if (functionName === "creationFee") return CREATION_FEE;
-      throw new Error(`unexpected read: ${functionName}`);
     },
     estimateContractGas: async (call: EstimatedCall) => {
       estimatedCalls.push(call);
@@ -103,9 +125,10 @@ function fakeChain(overrides: Partial<FakeChainState> = {}) {
 
   const walletClient = {
     getAddresses: async () => [ACCOUNT],
-    writeContract: async () => {
-      writes += 1;
-      throw new Error("estimation must not write");
+    // Capture what the create path would broadcast, then refuse to send.
+    writeContract: async (call: EstimatedCall) => {
+      writtenCalls.push(call);
+      throw new Error("test chain does not broadcast");
     },
   } as unknown as WalletClient;
 
@@ -113,35 +136,9 @@ function fakeChain(overrides: Partial<FakeChainState> = {}) {
     publicClient,
     walletClient,
     estimatedCalls,
+    writtenCalls,
     balanceReads: () => balanceReads,
-    writes: () => writes,
   };
-}
-
-const byteLength = (value: Hex) => (value.length - 2) / 2;
-
-function decodePlaceholderBundle() {
-  const [, , bundle] = decodeAbiParameters(
-    [
-      { name: "commitment", type: "bytes32" },
-      { name: "pkSeed", type: "bytes32" },
-      abiTuples.publicKey,
-      { name: "hashSuite", type: "uint32" },
-      { name: "erc1271Commitment", type: "bytes32" },
-      { name: "erc1271HashSuite", type: "uint32" },
-    ],
-    placeholderInitPayload()
-  ) as unknown as [
-    Hex,
-    Hex,
-    {
-      statefulPublicKey: Hex;
-      publicKeyCommitment: Hex;
-      pkSeed: Hex;
-      hypertreeRoot: Hex;
-    }
-  ];
-  return bundle;
 }
 
 function makeClient(chain: ReturnType<typeof fakeChain>) {
@@ -156,21 +153,25 @@ function makeClient(chain: ReturnType<typeof fakeChain>) {
 }
 
 describe("ShrincsFactoryClient.estimateCreationCost", () => {
-  it("prices a deployment without a signer", async () => {
+  it("prices a deployment without broadcasting", async () => {
     const chain = fakeChain();
 
-    const estimate = await makeClient(chain).estimateCreationCost();
+    const estimate = await makeClient(chain).estimateCreationCost(
+      createParams()
+    );
 
     expect(estimate.creationFee).toBe(CREATION_FEE);
     expect(estimate.gasPrice).toBe(2_000_000_000n);
     expect(estimate.gasUnits).toBe(applyGasMultiplier(400_000n, {}));
-    expect(chain.writes()).toBe(0);
+    expect(chain.writtenCalls).toHaveLength(0);
   });
 
   it("reports the likely cost alongside the ceiling", async () => {
     const chain = fakeChain();
 
-    const estimate = await makeClient(chain).estimateCreationCost();
+    const estimate = await makeClient(chain).estimateCreationCost(
+      createParams()
+    );
 
     expect(estimate.expectedGasUnits).toBe(400_000n);
     expect(estimate.expectedGasPrice).toBe(1_400_000_000n + 1n);
@@ -179,54 +180,43 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
     expect(chain.estimatedCalls).toHaveLength(1);
   });
 
-  it("estimates the same deployment call the create path would send", async () => {
+  it("estimates byte-for-byte the deployment call the create path sends", async () => {
     const chain = fakeChain();
+    const client = makeClient(chain);
+    const mainKey = signer.recoverKeyPair(VAULT_ID, { maxSignatures: MAX_SIGS });
 
-    await makeClient(chain).estimateCreationCost({ vaultId: VAULT_ID });
+    await client.estimateCreationCost(createParams());
+    await expect(
+      client.createShrincsWallet(createParams(), {
+        gas: 100_000n,
+        skipPreflightChecks: true,
+      })
+    ).rejects.toThrow("test chain does not broadcast");
 
-    const call = chain.estimatedCalls[0]!;
-    expect(call.address).toBe(FACTORY);
-    expect(call.functionName).toBe("deploySpecificWalletProxy");
-    expect(call.value).toBe(CREATION_FEE);
-    expect(call.account).toBe(ACCOUNT);
-    expect(call.args[0]).toBe(VAULT_ID);
+    const estimated = chain.estimatedCalls[0]!;
+    const written = chain.writtenCalls[0]!;
+    expect(estimated.address).toBe(FACTORY);
+    expect(estimated.functionName).toBe("deploySpecificWalletProxy");
+    expect(estimated.value).toBe(CREATION_FEE);
+    expect(estimated.account).toBe(ACCOUNT);
     // e3r: `deploySpecificWalletProxy(vaultId, commitment, index, to, payload)`.
-    expect(call.args[1]).toBe(placeholderMainCommitment());
-    expect(call.args[2]).toBe(3n);
-    expect(call.args[3]).toBe(ACCOUNT);
-  });
-
-  it("uses a non-zero-byte init payload so gas is not underpriced", async () => {
-    const chain = fakeChain();
-
-    await makeClient(chain).estimateCreationCost();
-
-    const initPayload = chain.estimatedCalls[0]!.args[4];
-    expect(initPayload).toContain("ff".repeat(STATEFUL_PUBLIC_KEY_BYTES));
-  });
-
-  it("builds a bundle whose embedded commitment recomputes", () => {
-    const bundle = decodePlaceholderBundle();
-
-    expect(bundle.publicKeyCommitment).toBe(publicKeyCommitment(bundle));
-  });
-
-  it("builds a bundle with the field widths the wallet requires", () => {
-    const bundle = decodePlaceholderBundle();
-
-    expect(byteLength(bundle.statefulPublicKey)).toBe(
-      STATEFUL_PUBLIC_KEY_BYTES
-    );
-    expect(byteLength(bundle.publicKeyCommitment)).toBe(32);
-    expect(byteLength(bundle.pkSeed)).toBe(32);
-    expect(byteLength(bundle.hypertreeRoot)).toBe(32);
+    expect(estimated.args[0]).toBe(VAULT_ID);
+    expect(estimated.args[1]).toBe(mainKey.publicKeyCommitment);
+    expect(estimated.args[2]).toBe(3n);
+    expect(estimated.args[3]).toBe(ACCOUNT);
+    // The init payload embeds the deploy-authorization signature. Estimating and
+    // deploying sign the same message at the same deploy leaf, so the payloads
+    // (and therefore the signatures) are identical — no divergent second
+    // signature exists for that leaf.
+    expect(written.args).toEqual(estimated.args);
+    expect(written.value).toBe(estimated.value);
   });
 
   it("funds the sender in simulation so an empty account can be quoted", async () => {
     const chain = fakeChain();
 
     await expect(
-      makeClient(chain).estimateCreationCost()
+      makeClient(chain).estimateCreationCost(createParams())
     ).resolves.toBeDefined();
 
     expect(chain.balanceReads()).toBe(0);
@@ -238,7 +228,9 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
   it("falls back to the legacy gas price when EIP-1559 estimation fails", async () => {
     const chain = fakeChain({ maxFeePerGas: undefined });
 
-    const estimate = await makeClient(chain).estimateCreationCost();
+    const estimate = await makeClient(chain).estimateCreationCost(
+      createParams()
+    );
 
     expect(estimate.gasPrice).toBe(7n);
     expect(estimate.expectedGasPrice).toBe(7n);
@@ -247,7 +239,9 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
   it("falls back to the legacy gas price when EIP-1559 returns no cap", async () => {
     const chain = fakeChain({ omitMaxFeePerGas: true });
 
-    const estimate = await makeClient(chain).estimateCreationCost();
+    const estimate = await makeClient(chain).estimateCreationCost(
+      createParams()
+    );
 
     expect(estimate.gasPrice).toBe(7n);
   });
@@ -256,7 +250,7 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
     const chain = fakeChain();
 
     const estimate = await makeClient(chain).estimateCreationCost(
-      {},
+      createParams(),
       { maxFeePerGas: 99n }
     );
 
@@ -268,7 +262,7 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
     const chain = fakeChain();
 
     const estimate = await makeClient(chain).estimateCreationCost(
-      {},
+      createParams(),
       { gasPrice: 55n }
     );
 
@@ -279,7 +273,9 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
   it("quotes one price on a chain with no base fee", async () => {
     const chain = fakeChain({ baseFeePerGas: null });
 
-    const estimate = await makeClient(chain).estimateCreationCost();
+    const estimate = await makeClient(chain).estimateCreationCost(
+      createParams()
+    );
 
     expect(estimate.expectedGasPrice).toBe(estimate.gasPrice);
   });
@@ -295,31 +291,27 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
       walletImplementation: IMPLEMENTATION,
     });
 
-    await expect(client.estimateCreationCost()).rejects.toBeInstanceOf(
-      ChainChangedError
-    );
+    await expect(
+      client.estimateCreationCost(createParams())
+    ).rejects.toBeInstanceOf(ChainChangedError);
   });
 
-  // TODO(e3r): the factory keys wallets by `deployVaultSalt(vaultId, commitment)`,
-  // so a vaultId-only "already claimed" check no longer exists on the client;
-  // re-enable once `estimateCreationCost` is reworked for e3r deploy auth.
-  it.skip("rejects a vaultId that already has a wallet", async () => {
+  it("rejects a (vaultId, commitment) that already has a wallet", async () => {
     const chain = fakeChain({
-      wallets: {
-        [VAULT_ID.toLowerCase()]: "0x00000000000000000000000000000000000000b1",
-      },
+      existingWallet: "0x00000000000000000000000000000000000000b1",
     });
 
     await expect(
-      makeClient(chain).estimateCreationCost({ vaultId: VAULT_ID })
+      makeClient(chain).estimateCreationCost(createParams())
     ).rejects.toBeInstanceOf(WalletAlreadyExistsError);
+    expect(chain.estimatedCalls).toHaveLength(0);
   });
 
   it("rejects an implementation that is not in the vetted set", async () => {
     const chain = fakeChain({ implementationCode: "0x" });
 
     await expect(
-      makeClient(chain).estimateCreationCost()
+      makeClient(chain).estimateCreationCost(createParams())
     ).rejects.toBeInstanceOf(ImplementationNotVettedError);
   });
 });

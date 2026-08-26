@@ -43,7 +43,7 @@ import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
-import { encodeDeployAuth, encodeInitPayload, publicKeyCommitment } from "./shrincsCodec.js";
+import { encodeDeployAuth, encodeInitPayload } from "./shrincsCodec.js";
 import { buildDeployAuthorization } from "./deployAuth.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
@@ -57,36 +57,6 @@ import {
 /// front-runnable across users and chains; random is the only safe default.
 export function randomVaultId(): Hex {
   return toHex(randomBytes(32));
-}
-
-const SHRINCS_PARAMS_STATEFUL_PUBLIC_KEY_BYTES = 68;
-const COMMITMENT_BYTES = 32;
-
-const nonZeroKeyMaterial = (bytes: number): Hex => `0x${"ff".repeat(bytes)}`;
-
-function placeholderBundleWithoutCommitment() {
-  return {
-    statefulPublicKey: nonZeroKeyMaterial(
-      SHRINCS_PARAMS_STATEFUL_PUBLIC_KEY_BYTES
-    ),
-    pkSeed: nonZeroKeyMaterial(COMMITMENT_BYTES),
-    hypertreeRoot: nonZeroKeyMaterial(COMMITMENT_BYTES),
-  };
-}
-
-export function placeholderMainCommitment(): Hex {
-  return publicKeyCommitment(placeholderBundleWithoutCommitment());
-}
-
-export function placeholderInitPayload(): Hex {
-  const bundleWithoutCommitment = placeholderBundleWithoutCommitment();
-  return encodeInitPayload({
-    mainBundle: {
-      ...bundleWithoutCommitment,
-      publicKeyCommitment: publicKeyCommitment(bundleWithoutCommitment),
-    },
-    erc1271Commitment: nonZeroKeyMaterial(COMMITMENT_BYTES),
-  });
 }
 
 /// How the wallet's dedicated ERC-1271 verifier key is specified at creation.
@@ -115,9 +85,11 @@ export interface ShrincsFactoryClientParams {
   walletImplementation?: Address;
 }
 
-export interface EstimateCreationCostParams {
-  vaultId?: Hex;
-}
+/// `estimateCreationCost` prices the exact deployment `createShrincsWallet`
+/// would send, so it takes the same inputs: under `e3r` the wallet address,
+/// the init payload, and the embedded deploy authorization all derive from the
+/// main key, so there is no signer-free quote.
+export type EstimateCreationCostParams = CreateShrincsWalletParams;
 
 export interface CreationCostEstimate extends CostEstimate {
   creationFee: bigint;
@@ -177,79 +149,8 @@ export class ShrincsFactoryClient {
       expectedAccount: this.account,
     });
 
-    const vaultId = params.vaultId ?? randomVaultId();
-
-    const mainKey = params.signer.recoverKeyPair(vaultId, {
-      maxSignatures: params.maxSignatures,
-    });
-
-    // The factory keys its registry by the commitment-bound deploy salt (`e3r`),
-    // so an existing-wallet check must look up `(vaultId, mainCommitment)`.
-    const existing = await this.getShrincsWalletAddress(
-      vaultId,
-      mainKey.publicKeyCommitment
-    );
-    if (existing !== zeroAddress) {
-      throw new WalletAlreadyExistsError(vaultId);
-    }
-
-    // Resolve the ERC-1271 verifier commitment from whichever explicit form the
-    // caller chose — never inferred from the main key/vaultId.
-    let erc1271Commitment: Hex;
-    if ("vaultId" in params.erc1271) {
-      const erc1271Key = params.signer.recoverKeyPair(params.erc1271.vaultId, {
-        maxSignatures: params.erc1271.maxSignatures ?? params.maxSignatures,
-      });
-      erc1271Commitment = erc1271Key.publicKeyCommitment;
-    } else {
-      erc1271Commitment = params.erc1271.commitment;
-    }
-
-    // the factory is the authority for the deploy-auth mode and the
-    // per-chain quipDeployChainIndex; the deploy signature must match exactly
-    // what `initialize` rebuilds and verifies against the factory. Read both
-    // from the factory rather than assuming, so a misconfigured factory fails
-    // loudly instead of producing an unverifiable signature.
-    const [deployModeRaw, chainIndexRaw] = (await Promise.all([
-      withDecodedError(
-        this.publicClient.readContract({
-          address: this.factoryAddress,
-          abi: walletFactoryAbi,
-          functionName: "deployMode",
-        })
-      ),
-      withDecodedError(
-        this.publicClient.readContract({
-          address: this.factoryAddress,
-          abi: walletFactoryAbi,
-          functionName: "quipDeployChainIndex",
-        })
-      ),
-    ])) as [number, number];
-    const mode = deployModeRaw === 0 ? "stateful" : "stateless";
-    const { signature: deploySignature } = buildDeployAuthorization({
-      mainKey,
-      chainId: this.chainId,
-      factoryAddress: this.factoryAddress,
-      vaultId,
-      owner: this.account,
-      erc1271Commitment,
-      quipDeployChainIndex: Number(chainIndexRaw),
-      mode,
-    });
-    const deployAuth = encodeDeployAuth(mainKey.publicKey, deploySignature, mode);
-
-    const initPayload = encodeInitPayload({
-      mainBundle: mainKey.publicKey,
-      erc1271Commitment,
-      deployAuth,
-    });
-
-    const { contractCall, creationFee } = await this.buildDeploymentCall(
-      vaultId,
-      mainKey.publicKeyCommitment,
-      initPayload
-    );
+    const { vaultId, contractCall, creationFee } =
+      await this.buildCreateCall(params);
     const prepared = await prepareTx({
       publicClient: this.publicClient,
       contractParams: contractCall,
@@ -287,8 +188,20 @@ export class ShrincsFactoryClient {
     });
   }
 
+  /// Price the deployment `createShrincsWallet(params)` would send, without
+  /// sending it. Builds the SAME call — same key, same init payload, same
+  /// deploy authorization — and runs it through `eth_estimateGas` with the
+  /// sender's balance overridden, so an empty account can be quoted. Nothing
+  /// is written and no on-chain leaf is consumed.
+  ///
+  /// Signature safety: the deploy authorization is a signature over a message
+  /// fixed by `(chainId, factory, vaultId, owner, erc1271Commitment,
+  /// quipDeployChainIndex)` at the deploy leaf reserved for this chain. The
+  /// estimate and the eventual deployment sign that one identical message at
+  /// that one leaf — a repeated signature of the same message reveals nothing
+  /// new, so this is not one-time-leaf reuse.
   async estimateCreationCost(
-    params: EstimateCreationCostParams = {},
+    params: EstimateCreationCostParams,
     opts: TxOptions = {}
   ): Promise<CreationCostEstimate> {
     await assertProviderState({
@@ -296,18 +209,7 @@ export class ShrincsFactoryClient {
       expectedChainId: this.chainId,
     });
 
-    // TODO(e3r): `placeholderInitPayload()` carries no `deployAuth`, so the
-    // wallet's `initialize` reverts `InvalidDeployAuthorization` under the e3r
-    // deploy-authorization gate and the gas simulation below fails. Estimating
-    // creation cost needs either a signer-built deploy authorization or a
-    // pinned gas constant; tracked as a follow-up on the guard-salt stack.
-    const vaultId = params.vaultId ?? randomVaultId();
-    const initPayload = placeholderInitPayload();
-    const { contractCall, creationFee } = await this.buildDeploymentCall(
-      vaultId,
-      placeholderMainCommitment(),
-      initPayload
-    );
+    const { contractCall, creationFee } = await this.buildCreateCall(params);
     const estimate = await estimateTxCost({
       publicClient: this.publicClient,
       account: this.account,
@@ -436,6 +338,92 @@ export class ShrincsFactoryClient {
         args: [deployVaultSalt(vaultId, mainCommitment)],
       })
     ) as Promise<Address>;
+  }
+
+  /// Everything `createShrincsWallet` and `estimateCreationCost` share: recover
+  /// the main key, refuse an already-deployed `(vaultId, commitment)`, resolve
+  /// the ERC-1271 commitment, sign the deploy authorization against the
+  /// factory's live deploy config, and pack the `deploySpecificWalletProxy` call.
+  private async buildCreateCall(params: CreateShrincsWalletParams): Promise<{
+    vaultId: Hex;
+    mainKey: ShrincsKeyPair;
+    contractCall: ContractCallParams;
+    creationFee: bigint;
+  }> {
+    const vaultId = params.vaultId ?? randomVaultId();
+
+    const mainKey = params.signer.recoverKeyPair(vaultId, {
+      maxSignatures: params.maxSignatures,
+    });
+
+    // The factory keys its registry by the commitment-bound deploy salt (`e3r`),
+    // so an existing-wallet check must look up `(vaultId, mainCommitment)`.
+    const existing = await this.getShrincsWalletAddress(
+      vaultId,
+      mainKey.publicKeyCommitment
+    );
+    if (existing !== zeroAddress) {
+      throw new WalletAlreadyExistsError(vaultId);
+    }
+
+    // Resolve the ERC-1271 verifier commitment from whichever explicit form the
+    // caller chose — never inferred from the main key/vaultId.
+    let erc1271Commitment: Hex;
+    if ("vaultId" in params.erc1271) {
+      const erc1271Key = params.signer.recoverKeyPair(params.erc1271.vaultId, {
+        maxSignatures: params.erc1271.maxSignatures ?? params.maxSignatures,
+      });
+      erc1271Commitment = erc1271Key.publicKeyCommitment;
+    } else {
+      erc1271Commitment = params.erc1271.commitment;
+    }
+
+    // the factory is the authority for the deploy-auth mode and the
+    // per-chain quipDeployChainIndex; the deploy signature must match exactly
+    // what `initialize` rebuilds and verifies against the factory. Read both
+    // from the factory rather than assuming, so a misconfigured factory fails
+    // loudly instead of producing an unverifiable signature.
+    const [deployModeRaw, chainIndexRaw] = (await Promise.all([
+      withDecodedError(
+        this.publicClient.readContract({
+          address: this.factoryAddress,
+          abi: walletFactoryAbi,
+          functionName: "deployMode",
+        })
+      ),
+      withDecodedError(
+        this.publicClient.readContract({
+          address: this.factoryAddress,
+          abi: walletFactoryAbi,
+          functionName: "quipDeployChainIndex",
+        })
+      ),
+    ])) as [number, number];
+    const mode = deployModeRaw === 0 ? "stateful" : "stateless";
+    const { signature: deploySignature } = buildDeployAuthorization({
+      mainKey,
+      chainId: this.chainId,
+      factoryAddress: this.factoryAddress,
+      vaultId,
+      owner: this.account,
+      erc1271Commitment,
+      quipDeployChainIndex: Number(chainIndexRaw),
+      mode,
+    });
+    const deployAuth = encodeDeployAuth(mainKey.publicKey, deploySignature, mode);
+
+    const initPayload = encodeInitPayload({
+      mainBundle: mainKey.publicKey,
+      erc1271Commitment,
+      deployAuth,
+    });
+
+    const { contractCall, creationFee } = await this.buildDeploymentCall(
+      vaultId,
+      mainKey.publicKeyCommitment,
+      initPayload
+    );
+    return { vaultId, mainKey, contractCall, creationFee };
   }
 
   private async buildDeploymentCall(

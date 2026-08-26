@@ -2,12 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { type Hex, keccak256, parseEther, toHex } from "viem";
+import { type Hex, parseEther, toHex } from "viem";
 import { foundry } from "viem/chains";
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 
 import { walletFactoryAbi } from "../../abi/WalletFactory.js";
-import { encodeInitPayload } from "../shrincsCodec.js";
 import {
   type ShrincsAnvilStack,
   SHRINCS_ANVIL_PORTS,
@@ -18,7 +17,7 @@ import {
   stopShrincsAnvilStack,
 } from "./utils/shrincsAnvilFixture.js";
 
-const MAX_SIGS = 4;
+const MAX_SIGS = 40;
 
 let stack: ShrincsAnvilStack;
 
@@ -30,80 +29,53 @@ afterAll(async () => {
   await stopShrincsAnvilStack(stack);
 }, 10_000);
 
-async function gasForDeploymentWithRealKeyMaterial(
-  vaultId: Hex
-): Promise<bigint> {
-  const creationFee = await stack.publicClient.readContract({
-    address: stack.factoryAddress,
-    abi: walletFactoryAbi,
-    functionName: "creationFee",
-  });
-  const signer = await makeShrincsSigner(0x31);
-  const mainKey = signer.recoverKeyPair(vaultId, { maxSignatures: MAX_SIGS });
-  const erc1271Key = signer.recoverKeyPair(("0x" + "31".repeat(32)) as Hex, {
-    maxSignatures: MAX_SIGS,
-  });
-  const code = await stack.publicClient.getCode({
-    address: stack.shrincsWalletImpl,
-  });
-  const index = await stack.publicClient.readContract({
-    address: stack.factoryAddress,
-    abi: walletFactoryAbi,
-    functionName: "getVettedCodeIndex",
-    args: [keccak256(code!)],
-  });
-
-  return stack.publicClient.estimateContractGas({
-    address: stack.factoryAddress,
-    abi: walletFactoryAbi,
-    functionName: "deploySpecificWalletProxy",
-    args: [
-      vaultId,
-      mainKey.publicKeyCommitment,
-      index,
-      stack.account.address,
-      encodeInitPayload({
-        mainBundle: mainKey.publicKey,
-        erc1271Commitment: erc1271Key.publicKeyCommitment,
-      }),
-    ],
-    value: creationFee,
-    account: stack.account.address,
-  });
+/// Distinct main + ERC-1271 vault branches per test so deployments never alias.
+function vaultIds(seedByte: number): { vaultId: Hex; erc1271VaultId: Hex } {
+  const erc1271 = new Uint8Array(32).fill(seedByte);
+  erc1271[0] = seedByte ^ 0xff;
+  return {
+    vaultId: toHex(new Uint8Array(32).fill(seedByte)),
+    erc1271VaultId: toHex(erc1271),
+  };
 }
 
 describe("cost estimation against a live anvil stack", () => {
-  // TODO(e3r): `estimateCreationCost` simulates with `placeholderInitPayload()`,
-  // which carries no `deployAuth`; under the e3r deploy-authorization gate the
-  // wallet's `initialize` reverts `InvalidDeployAuthorization`, so the estimate
-  // cannot be priced. Re-enable with the follow-up on the guard-salt stack
-  // (see the matching TODO in `shrincsFactoryClient.ts`).
-  it.skip("prices a deployment the wallet's initialize accepts, matching real key material", async () => {
-    const vaultId = toHex(new Uint8Array(32).fill(0x31));
+  it("prices the deployment createShrincsWallet then lands", async () => {
+    const signer = await makeShrincsSigner(0x31);
+    const { vaultId, erc1271VaultId } = vaultIds(0x31);
+    const params = {
+      signer,
+      maxSignatures: MAX_SIGS,
+      vaultId,
+      erc1271: { vaultId: erc1271VaultId, maxSignatures: MAX_SIGS },
+    };
+    const factory = makeShrincsFactoryClient(stack);
 
-    const estimate = await makeShrincsFactoryClient(stack).estimateCreationCost(
-      {
-        vaultId,
-      }
-    );
-
+    const estimate = await factory.estimateCreationCost(params);
     expect(estimate.gasUnits).toBeGreaterThan(0n);
     expect(estimate.gasPrice).toBeGreaterThan(0n);
-
-    const realKeyMaterialGas = await gasForDeploymentWithRealKeyMaterial(
-      vaultId
-    );
-    const drift = Math.abs(
-      Number(estimate.expectedGasUnits - realKeyMaterialGas) /
-        Number(realKeyMaterialGas)
-    );
-    expect(drift).toBeLessThan(0.01);
-
-    expect(estimate.gasUnits).toBeGreaterThan(realKeyMaterialGas);
     expect(estimate.expectedGasPrice).toBeLessThanOrEqual(estimate.gasPrice);
+
+    // The same params deploy for real: the deploy authorization signed for the
+    // estimate is the one that lands (same message, same deploy leaf).
+    const client = await factory.createShrincsWallet(params);
+    const state = await client.getWalletState();
+    expect(state.maxSignatures).toBe(MAX_SIGS);
+
+    const receipt = await stack.publicClient.getTransactionReceipt({
+      hash: (await stack.publicClient.getBlock({ includeTransactions: true }))
+        .transactions[0]!.hash,
+    });
+    const drift = Math.abs(
+      Number(estimate.expectedGasUnits - receipt.gasUsed) /
+        Number(receipt.gasUsed)
+    );
+    expect(estimate.expectedGasUnits).toBeGreaterThanOrEqual(receipt.gasUsed);
+    expect(drift).toBeLessThan(0.05);
+    expect(estimate.gasUnits).toBeGreaterThan(receipt.gasUsed);
   }, 180_000);
 
-  it("predicts what an execute actually costs", async () => {
+  it("prepareExecute prices and then sends the one signature it made", async () => {
     await stack.testClient.setBalance({
       address: stack.account.address,
       value: parseEther("100"),
@@ -116,20 +88,29 @@ describe("cost estimation against a live anvil stack", () => {
       value: parseEther("0.01"),
     };
 
-    const estimate = await client.estimateExecuteCost(transfer);
-    const receipt = await client.execute(transfer);
+    const before = (await client.getWalletState()).statefulLeavesUsed;
+    const prepared = await client.prepareExecute(transfer);
+    expect(prepared.estimate.expectedGasUnits).toBeGreaterThan(0n);
+    // Preparing signs in memory only: nothing is consumed on-chain yet.
+    expect((await client.getWalletState()).statefulLeavesUsed).toBe(before);
 
+    const receipt = await prepared.send();
     const drift = Math.abs(
-      Number(estimate.expectedGasUnits - receipt.gasUsed) /
+      Number(prepared.estimate.expectedGasUnits - receipt.gasUsed) /
         Number(receipt.gasUsed)
     );
-    expect(estimate.expectedGasUnits).toBeGreaterThanOrEqual(receipt.gasUsed);
+    expect(prepared.estimate.expectedGasUnits).toBeGreaterThanOrEqual(
+      receipt.gasUsed
+    );
     expect(drift).toBeLessThan(0.05);
-    expect(estimate.gasUnits).toBeGreaterThan(receipt.gasUsed);
+    expect(prepared.estimate.gasUnits).toBeGreaterThan(receipt.gasUsed);
+
+    // Exactly one leaf — the one the estimate was signed at — is consumed.
+    expect((await client.getWalletState()).statefulLeavesUsed).toBe(before + 1);
+    await expect(prepared.send()).rejects.toThrow("already sent");
   }, 180_000);
 
-  // TODO(e3r): see above — placeholder payload lacks `deployAuth`.
-  it.skip("prices a charged deployment for an account holding nothing", async () => {
+  it("prices a charged deployment for an account holding nothing", async () => {
     const factory = makeShrincsFactoryClient(stack);
     const fee = parseEther("0.01");
     const hash = await stack.walletClient.writeContract({
@@ -146,7 +127,14 @@ describe("cost estimation against a live anvil stack", () => {
       value: 0n,
     });
 
-    const estimate = await factory.estimateCreationCost();
+    const signer = await makeShrincsSigner(0x51);
+    const { vaultId, erc1271VaultId } = vaultIds(0x51);
+    const estimate = await factory.estimateCreationCost({
+      signer,
+      maxSignatures: MAX_SIGS,
+      vaultId,
+      erc1271: { vaultId: erc1271VaultId, maxSignatures: MAX_SIGS },
+    });
 
     expect(estimate.creationFee).toBe(fee);
     expect(estimate.gasUnits).toBeGreaterThan(0n);

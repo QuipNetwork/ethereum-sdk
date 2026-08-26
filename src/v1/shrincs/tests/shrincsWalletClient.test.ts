@@ -265,3 +265,132 @@ describe("ShrincsWalletClient setErc1271Key", () => {
     ).rejects.toThrow(ZeroErc1271CommitmentError);
   });
 });
+
+describe("ShrincsWalletClient prepareExecute signs once", () => {
+  interface CapturedCall {
+    functionName: string;
+    args: readonly unknown[];
+    value?: bigint;
+  }
+
+  /// A keypair whose `signStatefulActionAt` is counted and delegated unchanged.
+  function countingKeypair(): {
+    keypair: ShrincsKeyPair;
+    signs: () => number;
+    leaves: () => number[];
+  } {
+    let signs = 0;
+    const leaves: number[] = [];
+    const spy = Object.create(keypair) as ShrincsKeyPair;
+    spy.signStatefulActionAt = (ctx, leaf) => {
+      signs += 1;
+      leaves.push(leaf);
+      return keypair.signStatefulActionAt(ctx, leaf);
+    };
+    return { keypair: spy, signs: () => signs, leaves: () => leaves };
+  }
+
+  function makePrepareClient() {
+    const counted = countingKeypair();
+    const estimated: CapturedCall[] = [];
+    const written: CapturedCall[] = [];
+    const publicClient = {
+      getChainId: async () => CHAIN_ID,
+      getCode: async () => "0x6000" as Hex,
+      multicall: async ({
+        contracts,
+      }: {
+        contracts: readonly { functionName: string }[];
+      }) =>
+        contracts.map((c) => ({
+          status: "success" as const,
+          result: walletRead(c.functionName),
+        })),
+      readContract: async ({ functionName }: { functionName: string }) =>
+        walletRead(functionName),
+      estimateContractGas: async (call: CapturedCall) => {
+        estimated.push(call);
+        return 250_000n;
+      },
+      waitForTransactionReceipt: async () =>
+        ({
+          status: "success",
+          transactionHash: TX_HASH,
+        }) as unknown as TransactionReceipt,
+    } as unknown as PublicClient;
+    const walletClient = {
+      getAddresses: async () => [ACCOUNT],
+      writeContract: async (call: CapturedCall) => {
+        written.push(call);
+        return TX_HASH;
+      },
+    } as unknown as WalletClient;
+    const client = new ShrincsWalletClient({
+      walletAddress: WALLET,
+      publicClient,
+      walletClient,
+      keypair: counted.keypair,
+      vaultId: seed("vault"),
+      chainId: CHAIN_ID,
+      account: ACCOUNT,
+    });
+    return { client, estimated, written, ...counted };
+  }
+
+  // Pinned fee => no fee RPCs; no `gas` => the estimate really simulates.
+  const opts = { skipPreflightChecks: true, maxFeePerGas: 1n } as const;
+  const transfer = { target: WRONG_OWNER, value: 1n } as const;
+
+  it("signs exactly once across prepare + send, and sends the estimated bytes", async () => {
+    const { client, estimated, written, signs, leaves } = makePrepareClient();
+
+    const prepared = await client.prepareExecute(transfer, opts);
+    expect(signs()).toBe(1);
+    expect(prepared.leaf).toBe(leaves()[0]);
+    expect(prepared.leaf).toBeGreaterThan(MAX_DEPLOY_CHAINS);
+    expect(estimated).toHaveLength(1);
+    expect(written).toHaveLength(0);
+
+    await prepared.send();
+    // `send()` re-simulates for gas but never re-signs.
+    expect(signs()).toBe(1);
+    expect(written).toHaveLength(1);
+    expect(written[0]!.functionName).toBe("execute");
+    expect(written[0]!.args).toEqual(estimated[0]!.args);
+    expect(written[0]!.value).toBe(estimated[0]!.value);
+  });
+
+  it("refuses a second send without signing again", async () => {
+    const { client, written, signs } = makePrepareClient();
+
+    const prepared = await client.prepareExecute(transfer, opts);
+    await prepared.send();
+    await expect(prepared.send()).rejects.toThrow("already sent");
+
+    expect(signs()).toBe(1);
+    expect(written).toHaveLength(1);
+  });
+
+  it("hands every prepare and execute on one client a distinct leaf", async () => {
+    const { client, signs, leaves } = makePrepareClient();
+
+    const first = await client.prepareExecute(transfer, opts);
+    const second = await client.prepareExecute(
+      { ...transfer, value: 2n },
+      opts
+    );
+    // A plain execute after two un-sent prepares must not reuse either leaf,
+    // even though the on-chain bitmap (mocked) still reports both as free.
+    await client.execute({ ...transfer, value: 3n }, { ...opts, gas: 100_000n });
+
+    expect(signs()).toBe(3);
+    const used = leaves();
+    expect(new Set(used).size).toBe(3);
+    expect(used[0]).toBe(first.leaf);
+    expect(used[1]).toBe(second.leaf);
+    for (const leaf of used) {
+      expect(leaf).toBeGreaterThan(MAX_DEPLOY_CHAINS);
+      expect(leaf).toBeLessThanOrEqual(MAX_SIG);
+    }
+  });
+});

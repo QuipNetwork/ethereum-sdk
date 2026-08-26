@@ -37,6 +37,7 @@ export type {
   ShrincsTxKeyOptions,
   ExecuteParams,
   ExecuteCostEstimate,
+  PreparedExecute,
   ShrincsCall,
   UserOpEnvelope,
 } from "./shrincsWalletClient.js";
