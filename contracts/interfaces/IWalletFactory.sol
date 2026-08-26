@@ -88,10 +88,9 @@ interface IWalletFactory {
     ///         set has diverged from the factory's `walletOwner` source of
     ///         truth — a "this should never happen" defense-in-depth revert.
     error RegistryDesync();
-    /// @notice Thrown when a QSalt1-gated implementation is deployed at a
-    ///         vaultId that does not carry the QSalt1 prefix and is not on
-    ///         the pre-QSalt1 whitelist.
-    error LegacyNotWhitelisted();
+    /// @notice Thrown when a V1-gated implementation is deployed at a salt that does not carry the
+    ///         V1 commitment prefix (identity-bound salts only).
+    error NotV1Commitment();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
@@ -177,10 +176,6 @@ interface IWalletFactory {
         bytes32 indexed codehash,
         bool requiresQSalt1
     );
-
-    /// @notice Emitted when the pre-QSalt1 whitelist registry address is set.
-    /// @param registry The registry address.
-    event PreQSalt1WalletsUpdated(address indexed registry);
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                        */
@@ -314,11 +309,6 @@ interface IWalletFactory {
     /// @param newFee The new execute fee in wei.
     function setExecuteFee(uint256 newFee) external;
 
-    /// @notice Sets the pre-QSalt1 whitelist registry address.
-    /// @dev Only callable by the current admin. Emits `PreQSalt1WalletsUpdated`.
-    /// @param registry The registry contract address.
-    function setPreQSalt1Wallets(address registry) external;
-
     /// @notice Withdraws accumulated fees from the factory to the admin.
     /// @dev Only callable by the current admin. Reverts if the factory balance is insufficient.
     /// @param amount The amount of ETH in wei to withdraw.
@@ -451,8 +441,4 @@ interface IWalletFactory {
     /// @notice Returns the most recently vetted active implementation address.
     /// @return The latest active wallet implementation address, or `address(0)` if none.
     function latestWalletImpl() external view returns (address);
-
-    /// @notice Returns the pre-QSalt1 whitelist registry address.
-    /// @return The registry address, or `address(0)` if unset.
-    function preQSalt1Wallets() external view returns (address);
 }

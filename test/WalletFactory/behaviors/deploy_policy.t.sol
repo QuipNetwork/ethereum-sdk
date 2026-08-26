@@ -6,7 +6,6 @@ import {WalletFactoryTest} from "../WalletFactory.t.sol";
 import {WalletFactoryHarness} from "../../harness/WalletFactoryHarness.sol";
 import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {IWalletFactory} from "../../../contracts/interfaces/IWalletFactory.sol";
-import {PreQSalt1Wallets} from "../../../contracts/PreQSalt1Wallets.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 
 /// @dev Minimal wallet impl with a distinct codehash from WOTSPlusImplementation.
@@ -18,7 +17,6 @@ contract MockInitWallet {
 
 contract WalletFactory_deploy_policy is WalletFactoryTest {
     WalletFactoryHarness public harness;
-    PreQSalt1Wallets public registry;
     MockInitWallet public mockImpl;
     WOTSPlusImplementation public wotsImpl;
     uint256 public mockIndex;
@@ -33,8 +31,6 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         harness.initialize(payable(ADMIN));
 
         vm.startPrank(ADMIN);
-        registry = new PreQSalt1Wallets(ADMIN);
-        harness.setPreQSalt1Wallets(address(registry));
 
         mockImpl = new MockInitWallet();
         harness.vetImplementationWithPolicy(address(mockImpl), true);
@@ -103,27 +99,6 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         assertEq(harness.vaultIdOf(wallet), vaultId);
     }
 
-    function test_deploySpecificWalletProxy_whitelistedLegacySucceeds() public {
-        address to = makeAddr("to-whitelisted");
-        bytes32 vaultId = bytes32(uint256(1));
-
-        vm.prank(ADMIN);
-        registry.add(
-            vaultId,
-            to,
-            bytes32(uint256(0x11)),
-            bytes32(uint256(0x22))
-        );
-
-        address wallet = harness.deploySpecificWalletProxy{
-            value: harness.creationFee()
-        }(vaultId, bytes32(uint256(1)), mockIndex, payable(to), "");
-
-        assertTrue(wallet != address(0));
-        assertEq(harness.wallets(vaultId), wallet);
-        assertEq(harness.vaultIdOf(wallet), vaultId);
-    }
-
     function test_deploySpecificWalletProxy_wotsNonQSalt1Succeeds() public {
         address to = makeAddr("to-wots");
         bytes32 vaultId = bytes32(uint256(2));
@@ -143,14 +118,14 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         assertEq(harness.vaultIdOf(wallet), vaultId);
     }
 
-    function test_deploySpecificWalletProxy_revertsWhen_legacyNotWhitelisted()
+    function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnV1Impl()
         public
     {
-        address to = makeAddr("to-legacy");
+        address to = makeAddr("to-nonv1");
         bytes32 vaultId = bytes32(uint256(1));
         uint256 fee = harness.creationFee();
 
-        vm.expectRevert(IWalletFactory.LegacyNotWhitelisted.selector);
+        vm.expectRevert(IWalletFactory.NotV1Commitment.selector);
         harness.deploySpecificWalletProxy{value: fee}(
             vaultId,
             bytes32(uint256(1)),

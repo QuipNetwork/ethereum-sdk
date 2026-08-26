@@ -2,18 +2,16 @@
 pragma solidity ^0.8.33;
 
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
-import {PreQSalt1Wallets} from "../../../contracts/PreQSalt1Wallets.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
-/// @dev Identity-binding checks in `initialize`: QSalt1 recompute-and-match, and the
-///      legacy whitelist cross-check for non-QSalt1 vault ids.
+/// @dev Identity-binding checks in `initialize`: QSalt1 recompute-and-match, and
+///      revert on a non-V1 salt.
 contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
     /// @dev Runtime code of a harness whose immutable FACTORY is the mock factory.
     bytes internal _implCode;
     uint256 internal _bareNonce;
-    PreQSalt1Wallets internal registry;
 
     function setUp() public override {
         super.setUp();
@@ -22,8 +20,6 @@ contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
             address(shrincsVerifier)
         );
         _implCode = address(impl).code;
-        registry = new PreQSalt1Wallets(address(this));
-        factory.setPreQSalt1Wallets(address(registry));
     }
 
     function _freshBare()
@@ -85,34 +81,12 @@ contract ShrincsWallet_initialize_qsalt1 is ShrincsWalletTest {
         bare.initialize(payable(OWNER), _validInitPayload());
     }
 
-    function test_initialize_legacyMatchingIdentitySucceeds() public {
+    function test_initialize_revertsWhen_nonV1Salt() public {
         (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        bytes32 legacyId = bytes32(uint256(1));
-        registry.add(legacyId, OWNER, mainCommitment, erc1271Commitment);
-        factory.setVaultId(bareAddr, legacyId);
+        factory.setVaultId(bareAddr, bytes32(uint256(1)));
 
         vm.prank(address(factory));
-        bare.initialize(payable(OWNER), _validInitPayload());
-
-        assertEq(bare.owner(), OWNER, "owner installed");
-        assertEq(
-            bare.getShrincsPublicKeyCommitment(),
-            mainCommitment,
-            "main commitment"
-        );
-        assertEq(
-            bare.getErc1271Commitment(),
-            erc1271Commitment,
-            "erc1271 commitment"
-        );
-    }
-
-    function test_initialize_revertsWhen_legacyIdentityMismatch() public {
-        (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setVaultId(bareAddr, bytes32(uint256(2)));
-
-        vm.prank(address(factory));
-        vm.expectRevert(IShrincsWallet.LegacyIdentityMismatch.selector);
+        vm.expectRevert(IShrincsWallet.NotV1Commitment.selector);
         bare.initialize(payable(OWNER), _validInitPayload());
     }
 }

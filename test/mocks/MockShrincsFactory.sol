@@ -5,7 +5,6 @@ pragma solidity ^0.8.33;
 ///      `executeFee`, `getVettedCodeIndex`, `deprecatedImpls`, `updateWalletOwner`.
 contract MockShrincsFactory {
     uint256 public executeFee;
-    address public preQSalt1Wallets;
     mapping(bytes32 codehash => uint256 index) internal _vettedIndex;
     mapping(bytes32 codehash => bool deprecated) public deprecatedImpls;
     mapping(address wallet => address owner) public lastOwnerUpdate;
@@ -21,10 +20,6 @@ contract MockShrincsFactory {
 
     function vaultIdOf(address w) external view returns (bytes32) {
         return _vaultId[w];
-    }
-
-    function setPreQSalt1Wallets(address r) external {
-        preQSalt1Wallets = r;
     }
 
     function vet(bytes32 codehash, uint256 index) external {

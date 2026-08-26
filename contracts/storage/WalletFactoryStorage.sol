@@ -65,10 +65,8 @@ library WalletFactoryStorage {
         ///      each entry through `wallets[salt]`). `vaultIdOf` keeps the vaultId
         ///      for the `WalletDeployed`/`WalletOwnerChanged` events.
         mapping(address wallet => bytes32 salt) saltOf;
-        /// @dev Pre-QSalt1 legacy whitelist registry. Zero until the owner sets it.
-        address preQSalt1Wallets;
-        /// @dev True if proxies of this codehash may only be deployed at a QSalt1
-        ///      vaultId or a whitelisted legacy id. Default false (WOTS+ exempt).
+        /// @dev True if proxies of this codehash may only be deployed at a V1
+        ///      commitment (identity-bound salt). Default false (WOTS+ exempt).
         mapping(bytes32 codehash => bool requiresQSalt1) requiresQSalt1;
     }
 

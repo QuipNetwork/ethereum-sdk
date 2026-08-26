@@ -24,7 +24,6 @@ import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {IWalletFactory} from "./interfaces/IWalletFactory.sol";
 import {IWallet} from "./interfaces/IWallet.sol";
-import {IPreQSalt1Wallets} from "./interfaces/IPreQSalt1Wallets.sol";
 import {WalletFactoryStorage as Storage} from "./storage/WalletFactoryStorage.sol";
 import {ShrincsWalletCodec as Codec} from "./shrincs/ShrincsWalletCodec.sol";
 
@@ -183,12 +182,6 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-    function setPreQSalt1Wallets(address registry) external onlyOwner {
-        Storage.layout().preQSalt1Wallets = registry;
-        emit PreQSalt1WalletsUpdated(registry);
-    }
-
-    /// @inheritdoc IWalletFactory
     function withdraw(uint256 amount) external onlyOwner {
         if (address(this).balance < amount) {
             revert InsufficientBalance(amount, address(this).balance);
@@ -280,11 +273,6 @@ contract WalletFactory is
     /// @inheritdoc IWalletFactory
     function latestWalletImpl() external view returns (address) {
         return Storage.layout().latestWalletImpl;
-    }
-
-    /// @inheritdoc IWalletFactory
-    function preQSalt1Wallets() external view returns (address) {
-        return Storage.layout().preQSalt1Wallets;
     }
 
     /// @inheritdoc IWalletFactory
@@ -403,11 +391,11 @@ contract WalletFactory is
 
         // CREATE3 salt is the vaultId.
         bytes32 salt = vaultId;
-        if (
-            $.requiresQSalt1[impl.codehash] &&
-            !Codec.isQSalt1Salt(vaultId) &&
-            !IPreQSalt1Wallets($.preQSalt1Wallets).isWhitelisted(vaultId)
-        ) revert LegacyNotWhitelisted();
+        // Fail fast: a V1-required impl only deploys at an identity-bound V1 commitment. The wallet's
+        // own initialize re-checks this, so non-V1 salts can never take a V1 impl address.
+        if ($.requiresQSalt1[impl.codehash] && !Codec.isQSalt1Salt(vaultId)) {
+            revert NotV1Commitment();
+        }
         address contractAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
 
         // Publish the reverse `vaultIdOf` entry (also the `OnlyWallet` gate for the ownership

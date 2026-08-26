@@ -62,10 +62,11 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
-    /// @notice Thrown when a QSalt1 vaultId does not recompute from the install payload.
+    /// @notice Thrown when the V1 commitment (salt) does not recompute from the install payload.
     error IdentityMismatch();
-    /// @notice Thrown when a legacy vaultId whitelist entry does not match the install payload.
-    error LegacyIdentityMismatch();
+    /// @notice Thrown when the wallet is initialized under a non-V1 (unbound) salt. New wallets must
+    ///         use the identity-bound V1 commitment; legacy wallets use the separate WOTS+ impl.
+    error NotV1Commitment();
 
     /// @notice Thrown when a stateful signature's leaf index has already been consumed in the
     ///         current key epoch (used-leaf bitmap anti-replay).
