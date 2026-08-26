@@ -4,6 +4,8 @@
 
 import { getAddress } from "viem";
 
+import { keccak256, toHex } from "viem";
+
 import {
   CANONICAL_OPERATOR,
   LIVE_SALT_PREIMAGES,
@@ -14,9 +16,15 @@ import {
 import { NETWORK_ADDRESSES as V1_NETWORK_ADDRESSES } from "../../addresses.js";
 import {
   CANONICAL_ENTRYPOINT_V07,
+  DEPLOY_CHAIN_ORDER,
   NETWORK_ADDRESSES,
+  deployVaultSalt,
   getShrincsAddresses,
+  getShrincsWalletAddress,
+  quipDeployChainIndex,
 } from "../addresses.js";
+import { MAX_DEPLOY_CHAINS } from "../constants.js";
+import { UnsupportedNetworkError } from "../errors.js";
 
 // The published registry — `DEPLOYMENTS.md`, `src/v1/shrincs/addresses.ts`, and
 // `src/v1/addresses.json`. These are the addresses the SDK tells integrators to
@@ -67,9 +75,24 @@ describe("shrincs addresses", () => {
     }
   });
 
-  it("getShrincsAddresses falls back to the default entry for any chain", () => {
-    expect(getShrincsAddresses(1)).toEqual(NETWORK_ADDRESSES.default);
-    expect(getShrincsAddresses(8453)).toEqual(NETWORK_ADDRESSES.default);
+  it("getShrincsAddresses returns the default entry for every supported chain", () => {
+    // The Shrincs contracts share one CREATE3-deterministic address set across
+    // every supported chain, so each resolves to the same `default` entry.
+    expect(getShrincsAddresses(1)).toEqual(NETWORK_ADDRESSES.default); // mainnet
+    expect(getShrincsAddresses(8453)).toEqual(NETWORK_ADDRESSES.default); // Base
+    expect(getShrincsAddresses(777)).toEqual(NETWORK_ADDRESSES.default); // MIDL testnet
+    expect(getShrincsAddresses()).toEqual(NETWORK_ADDRESSES.default);
+  });
+
+  it("getShrincsAddresses throws UnsupportedNetworkError for unknown chain ids", () => {
+    expect(() => getShrincsAddresses(999999)).toThrow(UnsupportedNetworkError);
+  });
+
+  it("getShrincsAddresses returns the default entry for BASE_SEPOLIA", () => {
+    expect(getShrincsAddresses(84532)).toEqual(NETWORK_ADDRESSES.default);
+  });
+
+  it("getShrincsAddresses returns the default entry when chainId is omitted", () => {
     expect(getShrincsAddresses()).toEqual(NETWORK_ADDRESSES.default);
   });
 });
@@ -115,5 +138,58 @@ describe("published registry re-derived from the canonical operator", () => {
       // byte 20: cross-chain flag OFF → the same address on every chain
       expect(body.slice(40, 42)).toBe("00");
     });
+  });
+});
+
+describe("quipDeployChainIndex", () => {
+  it("returns the 1-based position in the committed deploy list", () => {
+    // Never 0 — leaf 0 is invalid, so the first chain maps to deploy leaf 1.
+    expect(quipDeployChainIndex(DEPLOY_CHAIN_ORDER[0]!)).toBe(1);
+    expect(quipDeployChainIndex(DEPLOY_CHAIN_ORDER[6]!)).toBe(7); // MIDL, last
+  });
+
+  it("assigns a distinct index to every listed chain", () => {
+    const indices = DEPLOY_CHAIN_ORDER.map((c) => quipDeployChainIndex(c));
+    expect(new Set(indices).size).toBe(DEPLOY_CHAIN_ORDER.length);
+  });
+
+  it("throws UnsupportedNetworkError for a chain not on the deploy list", () => {
+    expect(() => quipDeployChainIndex(999999)).toThrow(UnsupportedNetworkError);
+  });
+
+  it("keeps the committed list within the reserved deploy-leaf range", () => {
+    expect(DEPLOY_CHAIN_ORDER.length).toBeLessThanOrEqual(MAX_DEPLOY_CHAINS);
+  });
+
+  it("holds no duplicate chain (each maps to one deploy leaf)", () => {
+    expect(new Set(DEPLOY_CHAIN_ORDER).size).toBe(DEPLOY_CHAIN_ORDER.length);
+  });
+});
+
+describe("SHRINCS deploy salt / address (e3r)", () => {
+  const FACTORY = "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC" as const;
+  const vaultId = keccak256(toHex("vault-1"));
+  const commitment = keccak256(toHex("main-commitment"));
+
+  it("deployVaultSalt is deterministic for the same (vaultId, commitment)", () => {
+    expect(deployVaultSalt(vaultId, commitment)).toBe(
+      deployVaultSalt(vaultId, commitment)
+    );
+  });
+
+  it("deployVaultSalt binds BOTH the vault and the commitment", () => {
+    const base = deployVaultSalt(vaultId, commitment);
+    expect(deployVaultSalt(keccak256(toHex("vault-2")), commitment)).not.toBe(base);
+    expect(deployVaultSalt(vaultId, keccak256(toHex("other")))).not.toBe(base);
+  });
+
+  it("getShrincsWalletAddress is deterministic and commitment-bound", () => {
+    const addr = getShrincsWalletAddress(FACTORY, vaultId, commitment);
+    expect(getShrincsWalletAddress(FACTORY, vaultId, commitment)).toBe(addr);
+    // A different key commitment => a different counterfactual address, which is
+    // exactly what stops an attacker taking the victim's address (e3r).
+    expect(
+      getShrincsWalletAddress(FACTORY, vaultId, keccak256(toHex("attacker-key")))
+    ).not.toBe(addr);
   });
 });

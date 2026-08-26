@@ -13,11 +13,19 @@ contract WalletFactoryHarness is WalletFactory {
         return _findLatestActive();
     }
 
-    function exposed_deployProxy(address impl, bytes32 vaultId, address payable to, bytes calldata payload)
-        external
-        payable
-        returns (address)
-    {
-        return _deployProxy(impl, vaultId, to, payload);
+    /// @dev Wraps the owner-initialization guard (overridden to `true` because the factory inherits
+    ///      Solady `Ownable` directly, not the `ERC4337` base that supplies the override).
+    function exposed_guardInitializeOwner() external pure returns (bool) {
+        return _guardInitializeOwner();
+    }
+
+    function exposed_deployProxy(
+        address impl,
+        bytes32 vaultId,
+        bytes32 commitment,
+        address payable to,
+        bytes calldata payload
+    ) external payable returns (address) {
+        return _deployProxy(impl, vaultId, commitment, to, payload);
     }
 }

@@ -52,6 +52,17 @@ const keccakUtf8 = (s: string): Hex => keccak256(toBytes(s));
 /// `ActionContext.domainSeparator`).
 export const DOMAIN_TAG = keccakUtf8("quip-shrincs-wallet-v1");
 
+/// Paymaster signing-domain tag (combined with chainId + paymaster into the
+/// sponsorship `ActionContext.domainSeparator`).
+export const PAYMASTER_DOMAIN_TAG = keccakUtf8("quip-shrincs-paymaster-v1");
+
+/// Deploy signing-domain tag (combined with chainId + the FACTORY address into
+/// the deploy `ActionContext.domainSeparator`). The deploy authorization is
+/// bound to the factory — the authority that supplies the chainId and
+/// `quipDeployChainIndex` — because the wallet address does not yet exist when
+/// the deploy signature is produced. See `e3r`.
+export const DEPLOY_DOMAIN_TAG = keccakUtf8("quip-shrincs-deploy-v1");
+
 /// Per-operation `ActionContext.actionType` discriminators.
 export const ACTION_ERC4337_EXECUTE = keccakUtf8(
   "quip.shrincs.action.erc4337Execute"
@@ -70,6 +81,12 @@ export const ACTION_MARK_LEAVES_USED = keccakUtf8(
   "quip.shrincs.action.markLeavesUsed"
 );
 export const ACTION_ERC1271 = keccakUtf8("quip.shrincs.action.erc1271");
+export const ACTION_PAYMASTER_APPROVE = keccakUtf8(
+  "quip.shrincs.action.paymasterApprove"
+);
+/// Deploy authorization action type. Proves the main-key holder authorizes
+/// deploying this key at `(vaultId, owner)` on the factory's chain. See `e3r`.
+export const ACTION_DEPLOY = keccakUtf8("quip.shrincs.action.deploy");
 
 /// Per-path tags folded into `RotationContext.domainSeparator` (see
 /// `rotationDomainSeparator`). `RotationContext` carries no action
@@ -81,8 +98,6 @@ export const ROTATION_DOMAIN_RECOVER_WALLET = keccakUtf8(
 export const ROTATION_DOMAIN_TRANSFER_OWNERSHIP = keccakUtf8(
   "quip.shrincs.rotation.transferOwnership"
 );
-
-const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    WORD / HASH HELPERS                      */
@@ -208,6 +223,24 @@ export const leavesHash = (leaves: readonly number[]): Hex =>
 export const markLeavesUsedPayloadHash = (leavesHashValue: Hex): Hex =>
   hashWords(leavesHashValue);
 
+/// `payloadHash` for the deploy authorization (`e3r`). Binds the vault, the
+/// intended owner, the ERC-1271 commitment, and the `quipDeployChainIndex` so a
+/// deploy signature authorizes exactly one `(vaultId, owner, erc1271, chainIndex)`
+/// tuple. The main-key commitment is authenticated by the signature itself; the
+/// chain and factory are bound through the deploy `domainSeparator`.
+export const deployPayloadHash = (
+  vaultId: Hex,
+  owner: Address,
+  erc1271Commitment: Hex,
+  quipDeployChainIndex: number
+): Hex =>
+  hashWords(
+    vaultId,
+    addressWord(owner),
+    erc1271Commitment,
+    word(quipDeployChainIndex)
+  );
+
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    CONTEXT BUILDERS                         */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -320,27 +353,34 @@ export function encodeInitPayload(params: {
   erc1271Commitment: Hex;
   hashSuite?: number;
   erc1271HashSuite?: number;
+  /// e3r: the deploy-authorization envelope (from `encodeDeployAuth`). Present
+  /// for `initialize` payloads (a trailing 7th ABI field the wallet reads via
+  /// `decodeInitDeployAuth`); OMIT for `migrate` payloads, which stay 6-field.
+  deployAuth?: Hex;
 }): Hex {
   const commitment = params.mainBundle.publicKeyCommitment;
   const pkSeed = params.mainBundle.pkSeed;
-  return encodeAbiParameters(
-    [
-      { name: "commitment", type: "bytes32" },
-      { name: "pkSeed", type: "bytes32" },
-      PUBLIC_KEY_TUPLE,
-      { name: "hashSuite", type: "uint32" },
-      { name: "erc1271Commitment", type: "bytes32" },
-      { name: "erc1271HashSuite", type: "uint32" },
-    ],
-    [
-      commitment,
-      pkSeed,
-      publicKeyToAbi(params.mainBundle),
-      params.hashSuite ?? HASH_SUITE_KECCAK_256,
-      params.erc1271Commitment,
-      params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
-    ]
-  );
+  const fields = [
+    { name: "commitment", type: "bytes32" },
+    { name: "pkSeed", type: "bytes32" },
+    PUBLIC_KEY_TUPLE,
+    { name: "hashSuite", type: "uint32" },
+    { name: "erc1271Commitment", type: "bytes32" },
+    { name: "erc1271HashSuite", type: "uint32" },
+  ];
+  const values: unknown[] = [
+    commitment,
+    pkSeed,
+    publicKeyToAbi(params.mainBundle),
+    params.hashSuite ?? HASH_SUITE_KECCAK_256,
+    params.erc1271Commitment,
+    params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
+  ];
+  if (params.deployAuth !== undefined) {
+    fields.push({ name: "deployAuth", type: "bytes" });
+    values.push(params.deployAuth);
+  }
+  return encodeAbiParameters(fields, values);
 }
 
 /// ERC-4337 `userOp.signature` = `abi.encode(PublicKey, StatefulSignature,
@@ -380,6 +420,24 @@ export function encodeSponsorshipSignature(
 ): Hex {
   return encodeAbiParameters(
     [PUBLIC_KEY_TUPLE, STATEFUL_SIGNATURE_TUPLE],
+    [publicKeyToAbi(publicKey), signature]
+  );
+}
+
+/// The deploy-authorization envelope carried in the `initialize` payload (e3r) —
+/// `abi.encode(PublicKey, Signature)`, the same pair shape the SHRINCS verifier
+/// consumes. The signature tuple is stateful (`SHRINCS.Signature`) or stateless
+/// (`SPHINCSPlusC.Signature`) per the factory's deploy mode; `pk` is the main
+/// bundle. The wallet decodes this with `ShrincsWalletCodec.decodeInitDeployAuth`.
+export function encodeDeployAuth(
+  publicKey: ShrincsPublicKey,
+  signature: StatefulSignature | StatelessSignature,
+  mode: "stateful" | "stateless"
+): Hex {
+  const sigTuple =
+    mode === "stateful" ? STATEFUL_SIGNATURE_TUPLE : STATELESS_SIGNATURE_TUPLE;
+  return encodeAbiParameters(
+    [PUBLIC_KEY_TUPLE, sigTuple],
     [publicKeyToAbi(publicKey), signature]
   );
 }

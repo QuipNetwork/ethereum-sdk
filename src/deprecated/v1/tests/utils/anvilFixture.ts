@@ -31,8 +31,8 @@ import {
   createWalletClient,
   createTestClient,
   http,
+  keccak256,
   toHex,
-  concat,
   parseEther,
   parseEventLogs,
 } from "viem";
@@ -418,7 +418,7 @@ export async function createFreshWallet(
     address: stack.factoryAddress,
     abi: walletFactoryAbi,
     functionName: "deployLatestWalletProxy",
-    args: [vaultId, owner, initPayload],
+    args: [vaultId, keccak256(vaultId), owner, initPayload],
     account: deployer,
   });
   const creationReceipt = await stack.publicClient.waitForTransactionReceipt({

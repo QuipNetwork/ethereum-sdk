@@ -55,6 +55,10 @@ interface IShrincsWallet is IWallet {
     error CommitmentMismatch();
     /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
     error ZeroErc1271Commitment();
+    /// @notice Thrown when the deploy authorization embedded in the `initialize` payload (e3r)
+    ///         is absent, malformed, at the wrong reserved deploy leaf, or not a valid main-key
+    ///         signature over the factory-bound deploy context.
+    error InvalidDeployAuthorization();
     /// @notice Thrown when an install payload declares a hash suite other than
     ///         the compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this
     ///         implementation verifies; SHRINCS binds it into every canonical message hash).
@@ -106,7 +110,8 @@ interface IShrincsWallet is IWallet {
     ///                  4=erc1271StatelessCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
     error GuardedSlotTampered(uint256 slotIndex);
     /// @notice Thrown when `storageStore` is called. Raw storage writes are disabled because they
-    ///         could clear consumed-leaf bits in the bitmap and re-enable one-time-signature replay.
+    ///         could clear consumed-leaf bits in the bitmap and re-enable
+    ///         one-time-signature replay.
     error StorageStoreDisabled();
     /// @notice Thrown when `delegateExecute` is called. Running un-vetted bytecode in the wallet's
     ///         storage context is disabled; use `executeBatch` for batching.
@@ -359,7 +364,8 @@ interface IShrincsWallet is IWallet {
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
     /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
     ///      and overridden by the wallet (stateless SHRINCS verify against the dedicated verifier
-    ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an override clash.
+    ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an
+    ///      override clash.
     function debugIsValidSignature(
         bytes32 hash,
         bytes calldata signature

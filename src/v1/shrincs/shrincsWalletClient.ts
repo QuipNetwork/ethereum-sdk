@@ -29,19 +29,27 @@ import {
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { tryMulticall } from "../internal/multicall.js";
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
-import { HASH_SUITE_KECCAK_256 } from "./constants.js";
+import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "./constants.js";
 import {
   AuthLeafInTargetsError,
   CommitmentMismatchError,
   EmptyLeavesError,
   Erc1271ValidationResult,
   LeafOutOfRangeError,
+  ExecuteTargetHasNoCodeError,
+  OwnerMismatchError,
   StatefulBudgetExhaustedError,
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
 } from "./errors.js";
 import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
+import {
+  LeafReservationStore,
+  reserveExplicitLeaf,
+  reserveLowestLeaf,
+} from "./leafReservation.js";
+import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import {
   ACTION_ERC1271,
@@ -84,6 +92,7 @@ import {
 } from "./userOp.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
 const shrincsWalletDomain = (chainId: number, walletAddress: Address) =>
   ({
@@ -251,6 +260,10 @@ export class ShrincsWalletClient {
   private readonly walletClient: WalletClient;
   private readonly signer?: ShrincsSigner;
   private readonly keypair?: ShrincsKeyPair;
+  /// Per-instance record of leaves already handed out for signing this session,
+  /// so a sign-then-retry (changed payload, first tx not yet landed) cannot pick
+  /// the same leaf twice and reuse a one-time signature.
+  private readonly leafReservations = new LeafReservationStore();
 
   constructor(params: ShrincsWalletClientParams) {
     this.walletAddress = params.walletAddress;
@@ -281,22 +294,38 @@ export class ShrincsWalletClient {
     ) as Promise<boolean>;
   }
 
-  /// Lowest unused stateful leaf in `1..maxSignatures` for the current key
-  /// epoch, found by scanning the on-chain bitmap via multicall. Throws
-  /// `StatefulBudgetExhaustedError` if every leaf is consumed (or every free
-  /// leaf is excluded). `exclude` skips leaves the bitmap considers free but
-  /// that must not sign — e.g. `markLeavesUsed` targets, whose one-time keys
+  /// Lowest unused stateful signing leaf in `MAX_DEPLOY_CHAINS + 1 ..
+  /// maxSignatures` for the current key epoch, found by scanning the on-chain
+  /// bitmap via multicall. Leaves `[1..MAX_DEPLOY_CHAINS]` are reserved for
+  /// deploy authorizations (`e3r`) and never sign. Throws
+  /// `StatefulBudgetExhaustedError` if every signing leaf is consumed (or every
+  /// free leaf is excluded). `exclude` skips leaves the bitmap considers free
+  /// but that must not sign — e.g. `markLeavesUsed` targets, whose one-time keys
   /// have typically already signed an off-chain message.
   async lowestUnusedLeaf(
     maxSignatures: number,
     statefulLeavesUsed: number,
     exclude?: ReadonlySet<number>
   ): Promise<number> {
-    if (statefulLeavesUsed >= maxSignatures) {
+    const signingBudget = Math.max(0, maxSignatures - MAX_DEPLOY_CHAINS);
+    if (statefulLeavesUsed >= signingBudget) {
       throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
     }
+    const used = await this.fetchUsedLeaves(maxSignatures);
+    for (let leaf = MAX_DEPLOY_CHAINS + 1; leaf <= maxSignatures; leaf++) {
+      if (exclude?.has(leaf)) continue;
+      if (!used.has(leaf)) return leaf;
+    }
+    throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
+  }
+
+  /// The set of signing leaves in `MAX_DEPLOY_CHAINS + 1 .. maxSignatures` the
+  /// on-chain bitmap reports as used, read in one multicall. A leaf whose status
+  /// could not be read is treated as used: never sign at a leaf that is not
+  /// confirmed free. The reserved deploy-leaf range is never scanned (`e3r`).
+  private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
     const calls = [];
-    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
+    for (let leaf = MAX_DEPLOY_CHAINS + 1; leaf <= maxSignatures; leaf++) {
       calls.push({
         address: this.walletAddress,
         abi: shrincsWalletAbi,
@@ -305,12 +334,14 @@ export class ShrincsWalletClient {
       });
     }
     const results = await tryMulticall(this.publicClient, calls);
+    const used = new Set<number>();
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      if (exclude?.has(i + 1)) continue;
-      if (r && r.status === "success" && r.result === false) return i + 1;
+      // Result index `i` maps to the signing leaf `MAX_DEPLOY_CHAINS + 1 + i`.
+      const leaf = MAX_DEPLOY_CHAINS + 1 + i;
+      if (!(r && r.status === "success" && r.result === false)) used.add(leaf);
     }
-    throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
+    return used;
   }
 
   /// The WalletFactory that deployed this wallet (the remaining `IShrincsWallet`
@@ -432,11 +463,11 @@ export class ShrincsWalletClient {
     maxSignatures: number,
     installedCommitment: Hex
   ): ShrincsKeyPair {
-    if (this.keypair) return this.keypair;
-    if (!this.signer) {
+    const keypair =
+      this.keypair ?? this.signer?.recoverKeyPair(this.vaultId, { maxSignatures });
+    if (!keypair) {
       throw new Error("ShrincsWalletClient has no signer or keypair to sign with");
     }
-    const keypair = this.signer.recoverKeyPair(this.vaultId, { maxSignatures });
     if (
       keypair.publicKeyCommitment.toLowerCase() !==
       installedCommitment.toLowerCase()
@@ -468,13 +499,58 @@ export class ShrincsWalletClient {
       state.maxSignatures,
       state.shrincsPublicKeyCommitment
     );
-    const leaf =
-      keyOpts?.leaf ??
-      (await this.lowestUnusedLeaf(
+    // Validate the excluded leaves BEFORE reserving. `excludeLeaves` carries the
+    // revocation targets (`markLeavesUsed`), which must be valid signing leaves
+    // `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]` (`e3r`). Rejecting a malformed
+    // target here — before any leaf is reserved or signed — means a rejected
+    // call never burns a one-time signing leaf.
+    if (excludeLeaves) {
+      for (const target of excludeLeaves) {
+        if (
+          !Number.isInteger(target) ||
+          target <= MAX_DEPLOY_CHAINS ||
+          target > state.maxSignatures
+        ) {
+          throw new LeafOutOfRangeError(target, state.maxSignatures);
+        }
+      }
+    }
+    // Reserve the leaf in-process before signing so a sign-then-retry with a
+    // changed payload (first tx not yet landed, bitmap still shows the leaf
+    // free) cannot sign a second message at the same one-time leaf. An explicit
+    // override is reserved too, so a later automatic pick cannot collide with it.
+    const reservationKey = {
+      commitment: state.shrincsPublicKeyCommitment,
+      keyVersion: state.keyVersion,
+    };
+    let leaf: number;
+    if (keyOpts?.leaf !== undefined) {
+      leaf = keyOpts.leaf;
+      await reserveExplicitLeaf(this.leafReservations, reservationKey, leaf);
+    } else {
+      // The signing budget excludes the reserved deploy-leaf range
+      // `[1..MAX_DEPLOY_CHAINS]` (`e3r`); usable signing leaves are
+      // `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
+      const signingBudget = Math.max(
+        0,
+        state.maxSignatures - MAX_DEPLOY_CHAINS
+      );
+      if (state.statefulLeavesUsed >= signingBudget) {
+        throw new StatefulBudgetExhaustedError(
+          state.maxSignatures,
+          state.statefulLeavesUsed
+        );
+      }
+      const used = await this.fetchUsedLeaves(state.maxSignatures);
+      leaf = await reserveLowestLeaf(
+        this.leafReservations,
+        reservationKey,
+        (candidate) =>
+          used.has(candidate) || (excludeLeaves?.has(candidate) ?? false),
         state.maxSignatures,
-        state.statefulLeavesUsed,
-        excludeLeaves
-      ));
+        MAX_DEPLOY_CHAINS + 1
+      );
+    }
     return {
       keypair,
       state,
@@ -539,7 +615,8 @@ export class ShrincsWalletClient {
       ...(prepared.nonce !== undefined && { nonce: prepared.nonce }),
     } as unknown as Parameters<WalletClient["writeContract"]>[0];
     const hash = await withDecodedError(this.walletClient.writeContract(writeParams));
-    return this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    return assertReceiptSuccess(receipt);
   }
 
   /*  ── stateful writes ─────────────────────────────────────────────────  */
@@ -589,12 +666,15 @@ export class ShrincsWalletClient {
   }> {
     const value = params.value ?? 0n;
     const data = params.data ?? "0x";
-    const {
-      keypair,
-      state,
-      leaf,
-      domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    // A call with calldata to a codeless target is a phantom no-op that still
+    // consumes a leaf (solady's `execute` has no `extcodesize` guard). Pure
+    // value transfers (empty calldata) to an EOA are legitimate, so guard only
+    // when calldata is present.
+    if (data !== "0x") {
+      await this.assertExecuteTargetHasCode(params.target);
+    }
+    const { keypair, state, leaf, domainSeparator: ds } =
+      await this.prepareStatefulOp(opts);
     const maxFee = params.maxFee ?? state.executeFee;
     const ctx = buildActionContext({
       domainSeparator: ds,
@@ -630,6 +710,18 @@ export class ShrincsWalletClient {
     };
   }
 
+  /// Assert an `execute` target holds code, throwing `ExecuteTargetHasNoCodeError`
+  /// if it does not. The direct `execute` path calls this automatically for
+  /// calls that carry calldata; callers that assemble a userOp through
+  /// `buildExecuteUserOp` / `buildExecuteBatchUserOp` should call it themselves
+  /// before signing, since a call to a codeless target still consumes a leaf.
+  async assertExecuteTargetHasCode(target: Address): Promise<void> {
+    const code = await this.publicClient.getCode({ address: target });
+    if (code === undefined || code === "0x") {
+      throw new ExecuteTargetHasNoCodeError(target);
+    }
+  }
+
   /// Withdraw from the wallet's EntryPoint deposit.
   async withdrawDepositTo(
     params: { to: Address; amount: bigint },
@@ -652,7 +744,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "withdrawDepositTo",
       [publicKeyToAbi(keypair.publicKey), signature, params.to, params.amount],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -674,7 +766,10 @@ export class ShrincsWalletClient {
     params: { newCommitment: Hex; newHashSuite?: number },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    if (!params.newCommitment || /^0x0+$/.test(params.newCommitment)) {
+    if (
+      !params.newCommitment ||
+      params.newCommitment.toLowerCase() === ZERO32
+    ) {
       throw new ZeroErc1271CommitmentError();
     }
     const hashSuite = params.newHashSuite ?? HASH_SUITE_KECCAK_256;
@@ -694,13 +789,8 @@ export class ShrincsWalletClient {
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     return this.submit(
       "setErc1271Key",
-      [
-        publicKeyToAbi(keypair.publicKey),
-        signature,
-        params.newCommitment,
-        hashSuite,
-      ],
-      state.executeFee,
+      [publicKeyToAbi(keypair.publicKey), signature, params.newCommitment, hashSuite],
+      0n,
       opts
     );
   }
@@ -741,7 +831,7 @@ export class ShrincsWalletClient {
           publicKeyCommitment: nextStatefulKey.publicKeyCommitment,
         },
       ],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -771,23 +861,11 @@ export class ShrincsWalletClient {
     if (opts.leaf !== undefined && targetSet.has(opts.leaf)) {
       throw new AuthLeafInTargetsError(opts.leaf);
     }
-    const {
-      keypair,
-      state,
-      leaf,
-      domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts, targetSet);
-    // All guards run BEFORE signing: a signed-then-aborted call would itself
-    // leave a leaf needing revocation.
-    for (const target of leaves) {
-      if (
-        !Number.isInteger(target) ||
-        target < 1 ||
-        target > state.maxSignatures
-      ) {
-        throw new LeafOutOfRangeError(target, state.maxSignatures);
-      }
-    }
+    // `prepareStatefulOp` validates the target leaves (its `excludeLeaves`) and
+    // reserves the authorizing leaf only after they pass, so a malformed target
+    // never burns a signing leaf. All guards run BEFORE signing.
+    const { keypair, state, leaf, domainSeparator: ds } =
+      await this.prepareStatefulOp(opts, targetSet);
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -799,7 +877,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "markLeavesUsed",
       [publicKeyToAbi(keypair.publicKey), signature, [...leaves]],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -845,7 +923,7 @@ export class ShrincsWalletClient {
     return this.submit(
       "upgradeToAndCall",
       [params.newImplementation, data],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -901,7 +979,7 @@ export class ShrincsWalletClient {
         publicKeyToAbi(params.nextKey),
         params.newOwner,
       ],
-      state.executeFee,
+      0n,
       opts
     );
   }
@@ -930,12 +1008,8 @@ export class ShrincsWalletClient {
     const recoverySignature = keypair.signFullRotation(rctx, rotationTarget);
     return this.submit(
       "recoverWallet",
-      [
-        publicKeyToAbi(keypair.publicKey),
-        recoverySignature,
-        publicKeyToAbi(params.nextKey),
-      ],
-      state.executeFee,
+      [publicKeyToAbi(keypair.publicKey), recoverySignature, publicKeyToAbi(params.nextKey)],
+      0n,
       opts
     );
   }
@@ -975,8 +1049,11 @@ export class ShrincsWalletClient {
         state.erc1271Commitment
       );
     }
-    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+    if (params.owner.address.toLowerCase() === ZERO_ADDRESS) {
       throw new ZeroAddressOwnerError();
+    }
+    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+      throw new OwnerMismatchError(state.owner, params.owner.address);
     }
 
     // The stateless context mirrors `_checkErc1271Signature`: the LIVE action
@@ -1097,8 +1174,11 @@ export class ShrincsWalletClient {
   ): Promise<{ userOp: PackedUserOperation; userOpHash: Hex; leaf: number }> {
     const { keypair, state, leaf } = await this.prepareStatefulOp(opts);
 
-    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+    if (params.owner.address.toLowerCase() === ZERO_ADDRESS) {
       throw new ZeroAddressOwnerError();
+    }
+    if (params.owner.address.toLowerCase() !== state.owner.toLowerCase()) {
+      throw new OwnerMismatchError(state.owner, params.owner.address);
     }
     // Recompute the userOpHash exactly as `signWalletUserOp` does below, then
     // collect the owner co-signature over it as typed data.

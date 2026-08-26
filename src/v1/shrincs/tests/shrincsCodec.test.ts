@@ -239,3 +239,50 @@ describe("shrincsCodec", () => {
     expect(mainKey.verifyStatefulRaw(message, decoded.signature)).toBe(true);
   });
 });
+
+describe("deploy authorization primitives (e3r)", () => {
+  const VAULT = keccak256(toHex("vault"));
+  const OWNER = "0x00000000000000000000000000000000000000a1" as const;
+  const ERC1271 = keccak256(toHex("erc1271-commitment"));
+
+  it("DEPLOY_DOMAIN_TAG is distinct from the wallet and paymaster tags", () => {
+    expect(Codec.DEPLOY_DOMAIN_TAG).not.toBe(Codec.DOMAIN_TAG);
+    expect(Codec.DEPLOY_DOMAIN_TAG).not.toBe(Codec.PAYMASTER_DOMAIN_TAG);
+  });
+
+  it("ACTION_DEPLOY is distinct from every other action type", () => {
+    const others = [
+      Codec.ACTION_EXECUTE,
+      Codec.ACTION_WITHDRAW,
+      Codec.ACTION_UPGRADE,
+      Codec.ACTION_ROTATE_KEY,
+      Codec.ACTION_SET_ERC1271_KEY,
+      Codec.ACTION_ERC1271,
+      Codec.ACTION_PAYMASTER_APPROVE,
+    ];
+    for (const a of others) expect(Codec.ACTION_DEPLOY).not.toBe(a);
+  });
+
+  it("deployPayloadHash is deterministic for the same tuple", () => {
+    expect(Codec.deployPayloadHash(VAULT, OWNER, ERC1271, 3)).toBe(
+      Codec.deployPayloadHash(VAULT, OWNER, ERC1271, 3)
+    );
+  });
+
+  it("deployPayloadHash changes with each bound field", () => {
+    const base = Codec.deployPayloadHash(VAULT, OWNER, ERC1271, 3);
+    expect(Codec.deployPayloadHash(keccak256(toHex("other")), OWNER, ERC1271, 3)).not.toBe(base);
+    expect(
+      Codec.deployPayloadHash(VAULT, "0x00000000000000000000000000000000000000b2", ERC1271, 3)
+    ).not.toBe(base);
+    expect(Codec.deployPayloadHash(VAULT, OWNER, keccak256(toHex("x")), 3)).not.toBe(base);
+    expect(Codec.deployPayloadHash(VAULT, OWNER, ERC1271, 4)).not.toBe(base);
+  });
+
+  it("the deploy domain separator binds chainId and the factory address", () => {
+    const factory = "0x00000000000000000000000000000000000000cc" as const;
+    const dsA = Codec.domainSeparator(1, factory, Codec.DEPLOY_DOMAIN_TAG);
+    const dsB = Codec.domainSeparator(10, factory, Codec.DEPLOY_DOMAIN_TAG);
+    expect(dsA).not.toBe(dsB); // different chain => different deploy domain
+  });
+});

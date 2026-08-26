@@ -5,9 +5,10 @@ import {
   getNetworkAddresses,
   getVaultAddress,
   computeVaultAddress,
-  QUIP_FACTORY_ADDRESS,
 } from "../../../v1/addresses.js";
 import { UnsupportedNetworkError } from "../errors.js";
+
+const defaultFactory = NETWORK_ADDRESSES.default.WalletFactory;
 
 describe("Vault Address Functions", () => {
   const testVaultId: Hex =
@@ -31,7 +32,7 @@ describe("Vault Address Functions", () => {
 
   it("should match between getVaultAddress and computeVaultAddress", () => {
     const fromGet = getVaultAddress(testVaultId);
-    const fromCompute = computeVaultAddress(QUIP_FACTORY_ADDRESS, testVaultId);
+    const fromCompute = computeVaultAddress(defaultFactory, testVaultId);
     expect(fromGet).toEqual(fromCompute);
   });
 });
@@ -39,7 +40,7 @@ describe("Vault Address Functions", () => {
 describe("getNetworkAddresses", () => {
   it("returns default addresses when chainId is omitted", () => {
     const addrs = getNetworkAddresses();
-    expect(addrs.WalletFactory).toEqual(QUIP_FACTORY_ADDRESS);
+    expect(addrs.WalletFactory).toEqual(defaultFactory);
   });
 
   it("returns the registered entry for chains explicitly listed in NETWORK_ADDRESSES (MIDL)", () => {
@@ -60,7 +61,7 @@ describe("getNetworkAddresses", () => {
       CHAIN_IDS.OPTIMISM_SEPOLIA,
     ]) {
       const addrs = getNetworkAddresses(chainId);
-      expect(addrs.WalletFactory).toEqual(QUIP_FACTORY_ADDRESS);
+      expect(addrs.WalletFactory).toEqual(defaultFactory);
     }
   });
 

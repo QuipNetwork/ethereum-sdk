@@ -27,7 +27,12 @@ import {MockShrincsFactory} from "../mocks/MockShrincsFactory.sol";
 ///      canonical contexts live against the wallet's current state.
 contract ShrincsWalletTest is Test {
     uint256 internal constant CHAIN_ID = 31337;
-    uint32 internal constant MAX_SIG = 8;
+    // Leaves `[1..32]` are the reserved deploy-leaf range (e3r), so normal signing uses only
+    // `(32 .. MAX_SIG]`. `SIGN_BASE` is the first usable signing leaf; tests sign at
+    // `SIGN_BASE + k`. The budget is sized to leave 8 usable signing leaves, matching the
+    // pre-e3r count.
+    uint32 internal constant SIGN_BASE = 32; // == ShrincsWallet.MAX_DEPLOY_CHAINS
+    uint32 internal constant MAX_SIG = SIGN_BASE + 8;
 
     // Fixed harness address (kept stable so tests may hardcode `op.sender` etc.).
     address internal constant WALLET = 0x5B38Da6a701c568545dCfcB03FcB875f56beddC4;
@@ -189,7 +194,11 @@ contract ShrincsWalletTest is Test {
     /*                    SIGNING HELPERS                     */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Signs the wallet's canonical STATEFUL action message with the main key at `leaf`.
+    /// @dev Signs the wallet's canonical STATEFUL action message with the main key at signing
+    ///      slot `leaf`. The `leaf` argument is a 1-based SIGNING slot: it is offset past the
+    ///      reserved deploy-leaf range (e3r), so slot `k` consumes actual leaf `SIGN_BASE + k`.
+    ///      Callers pass small slot numbers; the wallet consumes/reports `SIGN_BASE + k`, which is
+    ///      why bitmap/event assertions are written as `SIGN_BASE + k`.
     function _signStatefulAction(bytes32 actionType, bytes32 payloadHash, uint32 leaf)
         internal
         view
@@ -199,7 +208,7 @@ contract ShrincsWalletTest is Test {
         bytes memory message =
             abi.encodePacked(SHRINCS.statefulActionMessageHash(wallet.getShrincsPublicKeyCommitment(), ctx));
         bool ok;
-        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, leaf, message);
+        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, SIGN_BASE + leaf, message);
         require(ok, "stateful sign failed");
     }
 
@@ -356,5 +365,76 @@ contract ShrincsWalletTest is Test {
     function _makeUserOp(bytes memory signature) internal pure returns (ERC4337.PackedUserOperation memory op) {
         op.sender = WALLET;
         op.signature = signature;
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                 DEPLOY-AUTH HELPERS (e3r)             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev The deploy signing domain (mirrors `ShrincsWallet._deployDomainSeparator`): bound to
+    ///      the FACTORY (`factory` mock here), not the wallet.
+    function _deployDomainSeparator(address factory_) internal view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(Codec.DEPLOY_DOMAIN_TAG, block.chainid, uint256(uint160(factory_)))
+        );
+    }
+
+    /// @dev The deploy `ActionContext` a deploy signature binds (nonce/keyVersion = 0).
+    function _deployContext(address factory_, bytes32 vaultId, address owner, uint16 idx)
+        internal
+        view
+        returns (SHRINCS.ActionContext memory)
+    {
+        return Codec.buildActionContext(
+            _deployDomainSeparator(factory_),
+            0,
+            0,
+            Codec.ACTION_DEPLOY,
+            Codec.deployPayloadHash(vaultId, owner, erc1271Commitment, idx)
+        );
+    }
+
+    /// @dev Produces the deploy-auth envelope `abi.encode(mainPk, sig)` the wallet embeds in the
+    ///      init payload — a main-key stateful signature at reserved deploy leaf `idx`.
+    function _statefulDeployAuth(address factory_, bytes32 vaultId, address owner, uint16 idx)
+        internal
+        view
+        returns (bytes memory)
+    {
+        SHRINCS.ActionContext memory ctx = _deployContext(factory_, vaultId, owner, idx);
+        bytes memory message =
+            abi.encodePacked(SHRINCS.statefulActionMessageHash(mainCommitment, ctx));
+        (SHRINCS.Signature memory sig, bool ok) =
+            SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, idx, message);
+        require(ok, "deploy stateful sign failed");
+        return abi.encode(mainPk, sig);
+    }
+
+    /// @dev Produces the deploy-auth envelope for a STATELESS-mode factory — a main-key stateless
+    ///      signature over the same deploy context (no leaf).
+    function _statelessDeployAuth(address factory_, bytes32 vaultId, address owner, uint16 idx)
+        internal
+        returns (bytes memory)
+    {
+        SHRINCS.ActionContext memory ctx = _deployContext(factory_, vaultId, owner, idx);
+        bytes memory message =
+            abi.encodePacked(SHRINCS.statelessActionMessageHash(mainCommitment, ctx));
+        SPHINCSPlusC.Signature memory sig = _signStatelessRaw(mainKey, mainPk, message);
+        return abi.encode(mainPk, sig);
+    }
+
+    /// @dev Builds a full init payload = the 6-field install tuple PLUS the trailing
+    ///      `bytes deployAuth` (7th ABI param) the wallet decodes via `decodeInitDeployAuth`.
+    function _initPayloadWithDeploy(bytes memory deployAuth) internal view returns (bytes memory) {
+        SHRINCS.PublicKey memory pk = _mainPk();
+        return abi.encode(
+            mainCommitment,
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            erc1271Commitment,
+            HashSuite.HASH_SUITE_ID,
+            deployAuth
+        );
     }
 }

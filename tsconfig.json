@@ -1,17 +1,26 @@
 {
   "compilerOptions": {
     "target": "es2020",
-    "module": "commonjs",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node", "jest"]
   },
   "include": [
+    "src/**/*",
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
     "hardhat.config.cts",
-    "test/**/*.ts",
-    "scripts/**/*"
+    "scripts",
+    "test/midl-integration.ts"
   ]
 }

@@ -26,7 +26,6 @@ import {
   type RotationTarget,
   type ShrincsPublicKey,
   type ShrincsWasmModule,
-  type StatefulRotationTarget,
   type StatefulSignature,
   type StatelessSignature,
   type WasmShrincsKeypair,
@@ -148,16 +147,6 @@ export class ShrincsKeyPair {
     return this.signStatelessRaw(message);
   }
 
-  /// Sign the stateful-only rotation recovery message at `leaf`.
-  signStatefulRotationAt(
-    context: RotationContext,
-    nextStatefulKey: StatefulRotationTarget,
-    leaf: number
-  ): StatefulSignature {
-    const message = this.statefulRotationMessageHash(context, nextStatefulKey);
-    return this.signStatefulRawAt(message, leaf);
-  }
-
   // ── canonical message hashes (no signing) ──────────────────────────────────
 
   statefulActionMessageHash(context: ActionContext): Hex {
@@ -183,18 +172,6 @@ export class ShrincsKeyPair {
       this.publicKey,
       context,
       nextKey
-    ) as Hex;
-  }
-
-  statefulRotationMessageHash(
-    context: RotationContext,
-    nextStatefulKey: StatefulRotationTarget
-  ): Hex {
-    return this.wasm.shrincsStatefulRotationMessageHash(
-      this.publicKeyCommitment,
-      this.publicKey,
-      context,
-      nextStatefulKey
     ) as Hex;
   }
 

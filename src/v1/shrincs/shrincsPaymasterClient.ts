@@ -31,10 +31,16 @@ import {
   VerifierMismatchError,
 } from "./errors.js";
 import {
+  LeafReservationStore,
+  reserveExplicitLeaf,
+  reserveLowestLeaf,
+} from "./leafReservation.js";
+import {
   buildStatefulRotationTarget,
   publicKeyToAbi,
 } from "./shrincsCodec.js";
 import { prepareTx, type TxOptions } from "./gas.js";
+import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
@@ -84,6 +90,10 @@ export class ShrincsPaymasterClient {
   private readonly walletClient: WalletClient;
   private readonly signer: ShrincsSigner;
   private readonly keypair?: ShrincsKeyPair;
+  /// Per-instance record of sponsorship leaves already handed out for signing,
+  /// so concurrent `sponsorUserOp` calls cannot race to the same lowest-unused
+  /// leaf and sign two messages at one one-time leaf.
+  private readonly leafReservations = new LeafReservationStore();
 
   constructor(params: ShrincsPaymasterClientParams) {
     this.paymasterAddress = params.paymasterAddress;
@@ -189,7 +199,31 @@ export class ShrincsPaymasterClient {
     ) {
       throw new VerifierMismatchError(keypair.publicKeyCommitment, verifier.commitment);
     }
-    const leaf = params.leaf ?? (await this.lowestUnusedLeaf(verifier));
+    // Reserve the leaf in-process before signing so concurrent sponsorships (or
+    // a sign-then-retry) cannot both pick the same lowest-unused leaf and sign
+    // two messages at one one-time leaf. An explicit override is reserved too.
+    const reservationKey = {
+      commitment: verifier.commitment,
+      keyVersion: verifier.keyVersion,
+    };
+    let leaf: number;
+    if (params.leaf !== undefined) {
+      leaf = params.leaf;
+      await reserveExplicitLeaf(this.leafReservations, reservationKey, leaf);
+    } else {
+      if (verifier.statefulLeavesUsed >= verifier.maxSignatures) {
+        throw new StatefulBudgetExhaustedError(
+          verifier.maxSignatures,
+          verifier.statefulLeavesUsed
+        );
+      }
+      leaf = await reserveLowestLeaf(
+        this.leafReservations,
+        reservationKey,
+        (candidate) => this.isStatefulLeafUsed(candidate),
+        verifier.maxSignatures
+      );
+    }
     const paymasterAndData = signPaymasterUserOp({
       keypair,
       userOp: params.userOp,
@@ -335,6 +369,7 @@ export class ShrincsPaymasterClient {
       ...(prepared.nonce !== undefined && { nonce: prepared.nonce }),
     } as unknown as Parameters<WalletClient["writeContract"]>[0];
     const hash = await withDecodedError(this.walletClient.writeContract(writeParams));
-    return this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    return assertReceiptSuccess(receipt);
   }
 }

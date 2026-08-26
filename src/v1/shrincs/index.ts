@@ -33,6 +33,7 @@ export type {
 export { ShrincsWalletClient, fetchShrincsWalletState } from "./shrincsWalletClient.js";
 export type {
   ShrincsWalletState,
+  ShrincsWalletClientParams,
   ShrincsTxKeyOptions,
   ExecuteParams,
   ExecuteCostEstimate,
@@ -41,7 +42,10 @@ export type {
 } from "./shrincsWalletClient.js";
 export type { CostEstimate } from "./estimateCost.js";
 export { ShrincsPaymasterClient } from "./shrincsPaymasterClient.js";
-export type { ShrincsVerifierState } from "./shrincsPaymasterClient.js";
+export type {
+  ShrincsVerifierState,
+  ShrincsPaymasterClientParams,
+} from "./shrincsPaymasterClient.js";
 export {
   ShrincsFactoryClient,
   randomVaultId,

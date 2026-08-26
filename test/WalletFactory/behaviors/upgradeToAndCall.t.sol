@@ -77,10 +77,10 @@ contract WalletFactory_upgradeToAndCall is WalletFactoryTest {
 
         // ERC-7201 namespaced state reads back identically through V2.
         assertEq(factory.owner(), ADMIN);
-        assertEq(factory.wallets(vaultId), walletAddr);
+        assertEq(factory.wallets(_salt(vaultId)), walletAddr);
         assertEq(factory.vaultIdOf(walletAddr), vaultId);
         assertEq(factory.walletOwner(walletAddr), ALICE);
-        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
+        assertNotEq(factory.getVaultIdIndex(ALICE, _salt(vaultId)), type(uint256).max);
         assertEq(factory.creationFee(), CREATION_FEE);
         assertEq(factory.executeFee(), EXECUTE_FEE);
         assertEq(factory.getVettedCodeCount(), vettedCount);
@@ -101,7 +101,8 @@ contract WalletFactory_upgradeToAndCall is WalletFactoryTest {
         // CREATE3 derives from address(this) == the proxy, ignoring initcode:
         // counterfactual wallet addresses survive the upgrade.
         bytes32 vaultId = keccak256("stable-across-upgrade");
-        address predicted = CREATE3.predictDeterministicAddress(vaultId, address(factory));
+        // e3r: the CREATE3 salt binds the main-key commitment.
+        address predicted = CREATE3.predictDeterministicAddress(_salt(vaultId), address(factory));
 
         _upgradeToV2(0.1 ether);
 
@@ -109,7 +110,7 @@ contract WalletFactory_upgradeToAndCall is WalletFactoryTest {
         WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(pk, 10);
         vm.prank(ALICE);
         address walletAddr =
-            factory.deployLatestWalletProxy(vaultId, payable(ALICE), _encodeInitPayload(pubkey, rKeys));
+            factory.deployLatestWalletProxy(vaultId, COMMITMENT, payable(ALICE), _encodeInitPayload(pubkey, rKeys));
         assertEq(walletAddr, predicted);
     }
 

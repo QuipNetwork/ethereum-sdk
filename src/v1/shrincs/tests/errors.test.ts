@@ -4,6 +4,13 @@
 
 import { encodeErrorResult, toFunctionSelector } from "viem";
 
+import { wotsPlusImplementationAbi } from "../../abi/WOTSPlusImplementation.js";
+import {
+  DuplicateKeyError,
+  UnknownContractError as V1UnknownContractError,
+} from "../../errors.js";
+import { makeErrorDecoder } from "../../internal/errorDecoder.js";
+import { decodeRevertBytes as decodeV1RevertBytes } from "../../internal/decodeError.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import {
   GuardedSlotTamperedError,
@@ -59,5 +66,56 @@ describe("shrincs error decoding", () => {
   it("maps an unknown 4-byte selector to UnknownContractError, and empty data to null", () => {
     expect(decodeRevertBytes("0xdeadbeef")).toBeInstanceOf(UnknownContractError);
     expect(decodeRevertBytes("0x")).toBeNull();
+  });
+});
+
+describe("registry-parameterized error decoder", () => {
+  it("decodes a v1-only error and a shrincs-only error through the shared core, keeping registries distinct", () => {
+    const v1Data = encodeErrorResult({
+      abi: wotsPlusImplementationAbi,
+      errorName: "DuplicateKey",
+    });
+    const shrincsData = encodeErrorResult({
+      abi: shrincsWalletAbi,
+      errorName: "StaleStatefulLeaf",
+    });
+
+    const v1 = makeErrorDecoder({
+      abis: [wotsPlusImplementationAbi],
+      errorMap: {
+        DuplicateKey: (_args, opts) => new DuplicateKeyError(opts),
+      },
+      unknownError: (name, args, opts) =>
+        new V1UnknownContractError(name, args, opts),
+    });
+    const shrincs = makeErrorDecoder({
+      abis: [shrincsWalletAbi],
+      errorMap: {
+        StaleStatefulLeaf: (_args, opts) =>
+          new StaleStatefulLeafError(undefined, opts),
+      },
+      unknownError: (name, args, opts) =>
+        new UnknownContractError(name, args, opts),
+    });
+
+    expect(v1.decodeRevertBytes(v1Data)).toBeInstanceOf(DuplicateKeyError);
+    expect(shrincs.decodeRevertBytes(shrincsData)).toBeInstanceOf(
+      StaleStatefulLeafError
+    );
+    expect(v1.decodeRevertBytes(shrincsData)).toBeInstanceOf(
+      V1UnknownContractError
+    );
+    expect(shrincs.decodeRevertBytes(v1Data)).toBeInstanceOf(
+      UnknownContractError
+    );
+
+    expect(decodeV1RevertBytes(v1Data)).toBeInstanceOf(DuplicateKeyError);
+    expect(decodeRevertBytes(shrincsData)).toBeInstanceOf(
+      StaleStatefulLeafError
+    );
+    expect(decodeV1RevertBytes(shrincsData)).toBeInstanceOf(
+      V1UnknownContractError
+    );
+    expect(decodeRevertBytes(v1Data)).toBeInstanceOf(UnknownContractError);
   });
 });

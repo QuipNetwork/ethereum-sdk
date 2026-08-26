@@ -36,8 +36,6 @@ import type { QuipWallet } from "./typechain-types/contracts/QuipWallet.js";
 import {
   computeVaultAddress,
   getNetworkAddresses,
-  QUIP_FACTORY_ADDRESS,
-  WOTS_PLUS_ADDRESS,
   CHAIN_IDS,
 } from "./addresses.js";
 
@@ -49,11 +47,11 @@ import { randomBytes } from "@noble/ciphers/webcrypto";
 // For whatever reason, typechain-types/index.ts does not do these
 // exports for us.
 export * from "./typechain-types/contracts/Deployer.js";
-export {
+export type {
   QuipFactory,
   QuipCreatedEvent,
 } from "./typechain-types/contracts/QuipFactory.js";
-export {
+export type {
   QuipWallet,
   pqTransferEvent,
 } from "./typechain-types/contracts/QuipWallet.js";
@@ -518,7 +516,7 @@ export class QuipClient {
         }
         vaultMap.set(ethers.hexlify(vaultId), walletAddress);
         index++;
-      } catch (error) {
+      } catch {
         // We've reached the end of the array
         break;
       }

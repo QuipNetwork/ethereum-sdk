@@ -46,6 +46,19 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     ///      execute digest — no factory state can raise what a wallet pays.
     uint256 public immutable MAX_FEE;
 
+    /// @dev Upper bound for `quipDeployChainIndex` — mirrors `ShrincsWallet.MAX_DEPLOY_CHAINS`
+    ///      (the reserved deploy-leaf range). Kept local so the generic factory does not import a
+    ///      wallet family; both are the same policy constant (e3r).
+    uint16 private constant _MAX_DEPLOY_CHAINS = 32;
+
+    /// @dev Transient slot holding the main-key commitment the in-flight `_deployProxy` salted
+    ///      the address with (e3r). Set before `initialize`, read back by the wallet through
+    ///      `pendingDeployCommitment()`, and auto-cleared at end of transaction (EIP-1153), so no
+    ///      permanent storage is spent and no stale value survives the deploy.
+    /// @notice REQUIRES EIP-1153 (TSTORE/TLOAD).
+    uint256 private constant _PENDING_DEPLOY_COMMITMENT_SLOT =
+        uint256(keccak256("quip.factory.pending.deploy.commitment")) - 1;
+
     constructor(uint256 maxFee_) payable {
         if (maxFee_ == 0) revert ZeroMaxFee();
         MAX_FEE = maxFee_;
@@ -53,6 +66,19 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     receive() external payable {}
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   INTERNAL OVERRIDES                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Guard owner initialization to prevent re-initialization. The factory inherits Solady
+    ///      `Ownable` directly (not the `ERC4337` base that supplies this override), so it MUST
+    ///      override `_guardInitializeOwner => true` itself: `_initializeOwner` then reverts
+    ///      `AlreadyInitialized` on a second call (defence in depth alongside the `initializer`
+    ///      modifier).
+    function _guardInitializeOwner() internal pure override returns (bool) {
+        return true;
+    }
 
     /// @inheritdoc IWalletFactory
     function initialize(address payable initialOwner) external initializer {
@@ -103,7 +129,9 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
         $.deprecatedImpls[codehash] = true;
         emit ImplementationSunset(impl, codehash);
-        if ($.latestWalletImpl == impl) {
+        // Deprecation is codehash-scoped, and the same codehash may live at
+        // multiple addresses, so compare the stored latest's EXTCODEHASH.
+        if ($.latestWalletImpl.codehash == codehash) {
             $.latestWalletImpl = _findLatestActive();
         }
     }
@@ -111,17 +139,19 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     /// @inheritdoc IWalletFactory
     function deployLatestWalletProxy(
         bytes32 vaultId,
+        bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) external payable returns (address) {
         address impl = Storage.layout().latestWalletImpl;
         if (impl == address(0)) revert NoActiveImplementation();
-        return _deployProxy(impl, vaultId, to, payload);
+        return _deployProxy(impl, vaultId, commitment, to, payload);
     }
 
     /// @inheritdoc IWalletFactory
     function deploySpecificWalletProxy(
         bytes32 vaultId,
+        bytes32 commitment,
         uint256 index,
         address payable to,
         bytes calldata payload
@@ -129,7 +159,14 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = $.vettedCode.at(index);
         if ($.deprecatedImpls[codehash]) revert ImplementationDeprecated();
-        return _deployProxy($.vettedWalletImpls[codehash], vaultId, to, payload);
+        return
+            _deployProxy(
+                $.vettedWalletImpls[codehash],
+                vaultId,
+                commitment,
+                to,
+                payload
+            );
     }
 
     /// @inheritdoc IWalletFactory
@@ -148,6 +185,20 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         uint256 oldFee = $.executeFee;
         $.executeFee = newFee;
         emit ExecuteFeeUpdated(oldFee, newFee);
+    }
+
+    /// @inheritdoc IWalletFactory
+    function setDeployConfig(
+        uint16 quipDeployChainIndex_,
+        DeployMode deployMode_
+    ) external onlyOwner {
+        if (quipDeployChainIndex_ == 0 || quipDeployChainIndex_ > _MAX_DEPLOY_CHAINS) {
+            revert InvalidDeployChainIndex(quipDeployChainIndex_);
+        }
+        Storage.Layout storage $ = Storage.layout();
+        $.quipDeployChainIndex = quipDeployChainIndex_;
+        $.deployMode = deployMode_;
+        emit DeployConfigSet(quipDeployChainIndex_, deployMode_);
     }
 
     /// @inheritdoc IWalletFactory
@@ -180,14 +231,15 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         }
 
         $.walletOwner[msg.sender] = newOwner;
-        // Both mutations MUST succeed: `oldOwner` came from the factory's
-        // authoritative `walletOwner` mapping so its set must contain
-        // `vaultId`; `newOwner` cannot already hold it because vaultIds are
-        // globally unique (CREATE3) and each lives in at most one owner's
-        // set at a time. A `false` return here means the registry diverged
-        // from `walletOwner` somehow — revert loudly.
-        if (!$.vaultIds[oldOwner].remove(vaultId)) revert RegistryDesync();
-        if (!$.vaultIds[newOwner].add(vaultId)) revert RegistryDesync();
+        // The per-owner set is keyed by the wallet's unique CREATE3 salt (e3r), not the raw
+        // vaultId, so two commitments under one vaultId can coexist. Both mutations MUST
+        // succeed: `salt` is in `oldOwner`'s set (it went there at deploy and moves only here),
+        // and `newOwner` cannot already hold it because a salt is globally unique (CREATE3) and
+        // lives in at most one owner's set at a time. A `false` return means the registry
+        // diverged from `walletOwner` — revert loudly.
+        bytes32 salt = $.saltOf[msg.sender];
+        if (!$.vaultIds[oldOwner].remove(salt)) revert RegistryDesync();
+        if (!$.vaultIds[newOwner].add(salt)) revert RegistryDesync();
         emit WalletOwnerChanged(vaultId, oldOwner, newOwner);
     }
 
@@ -208,6 +260,24 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     /// @inheritdoc IWalletFactory
     function executeFee() external view returns (uint256) {
         return Storage.layout().executeFee;
+    }
+
+    /// @inheritdoc IWalletFactory
+    function quipDeployChainIndex() external view returns (uint16) {
+        return Storage.layout().quipDeployChainIndex;
+    }
+
+    /// @inheritdoc IWalletFactory
+    function deployMode() external view returns (DeployMode) {
+        return Storage.layout().deployMode;
+    }
+
+    /// @inheritdoc IWalletFactory
+    function pendingDeployCommitment() external view returns (bytes32 c) {
+        uint256 slot = _PENDING_DEPLOY_COMMITMENT_SLOT;
+        assembly {
+            c := tload(slot)
+        }
     }
 
     /// @inheritdoc IWalletFactory
@@ -336,6 +406,7 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     function _deployProxy(
         address impl,
         bytes32 vaultId,
+        bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) internal returns (address) {
@@ -356,20 +427,35 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
             revert InsufficientCreationFee(msg.value, $.creationFee);
         }
         uint256 contractValue = msg.value - $.creationFee;
-        address contractAddr = CREATE3.deployDeterministic(
-            proxyInitcode,
-            vaultId
-        );
+
+        // e3r: the CREATE3 salt binds the main-key commitment, so the counterfactual address is
+        // a function of the key. Two commitments under one vaultId land at distinct addresses.
+        bytes32 salt = keccak256(abi.encode(vaultId, commitment));
+        address contractAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
+
+        // Publish the deploy context the wallet reads back during `initialize`, BEFORE the call:
+        //   - the reverse `vaultIdOf` entry (also the `OnlyWallet` gate for the ownership
+        //     callback), keyed by address as before;
+        //   - the salt commitment, via the transient `pendingDeployCommitment()` getter, so the
+        //     wallet can reject a payload whose key disagrees with the salted address.
+        // The deploy config (`quipDeployChainIndex`, `deployMode`) is already set at factory setup.
+        $.vaultIdOf[contractAddr] = vaultId;
+        $.saltOf[contractAddr] = salt;
+        {
+            uint256 slot = _PENDING_DEPLOY_COMMITMENT_SLOT;
+            assembly {
+                tstore(slot, commitment)
+            }
+        }
 
         IWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
-        $.wallets[vaultId] = contractAddr;
-        $.vaultIdOf[contractAddr] = vaultId;
+        // The registry is keyed by the unique salt, not the raw vaultId (e3r).
+        $.wallets[salt] = contractAddr;
         $.walletOwner[contractAddr] = to;
-        // `.add` cannot return false here: vaultId is unique per CREATE3,
-        // and a fresh contract address never appeared in any set before.
-        // Guard anyway against future Solady changes.
-        if (!$.vaultIds[to].add(vaultId)) revert RegistryDesync();
+        // `.add` cannot return false here: the salt is unique per CREATE3, and a fresh contract
+        // address never appeared in any set before. Guard anyway against future Solady changes.
+        if (!$.vaultIds[to].add(salt)) revert RegistryDesync();
 
         emit WalletDeployed(
             msg.value,

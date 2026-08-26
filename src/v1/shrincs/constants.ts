@@ -25,8 +25,13 @@ export const HASH_SUITE_UNSUPPORTED = 2;
 /// (Structural cross-check for decoded signatures.)
 export const STATEFUL_CHAINS = 64;
 
-/// Number of confirmations awaited after a write, unless overridden.
-export const DEFAULT_CONFIRMATIONS = 1;
+/// Size of the reserved deploy-leaf range at the low end of the main-key leaf
+/// space (`e3r`). Leaves `[1 .. MAX_DEPLOY_CHAINS]` are reserved for deploy
+/// authorizations, indexed by the factory's `quipDeployChainIndex`; the usable
+/// signing budget is `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`. This is the
+/// ceiling on `quipDeployChainIndex` and MUST equal the on-chain constant.
+/// DESIGN PARAMETER — confirm the value with the maintainer.
+export const MAX_DEPLOY_CHAINS = 32;
 
 // Conservative ERC-4337 gas budgets. SHRINCS stateful verification (64 WOTS-C
 // chains + an unbalanced Merkle auth path) is heavier than the WOTS+ wallet, so

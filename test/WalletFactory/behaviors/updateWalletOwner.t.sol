@@ -75,10 +75,10 @@ contract WalletFactory_updateWalletOwner is WalletFactoryTest {
         address wallet = _deployWalletFor(seed, ALICE);
         bytes32 vaultId = keccak256(abi.encodePacked(seed));
         assertEq(factory.vaultIdOf(wallet), vaultId);
-        assertEq(factory.wallets(vaultId), wallet);
+        assertEq(factory.wallets(_salt(vaultId)), wallet);
         assertEq(factory.walletOwner(wallet), ALICE);
-        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
-        assertEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);
+        assertNotEq(factory.getVaultIdIndex(ALICE, _salt(vaultId)), type(uint256).max);
+        assertEq(factory.getVaultIdIndex(BOB, _salt(vaultId)), type(uint256).max);
         assertEq(factory.getVaultIdCount(ALICE), 1);
     }
 }

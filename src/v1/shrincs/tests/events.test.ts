@@ -24,6 +24,8 @@ import {
   parseExecutionSucceeded,
   parseKeyRotated,
   parseLeafConsumedOnly,
+  parseLeafRevocationSkipped,
+  parseLeafRevoked,
   parsePaymasterInitialized,
   parsePaymasterValidationRejected,
   parseShrincsVerifierSet,
@@ -115,6 +117,102 @@ describe("shrincs event parsers", () => {
       const [out] = parseLeafConsumedOnly([log]);
       expect(out).toEqual({ leaf: 3 });
       expect(typeof out.leaf).toBe("number");
+    });
+
+    it("parseLeafRevoked coerces leaf->number, keyVersion->bigint", () => {
+      const log = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 5,
+        keyVersion: 9n,
+      });
+      const [out] = parseLeafRevoked([log]);
+      expect(out).toEqual({ leaf: 5, keyVersion: 9n });
+      expect(typeof out.leaf).toBe("number");
+      expect(typeof out.keyVersion).toBe("bigint");
+    });
+
+    it("parseLeafRevoked returns [] for an empty source", () => {
+      expect(parseLeafRevoked([])).toEqual([]);
+    });
+
+    it("parseLeafRevoked captures a paymaster-emitted LeafRevoked", () => {
+      const log = makeLog(shrincsPaymasterAbi as Abi, ADDR_B, "LeafRevoked", {
+        leaf: 7,
+        keyVersion: 3n,
+      });
+      expect(parseLeafRevoked([log])).toEqual([{ leaf: 7, keyVersion: 3n }]);
+    });
+
+    it("parseLeafRevoked does not double-count a single log across both ABIs", () => {
+      // The wallet and paymaster share the LeafRevoked topic, so one physical
+      // log decodes under both ABIs; dedup by (address, logIndex) keeps it once.
+      const log = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 1,
+        keyVersion: 0n,
+      });
+      expect(parseLeafRevoked([log])).toHaveLength(1);
+    });
+
+    it("parseLeafRevoked returns both wallet and paymaster leaves in one receipt", () => {
+      const walletLog = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 2,
+        keyVersion: 0n,
+      });
+      const paymasterLog = makeLog(
+        shrincsPaymasterAbi as Abi,
+        ADDR_B,
+        "LeafRevoked",
+        { leaf: 8, keyVersion: 0n }
+      );
+      expect(parseLeafRevoked([walletLog, paymasterLog])).toEqual([
+        { leaf: 2, keyVersion: 0n },
+        { leaf: 8, keyVersion: 0n },
+      ]);
+    });
+
+    it("keeps two distinct wallet leaves even when the source reuses a logIndex", () => {
+      // makeLog stamps logIndex 0 on every synthetic log, so an (address,
+      // logIndex) key would wrongly collapse these two distinct emissions.
+      const a = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 3,
+        keyVersion: 0n,
+      });
+      const b = makeLog(shrincsWalletAbi as Abi, ADDR_A, "LeafRevoked", {
+        leaf: 4,
+        keyVersion: 0n,
+      });
+      expect(parseLeafRevoked([a, b])).toEqual([
+        { leaf: 3, keyVersion: 0n },
+        { leaf: 4, keyVersion: 0n },
+      ]);
+    });
+
+    it("parseLeafRevocationSkipped captures a paymaster-emitted event", () => {
+      const log = makeLog(
+        shrincsPaymasterAbi as Abi,
+        ADDR_B,
+        "LeafRevocationSkipped",
+        { leaf: 4, keyVersion: 1n }
+      );
+      expect(parseLeafRevocationSkipped([log])).toEqual([
+        { leaf: 4, keyVersion: 1n },
+      ]);
+    });
+
+    it("parseLeafRevocationSkipped coerces leaf->number, keyVersion->bigint", () => {
+      const log = makeLog(
+        shrincsWalletAbi as Abi,
+        ADDR_A,
+        "LeafRevocationSkipped",
+        { leaf: 7, keyVersion: 2n }
+      );
+      const [out] = parseLeafRevocationSkipped([log]);
+      expect(out).toEqual({ leaf: 7, keyVersion: 2n });
+      expect(typeof out.leaf).toBe("number");
+      expect(typeof out.keyVersion).toBe("bigint");
+    });
+
+    it("parseLeafRevocationSkipped returns [] for an empty source", () => {
+      expect(parseLeafRevocationSkipped([])).toEqual([]);
     });
 
     it("parseExecutionSucceeded", () => {

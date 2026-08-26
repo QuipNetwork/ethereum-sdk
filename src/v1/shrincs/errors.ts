@@ -15,13 +15,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { type Hex } from "viem";
+import { type Address, type Hex } from "viem";
 
 // Shrincs SDK errors extend the shared `QuipError` base from the v1 SDK so that
 // `instanceof QuipError` and the `.code` discriminator work uniformly across
 // both wallet families. Contract-revert -> typed-error mapping lives in
 // `internal/decodeError.ts`.
 import { QuipError, type QuipErrorOptions } from "../errors.js";
+import { MAX_DEPLOY_CHAINS } from "./constants.js";
 
 // Re-export the base + the generic operational errors the reused helpers
 // (`internal/providerState.ts`, `gas.ts`) already throw, so Shrincs callers can
@@ -126,6 +127,20 @@ export class UnknownContractError extends QuipError {
   }
 }
 
+/// `waitForTransactionReceipt` resolved with `status === "reverted"` — the
+/// transaction landed but the call reverted on chain.
+export class TransactionRevertedError extends QuipError {
+  readonly transactionHash: Hex;
+  constructor(transactionHash: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_TRANSACTION_REVERTED",
+      `Transaction ${transactionHash} reverted`,
+      opts
+    );
+    this.transactionHash = transactionHash;
+  }
+}
+
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                      WALLET ERRORS                          */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -139,6 +154,39 @@ export class ZeroAddressFactoryError extends QuipError {
 export class ZeroAddressOwnerError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_ZERO_ADDRESS_OWNER", "Owner address is zero", opts);
+  }
+}
+
+/// Client-side only (never a contract revert): the supplied owner is non-zero
+/// but does not match the wallet's on-chain `owner()`.
+export class OwnerMismatchError extends QuipError {
+  readonly expected: Address;
+  readonly actual: Address;
+  constructor(expected: Address, actual: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_OWNER_MISMATCH",
+      `Owner ${actual} does not match the installed owner ${expected}`,
+      opts
+    );
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+/// An `execute` call carries calldata but its target holds no code. Solady's
+/// `execute` is a raw call with no `extcodesize` guard, so a call to a codeless
+/// target is a phantom no-op that still consumes a leaf, nonce, fee, and gas
+/// while reporting success. Pure value transfers (empty calldata) are exempt —
+/// sending ETH to an EOA is legitimate.
+export class ExecuteTargetHasNoCodeError extends QuipError {
+  readonly target: Address;
+  constructor(target: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EXECUTE_TARGET_NO_CODE",
+      `execute target ${target} has no code; a call to a codeless target is a phantom no-op that consumes a leaf`,
+      opts
+    );
+    this.target = target;
   }
 }
 
@@ -272,8 +320,10 @@ export class EmptyLeavesError extends QuipError {
   }
 }
 
-/// A `markLeavesUsed` target leaf is zero or exceeds the installed key's
-/// `maxSignatures` budget — a client bug, not a race, so the whole batch fails.
+/// A `markLeavesUsed` target leaf is outside the signing range — inside the
+/// reserved deploy-leaf range `[1..MAX_DEPLOY_CHAINS]` (`e3r`) or above the
+/// installed key's `maxSignatures` budget. A client bug, not a race, so the
+/// whole batch fails.
 export class LeafOutOfRangeError extends QuipError {
   readonly leaf: number;
   readonly maxSignatures?: number;
@@ -282,7 +332,9 @@ export class LeafOutOfRangeError extends QuipError {
       "SHRINCS_LEAF_OUT_OF_RANGE",
       maxSignatures === undefined
         ? `Revocation target leaf ${leaf} is out of range`
-        : `Revocation target leaf ${leaf} is out of range (valid: 1..${maxSignatures})`,
+        : `Revocation target leaf ${leaf} is out of range (valid: ${
+            MAX_DEPLOY_CHAINS + 1
+          }..${maxSignatures})`,
       opts
     );
     this.leaf = leaf;

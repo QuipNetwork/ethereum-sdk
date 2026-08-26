@@ -131,7 +131,10 @@ assertEq(logs[0].topics[0], Event.selector);
 
 ### Function Ordering
 
-Per the [Solidity style guide](https://docs.soliditylang.org/en/latest/style-guide.html#order-of-functions), functions are grouped by visibility, with state-changing before view/pure within each group:
+Ordering is **section-based**: functions are grouped by role under the ASCII section
+banners such as `INTERNAL OVERRIDES`, `EXTERNAL`, and `INTERNALS`. Within each section they
+follow the [Solidity style guide](https://docs.soliditylang.org/en/latest/style-guide.html#order-of-functions)
+visibility order (state-changing before view/pure). The canonical section sequence is:
 
 1. `constructor`
 2. `receive()` / `fallback()`
@@ -142,6 +145,17 @@ Per the [Solidity style guide](https://docs.soliditylang.org/en/latest/style-gui
 7. Public view/pure functions
 8. Internal functions
 9. Private functions
+
+**Deliberate deviations on the large SHRINCS contracts** (`ShrincsWallet`, `ShrincsPaymaster`,
+`WalletFactory`): the base-contract override surface (Solady `Ownable`/`ERC4337`/UUPS) stays
+together in the overrides section even when an individual override is `public`/`external`. For
+example, `ShrincsWallet` groups `execute`, `executeBatch`, `delegateExecute`, and `storageStore`
+with `_authorizeUpgrade` and `_validateSignature` rather than in the public section. Private
+helpers group by concern within the internals section — `_statelessRotate` is placed with the
+verify helpers rather than last. `WalletFactory` keeps `_authorizeUpgrade` with its other
+internals near the file end. Rationale: on these security contracts, adjacency of each override and
+its helpers keeps the code auditable and preserves git blame. A strict global visibility sort would
+fragment both.
 
 ### Import Style
 

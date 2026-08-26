@@ -30,7 +30,7 @@ contract WOTSPlusImplementation__validateSignature is WOTSPlusImplementationTest
 
         vm.prank(ALICE);
         address proxyAddr =
-            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-vs-vault"), payable(ALICE), payload);
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-vs-vault"), COMMITMENT, payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 

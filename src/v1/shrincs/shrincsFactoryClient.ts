@@ -33,15 +33,18 @@ import { walletFactoryAbi } from "../abi/WalletFactory.js";
 import { getNetworkAddresses } from "../addresses.js";
 import { NoVaultFoundError, WalletAlreadyExistsError } from "../errors.js";
 import { assertProviderState, boundChain } from "../internal/providerState.js";
-import { getShrincsAddresses } from "./addresses.js";
+import { deployVaultSalt, getShrincsAddresses } from "./addresses.js";
 import {
   CommitmentMismatchError,
+  ImplementationDeprecatedError,
   ImplementationNotVettedError,
 } from "./errors.js";
 import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
 import { withDecodedError } from "./internal/decodeError.js";
-import { encodeInitPayload, publicKeyCommitment } from "./shrincsCodec.js";
+import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
+import { encodeDeployAuth, encodeInitPayload, publicKeyCommitment } from "./shrincsCodec.js";
+import { buildDeployAuthorization } from "./deployAuth.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
   ShrincsWalletClient,
@@ -61,14 +64,22 @@ const COMMITMENT_BYTES = 32;
 
 const nonZeroKeyMaterial = (bytes: number): Hex => `0x${"ff".repeat(bytes)}`;
 
-export function placeholderInitPayload(): Hex {
-  const bundleWithoutCommitment = {
+function placeholderBundleWithoutCommitment() {
+  return {
     statefulPublicKey: nonZeroKeyMaterial(
       SHRINCS_PARAMS_STATEFUL_PUBLIC_KEY_BYTES
     ),
     pkSeed: nonZeroKeyMaterial(COMMITMENT_BYTES),
     hypertreeRoot: nonZeroKeyMaterial(COMMITMENT_BYTES),
   };
+}
+
+export function placeholderMainCommitment(): Hex {
+  return publicKeyCommitment(placeholderBundleWithoutCommitment());
+}
+
+export function placeholderInitPayload(): Hex {
+  const bundleWithoutCommitment = placeholderBundleWithoutCommitment();
   return encodeInitPayload({
     mainBundle: {
       ...bundleWithoutCommitment,
@@ -168,11 +179,19 @@ export class ShrincsFactoryClient {
 
     const vaultId = params.vaultId ?? randomVaultId();
 
-    await this.assertVaultIdUnclaimed(vaultId);
-
     const mainKey = params.signer.recoverKeyPair(vaultId, {
       maxSignatures: params.maxSignatures,
     });
+
+    // The factory keys its registry by the commitment-bound deploy salt (`e3r`),
+    // so an existing-wallet check must look up `(vaultId, mainCommitment)`.
+    const existing = await this.getShrincsWalletAddress(
+      vaultId,
+      mainKey.publicKeyCommitment
+    );
+    if (existing !== zeroAddress) {
+      throw new WalletAlreadyExistsError(vaultId);
+    }
 
     // Resolve the ERC-1271 verifier commitment from whichever explicit form the
     // caller chose — never inferred from the main key/vaultId.
@@ -186,13 +205,49 @@ export class ShrincsFactoryClient {
       erc1271Commitment = params.erc1271.commitment;
     }
 
+    // the factory is the authority for the deploy-auth mode and the
+    // per-chain quipDeployChainIndex; the deploy signature must match exactly
+    // what `initialize` rebuilds and verifies against the factory. Read both
+    // from the factory rather than assuming, so a misconfigured factory fails
+    // loudly instead of producing an unverifiable signature.
+    const [deployModeRaw, chainIndexRaw] = (await Promise.all([
+      withDecodedError(
+        this.publicClient.readContract({
+          address: this.factoryAddress,
+          abi: walletFactoryAbi,
+          functionName: "deployMode",
+        })
+      ),
+      withDecodedError(
+        this.publicClient.readContract({
+          address: this.factoryAddress,
+          abi: walletFactoryAbi,
+          functionName: "quipDeployChainIndex",
+        })
+      ),
+    ])) as [number, number];
+    const mode = deployModeRaw === 0 ? "stateful" : "stateless";
+    const { signature: deploySignature } = buildDeployAuthorization({
+      mainKey,
+      chainId: this.chainId,
+      factoryAddress: this.factoryAddress,
+      vaultId,
+      owner: this.account,
+      erc1271Commitment,
+      quipDeployChainIndex: Number(chainIndexRaw),
+      mode,
+    });
+    const deployAuth = encodeDeployAuth(mainKey.publicKey, deploySignature, mode);
+
     const initPayload = encodeInitPayload({
       mainBundle: mainKey.publicKey,
       erc1271Commitment,
+      deployAuth,
     });
 
     const { contractCall, creationFee } = await this.buildDeploymentCall(
       vaultId,
+      mainKey.publicKeyCommitment,
       initPayload
     );
     const prepared = await prepareTx({
@@ -211,8 +266,9 @@ export class ShrincsFactoryClient {
       } as unknown as Parameters<WalletClient["writeContract"]>[0])
     );
 
-    const receipt: TransactionReceipt =
-      await this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt: TransactionReceipt = assertReceiptSuccess(
+      await this.publicClient.waitForTransactionReceipt({ hash })
+    );
     const logs = parseEventLogs({
       abi: walletFactoryAbi,
       logs: receipt.logs,
@@ -240,12 +296,17 @@ export class ShrincsFactoryClient {
       expectedChainId: this.chainId,
     });
 
+    // TODO(e3r): `placeholderInitPayload()` carries no `deployAuth`, so the
+    // wallet's `initialize` reverts `InvalidDeployAuthorization` under the e3r
+    // deploy-authorization gate and the gas simulation below fails. Estimating
+    // creation cost needs either a signer-built deploy authorization or a
+    // pinned gas constant; tracked as a follow-up on the guard-salt stack.
     const vaultId = params.vaultId ?? randomVaultId();
-    await this.assertVaultIdUnclaimed(vaultId);
-
+    const initPayload = placeholderInitPayload();
     const { contractCall, creationFee } = await this.buildDeploymentCall(
       vaultId,
-      placeholderInitPayload()
+      placeholderMainCommitment(),
+      initPayload
     );
     const estimate = await estimateTxCost({
       publicClient: this.publicClient,
@@ -258,14 +319,22 @@ export class ShrincsFactoryClient {
     return { ...estimate, creationFee };
   }
 
-  /// Resolve an existing wallet by `vaultId`, asserting `signer` reproduces the
-  /// installed main-key commitment (`CommitmentMismatchError` otherwise), and
-  /// return a bound `ShrincsWalletClient`.
+  /// Resolve an existing wallet by `(vaultId, maxSignatures)`, asserting `signer`
+  /// reproduces the installed main-key commitment (`CommitmentMismatchError`
+  /// otherwise), and return a bound `ShrincsWalletClient`. `maxSignatures` is
+  /// required: under `e3r` the wallet address binds to the main-key commitment,
+  /// which depends on the key's leaf budget, so it cannot be recovered from the
+  /// vault id alone.
   async getShrincsWallet(
     vaultId: Hex,
-    signer: ShrincsSigner
+    signer: ShrincsSigner,
+    maxSignatures: number
   ): Promise<ShrincsWalletClient> {
-    const walletAddress = await this.getShrincsWalletAddress(vaultId);
+    const keypair = signer.recoverKeyPair(vaultId, { maxSignatures });
+    const walletAddress = await this.getShrincsWalletAddress(
+      vaultId,
+      keypair.publicKeyCommitment
+    );
     if (walletAddress === zeroAddress) {
       throw new NoVaultFoundError(vaultId);
     }
@@ -280,9 +349,6 @@ export class ShrincsFactoryClient {
     });
 
     const state = await client.getWalletState();
-    const keypair = signer.recoverKeyPair(vaultId, {
-      maxSignatures: state.maxSignatures,
-    });
     if (
       keypair.publicKeyCommitment.toLowerCase() !==
       state.shrincsPublicKeyCommitment.toLowerCase()
@@ -295,13 +361,19 @@ export class ShrincsFactoryClient {
     return client;
   }
 
-  async getWalletState(vaultId: Hex): Promise<{
+  async getWalletState(
+    vaultId: Hex,
+    mainCommitment: Hex
+  ): Promise<{
     keyVersion: number;
     shrincsPublicKeyCommitment: Hex;
     maxSignatures: number;
     hashSuite: number;
   } | null> {
-    const walletAddress = await this.getShrincsWalletAddress(vaultId);
+    const walletAddress = await this.getShrincsWalletAddress(
+      vaultId,
+      mainCommitment
+    );
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(
       this.publicClient,
@@ -319,7 +391,10 @@ export class ShrincsFactoryClient {
     vaultId: Hex;
     keypair: ShrincsKeyPair;
   }): Promise<ShrincsWalletClient | null> {
-    const walletAddress = await this.getShrincsWalletAddress(params.vaultId);
+    const walletAddress = await this.getShrincsWalletAddress(
+      params.vaultId,
+      params.keypair.publicKeyCommitment
+    );
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(
       this.publicClient,
@@ -329,7 +404,10 @@ export class ShrincsFactoryClient {
       params.keypair.publicKeyCommitment.toLowerCase() !==
       state.shrincsPublicKeyCommitment.toLowerCase()
     ) {
-      return null;
+      throw new CommitmentMismatchError(
+        params.keypair.publicKeyCommitment,
+        state.shrincsPublicKeyCommitment
+      );
     }
     return new ShrincsWalletClient({
       walletAddress,
@@ -342,27 +420,27 @@ export class ShrincsFactoryClient {
     });
   }
 
-  /// The factory-registered wallet address for `vaultId` (`zeroAddress` if none).
-  async getShrincsWalletAddress(vaultId: Hex): Promise<Address> {
+  /// The factory-registered wallet address for `(vaultId, mainCommitment)`
+  /// (`zeroAddress` if none). Under `e3r` the factory keys its registry by the
+  /// commitment-bound deploy salt, so resolving a wallet requires the main-key
+  /// commitment, not the vault id alone.
+  async getShrincsWalletAddress(
+    vaultId: Hex,
+    mainCommitment: Hex
+  ): Promise<Address> {
     return withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
         abi: walletFactoryAbi,
         functionName: "wallets",
-        args: [vaultId],
+        args: [deployVaultSalt(vaultId, mainCommitment)],
       })
     ) as Promise<Address>;
   }
 
-  private async assertVaultIdUnclaimed(vaultId: Hex): Promise<void> {
-    const existing = await this.getShrincsWalletAddress(vaultId);
-    if (existing !== zeroAddress) {
-      throw new WalletAlreadyExistsError(vaultId);
-    }
-  }
-
   private async buildDeploymentCall(
     vaultId: Hex,
+    mainCommitment: Hex,
     initPayload: Hex
   ): Promise<{ contractCall: ContractCallParams; creationFee: bigint }> {
     const index = await this.resolveImplementationIndex();
@@ -380,7 +458,7 @@ export class ShrincsFactoryClient {
         address: this.factoryAddress,
         abi: walletFactoryAbi,
         functionName: "deploySpecificWalletProxy",
-        args: [vaultId, index, this.account, initPayload],
+        args: [vaultId, mainCommitment, index, this.account, initPayload],
         value: creationFee,
         account: this.account as Account | Address,
       },
@@ -389,7 +467,8 @@ export class ShrincsFactoryClient {
 
   /// Vetted-set index of the Shrincs implementation, resolved from its on-chain
   /// codehash. Throws `ImplementationNotVettedError` if the implementation is not
-  /// in the factory's vetted set (or not deployed on this chain).
+  /// in the factory's vetted set (or not deployed on this chain). Throws
+  /// `ImplementationDeprecatedError` if the vetted codehash has been sunset.
   private async resolveImplementationIndex(): Promise<bigint> {
     const code = await this.publicClient.getCode({
       address: this.walletImplementation,
@@ -397,16 +476,28 @@ export class ShrincsFactoryClient {
     if (!code || code === "0x") {
       throw new ImplementationNotVettedError();
     }
+    const codehash = keccak256(code);
     const index = (await withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
         abi: walletFactoryAbi,
         functionName: "getVettedCodeIndex",
-        args: [keccak256(code)],
+        args: [codehash],
       })
     )) as bigint;
     if (index === maxUint256) {
       throw new ImplementationNotVettedError();
+    }
+    const deprecated = (await withDecodedError(
+      this.publicClient.readContract({
+        address: this.factoryAddress,
+        abi: walletFactoryAbi,
+        functionName: "deprecatedImpls",
+        args: [codehash],
+      })
+    )) as boolean;
+    if (deprecated) {
+      throw new ImplementationDeprecatedError();
     }
     return index;
   }

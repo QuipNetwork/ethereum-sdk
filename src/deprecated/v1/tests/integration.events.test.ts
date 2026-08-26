@@ -15,7 +15,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
-import { toHex, zeroAddress } from "viem";
+import { zeroAddress } from "viem";
 
 import { KeyType } from "../walletClient.js";
 import {

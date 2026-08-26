@@ -24,6 +24,7 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  keccak256,
   toHex,
   zeroAddress,
   parseEventLogs,
@@ -207,7 +208,13 @@ export class QuipClient {
       quipSigner,
       {
         functionName: "deployLatestWalletProxy",
-        argsExceptInitPayload: () => [vaultId, this.account!] as const,
+        // e3r: the shared factory salt now binds a deploy commitment. The sunset
+        // WOTS+ wallet does not verify it (only ShrincsWallet does), so pass a
+        // deterministic per-vault value to keep the address deterministic. WOTS+
+        // keeps its documented vaultId front-running exposure (random vaultId is
+        // still the only safe default).
+        argsExceptInitPayload: () =>
+          [vaultId, keccak256(vaultId), this.account!] as const,
       },
       txOpts
     );
@@ -230,7 +237,10 @@ export class QuipClient {
       quipSigner,
       {
         functionName: "deploySpecificWalletProxy",
-        argsExceptInitPayload: () => [vaultId, index, this.account!] as const,
+        // e3r: see createWallet — deterministic salt commitment for the sunset
+        // WOTS+ family (not verified by its wallet).
+        argsExceptInitPayload: () =>
+          [vaultId, keccak256(vaultId), index, this.account!] as const,
       },
       txOpts
     );

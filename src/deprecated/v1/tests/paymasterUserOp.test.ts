@@ -21,7 +21,6 @@ import {
   hexToBytes,
   keccak256,
   pad,
-  size,
   slice,
   toHex,
 } from "viem";
