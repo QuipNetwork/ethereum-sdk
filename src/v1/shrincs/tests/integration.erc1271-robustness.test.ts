@@ -168,9 +168,12 @@ describe("ShrincsWallet.isValidSignature never-revert robustness", () => {
   // same hash, returns the success magic — so the battery above is rejecting
   // bad input, not a wallet that rejects everything.
   it("accepts a genuine signErc1271 blob (success magic) — battery isn't a tautology", async () => {
-    const erc1271KeyPair = wallet.signer.recoverKeyPair(wallet.erc1271VaultId, {
-      maxSignatures: wallet.maxSignatures,
-    });
+    const erc1271KeyPair = wallet.signer.recoverKeyPair(
+      wallet.erc1271DerivationIndex,
+      {
+        maxSignatures: wallet.maxSignatures,
+      }
+    );
     const blob = await wallet.client.signErc1271({
       hash,
       erc1271KeyPair,

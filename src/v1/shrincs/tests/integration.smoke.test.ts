@@ -95,7 +95,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
   // ── (a) deploy + reads ───────────────────────────────────────────────
   it("a. deploys a wallet, reads expected state, and resolves the same address", async () => {
     const seedByte = 0x10;
-    const { client, signer, vaultId, walletAddress } =
+    const { client, signer, derivationIndex, erc1271DerivationIndex, walletAddress } =
       await createFreshShrincsWallet(stack, seedByte, {
         maxSignatures: MAX_SIGS,
       });
@@ -107,7 +107,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(state.remainingStatefulSignatures).toBe(SIGNING_BUDGET);
 
     // Commitment installed on-chain reproduces from the signer.
-    const mainKey = signer.recoverKeyPair(vaultId, { maxSignatures: MAX_SIGS });
+    const mainKey = signer.recoverKeyPair(derivationIndex, {
+      maxSignatures: MAX_SIGS,
+    });
     expect(state.shrincsPublicKeyCommitment.toLowerCase()).toBe(
       mainKey.publicKeyCommitment.toLowerCase()
     );
@@ -120,7 +122,13 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     // getShrincsWallet resolves the same address and validates the commitment.
     const factory = makeShrincsFactoryClient(stack);
-    const resolved = await factory.getShrincsWallet(vaultId, signer, MAX_SIGS);
+    const resolved = await factory.getShrincsWallet({
+      derivationIndex,
+      erc1271: { derivationIndex: erc1271DerivationIndex, maxSignatures: MAX_SIGS },
+      owner: stack.account.address,
+      signer,
+      maxSignatures: MAX_SIGS,
+    });
     expect(getAddress(resolved.walletAddress)).toBe(getAddress(walletAddress));
   }, 120_000);
 
@@ -212,15 +220,12 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
   // ── (e) ERC-1271 round-trip ──────────────────────────────────────────
   it("e. signErc1271 produces a blob the wallet accepts (isValidSignature + debug Ok)", async () => {
-    const { client, signer, erc1271VaultId } = await createFreshShrincsWallet(
-      stack,
-      0x50,
-      { maxSignatures: MAX_SIGS }
-    );
+    const { client, signer, erc1271DerivationIndex } =
+      await createFreshShrincsWallet(stack, 0x50, { maxSignatures: MAX_SIGS });
 
-    // The ERC-1271 verifier key was installed at creation under erc1271VaultId.
+    // The ERC-1271 verifier key was installed at creation under erc1271DerivationIndex.
     const state = await client.getWalletState();
-    const erc1271KeyPair = signer.recoverKeyPair(erc1271VaultId, {
+    const erc1271KeyPair = signer.recoverKeyPair(erc1271DerivationIndex, {
       maxSignatures: MAX_SIGS,
     });
     expect(erc1271KeyPair.publicKeyCommitment.toLowerCase()).toBe(
@@ -268,8 +273,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // Operator signer holds the paymaster's sponsorship verifier key.
     const operatorSeed = 0x61;
     const operator = await makeShrincsSigner(operatorSeed);
+    const operatorIndex = operatorSeed;
     const operatorVaultId = toHex(new Uint8Array(32).fill(operatorSeed));
-    const verifierKey = operator.recoverKeyPair(operatorVaultId, {
+    const verifierKey = operator.recoverKeyPair(operatorIndex, {
       maxSignatures: MAX_SIGS,
     });
 
@@ -288,6 +294,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       walletClient: stack.walletClient,
       signer: operator,
       vaultId: operatorVaultId,
+      derivationIndex: operatorIndex,
       chainId: foundry.id,
       account: stack.account.address,
     });
@@ -642,13 +649,14 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // so it must not share the stack proxy that test (f) initialized.
     const paymaster = await deployFreshPaymasterProxy(stack);
 
-    // ONE operator signer, two vault branches: vault1 = the initial key,
-    // vault2 = the rotation target (real operators rotate within one master
+    // ONE operator signer, two derivation indices: index1 = the initial key,
+    // index2 = the rotation target (real operators rotate within one master
     // secret — that is what makes the post-rotation graft recoverable).
     const operator = await makeShrincsSigner(0xa0);
+    const index1 = 0xa0;
+    const index2 = 0xa1;
     const vault1 = toHex(new Uint8Array(32).fill(0xa0));
-    const vault2 = toHex(new Uint8Array(32).fill(0xa1));
-    const key1 = operator.recoverKeyPair(vault1, { maxSignatures: MAX_SIGS });
+    const key1 = operator.recoverKeyPair(index1, { maxSignatures: MAX_SIGS });
 
     await initializePaymaster(stack, {
       owner: stack.account.address,
@@ -662,6 +670,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       walletClient: stack.walletClient,
       signer: operator,
       vaultId: vault1,
+      derivationIndex: index1,
       chainId: foundry.id,
       account: stack.account.address,
     });
@@ -707,7 +716,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // Rotate to vault2's fresh stateful subkey with a BIGGER budget (the
     // budget rides inside the 68-byte encoding — each rotation may change it).
     const NEW_MAX = 8;
-    const key2 = operator.recoverKeyPair(vault2, { maxSignatures: NEW_MAX });
+    const key2 = operator.recoverKeyPair(index2, { maxSignatures: NEW_MAX });
     const rotation = await pmClient.rotateStatefulKey({
       nextStatefulPublicKey: key2.publicKey.statefulPublicKey,
     });
@@ -748,8 +757,8 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // Post-rotation operator keypair: graft vault2's stateful secrets onto
     // vault1's stateless half — reproduces the installed commitment exactly.
     const grafted = operator.deriveKeyPair({
-      statefulVaultId: vault2,
-      statelessVaultId: vault1,
+      statefulIndex: index2,
+      statelessIndex: index1,
       maxSignatures: NEW_MAX,
     });
     expect(grafted.publicKeyCommitment.toLowerCase()).toBe(
@@ -760,7 +769,8 @@ describe("Shrincs SDK live-anvil smoke", () => {
       publicClient: stack.publicClient,
       walletClient: stack.walletClient,
       signer: operator,
-      vaultId: vault2,
+      vaultId: vault1,
+      derivationIndex: index2,
       chainId: foundry.id,
       account: stack.account.address,
       keypair: grafted,

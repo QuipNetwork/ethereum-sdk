@@ -23,9 +23,9 @@ describe("shrincs SDK barrel exports", () => {
     }
   });
 
-  it("exports the WASM loader and vaultId helper as functions", () => {
+  it("exports the WASM loader and QSalt1 vaultId helper as functions", () => {
     expect(typeof SDK.loadShrincsWasm).toBe("function");
-    expect(typeof SDK.randomVaultId).toBe("function");
+    expect(typeof SDK.qsalt1VaultId).toBe("function");
   });
 
   it("exports the codec namespace with its encoders", () => {

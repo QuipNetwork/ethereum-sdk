@@ -32,7 +32,6 @@ import {
   createTestClient,
   http,
   parseEther,
-  toHex,
 } from "viem";
 import { createAnvil, type Anvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
@@ -303,10 +302,12 @@ export function makeShrincsFactoryClient(
 
 export interface FreshShrincsWallet {
   signer: ShrincsSigner;
-  /// Main-key vault branch (filled with `seedByte`).
+  /// Main-key derivation index (the `seedByte` used at creation).
+  derivationIndex: number;
+  /// ERC-1271 verifier-key derivation index (distinct from `derivationIndex`).
+  erc1271DerivationIndex: number;
+  /// Computed QSalt1 vault id (on-chain identity), not a key seed.
   vaultId: Hex;
-  /// ERC-1271 verifier-key vault branch (distinct from `vaultId`).
-  erc1271VaultId: Hex;
   maxSignatures: number;
   client: ShrincsWalletClient;
   walletAddress: Address;
@@ -326,9 +327,9 @@ export interface CreateFreshShrincsWalletOptions {
 /// Deploy a fresh ShrincsWallet through the SDK's `ShrincsFactoryClient`,
 /// using the FE-derived-from-quantum-secret model: both the main key and the
 /// dedicated ERC-1271 verifier key are derived from the SAME signer under
-/// DISTINCT vault branches (`vaultId` vs `erc1271VaultId`). `seedByte`
-/// parameterizes the quantum secret + both vault branches so each test gets an
-/// isolated wallet whose key material doesn't collide with others.
+/// DISTINCT derivation indices (`derivationIndex` vs `erc1271DerivationIndex`).
+/// `seedByte` parameterizes the quantum secret + both indices so each test
+/// gets an isolated wallet whose key material doesn't collide with others.
 export async function createFreshShrincsWallet(
   stack: ShrincsAnvilStack,
   seedByte: number,
@@ -339,18 +340,15 @@ export async function createFreshShrincsWallet(
   const entryPointDeposit = opts.entryPointDeposit ?? 0n;
 
   const signer = await makeShrincsSigner(seedByte);
-  const vaultId = toHex(new Uint8Array(32).fill(seedByte));
-  // Distinct erc1271 branch: flip the high byte so it never aliases `vaultId`.
-  const erc1271Bytes = new Uint8Array(32).fill(seedByte);
-  erc1271Bytes[0] = seedByte ^ 0xff;
-  const erc1271VaultId = toHex(erc1271Bytes);
+  const derivationIndex = seedByte;
+  const erc1271DerivationIndex = seedByte ^ 0xff;
 
   const factory = makeShrincsFactoryClient(stack);
   const client = await factory.createShrincsWallet({
     signer,
     maxSignatures,
-    vaultId,
-    erc1271: { vaultId: erc1271VaultId, maxSignatures },
+    derivationIndex,
+    erc1271: { derivationIndex: erc1271DerivationIndex, maxSignatures },
   });
   const walletAddress = client.walletAddress;
 
@@ -375,8 +373,9 @@ export async function createFreshShrincsWallet(
 
   return {
     signer,
-    vaultId,
-    erc1271VaultId,
+    derivationIndex,
+    erc1271DerivationIndex,
+    vaultId: client.vaultId,
     maxSignatures,
     client,
     walletAddress,

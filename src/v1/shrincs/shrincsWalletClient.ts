@@ -181,6 +181,9 @@ export interface ShrincsWalletClientParams {
   signer?: ShrincsSigner;
   keypair?: ShrincsKeyPair;
   vaultId: Hex;
+  /// Caller-chosen key-derivation index. Required when recovering a keypair
+  /// from `signer` (no injected `keypair`). Unused when `keypair` is provided.
+  derivationIndex?: number;
   chainId: number;
   account: Address;
 }
@@ -243,6 +246,7 @@ export class ShrincsWalletClient {
   readonly chainId: number;
   readonly account: Address;
   readonly vaultId: Hex;
+  readonly derivationIndex?: number;
 
   private readonly publicClient: PublicClient;
   private readonly walletClient: WalletClient;
@@ -260,6 +264,7 @@ export class ShrincsWalletClient {
     this.signer = params.signer;
     this.keypair = params.keypair;
     this.vaultId = params.vaultId;
+    this.derivationIndex = params.derivationIndex;
     this.chainId = params.chainId;
     this.account = params.account;
   }
@@ -440,15 +445,23 @@ export class ShrincsWalletClient {
 
   /*  ── write helpers ───────────────────────────────────────────────────  */
 
-  /// Recover the signing keypair for this vault at the wallet's installed budget
+  /// Recover the signing keypair for this wallet at the installed budget
   /// and confirm its commitment matches the installed one. Throws
   /// `CommitmentMismatchError` before any signature is produced.
   private recoverSigningKey(
     maxSignatures: number,
     installedCommitment: Hex
   ): ShrincsKeyPair {
-    const keypair =
-      this.keypair ?? this.signer?.recoverKeyPair(this.vaultId, { maxSignatures });
+    let keypair = this.keypair;
+    if (!keypair) {
+      const derivationIndex = this.derivationIndex;
+      if (derivationIndex === undefined) {
+        throw new Error(
+          "ShrincsWalletClient has no derivationIndex to recover a keypair with"
+        );
+      }
+      keypair = this.signer?.recoverKeyPair(derivationIndex, { maxSignatures });
+    }
     if (!keypair) {
       throw new Error("ShrincsWalletClient has no signer or keypair to sign with");
     }

@@ -124,29 +124,19 @@ export function isQSalt1Salt(salt: Hex): boolean {
   return slice(salt, 0, 6).toLowerCase() === QSALT1_PREFIX.toLowerCase();
 }
 
-/// The CREATE3 deploy salt for a SHRINCS wallet (`e3r`). Binds the vault to the
-/// main-key commitment, so the counterfactual address is a function of the key.
-/// MUST match the on-chain `keccak256(abi.encode(vaultId, commitment))`.
-export function deployVaultSalt(vaultId: Hex, mainCommitment: Hex): Hex {
-  return keccak256(
-    encodeAbiParameters(
-      [{ type: "bytes32" }, { type: "bytes32" }],
-      [vaultId, mainCommitment]
-    )
-  );
-}
-
 /// Predict the counterfactual SHRINCS wallet address for
-/// `(factory, vaultId, mainCommitment)`. Use this before deploy to know where to
-/// prefund. The address is bound to the key commitment (`e3r`).
+/// `(factory, statefulC, statelessC, owner)`. Use this before deploy to know
+/// where to prefund. The CREATE3 salt is the QSalt1 vault id, so the address is
+/// a function of the two key commitments and the intended owner.
 export function getShrincsWalletAddress(
   factoryAddress: Address,
-  vaultId: Hex,
-  mainCommitment: Hex
+  statefulC: Hex,
+  statelessC: Hex,
+  owner: Address
 ): Address {
   return computeCreate3Address(
     factoryAddress,
-    deployVaultSalt(vaultId, mainCommitment)
+    qsalt1VaultId(statefulC, statelessC, owner)
   );
 }
 

@@ -6,11 +6,11 @@ import { getAddress } from "viem";
 
 import { keccak256, toHex } from "viem";
 
+import { computeCreate3Address } from "../../addresses.js";
 import {
   CANONICAL_ENTRYPOINT_V07,
   NETWORK_ADDRESSES,
   QSALT1_PREFIX,
-  deployVaultSalt,
   getShrincsAddresses,
   getShrincsWalletAddress,
   isQSalt1Salt,
@@ -119,30 +119,53 @@ describe("QSalt1 identity codec (byte-exact with Solidity)", () => {
   });
 });
 
-describe("SHRINCS deploy salt / address (e3r)", () => {
+describe("SHRINCS QSalt1 address predictor", () => {
   const FACTORY = "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC" as const;
-  const vaultId = keccak256(toHex("vault-1"));
-  const commitment = keccak256(toHex("main-commitment"));
+  const statefulC = keccak256(toHex("stateful"));
+  const statelessC = keccak256(toHex("stateless"));
+  const owner = "0x00000000000000000000000000000000000000AA" as const;
 
-  it("deployVaultSalt is deterministic for the same (vaultId, commitment)", () => {
-    expect(deployVaultSalt(vaultId, commitment)).toBe(
-      deployVaultSalt(vaultId, commitment)
+  it("getShrincsWalletAddress equals computeCreate3Address(factory, qsalt1VaultId)", () => {
+    expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
+      computeCreate3Address(
+        FACTORY,
+        qsalt1VaultId(statefulC, statelessC, owner)
+      )
     );
   });
 
-  it("deployVaultSalt binds BOTH the vault and the commitment", () => {
-    const base = deployVaultSalt(vaultId, commitment);
-    expect(deployVaultSalt(keccak256(toHex("vault-2")), commitment)).not.toBe(base);
-    expect(deployVaultSalt(vaultId, keccak256(toHex("other")))).not.toBe(base);
+  it("getShrincsWalletAddress is deterministic for the same identity", () => {
+    const addr = getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner);
+    expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
+      addr
+    );
   });
 
-  it("getShrincsWalletAddress is deterministic and commitment-bound", () => {
-    const addr = getShrincsWalletAddress(FACTORY, vaultId, commitment);
-    expect(getShrincsWalletAddress(FACTORY, vaultId, commitment)).toBe(addr);
-    // A different key commitment => a different counterfactual address, which is
-    // exactly what stops an attacker taking the victim's address (e3r).
+  it("getShrincsWalletAddress binds statefulC, statelessC, and owner", () => {
+    const addr = getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner);
     expect(
-      getShrincsWalletAddress(FACTORY, vaultId, keccak256(toHex("attacker-key")))
+      getShrincsWalletAddress(
+        FACTORY,
+        keccak256(toHex("attacker-key")),
+        statelessC,
+        owner
+      )
+    ).not.toBe(addr);
+    expect(
+      getShrincsWalletAddress(
+        FACTORY,
+        statefulC,
+        keccak256(toHex("other-stateless")),
+        owner
+      )
+    ).not.toBe(addr);
+    expect(
+      getShrincsWalletAddress(
+        FACTORY,
+        statefulC,
+        statelessC,
+        "0x00000000000000000000000000000000000000bb"
+      )
     ).not.toBe(addr);
   });
 });

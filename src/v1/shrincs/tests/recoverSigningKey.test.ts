@@ -80,3 +80,23 @@ describe("ShrincsWalletClient.recoverSigningKey (injected keypair)", () => {
     expect(recoverSigningKey(client, installed)).toBe(keypair);
   });
 });
+
+describe("ShrincsWalletClient.recoverSigningKey (signer fallback)", () => {
+  it("throws when the signer fallback is reached without derivationIndex", async () => {
+    const signer = await ShrincsSigner.create(
+      new TextEncoder().encode("any master")
+    );
+    const client = new ShrincsWalletClient({
+      walletAddress: WALLET,
+      publicClient: {} as PublicClient,
+      walletClient: {} as WalletClient,
+      signer,
+      vaultId: VAULT_ID,
+      chainId: CHAIN_ID,
+      account: WALLET,
+    });
+    expect(() =>
+      recoverSigningKey(client, `0x${"ff".repeat(32)}` as Hex)
+    ).toThrow("ShrincsWalletClient has no derivationIndex to recover a keypair with");
+  });
+});

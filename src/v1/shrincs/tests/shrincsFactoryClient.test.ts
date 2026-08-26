@@ -13,12 +13,19 @@ import {
   zeroAddress,
 } from "viem";
 
+import { computeCreate3Address } from "../../addresses.js";
+import { NoVaultFoundError } from "../../errors.js";
 import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
   TransactionRevertedError,
 } from "../errors.js";
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
+import {
+  getShrincsWalletAddress,
+  qsalt1VaultId,
+} from "../addresses.js";
+import { encodeInitPayload } from "../shrincsCodec.js";
 import { ShrincsFactoryClient } from "../shrincsFactoryClient.js";
 import {
   ShrincsSigner,
@@ -78,6 +85,7 @@ function makeFactory(
   opts: {
     receiptStatus?: TransactionReceipt["status"];
     reads?: Record<string, unknown>;
+    captureWriteArgs?: (args: unknown[]) => void;
   } = {}
 ): ShrincsFactoryClient {
   const publicClient = {
@@ -94,7 +102,10 @@ function makeFactory(
   } as unknown as PublicClient;
   const walletClient = {
     getAddresses: async () => [ACCOUNT],
-    writeContract: async () => TX_HASH,
+    writeContract: async (req: { args?: unknown[] }) => {
+      if (opts.captureWriteArgs && req.args) opts.captureWriteArgs(req.args);
+      return TX_HASH;
+    },
   } as unknown as WalletClient;
   return new ShrincsFactoryClient({
     publicClient,
@@ -107,19 +118,83 @@ function makeFactory(
 }
 
 describe("ShrincsFactoryClient.createShrincsWallet", () => {
+  const createParams = {
+    signer: dummySigner(),
+    maxSignatures: 8,
+    derivationIndex: 1,
+    erc1271: { commitment: ERC1271_COMMITMENT },
+  } as const;
+
   it("throws TransactionRevertedError when the deploy receipt status is reverted", async () => {
     const factory = makeFactory({ receiptStatus: "reverted" });
     await expect(
-      factory.createShrincsWallet(
-        {
-          signer: dummySigner(),
-          maxSignatures: 8,
-          vaultId: VAULT_ID,
-          erc1271: { commitment: ERC1271_COMMITMENT },
-        },
-        { gas: 100_000n, skipPreflightChecks: true }
-      )
+      factory.createShrincsWallet(createParams, {
+        gas: 100_000n,
+        skipPreflightChecks: true,
+      })
     ).rejects.toThrow(TransactionRevertedError);
+  });
+
+  it("builds QSalt1 deploy args with vaultId from commitments and no deploy authorization", async () => {
+    let capturedArgs: unknown[] | undefined;
+    const factory = makeFactory({
+      receiptStatus: "reverted",
+      captureWriteArgs: (args) => {
+        capturedArgs = args;
+      },
+    });
+    await expect(
+      factory.createShrincsWallet(createParams, {
+        gas: 100_000n,
+        skipPreflightChecks: true,
+      })
+    ).rejects.toThrow(TransactionRevertedError);
+
+    expect(capturedArgs).toBeDefined();
+    const args = capturedArgs as unknown[];
+    const statefulC = realKeypair.publicKeyCommitment;
+    const vaultId = qsalt1VaultId(statefulC, ERC1271_COMMITMENT, ACCOUNT);
+    expect(args[0]).toBe(vaultId);
+    expect(args[1]).toBe(statefulC);
+    expect(args[3]).toBe(ACCOUNT);
+    expect(args[4]).toBe(
+      encodeInitPayload({
+        mainBundle: realKeypair.publicKey,
+        erc1271Commitment: ERC1271_COMMITMENT,
+      })
+    );
+    expect(args).toHaveLength(5);
+  });
+});
+
+describe("getShrincsWalletAddress (CREATE3 predictor)", () => {
+  it("equals computeCreate3Address(factory, qsalt1VaultId)", () => {
+    const statefulC = `0x${"11".repeat(32)}` as Hex;
+    const statelessC = `0x${"22".repeat(32)}` as Hex;
+    expect(
+      getShrincsWalletAddress(FACTORY, statefulC, statelessC, ACCOUNT)
+    ).toBe(
+      computeCreate3Address(
+        FACTORY,
+        qsalt1VaultId(statefulC, statelessC, ACCOUNT)
+      )
+    );
+  });
+});
+
+describe("ShrincsFactoryClient.getLegacyWallet", () => {
+  it("returns the wallets(id) mapping entry", async () => {
+    const walletAddress =
+      "0x00000000000000000000000000000000000000aa" as Address;
+    const factory = makeFactory({ reads: { wallets: walletAddress } });
+    expect(await factory.getLegacyWallet(VAULT_ID)).toBe(walletAddress);
+  });
+
+  it("throws NoVaultFoundError when wallets(id) is zero", async () => {
+    const factory = makeFactory();
+    await expect(factory.getLegacyWallet(VAULT_ID)).rejects.toThrow(
+      NoVaultFoundError
+    );
   });
 });
 

@@ -67,13 +67,16 @@ export interface ShrincsPaymasterClientParams {
   /// Operator signer holding the sponsorship verifier key.
   signer: ShrincsSigner;
   vaultId: Hex;
+  /// Caller-chosen key-derivation index. Required when recovering a keypair
+  /// from `signer` (no injected `keypair`). Unused when `keypair` is provided.
+  derivationIndex?: number;
   chainId: number;
   account: Address;
   /// Pre-built keypair override. Takes precedence over `signer.recoverKeyPair`
   /// — REQUIRED after a `rotateStatefulKey`, where the live bundle is a graft
-  /// of the new stateful vault and the ORIGINAL stateless vault (build it with
-  /// `signer.deriveKeyPair({ statefulVaultId, statelessVaultId, maxSignatures })`;
-  /// a plain `recoverKeyPair` on either vault reproduces the wrong commitment).
+  /// of the new stateful index and the ORIGINAL stateless index (build it with
+  /// `signer.deriveKeyPair({ statefulIndex, statelessIndex, maxSignatures })`;
+  /// a plain `recoverKeyPair` on either index reproduces the wrong commitment).
   keypair?: ShrincsKeyPair;
 }
 
@@ -85,6 +88,7 @@ export class ShrincsPaymasterClient {
   readonly chainId: number;
   readonly account: Address;
   readonly vaultId: Hex;
+  readonly derivationIndex?: number;
 
   private readonly publicClient: PublicClient;
   private readonly walletClient: WalletClient;
@@ -101,18 +105,22 @@ export class ShrincsPaymasterClient {
     this.walletClient = params.walletClient;
     this.signer = params.signer;
     this.vaultId = params.vaultId;
+    this.derivationIndex = params.derivationIndex;
     this.chainId = params.chainId;
     this.account = params.account;
     this.keypair = params.keypair;
   }
 
   /// The operator keypair: the explicit override when set (post-rotation
-  /// grafted bundles), else re-derived from the signer's vault branch.
+  /// grafted bundles), else re-derived from the signer's derivation index.
   private operatorKeyPair(maxSignatures: number): ShrincsKeyPair {
-    return (
-      this.keypair ??
-      this.signer.recoverKeyPair(this.vaultId, { maxSignatures })
-    );
+    if (this.keypair) return this.keypair;
+    if (this.derivationIndex === undefined) {
+      throw new Error(
+        "ShrincsPaymasterClient has no derivationIndex to recover a keypair with"
+      );
+    }
+    return this.signer.recoverKeyPair(this.derivationIndex, { maxSignatures });
   }
 
   /*  ── reads ───────────────────────────────────────────────────────────  */

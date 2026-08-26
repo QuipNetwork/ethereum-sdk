@@ -43,13 +43,11 @@ export type {
   ShrincsVerifierState,
   ShrincsPaymasterClientParams,
 } from "./shrincsPaymasterClient.js";
-export {
-  ShrincsFactoryClient,
-  randomVaultId,
-} from "./shrincsFactoryClient.js";
+export { ShrincsFactoryClient } from "./shrincsFactoryClient.js";
 export type {
   ShrincsFactoryClientParams,
   CreateShrincsWalletParams,
+  GetShrincsWalletParams,
   Erc1271KeySpec,
 } from "./shrincsFactoryClient.js";
 
