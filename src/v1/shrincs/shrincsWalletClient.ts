@@ -29,7 +29,7 @@ import {
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { tryMulticall } from "../internal/multicall.js";
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
-import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "./constants.js";
+import { HASH_SUITE_KECCAK_256 } from "./constants.js";
 import {
   AuthLeafInTargetsError,
   CommitmentMismatchError,
@@ -282,10 +282,8 @@ export class ShrincsWalletClient {
     ) as Promise<boolean>;
   }
 
-  /// Lowest unused stateful signing leaf in `MAX_DEPLOY_CHAINS + 1 ..
-  /// maxSignatures` for the current key epoch, found by scanning the on-chain
-  /// bitmap via multicall. Leaves `[1..MAX_DEPLOY_CHAINS]` are reserved for
-  /// deploy authorizations (`e3r`) and never sign. Throws
+  /// Lowest unused stateful signing leaf in `1..maxSignatures` for the current
+  /// key epoch, found by scanning the on-chain bitmap via multicall. Throws
   /// `StatefulBudgetExhaustedError` if every signing leaf is consumed (or every
   /// free leaf is excluded). `exclude` skips leaves the bitmap considers free
   /// but that must not sign — e.g. `markLeavesUsed` targets, whose one-time keys
@@ -295,25 +293,23 @@ export class ShrincsWalletClient {
     statefulLeavesUsed: number,
     exclude?: ReadonlySet<number>
   ): Promise<number> {
-    const signingBudget = Math.max(0, maxSignatures - MAX_DEPLOY_CHAINS);
-    if (statefulLeavesUsed >= signingBudget) {
+    if (statefulLeavesUsed >= maxSignatures) {
       throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
     }
     const used = await this.fetchUsedLeaves(maxSignatures);
-    for (let leaf = MAX_DEPLOY_CHAINS + 1; leaf <= maxSignatures; leaf++) {
+    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
       if (exclude?.has(leaf)) continue;
       if (!used.has(leaf)) return leaf;
     }
     throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
   }
 
-  /// The set of signing leaves in `MAX_DEPLOY_CHAINS + 1 .. maxSignatures` the
-  /// on-chain bitmap reports as used, read in one multicall. A leaf whose status
-  /// could not be read is treated as used: never sign at a leaf that is not
-  /// confirmed free. The reserved deploy-leaf range is never scanned (`e3r`).
+  /// The set of signing leaves in `1..maxSignatures` the on-chain bitmap
+  /// reports as used, read in one multicall. A leaf whose status could not be
+  /// read is treated as used: never sign at a leaf that is not confirmed free.
   private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
     const calls = [];
-    for (let leaf = MAX_DEPLOY_CHAINS + 1; leaf <= maxSignatures; leaf++) {
+    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
       calls.push({
         address: this.walletAddress,
         abi: shrincsWalletAbi,
@@ -325,8 +321,8 @@ export class ShrincsWalletClient {
     const used = new Set<number>();
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
-      // Result index `i` maps to the signing leaf `MAX_DEPLOY_CHAINS + 1 + i`.
-      const leaf = MAX_DEPLOY_CHAINS + 1 + i;
+      // Result index `i` maps to the signing leaf `1 + i`.
+      const leaf = 1 + i;
       if (!(r && r.status === "success" && r.result === false)) used.add(leaf);
     }
     return used;
@@ -489,14 +485,14 @@ export class ShrincsWalletClient {
     );
     // Validate the excluded leaves BEFORE reserving. `excludeLeaves` carries the
     // revocation targets (`markLeavesUsed`), which must be valid signing leaves
-    // `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]` (`e3r`). Rejecting a malformed
-    // target here — before any leaf is reserved or signed — means a rejected
-    // call never burns a one-time signing leaf.
+    // `[1..maxSignatures]`. Rejecting a malformed target here — before any leaf
+    // is reserved or signed — means a rejected call never burns a one-time
+    // signing leaf.
     if (excludeLeaves) {
       for (const target of excludeLeaves) {
         if (
           !Number.isInteger(target) ||
-          target <= MAX_DEPLOY_CHAINS ||
+          target < 1 ||
           target > state.maxSignatures
         ) {
           throw new LeafOutOfRangeError(target, state.maxSignatures);
@@ -516,14 +512,7 @@ export class ShrincsWalletClient {
       leaf = keyOpts.leaf;
       await reserveExplicitLeaf(this.leafReservations, reservationKey, leaf);
     } else {
-      // The signing budget excludes the reserved deploy-leaf range
-      // `[1..MAX_DEPLOY_CHAINS]` (`e3r`); usable signing leaves are
-      // `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
-      const signingBudget = Math.max(
-        0,
-        state.maxSignatures - MAX_DEPLOY_CHAINS
-      );
-      if (state.statefulLeavesUsed >= signingBudget) {
+      if (state.statefulLeavesUsed >= state.maxSignatures) {
         throw new StatefulBudgetExhaustedError(
           state.maxSignatures,
           state.statefulLeavesUsed
@@ -535,8 +524,7 @@ export class ShrincsWalletClient {
         reservationKey,
         (candidate) =>
           used.has(candidate) || (excludeLeaves?.has(candidate) ?? false),
-        state.maxSignatures,
-        MAX_DEPLOY_CHAINS + 1
+        state.maxSignatures
       );
     }
     return {

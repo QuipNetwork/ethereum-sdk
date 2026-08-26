@@ -48,13 +48,12 @@ contract ShrincsWallet__bitmap is ShrincsWalletTest {
 
     function test_bitmap_countersTrackUsage() public {
         assertEq(wallet.statefulLeavesUsed(), 0);
-        // The signing budget excludes the reserved deploy-leaf range (e3r).
-        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - SIGN_BASE);
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG);
 
-        wallet.harness_markLeafUsed(SIGN_BASE + 1);
-        wallet.harness_markLeafUsed(SIGN_BASE + 2);
+        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(2);
         assertEq(wallet.statefulLeavesUsed(), 2);
-        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - SIGN_BASE - 2);
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - 2);
     }
 
     /// @dev Off-by-one guard on `1 << (leaf & 0xff)`: marking a bit must not touch its neighbours.

@@ -13,7 +13,7 @@ import {
   toHex,
 } from "viem";
 
-import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "../constants.js";
+import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   OwnerMismatchError,
   ZeroAddressOwnerError,
@@ -26,11 +26,8 @@ import { type PackedUserOperation } from "../../userOpCodec.js";
 const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const ACCOUNT = "0x00000000000000000000000000000000000000a1" as Address;
 const CHAIN_ID = 31337;
-// The main-key hypertree reserves leaves `[1..MAX_DEPLOY_CHAINS]` for deploy
-// authorizations (`e3r`); signing uses `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
-// A tree of `MAX_DEPLOY_CHAINS + 8` leaves yields SIGNING_BUDGET usable signatures.
 const SIGNING_BUDGET = 8;
-const MAX_SIG = MAX_DEPLOY_CHAINS + SIGNING_BUDGET;
+const MAX_SIG = SIGNING_BUDGET;
 const EXECUTE_FEE = 10_000_000n;
 const TX_HASH =
   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
@@ -139,8 +136,7 @@ describe("ShrincsWalletClient fee-free writes", () => {
   it("markLeavesUsed submits with value 0n even when executeFee is non-zero", async () => {
     const { client, capturedValue } = makeFeeFreeWriteClient();
 
-    // A signing leaf (outside the reserved deploy-leaf range, `e3r`).
-    await client.markLeavesUsed({ leaves: [MAX_DEPLOY_CHAINS + 2] }, feeFreeOpts);
+    await client.markLeavesUsed({ leaves: [2] }, feeFreeOpts);
 
     expect(capturedValue()).toBe(0n);
     expect(capturedValue()).not.toBe(EXECUTE_FEE);

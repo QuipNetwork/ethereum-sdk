@@ -22,7 +22,6 @@ import { type Address, type Hex } from "viem";
 // both wallet families. Contract-revert -> typed-error mapping lives in
 // `internal/decodeError.ts`.
 import { QuipError, type QuipErrorOptions } from "../errors.js";
-import { MAX_DEPLOY_CHAINS } from "./constants.js";
 
 // Re-export the base + the generic operational errors the reused helpers
 // (`internal/providerState.ts`, `gas.ts`) already throw, so Shrincs callers can
@@ -320,9 +319,8 @@ export class EmptyLeavesError extends QuipError {
   }
 }
 
-/// A `markLeavesUsed` target leaf is outside the signing range — inside the
-/// reserved deploy-leaf range `[1..MAX_DEPLOY_CHAINS]` (`e3r`) or above the
-/// installed key's `maxSignatures` budget. A client bug, not a race, so the
+/// A `markLeavesUsed` target leaf is outside the signing range — zero or above
+/// the installed key's `maxSignatures` budget. A client bug, not a race, so the
 /// whole batch fails.
 export class LeafOutOfRangeError extends QuipError {
   readonly leaf: number;
@@ -332,9 +330,7 @@ export class LeafOutOfRangeError extends QuipError {
       "SHRINCS_LEAF_OUT_OF_RANGE",
       maxSignatures === undefined
         ? `Revocation target leaf ${leaf} is out of range`
-        : `Revocation target leaf ${leaf} is out of range (valid: ${
-            MAX_DEPLOY_CHAINS + 1
-          }..${maxSignatures})`,
+        : `Revocation target leaf ${leaf} is out of range (valid: 1..${maxSignatures})`,
       opts
     );
     this.leaf = leaf;

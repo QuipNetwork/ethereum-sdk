@@ -45,8 +45,7 @@ import {
 import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
 import { withDecodedError } from "./internal/decodeError.js";
-import { encodeDeployAuth, encodeInitPayload } from "./shrincsCodec.js";
-import { buildDeployAuthorization } from "./deployAuth.js";
+import { encodeInitPayload } from "./shrincsCodec.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
   ShrincsWalletClient,
@@ -168,44 +167,9 @@ export class ShrincsFactoryClient {
       erc1271Commitment = params.erc1271.commitment;
     }
 
-    // e3r: the factory is the authority for the deploy-auth mode and the
-    // per-chain quipDeployChainIndex; the deploy signature must match exactly
-    // what `initialize` rebuilds and verifies against the factory. Read both
-    // from the factory rather than assuming, so a misconfigured factory fails
-    // loudly instead of producing an unverifiable signature.
-    const [deployModeRaw, chainIndexRaw] = (await Promise.all([
-      withDecodedError(
-        this.publicClient.readContract({
-          address: this.factoryAddress,
-          abi: walletFactoryAbi,
-          functionName: "deployMode",
-        })
-      ),
-      withDecodedError(
-        this.publicClient.readContract({
-          address: this.factoryAddress,
-          abi: walletFactoryAbi,
-          functionName: "quipDeployChainIndex",
-        })
-      ),
-    ])) as [number, number];
-    const mode = deployModeRaw === 0 ? "stateful" : "stateless";
-    const { signature: deploySignature } = buildDeployAuthorization({
-      mainKey,
-      chainId: this.chainId,
-      factoryAddress: this.factoryAddress,
-      vaultId,
-      owner: this.account,
-      erc1271Commitment,
-      quipDeployChainIndex: Number(chainIndexRaw),
-      mode,
-    });
-    const deployAuth = encodeDeployAuth(mainKey.publicKey, deploySignature, mode);
-
     const initPayload = encodeInitPayload({
       mainBundle: mainKey.publicKey,
       erc1271Commitment,
-      deployAuth,
     });
 
     const index = await this.resolveImplementationIndex();

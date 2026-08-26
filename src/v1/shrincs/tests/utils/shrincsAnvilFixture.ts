@@ -215,20 +215,6 @@ export async function setupShrincsAnvilStack(
   });
   await publicClient.waitForTransactionReceipt({ hash: factoryInitHash });
 
-  // e3r: configure the factory's deploy authorization policy — a stateful deploy
-  // auth at quipDeployChainIndex 1. `createShrincsWallet` reads these back to
-  // produce the matching deploy signature; an unconfigured factory (index 0)
-  // rejects deploys.
-  const deployCfgHash = await walletClient.writeContract({
-    chain: foundry,
-    address: factoryAddress,
-    abi: walletFactoryAbi,
-    functionName: "setDeployConfig",
-    args: [1, 0], // quipDeployChainIndex = 1, DeployMode.Stateful
-    account,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: deployCfgHash });
-
   // 2. ShrincsWallet impl (no library linking — empty linkReferences) + vet.
   const implHash = await walletClient.deployContract({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

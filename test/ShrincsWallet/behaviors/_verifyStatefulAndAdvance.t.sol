@@ -197,8 +197,7 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
     ///      reaches `SHRINCS.verifyStateful`, which rejects the empty signature as `InvalidSignature`.
     function testFuzz_verifyStatefulAndAdvance_budgetGuard(uint256 leaf) public {
         leaf = bound(leaf, 0, 512); // `_statefulSigWithLeaf` allocates `new bytes32[](leaf)`
-        // Signing excludes the reserved deploy-leaf range `[1..SIGN_BASE]` (e3r).
-        if (leaf <= SIGN_BASE || leaf > MAX_SIG) {
+        if (leaf == 0 || leaf > MAX_SIG) {
             vm.expectRevert(IShrincsWallet.StatefulBudgetExhausted.selector);
         } else {
             vm.expectRevert(IShrincsWallet.InvalidSignature.selector);

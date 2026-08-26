@@ -55,10 +55,6 @@ interface IShrincsWallet is IWallet {
     error CommitmentMismatch();
     /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
     error ZeroErc1271Commitment();
-    /// @notice Thrown when the deploy authorization embedded in the `initialize` payload (e3r)
-    ///         is absent, malformed, at the wrong reserved deploy leaf, or not a valid main-key
-    ///         signature over the factory-bound deploy context.
-    error InvalidDeployAuthorization();
     /// @notice Thrown when an install payload declares a hash suite other than
     ///         the compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this
     ///         implementation verifies; SHRINCS binds it into every canonical message hash).

@@ -46,11 +46,10 @@ contract ShrincsWallet_views is ShrincsWalletTest {
 
     function test_maxAndRemainingSignatures() public {
         assertEq(wallet.maxSignatures(), MAX_SIG);
-        // The signing budget excludes the reserved deploy-leaf range (e3r).
-        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - SIGN_BASE);
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG);
         wallet.harness_markLeafUsed(SIGN_BASE + 1);
         assertEq(wallet.statefulLeavesUsed(), 1);
-        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - SIGN_BASE - 1);
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - 1);
     }
 
     /// @dev The advisory counter must never underflow/revert if it ever drifts above

@@ -42,7 +42,7 @@ import { walletFactoryAbi } from "../../abi/WalletFactory.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
-import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "../constants.js";
+import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   AuthLeafInTargetsError,
   EmptyLeavesError,
@@ -73,18 +73,13 @@ const OWNER_PRIV =
 const ownerAccount = privateKeyToAccount(OWNER_PRIV);
 
 const RECIPIENT = "0x000000000000000000000000000000000000d00d" as Address;
-// The main-key hypertree reserves leaves `[1..MAX_DEPLOY_CHAINS]` for deploy
-// authorizations (`e3r`); signing uses `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
-// So a wallet with SIGNING_BUDGET usable signatures needs a tree of
-// `MAX_DEPLOY_CHAINS + SIGNING_BUDGET` leaves, and its first signing leaf is
-// `MAX_DEPLOY_CHAINS + 1`.
 const SIGNING_BUDGET = 4;
-const MAX_SIGS = MAX_DEPLOY_CHAINS + SIGNING_BUDGET;
+const MAX_SIGS = SIGNING_BUDGET;
 // The first four signing leaves, named by their position in the signing budget.
-const LEAF_1 = MAX_DEPLOY_CHAINS + 1;
-const LEAF_2 = MAX_DEPLOY_CHAINS + 2;
-const LEAF_3 = MAX_DEPLOY_CHAINS + 3;
-const LEAF_4 = MAX_DEPLOY_CHAINS + 4;
+const LEAF_1 = 1;
+const LEAF_2 = 2;
+const LEAF_3 = 3;
+const LEAF_4 = 4;
 
 let stack: ShrincsAnvilStack;
 
@@ -494,10 +489,6 @@ describe("Shrincs SDK live-anvil smoke", () => {
     ).rejects.toBeInstanceOf(AuthLeafInTargetsError);
     await expect(
       client.markLeavesUsed({ leaves: [0] })
-    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
-    // A reserved deploy leaf is out of the signing range (`e3r`).
-    await expect(
-      client.markLeavesUsed({ leaves: [MAX_DEPLOY_CHAINS] })
     ).rejects.toBeInstanceOf(LeafOutOfRangeError);
     await expect(
       client.markLeavesUsed({ leaves: [MAX_SIGS + 1] })

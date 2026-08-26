@@ -25,8 +25,7 @@ import {
   type ShrincsKeyPair,
 } from "../shrincsSigner.js";
 
-// A real main keypair so `createShrincsWallet` can produce a genuine e3r deploy
-// signature (the dummy signer below hands it back from `recoverKeyPair`).
+// A real main keypair (the dummy signer below hands it back from `recoverKeyPair`).
 let realKeypair: ShrincsKeyPair;
 beforeAll(async () => {
   const signer = await ShrincsSigner.create(
@@ -70,10 +69,6 @@ function factoryReads(
       return false;
     case "creationFee":
       return 0n;
-    case "deployMode":
-      return 0; // Stateful
-    case "quipDeployChainIndex":
-      return 1;
     default:
       throw new Error(`unexpected factory read: ${functionName}`);
   }

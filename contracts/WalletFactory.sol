@@ -46,19 +46,6 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     ///      execute digest — no factory state can raise what a wallet pays.
     uint256 public immutable MAX_FEE;
 
-    /// @dev Upper bound for `quipDeployChainIndex` — mirrors `ShrincsWallet.MAX_DEPLOY_CHAINS`
-    ///      (the reserved deploy-leaf range). Kept local so the generic factory does not import a
-    ///      wallet family; both are the same policy constant (e3r).
-    uint16 private constant _MAX_DEPLOY_CHAINS = 32;
-
-    /// @dev Transient slot holding the main-key commitment the in-flight `_deployProxy` salted
-    ///      the address with (e3r). Set before `initialize`, read back by the wallet through
-    ///      `pendingDeployCommitment()`, and auto-cleared at end of transaction (EIP-1153), so no
-    ///      permanent storage is spent and no stale value survives the deploy.
-    /// @notice REQUIRES EIP-1153 (TSTORE/TLOAD).
-    uint256 private constant _PENDING_DEPLOY_COMMITMENT_SLOT =
-        uint256(keccak256("quip.factory.pending.deploy.commitment")) - 1;
-
     constructor(uint256 maxFee_) payable {
         if (maxFee_ == 0) revert ZeroMaxFee();
         MAX_FEE = maxFee_;
@@ -188,20 +175,6 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
-    function setDeployConfig(
-        uint16 quipDeployChainIndex_,
-        DeployMode deployMode_
-    ) external onlyOwner {
-        if (quipDeployChainIndex_ == 0 || quipDeployChainIndex_ > _MAX_DEPLOY_CHAINS) {
-            revert InvalidDeployChainIndex(quipDeployChainIndex_);
-        }
-        Storage.Layout storage $ = Storage.layout();
-        $.quipDeployChainIndex = quipDeployChainIndex_;
-        $.deployMode = deployMode_;
-        emit DeployConfigSet(quipDeployChainIndex_, deployMode_);
-    }
-
-    /// @inheritdoc IWalletFactory
     function withdraw(uint256 amount) external onlyOwner {
         if (address(this).balance < amount) {
             revert InsufficientBalance(amount, address(this).balance);
@@ -260,24 +233,6 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     /// @inheritdoc IWalletFactory
     function executeFee() external view returns (uint256) {
         return Storage.layout().executeFee;
-    }
-
-    /// @inheritdoc IWalletFactory
-    function quipDeployChainIndex() external view returns (uint16) {
-        return Storage.layout().quipDeployChainIndex;
-    }
-
-    /// @inheritdoc IWalletFactory
-    function deployMode() external view returns (DeployMode) {
-        return Storage.layout().deployMode;
-    }
-
-    /// @inheritdoc IWalletFactory
-    function pendingDeployCommitment() external view returns (bytes32 c) {
-        uint256 slot = _PENDING_DEPLOY_COMMITMENT_SLOT;
-        assembly {
-            c := tload(slot)
-        }
     }
 
     /// @inheritdoc IWalletFactory
@@ -433,20 +388,10 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         bytes32 salt = keccak256(abi.encode(vaultId, commitment));
         address contractAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
 
-        // Publish the deploy context the wallet reads back during `initialize`, BEFORE the call:
-        //   - the reverse `vaultIdOf` entry (also the `OnlyWallet` gate for the ownership
-        //     callback), keyed by address as before;
-        //   - the salt commitment, via the transient `pendingDeployCommitment()` getter, so the
-        //     wallet can reject a payload whose key disagrees with the salted address.
-        // The deploy config (`quipDeployChainIndex`, `deployMode`) is already set at factory setup.
+        // Publish the reverse `vaultIdOf` entry (also the `OnlyWallet` gate for the ownership
+        // callback) BEFORE the call, keyed by address.
         $.vaultIdOf[contractAddr] = vaultId;
         $.saltOf[contractAddr] = salt;
-        {
-            uint256 slot = _PENDING_DEPLOY_COMMITMENT_SLOT;
-            assembly {
-                tstore(slot, commitment)
-            }
-        }
 
         IWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
