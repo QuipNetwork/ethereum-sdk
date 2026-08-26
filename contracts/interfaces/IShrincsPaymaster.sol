@@ -146,10 +146,8 @@ interface IShrincsPaymaster is IPaymaster {
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Initializes the paymaster proxy with an owner AND its initial global
-    ///         SHRINCS verifier
-    ///         key. Callable once. The paymaster always has a verifier from this
-    ///         point on — there is
+    /// @notice Initializes the paymaster proxy with an owner AND its initial global SHRINCS verifier
+    ///         key. Callable once. The paymaster always has a verifier from this point on — there is
     ///         no way to unset it (only rotate via `rotateStatefulKey`). The full public-key bundle
     ///         is required (not just its commitment) so the installed commitment and stateful leaf
     ///         budget are DERIVED from validated key material, exactly like `rotateStatefulKey` and

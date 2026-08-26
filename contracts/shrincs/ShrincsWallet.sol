@@ -91,12 +91,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     bytes32 private constant _QUIP_USER_OP_HASH_TYPEHASH =
         keccak256("QuipUserOpHash(bytes32 userOpHash)");
 
-    /// @dev SHRINCS guarded-slot values mirrored as direct hex literals. `ShrincsWalletStorage`
-    ///      holds the canonical copies; Solidity's inline assembly (the guard snapshot/check below)
-    ///      accepts only a direct number constant or a reference to one — NOT a library member
-    ///      (`Storage.X`) or a `base + N` expression — so these must be retyped here rather than
-    ///      aliased. `test/fixtures/ShrincsWallet.storageLayout.json` pins each `Layout` field's
-    ///      slot and fails the suite if this mirror drifts from the field order.
+    /// @dev SHRINCS storage base slots, duplicated from `ShrincsWalletStorage` as numeric
+    ///      literals because inline assembly cannot reference cross-library constants or `base+N`.
+    ///      Kept in lock-step with `Layout` field order (pinned by the storage-layout fixture).
     bytes32 private constant _SHRINCS_FACTORY_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
     bytes32 private constant _SHRINCS_COMMITMENT_SLOT =
@@ -183,17 +180,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             );
             return 1;
         }
-        // Fail-closed policy for a malformed signature. Two failure classes are
-        // handled differently on purpose:
-        //   - Too short to hold the three offsets: SOFT fail (the `return 1`
-        //     above). The bundler drops the op as SIG_VALIDATION_FAILED without
-        //     penalising the sender.
-        //   - Long enough to pass that check but carrying an offset that runs
-        //     past the payload: HARD `MalformedPayload` revert from the codec
-        //     below. Such an offset cannot come from an honest client, and
-        //     decoding it could read adjacent calldata, so reverting to reject
-        //     the op outright is the intended fail-closed behaviour, not a soft
-        //     rejection.
+        // Fail-closed: too-short signatures soft-fail (`return 1`); a bad in-range offset hard-reverts.
         (
             SHRINCS.PublicKey calldata pk,
             SHRINCS.Signature calldata sig,
@@ -216,7 +203,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
-        uint32 leaf = _leafIndex(sig);
+        uint32 leaf = uint32(sig.authPath.length);
         if (leaf == 0 || leaf > $.maxSignatures) {
             emit UserOpValidationRejected(
                 UserOpValidationFailure.StatefulBudgetExhausted
@@ -389,10 +376,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ) = _decodeAndValidateInstall(payload);
 
         Storage.Layout storage $ = Storage.layout();
-        // No-drift invariant: re-establish the guarded `_SHRINCS_FACTORY_SLOT` snapshot to this
-        // (the new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
-        // `FACTORY` is the new source of truth; pinning storage to it keeps the snapshot slot and
-        // the `walletFactory()` getter from ever diverging from the immutable after an upgrade.
+        // Pin the guarded factory snapshot to this implementation's immutable `FACTORY`.
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
@@ -922,17 +906,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function getExecuteFee() public view returns (uint256) {
-        // The immutable `FACTORY` is the single source of truth for the factory address (same
-        // anchor as `msg.sender == FACTORY` access control and upgrade vetting), so fees are read
-        // from and paid to it — never the mutable `$.walletFactory` snapshot slot, which could
-        // diverge from the immutable after an upgrade to a differently-compiled implementation.
+        // Read from the immutable `FACTORY`, not the mutable snapshot slot.
         return IWalletFactory(FACTORY).executeFee();
     }
 
     /// @inheritdoc IShrincsWallet
     function walletFactory() external view returns (address payable) {
-        // Exposes the guarded `_SHRINCS_FACTORY_SLOT` snapshot value, which `initialize`/`migrate`
-        // re-establish to `FACTORY`, so it is invariantly equal to the immutable source of truth.
+        // Snapshot slot, re-established to `FACTORY` on initialize/migrate.
         return Storage.layout().walletFactory;
     }
 
@@ -1005,18 +985,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /*                      INTERNALS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev The stateful leaf index a SHRINCS signature reveals is encoded as its
-    ///      authentication-path length. Single derivation point for every stateful verify path.
-    function _leafIndex(
-        SHRINCS.Signature calldata signature
-    ) internal pure returns (uint32) {
-        return uint32(signature.authPath.length);
-    }
-
-    /// @dev Decodes and fully validates an install/migrate key-bundle payload — the block shared
-    ///      byte-for-byte by `initialize` and `migrate`: non-zero ERC-1271 commitment, declared
-    ///      hash suites, main-bundle shape + commitment recompute, and a non-zero leaf budget.
-    ///      Returns exactly the three values both callers persist. Pure: touches no storage.
+    /// @dev Shared initialize/migrate payload decode and key-bundle validation.
     function _decodeAndValidateInstall(
         bytes calldata payload
     )
@@ -1076,7 +1045,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ) internal returns (uint32 leaf) {
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
-        leaf = _leafIndex(signature);
+        leaf = uint32(signature.authPath.length);
         if (leaf == 0 || leaf > $.maxSignatures)
             revert StatefulBudgetExhausted();
         if (_isStatefulLeafUsed($, epoch, leaf)) revert StaleStatefulLeaf();
@@ -1324,8 +1293,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint256 fee = getExecuteFee();
         if (fee > maxFee) revert ExecuteFeeExceedsCap(fee, maxFee);
         if (fee > 0) {
-            // Paid to the immutable `FACTORY` — the single source of truth — matching the fee
-            // read in `getExecuteFee`, so the amount charged and its recipient can never diverge.
+            // Paid to the immutable `FACTORY`, matching `getExecuteFee`.
             SafeTransferLib.safeTransferETH(FACTORY, fee);
         }
     }

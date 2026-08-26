@@ -303,9 +303,8 @@ interface IWalletFactory {
     function MAX_FEE() external view returns (uint256);
 
     /// @notice Returns the wallet address registered under a CREATE3 salt on this factory.
-    /// @dev Keyed by the CREATE3 salt, which is the `commitment` itself. Same salt on every
-    ///      chain resolves to the same deterministic address.
-    /// @param salt The CREATE3 salt; the CREATE3 salt is the `commitment` itself.
+    /// @dev The CREATE3 salt is the `commitment`. Same salt on every chain yields the same address.
+    /// @param salt The CREATE3 salt (the wallet `commitment`).
     /// @return The wallet address, or `address(0)` if none registered here.
     function wallets(bytes32 salt) external view returns (address);
 

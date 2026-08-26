@@ -37,12 +37,7 @@ import {ShrincsWalletCodec as Codec} from "./shrincs/ShrincsWalletCodec.sol";
 ///         (`WalletFactoryStorage`) whose layout is append-only across upgrades.
 ///         The owner is expected to be a post-quantum wallet; upgrades are
 ///         authorized by `onlyOwner` and thus PQ-secured upstream.
-contract WalletFactory is
-    IWalletFactory,
-    Ownable,
-    UUPSUpgradeable,
-    Initializable
-{
+contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializable {
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     /// @inheritdoc IWalletFactory
@@ -64,11 +59,7 @@ contract WalletFactory is
     /*                   INTERNAL OVERRIDES                   */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Guard owner initialization to prevent re-initialization. The factory inherits Solady
-    ///      `Ownable` directly (not the `ERC4337` base that supplies this override), so it MUST
-    ///      override `_guardInitializeOwner => true` itself: `_initializeOwner` then reverts
-    ///      `AlreadyInitialized` on a second call (defence in depth alongside the `initializer`
-    ///      modifier).
+    /// @dev Returns true so `_initializeOwner` reverts `AlreadyInitialized` on a second call.
     function _guardInitializeOwner() internal pure override returns (bool) {
         return true;
     }
@@ -85,7 +76,16 @@ contract WalletFactory is
 
     /// @inheritdoc IWalletFactory
     function vetImplementation(address impl) external onlyOwner {
-        _vetImplementation(impl);
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 codehash = impl.codehash;
+        if (codehash == 0) revert EmptyCode();
+        if (!$.vettedCode.add(codehash)) revert AlreadyVetted();
+        $.vettedWalletImpls[codehash] = impl;
+        // A freshly-added entry is, by construction, at `length() - 1` — the
+        // most recently inserted slot that `_findLatestActive` would return —
+        // so it is unconditionally the new latest active implementation.
+        $.latestWalletImpl = impl;
+        emit ImplementationVetted(impl, codehash);
     }
 
     /// @inheritdoc IWalletFactory
@@ -141,13 +141,7 @@ contract WalletFactory is
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = $.vettedCode.at(index);
         if ($.deprecatedImpls[codehash]) revert ImplementationDeprecated();
-        return
-            _deployProxy(
-                $.vettedWalletImpls[codehash],
-                commitment,
-                to,
-                payload
-            );
+        return _deployProxy($.vettedWalletImpls[codehash], commitment, to, payload);
     }
 
     /// @inheritdoc IWalletFactory
@@ -376,11 +370,10 @@ contract WalletFactory is
         uint256 contractValue = msg.value - $.creationFee;
 
         // CREATE3 salt is the commitment.
-        bytes32 salt = commitment;
         // Reject any commitment that is not a V01-shaped identity salt. The wallet separately proves
         // the salt's tail binds its own key-set; the factory rejects a malformed prefix at the door.
         if (!Codec.isV1Commitment(commitment)) revert NotV1Commitment();
-        address contractAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
+        address contractAddr = CREATE3.deployDeterministic(proxyInitcode, commitment);
 
         // Publish the reverse `commitmentOf` entry (also the `OnlyWallet` gate for the ownership
         // callback) BEFORE the call, keyed by address.
@@ -388,12 +381,11 @@ contract WalletFactory is
 
         IWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
-        // The registry is keyed by salt, which equals commitment.
-        $.wallets[salt] = contractAddr;
+        $.wallets[commitment] = contractAddr;
         $.walletOwner[contractAddr] = to;
         // `.add` cannot return false here: the salt is unique per CREATE3, and a fresh contract
         // address never appeared in any set before. Guard anyway against future Solady changes.
-        if (!$.commitments[to].add(salt)) revert RegistryDesync();
+        if (!$.commitments[to].add(commitment)) revert RegistryDesync();
 
         emit WalletDeployed(
             msg.value,
@@ -405,22 +397,5 @@ contract WalletFactory is
         );
 
         return contractAddr;
-    }
-
-    /// @dev Shared vetting body. Adds `impl`'s codehash to the vetted set and
-    ///      records it as the latest active implementation.
-    function _vetImplementation(
-        address impl
-    ) private returns (bytes32 codehash) {
-        Storage.Layout storage $ = Storage.layout();
-        codehash = impl.codehash;
-        if (codehash == 0) revert EmptyCode();
-        if (!$.vettedCode.add(codehash)) revert AlreadyVetted();
-        $.vettedWalletImpls[codehash] = impl;
-        // A freshly-added entry is, by construction, at `length() - 1` — the
-        // most recently inserted slot that `_findLatestActive` would return —
-        // so it is unconditionally the new latest active implementation.
-        $.latestWalletImpl = impl;
-        emit ImplementationVetted(impl, codehash);
     }
 }

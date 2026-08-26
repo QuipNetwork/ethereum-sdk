@@ -151,9 +151,7 @@ library ShrincsWalletCodec {
         assembly {
             let o := payload.offset
             let len := payload.length
-            // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0xc0` here, so `sub(len, 0x20)` never
-            // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
+            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -166,8 +164,6 @@ library ShrincsWalletCodec {
             pkSeed := calldataload(add(o, 0x20))
             let mbOff := calldataload(add(o, 0x40))
             reqTail(mbOff, len, malformed)
-            // Nested PublicKey tail bounds are out of scope here; those fields are read through
-            // Solidity calldata accessors downstream, which bounds-check against calldatasize.
             mainBundle := add(o, mbOff)
             hashSuite := and(calldataload(add(o, 0x60)), 0xffffffff)
             erc1271Commitment := calldataload(add(o, 0x80))
@@ -197,9 +193,7 @@ library ShrincsWalletCodec {
         assembly {
             let o := sig.offset
             let len := sig.length
-            // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0x60` here, so `sub(len, 0x20)` never
-            // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
+            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -213,8 +207,6 @@ library ShrincsWalletCodec {
             publicKey := add(o, pkOff)
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
-            // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
             signature := add(o, sigOff)
             let eo := calldataload(add(o, 0x40))
             reqTail(eo, len, malformed)
@@ -253,9 +245,7 @@ library ShrincsWalletCodec {
         assembly {
             let o := sig.offset
             let len := sig.length
-            // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0x40` here, so `sub(len, 0x20)` never
-            // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
+            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -269,8 +259,6 @@ library ShrincsWalletCodec {
             publicKey := add(o, pkOff)
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
-            // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
             signature := add(o, sigOff)
         }
     }
@@ -301,9 +289,7 @@ library ShrincsWalletCodec {
         assembly {
             let o := data.offset
             let len := data.length
-            // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0xa0` here, so `sub(len, 0x20)` never
-            // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
+            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -317,8 +303,6 @@ library ShrincsWalletCodec {
             publicKey := add(o, pkOff)
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
-            // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
             signature := add(o, sigOff)
             shouldMigrate := iszero(iszero(calldataload(add(o, 0x40))))
             let mo := calldataload(add(o, 0x60))
@@ -338,19 +322,7 @@ library ShrincsWalletCodec {
         }
     }
 
-    /// @dev Decodes the ERC-1271 `signature` blob, the ABI encoding of
-    ///      `(PublicKey publicKey, SPHINCSPlusC.Signature signature, bytes ecdsaSig)`.
-    /// @dev Non-reverting decoder for the ERC-1271 staticcall path, where a revert is a denial of
-    ///      service on the relying contract that staticcalls `isValidSignature`. Applies the SAME
-    ///      top-level ABI tail-offset bounds checks as the reverting decoders, but signals a
-    ///      malformed payload with `ok = false` instead of reverting `MalformedPayload`. On failure
-    ///      the calldata references are pinned to a safe zero-length slice at `sig.offset`; the
-    ///      caller returns on `!ok` and never dereferences them.
-    ///
-    ///      Nested `PublicKey`/`Signature` tail bounds stay out of scope here — those fields are
-    ///      read downstream through Solidity calldata accessors (which bounds-check calldatasize
-    ///      and revert), but that read sits BEHIND the owner ECDSA gate and is unreachable to an
-    ///      adversary, so its revert is not a DoS surface.
+    /// @dev Non-reverting ERC-1271 decoder: ABI `(PublicKey, SPHINCSPlusC.Signature, bytes)`; returns `ok = false` on malformation.
     function tryDecodeErc1271Signature(
         bytes calldata sig
     )

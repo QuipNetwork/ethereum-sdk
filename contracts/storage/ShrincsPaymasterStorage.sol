@@ -39,14 +39,11 @@ library ShrincsPaymasterStorage {
         ///      namespace. MONOTONIC — only ever increments, so a rotated key can never reuse a
         ///      namespace that already has consumed leaves.
         uint256 keyVersion;
-        /// @dev Stateful-leaf anti-replay, namespaced by `keyVersion`. A leaf is
-        ///      consumable once and
+        /// @dev Stateful-leaf anti-replay, namespaced by `keyVersion`. A leaf is consumable once and
         ///      in ANY order (no sequential constraint), so out-of-order userOp landing never
-        ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit
-        ///      `leafIndex & 0xff`
+        ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit `leafIndex & 0xff`
         ///      is set when leaf `leafIndex` is consumed.
-        mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits))
-            usedStatefulLeafBitmap;
+        mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits)) usedStatefulLeafBitmap;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.paymaster.shrincs")) - 1))
