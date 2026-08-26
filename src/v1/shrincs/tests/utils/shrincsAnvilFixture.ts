@@ -135,6 +135,9 @@ export async function setupShrincsAnvilStack(
   const sphincsSiblingArtifact = readForgeArtifact(
     "out/SPHINCSPlusC256sKeccak.sol/SPHINCSPlusC256sKeccak.json"
   );
+  const preQSalt1Artifact = readForgeArtifact(
+    "out/PreQSalt1Wallets.sol/PreQSalt1Wallets.json"
+  );
   const entryPointFixture = JSON.parse(
     readFileSync(
       join(process.cwd(), "src/v1/tests/fixtures/entrypoint-v0.7.json"),
@@ -214,6 +217,28 @@ export async function setupShrincsAnvilStack(
   });
   await publicClient.waitForTransactionReceipt({ hash: factoryInitHash });
 
+  // Empty pre-QSalt1 registry so the factory policy gate has a live pointer.
+  const registryHash = await walletClient.deployContract({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    abi: preQSalt1Artifact.abi as any,
+    bytecode: preQSalt1Artifact.bytecode.object as Hex,
+    args: [account.address],
+    account,
+    chain: foundry,
+  });
+  const registryReceipt = await publicClient.waitForTransactionReceipt({
+    hash: registryHash,
+  });
+  const setRegistryHash = await walletClient.writeContract({
+    chain: foundry,
+    address: factoryAddress,
+    abi: walletFactoryAbi,
+    functionName: "setPreQSalt1Wallets",
+    args: [registryReceipt.contractAddress!],
+    account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: setRegistryHash });
+
   // 2. ShrincsWallet impl (no library linking — empty linkReferences) + vet.
   const implHash = await walletClient.deployContract({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -232,8 +257,8 @@ export async function setupShrincsAnvilStack(
     chain: foundry,
     address: factoryAddress,
     abi: walletFactoryAbi,
-    functionName: "vetImplementation",
-    args: [shrincsWalletImpl],
+    functionName: "vetImplementationWithPolicy",
+    args: [shrincsWalletImpl, true],
     account,
   });
   await publicClient.waitForTransactionReceipt({ hash: vetHash });

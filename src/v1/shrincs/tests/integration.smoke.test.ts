@@ -29,9 +29,12 @@ import {
 import {
   type Address,
   type Hex,
+  BaseError,
+  ContractFunctionRevertedError,
   getAddress,
   parseEther,
   parseEventLogs,
+  toFunctionSelector,
   toHex,
 } from "viem";
 import { foundry } from "viem/chains";
@@ -52,9 +55,11 @@ import {
   StaleStatefulLeafError,
   VerifierMismatchError,
 } from "../errors.js";
-import { publicKeyCommitment } from "../shrincsCodec.js";
+import { qsalt1VaultId } from "../addresses.js";
+import { encodeInitPayload, publicKeyCommitment } from "../shrincsCodec.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
 import {
+  DEFAULT_ACCOUNT,
   SHRINCS_ANVIL_PORTS,
   type ShrincsAnvilStack,
   createFreshShrincsWallet,
@@ -856,4 +861,80 @@ describe("Shrincs SDK live-anvil smoke", () => {
     });
     expect(recipientAfter - recipientBefore).toBe(value);
   }, 240_000);
+
+  // ── (k) front-run rejection ──────────────────────────────────────────
+  it("k. front-running a victim's vaultId with a different owner reverts IdentityMismatch", async () => {
+    const victimSeed = 0xb0;
+    const victimIndex = victimSeed;
+    const victimErc1271Index = victimSeed ^ 0xff;
+    const signer = await makeShrincsSigner(victimSeed);
+    const mainKey = signer.recoverKeyPair(victimIndex, {
+      maxSignatures: MAX_SIGS,
+    });
+    const erc1271Key = signer.recoverKeyPair(victimErc1271Index, {
+      maxSignatures: MAX_SIGS,
+    });
+    const statefulC = mainKey.publicKeyCommitment;
+    const statelessC = erc1271Key.publicKeyCommitment;
+    const victimOwner = DEFAULT_ACCOUNT.address;
+    const victimVaultId = qsalt1VaultId(statefulC, statelessC, victimOwner);
+
+    const initPayload = encodeInitPayload({
+      mainBundle: mainKey.publicKey,
+      erc1271Commitment: statelessC,
+    });
+
+    // Fixture vets exactly one impl; index 0 is that entry.
+    const vettedCount = await stack.publicClient.readContract({
+      address: stack.factoryAddress,
+      abi: walletFactoryAbi,
+      functionName: "getVettedCodeCount",
+    });
+    expect(vettedCount).toBe(1n);
+    const index = 0n;
+
+    const creationFee = await stack.publicClient.readContract({
+      address: stack.factoryAddress,
+      abi: walletFactoryAbi,
+      functionName: "creationFee",
+    });
+
+    const ATTACKER_OWNER =
+      "0x0000000000000000000000000000000000000bad" as Address;
+    expect(getAddress(ATTACKER_OWNER)).not.toBe(getAddress(victimOwner));
+
+    const deploy = (owner: Address) =>
+      stack.walletClient.writeContract({
+        chain: foundry,
+        address: stack.factoryAddress,
+        abi: walletFactoryAbi,
+        functionName: "deploySpecificWalletProxy",
+        args: [victimVaultId, statefulC, index, owner, initPayload],
+        value: creationFee,
+        account: stack.account,
+      });
+
+    // Attacker occupies the victim's vaultId with a different owner — initialize
+    // recomputes qsalt1Tail(..., ATTACKER_OWNER) and reverts IdentityMismatch.
+    let caught: unknown = null;
+    try {
+      await deploy(ATTACKER_OWNER);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeNull();
+    const identityMismatch = toFunctionSelector("IdentityMismatch()");
+    expect(caught).toBeInstanceOf(BaseError);
+    const reverted = (caught as BaseError).walk(
+      (e) => e instanceof ContractFunctionRevertedError
+    ) as ContractFunctionRevertedError | null;
+    expect(reverted?.raw?.slice(0, 10)).toBe(identityMismatch);
+
+    // Positive control: the same deploy with the bound owner succeeds.
+    const hash = await deploy(victimOwner);
+    const receipt = await stack.publicClient.waitForTransactionReceipt({
+      hash,
+    });
+    expect(receipt.status).toBe("success");
+  }, 120_000);
 });
