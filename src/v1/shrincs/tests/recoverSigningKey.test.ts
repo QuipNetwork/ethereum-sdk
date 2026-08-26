@@ -45,7 +45,7 @@ function makeClient(keypair: ShrincsKeyPair): ShrincsWalletClient {
     publicClient: {} as PublicClient,
     walletClient: {} as WalletClient,
     keypair,
-    vaultId: VAULT_ID,
+    commitment: VAULT_ID,
     chainId: CHAIN_ID,
     account: WALLET,
   });
@@ -91,7 +91,7 @@ describe("ShrincsWalletClient.recoverSigningKey (signer fallback)", () => {
       publicClient: {} as PublicClient,
       walletClient: {} as WalletClient,
       signer,
-      vaultId: VAULT_ID,
+      commitment: VAULT_ID,
       chainId: CHAIN_ID,
       account: WALLET,
     });

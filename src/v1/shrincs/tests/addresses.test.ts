@@ -10,11 +10,11 @@ import { computeCreate3Address } from "../../addresses.js";
 import {
   CANONICAL_ENTRYPOINT_V07,
   NETWORK_ADDRESSES,
-  QSALT1_PREFIX,
+  V1_PREFIX,
   getShrincsAddresses,
   getShrincsWalletAddress,
-  isQSalt1Salt,
-  qsalt1VaultId,
+  isV1Commitment,
+  v1Commitment,
 } from "../addresses.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
@@ -71,65 +71,65 @@ describe("shrincs addresses", () => {
   });
 });
 
-describe("QSalt1 identity codec (byte-exact with Solidity)", () => {
+describe("V1 identity codec (byte-exact with Solidity)", () => {
   // Fixed fixture shared with the Solidity golden test
   // (test/ShrincsWallet/behaviors/identity.t.sol).
   const statefulC = `0x${"11".repeat(32)}` as const;
   const statelessC = `0x${"22".repeat(32)}` as const;
   const owner = "0x00000000000000000000000000000000000000AA" as const;
 
-  // The 32-byte vault id for the fixture, pinned. BOTH sides must return this
+  // The 32-byte commitment for the fixture, pinned. BOTH sides must return this
   // exact value — it is what proves the truncation and the ABI encoding agree.
   const GOLDEN =
     "0x5153616c743187fa095d9004d2c66b2770cce3714f8805f2484e9083e41b0764";
 
-  it("QSALT1_PREFIX is the 6 ASCII bytes of \"QSalt1\"", () => {
-    expect(QSALT1_PREFIX).toBe("0x5153616c7431");
+  it("V1_PREFIX is the 6 bytes 0x5153616c7431", () => {
+    expect(V1_PREFIX).toBe("0x5153616c7431");
   });
 
-  it("qsalt1VaultId matches the cross-language golden", () => {
-    expect(qsalt1VaultId(statefulC, statelessC, owner)).toBe(GOLDEN);
+  it("v1Commitment matches the cross-language golden", () => {
+    expect(v1Commitment(statefulC, statelessC, owner)).toBe(GOLDEN);
   });
 
-  it("qsalt1VaultId is 32 bytes prefixed by QSALT1_PREFIX", () => {
-    const id = qsalt1VaultId(statefulC, statelessC, owner);
+  it("v1Commitment is 32 bytes prefixed by V1_PREFIX", () => {
+    const id = v1Commitment(statefulC, statelessC, owner);
     expect((id.length - 2) / 2).toBe(32);
-    expect(id.slice(0, 14)).toBe(QSALT1_PREFIX);
+    expect(id.slice(0, 14)).toBe(V1_PREFIX);
   });
 
-  it("qsalt1VaultId binds each input", () => {
-    const base = qsalt1VaultId(statefulC, statelessC, owner);
-    expect(qsalt1VaultId(`0x${"33".repeat(32)}`, statelessC, owner)).not.toBe(base);
-    expect(qsalt1VaultId(statefulC, `0x${"44".repeat(32)}`, owner)).not.toBe(base);
+  it("v1Commitment binds each input", () => {
+    const base = v1Commitment(statefulC, statelessC, owner);
+    expect(v1Commitment(`0x${"33".repeat(32)}`, statelessC, owner)).not.toBe(base);
+    expect(v1Commitment(statefulC, `0x${"44".repeat(32)}`, owner)).not.toBe(base);
     expect(
-      qsalt1VaultId(statefulC, statelessC, "0x00000000000000000000000000000000000000bb")
+      v1Commitment(statefulC, statelessC, "0x00000000000000000000000000000000000000bb")
     ).not.toBe(base);
   });
 
-  it("isQSalt1Salt is true for a QSalt1 vault id", () => {
-    expect(isQSalt1Salt(GOLDEN)).toBe(true);
-    expect(isQSalt1Salt(qsalt1VaultId(statefulC, statelessC, owner))).toBe(true);
+  it("isV1Commitment is true for a V1 commitment", () => {
+    expect(isV1Commitment(GOLDEN)).toBe(true);
+    expect(isV1Commitment(v1Commitment(statefulC, statelessC, owner))).toBe(true);
   });
 
-  it("isQSalt1Salt is false for a non-prefixed 32-byte value", () => {
-    expect(isQSalt1Salt(keccak256(toHex("not-a-qsalt1-salt")))).toBe(false);
+  it("isV1Commitment is false for a non-prefixed 32-byte value", () => {
+    expect(isV1Commitment(keccak256(toHex("not-a-v1-salt")))).toBe(false);
     expect(
-      isQSalt1Salt("0x0000000000000000000000000000000000000000000000000000000000000001")
+      isV1Commitment("0x0000000000000000000000000000000000000000000000000000000000000001")
     ).toBe(false);
   });
 });
 
-describe("SHRINCS QSalt1 address predictor", () => {
+describe("SHRINCS V1 address predictor", () => {
   const FACTORY = "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC" as const;
   const statefulC = keccak256(toHex("stateful"));
   const statelessC = keccak256(toHex("stateless"));
   const owner = "0x00000000000000000000000000000000000000AA" as const;
 
-  it("getShrincsWalletAddress equals computeCreate3Address(factory, qsalt1VaultId)", () => {
+  it("getShrincsWalletAddress equals computeCreate3Address(factory, v1Commitment)", () => {
     expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
       computeCreate3Address(
         FACTORY,
-        qsalt1VaultId(statefulC, statelessC, owner)
+        v1Commitment(statefulC, statelessC, owner)
       )
     );
   });

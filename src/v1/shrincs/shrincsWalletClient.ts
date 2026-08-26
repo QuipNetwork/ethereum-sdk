@@ -180,7 +180,7 @@ export interface ShrincsWalletClientParams {
   walletClient: WalletClient;
   signer?: ShrincsSigner;
   keypair?: ShrincsKeyPair;
-  vaultId: Hex;
+  commitment: Hex;
   /// Caller-chosen key-derivation index. Required when recovering a keypair
   /// from `signer` (no injected `keypair`). Unused when `keypair` is provided.
   derivationIndex?: number;
@@ -245,7 +245,7 @@ export class ShrincsWalletClient {
   readonly walletAddress: Address;
   readonly chainId: number;
   readonly account: Address;
-  readonly vaultId: Hex;
+  readonly commitment: Hex;
   readonly derivationIndex?: number;
 
   private readonly publicClient: PublicClient;
@@ -263,7 +263,7 @@ export class ShrincsWalletClient {
     this.walletClient = params.walletClient;
     this.signer = params.signer;
     this.keypair = params.keypair;
-    this.vaultId = params.vaultId;
+    this.commitment = params.commitment;
     this.derivationIndex = params.derivationIndex;
     this.chainId = params.chainId;
     this.account = params.account;
@@ -713,7 +713,7 @@ export class ShrincsWalletClient {
 
   /// Routine stateful rotation: refresh the stateful subkey, reuse the stateless
   /// recovery root. `nextStatefulPublicKey` is the fresh stateful key's encoded
-  /// 68-byte public key (from a freshly keygen'd bundle under a new vaultId).
+  /// 68-byte public key (from a freshly keygen'd bundle under a new commitment).
   async rotateKey(
     params: { nextStatefulPublicKey: Hex },
     opts: TxOptions & ShrincsTxKeyOptions = {}

@@ -55,7 +55,7 @@ import {
   StaleStatefulLeafError,
   VerifierMismatchError,
 } from "../errors.js";
-import { qsalt1VaultId } from "../addresses.js";
+import { v1Commitment } from "../addresses.js";
 import { encodeInitPayload, publicKeyCommitment } from "../shrincsCodec.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
 import {
@@ -279,7 +279,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const operatorSeed = 0x61;
     const operator = await makeShrincsSigner(operatorSeed);
     const operatorIndex = operatorSeed;
-    const operatorVaultId = toHex(new Uint8Array(32).fill(operatorSeed));
+    const operatorCommitment = toHex(new Uint8Array(32).fill(operatorSeed));
     const verifierKey = operator.recoverKeyPair(operatorIndex, {
       maxSignatures: MAX_SIGS,
     });
@@ -298,7 +298,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       publicClient: stack.publicClient,
       walletClient: stack.walletClient,
       signer: operator,
-      vaultId: operatorVaultId,
+      commitment: operatorCommitment,
       derivationIndex: operatorIndex,
       chainId: foundry.id,
       account: stack.account.address,
@@ -674,7 +674,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       publicClient: stack.publicClient,
       walletClient: stack.walletClient,
       signer: operator,
-      vaultId: vault1,
+      commitment: vault1,
       derivationIndex: index1,
       chainId: foundry.id,
       account: stack.account.address,
@@ -774,7 +774,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       publicClient: stack.publicClient,
       walletClient: stack.walletClient,
       signer: operator,
-      vaultId: vault1,
+      commitment: vault1,
       derivationIndex: index2,
       chainId: foundry.id,
       account: stack.account.address,
@@ -863,7 +863,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
   }, 240_000);
 
   // ── (k) front-run rejection ──────────────────────────────────────────
-  it("k. front-running a victim's vaultId with a different owner reverts IdentityMismatch", async () => {
+  it("k. front-running a victim's commitment with a different owner reverts IdentityMismatch", async () => {
     const victimSeed = 0xb0;
     const victimIndex = victimSeed;
     const victimErc1271Index = victimSeed ^ 0xff;
@@ -877,7 +877,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const statefulC = mainKey.publicKeyCommitment;
     const statelessC = erc1271Key.publicKeyCommitment;
     const victimOwner = DEFAULT_ACCOUNT.address;
-    const victimVaultId = qsalt1VaultId(statefulC, statelessC, victimOwner);
+    const victimCommitment = v1Commitment(statefulC, statelessC, victimOwner);
 
     const initPayload = encodeInitPayload({
       mainBundle: mainKey.publicKey,
@@ -909,13 +909,13 @@ describe("Shrincs SDK live-anvil smoke", () => {
         address: stack.factoryAddress,
         abi: walletFactoryAbi,
         functionName: "deploySpecificWalletProxy",
-        args: [victimVaultId, statefulC, index, owner, initPayload],
+        args: [victimCommitment, index, owner, initPayload],
         value: creationFee,
         account: stack.account,
       });
 
-    // Attacker occupies the victim's vaultId with a different owner — initialize
-    // recomputes qsalt1Tail(..., ATTACKER_OWNER) and reverts IdentityMismatch.
+    // Attacker occupies the victim's commitment with a different owner — initialize
+    // recomputes v1CommitmentTail(..., ATTACKER_OWNER) and reverts IdentityMismatch.
     let caught: unknown = null;
     try {
       await deploy(ATTACKER_OWNER);

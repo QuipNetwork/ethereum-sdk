@@ -66,7 +66,7 @@ export interface ShrincsPaymasterClientParams {
   walletClient: WalletClient;
   /// Operator signer holding the sponsorship verifier key.
   signer: ShrincsSigner;
-  vaultId: Hex;
+  commitment: Hex;
   /// Caller-chosen key-derivation index. Required when recovering a keypair
   /// from `signer` (no injected `keypair`). Unused when `keypair` is provided.
   derivationIndex?: number;
@@ -87,7 +87,7 @@ export class ShrincsPaymasterClient {
   readonly paymasterAddress: Address;
   readonly chainId: number;
   readonly account: Address;
-  readonly vaultId: Hex;
+  readonly commitment: Hex;
   readonly derivationIndex?: number;
 
   private readonly publicClient: PublicClient;
@@ -104,7 +104,7 @@ export class ShrincsPaymasterClient {
     this.publicClient = params.publicClient;
     this.walletClient = params.walletClient;
     this.signer = params.signer;
-    this.vaultId = params.vaultId;
+    this.commitment = params.commitment;
     this.derivationIndex = params.derivationIndex;
     this.chainId = params.chainId;
     this.account = params.account;
@@ -268,7 +268,7 @@ export class ShrincsPaymasterClient {
   /// leaf bitmap; the current bundle's stateless half is reused, never rotated
   /// (it is inert — the paymaster only verifies stateful sponsorship
   /// signatures). `nextStatefulPublicKey` is the fresh stateful key's encoded
-  /// 68-byte public key (from a freshly keygen'd bundle under a new vaultId);
+  /// 68-byte public key (from a freshly keygen'd bundle under a new commitment);
   /// the new `maxSignatures` budget is decoded on-chain from that encoding.
   /// The operator signer must still hold the CURRENT key: its public bundle is
   /// pinned on-chain to authorize carrying the stateless half forward

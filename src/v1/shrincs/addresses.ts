@@ -90,18 +90,14 @@ const SHRINCS_SUPPORTED_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
   CHAIN_IDS.MIDL_TESTNET,
 ]);
 
-/// The 6-byte `QSalt1` marker (ASCII "QSalt1") that prefixes a QSalt1 vault id.
-/// Mirrors the Solidity `QSALT1_PREFIX`. A salt carrying this prefix is a
-/// commitment-identity salt whose low 26 bytes are `qsalt1Tail`.
-export const QSALT1_PREFIX = "0x5153616c7431" as Hex;
+/// The 6-byte marker (`0x5153616c7431`) that prefixes a V1 commitment.
+/// Mirrors the Solidity `V1_PREFIX`. A salt carrying this prefix is a
+/// commitment-identity salt whose low 26 bytes are `v1CommitmentTail`.
+export const V1_PREFIX = "0x5153616c7431" as Hex;
 
-/// The identity-binding vault id (`QSalt1`): 32 bytes =
-/// `QSALT1_PREFIX(6) ‖ tail(26)`, where `tail` is the LOW 26 bytes of
-/// `keccak256(abi.encode(statefulC, statelessC, owner))`. Binds the vault id to
-/// the stateful/stateless commitments and the intended owner, so the
-/// counterfactual address is a function of the wallet's identity. MUST match the
-/// on-chain `ShrincsWalletCodec.qsalt1VaultId` byte-for-byte.
-export function qsalt1VaultId(
+/// The low 26 bytes of `keccak256(abi.encode(statefulC, statelessC, owner))`.
+/// MUST match on-chain `ShrincsWalletCodec.v1CommitmentTail` byte-for-byte.
+export function v1CommitmentTail(
   statefulC: Hex,
   statelessC: Hex,
   owner: Address
@@ -112,21 +108,33 @@ export function qsalt1VaultId(
       [statefulC, statelessC, owner]
     )
   );
-  // Low 26 bytes: keccak bytes [6..32). The high 6 bytes are dropped so the
-  // prefix occupies [0..6) — matching Solidity `keccak256(...) << 48` truncated
-  // to `bytes26`.
-  return concat([QSALT1_PREFIX, slice(digest, 6, 32)]);
+  // keccak bytes [6..32). The high 6 bytes are dropped so the prefix occupies
+  // [0..6) — matching Solidity `keccak256(...) << 48` truncated to `bytes26`.
+  return slice(digest, 6, 32);
 }
 
-/// True when `salt` carries the `QSalt1` marker in its high 6 bytes. Mirrors the
-/// Solidity `isQSalt1Salt` (`bytes6(salt) == QSALT1_PREFIX`).
-export function isQSalt1Salt(salt: Hex): boolean {
-  return slice(salt, 0, 6).toLowerCase() === QSALT1_PREFIX.toLowerCase();
+/// The identity-binding V1 commitment: 32 bytes =
+/// `V1_PREFIX(6) ‖ v1CommitmentTail(26)`. Binds the commitment to the
+/// stateful/stateless public-key commitments and the intended owner, so the
+/// counterfactual address is a function of the wallet's identity. MUST match the
+/// on-chain `ShrincsWalletCodec.v1Commitment` byte-for-byte.
+export function v1Commitment(
+  statefulC: Hex,
+  statelessC: Hex,
+  owner: Address
+): Hex {
+  return concat([V1_PREFIX, v1CommitmentTail(statefulC, statelessC, owner)]);
+}
+
+/// True when `salt` carries the V1 marker in its high 6 bytes. Mirrors the
+/// Solidity `isV1Commitment` (`bytes6(salt) == V1_PREFIX`).
+export function isV1Commitment(salt: Hex): boolean {
+  return slice(salt, 0, 6).toLowerCase() === V1_PREFIX.toLowerCase();
 }
 
 /// Predict the counterfactual SHRINCS wallet address for
 /// `(factory, statefulC, statelessC, owner)`. Use this before deploy to know
-/// where to prefund. The CREATE3 salt is the QSalt1 vault id, so the address is
+/// where to prefund. The CREATE3 salt is the V1 commitment, so the address is
 /// a function of the two key commitments and the intended owner.
 export function getShrincsWalletAddress(
   factoryAddress: Address,
@@ -136,7 +144,7 @@ export function getShrincsWalletAddress(
 ): Address {
   return computeCreate3Address(
     factoryAddress,
-    qsalt1VaultId(statefulC, statelessC, owner)
+    v1Commitment(statefulC, statelessC, owner)
   );
 }
 

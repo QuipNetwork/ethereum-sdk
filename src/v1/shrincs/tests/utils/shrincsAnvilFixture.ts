@@ -400,7 +400,7 @@ export async function createFreshShrincsWallet(
     signer,
     derivationIndex,
     erc1271DerivationIndex,
-    vaultId: client.vaultId,
+    vaultId: client.commitment,
     maxSignatures,
     client,
     walletAddress,

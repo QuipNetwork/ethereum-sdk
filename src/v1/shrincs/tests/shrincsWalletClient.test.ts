@@ -124,7 +124,7 @@ describe("ShrincsWalletClient fee-free writes", () => {
       publicClient,
       walletClient,
       keypair,
-      vaultId: seed("vault"),
+      commitment: seed("vault"),
       chainId: CHAIN_ID,
       account: ACCOUNT,
     });
@@ -189,7 +189,7 @@ function makeWalletClient(
     publicClient,
     walletClient,
     keypair,
-    vaultId: seed("vault"),
+    commitment: seed("vault"),
     chainId: CHAIN_ID,
     account: ACCOUNT,
   });

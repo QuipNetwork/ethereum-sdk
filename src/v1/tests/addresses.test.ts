@@ -87,12 +87,12 @@ describe("isMidlNetwork", () => {
 });
 
 describe("computeVaultAddress / getVaultAddress", () => {
-  it("is deterministic for the same (factory, vaultId)", () => {
+  it("is deterministic for the same (factory, commitment)", () => {
     const id = salt("vault-a");
     expect(computeVaultAddress(FACTORY, id)).toBe(computeVaultAddress(FACTORY, id));
   });
 
-  it("produces distinct addresses for distinct vaultIds", () => {
+  it("produces distinct addresses for distinct commitments", () => {
     expect(computeVaultAddress(FACTORY, salt("vault-a"))).not.toBe(
       computeVaultAddress(FACTORY, salt("vault-b"))
     );

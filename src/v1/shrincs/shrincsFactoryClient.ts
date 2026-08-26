@@ -34,7 +34,7 @@ import {
   WalletAlreadyExistsError,
 } from "../errors.js";
 import { assertProviderState, boundChain } from "../internal/providerState.js";
-import { getShrincsAddresses, qsalt1VaultId } from "./addresses.js";
+import { getShrincsAddresses, v1Commitment } from "./addresses.js";
 import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
@@ -82,7 +82,7 @@ export interface CreateShrincsWalletParams {
   /// Stateful signature budget baked into the main key's commitment. Must match
   /// the value passed to `signer.recoverKeyPair(...)` for every later signature.
   maxSignatures: number;
-  /// Main-key derivation index. The QSalt1 vault id is computed from the
+  /// Main-key derivation index. The V1 commitment is computed from the
   /// resulting commitments and the factory account (the intended owner).
   derivationIndex: number;
   /// The dedicated ERC-1271 verifier key. Required and explicit — see
@@ -93,7 +93,7 @@ export interface CreateShrincsWalletParams {
 export interface GetShrincsWalletParams {
   derivationIndex: number;
   erc1271: Erc1271KeySpec;
-  /// Owner used at creation (the `to` argument). Bound into the QSalt1 vault id.
+  /// Owner used at creation (the `to` argument). Bound into the V1 commitment.
   owner: Address;
   signer: ShrincsSigner;
   maxSignatures: number;
@@ -149,7 +149,7 @@ export class ShrincsFactoryClient {
       params.maxSignatures
     );
     const owner = this.account;
-    const vaultId = qsalt1VaultId(statefulC, statelessC, owner);
+    const commitment = v1Commitment(statefulC, statelessC, owner);
 
     const existing = await this.getShrincsWalletAddress(
       statefulC,
@@ -157,7 +157,7 @@ export class ShrincsFactoryClient {
       owner
     );
     if (existing !== zeroAddress) {
-      throw new WalletAlreadyExistsError(vaultId);
+      throw new WalletAlreadyExistsError(commitment);
     }
 
     const initPayload = encodeInitPayload({
@@ -178,7 +178,7 @@ export class ShrincsFactoryClient {
       address: this.factoryAddress,
       abi: walletFactoryAbi,
       functionName: "deploySpecificWalletProxy",
-      args: [vaultId, statefulC, index, this.account, initPayload],
+      args: [commitment, index, this.account, initPayload],
       value: creationFee,
       account: this.account as Account | Address,
     };
@@ -213,7 +213,7 @@ export class ShrincsFactoryClient {
       publicClient: this.publicClient,
       walletClient: this.walletClient,
       signer: params.signer,
-      vaultId,
+      commitment,
       derivationIndex: params.derivationIndex,
       chainId: this.chainId,
       account: this.account,
@@ -221,7 +221,7 @@ export class ShrincsFactoryClient {
   }
 
   /// Resolve an existing wallet from its derivation index, ERC-1271 spec, and
-  /// original owner. Recomputes the QSalt1 vault id (and therefore the address)
+  /// original owner. Recomputes the V1 commitment (and therefore the address)
   /// from those inputs, asserts `signer` reproduces the installed main-key
   /// commitment (`CommitmentMismatchError` otherwise), and returns a bound
   /// `ShrincsWalletClient`.
@@ -236,21 +236,21 @@ export class ShrincsFactoryClient {
       erc1271,
       maxSignatures
     );
-    const vaultId = qsalt1VaultId(statefulC, statelessC, owner);
+    const commitment = v1Commitment(statefulC, statelessC, owner);
     const walletAddress = await this.getShrincsWalletAddress(
       statefulC,
       statelessC,
       owner
     );
     if (walletAddress === zeroAddress) {
-      throw new NoVaultFoundError(vaultId);
+      throw new NoVaultFoundError(commitment);
     }
     const client = new ShrincsWalletClient({
       walletAddress,
       publicClient: this.publicClient,
       walletClient: this.walletClient,
       signer,
-      vaultId,
+      commitment,
       derivationIndex,
       chainId: this.chainId,
       account: this.account,
@@ -269,13 +269,13 @@ export class ShrincsFactoryClient {
     return client;
   }
 
-  async getWalletState(vaultId: Hex): Promise<{
+  async getWalletState(commitment: Hex): Promise<{
     keyVersion: number;
     shrincsPublicKeyCommitment: Hex;
     maxSignatures: number;
     hashSuite: number;
   } | null> {
-    const walletAddress = await this.readWallets(vaultId);
+    const walletAddress = await this.readWallets(commitment);
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
     return {
@@ -287,10 +287,10 @@ export class ShrincsFactoryClient {
   }
 
   async openShrincsWallet(params: {
-    vaultId: Hex;
+    commitment: Hex;
     keypair: ShrincsKeyPair;
   }): Promise<ShrincsWalletClient | null> {
-    const walletAddress = await this.readWallets(params.vaultId);
+    const walletAddress = await this.readWallets(params.commitment);
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(this.publicClient, walletAddress);
     if (
@@ -307,31 +307,21 @@ export class ShrincsFactoryClient {
       publicClient: this.publicClient,
       walletClient: this.walletClient,
       keypair: params.keypair,
-      vaultId: params.vaultId,
+      commitment: params.commitment,
       chainId: this.chainId,
       account: this.account,
     });
   }
 
-  /// The factory-registered wallet address for the QSalt1 identity
+  /// The factory-registered wallet address for the V1 identity
   /// `(statefulC, statelessC, owner)` (`zeroAddress` if none). The mapping is
-  /// keyed by `vaultId` (CREATE3 salt == vaultId).
+  /// keyed by `commitment` (CREATE3 salt == commitment).
   async getShrincsWalletAddress(
     statefulC: Hex,
     statelessC: Hex,
     owner: Address
   ): Promise<Address> {
-    return this.readWallets(qsalt1VaultId(statefulC, statelessC, owner));
-  }
-
-  /// Look up a wallet by a raw factory mapping id (QSalt1 vault id or a
-  /// whitelisted legacy id). Throws `NoVaultFoundError` if the slot is empty.
-  async getLegacyWallet(id: Hex): Promise<Address> {
-    const walletAddress = await this.readWallets(id);
-    if (walletAddress === zeroAddress) {
-      throw new NoVaultFoundError(id);
-    }
-    return walletAddress;
+    return this.readWallets(v1Commitment(statefulC, statelessC, owner));
   }
 
   private resolveErc1271Commitment(

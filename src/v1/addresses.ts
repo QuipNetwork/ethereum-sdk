@@ -149,7 +149,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", WotsNetworkAddresses>
  * Resolution order:
  *   1. `chainId === undefined` → returns the `default` entry (back-compat
  *      for callers that operate before the chain is detected, e.g.
- *      `getVaultAddress(vaultId)` with no chainId).
+ *      `getVaultAddress(commitment)` with no chainId).
  *   2. `chainId` registered in `NETWORK_ADDRESSES` (e.g. MIDL) → that entry.
  *   3. `chainId` in `SHARED_DEPLOYMENT_CHAIN_IDS` → the `default` entry
  *      (mainnet / sepolia / base / op / their L2 testnets all share
@@ -193,36 +193,36 @@ const PROXY_INITCODE_HASH: Hex =
 
 /**
  * Compute the deterministic CREATE3 address of a Quip Vault.
- * The address depends only on (factory, vaultId).
+ * The address depends only on (factory, commitment).
  *
- * @param vaultId - The vault identifier (used as CREATE3 salt)
+ * @param commitment - The identity (used as CREATE3 salt)
  * @param chainId - Optional chain ID for network-specific factory resolution
  * @returns The address where the vault contract would be deployed
  */
-export function getVaultAddress(vaultId: Hex, chainId?: number): Address {
+export function getVaultAddress(commitment: Hex, chainId?: number): Address {
   const factory = getNetworkAddresses(chainId).WalletFactory;
-  return computeVaultAddress(factory, vaultId);
+  return computeVaultAddress(factory, commitment);
 }
 
 /**
  * Compute a CREATE3 vault address with an explicit factory address.
  *
  * @param factoryAddress - The WalletFactory contract address
- * @param vaultId - The vault identifier (used as CREATE3 salt)
+ * @param commitment - The identity (used as CREATE3 salt)
  * @returns The address where the vault contract would be deployed
  */
 export function computeVaultAddress(
   factoryAddress: Address,
-  vaultId: Hex
+  commitment: Hex
 ): Address {
-  return computeCreate3Address(factoryAddress, vaultId);
+  return computeCreate3Address(factoryAddress, commitment);
 }
 
 /**
  * Compute a Solady CREATE3 address from a factory and a 32-byte salt. The
  * address depends only on (factory, salt) — never on the deployed bytecode — so
  * it is chain-independent and shared by both wallet families. Callers derive the
- * salt (a raw vaultId for the sunset family, or a commitment-bound salt for the
+ * salt (a raw identity for the sunset family, or a commitment-bound salt for the
  * live SHRINCS deploy — see `e3r`).
  *
  * @param factoryAddress - The factory that runs CREATE3

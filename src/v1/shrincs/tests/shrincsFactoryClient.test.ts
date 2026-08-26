@@ -14,7 +14,6 @@ import {
 } from "viem";
 
 import { computeCreate3Address } from "../../addresses.js";
-import { NoVaultFoundError } from "../../errors.js";
 import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
@@ -23,7 +22,7 @@ import {
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   getShrincsWalletAddress,
-  qsalt1VaultId,
+  v1Commitment,
 } from "../addresses.js";
 import { encodeInitPayload } from "../shrincsCodec.js";
 import { ShrincsFactoryClient } from "../shrincsFactoryClient.js";
@@ -135,7 +134,7 @@ describe("ShrincsFactoryClient.createShrincsWallet", () => {
     ).rejects.toThrow(TransactionRevertedError);
   });
 
-  it("builds QSalt1 deploy args with vaultId from commitments and no deploy authorization", async () => {
+  it("builds V1 deploy args with commitment from key material and no deploy authorization", async () => {
     let capturedArgs: unknown[] | undefined;
     const factory = makeFactory({
       receiptStatus: "reverted",
@@ -153,22 +152,22 @@ describe("ShrincsFactoryClient.createShrincsWallet", () => {
     expect(capturedArgs).toBeDefined();
     const args = capturedArgs as unknown[];
     const statefulC = realKeypair.publicKeyCommitment;
-    const vaultId = qsalt1VaultId(statefulC, ERC1271_COMMITMENT, ACCOUNT);
-    expect(args[0]).toBe(vaultId);
-    expect(args[1]).toBe(statefulC);
-    expect(args[3]).toBe(ACCOUNT);
-    expect(args[4]).toBe(
+    const commitment = v1Commitment(statefulC, ERC1271_COMMITMENT, ACCOUNT);
+    expect(args[0]).toBe(commitment);
+    expect(args[1]).toBe(0n);
+    expect(args[2]).toBe(ACCOUNT);
+    expect(args[3]).toBe(
       encodeInitPayload({
         mainBundle: realKeypair.publicKey,
         erc1271Commitment: ERC1271_COMMITMENT,
       })
     );
-    expect(args).toHaveLength(5);
+    expect(args).toHaveLength(4);
   });
 });
 
 describe("getShrincsWalletAddress (CREATE3 predictor)", () => {
-  it("equals computeCreate3Address(factory, qsalt1VaultId)", () => {
+  it("equals computeCreate3Address(factory, v1Commitment)", () => {
     const statefulC = `0x${"11".repeat(32)}` as Hex;
     const statelessC = `0x${"22".repeat(32)}` as Hex;
     expect(
@@ -176,24 +175,8 @@ describe("getShrincsWalletAddress (CREATE3 predictor)", () => {
     ).toBe(
       computeCreate3Address(
         FACTORY,
-        qsalt1VaultId(statefulC, statelessC, ACCOUNT)
+        v1Commitment(statefulC, statelessC, ACCOUNT)
       )
-    );
-  });
-});
-
-describe("ShrincsFactoryClient.getLegacyWallet", () => {
-  it("returns the wallets(id) mapping entry", async () => {
-    const walletAddress =
-      "0x00000000000000000000000000000000000000aa" as Address;
-    const factory = makeFactory({ reads: { wallets: walletAddress } });
-    expect(await factory.getLegacyWallet(VAULT_ID)).toBe(walletAddress);
-  });
-
-  it("throws NoVaultFoundError when wallets(id) is zero", async () => {
-    const factory = makeFactory();
-    await expect(factory.getLegacyWallet(VAULT_ID)).rejects.toThrow(
-      NoVaultFoundError
     );
   });
 });
@@ -271,7 +254,7 @@ describe("ShrincsFactoryClient.openShrincsWallet", () => {
     } as unknown as ShrincsKeyPair;
 
     await expect(
-      factory.openShrincsWallet({ vaultId: VAULT_ID, keypair })
+      factory.openShrincsWallet({ commitment: VAULT_ID, keypair })
     ).rejects.toThrow(CommitmentMismatchError);
   });
 });
