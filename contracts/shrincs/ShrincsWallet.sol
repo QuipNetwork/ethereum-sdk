@@ -36,6 +36,7 @@ import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "./interfaces/IShrincsWallet.sol";
 import {IWalletFactory} from "../interfaces/IWalletFactory.sol";
+import {IPreQSalt1Wallets} from "../interfaces/IPreQSalt1Wallets.sol";
 import {ShrincsWalletCodec as Codec} from "./ShrincsWalletCodec.sol";
 import {ShrincsWalletStorage as Storage} from "./ShrincsWalletStorage.sol";
 
@@ -352,6 +353,23 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             bytes32 erc1271Commitment,
             uint32 maxSignatures
         ) = _decodeAndValidateInstall(payload);
+
+        bytes32 vaultId = IWalletFactory(FACTORY).vaultIdOf(address(this));
+        if (Codec.isQSalt1Salt(vaultId)) {
+            // Left-shift drops the 6-byte QSalt1 prefix; bytes26 keeps the 26-byte identity tail.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            if (bytes26(vaultId << 48) != Codec.qsalt1Tail(commitment, erc1271Commitment, newOwner)) {
+                revert IdentityMismatch();
+            }
+        } else {
+            // Legacy branch is only reachable when the factory's deploy gate already
+            // admitted this id (whitelisted), so `preQSalt1Wallets()` is non-zero there.
+            (address wOwner, bytes32 wStateful, bytes32 wStateless) =
+                IPreQSalt1Wallets(IWalletFactory(FACTORY).preQSalt1Wallets()).get(vaultId);
+            if (wOwner != newOwner || wStateful != commitment || wStateless != erc1271Commitment) {
+                revert LegacyIdentityMismatch();
+            }
+        }
 
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
