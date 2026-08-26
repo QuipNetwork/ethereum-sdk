@@ -108,4 +108,29 @@ contract PreQSalt1WalletsTest is Test {
         assertEq(statelessC, STATELESS_C2);
         assertTrue(registry.isWhitelisted(ID));
     }
+
+    function test_remove_revertsWhen_callerNotOwner() public {
+        vm.prank(ADMIN);
+        registry.add(ID, ALICE, STATEFUL_C, STATELESS_C);
+
+        vm.prank(ALICE);
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        registry.remove(ID);
+    }
+
+    function test_remove_revertsWhen_alreadyRemoved() public {
+        vm.prank(ADMIN);
+        registry.add(ID, ALICE, STATEFUL_C, STATELESS_C);
+        vm.prank(ADMIN);
+        registry.remove(ID);
+
+        vm.prank(ADMIN);
+        vm.expectRevert(IPreQSalt1Wallets.NotWhitelisted.selector);
+        registry.remove(ID);
+    }
+
+    function test_constructor_revertsWhen_zeroOwner() public {
+        vm.expectRevert(IPreQSalt1Wallets.ZeroOwner.selector);
+        new PreQSalt1Wallets(address(0));
+    }
 }

@@ -35,7 +35,10 @@ contract PreQSalt1Wallets is IPreQSalt1Wallets, Ownable {
 
     mapping(bytes32 id => Entry) private _entries;
 
+    /// @dev Reverts `ZeroOwner` on a zero `initialOwner`: Solady would otherwise
+    ///      store a zero owner and permanently lock every `onlyOwner` entrypoint.
     constructor(address initialOwner) {
+        if (initialOwner == address(0)) revert ZeroOwner();
         _initializeOwner(initialOwner);
     }
 
