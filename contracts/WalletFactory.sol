@@ -218,12 +218,11 @@ contract WalletFactory is
         }
 
         $.walletOwner[msg.sender] = newOwner;
-        // The per-owner set is keyed by the wallet's unique CREATE3 salt (e3r), not the raw
-        // vaultId, so two commitments under one vaultId can coexist. Both mutations MUST
-        // succeed: `salt` is in `oldOwner`'s set (it went there at deploy and moves only here),
-        // and `newOwner` cannot already hold it because a salt is globally unique (CREATE3) and
-        // lives in at most one owner's set at a time. A `false` return means the registry
-        // diverged from `walletOwner` — revert loudly.
+        // The per-owner set is keyed by the vaultId (which is the CREATE3 salt). Both
+        // mutations MUST succeed: `salt` is in `oldOwner`'s set (it went there at deploy
+        // and moves only here), and `newOwner` cannot already hold it because a salt is
+        // globally unique (CREATE3) and lives in at most one owner's set at a time. A
+        // `false` return means the registry diverged from `walletOwner` — revert loudly.
         bytes32 salt = $.saltOf[msg.sender];
         if (!$.vaultIds[oldOwner].remove(salt)) revert RegistryDesync();
         if (!$.vaultIds[newOwner].add(salt)) revert RegistryDesync();

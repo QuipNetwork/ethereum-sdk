@@ -240,9 +240,9 @@ interface IWalletFactory {
     ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
     /// @dev Iterates backwards through the vetted set to find the most recently added
     ///      non-deprecated implementation. Uses CREATE3 for deterministic addressing.
-    /// @param vaultId The vault identifier; combined with `commitment` into the CREATE3 salt.
-    /// @param commitment The main-key commitment the address is bound to (e3r). Used only to
-    ///                derive the salt `keccak256(abi.encode(vaultId, commitment))`.
+    /// @param vaultId The vault identifier. The CREATE3 salt is the `vaultId` itself.
+    /// @param commitment The main-key commitment the address is bound to (e3r). The CREATE3
+    ///                salt is the `vaultId` itself.
     /// @param to The classical address that will own the new wallet.
     /// @param payload Implementation-defined init data, passed to the wallet's
     ///                `initialize` verbatim. Opaque to the factory: layout and
@@ -261,7 +261,7 @@ interface IWalletFactory {
     ///         fee) to the wallet.
     /// @dev The index corresponds to insertion order in the vetted set. Reverts if the
     ///      implementation at the given index is deprecated.
-    /// @param vaultId The vault identifier; combined with `commitment` into the CREATE3 salt.
+    /// @param vaultId The vault identifier. The CREATE3 salt is the `vaultId` itself.
     /// @param commitment The main-key commitment the address is bound to (e3r); see
     ///                `deployLatestWalletProxy`.
     /// @param index The index into the vetted implementation set.
@@ -342,11 +342,9 @@ interface IWalletFactory {
     function MAX_FEE() external view returns (uint256);
 
     /// @notice Returns the wallet address registered under a CREATE3 salt on this factory.
-    /// @dev Keyed by the derived salt `keccak256(abi.encode(vaultId, commitment))` (e3r), NOT by
-    ///      the raw `vaultId`: with the main-key commitment folded into the salt, two commitments
-    ///      under one `vaultId` resolve to two distinct addresses and no longer collide in this
-    ///      registry. Same salt on every chain resolves to the same deterministic address.
-    /// @param salt The CREATE3 salt `keccak256(abi.encode(vaultId, commitment))`.
+    /// @dev Keyed by the CREATE3 salt, which is the `vaultId` itself. Same salt on every
+    ///      chain resolves to the same deterministic address.
+    /// @param salt The CREATE3 salt; the CREATE3 salt is the `vaultId` itself.
     /// @return The wallet address, or `address(0)` if none registered here.
     function wallets(bytes32 salt) external view returns (address);
 

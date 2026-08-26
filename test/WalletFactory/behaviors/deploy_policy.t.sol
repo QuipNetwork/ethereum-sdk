@@ -99,23 +99,8 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         }(vaultId, bytes32(uint256(1)), mockIndex, payable(to), "");
 
         assertTrue(wallet != address(0));
-    }
-
-    function test_deploySpecificWalletProxy_revertsWhen_legacyNotWhitelisted()
-        public
-    {
-        address to = makeAddr("to-legacy");
-        bytes32 vaultId = bytes32(uint256(1));
-        uint256 fee = harness.creationFee();
-
-        vm.expectRevert(IWalletFactory.LegacyNotWhitelisted.selector);
-        harness.deploySpecificWalletProxy{value: fee}(
-            vaultId,
-            bytes32(uint256(1)),
-            mockIndex,
-            payable(to),
-            ""
-        );
+        assertEq(harness.wallets(vaultId), wallet);
+        assertEq(harness.vaultIdOf(wallet), vaultId);
     }
 
     function test_deploySpecificWalletProxy_whitelistedLegacySucceeds() public {
@@ -135,6 +120,8 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         }(vaultId, bytes32(uint256(1)), mockIndex, payable(to), "");
 
         assertTrue(wallet != address(0));
+        assertEq(harness.wallets(vaultId), wallet);
+        assertEq(harness.vaultIdOf(wallet), vaultId);
     }
 
     function test_deploySpecificWalletProxy_wotsNonQSalt1Succeeds() public {
@@ -152,5 +139,24 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         );
 
         assertTrue(wallet != address(0));
+        assertEq(harness.wallets(vaultId), wallet);
+        assertEq(harness.vaultIdOf(wallet), vaultId);
+    }
+
+    function test_deploySpecificWalletProxy_revertsWhen_legacyNotWhitelisted()
+        public
+    {
+        address to = makeAddr("to-legacy");
+        bytes32 vaultId = bytes32(uint256(1));
+        uint256 fee = harness.creationFee();
+
+        vm.expectRevert(IWalletFactory.LegacyNotWhitelisted.selector);
+        harness.deploySpecificWalletProxy{value: fee}(
+            vaultId,
+            bytes32(uint256(1)),
+            mockIndex,
+            payable(to),
+            ""
+        );
     }
 }
