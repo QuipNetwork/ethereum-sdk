@@ -88,8 +88,8 @@ interface IWalletFactory {
     ///         set has diverged from the factory's `walletOwner` source of
     ///         truth — a "this should never happen" defense-in-depth revert.
     error RegistryDesync();
-    /// @notice Thrown when a V1-gated implementation is deployed at a salt that does not carry the
-    ///         V1 commitment prefix (identity-bound salts only).
+    /// @notice Thrown when a wallet proxy is deployed at a salt that is not a V01-shaped identity
+    ///         commitment (identity-bound salts only).
     error NotV1Commitment();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -167,16 +167,6 @@ interface IWalletFactory {
         address indexed newOwner
     );
 
-    /// @notice Emitted when an implementation is vetted with an explicit
-    ///         V1 deploy policy.
-    /// @param codehash The implementation codehash.
-    /// @param requiresV1 True if new proxies of this codehash must use a
-    ///        V1 commitment.
-    event ImplementationPolicySet(
-        bytes32 indexed codehash,
-        bool requiresV1
-    );
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -198,19 +188,6 @@ interface IWalletFactory {
     ///      reconstructable from events alone. Sets `latestWalletImpl` to the new impl.
     /// @param impl The deployed implementation contract address.
     function vetImplementation(address impl) external;
-
-    /// @notice Approves a fresh implementation's codehash and sets its V1
-    ///         deploy policy.
-    /// @dev Only callable by the admin. Same vetting rules as
-    ///      `vetImplementation`. Stores `requiresV1_` against the
-    ///      codehash and emits `ImplementationPolicySet`.
-    /// @param impl The deployed implementation contract address.
-    /// @param requiresV1_ True if new proxies of this codehash must use a
-    ///        V1 commitment.
-    function vetImplementationWithPolicy(
-        address impl,
-        bool requiresV1_
-    ) external;
 
     /// @notice Marks an implementation's codehash as deprecated.
     /// @dev Only callable by the admin. The codehash remains in the set (preserving indices)

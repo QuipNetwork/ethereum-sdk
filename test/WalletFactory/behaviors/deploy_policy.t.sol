@@ -33,7 +33,7 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         vm.startPrank(ADMIN);
 
         mockImpl = new MockInitWallet();
-        harness.vetImplementationWithPolicy(address(mockImpl), true);
+        harness.vetImplementation(address(mockImpl));
 
         wotsImpl = new WOTSPlusImplementation(payable(address(harness)));
         harness.vetImplementation(address(wotsImpl));
@@ -99,22 +99,22 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         assertEq(harness.commitmentOf(wallet), commitment);
     }
 
-    function test_deploySpecificWalletProxy_wotsNonV1Succeeds() public {
+    function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnWotsImpl()
+        public
+    {
         address to = makeAddr("to-wots");
         bytes32 commitment = bytes32(uint256(2));
+        uint256 fee = harness.creationFee();
 
-        address wallet = harness.deploySpecificWalletProxy{
-            value: harness.creationFee()
-        }(
+        // The V01 prefix gate is unconditional: even the legacy WOTS+ impl is
+        // rejected at a non-V01 salt.
+        vm.expectRevert(IWalletFactory.NotV1Commitment.selector);
+        harness.deploySpecificWalletProxy{value: fee}(
             commitment,
             wotsIndex,
             payable(to),
             _buildPayload()
         );
-
-        assertTrue(wallet != address(0));
-        assertEq(harness.wallets(commitment), wallet);
-        assertEq(harness.commitmentOf(wallet), commitment);
     }
 
     function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnV1Impl()

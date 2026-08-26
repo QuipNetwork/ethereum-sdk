@@ -59,15 +59,6 @@ library WalletFactoryStorage {
         ///      recomputed on deprecate/undeprecate).
         address latestWalletImpl;
         // --- APPEND-ONLY below this line; never reorder above ---
-        /// @dev Per-wallet CREATE3 salt. The salt IS the commitment. Written in
-        ///      `_deployProxy`; read by `updateWalletOwner` (to move the entry
-        ///      between owners' `commitments` sets) and `getWallets` (which resolves
-        ///      each entry through `wallets[salt]`). `commitmentOf` keeps the
-        ///      commitment for the `WalletDeployed`/`WalletOwnerChanged` events.
-        mapping(address wallet => bytes32 salt) saltOf;
-        /// @dev True if proxies of this codehash may only be deployed at a V1
-        ///      commitment (identity-bound salt). Default false (WOTS+ exempt).
-        mapping(bytes32 codehash => bool requiresV1) requiresV1;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.factory")) - 1))

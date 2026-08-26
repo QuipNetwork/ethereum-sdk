@@ -80,13 +80,4 @@ contract ShrincsWallet_initialize_v1 is ShrincsWalletTest {
         vm.expectRevert(IShrincsWallet.IdentityMismatch.selector);
         bare.initialize(payable(OWNER), _validInitPayload());
     }
-
-    function test_initialize_revertsWhen_nonV1Salt() public {
-        (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setCommitment(bareAddr, bytes32(uint256(1)));
-
-        vm.prank(address(factory));
-        vm.expectRevert(IShrincsWallet.NotV1Commitment.selector);
-        bare.initialize(payable(OWNER), _validInitPayload());
-    }
 }

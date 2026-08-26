@@ -257,8 +257,8 @@ export async function setupShrincsAnvilStack(
     chain: foundry,
     address: factoryAddress,
     abi: walletFactoryAbi,
-    functionName: "vetImplementationWithPolicy",
-    args: [shrincsWalletImpl, true],
+    functionName: "vetImplementation",
+    args: [shrincsWalletImpl],
     account,
   });
   await publicClient.waitForTransactionReceipt({ hash: vetHash });

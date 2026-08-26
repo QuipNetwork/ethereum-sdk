@@ -1971,11 +1971,6 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
-    "name": "NotV1Commitment",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "OwnershipHandoverDisabled",
     "inputs": []
   },

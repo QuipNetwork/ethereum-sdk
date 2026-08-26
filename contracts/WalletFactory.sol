@@ -89,16 +89,6 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-    function vetImplementationWithPolicy(
-        address impl,
-        bool requiresV1_
-    ) external onlyOwner {
-        bytes32 codehash = _vetImplementation(impl);
-        Storage.layout().requiresV1[codehash] = requiresV1_;
-        emit ImplementationPolicySet(codehash, requiresV1_);
-    }
-
-    /// @inheritdoc IWalletFactory
     function undeprecateImplementation(address impl) external onlyOwner {
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = impl.codehash;
@@ -213,7 +203,7 @@ contract WalletFactory is
         // and moves only here), and `newOwner` cannot already hold it because a salt is
         // globally unique (CREATE3) and lives in at most one owner's set at a time. A
         // `false` return means the registry diverged from `walletOwner` — revert loudly.
-        bytes32 salt = $.saltOf[msg.sender];
+        bytes32 salt = $.commitmentOf[msg.sender];
         if (!$.commitments[oldOwner].remove(salt)) revert RegistryDesync();
         if (!$.commitments[newOwner].add(salt)) revert RegistryDesync();
         emit WalletOwnerChanged(commitment, oldOwner, newOwner);
@@ -387,17 +377,14 @@ contract WalletFactory is
 
         // CREATE3 salt is the commitment.
         bytes32 salt = commitment;
-        // Fail fast: a V1-required impl only deploys at an identity-bound V1 commitment. The wallet's
-        // own initialize re-checks this, so non-V1 salts can never take a V1 impl address.
-        if ($.requiresV1[impl.codehash] && !Codec.isV1Commitment(commitment)) {
-            revert NotV1Commitment();
-        }
+        // Reject any commitment that is not a V01-shaped identity salt. The wallet separately proves
+        // the salt's tail binds its own key-set; the factory rejects a malformed prefix at the door.
+        if (!Codec.isV1Commitment(commitment)) revert NotV1Commitment();
         address contractAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
 
         // Publish the reverse `commitmentOf` entry (also the `OnlyWallet` gate for the ownership
         // callback) BEFORE the call, keyed by address.
         $.commitmentOf[contractAddr] = commitment;
-        $.saltOf[contractAddr] = salt;
 
         IWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
@@ -421,8 +408,7 @@ contract WalletFactory is
     }
 
     /// @dev Shared vetting body. Adds `impl`'s codehash to the vetted set and
-    ///      records it as the latest active implementation. Policy is left
-    ///      false unless the caller is `vetImplementationWithPolicy`.
+    ///      records it as the latest active implementation.
     function _vetImplementation(
         address impl
     ) private returns (bytes32 codehash) {
