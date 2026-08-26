@@ -88,6 +88,10 @@ interface IWalletFactory {
     ///         set has diverged from the factory's `walletOwner` source of
     ///         truth — a "this should never happen" defense-in-depth revert.
     error RegistryDesync();
+    /// @notice Thrown when a QSalt1-gated implementation is deployed at a
+    ///         vaultId that does not carry the QSalt1 prefix and is not on
+    ///         the pre-QSalt1 whitelist.
+    error LegacyNotWhitelisted();
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
@@ -164,6 +168,20 @@ interface IWalletFactory {
         address indexed newOwner
     );
 
+    /// @notice Emitted when an implementation is vetted with an explicit
+    ///         QSalt1 deploy policy.
+    /// @param codehash The implementation codehash.
+    /// @param requiresQSalt1 True if new proxies of this codehash must use a
+    ///        QSalt1 vaultId or a whitelisted legacy id.
+    event ImplementationPolicySet(
+        bytes32 indexed codehash,
+        bool requiresQSalt1
+    );
+
+    /// @notice Emitted when the pre-QSalt1 whitelist registry address is set.
+    /// @param registry The registry address.
+    event PreQSalt1WalletsUpdated(address indexed registry);
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -185,6 +203,19 @@ interface IWalletFactory {
     ///      reconstructable from events alone. Sets `latestWalletImpl` to the new impl.
     /// @param impl The deployed implementation contract address.
     function vetImplementation(address impl) external;
+
+    /// @notice Approves a fresh implementation's codehash and sets its QSalt1
+    ///         deploy policy.
+    /// @dev Only callable by the admin. Same vetting rules as
+    ///      `vetImplementation`. Stores `requiresQSalt1_` against the
+    ///      codehash and emits `ImplementationPolicySet`.
+    /// @param impl The deployed implementation contract address.
+    /// @param requiresQSalt1_ True if new proxies of this codehash must use a
+    ///        QSalt1 vaultId or a whitelisted legacy id.
+    function vetImplementationWithPolicy(
+        address impl,
+        bool requiresQSalt1_
+    ) external;
 
     /// @notice Marks an implementation's codehash as deprecated.
     /// @dev Only callable by the admin. The codehash remains in the set (preserving indices)
@@ -282,6 +313,11 @@ interface IWalletFactory {
     /// @dev Only callable by the current admin.
     /// @param newFee The new execute fee in wei.
     function setExecuteFee(uint256 newFee) external;
+
+    /// @notice Sets the pre-QSalt1 whitelist registry address.
+    /// @dev Only callable by the current admin. Emits `PreQSalt1WalletsUpdated`.
+    /// @param registry The registry contract address.
+    function setPreQSalt1Wallets(address registry) external;
 
     /// @notice Withdraws accumulated fees from the factory to the admin.
     /// @dev Only callable by the current admin. Reverts if the factory balance is insufficient.
@@ -417,4 +453,8 @@ interface IWalletFactory {
     /// @notice Returns the most recently vetted active implementation address.
     /// @return The latest active wallet implementation address, or `address(0)` if none.
     function latestWalletImpl() external view returns (address);
+
+    /// @notice Returns the pre-QSalt1 whitelist registry address.
+    /// @return The registry address, or `address(0)` if unset.
+    function preQSalt1Wallets() external view returns (address);
 }

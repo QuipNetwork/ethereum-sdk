@@ -59,12 +59,17 @@ library WalletFactoryStorage {
         ///      recomputed on deprecate/undeprecate).
         address latestWalletImpl;
         // --- APPEND-ONLY below this line; never reorder above ---
-        /// @dev Per-wallet CREATE3 salt (`keccak256(abi.encode(vaultId, commitment))`), the
-        ///      unique registry key. Written in `_deployProxy`; read by `updateWalletOwner`
-        ///      (to move the entry between owners' `vaultIds` sets) and `getWallets` (which
-        ///      resolves each entry through `wallets[salt]`). `vaultIdOf` keeps the RAW vaultId
+        /// @dev Per-wallet CREATE3 salt. The salt IS the vaultId. Written in
+        ///      `_deployProxy`; read by `updateWalletOwner` (to move the entry
+        ///      between owners' `vaultIds` sets) and `getWallets` (which resolves
+        ///      each entry through `wallets[salt]`). `vaultIdOf` keeps the vaultId
         ///      for the `WalletDeployed`/`WalletOwnerChanged` events.
         mapping(address wallet => bytes32 salt) saltOf;
+        /// @dev Pre-QSalt1 legacy whitelist registry. Zero until the owner sets it.
+        address preQSalt1Wallets;
+        /// @dev True if proxies of this codehash may only be deployed at a QSalt1
+        ///      vaultId or a whitelisted legacy id. Default false (WOTS+ exempt).
+        mapping(bytes32 codehash => bool requiresQSalt1) requiresQSalt1;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.factory")) - 1))
