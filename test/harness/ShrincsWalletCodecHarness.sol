@@ -84,17 +84,23 @@ contract ShrincsWalletCodecHarness {
         nonce = _n;
     }
 
-    function exposed_decodeErc1271Signature(bytes calldata sig)
+    function exposed_tryDecodeErc1271Signature(bytes calldata sig)
         external
         pure
         returns (
+            bool ok,
             SHRINCS.PublicKey memory publicKey,
             SPHINCSPlusC.Signature memory signature,
             bytes memory ecdsaSig
         )
     {
-        (SHRINCS.PublicKey calldata _pk, SPHINCSPlusC.Signature calldata _sig, bytes calldata _e) =
-            Codec.decodeErc1271Signature(sig);
+        SHRINCS.PublicKey calldata _pk;
+        SPHINCSPlusC.Signature calldata _sig;
+        bytes calldata _e;
+        (ok, _pk, _sig, _e) = Codec.tryDecodeErc1271Signature(sig);
+        // Mirror the production caller: on a malformed payload the calldata references are not
+        // valid ABI and must not be dereferenced. Return the zero-value memory structs instead.
+        if (!ok) return (ok, publicKey, signature, ecdsaSig);
         publicKey = _pk;
         signature = _sig;
         ecdsaSig = _e;

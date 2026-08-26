@@ -221,7 +221,8 @@ interface IShrincsWallet is IWallet {
         Ok,
         BadSignatureLength,
         InvalidEcdsaSignature,
-        InvalidShrincsSignature
+        InvalidShrincsSignature,
+        MalformedErc1271Payload
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

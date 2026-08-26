@@ -60,6 +60,47 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         );
     }
 
+    /// @dev ERC-1271 never-revert property (staticcall DoS resistance): a relying contract
+    ///      staticcalls `isValidSignature`, so any revert is a denial of service on it. Adversarial
+    ///      blobs whose ABI tail offsets point out of bounds — which the codec's `pw8` bounds-check
+    ///      reverts on — must instead return the FAIL magic through the ERC-1271 path. The adversary
+    ///      cannot forge the owner ECDSA, so it short-circuits before the (revert-prone) nested
+    ///      SHRINCS reads; only the top-level decode is reached, and it must not revert.
+    function test_isValidSignature_neverReverts_onMalformedBlobs() public {
+        _neverReverts(_fill(0x60, 0xff), "0x60 0xff (offsets wrap huge)");
+        _neverReverts(_fill(0x100, 0xff), "0x100 0xff");
+        _neverReverts(_fill(0x80, 0xff), "0x80 0xff (SDK client garbage)");
+        _neverReverts(
+            abi.encodePacked(bytes32(0), bytes32(0), bytes32(uint256(0x60)), bytes32(type(uint256).max)),
+            "huge ecdsaSig length word"
+        );
+        _neverReverts(_pseudoRandom(0xc8), "pseudo-random 0xc8");
+    }
+
+    /// @dev Asserts `isValidSignature` returns FAIL for `blob` WITHOUT reverting (try/catch turns a
+    ///      revert into a test failure rather than aborting the whole run).
+    function _neverReverts(bytes memory blob, string memory name) internal view {
+        try wallet.isValidSignature(HASH, blob) returns (bytes4 result) {
+            assertEq(result, FAIL, name);
+        } catch {
+            revert(string.concat("isValidSignature reverted on adversarial blob: ", name));
+        }
+    }
+
+    function _fill(uint256 n, uint8 b) internal pure returns (bytes memory out) {
+        out = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            out[i] = bytes1(b);
+        }
+    }
+
+    function _pseudoRandom(uint256 n) internal pure returns (bytes memory out) {
+        out = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            out[i] = bytes1(uint8((i * 131 + 17) & 0xff));
+        }
+    }
+
     function test_isValidSignature_ok() public {
         SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
         bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
