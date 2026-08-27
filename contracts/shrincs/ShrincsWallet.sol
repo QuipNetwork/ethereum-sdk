@@ -94,7 +94,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @dev SHRINCS storage base slots, duplicated from `ShrincsWalletStorage` as numeric
     ///      literals because inline assembly cannot reference cross-library constants or `base+N`.
     ///      Kept in lock-step with `Layout` field order (pinned by the storage-layout fixture).
-    bytes32 private constant _SHRINCS_FACTORY_SLOT =
+    bytes32 private constant _PQ_FACTORY_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
     bytes32 private constant _SHRINCS_COMMITMENT_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01;
@@ -180,7 +180,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             );
             return 1;
         }
-        // Fail-closed: too-short signatures soft-fail (`return 1`); a bad in-range offset hard-reverts.
         (
             SHRINCS.PublicKey calldata pk,
             SHRINCS.Signature calldata sig,
@@ -375,7 +374,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ) = _decodeAndValidateInstall(payload);
 
         Storage.Layout storage $ = Storage.layout();
-        // Pin the guarded factory snapshot to this implementation's immutable `FACTORY`.
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
@@ -905,13 +903,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function getExecuteFee() public view returns (uint256) {
-        // Read from the immutable `FACTORY`, not the mutable snapshot slot.
         return IWalletFactory(FACTORY).executeFee();
     }
 
     /// @inheritdoc IShrincsWallet
     function walletFactory() external view returns (address payable) {
-        // Snapshot slot, re-established to `FACTORY` on initialize/migrate.
         return Storage.layout().walletFactory;
     }
 
@@ -963,9 +959,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @inheritdoc IShrincsWallet
     function remainingStatefulSignatures() external view returns (uint32) {
         Storage.Layout storage $ = Storage.layout();
-        // Saturating: the leaf bitmap is the real anti-replay mechanism; this
-        // counter is advisory, so it must never revert even if it ever drifts
-        // above `maxSignatures`.
         if ($.statefulLeavesUsed >= $.maxSignatures) return 0;
         return $.maxSignatures - $.statefulLeavesUsed;
     }
@@ -1233,9 +1226,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ) internal view returns (Erc1271ValidationResult) {
         if (signature.length < 0x60)
             return Erc1271ValidationResult.BadSignatureLength;
-        // Non-reverting decode: a malformed blob (out-of-bounds ABI tail offsets) must return the
-        // ERC-1271 failure magic, never revert — a revert here is a DoS on the staticcalling
-        // relying contract. The reverting decoders remain on the transaction paths.
         (
             bool ok,
             SHRINCS.PublicKey calldata pk,
@@ -1292,7 +1282,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint256 fee = getExecuteFee();
         if (fee > maxFee) revert ExecuteFeeExceedsCap(fee, maxFee);
         if (fee > 0) {
-            // Paid to the immutable `FACTORY`, matching `getExecuteFee`.
             SafeTransferLib.safeTransferETH(FACTORY, fee);
         }
     }
@@ -1333,7 +1322,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         assembly {
             mstore(snapshot, sload(_OWNER_SLOT))
             mstore(add(snapshot, 0x20), sload(_ERC1967_IMPLEMENTATION_SLOT))
-            mstore(add(snapshot, 0x40), sload(_SHRINCS_FACTORY_SLOT))
+            mstore(add(snapshot, 0x40), sload(_PQ_FACTORY_SLOT))
             mstore(add(snapshot, 0x60), sload(_SHRINCS_COMMITMENT_SLOT))
             mstore(add(snapshot, 0x80), sload(_ERC1271_COMMITMENT_SLOT))
             mstore(add(snapshot, 0xa0), sload(_KEY_VERSION_SLOT))
@@ -1366,7 +1355,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             ) {
                 revertWithIndex(selector, 1)
             }
-            if iszero(eq(mload(add(snapshot, 0x40)), sload(_SHRINCS_FACTORY_SLOT))) {
+            if iszero(eq(mload(add(snapshot, 0x40)), sload(_PQ_FACTORY_SLOT))) {
                 revertWithIndex(selector, 2)
             }
             if iszero(

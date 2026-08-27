@@ -5,7 +5,7 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Pins the single-source-of-truth invariant for the factory address: the immutable `FACTORY`
 ///      is authoritative, and the mutable `$.walletFactory` snapshot slot (kept only for the
-///      `_SHRINCS_FACTORY_SLOT` guarded-slot layout) is re-established to `FACTORY` on init/migrate so it
+///      `_PQ_FACTORY_SLOT` guarded-slot layout) is re-established to `FACTORY` on init/migrate so it
 ///      can never drift from the immutable after an upgrade.
 contract ShrincsWallet_walletFactory is ShrincsWalletTest {
     function test_walletFactory_matchesImmutableAfterInit() public view {

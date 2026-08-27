@@ -24,42 +24,30 @@ import addresses from "./addresses.json" with { type: "json" };
 import { UnsupportedNetworkError } from "./errors.js";
 
 /**
- * Shared, wallet-family-agnostic network addresses. Both the SHRINCS family
- * (through its own `getShrincsAddresses`) and the sunset WOTS+ family rely on
- * the same ERC-4337 EntryPoint; the WalletFactory address is shared across
- * every chain reached by the same operator (CreateX sender-guarded CREATE3).
+ * Network-specific contract address configuration
  */
 export interface NetworkAddresses {
-  /// LIVE WalletFactory ERC-1967 proxy — a sender-guarded CreateX CREATE3
-  /// deployment, so its address is a function of (CreateX, DEPLOY_OPERATOR,
-  /// salt), identical on every chain reached by the same operator.
-  WalletFactory: Address;
-  /// ERC-4337 v0.7 EntryPoint. The canonical address
-  /// `0x0000000071727De22E5E9d8BAf0edAc6f37da032` is the same across every
-  /// chain where v0.7 is deployed — it's a CREATE2 deployment with a
-  /// fixed salt. Per-chain entry exists so alternative deployments (e.g.
-  /// MIDL, app-specific bundlers) can override.
-  EntryPoint: Address;
-}
-
-/**
- * WOTS+-family address set. The WOTS+ wallet family (QuipSigner, QuipClient,
- * QuipPaymasterClient, …) moved to `./deprecated/v1`; these fields exist only
- * for that sunset family and are not part of the shared `NetworkAddresses`
- * surface. The live SHRINCS family resolves through `getShrincsAddresses`.
- */
-export interface WotsNetworkAddresses extends NetworkAddresses {
   /// Sunset WOTS+-era CREATE3 bootstrap (now `contracts/deprecated/Deployer.sol`).
   /// Kept because the deployed WOTS+-era artifacts derive their addresses from
   /// it; LIVE contracts deploy straight through CreateX with sender-guarded
   /// salts and do not touch it.
   Deployer: Address;
   WOTSPlus: Address;
+  /// LIVE WalletFactory ERC-1967 proxy — a sender-guarded CreateX CREATE3
+  /// deployment, so its address is a function of (CreateX, DEPLOY_OPERATOR,
+  /// salt), identical on every chain reached by the same operator.
+  WalletFactory: Address;
   /// WOTSPlusImplementation implementation that the factory clones via CREATE3 on
   /// `createWallet`. The impl itself is never called directly (its
   /// initializers are gated); surfaced so tooling can verify which
   /// implementation is vetted on a given chain.
   WOTSPlusImplementation: Address;
+  /// ERC-4337 v0.7 EntryPoint. The canonical address
+  /// `0x0000000071727De22E5E9d8BAf0edAc6f37da032` is the same across every
+  /// chain where v0.7 is deployed — it's a CREATE2 deployment with a
+  /// fixed salt. Per-chain entry exists so alternative deployments (e.g.
+  /// MIDL, app-specific bundlers) can override.
+  EntryPoint: Address;
   /// Per-chain QuipPaymaster proxy address (user-facing). Zero address
   /// indicates no paymaster is deployed on this chain —
   /// `QuipPaymasterClient` rejects construction against a zero address.
@@ -113,11 +101,10 @@ const SHARED_DEPLOYMENT_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
 ]);
 
 /**
- * WOTS+-family address registry. Maps chain IDs to the sunset family's
- * contract addresses. Serves the WOTS+ clients under `./deprecated/v1`; the
- * live SHRINCS family resolves through `getShrincsAddresses`.
+ * Network-specific address registry
+ * Maps chain IDs to their deployed contract addresses
  */
-export const NETWORK_ADDRESSES: Record<number | "default", WotsNetworkAddresses> = {
+export const NETWORK_ADDRESSES: Record<number | "default", NetworkAddresses> = {
   // Default: Existing EVM chains (shared deterministic addresses via CREATE3)
   default: {
     Deployer: addresses.Deployer as Address,
@@ -158,16 +145,11 @@ export const NETWORK_ADDRESSES: Record<number | "default", WotsNetworkAddresses>
  *      from the prior silent fall-through, which would have returned the
  *      mainnet addresses for any chainId outside the supported set.
  *
- * The returned addresses are deterministic CREATE3/CREATE2 *predictions*.
- * Membership in the supported set means the address is derivable on that
- * chain, not that the contracts are live there — a caller that needs live
- * deployment must confirm on-chain (`getCode`) before use.
- *
  * @param chainId - The chain ID of the network (e.g., 777 for MIDL testnet)
- * @returns WotsNetworkAddresses for the specified chain
+ * @returns NetworkAddresses for the specified chain
  * @throws UnsupportedNetworkError when `chainId` is provided and unsupported.
  */
-export function getNetworkAddresses(chainId?: number): WotsNetworkAddresses {
+export function getNetworkAddresses(chainId?: number): NetworkAddresses {
   if (chainId === undefined) {
     return NETWORK_ADDRESSES.default;
   }
@@ -220,10 +202,7 @@ export function computeVaultAddress(
 
 /**
  * Compute a Solady CREATE3 address from a factory and a 32-byte salt. The
- * address depends only on (factory, salt) — never on the deployed bytecode — so
- * it is chain-independent and shared by both wallet families. Callers derive the
- * salt (a raw identity for the sunset family, or a commitment-bound salt for the
- * live SHRINCS deploy — see `e3r`).
+ * address depends only on (factory, salt), never on the deployed bytecode.
  *
  * @param factoryAddress - The factory that runs CREATE3
  * @param salt - The 32-byte CREATE3 salt

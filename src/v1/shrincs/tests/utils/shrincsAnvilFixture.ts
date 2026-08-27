@@ -310,7 +310,7 @@ export interface FreshShrincsWallet {
   derivationIndex: number;
   /// ERC-1271 verifier-key derivation index (distinct from `derivationIndex`).
   erc1271DerivationIndex: number;
-  /// Computed QSalt1 vault id (on-chain identity), not a key seed.
+  /// On-chain identity (CREATE3 salt).
   vaultId: Hex;
   maxSignatures: number;
   client: ShrincsWalletClient;

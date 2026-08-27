@@ -6,8 +6,7 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
-/// @dev Identity-binding checks in `initialize`: V1 recompute-and-match, and
-///      revert on a non-V1 salt.
+/// @dev Identity-binding checks in `initialize`: V1 recompute-and-match.
 contract ShrincsWallet_initialize_v1 is ShrincsWalletTest {
     /// @dev Runtime code of a harness whose immutable FACTORY is the mock factory.
     bytes internal _implCode;

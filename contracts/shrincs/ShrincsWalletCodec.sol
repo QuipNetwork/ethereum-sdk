@@ -107,7 +107,7 @@ library ShrincsWalletCodec {
     ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
     ///      The payload is opaque to the factory; `commitment`/`pkSeed` landing at
     ///      `payload[0:32]` / `[32:64]` is just natural ABI head-word order, not a
-    ///      layout constraint. Shared verbatim by `initialize` and `migrate`.
+    ///      layout constraint.
     function decodeInit(
         bytes calldata payload
     )
@@ -129,7 +129,6 @@ library ShrincsWalletCodec {
         assembly {
             let o := payload.offset
             let len := payload.length
-            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -171,7 +170,6 @@ library ShrincsWalletCodec {
         assembly {
             let o := sig.offset
             let len := sig.length
-            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -189,8 +187,6 @@ library ShrincsWalletCodec {
             let eo := calldataload(add(o, 0x40))
             reqTail(eo, len, malformed)
             let ecLen := calldataload(add(o, eo))
-            // The ecdsaSig bytes must fit: eo + 0x20 + ecLen <= len. `eo <= len - 0x20` was just
-            // proven, so `sub(sub(len, 0x20), eo)` cannot underflow — no wrapped-sum trust.
             if gt(ecLen, sub(sub(len, 0x20), eo)) {
                 mstore(0x00, malformed)
                 mstore(0x04, add(add(eo, 0x20), ecLen))
@@ -223,7 +219,6 @@ library ShrincsWalletCodec {
         assembly {
             let o := sig.offset
             let len := sig.length
-            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -267,7 +262,6 @@ library ShrincsWalletCodec {
         assembly {
             let o := data.offset
             let len := data.length
-            // Reverts MalformedPayload unless the tail-offset head word is inside the slice.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
                     mstore(0x00, m)
@@ -286,8 +280,6 @@ library ShrincsWalletCodec {
             let mo := calldataload(add(o, 0x60))
             reqTail(mo, len, malformed)
             let mLen := calldataload(add(o, mo))
-            // The migratorPayload bytes must fit: mo + 0x20 + mLen <= len. `mo <= len - 0x20` was
-            // just proven, so `sub(sub(len, 0x20), mo)` cannot underflow — no wrapped-sum trust.
             if gt(mLen, sub(sub(len, 0x20), mo)) {
                 mstore(0x00, malformed)
                 mstore(0x04, add(add(mo, 0x20), mLen))
@@ -316,14 +308,10 @@ library ShrincsWalletCodec {
         assembly {
             let o := sig.offset
             let len := sig.length
-            // Safe default: a zero-length slice at the head, overwritten only when every check
-            // passes. Until then the caller must not (and does not) dereference these.
             publicKey := o
             signature := o
             ecdsaSig.offset := o
             ecdsaSig.length := 0
-            // `tail` holds iff the head word a tail offset points at is inside the slice. Reached
-            // only under `len >= 0x60`, so `sub(len, 0x20)` never underflows.
             function tail(off, l) -> good {
                 good := iszero(gt(off, sub(l, 0x20)))
             }
@@ -336,8 +324,6 @@ library ShrincsWalletCodec {
                     and(tail(sigOff, len), tail(eo, len))
                 ) {
                     let ecLen := calldataload(add(o, eo))
-                    // The ecdsaSig bytes must fit: eo + 0x20 + ecLen <= len. `eo <= len - 0x20`
-                    // was just proven, so `sub(sub(len, 0x20), eo)` cannot underflow.
                     if iszero(gt(ecLen, sub(sub(len, 0x20), eo))) {
                         publicKey := add(o, pkOff)
                         signature := add(o, sigOff)

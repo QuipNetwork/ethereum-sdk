@@ -36,12 +36,7 @@ import {WalletFactoryStorage as Storage} from "./storage/WalletFactoryStorage.so
 ///         (`WalletFactoryStorage`) whose layout is append-only across upgrades.
 ///         The owner is expected to be a post-quantum wallet; upgrades are
 ///         authorized by `onlyOwner` and thus PQ-secured upstream.
-contract WalletFactory is
-    IWalletFactory,
-    Ownable,
-    UUPSUpgradeable,
-    Initializable
-{
+contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializable {
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     /// @inheritdoc IWalletFactory
@@ -91,8 +86,6 @@ contract WalletFactory is
         $.latestWalletImpl = impl;
         emit ImplementationVetted(impl, codehash);
     }
-
-    /// @inheritdoc IWalletFactory
 
     /// @inheritdoc IWalletFactory
     function undeprecateImplementation(address impl) external onlyOwner {
@@ -147,13 +140,7 @@ contract WalletFactory is
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = $.vettedCode.at(index);
         if ($.deprecatedImpls[codehash]) revert ImplementationDeprecated();
-        return
-            _deployProxy(
-                $.vettedWalletImpls[codehash],
-                commitment,
-                to,
-                payload
-            );
+        return _deployProxy($.vettedWalletImpls[codehash], commitment, to, payload);
     }
 
     /// @inheritdoc IWalletFactory
@@ -204,14 +191,14 @@ contract WalletFactory is
         }
 
         $.walletOwner[msg.sender] = newOwner;
-        // The per-owner set is keyed by the commitment (which is the CREATE3 salt). Both
-        // mutations MUST succeed: `salt` is in `oldOwner`'s set (it went there at deploy
-        // and moves only here), and `newOwner` cannot already hold it because a salt is
-        // globally unique (CREATE3) and lives in at most one owner's set at a time. A
-        // `false` return means the registry diverged from `walletOwner` — revert loudly.
-        bytes32 salt = $.commitmentOf[msg.sender];
-        if (!$.commitments[oldOwner].remove(salt)) revert RegistryDesync();
-        if (!$.commitments[newOwner].add(salt)) revert RegistryDesync();
+        // Both mutations MUST succeed: `oldOwner` came from the factory's
+        // authoritative `walletOwner` mapping so its set must contain
+        // `commitment`; `newOwner` cannot already hold it because commitments are
+        // globally unique (CREATE3) and each lives in at most one owner's
+        // set at a time. A `false` return here means the registry diverged
+        // from `walletOwner` somehow — revert loudly.
+        if (!$.commitments[oldOwner].remove(commitment)) revert RegistryDesync();
+        if (!$.commitments[newOwner].add(commitment)) revert RegistryDesync();
         emit WalletOwnerChanged(commitment, oldOwner, newOwner);
     }
 
@@ -264,8 +251,6 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-
-    /// @inheritdoc IWalletFactory
     function latestWalletImpl() external view returns (address) {
         return Storage.layout().latestWalletImpl;
     }
@@ -288,9 +273,7 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-    function getCommitmentCount(
-        address owner_
-    ) external view returns (uint256) {
+    function getCommitmentCount(address owner_) external view returns (uint256) {
         return Storage.layout().commitments[owner_].length();
     }
 

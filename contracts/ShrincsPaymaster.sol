@@ -172,7 +172,6 @@ contract ShrincsPaymaster is
             return ("", 1);
         }
 
-        // Fail-closed: too-short blobs soft-fail; a bad in-range offset hard-reverts from the codec.
         if (!_verifyAndAdvance(userOp)) return ("", 1);
 
         bytes calldata paymasterData = userOp
@@ -326,10 +325,8 @@ contract ShrincsPaymaster is
 
     /// @dev Verifies the global SHRINCS stateful sponsorship signature and consumes its leaf in the
     ///      used-leaf bitmap. The consume is committed immediately (the anti-replay Effect), so the
-    ///      leaf is spent regardless of whether execution later succeeds. No wrapper
-    ///      nonce is bound:
-    ///      anti-replay is the one-time leaf, and freshness comes from `userOp.nonce`
-    ///      (already inside
+    ///      leaf is spent regardless of whether execution later succeeds. No wrapper nonce is bound:
+    ///      anti-replay is the one-time leaf, and freshness comes from `userOp.nonce` (already inside
     ///      `_userOpBindingHash`), so sponsored userOps may land in any order.
     function _verifyAndAdvance(
         PackedUserOperation calldata userOp
@@ -494,9 +491,6 @@ contract ShrincsPaymaster is
     /// @inheritdoc IShrincsPaymaster
     function remainingStatefulSignatures() external view returns (uint32) {
         Storage.Layout storage $ = Storage.layout();
-        // Saturating: the leaf bitmap is the real anti-replay mechanism; this
-        // counter is advisory, so it must never revert even if it ever drifts
-        // above `maxSignatures`.
         if ($.statefulLeavesUsed >= $.maxSignatures) return 0;
         return $.maxSignatures - $.statefulLeavesUsed;
     }
