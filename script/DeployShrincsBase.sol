@@ -12,6 +12,14 @@ import {DeployConstants} from "./Constants.sol";
 import {CreateXHelpers} from "./CreateXHelpers.sol";
 import {DeployHelpers} from "./DeployHelpers.sol";
 
+/// Getter surface used for the post-deploy identity checks. Both members are
+/// public immutables, whose auto-generated getters have no `.selector` on the
+/// contract type — hence this minimal interface.
+interface IShrincsIdentity {
+    function FACTORY() external view returns (address);
+    function SHRINCS_VERIFIER() external view returns (address);
+}
+
 /**
  * @title DeployShrincsBase
  * @dev Shrincs family deploy steps (used by `02_DeployShrincs.s.sol` and the
@@ -24,10 +32,10 @@ import {DeployHelpers} from "./DeployHelpers.sol";
  *      WalletFactory must already exist. Deploys go straight through CreateX with
  *      sender-guarded salts (`CreateXHelpers`) — addresses are a function of
  *      (CreateX, DEPLOY_OPERATOR, salt preimage). Salts and the pinned external
- *      verifier live in `DeployConstants` (V1.1 — bumped for the
- *      external-verifier implementations; CREATE3 reuses an address per salt, so
- *      new impl code needs a new salt on chains that already hold the V1.0
- *      deploys).
+ *      verifier live in `DeployConstants` — proxies at `V1.0.0` (permanent
+ *      identity), implementations at `V1.0.0-beta` (rev'd when the verifier or
+ *      impl code changes; CREATE3 reuses an address per salt, so new impl code
+ *      needs a new salt on chains that already hold the prior deploys).
  */
 abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
     /// The pinned verifier address must actually host the scheme the impls
@@ -85,6 +93,19 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         impl = _createXDeploy(
             operator, pk, code, DeployConstants.shrincsWalletSalt(), "ShrincsWallet"
         );
+        // Identity, on both the fresh and the idempotent-skip path: both are
+        // constructor-set immutables, so this proves we are about to VET this
+        // build's wallet and not a stale impl left at the canonical address by an
+        // earlier partial run (vetting also sets `latestWalletImpl`).
+        require(
+            _readAddress(impl, IShrincsIdentity.FACTORY.selector, "ShrincsWallet") == factory,
+            "ShrincsWallet: FACTORY immutable does not match the canonical factory"
+        );
+        require(
+            _readAddress(impl, IShrincsIdentity.SHRINCS_VERIFIER.selector, "ShrincsWallet")
+                == DeployConstants.SHRINCS_EXTERNAL_VERIFIER,
+            "ShrincsWallet: SHRINCS_VERIFIER immutable does not match the pinned verifier"
+        );
         _vetIfNeeded(factory, pk, impl, "ShrincsWallet");
     }
 
@@ -110,6 +131,14 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
             DeployConstants.shrincsPaymasterImplSalt(),
             "ShrincsPaymaster impl"
         );
+        // Identity, on both the fresh and the idempotent-skip path: the verifier is
+        // a constructor-set immutable, so this proves the proxy below is about to
+        // delegate to THIS build's implementation.
+        require(
+            _readAddress(impl, IShrincsIdentity.SHRINCS_VERIFIER.selector, "ShrincsPaymaster impl")
+                == DeployConstants.SHRINCS_EXTERNAL_VERIFIER,
+            "ShrincsPaymaster impl: SHRINCS_VERIFIER immutable does not match the pinned verifier"
+        );
         bytes memory initData = abi.encodeCall(
             ShrincsPaymaster.initialize,
             (v.paymasterOwner, v.publicKey, v.hashSuite)
@@ -123,6 +152,9 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
             bytes(DeployConstants.SHRINCS_PAYMASTER_PROXY_SALT),
             "ShrincsPaymaster proxy"
         );
+        // Identity before the owner check: on the idempotent-skip path the owner
+        // read alone would happily accept any contract that answers `owner()`.
+        _assertErc1967Proxy(proxy, impl, "ShrincsPaymaster proxy");
         require(
             ShrincsPaymaster(payable(proxy)).owner() == v.paymasterOwner,
             "ShrincsPaymaster owner mismatch"

@@ -42,7 +42,8 @@ import {
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
 } from "./errors.js";
-import { prepareTx, type TxOptions } from "./gas.js";
+import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
+import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
 import {
   LeafReservationStore,
   reserveExplicitLeaf,
@@ -145,6 +146,37 @@ export interface ShrincsWalletState {
   maxSignatures: number;
   statefulLeavesUsed: number;
   remainingStatefulSignatures: number;
+}
+
+export interface ExecuteParams {
+  target: Address;
+  value?: bigint;
+  data?: Hex;
+  maxFee?: bigint;
+}
+
+export interface ExecuteCostEstimate extends CostEstimate {
+  executeFee: bigint;
+}
+
+/// An `execute` that has been signed ONCE and priced, but not sent. The leaf
+/// is reserved in this client instance and the signature exists only in
+/// memory until `send()` broadcasts exactly those bytes. See `prepareExecute`.
+export interface PreparedExecute {
+  /// The one-time leaf this op is signed at.
+  leaf: number;
+  /// The signed fee ceiling (`params.maxFee`, or the live fee at prepare time).
+  maxFee: bigint;
+  /// The live `executeFee` read at prepare time.
+  executeFee: bigint;
+  /// ETH the sender attaches: `value + maxFee`.
+  totalValue: bigint;
+  /// `eth_estimateGas` of the signed call with the sender's balance overridden,
+  /// so the quote does not depend on the account currently being funded.
+  estimate: ExecuteCostEstimate;
+  /// Broadcast the prepared call and wait for its receipt. One-shot: a second
+  /// call throws rather than re-signing or re-sending.
+  send(): Promise<TransactionReceipt>;
 }
 
 export interface ShrincsTxKeyOptions {
@@ -557,13 +589,12 @@ export class ShrincsWalletClient {
     });
   }
 
-  private async submit(
+  private buildContractCall(
     functionName: string,
     args: readonly unknown[],
-    value: bigint,
-    opts: TxOptions
-  ): Promise<TransactionReceipt> {
-    const contractCall = {
+    value: bigint
+  ): ContractCallParams {
+    return {
       address: this.walletAddress,
       abi: shrincsWalletAbi as readonly unknown[],
       functionName,
@@ -571,10 +602,30 @@ export class ShrincsWalletClient {
       value,
       account: this.account as Account | Address,
     };
+  }
+
+  private async submit(
+    functionName: string,
+    args: readonly unknown[],
+    value: bigint,
+    opts: TxOptions
+  ): Promise<TransactionReceipt> {
+    return this.send(
+      this.buildContractCall(functionName, args, value),
+      value,
+      opts
+    );
+  }
+
+  private async send(
+    contractCall: ContractCallParams,
+    totalValue: bigint,
+    opts: TxOptions
+  ): Promise<TransactionReceipt> {
     const prepared = await prepareTx({
       publicClient: this.publicClient,
       contractParams: contractCall,
-      totalValue: value,
+      totalValue,
       opts,
     });
     const writeParams = {
@@ -600,9 +651,71 @@ export class ShrincsWalletClient {
   /// fee decrease between signing and landing succeeds at the lower price; pass
   /// a higher `maxFee` for headroom against increases.
   async execute(
-    params: { target: Address; value?: bigint; data?: Hex; maxFee?: bigint },
+    params: ExecuteParams,
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
+    const { contractCall, totalValue } = await this.buildExecuteCall(
+      params,
+      opts
+    );
+    return this.send(contractCall, totalValue, opts);
+  }
+
+  /// Sign an `execute` once, price it, and hand back a `send()` that broadcasts
+  /// those exact bytes. This is the quote-then-send path.
+  ///
+  /// Why not a separate estimate call: a stateful leaf may sign ONE message.
+  /// Quoting by signing, then signing again at send time — with any change to
+  /// the params — would put two different messages under one leaf, which is
+  /// forgeable. Here there is exactly one signature; the estimate is computed
+  /// over it and `send()` reuses it unchanged, so nothing is ever re-signed.
+  ///
+  /// The reservation is per client instance and has no release: a prepared op
+  /// that is never sent leaves its leaf unused on-chain (the bitmap is
+  /// authoritative) but not re-issued by this client, so a later prepare in the
+  /// same process cannot sign a second message at it.
+  async prepareExecute(
+    params: ExecuteParams,
+    opts: TxOptions & ShrincsTxKeyOptions = {}
+  ): Promise<PreparedExecute> {
+    const { contractCall, totalValue, executeFee, maxFee, leaf } =
+      await this.buildExecuteCall(params, opts);
+    const cost = await estimateTxCost({
+      publicClient: this.publicClient,
+      account: this.account,
+      contractCall,
+      totalValue,
+      opts,
+    });
+    let sent = false;
+    return {
+      leaf,
+      maxFee,
+      executeFee,
+      totalValue,
+      estimate: { ...cost, executeFee },
+      send: () => {
+        if (sent) {
+          return Promise.reject(
+            new Error("prepared execute already sent: prepare a new one")
+          );
+        }
+        sent = true;
+        return this.send(contractCall, totalValue, opts);
+      },
+    };
+  }
+
+  private async buildExecuteCall(
+    params: ExecuteParams,
+    opts: TxOptions & ShrincsTxKeyOptions
+  ): Promise<{
+    contractCall: ContractCallParams;
+    totalValue: bigint;
+    executeFee: bigint;
+    maxFee: bigint;
+    leaf: number;
+  }> {
     const value = params.value ?? 0n;
     const data = params.data ?? "0x";
     // A call with calldata to a codeless target is a phantom no-op that still
@@ -620,18 +733,35 @@ export class ShrincsWalletClient {
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_EXECUTE,
-      payloadHash: executePayloadHash(params.target, value, keccakData(data), maxFee),
+      payloadHash: executePayloadHash(
+        params.target,
+        value,
+        keccakData(data),
+        maxFee
+      ),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     // msg.value funds the ceiling; any excess over the live fee stays in the
     // wallet (the user's own funds), and the call cannot underfund a fee move
     // within the cap.
-    return this.submit(
-      "execute",
-      [publicKeyToAbi(keypair.publicKey), signature, params.target, value, data, maxFee],
-      value + maxFee,
-      opts
-    );
+    return {
+      contractCall: this.buildContractCall(
+        "execute",
+        [
+          publicKeyToAbi(keypair.publicKey),
+          signature,
+          params.target,
+          value,
+          data,
+          maxFee,
+        ],
+        value + maxFee
+      ),
+      totalValue: value + maxFee,
+      executeFee: state.executeFee,
+      maxFee,
+      leaf,
+    };
   }
 
   /// Assert an `execute` target holds code, throwing `ExecuteTargetHasNoCodeError`
@@ -651,8 +781,12 @@ export class ShrincsWalletClient {
     params: { to: Address; amount: bigint },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -693,8 +827,12 @@ export class ShrincsWalletClient {
       throw new ZeroErc1271CommitmentError();
     }
     const hashSuite = params.newHashSuite ?? HASH_SUITE_KECCAK_256;
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -718,8 +856,12 @@ export class ShrincsWalletClient {
     params: { nextStatefulPublicKey: Hex },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const nextStatefulKey = buildStatefulRotationTarget({
       nextStatefulPublicKey: params.nextStatefulPublicKey,
       currentPkSeed: keypair.publicKey.pkSeed,
@@ -805,8 +947,12 @@ export class ShrincsWalletClient {
   ): Promise<TransactionReceipt> {
     const shouldMigrate = params.shouldMigrate ?? false;
     const migratorPayload = params.migratorPayload ?? "0x";
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -846,8 +992,12 @@ export class ShrincsWalletClient {
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
     if (params.newOwner === ZERO_ADDRESS) throw new ZeroAddressOwnerError();
-    const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+    const {
+      keypair,
+      state,
+      leaf,
+      domainSeparator: ds,
+    } = await this.prepareStatefulOp(opts);
     const rotationTarget = toRotationTarget(params.nextKey);
 
     const ownerCtx = buildActionContext({
@@ -997,7 +1147,12 @@ export class ShrincsWalletClient {
     const callData = encodeFunctionData({
       abi: shrincsWalletAbi,
       functionName: "execute",
-      args: [params.target, params.value ?? 0n, params.data ?? "0x", params.maxFee],
+      args: [
+        params.target,
+        params.value ?? 0n,
+        params.data ?? "0x",
+        params.maxFee,
+      ],
     });
     return this.assembleUserOp(callData, params);
   }

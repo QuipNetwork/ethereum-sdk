@@ -4,25 +4,160 @@
 
 The go-forward lineage: WalletFactory (UUPS) + SHRINCS family, deployed by
 `script/01_DeployFactory.s.sol` → `script/02_DeployShrincs.s.sol`. Every
-address is a function of (CreateX, `DEPLOY_OPERATOR`, salt preimage) — see
+address is a function of (CreateX, `CANONICAL_OPERATOR`, salt preimage) — see
 `script/Constants.sol` for the salts — and is identical on every chain the
-operator deploys to. Derived for the canonical operator below; verify locally
-with `DEPLOY_OPERATOR=0x... make predict-addresses`.
+operator deploys to. Verify locally with `make predict-addresses` (the operator
+is pinned — no env vars needed).
+
+**Live on Base mainnet (8453) as of 2026-08-03**, all five contracts verified on
+Basescan. As of 2026-08-14 the factory and wallet halves are live at the same
+canonical addresses on Base Sepolia (84532) and OP Sepolia (11155420) too; the
+ShrincsPaymaster remains mainnet-only.
+
+| | Base mainnet | Base Sepolia | OP Sepolia |
+|---|---|---|---|
+| WalletFactory impl | ✅ | ✅ | ✅ |
+| WalletFactory proxy | ✅ | ✅ | ✅ |
+| ShrincsWallet impl (vetted, `latestWalletImpl`) | ✅ | ✅ | ✅ |
+| ShrincsPaymaster impl + proxy | ✅ | — | — |
+| SHRINCS256sKeccak verifier | ✅ | ✅ | ✅ |
+
+The WalletFactory *impl* predates this generation on the two testnets: its salt
+never moved and its bytecode never referenced the verifier, so it kept its
+address across the generation boundary. The prior generation also remains on
+those chains — see *Superseded generation*.
 
 | | Address |
 |---|---|
-| DEPLOY_OPERATOR (canonical) | `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` |
+| CANONICAL_OPERATOR | `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` |
 | WalletFactory impl | `0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f` |
-| **WalletFactory proxy** (permanent factory identity) | `0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5` |
-| ShrincsWallet impl | `0xb84a596A6fB567FC4634b4f49212410D1193140e` |
-| ShrincsPaymaster impl | `0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59` |
-| **ShrincsPaymaster proxy** (canonical paymaster) | `0xE38420930EBD214FE8FEb403dd66F4887AEF76E8` |
-| SHRINCS256sKeccak verifier (external, pinned) | `0x9154dA0BA19600C543a8c5ed1B1c44af415B5688` |
+| **WalletFactory proxy** (permanent factory identity) | `0xdCD90563B912f82D2f23d5c7988B3Fec2da63471` |
+| ShrincsWallet impl | `0x33d3949117c8Bba7A3637C96a564a817E00c5aE0` |
+| ShrincsPaymaster impl | `0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3` |
+| **ShrincsPaymaster proxy** (canonical paymaster) | `0x077C06913777777DfABf951a5A0F8CA665764ac9` |
+| SHRINCS256sKeccak verifier (external, pinned) | `0xE6F2970bA30d59e8288b7007bA755828372457c3` |
+
 
 > The verifier is deployed by hashsigs-solidity's own CreateX scripts (its
 > `DEPLOYMENTS.md`), not this repo — the Shrincs implementations pin it as an
 > immutable, and `02_DeployShrincs` refuses to deploy unless the pinned
-> address hosts the expected scheme (`PROFILE_TAG`).
+> address hosts the expected scheme (`PROFILE_TAG`). It is **live on Base
+> mainnet (8453), Base Sepolia (84532) and OP Sepolia (11155420)** together with
+> its stateless delegate `SPHINCSPlusC256sKeccak` at
+> `0x97B3726F44e3B7521199CE4e0fC160A32A597d31`. The testnet copies were deployed
+> on 2026-08-14 and are byte-identical to the mainnet ones.
+> `dependencies/@quip.network/hashsigs-solidity` is pinned to rev `dd6fa9e`, the
+> commit that build came from, so the artifact we compile matches the bytes on
+> chain.
+
+### Deployed transactions (Base mainnet, 8453)
+
+Broadcast by `CANONICAL_OPERATOR` through CreateX's permissioned mode, so these
+addresses were reachable by no other account. Two blocks, one per script.
+
+| Artifact | Address | Tx | Block | Gas |
+|---|---|---|---|---|
+| WalletFactory impl | `0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f` | `0x6803e47686aaec35f4c159e720b383743609d9f868a8f918433b83127c8cd64d` | 49485171 | 1,786,028 |
+| WalletFactory proxy | `0xdCD90563B912f82D2f23d5c7988B3Fec2da63471` | `0xdc65e84bb3be3bb35edca6a3008a72768c42a23454fd568a83005d2f3a03cec9` | 49485171 | 195,629 |
+| ShrincsWallet impl | `0x33d3949117c8Bba7A3637C96a564a817E00c5aE0` | `0x0bf64af71bd74bd501a35e5261588260c466a578c83669156f8f171060167b1e` | 49485205 | 3,883,195 |
+| ↳ `vetImplementation` | (call on the factory) | `0x17bc8fd942bc364da2cefa5df73aea247463407b38a2c7ad245a189d71ee4813` | 49485205 | 101,824 |
+| ShrincsPaymaster impl | `0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3` | `0x54a63c3f55b630baa857d6d6d5062309f5eb0a237eb8bb2bea424ebed7b747e6` | 49485205 | 1,742,504 |
+| ShrincsPaymaster proxy | `0x077C06913777777DfABf951a5A0F8CA665764ac9` | `0x9a54e7f927fd39ceabf3191682e121df020bc23bb3c3d1fe96d79111b82478f6` | 49485205 | 251,696 |
+
+Total 7,960,876 gas. Block 49485171 (`01_DeployFactory`) and 49485205
+(`02_DeployShrincs`), 2026-08-03 12:21–12:22 UTC. All five contracts are
+verified on Basescan.
+
+> ⚠️ Do NOT read the per-transaction mapping out of
+> `broadcast/*/8453/run-latest.json` — its `additionalContracts` field pairs
+> hashes with the wrong addresses here, because every CreateX deploy is a `CALL`
+> to the singleton rather than a `CREATE`. The table above was reconstructed
+> from on-chain receipt logs and cross-checked against contract sizes.
+
+Installed verifier state at deploy (`getShrincsVerifier()`): commitment
+`0xd2f83c7986abe791212b6d399929aa7f17977d059d6d5d047bf3010072fbae72`,
+`keyVersion` 0, `maxSignatures` 4096 (the hashsigs keygen ceiling),
+`statefulLeavesUsed` 0.
+
+> ⚠️ **Post-deploy state — not yet production-ready.** Both the factory and the
+> paymaster are still owned by the deploy EOA and have NOT been handed over to a
+> post-quantum wallet, so a single ECDSA key can rotate the verifier, drain the
+> deposit, and upgrade either implementation. The paymaster has no EntryPoint
+> deposit and no stake, so it cannot sponsor anything and conformant bundlers
+> will reject it. `creationFee` and `executeFee` are both 0.
+
+### Deployed transactions (Base Sepolia 84532, OP Sepolia 11155420)
+
+Same operator, same CreateX permissioned mode, on 2026-08-14. `01_DeployFactory`
+broadcast a single transaction per chain: the WalletFactory impl was already at
+its canonical address from the previous generation, so the idempotent path
+skipped it and only the proxy went out. The wallet impl followed later the same
+day via `script/DeployShrincsWallet.s.sol` — deploy + vet, no paymaster.
+
+| Chain | Artifact | Tx | Block | Gas |
+|---|---|---|---|---|
+| 84532 | WalletFactory proxy | `0x0b7901fea5afa722592a9070326205c2c22b4a97056282aef337f7d527e84ce8` | 45464746 | 195,629 |
+| 84532 | ShrincsWallet impl | `0xf9fee3c664f885e5d801647be07a8a52fc4ace95a3fdbbf8dcdbdd2e8a3728d5` | 45481568 | 3,883,195 |
+| 84532 | ↳ `vetImplementation` | `0x8762fda46fd388c924e8539f2839bb8a378af0f50983b12416b8cb6f47abecb1` | 45481568 | 101,824 |
+| 11155420 | WalletFactory proxy | `0xe147e53e3f8b104172f762cfe59abef0a20a38357cac8d3f90fb3644e6f28b0a` | 47447636 | 195,629 |
+| 11155420 | ShrincsWallet impl | `0x6bb1c19b198957824b546b2795eb81f673dc6160aefc689cb7770c690174d350` | 47464469 | 3,883,195 |
+| 11155420 | ↳ `vetImplementation` | `0x2494be8c719167fd3ede9f1695f850ec22f3f9180b2fb91034edd8a9824be192` | 47464469 | 101,824 |
+
+Post-deploy state on both testnets: factory `owner()` and `latestWalletImpl()`
+are the operator and `0x33d3949117c8Bba7A3637C96a564a817E00c5aE0`,
+`getVettedCodeCount()` is 1, `MAX_FEE()` is 1e18.
+
+> The ShrincsWallet **codehash differs per chain** even though the source and
+> compiler settings are identical — OpenZeppelin's `EIP712` caches the chain id
+> and the derived domain separator as immutables, so the deployed bytes are
+> chain-scoped by construction. Blanking the immutable windows makes all three
+> chains byte-identical to a local build. Vetting is keyed on codehash, which is
+> why each chain must vet its own impl; the address is the same everywhere
+> because CREATE3 ignores creation code.
+
+> No ShrincsPaymaster on either testnet. `02_DeployShrincs` would deploy one, but
+> it installs a stateful SHRINCS sponsorship key at `initialize`, and the key in
+> `.env` is the one already installed on mainnet. Sharing a stateful hash-based
+> key across chains is unsafe: each paymaster tracks its own leaf bitmap from
+> zero, and `_domainSeparator()` folds in `block.chainid`, so the same leaf index
+> signs *different* messages on two chains — a one-time-signature disclosure that
+> leaks that leaf's key. Generate a separate key per testnet before deploying a
+> paymaster there. `script/DeployShrincsWallet.s.sol` exists for exactly this
+> case: the wallet half without the paymaster.
+
+### Superseded generation (Base Sepolia 84532, OP Sepolia 11155420)
+
+Live since 2026-07-29 and left in place. hashsigs moved its own deploys onto
+sender-guarded CreateX salts, which relocated every verifier; because both
+Shrincs implementations bake the verifier in as an immutable, their bytecode
+changed and their salts had to move with it. The proxies and the wallet impl
+were re-versioned at the same time so the whole set reads as one generation.
+
+| | Address (superseded) |
+|---|---|
+| WalletFactory proxy | `0x6de121F7cc8b310aDBc957425B97e1C8dfcE3BE5` |
+| ShrincsWallet impl | `0xb84a596A6fB567FC4634b4f49212410D1193140e` |
+| ShrincsPaymaster impl | `0x71c976A2FCed1B5e9C171BAf029a12fdaf391f49` |
+| ShrincsPaymaster proxy | `0xd258BA8ddEACe7A74184f368B7FDb55DDa53DcC5` |
+| SHRINCS256sKeccak verifier | `0x9154dA0BA19600C543a8c5ed1B1c44af415B5688` |
+| ShrincsPaymaster pair, pre-bundle-rework | `0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59` (impl), `0xE38420930EBD214FE8FEb403dd66F4887AEF76E8` (proxy) |
+
+Every preimage behind those addresses is permanently occupied on those chains —
+**never reuse one**. Two consequences worth stating plainly:
+
+- **Wallet addresses move.** The factory proxy is the permanent factory
+  identity: wallets bake it in as an immutable and CREATE3 wallet addressing
+  derives from it. A new factory proxy means every user wallet derives to a new
+  address. Wallets already deployed on the testnets stay with the old factory.
+- **The testnets now carry both generations.** As of 2026-08-14 the current
+  generation's factory and wallet halves live alongside the superseded set on
+  both chains (the pinned verifier was deployed there first, which is what made
+  it possible). They are still not a mirror of mainnet — no ShrincsPaymaster —
+  and the chain-invariance property holds *within* a generation, not across
+  them.
+
+Withdraw the retired paymasters' EntryPoint deposits/stake; nothing should point
+at them.
 
 ## v1.1 — canonical addresses (CREATE3 via the v1 Deployer)
 
@@ -73,19 +208,42 @@ with no env vars and no RPC.
 ### Salts
 
 **Live contracts** — sender-guarded CreateX preimages. The deployed address
-is a function of (CreateX, `DEPLOY_OPERATOR`, preimage); only the operator
+is a function of (CreateX, `CANONICAL_OPERATOR`, preimage); only the operator
 can consume the salt. The Shrincs *implementation* preimages append
 `SHRINCSParams.PROFILE_ID` (= `keccak256("shrincs-256s-keccak")`, the
 verifier's `PROFILE_TAG()`) so an impl built against a different
 cryptographic scheme structurally lands at a different address.
 
+**One scheme, two suffixes**, applied uniformly:
+
+- **proxies → `V1.0.0`** — the permanent public identity. A proxy address is
+  meant never to move again; code changes happen *under* it via UUPS.
+- **implementations → `V1.0.0-beta`** — the churning half, replaced whenever the
+  code or the pinned verifier changes.
+
+Salt strings are **opaque preimages**: only uniqueness matters. `V1.0.0` is not
+"newer than" `V1.0.0-beta` — they name different roles, not an ordering.
+
 | Contract | Salt preimage |
 |---|---|
 | WalletFactory impl (UUPS) | `QUIP:WalletFactory:Impl:V1.0.0-beta` |
-| WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V1.0.0-beta` |
+| WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V1.0.0` |
+| ShrincsWallet impl | `QUIP:ShrincsWallet:Impl:V1.0.0-beta:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.0.0-beta:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.0.0` |
+
+Retired and permanently occupied on Base Sepolia / OP Sepolia — **never reuse**:
+
+| | Retired preimage |
+|---|---|
+| WalletFactory proxy | `QUIP:WalletFactory:Proxy:V1.0.0-beta` |
 | ShrincsWallet impl | `QUIP:ShrincsWallet:V1.1:` ‖ `PROFILE_ID` |
-| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.1:` ‖ `PROFILE_ID` |
-| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.1` |
+| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:` ‖ `PROFILE_ID`, and `…:Impl:V1.1:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.0.1-beta`, and `…:Proxy:V1.1` |
+
+The WalletFactory *impl* preimage is unchanged and intentionally so: its
+bytecode never referenced the verifier, so it keeps its address across the
+generation boundary.
 
 **Sunset WOTS+ era** — unguarded salts (`keccak256(preimage)`) consumed
 through the deprecated Deployer; addresses depend only on (Deployer, salt).
@@ -122,9 +280,18 @@ address     = CREATE3(CreateX, guardedSalt)
   ignores initcode — under the old permissionless Deployer, anyone could
   have deployed arbitrary code at a canonical address first, and the
   idempotent skip would have silently accepted it.)
+- **A wrong caller does NOT revert.** CreateX's `_parseSalt` sees leading
+  bytes matching neither `msg.sender` nor `address(0)`, falls through to the
+  PERMISSIONLESS branch, and deploys *successfully* at a different address.
+  The canonical address stays untouched — that is the squat-proofing — but
+  the failure is silent, which is why `_createXDeploy` checks the broadcaster
+  itself. Verified against the real singleton by
+  `test_senderGuard_strangerLandsElsewhere_canonicalUntouched`.
 - **Chain-invariant:** the 21st byte `0x00` opts out of CreateX's chainid
   binding, so the same (operator, preimage) lands at the same address on
-  every chain.
+  every chain. `0x01` would bind `block.chainid` and give per-chain
+  addresses; `CreateXHelpers._rawSalt` writes the `0x00` explicitly and
+  `_assertSaltLayout` refuses anything else.
 - **API asymmetry to remember:** `CreateX.deployCreate3` consumes the RAW
   salt (and guards internally); address *prediction* consumes the GUARDED
   salt — offline via solady's `CREATE3.predictDeterministicAddress(guardedSalt,
@@ -134,6 +301,53 @@ address     = CREATE3(CreateX, guardedSalt)
 > The operator key must sign each canonical deploy on each chain, forever —
 > losing it means losing the ability to materialize the canonical addresses
 > on new chains. Guard that key accordingly.
+
+### The operator is pinned, not configured
+
+`DeployConstants.CANONICAL_OPERATOR` (mirrored in
+`src/v1/internal/createxSalts.ts`) hard-codes
+`0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26`. `DEPLOY_OPERATOR` is still read
+from the environment, but must equal the pin or the run aborts.
+
+This closes a silent failure. `require(vm.addr(PRIVATE_KEY) == DEPLOY_OPERATOR)`
+only proves the env var and the key agree with *each other* — a stale or
+mistyped operator plus its matching key predicts, deploys, and self-asserts a
+perfectly consistent result, at an address nothing in this file publishes.
+
+**Changing the operator re-derives every live address.** It is a four-part edit
+that must land together, or the SDK will publish addresses that do not exist:
+
+1. `DeployConstants.CANONICAL_OPERATOR` (`script/Constants.sol`)
+2. `CANONICAL_OPERATOR` (`src/v1/internal/createxSalts.ts`)
+3. the address tables in this file and the pins in `src/v1/shrincs/addresses.ts`
+4. `make release` to regenerate `src/v1/addresses.json`
+
+`test_publishedRegistry_matchesDerivation` and the SDK's `addresses.test.ts`
+fail until all four agree.
+
+> ⚠️ **A Safe/multisig operator is not a drop-in.** The broadcaster check reads
+> `vm.addr(PRIVATE_KEY)`, and it works only because the EOA calls CreateX
+> *directly*. Route the deploy through a Safe and CreateX sees the Safe as
+> `msg.sender` while the salt still embeds the EOA — the permissionless branch,
+> a different address. Moving the operator behind a contract means embedding the
+> **Safe's** address in the salt, which changes every canonical address.
+
+### Gates that run before any broadcast
+
+| Gate | Catches |
+|---|---|
+| `DEPLOY_OPERATOR == CANONICAL_OPERATOR` | stale/mistyped operator — the silent wrong-address deploy |
+| `vm.addr(PRIVATE_KEY) == DEPLOY_OPERATOR` | wrong signer; CreateX would take the permissionless branch without reverting |
+| `_assertSaltLayout` | salt bytes 0–19 not the operator, or byte 20 not `0x00` (chain-invariance) |
+| local prediction `==` `ICreateX.computeCreate3Address(guardedSalt)` | drift between our mirror of `_guard` and the singleton we are about to call |
+| identity view calls on occupied addresses | stale or foreign code adopted by the idempotent skip — `MAX_FEE()` for the factory impl, `FACTORY()`/`SHRINCS_VERIFIER()` for the Shrincs impls, a non-zero ERC-1967 slot for both proxies |
+| `deployed == expected` | any post-broadcast branch divergence |
+
+Runtime codehash is deliberately **not** pinned: all three live artifacts carry
+constructor-set immutables (`MAX_FEE`, `SHRINCS_VERIFIER`, `FACTORY`), so the
+codehash is a function of the deploy params and no static pin is knowable. The
+identity view calls read those same immutables directly instead. The codehash is
+logged on the skip path for forensics only.
 
 ### Deployer bootstrap (sunset WOTS+ era)
 
@@ -176,10 +390,12 @@ The live flow is two numbered scripts, run in order (both idempotent —
 re-runs skip anything already deployed/vetted):
 
 ```
-0. Predict addresses     DEPLOY_OPERATOR=0x... make predict-addresses
-                         # No RPC needed. Live rows require DEPLOY_OPERATOR
-                         # (they are a function of it); without it only the
-                         # sunset WOTS+-era rows print.
+0. Predict addresses     make predict-addresses
+                         # No RPC and no env vars needed — the operator is
+                         # pinned (CANONICAL_OPERATOR). Every row must match
+                         # the Live table above; a DEPLOY_OPERATOR that
+                         # disagrees with the pin aborts instead of printing
+                         # a plausible wrong address set.
 
 1. Deploy factory        make deploy-factory-<chain>
                          # script/01_DeployFactory.s.sol: WalletFactory impl
@@ -206,8 +422,21 @@ Sunset WOTS+ family (optional, frozen under `script/deprecated/`):
 Note that vetting a WOTS+ impl AFTER the Shrincs deploy would flip
 `latestWalletImpl` back to WOTS+ — the intended default is Shrincs.
 
-`<chain>` is currently `base-sepolia`; see Makefile for the full list of
-per-chain targets.
+`<chain>` is `base-sepolia`, `op-sepolia`, or `base` (mainnet); see Makefile for
+the full list of per-chain targets. Step 1 is a no-op on a chain whose factory
+is already live (both scripts are idempotent per-contract), so rolling only the
+paymaster onto an existing chain is just step 2.
+
+**Base mainnet** additionally has dry-run targets — `make dryrun-factory-base`
+and `make dryrun-shrincs-base` — which simulate against a fork without
+`--broadcast`, so nothing is sent on-chain. They pass `--sender
+$(DEPLOY_OPERATOR)` but no `--private-key` flag; the scripts still read
+`PRIVATE_KEY` from your `.env` to simulate the operator's broadcast and assert
+`vm.addr(PRIVATE_KEY) == DEPLOY_OPERATOR`, so `PRIVATE_KEY` must be set. Run both
+before either `deploy-*-base` and confirm the printed addresses match the Live
+table above. `API_URL_BASE` must be a keyed provider: a
+public endpoint times out mid-simulation. The sunset WOTS+ targets are
+deliberately not mirrored for mainnet.
 
 ### Required environment variables
 
@@ -233,7 +462,14 @@ DEPLOY_OPERATOR=0x...
 
 # Deploy-time owners / params
 FACTORY_OWNER=0x...                            # controls vetImplementation
-MAX_FEE=1000000000000000                       # wallet creation fee (wei)
+MAX_FEE=1000000000000000000                     # wallet creation fee cap (wei),
+                                               # 1e18. MUST stay 1e18: it is a
+                                               # constructor immutable of the
+                                               # WalletFactory impl, and every live
+                                               # chain already hosts the 1e18 build.
+                                               # 01_DeployFactory asserts
+                                               # MAX_FEE() == $MAX_FEE and aborts on
+                                               # a mismatch.
 SHRINCS_PAYMASTER_OWNER=0x...                  # 02_DeployShrincs
 SHRINCS_VERIFIER_PUBLIC_KEY=0x...              # 02_DeployShrincs — abi-encoded
                                                # SHRINCS.PublicKey bundle from
