@@ -32,10 +32,10 @@ interface IShrincsIdentity {
  *      WalletFactory must already exist. Deploys go straight through CreateX with
  *      sender-guarded salts (`CreateXHelpers`) — addresses are a function of
  *      (CreateX, DEPLOY_OPERATOR, salt preimage). Salts and the pinned external
- *      verifier live in `DeployConstants` (V1.1 — bumped for the
- *      external-verifier implementations; CREATE3 reuses an address per salt, so
- *      new impl code needs a new salt on chains that already hold the V1.0
- *      deploys).
+ *      verifier live in `DeployConstants` — proxies at `V1.0.0` (permanent
+ *      identity), implementations at `V1.0.0-beta` (rev'd when the verifier or
+ *      impl code changes; CREATE3 reuses an address per salt, so new impl code
+ *      needs a new salt on chains that already hold the prior deploys).
  */
 abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
     /// The pinned verifier address must actually host the scheme the impls

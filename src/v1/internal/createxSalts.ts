@@ -1,4 +1,4 @@
-// Copyright (C) 2026 quip.network
+// Copyright (C) 2025 quip.network
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 

@@ -40,6 +40,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { entryPointV07Abi } from "../../abi/EntryPointV07.js";
 import { walletFactoryAbi } from "../../abi/WalletFactory.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
+import { getShrincsWalletAddress } from "../addresses.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
 import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "../constants.js";
@@ -127,6 +128,20 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const factory = makeShrincsFactoryClient(stack);
     const resolved = await factory.getShrincsWallet(vaultId, signer, MAX_SIGS);
     expect(getAddress(resolved.walletAddress)).toBe(getAddress(walletAddress));
+
+    // The PURE off-chain predictor — what integrators use to PREFUND a wallet
+    // before it is deployed — must equal the address the factory actually
+    // deployed. A drift between this CREATE3 math and the on-chain factory would
+    // misdirect prefunds without failing any other test.
+    expect(
+      getAddress(
+        getShrincsWalletAddress(
+          stack.factoryAddress,
+          vaultId,
+          mainKey.publicKeyCommitment
+        )
+      )
+    ).toBe(getAddress(walletAddress));
   }, 120_000);
 
   // ── (b) stateful execute ─────────────────────────────────────────────

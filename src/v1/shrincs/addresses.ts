@@ -63,7 +63,7 @@ export interface ShrincsNetworkAddresses {
 // cryptographic scheme land at different addresses. Proxy preimages carry no
 // tag; an ERC-1967 proxy is scheme-agnostic.
 //
-// ⚠️ THIS IS THE BASE MAINNET GENERATION. hashsigs moved its verifier deploys
+// NOTE: THIS IS THE BASE MAINNET GENERATION. hashsigs moved its verifier deploys
 // onto sender-guarded salts, relocating `SHRINCS256sKeccak` to the address
 // below; the implementations bake it in as an immutable, so their salts moved
 // with it. The PRIOR generation is still live on Base Sepolia and OP Sepolia

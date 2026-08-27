@@ -54,11 +54,15 @@ abstract contract CreateXHelpers is Script {
     ///      this is written explicitly below and asserted in `_assertSaltLayout`.
     uint256 internal constant CROSSCHAIN_FLAG_OFF = 0x00;
 
-    /// @dev Bit offsets of the three raw-salt fields (bytes are numbered from the
-    ///      most-significant end, matching CreateX's `_parseSalt`).
-    uint256 internal constant _SALT_OPERATOR_SHIFT = 96; // bytes 0..19
-    uint256 internal constant _SALT_FLAG_SHIFT = 88; // byte  20
-    uint256 internal constant _SALT_ENTROPY_SHIFT = 168; // bytes 21..31
+    /// @dev Placement shifts for the three raw-salt fields (bytes numbered from the
+    ///      most-significant end, matching CreateX's `_parseSalt`). Operator and
+    ///      flag are LEFT-shifts that position a field; the entropy shift is a
+    ///      RIGHT-shift that pulls the top 11 bytes of the keccak down into
+    ///      bytes 21..31 — the opposite direction, named apart so a future `<<`
+    ///      cannot silently smash the salt.
+    uint256 internal constant _SALT_OPERATOR_SHIFT = 96; // << places bytes 0..19
+    uint256 internal constant _SALT_FLAG_SHIFT = 88; // << places byte 20
+    uint256 internal constant _KECCAK_TO_ENTROPY_SHIFT = 168; // >> keccak into bytes 21..31
 
     /// @dev Assemble the sender-guarded raw salt, all 32 bytes accounted for:
     ///
@@ -73,7 +77,7 @@ abstract contract CreateXHelpers is Script {
     function _rawSalt(address operator, bytes memory saltPreimage) internal pure returns (bytes32) {
         bytes32 salt = bytes32(uint256(uint160(operator)) << _SALT_OPERATOR_SHIFT)
             | bytes32(CROSSCHAIN_FLAG_OFF << _SALT_FLAG_SHIFT)
-            | (keccak256(saltPreimage) >> _SALT_ENTROPY_SHIFT);
+            | (keccak256(saltPreimage) >> _KECCAK_TO_ENTROPY_SHIFT);
         _assertSaltLayout(operator, salt);
         return salt;
     }
@@ -141,9 +145,13 @@ abstract contract CreateXHelpers is Script {
             return expected;
         }
         require(CREATEX.code.length > 0, "CreateX not deployed on this chain");
-        // Cross-check our pure mirror of CreateX's `_guard` against CreateX's OWN
-        // derivation before spending gas. Catches drift between the two the only
-        // way that is free: asking the singleton we are about to call.
+        // Pin our CREATE3 math (proxy initcode + child at nonce 1) against
+        // CreateX's own, before spending gas: hand CreateX the guarded salt WE
+        // computed and require it predicts the same address. This does NOT
+        // exercise CreateX's `_guard` — `computeCreate3Address` takes an
+        // already-guarded salt. `_guard` is pinned separately, by `deployed ==
+        // expected` after the broadcast and by
+        // `test_senderGuard_strangerLandsElsewhere_canonicalUntouched`.
         require(
             ICreateX(CREATEX).computeCreate3Address(_guardedSalt(operator, rawSalt)) == expected,
             string.concat(name, ": local prediction disagrees with CreateX")

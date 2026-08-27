@@ -35,9 +35,14 @@ contract PredictAddresses is CreateXHelpers {
         // override is accepted only if it AGREES — a disagreeing one is the
         // silent-wrong-address bug this script exists to catch.
         address operator = DeployConstants.CANONICAL_OPERATOR;
-        try vm.envAddress("DEPLOY_OPERATOR") returns (address op) {
-            require(op == operator, "DEPLOY_OPERATOR disagrees with the pinned CANONICAL_OPERATOR");
-        } catch {}
+        // Unset → use the pin. Set-but-disagreeing → the silent-wrong-address bug
+        // this script exists to catch (the require below). Set-but-malformed →
+        // `envOr` reverts with a parse error instead of being swallowed by an
+        // empty catch (which would print the canonical rows as if all was well).
+        require(
+            vm.envOr("DEPLOY_OPERATOR", operator) == operator,
+            "DEPLOY_OPERATOR disagrees with the pinned CANONICAL_OPERATOR"
+        );
 
         console.log("CreateX:        ", CREATEX);
         console.log("Deploy operator:", operator);

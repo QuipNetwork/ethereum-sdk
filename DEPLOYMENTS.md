@@ -428,9 +428,13 @@ is already live (both scripts are idempotent per-contract), so rolling only the
 paymaster onto an existing chain is just step 2.
 
 **Base mainnet** additionally has dry-run targets — `make dryrun-factory-base`
-and `make dryrun-shrincs-base` — which simulate against a fork with no key and
-no `--broadcast`. Run both before either `deploy-*-base` and confirm the printed
-addresses match the Live table above. `API_URL_BASE` must be a keyed provider: a
+and `make dryrun-shrincs-base` — which simulate against a fork without
+`--broadcast`, so nothing is sent on-chain. They pass `--sender
+$(DEPLOY_OPERATOR)` but no `--private-key` flag; the scripts still read
+`PRIVATE_KEY` from your `.env` to simulate the operator's broadcast and assert
+`vm.addr(PRIVATE_KEY) == DEPLOY_OPERATOR`, so `PRIVATE_KEY` must be set. Run both
+before either `deploy-*-base` and confirm the printed addresses match the Live
+table above. `API_URL_BASE` must be a keyed provider: a
 public endpoint times out mid-simulation. The sunset WOTS+ targets are
 deliberately not mirrored for mainnet.
 

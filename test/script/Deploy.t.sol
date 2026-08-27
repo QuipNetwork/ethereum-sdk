@@ -87,6 +87,11 @@ contract DeployScriptsTest is Test {
     address internal constant PUBLISHED_SHRINCS_PM_IMPL = 0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3;
     address internal constant PUBLISHED_SHRINCS_PM_PROXY = 0x077C06913777777DfABf951a5A0F8CA665764ac9;
 
+    // eip1967.proxy.implementation slot (keccak256("eip1967.proxy.implementation") - 1),
+    // read to recover an impl address from behind its ERC-1967 proxy.
+    bytes32 internal constant ERC1967_IMPL_SLOT =
+        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
     address internal owner; // doubles as the DEPLOY_OPERATOR (sender-guarded salts)
     DeployHarness internal h;
 
@@ -186,6 +191,19 @@ contract DeployScriptsTest is Test {
         assertEq(f.latestWalletImpl(), sImpl, "latest must be Shrincs");
 
         assertGt(sPm.code.length, 0, "shrincs paymaster code");
+
+        // Pin the three IMPLEMENTATION addresses too, not just the two proxies.
+        // Vetting keys on codehash, not address, so a drifted impl salt would
+        // deploy at an unpredicted address and still vet — assert the ACTUALLY
+        // deployed impl (through real CreateX) equals the prediction. Factory and
+        // paymaster impls sit behind their ERC-1967 proxies.
+        bytes[5] memory pre = _livePreimages();
+        assertEq(sImpl, _predictLiveIndependent(pre[2]), "ShrincsWallet impl addr");
+        assertEq(sImpl, h.predictLive(owner, pre[2]), "helper agrees on wallet impl");
+        address fImpl = address(uint160(uint256(vm.load(fAddr, ERC1967_IMPL_SLOT))));
+        assertEq(fImpl, _predictLiveIndependent(pre[0]), "WalletFactory impl addr");
+        address pmImpl = address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT))));
+        assertEq(pmImpl, _predictLiveIndependent(pre[3]), "ShrincsPaymaster impl addr");
     }
 
     /// Re-running every step is a no-op (skip-if-deployed / skip-if-vetted), never
