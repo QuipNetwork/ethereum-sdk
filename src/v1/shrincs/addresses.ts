@@ -68,8 +68,9 @@ export interface ShrincsNetworkAddresses {
 // cryptographic scheme land at different addresses. Proxy preimages carry no
 // tag; an ERC-1967 proxy is scheme-agnostic.
 //
-// NOTE: THIS IS THE V1.0.1 GENERATION — PREDICTED, NOT YET DEPLOYED. It is a
-// full redeploy of every contract: hashsigs-solidity MR !26 (raw signatures
+// NOTE: THIS IS THE V1.0.1 GENERATION — live on Base Sepolia and OP Sepolia since
+// 2026-08-27 (Base mainnet follows once the V4 verifier pair lands there). It
+// is a full redeploy of every contract: hashsigs-solidity MR !26 (raw signatures
 // bound to the full public-key commitment) relocated `SHRINCS256sKeccak` to
 // the V4 address below, the WalletFactory code changed, and the V1.0.0
 // generation — live on Base mainnet, Base Sepolia and OP Sepolia against the
