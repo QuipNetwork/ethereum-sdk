@@ -57,10 +57,12 @@ library DeployConstants {
     /// This is the V4 verifier (`QUIP:SHRINCS256sKeccak:V4.0`, hashsigs-solidity
     /// MR !26 — raw ERC-7913 signatures bound to the full public-key commitment)
     /// with its stateless delegate `QUIP:SPHINCSPlusC256sKeccak:V3.0` at
-    /// `0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864`. NOT YET DEPLOYED on any
-    /// chain: `02_DeployShrincs` refuses to broadcast until hashsigs-solidity
-    /// has. The previous (V2) pair, live on Base mainnet / Base Sepolia /
-    /// OP Sepolia, is `0xE6F2970bA30d59e8288b7007bA755828372457c3` +
+    /// `0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864`. Live on Base Sepolia
+    /// (84532) since 2026-08-27 — runtime codehashes match the dep's
+    /// DEPLOYMENTS.md (`0xe9319929…` / `0xe8d1cd07…`); not yet on Base mainnet
+    /// or OP Sepolia, where `02_DeployShrincs` refuses to broadcast until
+    /// hashsigs-solidity has deployed the pair. The previous (V2) pair, live on
+    /// all three chains, is `0xE6F2970bA30d59e8288b7007bA755828372457c3` +
     /// `0x97B3726F44e3B7521199CE4e0fC160A32A597d31`; see DEPLOYMENTS.md.
     address internal constant SHRINCS_EXTERNAL_VERIFIER =
         0xF2f9E6D692da41b089c3c261c41509669eEc5567;
