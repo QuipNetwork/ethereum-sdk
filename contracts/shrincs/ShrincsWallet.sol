@@ -72,14 +72,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      state (leaf bitmap, nonce, keyVersion, installed commitments).
     address public immutable SHRINCS_VERIFIER;
 
-    /// @dev Reserved leaf range for deploy authorizations (e3r). Leaves `[1..MAX_DEPLOY_CHAINS]`
-    ///      of the main key are carved out for per-chain deploy signatures (indexed by the
-    ///      factory's `quipDeployChainIndex`); normal stateful SIGNING is restricted to
-    ///      `(MAX_DEPLOY_CHAINS .. maxSignatures]`. Keeping the two regions disjoint guarantees a
-    ///      signing leaf can never collide with a deploy leaf, so no one-time secret is ever
-    ///      revealed twice. MUST equal the SDK `MAX_DEPLOY_CHAINS`.
-    uint32 public constant MAX_DEPLOY_CHAINS = 32;
-
     /// @dev Transient storage slot gating `migrate` to the `upgradeToAndCall` context.
     /// @notice REQUIRES EIP-1153 (TSTORE/TLOAD).
     uint256 private constant _UPGRADE_GUARD_SLOT =
@@ -225,8 +217,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
         uint32 leaf = _leafIndex(sig);
-        // Signing budget excludes the reserved deploy-leaf range `[1..MAX_DEPLOY_CHAINS]` (e3r).
-        if (leaf <= MAX_DEPLOY_CHAINS || leaf > $.maxSignatures) {
+        if (leaf == 0 || leaf > $.maxSignatures) {
             emit UserOpValidationRejected(
                 UserOpValidationFailure.StatefulBudgetExhausted
             );
@@ -362,10 +353,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             uint32 maxSignatures
         ) = _decodeAndValidateInstall(payload);
 
-        // e3r: the address is bound to `commitment` through the CREATE3 salt, and only the
-        // main-key holder can authorize the deploy. Verify the embedded deploy signature
-        // BEFORE committing any state (reverts leave nothing behind).
-        _verifyDeployAuthorization(newOwner, commitment, erc1271Commitment, payload);
+        bytes32 walletCommitment = IWalletFactory(FACTORY).commitmentOf(address(this));
+        if (
+            walletCommitment !=
+            Codec.v1Commitment(commitment, erc1271Commitment, newOwner)
+        ) {
+            revert IdentityMismatch();
+        }
 
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
@@ -756,10 +750,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint256 epoch = $.keyVersion;
         for (uint256 i = 0; i < n; ++i) {
             uint32 leaf = leaves[i];
-            // Out-of-range is a client bug, not a race — fail the whole batch loudly. The
-            // reserved deploy-leaf range `[1..MAX_DEPLOY_CHAINS]` is not part of the signing
-            // budget, so it is not a valid revocation target (e3r).
-            if (leaf <= MAX_DEPLOY_CHAINS || leaf > $.maxSignatures)
+            // Out-of-range is a client bug, not a race — fail the whole batch loudly.
+            if (leaf == 0 || leaf > $.maxSignatures)
                 revert LeafOutOfRange(leaf);
             if (_isStatefulLeafUsed($, epoch, leaf)) {
                 emit LeafRevocationSkipped(leaf, epoch);
@@ -991,17 +983,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @inheritdoc IShrincsWallet
     function remainingStatefulSignatures() external view returns (uint32) {
         Storage.Layout storage $ = Storage.layout();
-        // Signing budget excludes the reserved deploy-leaf range
-        // `[1..MAX_DEPLOY_CHAINS]` (e3r): usable signing leaves are
-        // `(MAX_DEPLOY_CHAINS .. maxSignatures]`.
-        uint32 budget = $.maxSignatures > MAX_DEPLOY_CHAINS
-            ? $.maxSignatures - MAX_DEPLOY_CHAINS
-            : 0;
         // Saturating: the leaf bitmap is the real anti-replay mechanism; this
         // counter is advisory, so it must never revert even if it ever drifts
-        // above the signing budget.
-        if ($.statefulLeavesUsed >= budget) return 0;
-        return budget - $.statefulLeavesUsed;
+        // above `maxSignatures`.
+        if ($.statefulLeavesUsed >= $.maxSignatures) return 0;
+        return $.maxSignatures - $.statefulLeavesUsed;
     }
 
     /// @inheritdoc IShrincsWallet
@@ -1090,8 +1076,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
         leaf = _leafIndex(signature);
-        // Signing budget excludes the reserved deploy-leaf range `[1..MAX_DEPLOY_CHAINS]` (e3r).
-        if (leaf <= MAX_DEPLOY_CHAINS || leaf > $.maxSignatures)
+        if (leaf == 0 || leaf > $.maxSignatures)
             revert StatefulBudgetExhausted();
         if (_isStatefulLeafUsed($, epoch, leaf)) revert StaleStatefulLeaf();
 
@@ -1279,11 +1264,16 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ) internal view returns (Erc1271ValidationResult) {
         if (signature.length < 0x60)
             return Erc1271ValidationResult.BadSignatureLength;
+        // Non-reverting decode: a malformed blob (out-of-bounds ABI tail offsets) must return the
+        // ERC-1271 failure magic, never revert — a revert here is a DoS on the staticcalling
+        // relying contract. The reverting decoders remain on the transaction paths.
         (
+            bool ok,
             SHRINCS.PublicKey calldata pk,
             SPHINCSPlusC.Signature calldata sig,
             bytes calldata ecdsaSig
-        ) = Codec.decodeErc1271Signature(signature);
+        ) = Codec.tryDecodeErc1271Signature(signature);
+        if (!ok) return Erc1271ValidationResult.MalformedErc1271Payload;
 
         address recovered = ECDSA.tryRecoverCalldata(
             quipSignedHashEcdsaTarget(hash),
@@ -1337,94 +1327,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             // read in `getExecuteFee`, so the amount charged and its recipient can never diverge.
             SafeTransferLib.safeTransferETH(FACTORY, fee);
         }
-    }
-
-    /// @dev Verifies the deploy authorization embedded in the `initialize` payload (e3r).
-    ///      Runs during `initialize`, where `msg.sender == FACTORY` (checked by the caller).
-    ///      Steps:
-    ///        1. Cross-check the CREATE3 salt commitment (`FACTORY.pendingDeployCommitment()`,
-    ///           the value the factory salted the address with) against the main commitment the
-    ///           payload installs. A mismatch means the address was bound to a DIFFERENT key
-    ///           than the one being installed — reject (`CommitmentMismatch`).
-    ///        2. Read the factory's authoritative deploy context: `vaultId` (the reverse
-    ///           registry entry set before this call), the reserved `quipDeployChainIndex`, and
-    ///           the declared `deployMode`.
-    ///        3. Rebuild the deploy `ActionContext` (bound to chainId + FACTORY via
-    ///           `DEPLOY_DOMAIN_TAG`, `nonce`/`keyVersion` = 0 since the wallet is fresh) and
-    ///           verify the embedded main-key signature against the installed commitment:
-    ///           stateful → a signature at reserved deploy leaf `quipDeployChainIndex`; stateless
-    ///           → a chainId-bound stateless signature. No leaf is consumed and no nonce is
-    ///           advanced — the `initializer` guard makes the deploy inherently one-time.
-    function _verifyDeployAuthorization(
-        address newOwner,
-        bytes32 commitment,
-        bytes32 erc1271Commitment,
-        bytes calldata payload
-    ) private view {
-        IWalletFactory factory = IWalletFactory(FACTORY);
-        if (factory.pendingDeployCommitment() != commitment)
-            revert CommitmentMismatch();
-
-        bytes32 vaultId = factory.vaultIdOf(address(this));
-        uint16 quipDeployChainIndex = factory.quipDeployChainIndex();
-        IWalletFactory.DeployMode mode = factory.deployMode();
-
-        bytes calldata deployAuth = Codec.decodeInitDeployAuth(payload);
-
-        SHRINCS.ActionContext memory ctx = Codec.buildActionContext(
-            _deployDomainSeparator(),
-            0,
-            0,
-            Codec.ACTION_DEPLOY,
-            Codec.deployPayloadHash(
-                vaultId,
-                newOwner,
-                erc1271Commitment,
-                quipDeployChainIndex
-            )
-        );
-
-        if (mode == IWalletFactory.DeployMode.Stateful) {
-            // Verify FIRST: `_tryVerifyStateful` treats any malformed/short/garbage envelope as a
-            // rejection (returns false), so an absent or bad deploy signature reverts here rather
-            // than hard-reverting inside the decoder below.
-            if (
-                !_tryVerifyStateful(
-                    commitment,
-                    SHRINCS.statefulActionMessageHash(commitment, ctx),
-                    deployAuth
-                )
-            ) revert InvalidDeployAuthorization();
-            // A valid signature guarantees a well-formed envelope, so decoding it to read the
-            // revealed leaf is safe. Enforce it used the reserved deploy leaf
-            // `quipDeployChainIndex` (the envelope shares the `abi.encode(PublicKey,
-            // SHRINCS.Signature)` shape of a
-            // sponsorship blob, so reuse that decoder).
-            (, SHRINCS.Signature calldata deploySig) = Codec
-                .decodeSponsorshipSignature(deployAuth);
-            if (_leafIndex(deploySig) != quipDeployChainIndex)
-                revert InvalidDeployAuthorization();
-        } else {
-            if (
-                !_tryVerifyStateless(
-                    commitment,
-                    SHRINCS.statelessActionMessageHash(commitment, ctx),
-                    deployAuth
-                )
-            ) revert InvalidDeployAuthorization();
-        }
-    }
-
-    /// @dev The deploy signing domain (e3r): tag + chainId + FACTORY. Bound to the factory (not
-    ///      `address(this)`) because the deploy signature is produced before the wallet address
-    ///      exists; the factory is the authority that supplies chainId + `quipDeployChainIndex`.
-    function _deployDomainSeparator() internal view returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                Codec.DEPLOY_DOMAIN_TAG,
-                bytes32(block.chainid),
-                bytes32(uint256(uint160(address(FACTORY))))
-            );
     }
 
     /// @dev The wallet's canonical SHRINCS signing domain: tag + chainId + this wallet.

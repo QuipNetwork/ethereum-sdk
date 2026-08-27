@@ -24,16 +24,14 @@ import {
   keccak256,
   maxUint256,
   parseEventLogs,
-  toHex,
   zeroAddress,
 } from "viem";
-import { randomBytes } from "@noble/ciphers/webcrypto";
 
 import { walletFactoryAbi } from "../abi/WalletFactory.js";
 import { getNetworkAddresses } from "../addresses.js";
 import { NoVaultFoundError, WalletAlreadyExistsError } from "../errors.js";
 import { assertProviderState, boundChain } from "../internal/providerState.js";
-import { deployVaultSalt, getShrincsAddresses } from "./addresses.js";
+import { getShrincsAddresses, v1Commitment } from "./addresses.js";
 import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
@@ -43,33 +41,24 @@ import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
-import { encodeDeployAuth, encodeInitPayload } from "./shrincsCodec.js";
-import { buildDeployAuthorization } from "./deployAuth.js";
+import { encodeInitPayload } from "./shrincsCodec.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
   ShrincsWalletClient,
   fetchShrincsWalletState,
 } from "./shrincsWalletClient.js";
 
-/// Generate a CSPRNG-backed 32-byte vaultId — the default for `createShrincsWallet`
-/// when the caller omits one. The factory's vaultId namespace is GLOBAL (the
-/// CREATE3 salt is keyed solely on vaultId), so a predictable vaultId is
-/// front-runnable across users and chains; random is the only safe default.
-export function randomVaultId(): Hex {
-  return toHex(randomBytes(32));
-}
-
 /// How the wallet's dedicated ERC-1271 verifier key is specified at creation.
 /// There is intentionally NO default derivation: the ERC-1271 key is an
 /// independent bundle whose commitment is sealed into the wallet's init
 /// immutably, so the caller must choose it explicitly and record how to recover
-/// it (exactly as it must for the main `vaultId`). Either:
-///   - `{ vaultId, maxSignatures? }`: derive it from the SAME `signer` under a
-///     caller-chosen vault branch (recover later via the same `vaultId`), or
+/// it (exactly as it must for the main `derivationIndex`). Either:
+///   - `{ derivationIndex, maxSignatures? }`: derive it from the SAME `signer`
+///     under a caller-chosen index (recover later via the same index), or
 ///   - `{ commitment }`: supply a precomputed commitment for a fully
 ///     independent key (e.g. a different signer or an out-of-band key).
 export type Erc1271KeySpec =
-  | { vaultId: Hex; maxSignatures?: number }
+  | { derivationIndex: number; maxSignatures?: number }
   | { commitment: Hex };
 
 export interface ShrincsFactoryClientParams {
@@ -86,9 +75,9 @@ export interface ShrincsFactoryClientParams {
 }
 
 /// `estimateCreationCost` prices the exact deployment `createShrincsWallet`
-/// would send, so it takes the same inputs: under `e3r` the wallet address,
-/// the init payload, and the embedded deploy authorization all derive from the
-/// main key, so there is no signer-free quote.
+/// would send, so it takes the same inputs: the V1 commitment (and therefore
+/// the wallet address) and the init payload all derive from the main key, so
+/// there is no signer-free quote.
 export type EstimateCreationCostParams = CreateShrincsWalletParams;
 
 export interface CreationCostEstimate extends CostEstimate {
@@ -101,11 +90,21 @@ export interface CreateShrincsWalletParams {
   /// Stateful signature budget baked into the main key's commitment. Must match
   /// the value passed to `signer.recoverKeyPair(...)` for every later signature.
   maxSignatures: number;
-  /// Main-key vault branch. Defaults to a CSPRNG-generated 32-byte value.
-  vaultId?: Hex;
+  /// Main-key derivation index. The V1 commitment is computed from the
+  /// resulting commitments and the factory account (the intended owner).
+  derivationIndex: number;
   /// The dedicated ERC-1271 verifier key. Required and explicit — see
   /// `Erc1271KeySpec` (there is no inferred default).
   erc1271: Erc1271KeySpec;
+}
+
+export interface GetShrincsWalletParams {
+  derivationIndex: number;
+  erc1271: Erc1271KeySpec;
+  /// Owner used at creation (the `to` argument). Bound into the V1 commitment.
+  owner: Address;
+  signer: ShrincsSigner;
+  maxSignatures: number;
 }
 
 /// Deploys `ShrincsWallet` proxies via the shared `WalletFactory` (its
@@ -149,7 +148,7 @@ export class ShrincsFactoryClient {
       expectedAccount: this.account,
     });
 
-    const { vaultId, contractCall, creationFee } =
+    const { commitment, contractCall, creationFee } =
       await this.buildCreateCall(params);
     const prepared = await prepareTx({
       publicClient: this.publicClient,
@@ -182,24 +181,19 @@ export class ShrincsFactoryClient {
       publicClient: this.publicClient,
       walletClient: this.walletClient,
       signer: params.signer,
-      vaultId,
+      commitment,
+      derivationIndex: params.derivationIndex,
       chainId: this.chainId,
       account: this.account,
     });
   }
 
   /// Price the deployment `createShrincsWallet(params)` would send, without
-  /// sending it. Builds the SAME call — same key, same init payload, same
-  /// deploy authorization — and runs it through `eth_estimateGas` with the
-  /// sender's balance overridden, so an empty account can be quoted. Nothing
-  /// is written and no on-chain leaf is consumed.
-  ///
-  /// Signature safety: the deploy authorization is a signature over a message
-  /// fixed by `(chainId, factory, vaultId, owner, erc1271Commitment,
-  /// quipDeployChainIndex)` at the deploy leaf reserved for this chain. The
-  /// estimate and the eventual deployment sign that one identical message at
-  /// that one leaf — a repeated signature of the same message reveals nothing
-  /// new, so this is not one-time-leaf reuse.
+  /// sending it. Builds the SAME call — same key, same commitment, same init
+  /// payload — and runs it through `eth_estimateGas` with the sender's balance
+  /// overridden, so an empty account can be quoted. Nothing is written and no
+  /// on-chain leaf is consumed: under the V1 identity model deployment carries
+  /// no signature at all, so estimating is signature-free.
   async estimateCreationCost(
     params: EstimateCreationCostParams,
     opts: TxOptions = {}
@@ -221,31 +215,38 @@ export class ShrincsFactoryClient {
     return { ...estimate, creationFee };
   }
 
-  /// Resolve an existing wallet by `(vaultId, maxSignatures)`, asserting `signer`
-  /// reproduces the installed main-key commitment (`CommitmentMismatchError`
-  /// otherwise), and return a bound `ShrincsWalletClient`. `maxSignatures` is
-  /// required: under `e3r` the wallet address binds to the main-key commitment,
-  /// which depends on the key's leaf budget, so it cannot be recovered from the
-  /// vault id alone.
+  /// Resolve an existing wallet from its derivation index, ERC-1271 spec, and
+  /// original owner. Recomputes the V1 commitment (and therefore the address)
+  /// from those inputs, asserts `signer` reproduces the installed main-key
+  /// commitment (`CommitmentMismatchError` otherwise), and returns a bound
+  /// `ShrincsWalletClient`.
   async getShrincsWallet(
-    vaultId: Hex,
-    signer: ShrincsSigner,
-    maxSignatures: number
+    params: GetShrincsWalletParams
   ): Promise<ShrincsWalletClient> {
-    const keypair = signer.recoverKeyPair(vaultId, { maxSignatures });
+    const { derivationIndex, erc1271, owner, signer, maxSignatures } = params;
+    const keypair = signer.recoverKeyPair(derivationIndex, { maxSignatures });
+    const statefulC = keypair.publicKeyCommitment;
+    const statelessC = this.resolveErc1271Commitment(
+      signer,
+      erc1271,
+      maxSignatures
+    );
+    const commitment = v1Commitment(statefulC, statelessC, owner);
     const walletAddress = await this.getShrincsWalletAddress(
-      vaultId,
-      keypair.publicKeyCommitment
+      statefulC,
+      statelessC,
+      owner
     );
     if (walletAddress === zeroAddress) {
-      throw new NoVaultFoundError(vaultId);
+      throw new NoVaultFoundError(commitment);
     }
     const client = new ShrincsWalletClient({
       walletAddress,
       publicClient: this.publicClient,
       walletClient: this.walletClient,
       signer,
-      vaultId,
+      commitment,
+      derivationIndex,
       chainId: this.chainId,
       account: this.account,
     });
@@ -263,19 +264,13 @@ export class ShrincsFactoryClient {
     return client;
   }
 
-  async getWalletState(
-    vaultId: Hex,
-    mainCommitment: Hex
-  ): Promise<{
+  async getWalletState(commitment: Hex): Promise<{
     keyVersion: number;
     shrincsPublicKeyCommitment: Hex;
     maxSignatures: number;
     hashSuite: number;
   } | null> {
-    const walletAddress = await this.getShrincsWalletAddress(
-      vaultId,
-      mainCommitment
-    );
+    const walletAddress = await this.readWallets(commitment);
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(
       this.publicClient,
@@ -290,13 +285,10 @@ export class ShrincsFactoryClient {
   }
 
   async openShrincsWallet(params: {
-    vaultId: Hex;
+    commitment: Hex;
     keypair: ShrincsKeyPair;
   }): Promise<ShrincsWalletClient | null> {
-    const walletAddress = await this.getShrincsWalletAddress(
-      params.vaultId,
-      params.keypair.publicKeyCommitment
-    );
+    const walletAddress = await this.readWallets(params.commitment);
     if (walletAddress === zeroAddress) return null;
     const state = await fetchShrincsWalletState(
       this.publicClient,
@@ -316,121 +308,83 @@ export class ShrincsFactoryClient {
       publicClient: this.publicClient,
       walletClient: this.walletClient,
       keypair: params.keypair,
-      vaultId: params.vaultId,
+      commitment: params.commitment,
       chainId: this.chainId,
       account: this.account,
     });
   }
 
-  /// The factory-registered wallet address for `(vaultId, mainCommitment)`
-  /// (`zeroAddress` if none). Under `e3r` the factory keys its registry by the
-  /// commitment-bound deploy salt, so resolving a wallet requires the main-key
-  /// commitment, not the vault id alone.
+  /// The factory-registered wallet address for the V1 identity
+  /// `(statefulC, statelessC, owner)` (`zeroAddress` if none). The mapping is
+  /// keyed by `commitment` (CREATE3 salt == commitment).
   async getShrincsWalletAddress(
-    vaultId: Hex,
-    mainCommitment: Hex
+    statefulC: Hex,
+    statelessC: Hex,
+    owner: Address
   ): Promise<Address> {
+    return this.readWallets(v1Commitment(statefulC, statelessC, owner));
+  }
+
+  private resolveErc1271Commitment(
+    signer: ShrincsSigner,
+    erc1271: Erc1271KeySpec,
+    defaultMaxSignatures: number
+  ): Hex {
+    if ("derivationIndex" in erc1271) {
+      return signer.recoverKeyPair(erc1271.derivationIndex, {
+        maxSignatures: erc1271.maxSignatures ?? defaultMaxSignatures,
+      }).publicKeyCommitment;
+    }
+    return erc1271.commitment;
+  }
+
+  private async readWallets(id: Hex): Promise<Address> {
     return withDecodedError(
       this.publicClient.readContract({
         address: this.factoryAddress,
         abi: walletFactoryAbi,
         functionName: "wallets",
-        args: [deployVaultSalt(vaultId, mainCommitment)],
+        args: [id],
       })
     ) as Promise<Address>;
   }
 
   /// Everything `createShrincsWallet` and `estimateCreationCost` share: recover
-  /// the main key, refuse an already-deployed `(vaultId, commitment)`, resolve
-  /// the ERC-1271 commitment, sign the deploy authorization against the
-  /// factory's live deploy config, and pack the `deploySpecificWalletProxy` call.
+  /// the main key, resolve the ERC-1271 commitment, compute the V1 commitment
+  /// for `(statefulC, statelessC, owner)`, refuse an already-deployed identity,
+  /// and pack the `deploySpecificWalletProxy` call.
   private async buildCreateCall(params: CreateShrincsWalletParams): Promise<{
-    vaultId: Hex;
+    commitment: Hex;
     mainKey: ShrincsKeyPair;
     contractCall: ContractCallParams;
     creationFee: bigint;
   }> {
-    const vaultId = params.vaultId ?? randomVaultId();
-
-    const mainKey = params.signer.recoverKeyPair(vaultId, {
+    const mainKey = params.signer.recoverKeyPair(params.derivationIndex, {
       maxSignatures: params.maxSignatures,
     });
+    const statefulC = mainKey.publicKeyCommitment;
+    const statelessC = this.resolveErc1271Commitment(
+      params.signer,
+      params.erc1271,
+      params.maxSignatures
+    );
+    const owner = this.account;
+    const commitment = v1Commitment(statefulC, statelessC, owner);
 
-    // The factory keys its registry by the commitment-bound deploy salt (`e3r`),
-    // so an existing-wallet check must look up `(vaultId, mainCommitment)`.
     const existing = await this.getShrincsWalletAddress(
-      vaultId,
-      mainKey.publicKeyCommitment
+      statefulC,
+      statelessC,
+      owner
     );
     if (existing !== zeroAddress) {
-      throw new WalletAlreadyExistsError(vaultId);
+      throw new WalletAlreadyExistsError(commitment);
     }
-
-    // Resolve the ERC-1271 verifier commitment from whichever explicit form the
-    // caller chose — never inferred from the main key/vaultId.
-    let erc1271Commitment: Hex;
-    if ("vaultId" in params.erc1271) {
-      const erc1271Key = params.signer.recoverKeyPair(params.erc1271.vaultId, {
-        maxSignatures: params.erc1271.maxSignatures ?? params.maxSignatures,
-      });
-      erc1271Commitment = erc1271Key.publicKeyCommitment;
-    } else {
-      erc1271Commitment = params.erc1271.commitment;
-    }
-
-    // the factory is the authority for the deploy-auth mode and the
-    // per-chain quipDeployChainIndex; the deploy signature must match exactly
-    // what `initialize` rebuilds and verifies against the factory. Read both
-    // from the factory rather than assuming, so a misconfigured factory fails
-    // loudly instead of producing an unverifiable signature.
-    const [deployModeRaw, chainIndexRaw] = (await Promise.all([
-      withDecodedError(
-        this.publicClient.readContract({
-          address: this.factoryAddress,
-          abi: walletFactoryAbi,
-          functionName: "deployMode",
-        })
-      ),
-      withDecodedError(
-        this.publicClient.readContract({
-          address: this.factoryAddress,
-          abi: walletFactoryAbi,
-          functionName: "quipDeployChainIndex",
-        })
-      ),
-    ])) as [number, number];
-    const mode = deployModeRaw === 0 ? "stateful" : "stateless";
-    const { signature: deploySignature } = buildDeployAuthorization({
-      mainKey,
-      chainId: this.chainId,
-      factoryAddress: this.factoryAddress,
-      vaultId,
-      owner: this.account,
-      erc1271Commitment,
-      quipDeployChainIndex: Number(chainIndexRaw),
-      mode,
-    });
-    const deployAuth = encodeDeployAuth(mainKey.publicKey, deploySignature, mode);
 
     const initPayload = encodeInitPayload({
       mainBundle: mainKey.publicKey,
-      erc1271Commitment,
-      deployAuth,
+      erc1271Commitment: statelessC,
     });
 
-    const { contractCall, creationFee } = await this.buildDeploymentCall(
-      vaultId,
-      mainKey.publicKeyCommitment,
-      initPayload
-    );
-    return { vaultId, mainKey, contractCall, creationFee };
-  }
-
-  private async buildDeploymentCall(
-    vaultId: Hex,
-    mainCommitment: Hex,
-    initPayload: Hex
-  ): Promise<{ contractCall: ContractCallParams; creationFee: bigint }> {
     const index = await this.resolveImplementationIndex();
     const creationFee = (await withDecodedError(
       this.publicClient.readContract({
@@ -440,17 +394,15 @@ export class ShrincsFactoryClient {
       })
     )) as bigint;
 
-    return {
-      creationFee,
-      contractCall: {
-        address: this.factoryAddress,
-        abi: walletFactoryAbi,
-        functionName: "deploySpecificWalletProxy",
-        args: [vaultId, mainCommitment, index, this.account, initPayload],
-        value: creationFee,
-        account: this.account as Account | Address,
-      },
+    const contractCall: ContractCallParams = {
+      address: this.factoryAddress,
+      abi: walletFactoryAbi,
+      functionName: "deploySpecificWalletProxy",
+      args: [commitment, index, this.account, initPayload],
+      value: creationFee,
+      account: this.account as Account | Address,
     };
+    return { commitment, mainKey, contractCall, creationFee };
   }
 
   /// Vetted-set index of the Shrincs implementation, resolved from its on-chain

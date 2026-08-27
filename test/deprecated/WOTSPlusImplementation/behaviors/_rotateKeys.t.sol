@@ -31,7 +31,7 @@ contract WOTSPlusImplementation__rotateKeys is WOTSPlusImplementationTest {
         bytes memory payload = _encodeInitPayload(pub, rKeys);
 
         vm.prank(ALICE);
-        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-rotate-vault"), COMMITMENT, payable(ALICE), payload
+        address proxyAddr = factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-rotate-vault"), payable(ALICE), payload
         );
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
 

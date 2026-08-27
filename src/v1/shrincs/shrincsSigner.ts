@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { keccak_256 } from "@noble/hashes/sha3";
-import { type Hex, hexToBytes, toHex } from "viem";
+import { type Hex, toBytes, toHex } from "viem";
 
 import { publicKeyCommitment } from "./shrincsCodec.js";
 import { ShrincsKeyDerivationSelfTestError } from "./errors.js";
@@ -60,8 +60,8 @@ export interface ShrincsKeygenOptions {
 }
 
 export interface DeriveKeyPairParams {
-  statefulVaultId: Hex;
-  statelessVaultId: Hex;
+  statefulIndex: number;
+  statelessIndex: number;
   maxSignatures: number;
 }
 
@@ -213,9 +213,9 @@ export class ShrincsKeyPair {
 
 /// In-memory SHRINCS signer keyed off a single master secret (the seed-phrase
 /// analog). Every keypair the user ever uses is deterministically derived from
-/// it plus a per-wallet `vaultId`:
+/// it plus a caller-chosen `derivationIndex`:
 ///
-///   seedHex = keccak256(keccak256(masterSecret) ‖ vaultId)
+///   seedHex = keccak256(keccak256(masterSecret) ‖ uint256BE(index, 32 bytes))
 ///   keypair = shrincsKeygen(seedHex, maxSignatures)
 ///
 /// Unlike the WOTS+ `QuipSigner`, there is **no burn set**: SHRINCS is stateful
@@ -242,32 +242,35 @@ export class ShrincsSigner {
     return new ShrincsSigner(wasm, keccak_256(masterSecret));
   }
 
-  /// Deterministic per-vault seed: `keccak256(masterSecret ‖ vaultId)`.
-  deriveSeedHex(vaultId: Hex): Hex {
+  /// Deterministic per-index seed: `keccak256(masterSecret ‖ uint256BE(index, 32))`.
+  deriveSeedHex(derivationIndex: number): Hex {
     const seed = Uint8Array.from([
       ...this.masterSecret,
-      ...hexToBytes(vaultId),
+      ...toBytes(BigInt(derivationIndex), { size: 32 }),
     ]);
     return toHex(keccak_256(seed));
   }
 
-  /// Recover (re-derive) the keypair for a vault branch. The canonical path:
+  /// Recover (re-derive) the keypair for a derivation index. The canonical path:
   /// read the wallet's `maxSignatures()` from chain, pass it here, sign. Runs
   /// the self-test before returning.
-  recoverKeyPair(vaultId: Hex, opts: ShrincsKeygenOptions): ShrincsKeyPair {
-    return this.keygenFromSeedHex(this.deriveSeedHex(vaultId), opts);
+  recoverKeyPair(
+    derivationIndex: number,
+    opts: ShrincsKeygenOptions
+  ): ShrincsKeyPair {
+    return this.keygenFromSeedHex(this.deriveSeedHex(derivationIndex), opts);
   }
 
   deriveKeyPair(params: DeriveKeyPairParams): ShrincsKeyPair {
     const statefulInner = this.wasm.shrincsKeygen(
-      this.deriveSeedHex(params.statefulVaultId),
+      this.deriveSeedHex(params.statefulIndex),
       params.maxSignatures
     );
     const statelessInner =
-      params.statelessVaultId === params.statefulVaultId
+      params.statelessIndex === params.statefulIndex
         ? statefulInner
         : this.wasm.shrincsKeygen(
-            this.deriveSeedHex(params.statelessVaultId),
+            this.deriveSeedHex(params.statelessIndex),
             params.maxSignatures
           );
     const pair = new ShrincsKeyPair(this.wasm, statefulInner, statelessInner);

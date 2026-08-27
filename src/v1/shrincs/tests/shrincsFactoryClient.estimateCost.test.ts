@@ -15,6 +15,7 @@ import {
   ShrincsFactoryClient,
 } from "../shrincsFactoryClient.js";
 import { ShrincsSigner } from "../shrincsSigner.js";
+import { v1Commitment } from "../addresses.js";
 import { ChainChangedError, WalletAlreadyExistsError } from "../../errors.js";
 import { applyGasMultiplier } from "../gas.js";
 import { ImplementationNotVettedError } from "../errors.js";
@@ -24,7 +25,7 @@ const ACCOUNT = "0x00000000000000000000000000000000000000a1" as Address;
 const FACTORY = "0x00000000000000000000000000000000000000f1" as Address;
 const IMPLEMENTATION = "0x00000000000000000000000000000000000000e1" as Address;
 const CREATION_FEE = 1_000_000_000_000_000n;
-const VAULT_ID = ("0x" + "77".repeat(32)) as Hex;
+const DERIVATION_INDEX = 7;
 const ERC1271_COMMITMENT = ("0x" + "22".repeat(32)) as Hex;
 const MAX_SIGS = 40;
 
@@ -41,7 +42,7 @@ function createParams(
   return {
     signer,
     maxSignatures: MAX_SIGS,
-    vaultId: VAULT_ID,
+    derivationIndex: DERIVATION_INDEX,
     erc1271: { commitment: ERC1271_COMMITMENT },
     ...overrides,
   };
@@ -50,7 +51,7 @@ function createParams(
 interface EstimatedCall {
   address: Address;
   functionName: string;
-  args: [Hex, Hex, bigint, Address, Hex];
+  args: [Hex, bigint, Address, Hex];
   value: bigint;
   account: Address;
   stateOverride?: { address: Address; balance: bigint }[];
@@ -102,10 +103,6 @@ function fakeChain(overrides: Partial<FakeChainState> = {}) {
           return false;
         case "creationFee":
           return CREATION_FEE;
-        case "deployMode":
-          return 0; // Stateful
-        case "quipDeployChainIndex":
-          return 1;
         default:
           throw new Error(`unexpected read: ${functionName}`);
       }
@@ -183,7 +180,14 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
   it("estimates byte-for-byte the deployment call the create path sends", async () => {
     const chain = fakeChain();
     const client = makeClient(chain);
-    const mainKey = signer.recoverKeyPair(VAULT_ID, { maxSignatures: MAX_SIGS });
+    const mainKey = signer.recoverKeyPair(DERIVATION_INDEX, {
+      maxSignatures: MAX_SIGS,
+    });
+    const commitment = v1Commitment(
+      mainKey.publicKeyCommitment,
+      ERC1271_COMMITMENT,
+      ACCOUNT
+    );
 
     await client.estimateCreationCost(createParams());
     await expect(
@@ -199,15 +203,12 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
     expect(estimated.functionName).toBe("deploySpecificWalletProxy");
     expect(estimated.value).toBe(CREATION_FEE);
     expect(estimated.account).toBe(ACCOUNT);
-    // e3r: `deploySpecificWalletProxy(vaultId, commitment, index, to, payload)`.
-    expect(estimated.args[0]).toBe(VAULT_ID);
-    expect(estimated.args[1]).toBe(mainKey.publicKeyCommitment);
-    expect(estimated.args[2]).toBe(3n);
-    expect(estimated.args[3]).toBe(ACCOUNT);
-    // The init payload embeds the deploy-authorization signature. Estimating and
-    // deploying sign the same message at the same deploy leaf, so the payloads
-    // (and therefore the signatures) are identical — no divergent second
-    // signature exists for that leaf.
+    // V1: `deploySpecificWalletProxy(commitment, index, to, payload)`.
+    expect(estimated.args[0]).toBe(commitment);
+    expect(estimated.args[1]).toBe(3n);
+    expect(estimated.args[2]).toBe(ACCOUNT);
+    // Same key, same commitment, same init payload: the estimate and the
+    // deployment are the same call byte-for-byte.
     expect(written.args).toEqual(estimated.args);
     expect(written.value).toBe(estimated.value);
   });
@@ -296,7 +297,7 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
     ).rejects.toBeInstanceOf(ChainChangedError);
   });
 
-  it("rejects a (vaultId, commitment) that already has a wallet", async () => {
+  it("rejects a V1 identity that already has a wallet", async () => {
     const chain = fakeChain({
       existingWallet: "0x00000000000000000000000000000000000000b1",
     });

@@ -55,10 +55,6 @@ interface IShrincsWallet is IWallet {
     error CommitmentMismatch();
     /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
     error ZeroErc1271Commitment();
-    /// @notice Thrown when the deploy authorization embedded in the `initialize` payload (e3r)
-    ///         is absent, malformed, at the wrong reserved deploy leaf, or not a valid main-key
-    ///         signature over the factory-bound deploy context.
-    error InvalidDeployAuthorization();
     /// @notice Thrown when an install payload declares a hash suite other than
     ///         the compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this
     ///         implementation verifies; SHRINCS binds it into every canonical message hash).
@@ -66,6 +62,8 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
+    /// @notice Thrown when the V1 commitment (salt) does not recompute from the install payload.
+    error IdentityMismatch();
 
     /// @notice Thrown when a stateful signature's leaf index has already been consumed in the
     ///         current key epoch (used-leaf bitmap anti-replay).
@@ -221,7 +219,8 @@ interface IShrincsWallet is IWallet {
         Ok,
         BadSignatureLength,
         InvalidEcdsaSignature,
-        InvalidShrincsSignature
+        InvalidShrincsSignature,
+        MalformedErc1271Payload
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

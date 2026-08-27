@@ -64,23 +64,19 @@ export class LeafReservationStore {
   }
 }
 
-/// Reserves the lowest leaf in `minLeaf..maxSignatures` that is neither reported
-/// by `isUsedOrReserved` (the on-chain used check) nor already reserved in
-/// `store`, atomically adding it to the store before returning. Selection is
-/// serialized per key so concurrent callers receive distinct leaves even when
-/// the check is async. `minLeaf` (default 1) lets a caller exclude a reserved
-/// low range: the SHRINCS wallet reserves leaves `[1..MAX_DEPLOY_CHAINS]` for
-/// deploy authorizations (`e3r`), so it signs only from `MAX_DEPLOY_CHAINS + 1`.
-/// Throws `StatefulBudgetExhaustedError` when no free leaf remains.
+/// Reserves the lowest leaf in `1..maxSignatures` that is neither reported by
+/// `isUsedOrReserved` (the on-chain used check) nor already reserved in `store`,
+/// atomically adding it to the store before returning. Selection is serialized
+/// per key so concurrent callers receive distinct leaves even when the check is
+/// async. Throws `StatefulBudgetExhaustedError` when no free leaf remains.
 export function reserveLowestLeaf(
   store: LeafReservationStore,
   key: LeafReservationKey,
   isUsedOrReserved: (leaf: number) => boolean | Promise<boolean>,
-  maxSignatures: number,
-  minLeaf = 1
+  maxSignatures: number
 ): Promise<number> {
   return store.withKeyLock(key, async (reserved) => {
-    for (let leaf = minLeaf; leaf <= maxSignatures; leaf++) {
+    for (let leaf = 1; leaf <= maxSignatures; leaf++) {
       if (reserved.has(leaf)) continue;
       if (await isUsedOrReserved(leaf)) continue;
       reserved.add(leaf);

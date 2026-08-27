@@ -19,19 +19,16 @@
 // consumer can deploy and operate a ShrincsWallet + ShrincsPaymaster against
 // real on-chain contracts. Each sub-flow runs as its own `it` with an isolated
 // wallet (distinct seedByte) so tests never depend on each other.
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-} from "@jest/globals";
+import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import {
   type Address,
   type Hex,
+  BaseError,
+  ContractFunctionRevertedError,
   getAddress,
   parseEther,
   parseEventLogs,
+  toFunctionSelector,
   toHex,
 } from "viem";
 import { foundry } from "viem/chains";
@@ -42,7 +39,7 @@ import { walletFactoryAbi } from "../../abi/WalletFactory.js";
 import { CANONICAL_ENTRYPOINT_V07 } from "../../addresses.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
-import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "../constants.js";
+import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   AuthLeafInTargetsError,
   EmptyLeavesError,
@@ -52,9 +49,11 @@ import {
   StaleStatefulLeafError,
   VerifierMismatchError,
 } from "../errors.js";
-import { publicKeyCommitment } from "../shrincsCodec.js";
+import { v1Commitment } from "../addresses.js";
+import { encodeInitPayload, publicKeyCommitment } from "../shrincsCodec.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
 import {
+  DEFAULT_ACCOUNT,
   SHRINCS_ANVIL_PORTS,
   type ShrincsAnvilStack,
   createFreshShrincsWallet,
@@ -73,18 +72,13 @@ const OWNER_PRIV =
 const ownerAccount = privateKeyToAccount(OWNER_PRIV);
 
 const RECIPIENT = "0x000000000000000000000000000000000000d00d" as Address;
-// The main-key hypertree reserves leaves `[1..MAX_DEPLOY_CHAINS]` for deploy
-// authorizations (`e3r`); signing uses `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
-// So a wallet with SIGNING_BUDGET usable signatures needs a tree of
-// `MAX_DEPLOY_CHAINS + SIGNING_BUDGET` leaves, and its first signing leaf is
-// `MAX_DEPLOY_CHAINS + 1`.
 const SIGNING_BUDGET = 4;
-const MAX_SIGS = MAX_DEPLOY_CHAINS + SIGNING_BUDGET;
+const MAX_SIGS = SIGNING_BUDGET;
 // The first four signing leaves, named by their position in the signing budget.
-const LEAF_1 = MAX_DEPLOY_CHAINS + 1;
-const LEAF_2 = MAX_DEPLOY_CHAINS + 2;
-const LEAF_3 = MAX_DEPLOY_CHAINS + 3;
-const LEAF_4 = MAX_DEPLOY_CHAINS + 4;
+const LEAF_1 = 1;
+const LEAF_2 = 2;
+const LEAF_3 = 3;
+const LEAF_4 = 4;
 
 let stack: ShrincsAnvilStack;
 
@@ -100,10 +94,15 @@ describe("Shrincs SDK live-anvil smoke", () => {
   // ── (a) deploy + reads ───────────────────────────────────────────────
   it("a. deploys a wallet, reads expected state, and resolves the same address", async () => {
     const seedByte = 0x10;
-    const { client, signer, vaultId, walletAddress } =
-      await createFreshShrincsWallet(stack, seedByte, {
-        maxSignatures: MAX_SIGS,
-      });
+    const {
+      client,
+      signer,
+      derivationIndex,
+      erc1271DerivationIndex,
+      walletAddress,
+    } = await createFreshShrincsWallet(stack, seedByte, {
+      maxSignatures: MAX_SIGS,
+    });
 
     const state = await client.getWalletState();
     expect(getAddress(state.owner)).toBe(getAddress(stack.account.address));
@@ -112,7 +111,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(state.remainingStatefulSignatures).toBe(SIGNING_BUDGET);
 
     // Commitment installed on-chain reproduces from the signer.
-    const mainKey = signer.recoverKeyPair(vaultId, { maxSignatures: MAX_SIGS });
+    const mainKey = signer.recoverKeyPair(derivationIndex, {
+      maxSignatures: MAX_SIGS,
+    });
     expect(state.shrincsPublicKeyCommitment.toLowerCase()).toBe(
       mainKey.publicKeyCommitment.toLowerCase()
     );
@@ -125,7 +126,16 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     // getShrincsWallet resolves the same address and validates the commitment.
     const factory = makeShrincsFactoryClient(stack);
-    const resolved = await factory.getShrincsWallet(vaultId, signer, MAX_SIGS);
+    const resolved = await factory.getShrincsWallet({
+      derivationIndex,
+      erc1271: {
+        derivationIndex: erc1271DerivationIndex,
+        maxSignatures: MAX_SIGS,
+      },
+      owner: stack.account.address,
+      signer,
+      maxSignatures: MAX_SIGS,
+    });
     expect(getAddress(resolved.walletAddress)).toBe(getAddress(walletAddress));
   }, 120_000);
 
@@ -159,7 +169,10 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxSignatures: MAX_SIGS,
     });
 
-    const r1 = await client.execute({ target: RECIPIENT, value: parseEther("0.1") });
+    const r1 = await client.execute({
+      target: RECIPIENT,
+      value: parseEther("0.1"),
+    });
     const leaves1 = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: r1.logs,
@@ -168,7 +181,10 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(leaves1.length).toBe(1);
     expect(Number(leaves1[0].args.leaf)).toBe(LEAF_1);
 
-    const r2 = await client.execute({ target: RECIPIENT, value: parseEther("0.1") });
+    const r2 = await client.execute({
+      target: RECIPIENT,
+      value: parseEther("0.1"),
+    });
     const leaves2 = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: r2.logs,
@@ -217,15 +233,12 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
   // ── (e) ERC-1271 round-trip ──────────────────────────────────────────
   it("e. signErc1271 produces a blob the wallet accepts (isValidSignature + debug Ok)", async () => {
-    const { client, signer, erc1271VaultId } = await createFreshShrincsWallet(
-      stack,
-      0x50,
-      { maxSignatures: MAX_SIGS }
-    );
+    const { client, signer, erc1271DerivationIndex } =
+      await createFreshShrincsWallet(stack, 0x50, { maxSignatures: MAX_SIGS });
 
-    // The ERC-1271 verifier key was installed at creation under erc1271VaultId.
+    // The ERC-1271 verifier key was installed at creation under erc1271DerivationIndex.
     const state = await client.getWalletState();
-    const erc1271KeyPair = signer.recoverKeyPair(erc1271VaultId, {
+    const erc1271KeyPair = signer.recoverKeyPair(erc1271DerivationIndex, {
       maxSignatures: MAX_SIGS,
     });
     expect(erc1271KeyPair.publicKeyCommitment.toLowerCase()).toBe(
@@ -266,15 +279,20 @@ describe("Shrincs SDK live-anvil smoke", () => {
   it("f. sponsors a wallet execute userOp via the paymaster and submits handleOps", async () => {
     // Wallet whose userOp will be sponsored. No EntryPoint deposit needed: the
     // paymaster covers prefund.
-    const { client: walletClient } = await createFreshShrincsWallet(stack, 0x60, {
-      maxSignatures: MAX_SIGS,
-    });
+    const { client: walletClient } = await createFreshShrincsWallet(
+      stack,
+      0x60,
+      {
+        maxSignatures: MAX_SIGS,
+      }
+    );
 
     // Operator signer holds the paymaster's sponsorship verifier key.
     const operatorSeed = 0x61;
     const operator = await makeShrincsSigner(operatorSeed);
-    const operatorVaultId = toHex(new Uint8Array(32).fill(operatorSeed));
-    const verifierKey = operator.recoverKeyPair(operatorVaultId, {
+    const operatorIndex = operatorSeed;
+    const operatorCommitment = toHex(new Uint8Array(32).fill(operatorSeed));
+    const verifierKey = operator.recoverKeyPair(operatorIndex, {
       maxSignatures: MAX_SIGS,
     });
 
@@ -292,13 +310,17 @@ describe("Shrincs SDK live-anvil smoke", () => {
       publicClient: stack.publicClient,
       walletClient: stack.walletClient,
       signer: operator,
-      vaultId: operatorVaultId,
+      commitment: operatorCommitment,
+      derivationIndex: operatorIndex,
       chainId: foundry.id,
       account: stack.account.address,
     });
 
     await pmClient.deposit(parseEther("2"));
-    await pmClient.addStake({ unstakeDelaySec: 86_400, value: parseEther("1") });
+    await pmClient.addStake({
+      unstakeDelaySec: 86_400,
+      value: parseEther("1"),
+    });
 
     // Sanity: verifier commitment installed.
     const verifier = await pmClient.getShrincsVerifier();
@@ -445,8 +467,12 @@ describe("Shrincs SDK live-anvil smoke", () => {
         caught = e;
       }
       expect(caught).toBeInstanceOf(ExecuteFeeExceedsCapError);
-      expect((caught as ExecuteFeeExceedsCapError).fee).toBe(parseEther("0.002"));
-      expect((caught as ExecuteFeeExceedsCapError).maxFee).toBe(parseEther("0.001"));
+      expect((caught as ExecuteFeeExceedsCapError).fee).toBe(
+        parseEther("0.002")
+      );
+      expect((caught as ExecuteFeeExceedsCapError).maxFee).toBe(
+        parseEther("0.001")
+      );
       expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(false);
 
       // Ceiling with headroom above the live fee: lands at LEAF_2 (LEAF_1 was
@@ -492,13 +518,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
     await expect(
       client.markLeavesUsed({ leaves: [LEAF_2, LEAF_3] }, { leaf: LEAF_2 })
     ).rejects.toBeInstanceOf(AuthLeafInTargetsError);
-    await expect(
-      client.markLeavesUsed({ leaves: [0] })
-    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
-    // A reserved deploy leaf is out of the signing range (`e3r`).
-    await expect(
-      client.markLeavesUsed({ leaves: [MAX_DEPLOY_CHAINS] })
-    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
+    await expect(client.markLeavesUsed({ leaves: [0] })).rejects.toBeInstanceOf(
+      LeafOutOfRangeError
+    );
     await expect(
       client.markLeavesUsed({ leaves: [MAX_SIGS + 1] })
     ).rejects.toBeInstanceOf(LeafOutOfRangeError);
@@ -514,10 +536,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
       logs: receipt.logs,
       eventName: "LeafRevoked",
     });
-    expect(revoked.map((l) => Number(l.args.leaf)).sort((a, b) => a - b)).toEqual([
-      LEAF_1,
-      LEAF_3,
-    ]);
+    expect(
+      revoked.map((l) => Number(l.args.leaf)).sort((a, b) => a - b)
+    ).toEqual([LEAF_1, LEAF_3]);
     const verified = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: receipt.logs,
@@ -651,13 +672,14 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // so it must not share the stack proxy that test (f) initialized.
     const paymaster = await deployFreshPaymasterProxy(stack);
 
-    // ONE operator signer, two vault branches: vault1 = the initial key,
-    // vault2 = the rotation target (real operators rotate within one master
+    // ONE operator signer, two derivation indices: index1 = the initial key,
+    // index2 = the rotation target (real operators rotate within one master
     // secret — that is what makes the post-rotation graft recoverable).
     const operator = await makeShrincsSigner(0xa0);
+    const index1 = 0xa0;
+    const index2 = 0xa1;
     const vault1 = toHex(new Uint8Array(32).fill(0xa0));
-    const vault2 = toHex(new Uint8Array(32).fill(0xa1));
-    const key1 = operator.recoverKeyPair(vault1, { maxSignatures: MAX_SIGS });
+    const key1 = operator.recoverKeyPair(index1, { maxSignatures: MAX_SIGS });
 
     await initializePaymaster(stack, {
       owner: stack.account.address,
@@ -670,7 +692,8 @@ describe("Shrincs SDK live-anvil smoke", () => {
       publicClient: stack.publicClient,
       walletClient: stack.walletClient,
       signer: operator,
-      vaultId: vault1,
+      commitment: vault1,
+      derivationIndex: index1,
       chainId: foundry.id,
       account: stack.account.address,
     });
@@ -716,7 +739,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // Rotate to vault2's fresh stateful subkey with a BIGGER budget (the
     // budget rides inside the 68-byte encoding — each rotation may change it).
     const NEW_MAX = 8;
-    const key2 = operator.recoverKeyPair(vault2, { maxSignatures: NEW_MAX });
+    const key2 = operator.recoverKeyPair(index2, { maxSignatures: NEW_MAX });
     const rotation = await pmClient.rotateStatefulKey({
       nextStatefulPublicKey: key2.publicKey.statefulPublicKey,
     });
@@ -757,8 +780,8 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // Post-rotation operator keypair: graft vault2's stateful secrets onto
     // vault1's stateless half — reproduces the installed commitment exactly.
     const grafted = operator.deriveKeyPair({
-      statefulVaultId: vault2,
-      statelessVaultId: vault1,
+      statefulIndex: index2,
+      statelessIndex: index1,
       maxSignatures: NEW_MAX,
     });
     expect(grafted.publicKeyCommitment.toLowerCase()).toBe(
@@ -769,7 +792,8 @@ describe("Shrincs SDK live-anvil smoke", () => {
       publicClient: stack.publicClient,
       walletClient: stack.walletClient,
       signer: operator,
-      vaultId: vault2,
+      commitment: vault1,
+      derivationIndex: index2,
       chainId: foundry.id,
       account: stack.account.address,
       keypair: grafted,
@@ -777,11 +801,18 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     // Full sponsorship under the ROTATED key: fund, sponsor, land a real op.
     await pmClient2.deposit(parseEther("2"));
-    await pmClient2.addStake({ unstakeDelaySec: 86_400, value: parseEther("1") });
-
-    const { client: walletClient } = await createFreshShrincsWallet(stack, 0xa2, {
-      maxSignatures: MAX_SIGS,
+    await pmClient2.addStake({
+      unstakeDelaySec: 86_400,
+      value: parseEther("1"),
     });
+
+    const { client: walletClient } = await createFreshShrincsWallet(
+      stack,
+      0xa2,
+      {
+        maxSignatures: MAX_SIGS,
+      }
+    );
     await stack.testClient.setBalance({
       address: walletClient.walletAddress,
       value: parseEther("5"),
@@ -812,7 +843,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxFeePerGas,
       maxPriorityFeePerGas,
     });
-    const { paymasterAndData, leaf } = await pmClient2.sponsorUserOp({ userOp });
+    const { paymasterAndData, leaf } = await pmClient2.sponsorUserOp({
+      userOp,
+    });
     userOp = { ...userOp, paymasterAndData };
     const signed = await walletClient.signExecuteUserOp({
       userOp,
@@ -855,4 +888,80 @@ describe("Shrincs SDK live-anvil smoke", () => {
     });
     expect(recipientAfter - recipientBefore).toBe(value);
   }, 240_000);
+
+  // ── (k) front-run rejection ──────────────────────────────────────────
+  it("k. front-running a victim's commitment with a different owner reverts IdentityMismatch", async () => {
+    const victimSeed = 0xb0;
+    const victimIndex = victimSeed;
+    const victimErc1271Index = victimSeed ^ 0xff;
+    const signer = await makeShrincsSigner(victimSeed);
+    const mainKey = signer.recoverKeyPair(victimIndex, {
+      maxSignatures: MAX_SIGS,
+    });
+    const erc1271Key = signer.recoverKeyPair(victimErc1271Index, {
+      maxSignatures: MAX_SIGS,
+    });
+    const statefulC = mainKey.publicKeyCommitment;
+    const statelessC = erc1271Key.publicKeyCommitment;
+    const victimOwner = DEFAULT_ACCOUNT.address;
+    const victimCommitment = v1Commitment(statefulC, statelessC, victimOwner);
+
+    const initPayload = encodeInitPayload({
+      mainBundle: mainKey.publicKey,
+      erc1271Commitment: statelessC,
+    });
+
+    // Fixture vets exactly one impl; index 0 is that entry.
+    const vettedCount = await stack.publicClient.readContract({
+      address: stack.factoryAddress,
+      abi: walletFactoryAbi,
+      functionName: "getVettedCodeCount",
+    });
+    expect(vettedCount).toBe(1n);
+    const index = 0n;
+
+    const creationFee = await stack.publicClient.readContract({
+      address: stack.factoryAddress,
+      abi: walletFactoryAbi,
+      functionName: "creationFee",
+    });
+
+    const ATTACKER_OWNER =
+      "0x0000000000000000000000000000000000000bad" as Address;
+    expect(getAddress(ATTACKER_OWNER)).not.toBe(getAddress(victimOwner));
+
+    const deploy = (owner: Address) =>
+      stack.walletClient.writeContract({
+        chain: foundry,
+        address: stack.factoryAddress,
+        abi: walletFactoryAbi,
+        functionName: "deploySpecificWalletProxy",
+        args: [victimCommitment, index, owner, initPayload],
+        value: creationFee,
+        account: stack.account,
+      });
+
+    // Attacker occupies the victim's commitment with a different owner — initialize
+    // recomputes v1Commitment(..., ATTACKER_OWNER) and reverts IdentityMismatch.
+    let caught: unknown = null;
+    try {
+      await deploy(ATTACKER_OWNER);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeNull();
+    const identityMismatch = toFunctionSelector("IdentityMismatch()");
+    expect(caught).toBeInstanceOf(BaseError);
+    const reverted = (caught as BaseError).walk(
+      (e) => e instanceof ContractFunctionRevertedError
+    ) as ContractFunctionRevertedError | null;
+    expect(reverted?.raw?.slice(0, 10)).toBe(identityMismatch);
+
+    // Positive control: the same deploy with the bound owner succeeds.
+    const hash = await deploy(victimOwner);
+    const receipt = await stack.publicClient.waitForTransactionReceipt({
+      hash,
+    });
+    expect(receipt.status).toBe("success");
+  }, 120_000);
 });

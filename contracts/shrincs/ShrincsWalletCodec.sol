@@ -42,13 +42,6 @@ library ShrincsWalletCodec {
     ///      `ActionContext.domainSeparator` so signatures cannot replay across chains/wallets.
     bytes32 internal constant DOMAIN_TAG = keccak256("quip-shrincs-wallet-v1");
 
-    /// @dev Deploy signing-domain tag (e3r). Combined with chainId + the FACTORY
-    ///      address into the deploy `ActionContext.domainSeparator`. The deploy
-    ///      authorization binds the factory (the authority that supplies the chainId
-    ///      and quipDeployChainIndex) because the wallet address does not yet exist.
-    bytes32 internal constant DEPLOY_DOMAIN_TAG =
-        keccak256("quip-shrincs-deploy-v1");
-
     /// @dev `ActionContext.actionType` discriminators — one per operation family. The SHRINCS
     ///      library binds `actionType` into `statefulActionMessageHash` /
     ///      `statelessActionMessageHash`, so a distinct constant per operation is the
@@ -71,10 +64,6 @@ library ShrincsWalletCodec {
         keccak256("quip.shrincs.action.markLeavesUsed");
     bytes32 internal constant ACTION_ERC1271 =
         keccak256("quip.shrincs.action.erc1271");
-    /// @dev Deploy authorization action type (e3r). Proves the main-key holder
-    ///      authorizes deploying this key at (vaultId, owner) on the factory's chain.
-    bytes32 internal constant ACTION_DEPLOY =
-        keccak256("quip.shrincs.action.deploy");
 
     /// @dev Per-path tags folded into `RotationContext.domainSeparator` (see
     ///      `rotationDomainSeparator`). `RotationContext` carries no action discriminator, so
@@ -88,6 +77,28 @@ library ShrincsWalletCodec {
         keccak256("quip.shrincs.rotation.transferOwnership");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    IDENTITY (V1)                       */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Domain separator committed inside the full-width V1 identity hash.
+    bytes32 internal constant V1_IDENTITY_DOMAIN =
+        keccak256("QUIP_SHRINCS_IDENTITY_V1");
+
+    /// @dev Full-width identity commitment binding both key commitments and the intended
+    ///      owner. The version domain lives inside the hash preimage so all 256 output bits
+    ///      retain second-preimage strength. Mirrors the SDK helper byte-for-byte.
+    function v1Commitment(
+        bytes32 statefulC,
+        bytes32 statelessC,
+        address owner
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(V1_IDENTITY_DOMAIN, statefulC, statelessC, owner)
+            );
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       DECODERS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
@@ -96,9 +107,7 @@ library ShrincsWalletCodec {
     ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
     ///      The payload is opaque to the factory; `commitment`/`pkSeed` landing at
     ///      `payload[0:32]` / `[32:64]` is just natural ABI head-word order, not a
-    ///      layout constraint. The `initialize` payload appends a trailing
-    ///      `bytes deployAuth` (7th head word) read separately by `decodeInitDeployAuth`;
-    ///      this decoder ignores it (and `migrate` payloads omit it entirely).
+    ///      layout constraint.
     function decodeInit(
         bytes calldata payload
     )
@@ -141,45 +150,6 @@ library ShrincsWalletCodec {
             hashSuite := and(calldataload(add(o, 0x60)), 0xffffffff)
             erc1271Commitment := calldataload(add(o, 0x80))
             erc1271HashSuite := and(calldataload(add(o, 0xa0)), 0xffffffff)
-        }
-    }
-
-    /// @dev Decodes the deploy authorization embedded in the `initialize` payload (e3r) — the
-    ///      7th ABI head word of the init tuple (see `decodeInit`; the init payload gains a
-    ///      trailing `bytes deployAuth`). `deployAuth` is itself the verify envelope
-    ///      `abi.encode(SHRINCS.PublicKey pk, sig)` where `sig` is a `SHRINCS.Signature`
-    ///      (stateful mode) or a `SPHINCSPlusC.Signature` (stateless mode); the wallet passes
-    ///      it straight to the pinned verifier. Returns a calldata slice into `payload`.
-    function decodeInitDeployAuth(
-        bytes calldata payload
-    ) internal pure returns (bytes calldata deployAuth) {
-        // Head is seven 32-byte words; the 7th (index 6, offset 0xc0) is the `bytes` tail offset.
-        if (payload.length < 0xe0)
-            revert MalformedPayload(0xe0, payload.length);
-        bytes4 malformed = MalformedPayload.selector;
-        assembly {
-            let o := payload.offset
-            let len := payload.length
-            let da := calldataload(add(o, 0xc0))
-            // The length word must sit inside the slice: da + 0x20 <= len. `len >= 0xe0` here so
-            // `sub(len, 0x20)` never underflows.
-            if gt(da, sub(len, 0x20)) {
-                mstore(0x00, malformed)
-                mstore(0x04, add(da, 0x20))
-                mstore(0x24, len)
-                revert(0x00, 0x44)
-            }
-            let daLen := calldataload(add(o, da))
-            // The deployAuth bytes must fit: da + 0x20 + daLen <= len. `da <= len - 0x20` was just
-            // proven, so `sub(sub(len, 0x20), da)` cannot underflow.
-            if gt(daLen, sub(sub(len, 0x20), da)) {
-                mstore(0x00, malformed)
-                mstore(0x04, add(add(da, 0x20), daLen))
-                mstore(0x24, len)
-                revert(0x00, 0x44)
-            }
-            deployAuth.offset := add(o, add(da, 0x20))
-            deployAuth.length := daLen
         }
     }
 
@@ -348,56 +318,60 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the ERC-1271 `signature` blob, the ABI encoding of
     ///      `(PublicKey publicKey, SPHINCSPlusC.Signature signature, bytes ecdsaSig)`.
-    function decodeErc1271Signature(
+    /// @dev Non-reverting decoder for the ERC-1271 staticcall path, where a revert is a denial of
+    ///      service on the relying contract that staticcalls `isValidSignature`. Applies the SAME
+    ///      top-level ABI tail-offset bounds checks as the reverting decoders, but signals a
+    ///      malformed payload with `ok = false` instead of reverting `MalformedPayload`. On failure
+    ///      the calldata references are pinned to a safe zero-length slice at `sig.offset`; the
+    ///      caller returns on `!ok` and never dereferences them.
+    ///
+    ///      Nested `PublicKey`/`Signature` tail bounds stay out of scope here — those fields are
+    ///      read downstream through Solidity calldata accessors (which bounds-check calldatasize
+    ///      and revert), but that read sits BEHIND the owner ECDSA gate and is unreachable to an
+    ///      adversary, so its revert is not a DoS surface.
+    function tryDecodeErc1271Signature(
         bytes calldata sig
     )
         internal
         pure
         returns (
+            bool ok,
             SHRINCS.PublicKey calldata publicKey,
             SPHINCSPlusC.Signature calldata signature,
             bytes calldata ecdsaSig
         )
     {
-        if (sig.length < 0x60) {
-            revert MalformedPayload(0x60, sig.length);
-        }
-        bytes4 malformed = MalformedPayload.selector;
         assembly {
             let o := sig.offset
             let len := sig.length
-            // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0x60` here, so `sub(len, 0x20)` never
-            // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
-            function reqTail(off, l, m) {
-                if gt(off, sub(l, 0x20)) {
-                    mstore(0x00, m)
-                    mstore(0x04, add(off, 0x20))
-                    mstore(0x24, l)
-                    revert(0x00, 0x44)
+            // Safe default: a zero-length slice at the head, overwritten only when every check
+            // passes. Until then the caller must not (and does not) dereference these.
+            publicKey := o
+            signature := o
+            ecdsaSig.offset := o
+            ecdsaSig.length := 0
+            // `tail` holds iff the head word a tail offset points at is inside the slice. Reached
+            // only under `len >= 0x60`, so `sub(len, 0x20)` never underflows.
+            function tail(off, l) -> good {
+                good := iszero(gt(off, sub(l, 0x20)))
+            }
+            if iszero(lt(len, 0x60)) {
+                let pkOff := calldataload(o)
+                let sigOff := calldataload(add(o, 0x20))
+                let eo := calldataload(add(o, 0x40))
+                if and(tail(pkOff, len), and(tail(sigOff, len), tail(eo, len))) {
+                    let ecLen := calldataload(add(o, eo))
+                    // The ecdsaSig bytes must fit: eo + 0x20 + ecLen <= len. `eo <= len - 0x20`
+                    // was just proven, so `sub(sub(len, 0x20), eo)` cannot underflow.
+                    if iszero(gt(ecLen, sub(sub(len, 0x20), eo))) {
+                        publicKey := add(o, pkOff)
+                        signature := add(o, sigOff)
+                        ecdsaSig.offset := add(o, add(eo, 0x20))
+                        ecdsaSig.length := ecLen
+                        ok := 1
+                    }
                 }
             }
-            let pkOff := calldataload(o)
-            reqTail(pkOff, len, malformed)
-            publicKey := add(o, pkOff)
-            let sigOff := calldataload(add(o, 0x20))
-            reqTail(sigOff, len, malformed)
-            // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
-            signature := add(o, sigOff)
-            let eo := calldataload(add(o, 0x40))
-            reqTail(eo, len, malformed)
-            let ecLen := calldataload(add(o, eo))
-            // The ecdsaSig bytes must fit: eo + 0x20 + ecLen <= len. `eo <= len - 0x20` was just
-            // proven, so `sub(sub(len, 0x20), eo)` cannot underflow — no wrapped-sum trust.
-            if gt(ecLen, sub(sub(len, 0x20), eo)) {
-                mstore(0x00, malformed)
-                mstore(0x04, add(add(eo, 0x20), ecLen))
-                mstore(0x24, len)
-                revert(0x00, 0x44)
-            }
-            ecdsaSig.offset := add(o, add(eo, 0x20))
-            ecdsaSig.length := ecLen
         }
     }
 
@@ -548,26 +522,5 @@ library ShrincsWalletCodec {
         bytes32 leavesHash
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(leavesHash);
-    }
-
-    /// @dev `payloadHash` for the deploy authorization (e3r). Binds the vault, the
-    ///      intended owner, the ERC-1271 commitment, and the quipDeployChainIndex so a
-    ///      deploy signature authorizes exactly one (vaultId, owner, erc1271, chainIndex)
-    ///      tuple. The main-key commitment is authenticated by the signature itself; the
-    ///      chain and factory are bound through the deploy `domainSeparator`. Mirrors the
-    ///      SDK `deployPayloadHash` word-for-word.
-    function deployPayloadHash(
-        bytes32 vaultId,
-        address owner,
-        bytes32 erc1271Commitment,
-        uint256 quipDeployChainIndex
-    ) internal pure returns (bytes32) {
-        return
-            EfficientHashLib.hash(
-                vaultId,
-                bytes32(uint256(uint160(owner))),
-                erc1271Commitment,
-                bytes32(quipDeployChainIndex)
-            );
     }
 }

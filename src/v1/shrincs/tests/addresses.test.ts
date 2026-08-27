@@ -6,6 +6,7 @@ import { getAddress } from "viem";
 
 import { keccak256, toHex } from "viem";
 
+import { computeCreate3Address } from "../../addresses.js";
 import {
   CANONICAL_OPERATOR,
   LIVE_SALT_PREIMAGES,
@@ -16,14 +17,12 @@ import {
 import { NETWORK_ADDRESSES as V1_NETWORK_ADDRESSES } from "../../addresses.js";
 import {
   CANONICAL_ENTRYPOINT_V07,
-  DEPLOY_CHAIN_ORDER,
   NETWORK_ADDRESSES,
-  deployVaultSalt,
+  V1_IDENTITY_DOMAIN,
   getShrincsAddresses,
   getShrincsWalletAddress,
-  quipDeployChainIndex,
+  v1Commitment,
 } from "../addresses.js";
-import { MAX_DEPLOY_CHAINS } from "../constants.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
 // The published registry — `DEPLOYMENTS.md`, `src/v1/shrincs/addresses.ts`, and
@@ -141,55 +140,95 @@ describe("published registry re-derived from the canonical operator", () => {
   });
 });
 
-describe("quipDeployChainIndex", () => {
-  it("returns the 1-based position in the committed deploy list", () => {
-    // Never 0 — leaf 0 is invalid, so the first chain maps to deploy leaf 1.
-    expect(quipDeployChainIndex(DEPLOY_CHAIN_ORDER[0]!)).toBe(1);
-    expect(quipDeployChainIndex(DEPLOY_CHAIN_ORDER[6]!)).toBe(7); // MIDL, last
-  });
+describe("V1 identity codec (byte-exact with Solidity)", () => {
+  // Fixed fixture shared with the Solidity golden test
+  // (test/ShrincsWallet/behaviors/identity.t.sol).
+  const statefulC = `0x${"11".repeat(32)}` as const;
+  const statelessC = `0x${"22".repeat(32)}` as const;
+  const owner = "0x00000000000000000000000000000000000000AA" as const;
 
-  it("assigns a distinct index to every listed chain", () => {
-    const indices = DEPLOY_CHAIN_ORDER.map((c) => quipDeployChainIndex(c));
-    expect(new Set(indices).size).toBe(DEPLOY_CHAIN_ORDER.length);
-  });
+  // The 32-byte commitment for the fixture, pinned. BOTH sides must return this
+  // exact value — it proves the domain and ABI encoding agree.
+  const GOLDEN =
+    "0xd165e4bbba9307d943f384fcaeaeb3c123bd87cfb9124a19d0a14fd4a3ae57df";
 
-  it("throws UnsupportedNetworkError for a chain not on the deploy list", () => {
-    expect(() => quipDeployChainIndex(999999)).toThrow(UnsupportedNetworkError);
-  });
-
-  it("keeps the committed list within the reserved deploy-leaf range", () => {
-    expect(DEPLOY_CHAIN_ORDER.length).toBeLessThanOrEqual(MAX_DEPLOY_CHAINS);
-  });
-
-  it("holds no duplicate chain (each maps to one deploy leaf)", () => {
-    expect(new Set(DEPLOY_CHAIN_ORDER).size).toBe(DEPLOY_CHAIN_ORDER.length);
-  });
-});
-
-describe("SHRINCS deploy salt / address (e3r)", () => {
-  const FACTORY = "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC" as const;
-  const vaultId = keccak256(toHex("vault-1"));
-  const commitment = keccak256(toHex("main-commitment"));
-
-  it("deployVaultSalt is deterministic for the same (vaultId, commitment)", () => {
-    expect(deployVaultSalt(vaultId, commitment)).toBe(
-      deployVaultSalt(vaultId, commitment)
+  it("V1 identity domain matches Solidity", () => {
+    expect(V1_IDENTITY_DOMAIN).toBe(
+      keccak256(toHex("QUIP_SHRINCS_IDENTITY_V1"))
     );
   });
 
-  it("deployVaultSalt binds BOTH the vault and the commitment", () => {
-    const base = deployVaultSalt(vaultId, commitment);
-    expect(deployVaultSalt(keccak256(toHex("vault-2")), commitment)).not.toBe(base);
-    expect(deployVaultSalt(vaultId, keccak256(toHex("other")))).not.toBe(base);
+  it("v1Commitment matches the cross-language golden", () => {
+    expect(v1Commitment(statefulC, statelessC, owner)).toBe(GOLDEN);
   });
 
-  it("getShrincsWalletAddress is deterministic and commitment-bound", () => {
-    const addr = getShrincsWalletAddress(FACTORY, vaultId, commitment);
-    expect(getShrincsWalletAddress(FACTORY, vaultId, commitment)).toBe(addr);
-    // A different key commitment => a different counterfactual address, which is
-    // exactly what stops an attacker taking the victim's address (e3r).
+  it("v1Commitment is a full 32-byte digest", () => {
+    const id = v1Commitment(statefulC, statelessC, owner);
+    expect((id.length - 2) / 2).toBe(32);
+  });
+
+  it("v1Commitment binds each input", () => {
+    const base = v1Commitment(statefulC, statelessC, owner);
+    expect(v1Commitment(`0x${"33".repeat(32)}`, statelessC, owner)).not.toBe(
+      base
+    );
+    expect(v1Commitment(statefulC, `0x${"44".repeat(32)}`, owner)).not.toBe(
+      base
+    );
     expect(
-      getShrincsWalletAddress(FACTORY, vaultId, keccak256(toHex("attacker-key")))
+      v1Commitment(
+        statefulC,
+        statelessC,
+        "0x00000000000000000000000000000000000000bb"
+      )
+    ).not.toBe(base);
+  });
+});
+
+describe("SHRINCS V1 address predictor", () => {
+  const FACTORY = "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC" as const;
+  const statefulC = keccak256(toHex("stateful"));
+  const statelessC = keccak256(toHex("stateless"));
+  const owner = "0x00000000000000000000000000000000000000AA" as const;
+
+  it("getShrincsWalletAddress equals computeCreate3Address(factory, v1Commitment)", () => {
+    expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
+      computeCreate3Address(FACTORY, v1Commitment(statefulC, statelessC, owner))
+    );
+  });
+
+  it("getShrincsWalletAddress is deterministic for the same identity", () => {
+    const addr = getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner);
+    expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
+      addr
+    );
+  });
+
+  it("getShrincsWalletAddress binds statefulC, statelessC, and owner", () => {
+    const addr = getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner);
+    expect(
+      getShrincsWalletAddress(
+        FACTORY,
+        keccak256(toHex("attacker-key")),
+        statelessC,
+        owner
+      )
+    ).not.toBe(addr);
+    expect(
+      getShrincsWalletAddress(
+        FACTORY,
+        statefulC,
+        keccak256(toHex("other-stateless")),
+        owner
+      )
+    ).not.toBe(addr);
+    expect(
+      getShrincsWalletAddress(
+        FACTORY,
+        statefulC,
+        statelessC,
+        "0x00000000000000000000000000000000000000bb"
+      )
     ).not.toBe(addr);
   });
 });

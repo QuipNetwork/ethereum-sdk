@@ -45,7 +45,7 @@ function makeClient(code: Hex | undefined): ShrincsWalletClient {
     publicClient,
     walletClient,
     keypair,
-    vaultId: seed("vault"),
+    commitment: seed("vault"),
     chainId: CHAIN_ID,
     account: ACCOUNT,
   });

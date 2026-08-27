@@ -15,14 +15,14 @@ contract WalletFactory_withdraw is WalletFactoryTest {
         vm.prank(ADMIN);
         factory.setCreationFee(CREATION_FEE);
 
-        bytes32 vaultId = keccak256("Fee Vault");
+        bytes32 commitment = keccak256("Fee Vault");
         (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
         WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
 
         bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
-        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(vaultId, COMMITMENT, payable(ALICE), payload);
+        factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(commitment, payable(ALICE), payload);
     }
 
     function test_setUp() public view override {

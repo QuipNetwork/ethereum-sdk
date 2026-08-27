@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { type Hex, parseEther, toHex } from "viem";
+import { parseEther } from "viem";
 import { foundry } from "viem/chains";
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 
@@ -29,25 +29,24 @@ afterAll(async () => {
   await stopShrincsAnvilStack(stack);
 }, 10_000);
 
-/// Distinct main + ERC-1271 vault branches per test so deployments never alias.
-function vaultIds(seedByte: number): { vaultId: Hex; erc1271VaultId: Hex } {
-  const erc1271 = new Uint8Array(32).fill(seedByte);
-  erc1271[0] = seedByte ^ 0xff;
-  return {
-    vaultId: toHex(new Uint8Array(32).fill(seedByte)),
-    erc1271VaultId: toHex(erc1271),
-  };
+/// Distinct main + ERC-1271 derivation indices per test so deployments never
+/// alias.
+function indices(seed: number): {
+  derivationIndex: number;
+  erc1271Index: number;
+} {
+  return { derivationIndex: seed, erc1271Index: seed + 1000 };
 }
 
 describe("cost estimation against a live anvil stack", () => {
   it("prices the deployment createShrincsWallet then lands", async () => {
     const signer = await makeShrincsSigner(0x31);
-    const { vaultId, erc1271VaultId } = vaultIds(0x31);
+    const { derivationIndex, erc1271Index } = indices(0x31);
     const params = {
       signer,
       maxSignatures: MAX_SIGS,
-      vaultId,
-      erc1271: { vaultId: erc1271VaultId, maxSignatures: MAX_SIGS },
+      derivationIndex,
+      erc1271: { derivationIndex: erc1271Index, maxSignatures: MAX_SIGS },
     };
     const factory = makeShrincsFactoryClient(stack);
 
@@ -56,8 +55,7 @@ describe("cost estimation against a live anvil stack", () => {
     expect(estimate.gasPrice).toBeGreaterThan(0n);
     expect(estimate.expectedGasPrice).toBeLessThanOrEqual(estimate.gasPrice);
 
-    // The same params deploy for real: the deploy authorization signed for the
-    // estimate is the one that lands (same message, same deploy leaf).
+    // The same params deploy for real: the estimate priced exactly this call.
     const client = await factory.createShrincsWallet(params);
     const state = await client.getWalletState();
     expect(state.maxSignatures).toBe(MAX_SIGS);
@@ -128,12 +126,12 @@ describe("cost estimation against a live anvil stack", () => {
     });
 
     const signer = await makeShrincsSigner(0x51);
-    const { vaultId, erc1271VaultId } = vaultIds(0x51);
+    const { derivationIndex, erc1271Index } = indices(0x51);
     const estimate = await factory.estimateCreationCost({
       signer,
       maxSignatures: MAX_SIGS,
-      vaultId,
-      erc1271: { vaultId: erc1271VaultId, maxSignatures: MAX_SIGS },
+      derivationIndex,
+      erc1271: { derivationIndex: erc1271Index, maxSignatures: MAX_SIGS },
     });
 
     expect(estimate.creationFee).toBe(fee);

@@ -17,7 +17,6 @@
 pragma solidity ^0.8.33;
 
 import {EnumerableSetLib} from "solady-0.1.26/src/utils/EnumerableSetLib.sol";
-import {IWalletFactory} from "../interfaces/IWalletFactory.sol";
 
 library WalletFactoryStorage {
     /// @dev The ERC-7201 namespace string (and the `_QUIP_FACTORY_STORAGE_SLOT` constant
@@ -32,21 +31,21 @@ library WalletFactoryStorage {
         /// @dev Fee charged on PQ-authenticated wallet operations. Capped by
         ///      the implementation's immutable `MAX_FEE`.
         uint256 executeFee;
-        /// @dev Wallet deployed at `vaultId` (a GLOBAL CREATE3 salt — the
+        /// @dev Wallet deployed at `commitment` (a GLOBAL CREATE3 salt — the
         ///      address is a pure function of (factory address, salt)).
         ///      Write-once in `_deployProxy`.
-        mapping(bytes32 vaultId => address wallet) wallets;
+        mapping(bytes32 commitment => address wallet) wallets;
         /// @dev Reverse of `wallets`. `bytes32(0)` means "not deployed by
         ///      this factory" — the `OnlyWallet` gate in `updateWalletOwner`.
         ///      Write-once in `_deployProxy`.
-        mapping(address wallet => bytes32 vaultId) vaultIdOf;
+        mapping(address wallet => bytes32 commitment) commitmentOf;
         /// @dev Authoritative CURRENT classical owner of each wallet —
         ///      rotated only by the wallet's `updateWalletOwner` callback.
         mapping(address wallet => address owner) walletOwner;
-        /// @dev Per-owner set of vaultIds. Tracks CURRENT classical owner —
+        /// @dev Per-owner set of commitments. Tracks CURRENT classical owner —
         ///      the wallet's PQ ownership-transfer flow calls back into
         ///      `updateWalletOwner` to move the entry between owners.
-        mapping(address owner => EnumerableSetLib.Bytes32Set) vaultIds;
+        mapping(address owner => EnumerableSetLib.Bytes32Set) commitments;
         /// @dev Insertion-ordered set of vetted implementation codehashes.
         ///      Deprecated entries remain in the set to preserve index
         ///      stability.
@@ -59,19 +58,6 @@ library WalletFactoryStorage {
         /// @dev Most recently vetted active implementation (backward-scan
         ///      recomputed on deprecate/undeprecate).
         address latestWalletImpl;
-        // --- e3r deploy-authorization config (APPEND-ONLY; never reorder above) ---
-        /// @dev This chain's reserved per-chain deploy leaf index (1-based, in
-        ///      `[1..MAX_DEPLOY_CHAINS]`). Set at factory setup via `setDeployConfig` and read by
-        ///      the wallet's `initialize` to rebuild the deploy context. Packs with `deployMode`.
-        uint16 quipDeployChainIndex;
-        /// @dev The deploy-signature mode this factory requires. Set via `setDeployConfig`.
-        IWalletFactory.DeployMode deployMode;
-        /// @dev Per-wallet CREATE3 salt (`keccak256(abi.encode(vaultId, commitment))`), the
-        ///      unique registry key. Written in `_deployProxy`; read by `updateWalletOwner`
-        ///      (to move the entry between owners' `vaultIds` sets) and `getWallets` (which
-        ///      resolves each entry through `wallets[salt]`). `vaultIdOf` keeps the RAW vaultId
-        ///      for the `WalletDeployed`/`WalletOwnerChanged` events.
-        mapping(address wallet => bytes32 salt) saltOf;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.factory")) - 1))

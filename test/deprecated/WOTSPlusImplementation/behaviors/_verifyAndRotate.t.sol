@@ -29,7 +29,7 @@ contract WOTSPlusImplementation__verifyAndRotate is WOTSPlusImplementationTest {
 
         vm.prank(ALICE);
         address proxyAddr =
-            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-vr-vault"), COMMITMENT, payable(ALICE), payload);
+            factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT}(keccak256("h-vr-vault"), payable(ALICE), payload);
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 

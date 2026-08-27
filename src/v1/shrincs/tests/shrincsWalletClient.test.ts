@@ -13,7 +13,7 @@ import {
   toHex,
 } from "viem";
 
-import { HASH_SUITE_KECCAK_256, MAX_DEPLOY_CHAINS } from "../constants.js";
+import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   OwnerMismatchError,
   ZeroAddressOwnerError,
@@ -26,11 +26,8 @@ import { type PackedUserOperation } from "../../userOpCodec.js";
 const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const ACCOUNT = "0x00000000000000000000000000000000000000a1" as Address;
 const CHAIN_ID = 31337;
-// The main-key hypertree reserves leaves `[1..MAX_DEPLOY_CHAINS]` for deploy
-// authorizations (`e3r`); signing uses `[MAX_DEPLOY_CHAINS + 1 .. maxSignatures]`.
-// A tree of `MAX_DEPLOY_CHAINS + 8` leaves yields SIGNING_BUDGET usable signatures.
 const SIGNING_BUDGET = 8;
-const MAX_SIG = MAX_DEPLOY_CHAINS + SIGNING_BUDGET;
+const MAX_SIG = SIGNING_BUDGET;
 const EXECUTE_FEE = 10_000_000n;
 const TX_HASH =
   "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as const;
@@ -127,7 +124,7 @@ describe("ShrincsWalletClient fee-free writes", () => {
       publicClient,
       walletClient,
       keypair,
-      vaultId: seed("vault"),
+      commitment: seed("vault"),
       chainId: CHAIN_ID,
       account: ACCOUNT,
     });
@@ -139,8 +136,7 @@ describe("ShrincsWalletClient fee-free writes", () => {
   it("markLeavesUsed submits with value 0n even when executeFee is non-zero", async () => {
     const { client, capturedValue } = makeFeeFreeWriteClient();
 
-    // A signing leaf (outside the reserved deploy-leaf range, `e3r`).
-    await client.markLeavesUsed({ leaves: [MAX_DEPLOY_CHAINS + 2] }, feeFreeOpts);
+    await client.markLeavesUsed({ leaves: [2] }, feeFreeOpts);
 
     expect(capturedValue()).toBe(0n);
     expect(capturedValue()).not.toBe(EXECUTE_FEE);
@@ -193,7 +189,7 @@ function makeWalletClient(
     publicClient,
     walletClient,
     keypair,
-    vaultId: seed("vault"),
+    commitment: seed("vault"),
     chainId: CHAIN_ID,
     account: ACCOUNT,
   });
@@ -330,7 +326,7 @@ describe("ShrincsWalletClient prepareExecute signs once", () => {
       publicClient,
       walletClient,
       keypair: counted.keypair,
-      vaultId: seed("vault"),
+      commitment: seed("vault"),
       chainId: CHAIN_ID,
       account: ACCOUNT,
     });
@@ -347,7 +343,8 @@ describe("ShrincsWalletClient prepareExecute signs once", () => {
     const prepared = await client.prepareExecute(transfer, opts);
     expect(signs()).toBe(1);
     expect(prepared.leaf).toBe(leaves()[0]);
-    expect(prepared.leaf).toBeGreaterThan(MAX_DEPLOY_CHAINS);
+    // Lowest free leaf: under V1 nothing is reserved ahead of execute leaves.
+    expect(prepared.leaf).toBe(1);
     expect(estimated).toHaveLength(1);
     expect(written).toHaveLength(0);
 
@@ -385,12 +382,10 @@ describe("ShrincsWalletClient prepareExecute signs once", () => {
 
     expect(signs()).toBe(3);
     const used = leaves();
-    expect(new Set(used).size).toBe(3);
     expect(used[0]).toBe(first.leaf);
     expect(used[1]).toBe(second.leaf);
-    for (const leaf of used) {
-      expect(leaf).toBeGreaterThan(MAX_DEPLOY_CHAINS);
-      expect(leaf).toBeLessThanOrEqual(MAX_SIG);
-    }
+    // Sequential from leaf 1: no deploy reservation under V1, and the in-memory
+    // store keeps un-sent prepares from being reused.
+    expect(used).toEqual([1, 2, 3]);
   });
 });
