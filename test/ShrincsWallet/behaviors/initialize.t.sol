@@ -9,6 +9,7 @@ import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -29,6 +30,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         address bareAddr = address(uint160(uint256(keccak256("bare-shrincs-wallet"))));
         vm.etch(bareAddr, address(impl).code);
         bare = ShrincsWalletHarness(payable(bareAddr));
+        factory.setCommitment(bareAddr, Codec.v1Commitment(mainCommitment, erc1271Commitment, OWNER));
     }
 
     function test_initialize_setsState() public {
