@@ -65,11 +65,10 @@ export class LeafReservationStore {
 }
 
 /// Reserves the lowest leaf in `1..maxSignatures` that is neither reported by
-/// `isUsedOrReserved` (the on-chain used check) nor already reserved in
-/// `store`, atomically adding it to the store before returning. Selection is
-/// serialized per key so concurrent callers receive distinct leaves even when
-/// the check is async. Throws `StatefulBudgetExhaustedError` when no free leaf
-/// remains.
+/// `isUsedOrReserved` (the on-chain used check) nor already reserved in `store`,
+/// atomically adding it to the store before returning. Selection is serialized
+/// per key so concurrent callers receive distinct leaves even when the check is
+/// async. Throws `StatefulBudgetExhaustedError` when no free leaf remains.
 export function reserveLowestLeaf(
   store: LeafReservationStore,
   key: LeafReservationKey,

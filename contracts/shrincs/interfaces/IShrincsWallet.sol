@@ -108,7 +108,8 @@ interface IShrincsWallet is IWallet {
     ///                  4=erc1271StatelessCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
     error GuardedSlotTampered(uint256 slotIndex);
     /// @notice Thrown when `storageStore` is called. Raw storage writes are disabled because they
-    ///         could clear consumed-leaf bits in the bitmap and re-enable one-time-signature replay.
+    ///         could clear consumed-leaf bits in the bitmap and re-enable
+    ///         one-time-signature replay.
     error StorageStoreDisabled();
     /// @notice Thrown when `delegateExecute` is called. Running un-vetted bytecode in the wallet's
     ///         storage context is disabled; use `executeBatch` for batching.
@@ -362,7 +363,8 @@ interface IShrincsWallet is IWallet {
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
     /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
     ///      and overridden by the wallet (stateless SHRINCS verify against the dedicated verifier
-    ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an override clash.
+    ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an
+    ///      override clash.
     function debugIsValidSignature(
         bytes32 hash,
         bytes calldata signature

@@ -325,8 +325,10 @@ contract ShrincsPaymaster is
 
     /// @dev Verifies the global SHRINCS stateful sponsorship signature and consumes its leaf in the
     ///      used-leaf bitmap. The consume is committed immediately (the anti-replay Effect), so the
-    ///      leaf is spent regardless of whether execution later succeeds. No wrapper nonce is bound:
-    ///      anti-replay is the one-time leaf, and freshness comes from `userOp.nonce` (already inside
+    ///      leaf is spent regardless of whether execution later succeeds. No wrapper
+    ///      nonce is bound:
+    ///      anti-replay is the one-time leaf, and freshness comes from `userOp.nonce`
+    ///      (already inside
     ///      `_userOpBindingHash`), so sponsored userOps may land in any order.
     function _verifyAndAdvance(
         PackedUserOperation calldata userOp

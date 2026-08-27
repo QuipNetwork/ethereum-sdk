@@ -57,7 +57,8 @@ library ShrincsWalletStorage {
         /// @dev Stateful-leaf anti-replay, namespaced by `keyVersion` so a rotation starts from a
         ///      fresh (all-unused) bitmap without clearing storage. A leaf is consumable once and
         ///      in ANY order (no sequential constraint), so out-of-order transaction landing never
-        ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit `leafIndex & 0xff`
+        ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit
+        ///      `leafIndex & 0xff`
         ///      is set when leaf `leafIndex` is consumed.
         mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits)) usedStatefulLeafBitmap;
     }
