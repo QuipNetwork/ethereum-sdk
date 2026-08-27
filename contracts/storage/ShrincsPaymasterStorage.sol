@@ -45,7 +45,8 @@ library ShrincsPaymasterStorage {
         ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit
         ///      `leafIndex & 0xff`
         ///      is set when leaf `leafIndex` is consumed.
-        mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits)) usedStatefulLeafBitmap;
+        mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits))
+            usedStatefulLeafBitmap;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.paymaster.shrincs")) - 1))
