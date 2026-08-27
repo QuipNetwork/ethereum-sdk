@@ -60,8 +60,7 @@ abstract contract WOTSPlusImplementationInvariantBase is WalletFactoryTest {
         bytes memory payload = _buildInitPayloadForCreate(INVARIANT_VAULT_SEED, txnPubs, recArr);
 
         vm.prank(address(handler));
-        address walletAddr = factory.deployLatestWalletProxy{value: INVARIANT_INITIAL_DEPOSIT}(
-            keccak256(abi.encodePacked(INVARIANT_VAULT_SEED)), payable(address(handler)), payload
+        address walletAddr = factory.deployLatestWalletProxy{value: INVARIANT_INITIAL_DEPOSIT}(keccak256(abi.encodePacked(INVARIANT_VAULT_SEED)), payable(address(handler)), payload
         );
         wallet = WOTSPlusImplementation(payable(walletAddr));
         return payload;

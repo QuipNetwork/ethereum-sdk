@@ -62,6 +62,8 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
+    /// @notice Thrown when the V1 commitment (salt) does not recompute from the install payload.
+    error IdentityMismatch();
 
     /// @notice Thrown when a stateful signature's leaf index has already been consumed in the
     ///         current key epoch (used-leaf bitmap anti-replay).
@@ -106,7 +108,8 @@ interface IShrincsWallet is IWallet {
     ///                  4=erc1271StatelessCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
     error GuardedSlotTampered(uint256 slotIndex);
     /// @notice Thrown when `storageStore` is called. Raw storage writes are disabled because they
-    ///         could clear consumed-leaf bits in the bitmap and re-enable one-time-signature replay.
+    ///         could clear consumed-leaf bits in the bitmap and re-enable
+    ///         one-time-signature replay.
     error StorageStoreDisabled();
     /// @notice Thrown when `delegateExecute` is called. Running un-vetted bytecode in the wallet's
     ///         storage context is disabled; use `executeBatch` for batching.
@@ -216,7 +219,8 @@ interface IShrincsWallet is IWallet {
         Ok,
         BadSignatureLength,
         InvalidEcdsaSignature,
-        InvalidShrincsSignature
+        InvalidShrincsSignature,
+        MalformedErc1271Payload
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -359,7 +363,8 @@ interface IShrincsWallet is IWallet {
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
     /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
     ///      and overridden by the wallet (stateless SHRINCS verify against the dedicated verifier
-    ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an override clash.
+    ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an
+    ///      override clash.
     function debugIsValidSignature(
         bytes32 hash,
         bytes calldata signature
@@ -419,6 +424,14 @@ interface IShrincsWallet is IWallet {
 
     /// @notice Whether stateful `leafIndex` has been consumed in the current key epoch.
     function isStatefulLeafUsed(uint256 leafIndex) external view returns (bool);
+
+    /// @notice The raw 256-bit used-leaf bitmap word `wordIndex` for the current key epoch.
+    ///         Bit `b` (0..255) of the returned word is leaf `wordIndex * 256 + b`; a set bit
+    ///         means that leaf is consumed. Lets a client read 256 leaves per call instead of
+    ///         one leaf per call. Out-of-range or all-free words read as 0.
+    function statefulLeafBitmapWord(
+        uint256 wordIndex
+    ) external view returns (uint256);
 
     /// @notice Count of stateful leaves consumed in the current key epoch.
     function statefulLeavesUsed() external view returns (uint32);

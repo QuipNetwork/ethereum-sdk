@@ -45,10 +45,8 @@ import {
   encodeOwnershipTransfer,
   encodeUpgradeToAndCall,
   encodeRecoveryUpgrade,
-  keysHash,
   saveWalletKeysHash,
   ownershipTransferKeysHash,
-  resetKeysetKeysHash,
   decodeInit,
   decodeExecute,
   decodeWithdrawDeposit,
@@ -152,8 +150,6 @@ const S1: Hex = toHex(10n, { size: 32 });
 const H1: Hex = toHex(11n, { size: 32 });
 const S2: Hex = toHex(12n, { size: 32 });
 const H2: Hex = toHex(13n, { size: 32 });
-const S3: Hex = toHex(14n, { size: 32 });
-const H3: Hex = toHex(15n, { size: 32 });
 const TARGET: Address = "0x0000000000000000000000000000000000000002";
 const IMPL: Address = "0x0000000000000000000000000000000000000003";
 const VALUE = 1000n;

@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { type Address, type Hex, toHex, zeroAddress } from "viem";
+import { type Address, toHex, zeroAddress } from "viem";
 
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";

@@ -24,7 +24,7 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
     function test_rotateKey_revertsWhen_notOwner() public {
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(1), _validTarget());
+        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), _validTarget());
     }
 
     function test_rotateKey_revertsWhen_badStatefulKeyLength() public {
@@ -34,7 +34,7 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
 
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
-        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(1), t);
+        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), t);
     }
 
     function test_rotateKey_revertsWhen_zeroMaxSignatures() public {
@@ -48,7 +48,7 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
 
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.ZeroMaxSignatures.selector);
-        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(1), t);
+        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), t);
     }
 
     function test_rotateKey_revertsWhen_leafZero() public {
@@ -58,10 +58,10 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
     }
 
     function test_rotateKey_revertsWhen_leafAlreadyUsed() public {
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
-        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(1), _validTarget());
+        wallet.rotateKey(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), _validTarget());
     }
 
     function test_rotateKey_revertsWhen_invalidSignature() public {

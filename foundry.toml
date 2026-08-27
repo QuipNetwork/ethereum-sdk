@@ -40,7 +40,7 @@ forge-std = "1.14.0"
 solady = "0.1.26"
 "@openzeppelin-contracts" = "5.6.0-rc.1"
 pcaversaccio-createx = { version = "1.0.0", git = "https://github.com/pcaversaccio/createx.git", tag = "v1.0.0" }
-"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "6f0fb103e026e19d056db8d5bf292f4a69e9935b" }
+"@quip.network/hashsigs-solidity" = { version = "0.2.0", git = "git@gitlab.com:quip.network/hashsigs-solidity.git", rev = "dd6fa9effeff78b8a502ddf8351308739a4522aa" }
 
 # Deploy profile: links WOTSPlus at its CREATE3 address for WOTSPlusImplementation compilation.
 # Needed ONLY by the sunset WOTS+ scripts under script/deprecated/ — the live

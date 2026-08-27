@@ -69,6 +69,34 @@ contract WalletFactory_deprecateImplementation is WalletFactoryTest {
         assertTrue(factory.deprecatedImpls(address(walletImplementation).codehash));
     }
 
+    /// @dev Deprecation is keyed by codehash, not address. Latest may hold
+    ///      address A while the owner deprecates a different address B that
+    ///      shares A's codehash (a redeploy of identical bytecode). The latest
+    ///      pointer must still recompute, otherwise deployLatestWalletProxy
+    ///      would deploy against a now-deprecated implementation.
+    ///      `new WOTSPlusImplementation()` cannot produce a second address with
+    ///      the same codehash: EIP-712 / CallContextChecker bake `address(this)`
+    ///      into immutables. Copy the runtime bytecode with `vm.etch` instead,
+    ///      matching `test_undeprecateImplementation_rebindsAddressForSameCodehash`.
+    function test_deprecateImplementation_clearsLatestWhenSameCodehashDifferentAddress() public {
+        address a = address(walletImplementation);
+        assertEq(factory.latestWalletImpl(), a);
+
+        address b = makeAddr("same-codehash-redeploy");
+        vm.etch(b, a.code);
+        assertEq(b.codehash, a.codehash);
+        assertTrue(a != b);
+
+        vm.prank(ADMIN);
+        factory.deprecateImplementation(b);
+
+        assertEq(factory.latestWalletImpl(), address(0));
+
+        vm.prank(ALICE);
+        vm.expectRevert(IWalletFactory.NoActiveImplementation.selector);
+        factory.deployLatestWalletProxy(keccak256("same-codehash vault"), payable(ALICE), "");
+    }
+
     // ── Reverts ──────────────────────────────────────────────────────
 
     function test_deprecateImplementation_revertsWhen_notVetted() public {

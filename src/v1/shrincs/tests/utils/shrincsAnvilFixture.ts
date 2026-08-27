@@ -32,7 +32,6 @@ import {
   createTestClient,
   http,
   parseEther,
-  toHex,
 } from "viem";
 import { createAnvil, type Anvil } from "@viem/anvil";
 import { foundry } from "viem/chains";
@@ -68,14 +67,29 @@ export const DEFAULT_MAX_FEE = 10n ** 16n;
 /// New port range, distinct from the v1 fixture's `ANVIL_PORTS` (8547-8558).
 export const SHRINCS_ANVIL_PORTS = {
   smoke: 8560,
+  estimate: 8562,
 } as const;
 
 /// The SPHINCSPlusC verifier address compile-time pinned inside
 /// `SHRINCS256sKeccak` (dep `DEPLOYMENTS.md`, CREATE3 — same on every chain).
 /// The fixture places its runtime bytecode here; stateless verification
-/// reverts on empty code at this address.
+/// reverts on empty code at this address. Moved with the sender-guarded
+/// re-scheme in hashsigs (was `0xf1Bd3aE9…`); it must track the dep pin, so
+/// re-read `SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER` after any dep bump.
 export const SPHINCS_PLUS_C_SIBLING =
-  "0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A" as const;
+  "0x97B3726F44e3B7521199CE4e0fC160A32A597d31" as const;
+
+function assertVerifierPinMatches(verifierArtifact: {
+  deployedBytecode: { object: string };
+}): void {
+  const pin = SPHINCS_PLUS_C_SIBLING.slice(2).toLowerCase();
+  if (!verifierArtifact.deployedBytecode.object.toLowerCase().includes(pin)) {
+    throw new Error(
+      `Built SHRINCS verifier does not reference ${SPHINCS_PLUS_C_SIBLING}. ` +
+        "The ./dependencies checkout is stale — run `./run setup` then rebuild."
+    );
+  }
+}
 
 // ─── Forge artifact loading ─────────────────────────────────────────
 
@@ -123,7 +137,9 @@ export async function setupShrincsAnvilStack(
   const account = opts.account ?? DEFAULT_ACCOUNT;
   const maxFee = opts.maxFee ?? DEFAULT_MAX_FEE;
 
-  const factoryArtifact = readForgeArtifact("out/WalletFactory.sol/WalletFactory.json");
+  const factoryArtifact = readForgeArtifact(
+    "out/WalletFactory.sol/WalletFactory.json"
+  );
   const walletArtifact = readForgeArtifact(
     "out/ShrincsWallet.sol/ShrincsWallet.json"
   );
@@ -142,6 +158,8 @@ export async function setupShrincsAnvilStack(
       "utf8"
     )
   ) as { deployedBytecode: Hex };
+
+  assertVerifierPinMatches(shrincsVerifierArtifact);
 
   const anvil = createAnvil({ port: opts.port });
   await anvil.start();
@@ -281,7 +299,9 @@ export async function stopShrincsAnvilStack(
 
 /// Construct a `ShrincsSigner` from a 32-byte quantum secret filled with
 /// `seedByte` (the FE master-secret analog).
-export async function makeShrincsSigner(seedByte: number): Promise<ShrincsSigner> {
+export async function makeShrincsSigner(
+  seedByte: number
+): Promise<ShrincsSigner> {
   return ShrincsSigner.create(new Uint8Array(32).fill(seedByte));
 }
 
@@ -303,10 +323,12 @@ export function makeShrincsFactoryClient(
 
 export interface FreshShrincsWallet {
   signer: ShrincsSigner;
-  /// Main-key vault branch (filled with `seedByte`).
+  /// Main-key derivation index (the `seedByte` used at creation).
+  derivationIndex: number;
+  /// ERC-1271 verifier-key derivation index (distinct from `derivationIndex`).
+  erc1271DerivationIndex: number;
+  /// On-chain identity (CREATE3 salt).
   vaultId: Hex;
-  /// ERC-1271 verifier-key vault branch (distinct from `vaultId`).
-  erc1271VaultId: Hex;
   maxSignatures: number;
   client: ShrincsWalletClient;
   walletAddress: Address;
@@ -326,9 +348,9 @@ export interface CreateFreshShrincsWalletOptions {
 /// Deploy a fresh ShrincsWallet through the SDK's `ShrincsFactoryClient`,
 /// using the FE-derived-from-quantum-secret model: both the main key and the
 /// dedicated ERC-1271 verifier key are derived from the SAME signer under
-/// DISTINCT vault branches (`vaultId` vs `erc1271VaultId`). `seedByte`
-/// parameterizes the quantum secret + both vault branches so each test gets an
-/// isolated wallet whose key material doesn't collide with others.
+/// DISTINCT derivation indices (`derivationIndex` vs `erc1271DerivationIndex`).
+/// `seedByte` parameterizes the quantum secret + both indices so each test
+/// gets an isolated wallet whose key material doesn't collide with others.
 export async function createFreshShrincsWallet(
   stack: ShrincsAnvilStack,
   seedByte: number,
@@ -339,18 +361,15 @@ export async function createFreshShrincsWallet(
   const entryPointDeposit = opts.entryPointDeposit ?? 0n;
 
   const signer = await makeShrincsSigner(seedByte);
-  const vaultId = toHex(new Uint8Array(32).fill(seedByte));
-  // Distinct erc1271 branch: flip the high byte so it never aliases `vaultId`.
-  const erc1271Bytes = new Uint8Array(32).fill(seedByte);
-  erc1271Bytes[0] = seedByte ^ 0xff;
-  const erc1271VaultId = toHex(erc1271Bytes);
+  const derivationIndex = seedByte;
+  const erc1271DerivationIndex = seedByte ^ 0xff;
 
   const factory = makeShrincsFactoryClient(stack);
   const client = await factory.createShrincsWallet({
     signer,
     maxSignatures,
-    vaultId,
-    erc1271: { vaultId: erc1271VaultId, maxSignatures },
+    derivationIndex,
+    erc1271: { derivationIndex: erc1271DerivationIndex, maxSignatures },
   });
   const walletAddress = client.walletAddress;
 
@@ -375,8 +394,9 @@ export async function createFreshShrincsWallet(
 
   return {
     signer,
-    vaultId,
-    erc1271VaultId,
+    derivationIndex,
+    erc1271DerivationIndex,
+    vaultId: client.commitment,
     maxSignatures,
     client,
     walletAddress,

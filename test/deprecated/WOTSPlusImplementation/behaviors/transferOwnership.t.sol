@@ -70,27 +70,27 @@ contract WOTSPlusImplementation_transferOwnership is WOTSPlusImplementationTest 
     }
 
     /// @dev The wallet's `transferOwnership(bytes)` tail calls back into the
-    ///      factory's `updateWalletOwner`, which moves the vaultId from
+    ///      factory's `updateWalletOwner`, which moves the commitment from
     ///      ALICE's set to BOB's set. This is the load-bearing assertion for
     ///      the registry-vs-owner consistency invariant.
     function test_transferOwnership_updatesFactoryRegistry() public {
-        bytes32 vaultId = factory.vaultIdOf(address(wallet));
-        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
-        assertEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);
-        uint256 aliceBefore = factory.getVaultIdCount(ALICE);
+        bytes32 commitment = factory.commitmentOf(address(wallet));
+        assertNotEq(factory.getCommitmentIndex(ALICE, _salt(commitment)), type(uint256).max);
+        assertEq(factory.getCommitmentIndex(BOB, _salt(commitment)), type(uint256).max);
+        uint256 aliceBefore = factory.getCommitmentCount(ALICE);
 
         bytes memory payload = _buildPayload(ownershipPubkey, ownershipPrivateKey, newOwnershipKey, BOB, newDisasterKey);
         vm.prank(ALICE);
         wallet.transferOwnership(payload);
 
-        assertEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
-        assertNotEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);
-        assertEq(factory.getVaultIdCount(ALICE), aliceBefore - 1);
-        assertEq(factory.getVaultIdCount(BOB), 1);
-        // wallets[vaultId] / vaultIdOf[wallet] are immutable — only the
+        assertEq(factory.getCommitmentIndex(ALICE, _salt(commitment)), type(uint256).max);
+        assertNotEq(factory.getCommitmentIndex(BOB, _salt(commitment)), type(uint256).max);
+        assertEq(factory.getCommitmentCount(ALICE), aliceBefore - 1);
+        assertEq(factory.getCommitmentCount(BOB), 1);
+        // wallets[commitment] / commitmentOf[wallet] are immutable — only the
         // per-owner set rotates.
-        assertEq(factory.wallets(vaultId), address(wallet));
-        assertEq(factory.vaultIdOf(address(wallet)), vaultId);
+        assertEq(factory.wallets(_salt(commitment)), address(wallet));
+        assertEq(factory.commitmentOf(address(wallet)), commitment);
     }
 
     function test_transferOwnership_replacesAllThreeKeysets() public {

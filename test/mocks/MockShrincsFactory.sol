@@ -2,15 +2,24 @@
 pragma solidity ^0.8.33;
 
 /// @dev Minimal stand-in for WalletFactory exposing only the surface `ShrincsWallet` calls:
-///      `executeFee`, `getVettedCodeIndex`, `deprecatedImpls`, and `updateWalletOwner`.
+///      `executeFee`, `getVettedCodeIndex`, `deprecatedImpls`, `updateWalletOwner`.
 contract MockShrincsFactory {
     uint256 public executeFee;
     mapping(bytes32 codehash => uint256 index) internal _vettedIndex;
     mapping(bytes32 codehash => bool deprecated) public deprecatedImpls;
     mapping(address wallet => address owner) public lastOwnerUpdate;
+    mapping(address => bytes32) private _commitment;
 
     function setExecuteFee(uint256 fee) external {
         executeFee = fee;
+    }
+
+    function setCommitment(address w, bytes32 id) external {
+        _commitment[w] = id;
+    }
+
+    function commitmentOf(address w) external view returns (bytes32) {
+        return _commitment[w];
     }
 
     function vet(bytes32 codehash, uint256 index) external {

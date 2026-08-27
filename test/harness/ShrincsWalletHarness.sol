@@ -164,6 +164,12 @@ contract ShrincsWalletHarness is ShrincsWallet {
         Storage.layout().maxSignatures = maxSignaturesValue;
     }
 
+    /// @dev Test-only setter to force the `$.walletFactory` snapshot slot away from the immutable
+    ///      `FACTORY`, so the no-drift invariant (migrate re-establishes it) can be exercised.
+    function harness_setWalletFactory(address payable walletFactory_) external {
+        Storage.layout().walletFactory = walletFactory_;
+    }
+
     /// @dev Wraps the owner-initialization guard. The wallet does NOT override it directly — it
     ///      inherits `_guardInitializeOwner() => true` from Solady's `ERC4337` base, which blocks
     ///      double-initialization (`_initializeOwner` reverts `AlreadyInitialized`). This pins that

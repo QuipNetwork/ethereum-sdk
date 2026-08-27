@@ -64,13 +64,13 @@ interface IWalletFactory {
     error ZeroMaxFee();
     /// @notice Thrown when the wallet owner address is zero.
     error ZeroAddressOwner();
-    /// @notice Thrown when `_deployProxy` is called with `vaultId == 0`. The zero
-    ///         vaultId is reserved as a sentinel for "not deployed by this factory"
-    ///         in the `vaultIdOf` reverse mapping; allowing it would collapse the
+    /// @notice Thrown when `_deployProxy` is called with `commitment == 0`. The zero
+    ///         commitment is reserved as a sentinel for "not deployed by this factory"
+    ///         in the `commitmentOf` reverse mapping; allowing it would collapse the
     ///         "is this caller one of my wallets?" check in `updateWalletOwner`.
-    error ZeroVaultId();
+    error ZeroCommitment();
     /// @notice Thrown when `updateWalletOwner` is called by an address that is
-    ///         not a wallet deployed by this factory (i.e. `vaultIdOf[msg.sender]`
+    ///         not a wallet deployed by this factory (i.e. `commitmentOf[msg.sender]`
     ///         is zero).
     error OnlyWallet();
     /// @notice Thrown when `updateWalletOwner` is called with `newOwner != owner()`
@@ -83,12 +83,11 @@ interface IWalletFactory {
     ///         business notifying a no-op transfer.
     error SameOwner();
     /// @notice Thrown when an EnumerableSet mutation inside `updateWalletOwner`
-    ///         returns `false` (i.e. `_vaultIds[oldOwner].remove(vaultId)` or
-    ///         `_vaultIds[newOwner].add(vaultId)`). Indicates the per-owner
+    ///         returns `false` (i.e. `commitments[oldOwner].remove(salt)` or
+    ///         `commitments[newOwner].add(salt)`). Indicates the per-owner
     ///         set has diverged from the factory's `walletOwner` source of
     ///         truth — a "this should never happen" defense-in-depth revert.
     error RegistryDesync();
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -129,7 +128,7 @@ interface IWalletFactory {
     /// @notice Emitted when a new wallet proxy is created.
     /// @param amount The ETH value sent with the creation transaction.
     /// @param when The block timestamp at which the wallet was created.
-    /// @param vaultId The salt used to derive the wallet's deterministic address.
+    /// @param commitment The salt used to derive the wallet's deterministic address.
     /// @param creator The classical address that owns the new wallet.
     /// @param implementation The vetted implementation the proxy was deployed with —
     ///        tells an off-chain indexer which wallet family/version this is. The
@@ -140,7 +139,7 @@ interface IWalletFactory {
     event WalletDeployed(
         uint256 amount,
         uint256 when,
-        bytes32 indexed vaultId,
+        bytes32 indexed commitment,
         address indexed creator,
         address implementation,
         address indexed quip
@@ -154,12 +153,12 @@ interface IWalletFactory {
     /// @notice Emitted when a wallet's classical owner changes via the
     ///         wallet's PQ-authenticated ownership-transfer path. The wallet
     ///         calls back into the factory at the tail of that flow to keep
-    ///         the per-owner vaultIds set consistent with the wallet's `owner()`.
-    /// @param vaultId The wallet's vaultId (derived via `vaultIdOf[msg.sender]`).
+    ///         the per-owner commitments set consistent with the wallet's `owner()`.
+    /// @param commitment The wallet's commitment (derived via `commitmentOf[msg.sender]`).
     /// @param oldOwner The owner before the transfer.
     /// @param newOwner The owner after the transfer.
     event WalletOwnerChanged(
-        bytes32 indexed vaultId,
+        bytes32 indexed commitment,
         address indexed oldOwner,
         address indexed newOwner
     );
@@ -209,7 +208,7 @@ interface IWalletFactory {
     ///         initializes it, and forwards deposited ETH (minus creation fee) to the wallet.
     /// @dev Iterates backwards through the vetted set to find the most recently added
     ///      non-deprecated implementation. Uses CREATE3 for deterministic addressing.
-    /// @param vaultId The salt used to derive the wallet's deterministic address.
+    /// @param commitment The identity commitment. The CREATE3 salt is the `commitment` itself.
     /// @param to The classical address that will own the new wallet.
     /// @param payload Implementation-defined init data, passed to the wallet's
     ///                `initialize` verbatim. Opaque to the factory: layout and
@@ -217,7 +216,7 @@ interface IWalletFactory {
     ///                family's own codec.
     /// @return The address of the newly deployed wallet proxy.
     function deployLatestWalletProxy(
-        bytes32 vaultId,
+        bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) external payable returns (address);
@@ -227,7 +226,7 @@ interface IWalletFactory {
     ///         fee) to the wallet.
     /// @dev The index corresponds to insertion order in the vetted set. Reverts if the
     ///      implementation at the given index is deprecated.
-    /// @param vaultId The salt used to derive the wallet's deterministic address.
+    /// @param commitment The identity commitment. The CREATE3 salt is the `commitment` itself.
     /// @param index The index into the vetted implementation set.
     /// @param to The classical address that will own the new wallet.
     /// @param payload Implementation-defined init data, passed to the wallet's
@@ -236,19 +235,19 @@ interface IWalletFactory {
     ///                family's own codec.
     /// @return The address of the newly deployed wallet proxy.
     function deploySpecificWalletProxy(
-        bytes32 vaultId,
+        bytes32 commitment,
         uint256 index,
         address payable to,
         bytes calldata payload
     ) external payable returns (address);
 
     /// @notice Callback used by deployed wallets to keep the per-owner
-    ///         vaultIds set consistent with `owner()` during the wallet's
+    ///         commitments set consistent with `owner()` during the wallet's
     ///         PQ-authenticated ownership-transfer flow.
     /// @dev NOT callable outside that flow. The factory looks up `oldOwner`
     ///      internally via `walletOwner[msg.sender]` — its own source of
     ///      truth — so the wallet cannot pass a wrong value. Gates, in order:
-    ///        - `vaultIdOf[msg.sender] != 0` — caller must be a wallet
+    ///        - `commitmentOf[msg.sender] != 0` — caller must be a wallet
     ///          deployed by THIS factory. Reverts `OnlyWallet` otherwise.
     ///        - `newOwner != address(0)` — reverts `ZeroAddressOwner`.
     ///        - `newOwner != walletOwner[msg.sender]` — reverts `SameOwner`.
@@ -257,7 +256,7 @@ interface IWalletFactory {
     ///          its new owner. Per the vetting contract (`IWallet`
     ///          natspec, rule 2), the only path producing that state is the
     ///          wallet's ownership-transfer flow. Reverts `OwnerStateMismatch`.
-    ///      On success, moves the vaultId from `walletOwner[msg.sender]`'s
+    ///      On success, moves the commitment from `walletOwner[msg.sender]`'s
     ///      set to `newOwner`'s set, updates `walletOwner[msg.sender]`,
     ///      and emits `WalletOwnerChanged`. The set mutations are guarded
     ///      against `false` return values from `EnumerableSetLib.add`/
@@ -299,28 +298,22 @@ interface IWalletFactory {
     /// @return The maximum fee in wei.
     function MAX_FEE() external view returns (uint256);
 
-    /// @notice Returns the wallet address deployed at `vaultId` on this
-    ///         factory.
-    /// @dev `vaultId` is a GLOBAL CREATE3 salt — same vaultId on every chain
-    ///      resolves to the same deterministic address. The outer
-    ///      `(owner, vaultId) → wallet` shape from earlier versions was
-    ///      misleading: the registry never gated lookup by owner, and the
-    ///      address is a pure function of the salt. Off-chain integrators
-    ///      MUST treat `vaultId` as a first-come-first-served global resource.
-    /// @param vaultId The vaultId used as CREATE3 salt.
-    /// @return The wallet address, or `address(0)` if none deployed here.
-    function wallets(bytes32 vaultId) external view returns (address);
+    /// @notice Returns the wallet address registered under a CREATE3 salt on this factory.
+    /// @dev The CREATE3 salt is the `commitment`. Same salt on every chain yields the same address.
+    /// @param salt The CREATE3 salt (the wallet `commitment`).
+    /// @return The wallet address, or `address(0)` if none registered here.
+    function wallets(bytes32 salt) external view returns (address);
 
-    /// @notice Returns the vaultId of a wallet deployed by this factory.
+    /// @notice Returns the commitment of a wallet deployed by this factory.
     /// @dev Used by `updateWalletOwner` to authenticate the calling wallet
-    ///      and derive its vaultId implicitly without trusting an argument.
+    ///      and derive its commitment implicitly without trusting an argument.
     ///      Returns `bytes32(0)` if `wallet` was not deployed by this factory.
     /// @param wallet The wallet contract address.
-    /// @return The vaultId, or `bytes32(0)` if unknown.
-    function vaultIdOf(address wallet) external view returns (bytes32);
+    /// @return The commitment, or `bytes32(0)` if unknown.
+    function commitmentOf(address wallet) external view returns (bytes32);
 
     /// @notice Returns the current classical owner of a wallet deployed by
-    ///         this factory. Source of truth for the per-owner `vaultIds`
+    ///         this factory. Source of truth for the per-owner `commitments`
     ///         registry — updated atomically in `updateWalletOwner` so the
     ///         wallet cannot supply a wrong `oldOwner`.
     /// @dev Initialized to `to` in `_deployProxy`. Tracks the wallet's
@@ -336,48 +329,48 @@ interface IWalletFactory {
     ///      Updated atomically when `transferOwnership(bytes)` runs on a
     ///      wallet via the `updateWalletOwner` callback.
     /// @param owner The classical owner address.
-    function getVaultIdCount(address owner) external view returns (uint256);
+    function getCommitmentCount(address owner) external view returns (uint256);
 
-    /// @notice Returns the vaultId at `index` in `owner`'s set.
+    /// @notice Returns the commitment at `index` in `owner`'s set.
     /// @dev Iteration order is not stable across removals (the underlying
     ///      `EnumerableSetLib.Bytes32Set` uses swap-and-pop). Off-chain
-    ///      callers should pair `getVaultIdCount` with a contiguous range
-    ///      of `getVaultIdAt(0..N-1)` reads in a single block (or use
-    ///      `getVaultIds` for a one-shot snapshot).
+    ///      callers should pair `getCommitmentCount` with a contiguous range
+    ///      of `getCommitmentAt(0..N-1)` reads in a single block (or use
+    ///      `getCommitments` for a one-shot snapshot).
     /// @param owner The classical owner address.
     /// @param index The index into `owner`'s set.
-    function getVaultIdAt(
+    function getCommitmentAt(
         address owner,
         uint256 index
     ) external view returns (bytes32);
 
-    /// @notice Returns the index of `vaultId` in `owner`'s set, or
+    /// @notice Returns the index of `commitment` in `owner`'s set, or
     ///         `type(uint256).max` if `owner` does not currently own a
-    ///         wallet at this vaultId. Mirrors `getVettedCodeIndex`.
+    ///         wallet at this commitment. Mirrors `getVettedCodeIndex`.
     /// @param owner The classical owner address.
-    /// @param vaultId The vaultId to query.
-    function getVaultIdIndex(
+    /// @param commitment The commitment to query.
+    function getCommitmentIndex(
         address owner,
-        bytes32 vaultId
+        bytes32 commitment
     ) external view returns (uint256);
 
-    /// @notice Returns the full set of vaultIds currently owned by `owner`
+    /// @notice Returns the full set of commitments currently owned by `owner`
     ///         as a `bytes32[]` snapshot — one read, no pagination.
-    /// @dev Off-chain callers should prefer this over `getVaultIdCount` +
-    ///      `getVaultIdAt` loops to avoid the `1 + N` round-trip pattern.
+    /// @dev Off-chain callers should prefer this over `getCommitmentCount` +
+    ///      `getCommitmentAt` loops to avoid the `1 + N` round-trip pattern.
     ///      Order is undefined; the set uses swap-and-pop on removal.
     /// @param owner The classical owner address.
-    function getVaultIds(
+    function getCommitments(
         address owner
     ) external view returns (bytes32[] memory);
 
     /// @notice Returns the wallet addresses currently owned by `owner` —
-    ///         one address per entry in `owner`'s vaultId set, looked up via
-    ///         the `wallets[vaultId]` mapping. One read, no pagination.
-    /// @dev Parallel-indexed with `getVaultIds(owner)` when called in the
+    ///         one address per entry in `owner`'s commitment set, looked up via
+    ///         the `wallets[commitment]` mapping. One read, no pagination.
+    /// @dev Parallel-indexed with `getCommitments(owner)` when called in the
     ///      same block (both iterate the same underlying set in the same
     ///      order). Pair them via multicall to materialize a
-    ///      `(vaultId → wallet)` map without `1 + N` round-trips.
+    ///      `(commitment → wallet)` map without `1 + N` round-trips.
     /// @param owner The classical owner address.
     function getWallets(address owner) external view returns (address[] memory);
 

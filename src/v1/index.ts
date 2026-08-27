@@ -31,9 +31,27 @@ export { entryPointV07Abi } from "./abi/EntryPointV07.js";
 // Addresses & network helpers
 export * from "./addresses.js";
 
-// Typed errors and simulation/gas helpers
+// Typed errors and simulation/gas helpers. `gas.js` is re-exported by name so
+// the internal `prepareTxCore` (shared with the SHRINCS gas module through a
+// deep import) stays off the public barrel. `QuipError` comes from `errors.js`.
 export * from "./errors.js";
-export * from "./gas.js";
+export {
+  DEFAULT_GAS_MULTIPLIER,
+  MIN_GAS_MULTIPLIER,
+  MAX_GAS_MULTIPLIER,
+  applyGasMultiplier,
+  resolveGasMultiplier,
+  resolveFeeOptions,
+  preflightBalanceCheck,
+  prepareTx,
+} from "./gas.js";
+export type {
+  TxOptions,
+  FeeOverrides,
+  PreparedTx,
+  ContractCallParams,
+  PrepareTxParams,
+} from "./gas.js";
 
 // Signature-scheme-agnostic ERC-4337 v0.7 codec (PackedUserOperation,
 // userOpHash, gas-field packing) — shared by both wallet families.

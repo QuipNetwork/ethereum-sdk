@@ -52,6 +52,10 @@ const keccakUtf8 = (s: string): Hex => keccak256(toBytes(s));
 /// `ActionContext.domainSeparator`).
 export const DOMAIN_TAG = keccakUtf8("quip-shrincs-wallet-v1");
 
+/// Paymaster signing-domain tag (combined with chainId + paymaster into the
+/// sponsorship `ActionContext.domainSeparator`).
+export const PAYMASTER_DOMAIN_TAG = keccakUtf8("quip-shrincs-paymaster-v1");
+
 /// Per-operation `ActionContext.actionType` discriminators.
 export const ACTION_ERC4337_EXECUTE = keccakUtf8(
   "quip.shrincs.action.erc4337Execute"
@@ -70,6 +74,9 @@ export const ACTION_MARK_LEAVES_USED = keccakUtf8(
   "quip.shrincs.action.markLeavesUsed"
 );
 export const ACTION_ERC1271 = keccakUtf8("quip.shrincs.action.erc1271");
+export const ACTION_PAYMASTER_APPROVE = keccakUtf8(
+  "quip.shrincs.action.paymasterApprove"
+);
 
 /// Per-path tags folded into `RotationContext.domainSeparator` (see
 /// `rotationDomainSeparator`). `RotationContext` carries no action
@@ -81,8 +88,6 @@ export const ROTATION_DOMAIN_RECOVER_WALLET = keccakUtf8(
 export const ROTATION_DOMAIN_TRANSFER_OWNERSHIP = keccakUtf8(
   "quip.shrincs.rotation.transferOwnership"
 );
-
-const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                    WORD / HASH HELPERS                      */

@@ -31,7 +31,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
         uint256 result = wallet.exposed_validateSignature(op, userOpHash);
         assertEq(result, 0, "valid leaf-1 signature should pass");
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 marked consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 marked consumed");
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the wrapper nonce");
     }
@@ -46,7 +46,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
 
     function test_validateSignature_revertsWhen_leafAlreadyUsed() public {
         // Pre-mark leaf 1 consumed; an otherwise-valid leaf-1 op must then be rejected.
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "already-consumed leaf must be rejected");
     }
@@ -57,7 +57,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         (ERC4337.PackedUserOperation memory op,) = _erc4337Op(1);
         uint256 result = wallet.exposed_validateSignature(op, keccak256("not-the-signed-hash"));
         assertEq(result, 1, "wrong message must be rejected");
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on rejection");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed on rejection");
     }
 
     function test_validateSignature_revertsWhen_badSignatureLength() public {
@@ -103,7 +103,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     }
 
     function test_validateSignature_reason_staleLeaf() public {
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1);
@@ -137,7 +137,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "non-owner co-signer rejected");
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on ECDSA rejection");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed on ECDSA rejection");
         assertEq(wallet.actionNonce(), 0, "nonce unchanged on ECDSA rejection");
     }
 
@@ -149,7 +149,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "missing co-signature rejected");
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed");
     }
 
     function test_validateSignature_reason_invalidEcdsa_malformed() public {
@@ -174,7 +174,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "1271-domain signature rejected");
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed");
     }
 
     function test_validateSignature_legacyTwoTupleBlob_rejected() public {
@@ -187,7 +187,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "legacy 2-tuple blob rejected");
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed");
     }
 
     function test_validateSignature_success_advancesActionNonce() public {
@@ -205,8 +205,8 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         assertEq(wallet.exposed_validateSignature(op3, h3), 0, "higher leaf lands first");
         (ERC4337.PackedUserOperation memory op2, bytes32 h2) = _erc4337Op(2);
         assertEq(wallet.exposed_validateSignature(op2, h2), 0, "lower leaf accepted after");
-        assertTrue(wallet.isStatefulLeafUsed(3), "leaf 3 consumed");
-        assertTrue(wallet.isStatefulLeafUsed(2), "leaf 2 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 3), "leaf 3 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "leaf 2 consumed");
         assertEq(wallet.statefulLeavesUsed(), 2, "two leaves consumed");
     }
 
@@ -219,7 +219,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
         factory.setExecuteFee(123456789); // moved between signing and validation
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "fee change cannot break validation");
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf consumed normally");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf consumed normally");
     }
 
     /// @dev THE regression guard for ERC-7562 finding F-1: the validation frame must perform no
@@ -247,7 +247,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         vm.recordLogs();
         assertEq(wallet.exposed_validateSignature(op2, h2), 1, "stale-nonce op rejected");
         assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidSignature));
-        assertFalse(wallet.isStatefulLeafUsed(2), "superseded op's leaf not consumed");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "superseded op's leaf not consumed");
         assertEq(wallet.actionNonce(), 1, "nonce unchanged by the rejection");
     }
 

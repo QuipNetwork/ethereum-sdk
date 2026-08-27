@@ -24,6 +24,7 @@ import {
 } from "viem";
 
 import { assertProviderState, boundChain } from "../internal/providerState.js";
+import { tryMulticall } from "../internal/multicall.js";
 import { shrincsPaymasterAbi } from "./abi/ShrincsPaymaster.js";
 import {
   EmptyLeavesError,
@@ -31,10 +32,21 @@ import {
   VerifierMismatchError,
 } from "./errors.js";
 import {
+  LeafReservationStore,
+  reserveExplicitLeaf,
+  reserveLowestLeaf,
+} from "./leafReservation.js";
+import {
   buildStatefulRotationTarget,
   publicKeyToAbi,
 } from "./shrincsCodec.js";
 import { prepareTx, type TxOptions } from "./gas.js";
+import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
+import {
+  bitmapWordCount,
+  usedLeavesFromWords,
+  wordsFromResults,
+} from "./internal/leafBitmap.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
@@ -60,14 +72,17 @@ export interface ShrincsPaymasterClientParams {
   walletClient: WalletClient;
   /// Operator signer holding the sponsorship verifier key.
   signer: ShrincsSigner;
-  vaultId: Hex;
+  commitment: Hex;
+  /// Caller-chosen key-derivation index. Required when recovering a keypair
+  /// from `signer` (no injected `keypair`). Unused when `keypair` is provided.
+  derivationIndex?: number;
   chainId: number;
   account: Address;
   /// Pre-built keypair override. Takes precedence over `signer.recoverKeyPair`
   /// — REQUIRED after a `rotateStatefulKey`, where the live bundle is a graft
-  /// of the new stateful vault and the ORIGINAL stateless vault (build it with
-  /// `signer.deriveKeyPair({ statefulVaultId, statelessVaultId, maxSignatures })`;
-  /// a plain `recoverKeyPair` on either vault reproduces the wrong commitment).
+  /// of the new stateful index and the ORIGINAL stateless index (build it with
+  /// `signer.deriveKeyPair({ statefulIndex, statelessIndex, maxSignatures })`;
+  /// a plain `recoverKeyPair` on either index reproduces the wrong commitment).
   keypair?: ShrincsKeyPair;
 }
 
@@ -78,31 +93,40 @@ export class ShrincsPaymasterClient {
   readonly paymasterAddress: Address;
   readonly chainId: number;
   readonly account: Address;
-  readonly vaultId: Hex;
+  readonly commitment: Hex;
+  readonly derivationIndex?: number;
 
   private readonly publicClient: PublicClient;
   private readonly walletClient: WalletClient;
   private readonly signer: ShrincsSigner;
   private readonly keypair?: ShrincsKeyPair;
+  /// Per-instance record of sponsorship leaves already handed out for signing,
+  /// so concurrent `sponsorUserOp` calls cannot race to the same lowest-unused
+  /// leaf and sign two messages at one one-time leaf.
+  private readonly leafReservations = new LeafReservationStore();
 
   constructor(params: ShrincsPaymasterClientParams) {
     this.paymasterAddress = params.paymasterAddress;
     this.publicClient = params.publicClient;
     this.walletClient = params.walletClient;
     this.signer = params.signer;
-    this.vaultId = params.vaultId;
+    this.commitment = params.commitment;
+    this.derivationIndex = params.derivationIndex;
     this.chainId = params.chainId;
     this.account = params.account;
     this.keypair = params.keypair;
   }
 
   /// The operator keypair: the explicit override when set (post-rotation
-  /// grafted bundles), else re-derived from the signer's vault branch.
+  /// grafted bundles), else re-derived from the signer's derivation index.
   private operatorKeyPair(maxSignatures: number): ShrincsKeyPair {
-    return (
-      this.keypair ??
-      this.signer.recoverKeyPair(this.vaultId, { maxSignatures })
-    );
+    if (this.keypair) return this.keypair;
+    if (this.derivationIndex === undefined) {
+      throw new Error(
+        "ShrincsPaymasterClient has no derivationIndex to recover a keypair with"
+      );
+    }
+    return this.signer.recoverKeyPair(this.derivationIndex, { maxSignatures });
   }
 
   /*  ── reads ───────────────────────────────────────────────────────────  */
@@ -146,8 +170,29 @@ export class ShrincsPaymasterClient {
     ) as Promise<boolean>;
   }
 
+  /// The set of `1..maxSignatures` leaves the on-chain bitmap reports as used,
+  /// read one 256-bit word per call via `statefulLeafBitmapWord` (256 leaves per
+  /// call instead of one). Throws `LeafBitmapReadError` if any word cannot be
+  /// read: an unread word leaves the used state of its 256 leaves unknown, and
+  /// signing at a leaf that is not confirmed free risks one-time-signature reuse.
+  private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
+    const wordCount = bitmapWordCount(maxSignatures);
+    if (wordCount === 0) return new Set();
+    const calls = [];
+    for (let word = 0; word < wordCount; word++) {
+      calls.push({
+        address: this.paymasterAddress,
+        abi: shrincsPaymasterAbi,
+        functionName: "statefulLeafBitmapWord" as const,
+        args: [BigInt(word)] as const,
+      });
+    }
+    const results = await tryMulticall(this.publicClient, calls);
+    return usedLeavesFromWords(wordsFromResults(results), maxSignatures);
+  }
+
   /// Lowest unused sponsorship leaf in `1..maxSignatures` for the current
-  /// verifier epoch. Sequential reads (the paymaster has no packed getter).
+  /// verifier epoch. Reads the bitmap by word (shared with the wallet client).
   async lowestUnusedLeaf(verifier: ShrincsVerifierState): Promise<number> {
     if (verifier.statefulLeavesUsed >= verifier.maxSignatures) {
       throw new StatefulBudgetExhaustedError(
@@ -155,8 +200,9 @@ export class ShrincsPaymasterClient {
         verifier.statefulLeavesUsed
       );
     }
+    const used = await this.fetchUsedLeaves(verifier.maxSignatures);
     for (let leaf = 1; leaf <= verifier.maxSignatures; leaf++) {
-      if (!(await this.isStatefulLeafUsed(leaf))) return leaf;
+      if (!used.has(leaf)) return leaf;
     }
     throw new StatefulBudgetExhaustedError(
       verifier.maxSignatures,
@@ -189,7 +235,32 @@ export class ShrincsPaymasterClient {
     ) {
       throw new VerifierMismatchError(keypair.publicKeyCommitment, verifier.commitment);
     }
-    const leaf = params.leaf ?? (await this.lowestUnusedLeaf(verifier));
+    // Reserve the leaf in-process before signing so concurrent sponsorships (or
+    // a sign-then-retry) cannot both pick the same lowest-unused leaf and sign
+    // two messages at one one-time leaf. An explicit override is reserved too.
+    const reservationKey = {
+      commitment: verifier.commitment,
+      keyVersion: verifier.keyVersion,
+    };
+    let leaf: number;
+    if (params.leaf !== undefined) {
+      leaf = params.leaf;
+      await reserveExplicitLeaf(this.leafReservations, reservationKey, leaf);
+    } else {
+      if (verifier.statefulLeavesUsed >= verifier.maxSignatures) {
+        throw new StatefulBudgetExhaustedError(
+          verifier.maxSignatures,
+          verifier.statefulLeavesUsed
+        );
+      }
+      const used = await this.fetchUsedLeaves(verifier.maxSignatures);
+      leaf = await reserveLowestLeaf(
+        this.leafReservations,
+        reservationKey,
+        (candidate) => used.has(candidate),
+        verifier.maxSignatures
+      );
+    }
     const paymasterAndData = signPaymasterUserOp({
       keypair,
       userOp: params.userOp,
@@ -226,7 +297,7 @@ export class ShrincsPaymasterClient {
   /// leaf bitmap; the current bundle's stateless half is reused, never rotated
   /// (it is inert — the paymaster only verifies stateful sponsorship
   /// signatures). `nextStatefulPublicKey` is the fresh stateful key's encoded
-  /// 68-byte public key (from a freshly keygen'd bundle under a new vaultId);
+  /// 68-byte public key (from a freshly keygen'd bundle under a new commitment);
   /// the new `maxSignatures` budget is decoded on-chain from that encoding.
   /// The operator signer must still hold the CURRENT key: its public bundle is
   /// pinned on-chain to authorize carrying the stateless half forward
@@ -335,6 +406,7 @@ export class ShrincsPaymasterClient {
       ...(prepared.nonce !== undefined && { nonce: prepared.nonce }),
     } as unknown as Parameters<WalletClient["writeContract"]>[0];
     const hash = await withDecodedError(this.walletClient.writeContract(writeParams));
-    return this.publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    return assertReceiptSuccess(receipt);
   }
 }

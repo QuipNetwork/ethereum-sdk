@@ -23,10 +23,6 @@
 
 import {
   type Address,
-  type Hex,
-  type WalletClient,
-  createWalletClient,
-  http,
   parseEther,
   toHex,
   zeroAddress,
@@ -34,7 +30,6 @@ import {
 import { foundry } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { wotsPlusImplementationAbi } from "../../../v1/abi/WOTSPlusImplementation.js";
 import { QuipSigner } from "../signer.js";
 import { createInMemoryBurnSet } from "../burnSet.js";
 import {
@@ -61,7 +56,6 @@ const NEW_OWNER_PRIV_KEY =
 const newOwnerAccount = privateKeyToAccount(NEW_OWNER_PRIV_KEY);
 
 let stack: AnvilStack;
-let newOwnerWalletClient: WalletClient;
 
 // Build a verifier `WinternitzAddress` + `WinternitzElements` pair for the
 // upgrade paths. In production this comes from the impl deployer's signed
@@ -94,11 +88,6 @@ async function buildVerifierAttestation(
 
 beforeAll(async () => {
   stack = await setupAnvilStack({ port: ANVIL_PORTS.pqPaths });
-  newOwnerWalletClient = createWalletClient({
-    chain: foundry,
-    transport: http(`http://127.0.0.1:${stack.anvil.port}`),
-    account: newOwnerAccount,
-  });
   // Fund the alternate owner so it can pay gas for requestOwnershipHandover.
   await stack.testClient.setBalance({
     address: newOwnerAccount.address,

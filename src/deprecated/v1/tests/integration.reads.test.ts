@@ -36,7 +36,6 @@ import {
   MULTICALL3_ADDRESS,
 } from "../../../v1/internal/multicall.js";
 import {
-  CANONICAL_ENTRYPOINT_V07,
   CHAIN_IDS,
   NETWORK_ADDRESSES,
 } from "../../../v1/addresses.js";
