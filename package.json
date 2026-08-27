@@ -37,42 +37,6 @@
       "import": "./dist/src/v1/shrincs/index.js",
       "types": "./dist/src/v1/shrincs/index.d.ts"
     },
-    "./deprecated/v1": {
-      "import": "./dist/src/deprecated/v1/index.js",
-      "types": "./dist/src/deprecated/v1/index.d.ts"
-    },
-    "./deprecated/v1/signer": {
-      "import": "./dist/src/deprecated/v1/signer.js",
-      "types": "./dist/src/deprecated/v1/signer.d.ts"
-    },
-    "./deprecated/v1/walletClient": {
-      "import": "./dist/src/deprecated/v1/walletClient.js",
-      "types": "./dist/src/deprecated/v1/walletClient.d.ts"
-    },
-    "./deprecated/v1/factoryClient": {
-      "import": "./dist/src/deprecated/v1/factoryClient.js",
-      "types": "./dist/src/deprecated/v1/factoryClient.d.ts"
-    },
-    "./deprecated/v1/paymaster": {
-      "import": "./dist/src/deprecated/v1/paymasterClient.js",
-      "types": "./dist/src/deprecated/v1/paymasterClient.d.ts"
-    },
-    "./deprecated/v1/errors": {
-      "import": "./dist/src/deprecated/v1/errors.js",
-      "types": "./dist/src/deprecated/v1/errors.d.ts"
-    },
-    "./deprecated/v1/events": {
-      "import": "./dist/src/deprecated/v1/events.js",
-      "types": "./dist/src/deprecated/v1/events.d.ts"
-    },
-    "./deprecated/v1/userOp": {
-      "import": "./dist/src/deprecated/v1/userOp.js",
-      "types": "./dist/src/deprecated/v1/userOp.d.ts"
-    },
-    "./deprecated/v1/wotsCodec": {
-      "import": "./dist/src/deprecated/v1/wotsCodec.js",
-      "types": "./dist/src/deprecated/v1/wotsCodec.d.ts"
-    },
     "./deprecated/v0": {
       "import": "./dist/src/deprecated/v0/index.js",
       "types": "./dist/src/deprecated/v0/index.d.ts"

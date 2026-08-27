@@ -19,7 +19,6 @@ dist/
 
 # Generated SDK files
 src/v1/abi/
-src/deprecated/v1/bytecode.json
 .DS_Store
 
 pwCrack.ts

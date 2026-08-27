@@ -367,6 +367,15 @@ export class QuipClient {
   private async setQuipFactory() {
     // Get network-appropriate factory address
     const addresses = getNetworkAddresses(this.chainId);
+    // A WOTS+ wallet's cross-chain address comes from the original QuipFactory
+    // (CREATE2). A zero factory address marks a chain the factory was never
+    // deployed to, so no address-compatible WOTS+ wallet can exist there. Fail
+    // closed instead of binding to the zero address.
+    if (addresses.QuipFactory === ethers.ZeroAddress) {
+      throw new Error(
+        `WOTS+ wallets are not supported on chain ${this.chainId}: no QuipFactory is deployed there.`
+      );
+    }
     this.factory = QuipFactory__factory.connect(
       addresses.QuipFactory,
       this.signer!
