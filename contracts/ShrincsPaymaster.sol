@@ -172,6 +172,16 @@ contract ShrincsPaymaster is
             return ("", 1);
         }
 
+        // Fail-closed policy for a malformed sponsorship blob. Two failure
+        // classes are handled differently on purpose:
+        //   - Too short to hold the ABI head: SOFT fail (the `return ("", 1)`
+        //     above). The bundler drops the op without penalising the sender.
+        //   - Long enough to pass that check but carrying an offset that runs
+        //     past the blob: HARD `MalformedPayload` revert from the codec
+        //     inside `_verifyAndAdvance`. Such an offset cannot come from an
+        //     honest operator, and decoding it could read adjacent calldata, so
+        //     reverting to reject the op outright is the intended fail-closed
+        //     behaviour, not a soft rejection.
         if (!_verifyAndAdvance(userOp)) return ("", 1);
 
         bytes calldata paymasterData = userOp
@@ -323,6 +333,14 @@ contract ShrincsPaymaster is
     /*                  INTERNAL FUNCTIONS                    */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /// @dev The stateful leaf index a SHRINCS signature reveals is encoded as its
+    ///      authentication-path length.
+    function _leafIndex(
+        SHRINCS.Signature calldata sig
+    ) internal pure returns (uint32) {
+        return uint32(sig.authPath.length);
+    }
+
     /// @dev Verifies the global SHRINCS stateful sponsorship signature and consumes its leaf in the
     ///      used-leaf bitmap. The consume is committed immediately (the anti-replay Effect), so the
     ///      leaf is spent regardless of whether execution later succeeds. No wrapper
@@ -346,7 +364,7 @@ contract ShrincsPaymaster is
         ) = Codec.decodeSponsorshipSignature(blob);
 
         uint256 epoch = $.keyVersion;
-        uint32 leaf = uint32(sig.authPath.length);
+        uint32 leaf = _leafIndex(sig);
         if (leaf == 0 || leaf > $.maxSignatures) {
             emit PaymasterValidationRejected(
                 userOp.sender,
@@ -493,6 +511,9 @@ contract ShrincsPaymaster is
     /// @inheritdoc IShrincsPaymaster
     function remainingStatefulSignatures() external view returns (uint32) {
         Storage.Layout storage $ = Storage.layout();
+        // Saturating: the leaf bitmap is the real anti-replay mechanism; this
+        // counter is advisory, so it must never revert even if it ever drifts
+        // above `maxSignatures`.
         if ($.statefulLeavesUsed >= $.maxSignatures) return 0;
         return $.maxSignatures - $.statefulLeavesUsed;
     }
