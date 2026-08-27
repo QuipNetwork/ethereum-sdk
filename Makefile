@@ -1,12 +1,16 @@
 .PHONY: build test clean format lint lint-fix snapshot gas install update release \
        deploy-deployer deploy-wotsplus deploy-factory deploy-shrincs \
-       deploy-impl vet-impl predict-addresses \
+       deploy-shrincs-wallet deploy-impl vet-impl predict-addresses \
        predict-base-sepolia deploy-deployer-base-sepolia \
        deploy-factory-base-sepolia deploy-shrincs-base-sepolia \
+       deploy-shrincs-wallet-base-sepolia \
        deploy-impl-base-sepolia vet-impl-base-sepolia \
        predict-op-sepolia deploy-deployer-op-sepolia \
        deploy-factory-op-sepolia deploy-shrincs-op-sepolia \
+       deploy-shrincs-wallet-op-sepolia \
        deploy-impl-op-sepolia vet-impl-op-sepolia \
+       predict-base dryrun-factory-base dryrun-shrincs-base \
+       deploy-factory-base deploy-shrincs-base vet-impl-base \
        fund-deployer drain-deployer balance \
        storage-layout-snapshot storage-layout-check
 
@@ -123,6 +127,10 @@ deploy-factory:
 deploy-shrincs:
 	forge script script/02_DeployShrincs.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
+# Wallet impl + vetting only (no ShrincsPaymaster) — see DeployShrincsWallet.s.sol
+deploy-shrincs-wallet:
+	forge script script/DeployShrincsWallet.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+
 deploy-impl:
 	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
@@ -141,14 +149,21 @@ predict-addresses:
 #   DEPLOY_OPERATOR         ⚠️ every LIVE canonical address (WalletFactory,
 #                           Shrincs*) is a function of this address — sender-
 #                           guarded CreateX salts; guard the key
-#                           (deploy-factory-*, deploy-shrincs-*, predict-*)
+#                           (deploy-factory-*, deploy-shrincs-*). PINNED as
+#                           DeployConstants.CANONICAL_OPERATOR: this var must
+#                           equal the pin or the run aborts. predict-* needs
+#                           no env vars at all.
 #   DEPLOYER_ADDRESS        bootstrapped Deployer contract address (e.g. the
 #                           canonical 0xA1A3990E…) — sunset WOTS+ family only
 #   FACTORY_OWNER           WalletFactory initial owner (deploy-factory-* only)
 #   MAX_FEE                 WalletFactory creation fee in wei (deploy-factory-* only)
 #   PAYMASTER_OWNER         QuipPaymaster proxy initial owner — sunset WOTS+ only
 #   SHRINCS_PAYMASTER_OWNER / SHRINCS_VERIFIER_COMMITMENT /
-#   SHRINCS_VERIFIER_MAX_SIGNATURES   ShrincsPaymaster init (deploy-shrincs-* only)
+#   SHRINCS_VERIFIER_MAX_SIGNATURES   ShrincsPaymaster init. Needed by
+#                           deploy-shrincs-* only — NOT by
+#                           deploy-shrincs-wallet-*, which deploys and vets
+#                           the wallet impl and no paymaster, so it needs
+#                           just PRIVATE_KEY + DEPLOY_OPERATOR.
 #   FACTORY_ADDRESS         existing WalletFactory address (deploy-impl-*,
 #                           vet-impl-* ONLY — deploy-shrincs-* derives the
 #                           canonical address from DEPLOY_OPERATOR, no override)
@@ -173,6 +188,12 @@ deploy-factory-base-sepolia:
 
 deploy-shrincs-base-sepolia:
 	forge script script/02_DeployShrincs.s.sol \
+	  --rpc-url base_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-shrincs-wallet-base-sepolia:
+	forge script script/DeployShrincsWallet.s.sol \
 	  --rpc-url base_sepolia \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
@@ -210,6 +231,12 @@ deploy-shrincs-op-sepolia:
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast --verify
 
+deploy-shrincs-wallet-op-sepolia:
+	forge script script/DeployShrincsWallet.s.sol \
+	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
 deploy-impl-op-sepolia:
 	FOUNDRY_PROFILE=deploy forge script script/deprecated/DeployImplementation.s.sol \
 	  --rpc-url op_sepolia \
@@ -219,6 +246,50 @@ deploy-impl-op-sepolia:
 vet-impl-op-sepolia:
 	forge script script/VetImplementation.s.sol \
 	  --rpc-url op_sepolia \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast
+
+# ── Base MAINNET (8453) ───────────────────────────────────────────
+# Real funds. `API_URL_BASE` must be a keyed provider — a public endpoint
+# times out mid-simulation on a forked run and can strand a broadcast.
+#
+# Dry-run FIRST (no key, no --broadcast); the printed addresses must match the
+# Live table in DEPLOYMENTS.md exactly:
+#   make dryrun-factory-base
+#   make dryrun-shrincs-base
+#
+# The sunset WOTS+ targets (deploy-deployer-*, deploy-impl-*) are deliberately
+# NOT mirrored here: that family is frozen and must not reach mainnet. Vetting
+# a WOTS+ impl would also flip `latestWalletImpl` away from Shrincs.
+
+predict-base:
+	forge script script/PredictAddresses.s.sol --rpc-url base
+
+dryrun-factory-base:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url base \
+	  --sender $(DEPLOY_OPERATOR)
+
+dryrun-shrincs-base:
+	forge script script/02_DeployShrincs.s.sol \
+	  --rpc-url base \
+	  --sender $(DEPLOY_OPERATOR)
+
+deploy-factory-base:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url base \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-shrincs-base:
+	forge script script/02_DeployShrincs.s.sol \
+	  --rpc-url base \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+vet-impl-base:
+	forge script script/VetImplementation.s.sol \
+	  --rpc-url base \
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast
 

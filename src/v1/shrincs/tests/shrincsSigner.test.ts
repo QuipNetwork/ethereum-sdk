@@ -138,6 +138,18 @@ describe("ShrincsSigner", () => {
     const sig = main.signStatelessRaw(message);
     expect(sig).toEqual(main.signStatelessRaw(message));
   });
+
+  it("recoverKeyPair is deterministic for the same derivationIndex", () => {
+    const a = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
+    const b = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
+    expect(a.publicKeyCommitment).toBe(b.publicKeyCommitment);
+  });
+
+  it("recoverKeyPair yields a different commitment for a different derivationIndex", () => {
+    const a = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
+    const b = signer.recoverKeyPair(2, { maxSignatures: MAX_SIG });
+    expect(a.publicKeyCommitment).not.toBe(b.publicKeyCommitment);
+  });
 });
 
 // ── helpers ──────────────────────────────────────────────────────────────────

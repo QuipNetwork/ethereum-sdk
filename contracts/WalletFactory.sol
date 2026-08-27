@@ -54,6 +54,19 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
 
     receive() external payable {}
 
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   INTERNAL OVERRIDES                   */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Guard owner initialization to prevent re-initialization. The factory inherits Solady
+    ///      `Ownable` directly (not the `ERC4337` base that supplies this override), so it MUST
+    ///      override `_guardInitializeOwner => true` itself: `_initializeOwner` then reverts
+    ///      `AlreadyInitialized` on a second call (defence in depth alongside the `initializer`
+    ///      modifier).
+    function _guardInitializeOwner() internal pure override returns (bool) {
+        return true;
+    }
+
     /// @inheritdoc IWalletFactory
     function initialize(address payable initialOwner) external initializer {
         if (initialOwner == address(0)) revert ZeroAddressOwner();
@@ -112,18 +125,18 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
 
     /// @inheritdoc IWalletFactory
     function deployLatestWalletProxy(
-        bytes32 vaultId,
+        bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) external payable returns (address) {
         address impl = Storage.layout().latestWalletImpl;
         if (impl == address(0)) revert NoActiveImplementation();
-        return _deployProxy(impl, vaultId, to, payload);
+        return _deployProxy(impl, commitment, to, payload);
     }
 
     /// @inheritdoc IWalletFactory
     function deploySpecificWalletProxy(
-        bytes32 vaultId,
+        bytes32 commitment,
         uint256 index,
         address payable to,
         bytes calldata payload
@@ -131,7 +144,7 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = $.vettedCode.at(index);
         if ($.deprecatedImpls[codehash]) revert ImplementationDeprecated();
-        return _deployProxy($.vettedWalletImpls[codehash], vaultId, to, payload);
+        return _deployProxy($.vettedWalletImpls[codehash], commitment, to, payload);
     }
 
     /// @inheritdoc IWalletFactory
@@ -164,8 +177,8 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     /// @inheritdoc IWalletFactory
     function updateWalletOwner(address newOwner) external {
         Storage.Layout storage $ = Storage.layout();
-        bytes32 vaultId = $.vaultIdOf[msg.sender];
-        if (vaultId == bytes32(0)) revert OnlyWallet();
+        bytes32 commitment = $.commitmentOf[msg.sender];
+        if (commitment == bytes32(0)) revert OnlyWallet();
         if (newOwner == address(0)) revert ZeroAddressOwner();
         // Authoritative read — the factory's own source of truth for
         // who currently owns this wallet. The wallet does not get to pass
@@ -184,13 +197,13 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         $.walletOwner[msg.sender] = newOwner;
         // Both mutations MUST succeed: `oldOwner` came from the factory's
         // authoritative `walletOwner` mapping so its set must contain
-        // `vaultId`; `newOwner` cannot already hold it because vaultIds are
+        // `commitment`; `newOwner` cannot already hold it because commitments are
         // globally unique (CREATE3) and each lives in at most one owner's
         // set at a time. A `false` return here means the registry diverged
         // from `walletOwner` somehow — revert loudly.
-        if (!$.vaultIds[oldOwner].remove(vaultId)) revert RegistryDesync();
-        if (!$.vaultIds[newOwner].add(vaultId)) revert RegistryDesync();
-        emit WalletOwnerChanged(vaultId, oldOwner, newOwner);
+        if (!$.commitments[oldOwner].remove(commitment)) revert RegistryDesync();
+        if (!$.commitments[newOwner].add(commitment)) revert RegistryDesync();
+        emit WalletOwnerChanged(commitment, oldOwner, newOwner);
     }
 
     /// @notice Disabled; always reverts with `RenounceDisabled`.
@@ -213,13 +226,13 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
-    function wallets(bytes32 vaultId) external view returns (address) {
-        return Storage.layout().wallets[vaultId];
+    function wallets(bytes32 salt) external view returns (address) {
+        return Storage.layout().wallets[salt];
     }
 
     /// @inheritdoc IWalletFactory
-    function vaultIdOf(address wallet) external view returns (bytes32) {
-        return Storage.layout().vaultIdOf[wallet];
+    function commitmentOf(address wallet) external view returns (bytes32) {
+        return Storage.layout().commitmentOf[wallet];
     }
 
     /// @inheritdoc IWalletFactory
@@ -264,31 +277,31 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIdCount(address owner_) external view returns (uint256) {
-        return Storage.layout().vaultIds[owner_].length();
+    function getCommitmentCount(address owner_) external view returns (uint256) {
+        return Storage.layout().commitments[owner_].length();
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIdAt(
+    function getCommitmentAt(
         address owner_,
         uint256 index
     ) external view returns (bytes32) {
-        return Storage.layout().vaultIds[owner_].at(index);
+        return Storage.layout().commitments[owner_].at(index);
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIdIndex(
+    function getCommitmentIndex(
         address owner_,
-        bytes32 vaultId
+        bytes32 commitment
     ) external view returns (uint256) {
-        return Storage.layout().vaultIds[owner_].indexOf(vaultId);
+        return Storage.layout().commitments[owner_].indexOf(commitment);
     }
 
     /// @inheritdoc IWalletFactory
-    function getVaultIds(
+    function getCommitments(
         address owner_
     ) external view returns (bytes32[] memory) {
-        return Storage.layout().vaultIds[owner_].values();
+        return Storage.layout().commitments[owner_].values();
     }
 
     /// @inheritdoc IWalletFactory
@@ -296,7 +309,7 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         address owner_
     ) external view returns (address[] memory walletAddrs) {
         Storage.Layout storage $ = Storage.layout();
-        bytes32[] memory ids = $.vaultIds[owner_].values();
+        bytes32[] memory ids = $.commitments[owner_].values();
         walletAddrs = new address[](ids.length);
         for (uint256 i = 0; i < ids.length; i++) {
             walletAddrs[i] = $.wallets[ids[i]];
@@ -337,7 +350,7 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     ///      upgrades.
     function _deployProxy(
         address impl,
-        bytes32 vaultId,
+        bytes32 commitment,
         address payable to,
         bytes calldata payload
     ) internal returns (address) {
@@ -352,31 +365,36 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         );
 
         if (to == address(0)) revert ZeroAddressOwner();
-        if (vaultId == bytes32(0)) revert ZeroVaultId();
+        if (commitment == bytes32(0)) revert ZeroCommitment();
         Storage.Layout storage $ = Storage.layout();
         if (msg.value < $.creationFee) {
             revert InsufficientCreationFee(msg.value, $.creationFee);
         }
         uint256 contractValue = msg.value - $.creationFee;
+
+        // CREATE3 salt is the full-width identity commitment. SHRINCS wallets
+        // recompute and validate it during initialization.
         address contractAddr = CREATE3.deployDeterministic(
             proxyInitcode,
-            vaultId
+            commitment
         );
+
+        // Publish the reverse `commitmentOf` entry (also the `OnlyWallet` gate for the ownership
+        // callback) BEFORE the call, keyed by address.
+        $.commitmentOf[contractAddr] = commitment;
 
         IWallet(contractAddr).initialize(to, payload);
         SafeTransferLib.safeTransferETH(contractAddr, contractValue);
-        $.wallets[vaultId] = contractAddr;
-        $.vaultIdOf[contractAddr] = vaultId;
+        $.wallets[commitment] = contractAddr;
         $.walletOwner[contractAddr] = to;
-        // `.add` cannot return false here: vaultId is unique per CREATE3,
-        // and a fresh contract address never appeared in any set before.
-        // Guard anyway against future Solady changes.
-        if (!$.vaultIds[to].add(vaultId)) revert RegistryDesync();
+        // `.add` cannot return false here: the salt is unique per CREATE3, and a fresh contract
+        // address never appeared in any set before. Guard anyway against future Solady changes.
+        if (!$.commitments[to].add(commitment)) revert RegistryDesync();
 
         emit WalletDeployed(
             msg.value,
             block.timestamp,
-            vaultId,
+            commitment,
             to,
             impl,
             contractAddr

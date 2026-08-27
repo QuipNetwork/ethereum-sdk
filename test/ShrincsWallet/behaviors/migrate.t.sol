@@ -17,7 +17,7 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 contract ShrincsWallet_migrate is ShrincsWalletTest {
     function test_migrate_reinstallsAndResets() public {
         // Dirty the per-epoch counter first, so the reset is observable.
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         assertEq(wallet.statefulLeavesUsed(), 1);
 
         wallet.harness_migrateInUpgradeContext(_validInitPayload());
@@ -26,7 +26,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 0, "leaves-used reset");
         assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment, "commitment reinstalled");
         // Fresh epoch ⇒ the previously-marked leaf is unused again under keyVersion 1.
-        assertFalse(wallet.isStatefulLeafUsed(1), "fresh namespace");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "fresh namespace");
     }
 
     function test_migrate_doesNotAdvanceActionNonce() public {

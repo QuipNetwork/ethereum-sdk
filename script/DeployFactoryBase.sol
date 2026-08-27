@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {console} from "forge-std-1.14.0/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
 import {WalletFactory} from "../contracts/WalletFactory.sol";
 import {DeployConstants} from "./Constants.sol";
 import {CreateXHelpers} from "./CreateXHelpers.sol";
+
+/// Getter surface used for the post-deploy identity check. A public immutable's
+/// auto-generated getter has no `.selector` on the contract type, so the
+/// selectors come from this minimal interface.
+interface IFactoryIdentity {
+    function MAX_FEE() external view returns (uint256);
+}
 
 /**
  * @title DeployFactoryBase
@@ -31,19 +37,20 @@ abstract contract DeployFactoryBase is CreateXHelpers {
         address impl =
             _createXDeploy(operator, pk, implCode, bytes(DeployConstants.FACTORY_IMPL_SALT), "WalletFactory impl");
 
+        // Identity, on both the fresh and the idempotent-skip path: `MAX_FEE` is a
+        // constructor-set immutable, so this proves the code at the canonical impl
+        // address is THIS build's factory and not a stale one deployed under a
+        // different fee bound.
+        require(
+            _readUint(impl, IFactoryIdentity.MAX_FEE.selector, "WalletFactory impl") == maxFee,
+            "WalletFactory impl: MAX_FEE at the canonical address does not match this build"
+        );
+
         bytes memory initData = abi.encodeCall(WalletFactory.initialize, (payable(owner)));
         bytes memory proxyCode = abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
         proxy =
             _createXDeploy(operator, pk, proxyCode, bytes(DeployConstants.FACTORY_PROXY_SALT), "WalletFactory proxy");
 
-        // Anti-squat: whatever sits at the canonical proxy address must be an
-        // ERC-1967 proxy. A freshly deployed proxy points at `impl`; a proxy that
-        // pre-existed may legitimately point at a NEWER impl (UUPS upgrade), so we
-        // require a non-zero impl slot and surface the current target.
-        address current = address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
-        require(current != address(0), "WalletFactory: code at proxy address is not an ERC-1967 proxy");
-        if (current != impl) {
-            console.log("  - WalletFactory proxy impl (upgraded since this build):", current);
-        }
+        _assertErc1967Proxy(proxy, impl, "WalletFactory proxy");
     }
 }

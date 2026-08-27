@@ -12,31 +12,34 @@ import { type ActionContext } from "../types.js";
 const MAX_SIG = 8;
 const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 const vid = (s: string): Hex => toHex(keccak_256(s));
+const STATEFUL_INDEX = 1;
+const STATELESS_INDEX = 2;
 
 describe("ShrincsSigner.deriveKeyPair", () => {
   it("reproduces recoverKeyPair when both points are equal (homogeneous)", async () => {
     const signer = await ShrincsSigner.create(new TextEncoder().encode("m"));
-    const id = vid("vault");
     const derived = signer.deriveKeyPair({
-      statefulVaultId: id,
-      statelessVaultId: id,
+      statefulIndex: STATEFUL_INDEX,
+      statelessIndex: STATEFUL_INDEX,
       maxSignatures: MAX_SIG,
     });
     expect(derived.publicKey).toEqual(
-      signer.recoverKeyPair(id, { maxSignatures: MAX_SIG }).publicKey
+      signer.recoverKeyPair(STATEFUL_INDEX, { maxSignatures: MAX_SIG }).publicKey
     );
   });
 
   it("grafts the stateful half from t and the stateless half from s (hybrid)", async () => {
     const signer = await ShrincsSigner.create(new TextEncoder().encode("m"));
-    const sId = vid("stateless");
-    const tId = vid("stateful");
-    const sHalf = signer.recoverKeyPair(sId, { maxSignatures: MAX_SIG });
-    const tHalf = signer.recoverKeyPair(tId, { maxSignatures: MAX_SIG });
+    const sHalf = signer.recoverKeyPair(STATELESS_INDEX, {
+      maxSignatures: MAX_SIG,
+    });
+    const tHalf = signer.recoverKeyPair(STATEFUL_INDEX, {
+      maxSignatures: MAX_SIG,
+    });
 
     const hybrid = signer.deriveKeyPair({
-      statefulVaultId: tId,
-      statelessVaultId: sId,
+      statefulIndex: STATEFUL_INDEX,
+      statelessIndex: STATELESS_INDEX,
       maxSignatures: MAX_SIG,
     });
 
@@ -59,8 +62,8 @@ describe("ShrincsSigner.deriveKeyPair", () => {
   it("signs and verifies a hybrid key on both the stateful and stateless paths", async () => {
     const signer = await ShrincsSigner.create(new TextEncoder().encode("m"));
     const hybrid = signer.deriveKeyPair({
-      statefulVaultId: vid("stateful"),
-      statelessVaultId: vid("stateless"),
+      statefulIndex: STATEFUL_INDEX,
+      statelessIndex: STATELESS_INDEX,
       maxSignatures: MAX_SIG,
     });
     const statefulSig = hybrid.signStatefulRawAt(vid("message"), 1);
