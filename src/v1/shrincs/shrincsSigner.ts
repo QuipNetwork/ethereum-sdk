@@ -16,9 +16,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { keccak_256 } from "@noble/hashes/sha3";
-import { type Hex, toHex } from "viem";
+import { type Hex, concat, encodeAbiParameters, hexToBytes, toHex } from "viem";
 
-import { publicKeyCommitment } from "./shrincsCodec.js";
+import {
+  abiTuples,
+  fullRotationMessageHash,
+  publicKeyCommitment,
+  statefulActionMessageHash,
+  statefulRawMessageHash,
+  statelessActionMessageHash,
+  statelessRawMessageHash,
+} from "./shrincsCodec.js";
 import { ShrincsKeyDerivationSelfTestError } from "./errors.js";
 import { deriveQuipSeed, mnemonicToSeed, type QuipHdPathOptions } from "./hd.js";
 import {
@@ -29,9 +37,14 @@ import {
   type ShrincsWasmModule,
   type StatefulSignature,
   type StatelessSignature,
-  type WasmShrincsKeypair,
 } from "./types.js";
-import { loadShrincsWasm } from "@quip.network/hashsigs-wasm";
+import {
+  loadShrincsWasm,
+  decodeStatefulEnvelope,
+  decodeStatelessSignature,
+  type StatefulSignatureParts,
+  type StatelessSignatureParts,
+} from "@quip.network/hashsigs-wasm";
 
 const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
@@ -66,14 +79,65 @@ export interface DeriveKeyPairParams {
   maxSignatures: number;
 }
 
+/// One derived key half at the wasm boundary: the 264-byte flat signing key
+/// plus the public key decomposed from the wasm's 164-byte flat bundle.
+interface ShrincsKeyMaterial {
+  secretKey: Uint8Array;
+  publicKey: ShrincsPublicKey;
+}
+
+/// Decompose the wasm's 164-byte flat public-key bundle:
+/// `statefulPublicKey(68) ‖ publicKeyCommitment(32) ‖ pkSeed(32) ‖
+/// hypertreeRoot(32)`.
+function decomposeFlatPublicKey(flat: Uint8Array): ShrincsPublicKey {
+  return {
+    statefulPublicKey: toHex(flat.slice(0, 68)),
+    publicKeyCommitment: toHex(flat.slice(68, 100)),
+    pkSeed: toHex(flat.slice(100, 132)),
+    hypertreeRoot: toHex(flat.slice(132, 164)),
+  };
+}
+
+/// Decoded wasm envelope parts (Uint8Array leaves) → SDK DTO (Hex leaves).
+function statefulSignatureFromParts(
+  parts: StatefulSignatureParts
+): StatefulSignature {
+  return {
+    randomizer: toHex(parts.randomizer),
+    counter: parts.counter,
+    chains: parts.chains.map((chain) => toHex(chain)),
+    authPath: parts.authPath.map((node) => toHex(node)),
+  };
+}
+
+function statelessSignatureFromParts(
+  parts: StatelessSignatureParts
+): StatelessSignature {
+  return {
+    fors: {
+      randomizer: toHex(parts.fors.randomizer),
+      counter: parts.fors.counter,
+      entries: parts.fors.entries.map((entry) => ({
+        secretLeaf: toHex(entry.secretLeaf),
+        authPath: entry.authPath.map((node) => toHex(node)),
+      })),
+    },
+    hypertree: parts.hypertree.map((layer) => ({
+      wotsCPkHash: toHex(layer.wotsCPkHash),
+      wotsCSignature: {
+        randomizer: toHex(layer.wotsCSignature.randomizer),
+        counter: layer.wotsCSignature.counter,
+        chains: layer.wotsCSignature.chains.map((chain) => toHex(chain)),
+      },
+      authPath: layer.authPath.map((node) => toHex(node)),
+    })),
+  };
+}
+
 function graftHybridPublicKey(
-  statefulInner: WasmShrincsKeypair,
-  statelessInner: WasmShrincsKeypair
+  stateful: ShrincsPublicKey,
+  stateless: ShrincsPublicKey
 ): ShrincsPublicKey {
-  // Raw wasm DTO (string leaves) → SDK DTO (Hex leaves): legal downcast; the
-  // wasm always emits 0x-lowercase hex (proven by hashsigsBoundary.test.ts).
-  const stateful = statefulInner.publicKey() as ShrincsPublicKey;
-  const stateless = statelessInner.publicKey() as ShrincsPublicKey;
   return {
     statefulPublicKey: stateful.statefulPublicKey,
     pkSeed: stateless.pkSeed,
@@ -86,33 +150,39 @@ function graftHybridPublicKey(
   };
 }
 
-/// A live SHRINCS keypair handle. Wraps the WASM signing key and exposes the
+/// A live SHRINCS keypair handle. Wraps the WASM signing keys and exposes the
 /// canonical signing surface the wallet/paymaster clients need.
 ///
 /// All signing is deterministic and does NOT track burned leaves: the on-chain
 /// used-leaf bitmap is authoritative. The caller reads the lowest unused leaf
 /// from chain and passes it to the `*At` methods; `authPath.length === leaf`.
+///
+/// The wasm boundary is raw bytes: signatures come back as canonical ABI
+/// envelopes and are decoded into typed DTOs here. Signing uses the RAW
+/// (unbound) wasm entry points, and the V4 ERC-7913 adapter binding is
+/// applied HERE (see shrincsCodec's `*RawMessageHash`) over the canonical
+/// hashes — hybrid-safe, because the binding must use the grafted bundle
+/// commitment, which the wasm's internally-binding entry points cannot know.
 export class ShrincsKeyPair {
-  /// Long-lived public key bundle. Pass straight into the codec/ABI encoders and
-  /// the WASM verify/message-hash entry points.
+  /// Long-lived public key bundle. Pass straight into the codec/ABI encoders.
   readonly publicKey: ShrincsPublicKey;
 
   private readonly wasm: ShrincsWasmModule;
-  private readonly statefulInner: WasmShrincsKeypair;
-  private readonly statelessInner: WasmShrincsKeypair;
+  private readonly stateful: ShrincsKeyMaterial;
+  private readonly stateless: ShrincsKeyMaterial;
 
   constructor(
     wasm: ShrincsWasmModule,
-    statefulInner: WasmShrincsKeypair,
-    statelessInner: WasmShrincsKeypair = statefulInner
+    stateful: ShrincsKeyMaterial,
+    stateless: ShrincsKeyMaterial = stateful
   ) {
     this.wasm = wasm;
-    this.statefulInner = statefulInner;
-    this.statelessInner = statelessInner;
+    this.stateful = stateful;
+    this.stateless = stateless;
     this.publicKey =
-      statelessInner === statefulInner
-        ? (statefulInner.publicKey() as ShrincsPublicKey)
-        : graftHybridPublicKey(statefulInner, statelessInner);
+      stateless === stateful
+        ? stateful.publicKey
+        : graftHybridPublicKey(stateful.publicKey, stateless.publicKey);
   }
 
   /// The installed-key commitment (the on-chain identity of this bundle).
@@ -120,60 +190,71 @@ export class ShrincsKeyPair {
     return this.publicKey.publicKeyCommitment;
   }
 
-  // ── canonical signing (message hashing delegated to the WASM) ──────────────
+  // ── canonical signing ──────────────────────────────────────────────────────
 
-  /// Sign a normal stateful action at `leaf`. The WASM folds the action context
-  /// into the parameter-set message structure, so the SDK never reimplements the
-  /// FORS/hypertree/WOTS-C math. Used by execute / withdraw / setErc1271Key /
-  /// rotateKey / upgrade / the ERC-4337 path / the owner-binding leg of
+  /// Sign a normal stateful action at `leaf`. The wallet delegates stateful
+  /// verification to the DEPLOYED ERC-7913 verifier, whose V4 adapter binds
+  /// `statefulRawMessageHash(commitment, hash)` on top of the caller hash —
+  /// so the signed digest is the canonical action hash wrapped once more in
+  /// that binding. Used by execute / withdraw / setErc1271Key / rotateKey /
+  /// upgrade / the ERC-4337 path / the owner-binding leg of
   /// transferOwnership.
   signStatefulActionAt(context: ActionContext, leaf: number): StatefulSignature {
-    const message = this.statefulActionMessageHash(context);
+    const message = statefulRawMessageHash(
+      this.publicKeyCommitment,
+      this.statefulActionMessageHash(context)
+    );
     return this.signStatefulRawAt(message, leaf);
   }
 
-  /// Sign a stateless action (ERC-1271). No leaf is consumed.
+  /// Sign a stateless action (ERC-1271). No leaf is consumed. The wallet
+  /// verifies stateless signatures through the DEPLOYED ERC-7913 verifier,
+  /// whose V4 adapter binds `statelessRawMessageHash(commitment, hash)` on
+  /// top of the caller hash — so the signed digest is the canonical action
+  /// hash wrapped once more in that binding.
   signStatelessAction(context: ActionContext): StatelessSignature {
-    const message = this.statelessActionMessageHash(context);
+    const message = statelessRawMessageHash(
+      this.publicKeyCommitment,
+      this.statelessActionMessageHash(context)
+    );
     return this.signStatelessRaw(message);
   }
 
   /// Sign the stateless full-bundle rotation recovery message
-  /// (`recoverWallet` and the recovery leg of `transferOwnership`).
+  /// (`recoverWallet` and the recovery leg of `transferOwnership`). Like
+  /// `signStatelessAction`, wrapped in the external verifier's V4
+  /// `statelessRawMessageHash` binding.
   signFullRotation(
     context: RotationContext,
     nextKey: RotationTarget
   ): StatelessSignature {
-    const message = this.fullRotationMessageHash(context, nextKey);
+    const message = statelessRawMessageHash(
+      this.publicKeyCommitment,
+      this.fullRotationMessageHash(context, nextKey)
+    );
     return this.signStatelessRaw(message);
   }
 
   // ── canonical message hashes (no signing) ──────────────────────────────────
 
   statefulActionMessageHash(context: ActionContext): Hex {
-    return this.wasm.shrincsStatefulActionMessageHash(
-      this.publicKeyCommitment,
-      context
-    ) as Hex;
+    return statefulActionMessageHash(this.publicKeyCommitment, context);
   }
 
   statelessActionMessageHash(context: ActionContext): Hex {
-    return this.wasm.shrincsStatelessActionMessageHash(
-      this.publicKeyCommitment,
-      context
-    ) as Hex;
+    return statelessActionMessageHash(this.publicKeyCommitment, context);
   }
 
   fullRotationMessageHash(
     context: RotationContext,
     nextKey: RotationTarget
   ): Hex {
-    return this.wasm.shrincsFullRotationMessageHash(
+    return fullRotationMessageHash(
       this.publicKeyCommitment,
       this.publicKey,
       context,
       nextKey
-    ) as Hex;
+    );
   }
 
   // ── raw signing (for codec/userOp composition and vector parity) ───────────
@@ -181,21 +262,38 @@ export class ShrincsKeyPair {
   /// Deterministically sign a raw 32-byte message at `leaf`
   /// (`authPath.length === leaf`). Does not advance any internal counter.
   signStatefulRawAt(messageHex: Hex, leaf: number): StatefulSignature {
-    return this.statefulInner.signStatefulRawAt(messageHex, leaf) as StatefulSignature;
+    const envelope = this.wasm.shrincsSignStatefulRawAt(
+      hexToBytes(messageHex),
+      this.stateful.secretKey,
+      leaf
+    );
+    return statefulSignatureFromParts(
+      decodeStatefulEnvelope(envelope).signature
+    );
   }
 
   signStatelessRaw(messageHex: Hex): StatelessSignature {
-    return this.statelessInner.signStatelessRaw(messageHex) as StatelessSignature;
+    const signature = this.wasm.shrincsSignStateless(
+      hexToBytes(messageHex),
+      this.stateless.secretKey
+    );
+    return statelessSignatureFromParts(decodeStatelessSignature(signature));
   }
 
   // ── verification helpers (self-test / debugging) ───────────────────────────
 
   verifyStatefulRaw(messageHex: Hex, signature: StatefulSignature): boolean {
+    // The wasm raw verify takes the composite `PublicKey ‖ Signature`
+    // envelope and pins the commitment against the carried key. Re-encode
+    // through the codec tuples — byte-identical to the wasm's own encoding.
+    const envelope = encodeAbiParameters(
+      [abiTuples.publicKey, abiTuples.statefulSignature],
+      [this.publicKey, signature]
+    );
     return this.wasm.shrincsVerifyStatefulRaw(
-      this.publicKeyCommitment,
-      this.publicKey,
-      messageHex,
-      signature
+      hexToBytes(envelope),
+      hexToBytes(messageHex),
+      hexToBytes(this.publicKeyCommitment)
     );
   }
 
@@ -203,11 +301,20 @@ export class ShrincsKeyPair {
     context: ActionContext,
     signature: StatelessSignature
   ): boolean {
-    return this.wasm.shrincsVerifyStatelessAction(
+    // Mirrors the on-chain path: canonical action hash wrapped in the
+    // external verifier's V4 raw binding.
+    const message = statelessRawMessageHash(
       this.publicKeyCommitment,
-      this.publicKey,
-      context,
-      signature
+      this.statelessActionMessageHash(context)
+    );
+    const encoded = encodeAbiParameters(
+      [abiTuples.statelessSignature],
+      [signature]
+    );
+    return this.wasm.shrincsVerifyStateless(
+      hexToBytes(encoded),
+      hexToBytes(message),
+      hexToBytes(concat([this.publicKey.pkSeed, this.publicKey.hypertreeRoot]))
     );
   }
 }
@@ -288,18 +395,18 @@ export class ShrincsSigner {
   }
 
   deriveKeyPair(params: DeriveKeyPairParams): ShrincsKeyPair {
-    const statefulInner = this.wasm.shrincsKeygen(
+    const stateful = this.keyMaterial(
       this.deriveSeedHex(params.statefulIndex),
       params.maxSignatures
     );
-    const statelessInner =
+    const stateless =
       params.statelessIndex === params.statefulIndex
-        ? statefulInner
-        : this.wasm.shrincsKeygen(
+        ? stateful
+        : this.keyMaterial(
             this.deriveSeedHex(params.statelessIndex),
             params.maxSignatures
           );
-    const pair = new ShrincsKeyPair(this.wasm, statefulInner, statelessInner);
+    const pair = new ShrincsKeyPair(this.wasm, stateful, stateless);
     this.runSelfTest(pair);
     return pair;
   }
@@ -307,10 +414,22 @@ export class ShrincsSigner {
   /// Low-level keygen from explicit seed material. Used for recovering keys
   /// whose seed is held out-of-band. Runs the self-test before returning.
   keygenFromSeedHex(seedHex: Hex, opts: ShrincsKeygenOptions): ShrincsKeyPair {
-    const inner = this.wasm.shrincsKeygen(seedHex, opts.maxSignatures);
-    const pair = new ShrincsKeyPair(this.wasm, inner);
+    const pair = new ShrincsKeyPair(
+      this.wasm,
+      this.keyMaterial(seedHex, opts.maxSignatures)
+    );
     this.runSelfTest(pair);
     return pair;
+  }
+
+  /// Derive one key half at the wasm boundary and pull its byte material out
+  /// of the wasm handle.
+  private keyMaterial(seedHex: Hex, maxSignatures: number): ShrincsKeyMaterial {
+    const keys = this.wasm.shrincsKeygen(hexToBytes(seedHex), maxSignatures);
+    return {
+      secretKey: keys.secretKey,
+      publicKey: decomposeFlatPublicKey(keys.publicKey),
+    };
   }
 
   /// Sign + verify a fixed sentinel against the freshly derived key (stateless

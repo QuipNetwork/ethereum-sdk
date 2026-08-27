@@ -24,6 +24,7 @@ import {
   decodeUserOpSignature,
   domainSeparator,
   erc4337PayloadHash,
+  statefulRawMessageHash,
 } from "../shrincsCodec.js";
 import { ShrincsSigner } from "../shrincsSigner.js";
 import {
@@ -187,7 +188,12 @@ describe("shrincs wallet userOp", () => {
           payloadHash: erc4337PayloadHash(userOpHash),
         })
       );
-      expect(main.verifyStatefulRaw(message, decoded.signature)).toBe(true);
+      expect(
+        main.verifyStatefulRaw(
+          statefulRawMessageHash(main.publicKeyCommitment, message),
+          decoded.signature
+        )
+      ).toBe(true);
     });
 
     it("is deterministic for a fixed (userOp, leaf, keyVersion)", async () => {

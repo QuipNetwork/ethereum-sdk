@@ -4,7 +4,7 @@
 
 import { type Address, type Hex, keccak256, sliceHex, toHex } from "viem";
 
-import { decodeSponsorshipSignature, buildActionContext, domainSeparator } from "../shrincsCodec.js";
+import { decodeSponsorshipSignature, buildActionContext, domainSeparator, statefulRawMessageHash } from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
   type PackedUserOperation,
@@ -117,7 +117,12 @@ describe("shrincs paymaster userOp", () => {
         payloadHash: paymasterBindingHash(op, header64()),
       })
     );
-    expect(verifier.verifyStatefulRaw(message, signature)).toBe(true);
+    expect(
+      verifier.verifyStatefulRaw(
+        statefulRawMessageHash(verifier.publicKeyCommitment, message),
+        signature
+      )
+    ).toBe(true);
 
     // Deterministic for fixed inputs; different nonce => different signature.
     expect(

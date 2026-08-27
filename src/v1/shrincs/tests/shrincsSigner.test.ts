@@ -10,6 +10,7 @@ import {
   ShrincsInvalidMnemonicError,
 } from "../errors.js";
 import { deriveQuipSeed, generateMnemonic, mnemonicToSeed } from "../hd.js";
+import { statefulRawMessageHash } from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
   type ActionContext,
@@ -90,9 +91,12 @@ describe("ShrincsSigner", () => {
       main.statefulActionMessageHash({ ...ctx, keyVersion: keccakStr("v1") })
     ).not.toBe(message);
 
+    // The wallet verifies through the deployed ERC-7913 verifier, so the
+    // signed digest is the canonical hash wrapped in the V4 raw binding.
+    const bound = statefulRawMessageHash(main.publicKeyCommitment, message);
     const sig = main.signStatefulActionAt(ctx, 4);
-    expect(sig).toEqual(main.signStatefulRawAt(message, 4));
-    expect(main.verifyStatefulRaw(message, sig)).toBe(true);
+    expect(sig).toEqual(main.signStatefulRawAt(bound, 4));
+    expect(main.verifyStatefulRaw(bound, sig)).toBe(true);
   });
 
   it("signs and verifies the stateless ERC-1271 action path", () => {
