@@ -53,9 +53,9 @@ library DeployConstants {
     ///   FOUNDRY_PROFILE=production forge script script/DeploySPHINCSPlusC256sKeccak.s.sol ...
     ///   FOUNDRY_PROFILE=production forge script script/DeploySHRINCS256sKeccak.s.sol ...
     /// (full commands in the dep's `DEPLOYMENTS.md`). Live on Base mainnet
-    /// (8453); its stateless delegate is `0x97B3726F44e3B7521199CE4e0fC160A32A597d31`.
+    /// (8453); its stateless delegate is `0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864`.
     address internal constant SHRINCS_EXTERNAL_VERIFIER =
-        0xE6F2970bA30d59e8288b7007bA755828372457c3;
+        0xF2f9E6D692da41b089c3c261c41509669eEc5567;
 
     // ── Versions ─────────────────────────────────────────────────────
     //

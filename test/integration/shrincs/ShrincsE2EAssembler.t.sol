@@ -219,7 +219,9 @@ abstract contract ShrincsE2EAssembler is Test {
             actionType: actionType,
             payloadHash: payloadHash
         });
-        bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(walletCommitment, ctx));
+        bytes memory message = abi.encodePacked(
+            SHRINCS.statefulRawMessageHash(walletCommitment, SHRINCS.statefulActionMessageHash(walletCommitment, ctx))
+        );
         bool ok;
         (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(walletKey, leaf, message);
         require(ok, "wallet sign failed");
@@ -241,7 +243,9 @@ abstract contract ShrincsE2EAssembler is Test {
             payloadHash: bindingHash
         });
         bytes32 commitment = useVerifier2 ? verifierCommitment2 : verifierCommitment;
-        bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(commitment, ctx));
+        bytes memory message = abi.encodePacked(
+            SHRINCS.statefulRawMessageHash(commitment, SHRINCS.statefulActionMessageHash(commitment, ctx))
+        );
         bool ok;
         (sig, ok) =
             SHRINCSTestSigner.signStatefulRawAtLeaf(useVerifier2 ? verifierKey2 : verifierKey, leaf, message);

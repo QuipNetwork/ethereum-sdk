@@ -43,7 +43,7 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
 
     // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
     // sibling; its code must exist there or stateless verification reverts on empty code.
-    address internal constant SPHINCS_SIBLING = 0x97B3726F44e3B7521199CE4e0fC160A32A597d31;
+    address internal constant SPHINCS_SIBLING = 0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864;
 
     function setUp() public virtual override {
         super.setUp(); // generates the wallet + verifier keys

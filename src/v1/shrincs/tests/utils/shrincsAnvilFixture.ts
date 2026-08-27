@@ -77,7 +77,7 @@ export const SHRINCS_ANVIL_PORTS = {
 /// re-scheme in hashsigs (was `0xf1Bd3aE9…`); it must track the dep pin, so
 /// re-read `SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER` after any dep bump.
 export const SPHINCS_PLUS_C_SIBLING =
-  "0x97B3726F44e3B7521199CE4e0fC160A32A597d31" as const;
+  "0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864" as const;
 
 function assertVerifierPinMatches(verifierArtifact: {
   deployedBytecode: { object: string };

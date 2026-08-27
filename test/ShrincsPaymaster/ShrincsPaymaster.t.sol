@@ -113,7 +113,11 @@ contract ShrincsPaymasterTest is Test {
             actionType: ACTION_PAYMASTER_APPROVE,
             payloadHash: bindingHash
         });
-        bytes memory message = abi.encodePacked(SHRINCS.statefulActionMessageHash(verifierCommitment, ctx));
+        bytes memory message = abi.encodePacked(
+            SHRINCS.statefulRawMessageHash(
+                verifierCommitment, SHRINCS.statefulActionMessageHash(verifierCommitment, ctx)
+            )
+        );
         bool ok;
         (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(verifierKey, leaf, message);
         require(ok, "sponsorship sign failed");
