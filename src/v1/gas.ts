@@ -18,6 +18,7 @@ import {
   type Account,
   type Address,
   type PublicClient,
+  type StateOverride,
 } from "viem";
 
 import {
@@ -144,6 +145,7 @@ export interface ContractCallParams {
   args?: readonly unknown[];
   value?: bigint;
   account: Account | Address;
+  stateOverride?: StateOverride;
 }
 
 export interface PrepareTxParams {

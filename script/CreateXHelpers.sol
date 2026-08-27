@@ -45,11 +45,55 @@ abstract contract CreateXHelpers is Script {
     bytes32 internal constant ERC1967_IMPL_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
-    /// @dev Assemble the sender-guarded raw salt: operator (20) ‖ 0x00 ‖ entropy (11).
+    /// @dev Byte 20 of the raw salt is CreateX's CROSS-CHAIN FLAG, and it is the
+    ///      difference between one canonical address everywhere and a different
+    ///      address per chain:
+    ///        0x01 → guard folds in `block.chainid`  (per-chain addresses)
+    ///        0x00 → guard omits it                  (chain-invariant) ← always us
+    ///      Chain-invariance is the entire point of the canonical address set, so
+    ///      this is written explicitly below and asserted in `_assertSaltLayout`.
+    uint256 internal constant CROSSCHAIN_FLAG_OFF = 0x00;
+
+    /// @dev Bit offsets of the three raw-salt fields (bytes are numbered from the
+    ///      most-significant end, matching CreateX's `_parseSalt`).
+    uint256 internal constant _SALT_OPERATOR_SHIFT = 96; // bytes 0..19
+    uint256 internal constant _SALT_FLAG_SHIFT = 88; // byte  20
+    uint256 internal constant _SALT_ENTROPY_SHIFT = 168; // bytes 21..31
+
+    /// @dev Assemble the sender-guarded raw salt, all 32 bytes accounted for:
+    ///
+    ///        byte  0 .. 19   operator address  → CreateX takes the MsgSender branch
+    ///        byte       20   0x00              → cross-chain flag OFF
+    ///        byte 21 .. 31   keccak(preimage)[0:11]
+    ///
+    ///      The flag term ORs in zero and is therefore a no-op at runtime; it is
+    ///      spelled out so the layout is complete on the page rather than being an
+    ///      unwritten gap between the other two fields. `_assertSaltLayout` is what
+    ///      actually enforces it.
     function _rawSalt(address operator, bytes memory saltPreimage) internal pure returns (bytes32) {
-        return
-            bytes32(uint256(uint160(operator)) << 96) |
-            (keccak256(saltPreimage) >> 168);
+        bytes32 salt = bytes32(uint256(uint160(operator)) << _SALT_OPERATOR_SHIFT)
+            | bytes32(CROSSCHAIN_FLAG_OFF << _SALT_FLAG_SHIFT)
+            | (keccak256(saltPreimage) >> _SALT_ENTROPY_SHIFT);
+        _assertSaltLayout(operator, salt);
+        return salt;
+    }
+
+    /// @dev Fail closed on the two layout properties CreateX branches on. Neither
+    ///      can be wrong by construction *today* — this exists so a future edit to
+    ///      `_rawSalt` cannot silently move us onto a different branch, because
+    ///      taking the wrong branch does NOT revert inside CreateX: it deploys
+    ///      successfully, at a different address.
+    ///
+    ///      Runs inside `_rawSalt`, so it covers prediction as well as deployment.
+    function _assertSaltLayout(address operator, bytes32 rawSalt_) internal pure {
+        require(
+            address(uint160(uint256(rawSalt_ >> _SALT_OPERATOR_SHIFT))) == operator,
+            "salt layout: bytes 0-19 are not the operator (CreateX would take the permissionless branch)"
+        );
+        require(
+            uint8(uint256(rawSalt_ >> _SALT_FLAG_SHIFT)) == CROSSCHAIN_FLAG_OFF,
+            "salt layout: byte 20 is not 0x00 (CreateX would bind block.chainid and break chain-invariance)"
+        );
     }
 
     /// @dev Mirror of CreateX's `_guard` for the MsgSender + no-crosschain branch:
@@ -65,11 +109,18 @@ abstract contract CreateXHelpers is Script {
     }
 
     /// @dev Idempotent sender-guarded CREATE3 deploy. Skips (loudly) when code
-    ///      already exists at the canonical address — callers deploying proxies
-    ///      should follow up with `_assertProxyImpl` so a squatted/foreign contract
-    ///      cannot masquerade as ours. Requires the broadcaster to BE the operator
-    ///      (CreateX reverts `InvalidSalt` otherwise; we check first for a clearer
-    ///      error).
+    ///      already exists at the canonical address — the skip proves only that
+    ///      SOMETHING has code there, so every caller must follow up with an
+    ///      identity check (`_assertErc1967Proxy` for proxies, a view call on a
+    ///      constructor-set immutable for implementations).
+    ///
+    ///      Requires the broadcaster to BE the operator, and that check is
+    ///      load-bearing rather than cosmetic: CreateX does NOT revert for a wrong
+    ///      caller. `_parseSalt` sees leading bytes matching neither `msg.sender`
+    ///      nor `address(0)`, falls through to the PERMISSIONLESS branch, and
+    ///      deploys SUCCESSFULLY at a different address. Verified against the real
+    ///      singleton by
+    ///      `test_senderGuard_strangerLandsElsewhere_canonicalUntouched`.
     function _createXDeploy(
         address operator,
         uint256 privateKey,
@@ -78,27 +129,86 @@ abstract contract CreateXHelpers is Script {
         string memory name
     ) internal returns (address deployed) {
         require(vm.addr(privateKey) == operator, string.concat(name, ": broadcaster is not DEPLOY_OPERATOR"));
+        bytes32 rawSalt = _rawSalt(operator, saltPreimage);
         address expected = _predictCreateX(operator, saltPreimage);
         if (expected.code.length > 0) {
+            // Informational only — every live artifact carries immutables, so the
+            // runtime codehash is a function of the deploy params and cannot be
+            // pinned. Callers prove identity with view calls (`_assertErc1967Proxy`
+            // and the per-artifact checks in the deploy bases).
             console.log(string.concat("  - ", name, " already has code at"), expected);
-            console.log("    (idempotent skip; verify it is the expected deployment)");
+            console.log("    codehash:", vm.toString(expected.codehash));
             return expected;
         }
         require(CREATEX.code.length > 0, "CreateX not deployed on this chain");
+        // Cross-check our pure mirror of CreateX's `_guard` against CreateX's OWN
+        // derivation before spending gas. Catches drift between the two the only
+        // way that is free: asking the singleton we are about to call.
+        require(
+            ICreateX(CREATEX).computeCreate3Address(_guardedSalt(operator, rawSalt)) == expected,
+            string.concat(name, ": local prediction disagrees with CreateX")
+        );
+        console.log(string.concat("  - ", name, " deploying to"), expected);
         vm.startBroadcast(privateKey);
-        deployed = ICreateX(CREATEX).deployCreate3(_rawSalt(operator, saltPreimage), bytecode);
+        deployed = ICreateX(CREATEX).deployCreate3(rawSalt, bytecode);
         vm.stopBroadcast();
         require(deployed == expected, string.concat(name, ": CREATE3 address mismatch"));
         console.log(string.concat("  - ", name, " deployed at"), deployed);
     }
 
-    /// @dev Anti-squat check for ERC-1967 proxies: the code at `proxy` must point
-    ///      at `impl`. Catches a foreign contract occupying the canonical proxy
-    ///      address (the idempotent skip alone cannot).
-    function _assertProxyImpl(address proxy, address impl, string memory name) internal view {
+    /// @dev Read one word from a getter on `target` via staticcall. Used for the
+    ///      identity checks: a raw `Typed(target).getter()` on foreign code fails
+    ///      with an opaque decode revert, whereas this names the artifact whose
+    ///      canonical address is not answering.
+    function _identityWord(address target, bytes4 selector, string memory name)
+        internal
+        view
+        returns (bytes32)
+    {
+        (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSelector(selector));
         require(
-            address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT)))) == impl,
-            string.concat(name, ": proxy does not point at the expected implementation")
+            ok && ret.length == 32,
+            string.concat(name, ": code at the canonical address does not answer the identity call")
         );
+        return abi.decode(ret, (bytes32));
+    }
+
+    function _readUint(address target, bytes4 selector, string memory name)
+        internal
+        view
+        returns (uint256)
+    {
+        return uint256(_identityWord(target, selector, name));
+    }
+
+    function _readAddress(address target, bytes4 selector, string memory name)
+        internal
+        view
+        returns (address)
+    {
+        return address(uint160(uint256(_identityWord(target, selector, name))));
+    }
+
+    /// @dev Identity check for a canonical ERC-1967 proxy address, run on BOTH the
+    ///      fresh-deploy and the idempotent-skip path — the skip alone proves only
+    ///      that *something* has code there.
+    ///
+    ///      Deliberately not `slot == impl`: a proxy that pre-existed this run may
+    ///      legitimately point at a NEWER implementation (UUPS upgrade), and both
+    ///      the factory and the paymaster are upgradeable. So require a non-zero
+    ///      implementation slot — which foreign, non-proxy code will not have — and
+    ///      surface a divergent target loudly instead of failing on it.
+    function _assertErc1967Proxy(address proxy, address impl, string memory name) internal view {
+        address current = address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
+        require(
+            current != address(0),
+            string.concat(name, ": code at the canonical proxy address is not an ERC-1967 proxy")
+        );
+        if (current != impl) {
+            console.log(
+                string.concat("  - ", name, " points at a different impl (upgraded since this build):"),
+                current
+            );
+        }
     }
 }

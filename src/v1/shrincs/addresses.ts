@@ -53,29 +53,41 @@ export interface ShrincsNetworkAddresses {
   ShrincsVerifier: Address;
 }
 
-// Deterministic CREATE3 addresses produced by `script/PredictAddresses.s.sol`
-// (run with `DEPLOY_OPERATOR` set). Shrincs contracts deploy straight through
-// the CreateX singleton with SENDER-GUARDED salts, so each address is a
-// function of (CreateX, DEPLOY_OPERATOR, salt preimage) — not the bytecode —
-// and is identical on every chain reached by the same operator. The
-// implementation salt preimages bind the verifier SCHEME tag on top of the
-// version: `"QUIP:ShrincsWallet:V1.1:" ‖ PROFILE_ID` (and the paymaster-impl
-// analog) where PROFILE_ID = keccak256("shrincs-256s-keccak") — the deployed
-// verifier's constant `PROFILE_TAG()` — so implementations pinned to a
-// different cryptographic scheme land at different addresses. The proxy
-// preimage is the plain `QUIP:ShrincsPaymaster:Proxy:V1.1` (scheme-agnostic).
+// Deterministic CREATE3 addresses produced by `script/PredictAddresses.s.sol`.
+// Shrincs contracts deploy straight through the CreateX singleton with
+// SENDER-GUARDED salts, so each address is a function of (CreateX,
+// CANONICAL_OPERATOR, salt preimage) — not the bytecode — and is identical on
+// every chain reached by the same operator.
 //
-// The values below are derived for the canonical DEPLOY_OPERATOR
-// `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` and deploy via
-// `script/02_DeployShrincs.s.sol` (see DEPLOYMENTS.md).
+// Salt scheme: proxies are `V1.0.0` (permanent public identity), implementations
+// are `V1.0.0-beta` (replaced as code changes). The implementation preimages
+// additionally bind the verifier SCHEME tag —
+// `"QUIP:ShrincsWallet:Impl:V1.0.0-beta:" ‖ PROFILE_ID` and the paymaster-impl
+// analog, where PROFILE_ID = keccak256("shrincs-256s-keccak") is the deployed
+// verifier's constant `PROFILE_TAG()` — so implementations pinned to a different
+// cryptographic scheme land at different addresses. Proxy preimages carry no
+// tag; an ERC-1967 proxy is scheme-agnostic.
+//
+// ⚠️ THIS IS THE BASE MAINNET GENERATION. hashsigs moved its verifier deploys
+// onto sender-guarded salts, relocating `SHRINCS256sKeccak` to the address
+// below; the implementations bake it in as an immutable, so their salts moved
+// with it. The PRIOR generation is still live on Base Sepolia and OP Sepolia
+// against verifier `0x9154dA0BA19600C543a8c5ed1B1c44af415B5688`, at entirely
+// different addresses (see DEPLOYMENTS.md). Those chains are legacy: this
+// registry describes the current generation only, deliberately single-valued
+// rather than per-chain, because CREATE3 ignores constructor args and a
+// per-chain verifier would put DIFFERENT code at the SAME impl address.
+//
+// Derived for the canonical operator `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26`
+// and deployed via `script/02_DeployShrincs.s.sol` (see DEPLOYMENTS.md).
 const SHRINCS_WALLET_IMPLEMENTATION =
-  "0xb84a596A6fB567FC4634b4f49212410D1193140e" as Address;
+  "0x33d3949117c8Bba7A3637C96a564a817E00c5aE0" as Address;
 const SHRINCS_PAYMASTER_PROXY =
-  "0xE38420930EBD214FE8FEb403dd66F4887AEF76E8" as Address;
+  "0x077C06913777777DfABf951a5A0F8CA665764ac9" as Address;
 const SHRINCS_PAYMASTER_IMPL =
-  "0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59" as Address;
+  "0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3" as Address;
 const SHRINCS_VERIFIER =
-  "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688" as Address;
+  "0xE6F2970bA30d59e8288b7007bA755828372457c3" as Address;
 
 /// Chains that share the CREATE3-deterministic (chain-independent) Shrincs
 /// addresses captured under the `default` entry of `NETWORK_ADDRESSES`.
