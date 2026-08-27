@@ -87,8 +87,10 @@ describe("shrincs addresses", () => {
     expect(() => getShrincsAddresses(999999)).toThrow(UnsupportedNetworkError);
   });
 
-  it("getShrincsAddresses returns the default entry for BASE_SEPOLIA", () => {
+  it("getShrincsAddresses returns the default entry for the live testnets", () => {
+    // Live V1.0.1 deployments as of 2026-08-27: Base Sepolia and OP Sepolia.
     expect(getShrincsAddresses(84532)).toEqual(NETWORK_ADDRESSES.default);
+    expect(getShrincsAddresses(11155420)).toEqual(NETWORK_ADDRESSES.default);
   });
 
   it("getShrincsAddresses returns the default entry when chainId is omitted", () => {
