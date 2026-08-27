@@ -361,6 +361,14 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             .decodeStatefulPublicKey(pk.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
 
+        bytes32 walletCommitment = IWalletFactory(FACTORY).commitmentOf(address(this));
+        if (
+            walletCommitment !=
+            Codec.v1Commitment(commitment, erc1271Commitment, newOwner)
+        ) {
+            revert IdentityMismatch();
+        }
+
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
         $.walletFactory = FACTORY;

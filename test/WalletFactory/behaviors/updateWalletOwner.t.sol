@@ -13,15 +13,15 @@ import {IWalletFactory} from "../../../contracts/interfaces/IWalletFactory.sol";
 ///      from its own `walletOwner[msg.sender]` source of truth.
 contract WalletFactory_updateWalletOwner is WalletFactoryTest {
     /// @dev Returns the address of a fresh wallet deployed by ALICE. The
-    ///      factory writes `vaultIdOf[wallet] = vaultId`,
-    ///      `walletOwner[wallet] = owner`, and `_vaultIds[owner].add(vaultId)`
+    ///      factory writes `commitmentOf[wallet] = commitment`,
+    ///      `walletOwner[wallet] = owner`, and `_commitments[owner].add(commitment)`
     ///      during `_deployProxy`.
     function _deployWalletFor(bytes32 seed, address owner) internal returns (address wallet) {
         (wallet,,,) = _createWalletFull(owner, seed, 0);
     }
 
     /// @dev Calls from any EOA / contract that wasn't deployed by this factory
-    ///      have `vaultIdOf[msg.sender] == 0` and fail the first gate.
+    ///      have `commitmentOf[msg.sender] == 0` and fail the first gate.
     function test_updateWalletOwner_revertsWhen_callerNotAWallet() public {
         vm.expectRevert(IWalletFactory.OnlyWallet.selector);
         vm.prank(BOB);
@@ -29,8 +29,8 @@ contract WalletFactory_updateWalletOwner is WalletFactoryTest {
     }
 
     /// @dev Even another factory's wallet can't notify THIS factory — its
-    ///      vaultIdOf entry lives in the other factory's storage. Reproduced
-    ///      here with a synthetic contract address: vaultIdOf lookup returns 0.
+    ///      commitmentOf entry lives in the other factory's storage. Reproduced
+    ///      here with a synthetic contract address: commitmentOf lookup returns 0.
     function test_updateWalletOwner_revertsWhen_callerIsRandomContract() public {
         address stranger = makeAddr("stranger-contract");
         vm.etch(stranger, hex"00"); // give it some code so it's not an EOA
@@ -73,12 +73,12 @@ contract WalletFactory_updateWalletOwner is WalletFactoryTest {
     function test_updateWalletOwner_setUpRegistryIsConsistent() public {
         bytes32 seed = bytes32(uint256(0xA5));
         address wallet = _deployWalletFor(seed, ALICE);
-        bytes32 vaultId = keccak256(abi.encodePacked(seed));
-        assertEq(factory.vaultIdOf(wallet), vaultId);
-        assertEq(factory.wallets(vaultId), wallet);
+        bytes32 commitment = keccak256(abi.encodePacked(seed));
+        assertEq(factory.commitmentOf(wallet), commitment);
+        assertEq(factory.wallets(commitment), wallet);
         assertEq(factory.walletOwner(wallet), ALICE);
-        assertNotEq(factory.getVaultIdIndex(ALICE, vaultId), type(uint256).max);
-        assertEq(factory.getVaultIdIndex(BOB, vaultId), type(uint256).max);
-        assertEq(factory.getVaultIdCount(ALICE), 1);
+        assertNotEq(factory.getCommitmentIndex(ALICE, commitment), type(uint256).max);
+        assertEq(factory.getCommitmentIndex(BOB, commitment), type(uint256).max);
+        assertEq(factory.getCommitmentCount(ALICE), 1);
     }
 }

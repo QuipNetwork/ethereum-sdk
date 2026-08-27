@@ -199,12 +199,12 @@ contract WalletFactoryTest is Test {
         return Codec.encodeInit(disasterKey, ownershipKey, txnPubkeys, recFixed, verifPubkeys);
     }
 
-    function _deployProxyAs(address owner, bytes32 vaultId, bytes memory payload, uint256 deposit)
+    function _deployProxyAs(address owner, bytes32 commitment, bytes memory payload, uint256 deposit)
         internal
         returns (address)
     {
         vm.prank(owner);
-        return factory.deployLatestWalletProxy{value: deposit}(vaultId, payable(owner), payload);
+        return factory.deployLatestWalletProxy{value: deposit}(commitment, payable(owner), payload);
     }
 
     /// @dev Encode init payload from a single "pqOwner" key (legacy shim).
@@ -244,8 +244,8 @@ contract WalletFactoryTest is Test {
     }
 
     /// @dev Compute the expected CREATE3 address for a WOTSPlusImplementation
-    function _computeWalletAddress(bytes32 vaultId, address) internal view returns (address) {
-        return CREATE3.predictDeterministicAddress(vaultId, address(factory));
+    function _computeWalletAddress(bytes32 commitment, address) internal view returns (address) {
+        return CREATE3.predictDeterministicAddress(commitment, address(factory));
     }
 
     /// @dev Deploy a fresh uninitialized WOTSPlusImplementation proxy via CREATE3.
