@@ -14,9 +14,15 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { type Address } from "viem";
+import {
+  type Address,
+  type Hex,
+  encodeAbiParameters,
+  keccak256,
+  toHex,
+} from "viem";
 
-import { CANONICAL_ENTRYPOINT_V07 } from "../addresses.js";
+import { CANONICAL_ENTRYPOINT_V07, computeVaultAddress } from "../addresses.js";
 import { UnsupportedNetworkError } from "../errors.js";
 
 // Chain ids and the canonical EntryPoint are shared with the v1 SDK.
@@ -66,6 +72,46 @@ const SHRINCS_PAYMASTER_IMPL =
   "0xfc5b4E75CA03c260255523DbbF56e93F9cbB5c59" as Address;
 const SHRINCS_VERIFIER =
   "0x9154dA0BA19600C543a8c5ed1B1c44af415B5688" as Address;
+
+/// Domain separator committed inside the full-width V1 identity hash.
+/// MUST match Solidity `keccak256("QUIP_SHRINCS_IDENTITY_V1")` byte-for-byte.
+export const V1_IDENTITY_DOMAIN = keccak256(toHex("QUIP_SHRINCS_IDENTITY_V1"));
+
+/// Full-width identity commitment binding both key commitments and the intended owner.
+/// MUST match on-chain `ShrincsWalletCodec.v1Commitment` byte-for-byte.
+export function v1Commitment(
+  statefulC: Hex,
+  statelessC: Hex,
+  owner: Address
+): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [
+        { type: "bytes32" },
+        { type: "bytes32" },
+        { type: "bytes32" },
+        { type: "address" },
+      ],
+      [V1_IDENTITY_DOMAIN, statefulC, statelessC, owner]
+    )
+  );
+}
+
+/// Predict the counterfactual SHRINCS wallet address for
+/// `(factory, statefulC, statelessC, owner)`. Use this before deploy to know
+/// where to prefund. The CREATE3 salt is the V1 commitment, so the address is
+/// a function of the two key commitments and the intended owner.
+export function getShrincsWalletAddress(
+  factoryAddress: Address,
+  statefulC: Hex,
+  statelessC: Hex,
+  owner: Address
+): Address {
+  return computeVaultAddress(
+    factoryAddress,
+    v1Commitment(statefulC, statelessC, owner)
+  );
+}
 
 /// Registry keyed by chain id, with a deterministic `default` entry shared by
 /// every chain (CREATE3 addresses are chain-independent).

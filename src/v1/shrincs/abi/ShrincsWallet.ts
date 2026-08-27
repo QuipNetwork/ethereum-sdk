@@ -1894,6 +1894,11 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
+    "name": "IdentityMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ImplementationDeprecated",
     "inputs": []
   },

@@ -2,12 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { getAddress } from "viem";
+import { getAddress, keccak256, toHex } from "viem";
 
+import { computeVaultAddress } from "../../addresses.js";
 import {
   CANONICAL_ENTRYPOINT_V07,
   NETWORK_ADDRESSES,
+  V1_IDENTITY_DOMAIN,
   getShrincsAddresses,
+  getShrincsWalletAddress,
+  v1Commitment,
 } from "../addresses.js";
 
 // Deterministic sender-guarded CreateX CREATE3 addresses from
@@ -45,5 +49,60 @@ describe("shrincs addresses", () => {
     expect(getShrincsAddresses(1)).toEqual(NETWORK_ADDRESSES.default);
     expect(getShrincsAddresses(8453)).toEqual(NETWORK_ADDRESSES.default);
     expect(getShrincsAddresses()).toEqual(NETWORK_ADDRESSES.default);
+  });
+});
+
+describe("V1 identity codec (byte-exact with Solidity)", () => {
+  // Fixed fixture shared with the Solidity golden test
+  // (`test/ShrincsWallet/behaviors/identity.t.sol`).
+  const statefulC = `0x${"11".repeat(32)}` as const;
+  const statelessC = `0x${"22".repeat(32)}` as const;
+  const owner = "0x00000000000000000000000000000000000000AA" as const;
+  const GOLDEN =
+    "0xd165e4bbba9307d943f384fcaeaeb3c123bd87cfb9124a19d0a14fd4a3ae57df";
+
+  it("V1 identity domain matches Solidity", () => {
+    expect(V1_IDENTITY_DOMAIN).toBe(keccak256(toHex("QUIP_SHRINCS_IDENTITY_V1")));
+  });
+
+  it("v1Commitment matches the cross-language golden", () => {
+    expect(v1Commitment(statefulC, statelessC, owner)).toBe(GOLDEN);
+  });
+
+  it("v1Commitment is a full 32-byte digest", () => {
+    const id = v1Commitment(statefulC, statelessC, owner);
+    expect((id.length - 2) / 2).toBe(32);
+  });
+
+  it("v1Commitment binds each input", () => {
+    const base = v1Commitment(statefulC, statelessC, owner);
+    expect(v1Commitment(`0x${"33".repeat(32)}`, statelessC, owner)).not.toBe(base);
+    expect(v1Commitment(statefulC, `0x${"44".repeat(32)}`, owner)).not.toBe(base);
+    expect(
+      v1Commitment(
+        statefulC,
+        statelessC,
+        "0x00000000000000000000000000000000000000bb"
+      )
+    ).not.toBe(base);
+  });
+});
+
+describe("SHRINCS V1 address predictor", () => {
+  const FACTORY = "0xE567d318819c067c26fC1E44D04beD2b4FE93BCC" as const;
+  const statefulC = keccak256(toHex("stateful"));
+  const statelessC = keccak256(toHex("stateless"));
+  const owner = "0x00000000000000000000000000000000000000AA" as const;
+
+  it("getShrincsWalletAddress equals computeVaultAddress(factory, v1Commitment)", () => {
+    expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
+      computeVaultAddress(FACTORY, v1Commitment(statefulC, statelessC, owner))
+    );
+  });
+
+  it("getShrincsWalletAddress is deterministic for the same identity", () => {
+    expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
+      getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)
+    );
   });
 });
