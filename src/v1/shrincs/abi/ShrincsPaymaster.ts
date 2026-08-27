@@ -356,6 +356,25 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "function",
+    "name": "statefulLeafBitmapWord",
+    "inputs": [
+      {
+        "name": "wordIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {

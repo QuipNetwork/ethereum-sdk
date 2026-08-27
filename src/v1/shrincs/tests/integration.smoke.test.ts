@@ -143,12 +143,16 @@ describe("Shrincs SDK live-anvil smoke", () => {
     // before it is deployed — must equal the address the factory actually
     // deployed. A drift between this CREATE3 math and the on-chain factory would
     // misdirect prefunds without failing any other test.
+    const erc1271Key = signer.recoverKeyPair(erc1271DerivationIndex, {
+      maxSignatures: MAX_SIGS,
+    });
     expect(
       getAddress(
         getShrincsWalletAddress(
           stack.factoryAddress,
-          vaultId,
-          mainKey.publicKeyCommitment
+          mainKey.publicKeyCommitment,
+          erc1271Key.publicKeyCommitment,
+          stack.account.address
         )
       )
     ).toBe(getAddress(walletAddress));

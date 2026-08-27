@@ -509,6 +509,14 @@ contract ShrincsPaymaster is
     }
 
     /// @inheritdoc IShrincsPaymaster
+    function statefulLeafBitmapWord(
+        uint256 wordIndex
+    ) external view returns (uint256) {
+        Storage.Layout storage $ = Storage.layout();
+        return $.usedStatefulLeafBitmap[$.keyVersion][wordIndex];
+    }
+
+    /// @inheritdoc IShrincsPaymaster
     function remainingStatefulSignatures() external view returns (uint32) {
         Storage.Layout storage $ = Storage.layout();
         // Saturating: the leaf bitmap is the real anti-replay mechanism; this

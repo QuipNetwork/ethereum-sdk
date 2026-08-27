@@ -73,6 +73,18 @@ contract ShrincsWallet_views is ShrincsWalletTest {
         assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 2));
     }
 
+    function test_statefulLeafBitmapWord_packsConsumedLeaves() public {
+        assertEq(wallet.statefulLeafBitmapWord(0), 0, "word 0 starts empty");
+        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(5);
+        assertEq(
+            wallet.statefulLeafBitmapWord(0),
+            (uint256(1) << 1) | (uint256(1) << 5),
+            "word 0 packs consumed leaves 1 and 5"
+        );
+        assertEq(wallet.statefulLeafBitmapWord(1), 0, "untouched word reads zero");
+    }
+
     function test_ownershipHandoverExpiresAt_alwaysZero() public view {
         assertEq(wallet.ownershipHandoverExpiresAt(OWNER), 0);
         assertEq(wallet.ownershipHandoverExpiresAt(address(0xCAFE)), 0);

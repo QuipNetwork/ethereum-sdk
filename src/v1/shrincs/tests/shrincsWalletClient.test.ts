@@ -81,6 +81,8 @@ function walletRead(
       return SIGNING_BUDGET;
     case "isStatefulLeafUsed":
       return false;
+    case "statefulLeafBitmapWord":
+      return 0n;
     default:
       throw new Error(`unexpected wallet read: ${functionName}`);
   }
