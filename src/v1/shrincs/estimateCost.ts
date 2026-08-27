@@ -69,22 +69,33 @@ export async function resolveFeePerGas(
 async function tryResolveEip1559FeePerGas(
   publicClient: PublicClient
 ): Promise<FeePerGas | null> {
+  let maxFeePerGas: bigint | undefined;
+  let maxPriorityFeePerGas: bigint | undefined;
   try {
-    const { maxFeePerGas, maxPriorityFeePerGas } =
-      await publicClient.estimateFeesPerGas();
-    if (maxFeePerGas === undefined) return null;
-
-    const { baseFeePerGas } = await publicClient.getBlock();
-    return {
-      cap: maxFeePerGas,
-      expected:
-        baseFeePerGas === null || baseFeePerGas === undefined
-          ? maxFeePerGas
-          : baseFeePerGas + (maxPriorityFeePerGas ?? 0n),
-    };
+    ({ maxFeePerGas, maxPriorityFeePerGas } =
+      await publicClient.estimateFeesPerGas());
   } catch {
+    // Chain does not support EIP-1559 fee estimation — caller falls back to legacy gas price.
     return null;
   }
+  if (maxFeePerGas === undefined) return null;
+
+  // A valid 1559 cap is already in hand. `baseFeePerGas` only refines `expected`;
+  // a failed block read must NOT discard the cap and silently downgrade the whole
+  // quote to legacy pricing — fall back `expected` to the cap instead.
+  let baseFeePerGas: bigint | null | undefined;
+  try {
+    ({ baseFeePerGas } = await publicClient.getBlock());
+  } catch {
+    baseFeePerGas = undefined;
+  }
+  return {
+    cap: maxFeePerGas,
+    expected:
+      baseFeePerGas === null || baseFeePerGas === undefined
+        ? maxFeePerGas
+        : baseFeePerGas + (maxPriorityFeePerGas ?? 0n),
+  };
 }
 
 export async function estimateTxCost(params: {

@@ -30,7 +30,10 @@ import {DeployFactoryBase} from "./DeployFactoryBase.sol";
  *   DEPLOY_OPERATOR  - Canonical deploy operator; every canonical address is a
  *                      function of this address — guard the key accordingly
  *   FACTORY_OWNER    - Initial owner of the factory (controls vetting, fees, upgrades)
- *   MAX_FEE          - Maximum wallet-creation fee in wei (e.g. 1000000000000000 = 0.001 ETH)
+ *   MAX_FEE          - Wallet-creation fee cap in wei, a factory-impl immutable.
+ *                      The live build is 1e18; a chain already carrying the
+ *                      canonical factory REQUIRES 1e18 or the idempotent-skip
+ *                      identity check aborts (see DEPLOYMENTS.md).
  */
 contract DeployFactory is DeployFactoryBase {
     function run() external {
