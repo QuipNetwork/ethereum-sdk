@@ -25,9 +25,6 @@ export const HASH_SUITE_UNSUPPORTED = 2;
 /// (Structural cross-check for decoded signatures.)
 export const STATEFUL_CHAINS = 64;
 
-/// Number of confirmations awaited after a write, unless overridden.
-export const DEFAULT_CONFIRMATIONS = 1;
-
 // Conservative ERC-4337 gas budgets. SHRINCS stateful verification (64 WOTS-C
 // chains + an unbalanced Merkle auth path) is heavier than the WOTS+ wallet, so
 // the verification ceilings sit above the v1 defaults. These are fallbacks only:

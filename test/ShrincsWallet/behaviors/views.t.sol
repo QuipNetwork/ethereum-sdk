@@ -47,16 +47,42 @@ contract ShrincsWallet_views is ShrincsWalletTest {
     function test_maxAndRemainingSignatures() public {
         assertEq(wallet.maxSignatures(), MAX_SIG);
         assertEq(wallet.remainingStatefulSignatures(), MAX_SIG);
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         assertEq(wallet.statefulLeavesUsed(), 1);
         assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - 1);
     }
 
+    /// @dev The advisory counter must never underflow/revert if it ever drifts above
+    ///      `maxSignatures`; the leaf bitmap is the real anti-replay mechanism.
+    function test_remainingStatefulSignatures_saturatesOnDrift() public {
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 2);
+        assertEq(wallet.statefulLeavesUsed(), 2);
+        // Force the counter above max: drop max below the used count.
+        wallet.harness_setMaxSignatures(1);
+        assertEq(wallet.remainingStatefulSignatures(), 0);
+        // Equal counts also saturate to zero.
+        wallet.harness_setMaxSignatures(2);
+        assertEq(wallet.remainingStatefulSignatures(), 0);
+    }
+
     function test_isStatefulLeafUsed_reflectsBitmap() public {
-        assertFalse(wallet.isStatefulLeafUsed(1));
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1));
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1));
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 2));
+    }
+
+    function test_statefulLeafBitmapWord_packsConsumedLeaves() public {
+        assertEq(wallet.statefulLeafBitmapWord(0), 0, "word 0 starts empty");
         wallet.harness_markLeafUsed(1);
-        assertTrue(wallet.isStatefulLeafUsed(1));
-        assertFalse(wallet.isStatefulLeafUsed(2));
+        wallet.harness_markLeafUsed(5);
+        assertEq(
+            wallet.statefulLeafBitmapWord(0),
+            (uint256(1) << 1) | (uint256(1) << 5),
+            "word 0 packs consumed leaves 1 and 5"
+        );
+        assertEq(wallet.statefulLeafBitmapWord(1), 0, "untouched word reads zero");
     }
 
     function test_ownershipHandoverExpiresAt_alwaysZero() public view {

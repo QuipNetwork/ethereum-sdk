@@ -36,10 +36,36 @@ contract ShrincsPaymaster_views is ShrincsPaymasterTest {
         assertEq(paymaster.remainingStatefulSignatures(), MAX_SIG - 1);
     }
 
+    /// @dev The advisory counter must never underflow/revert if it ever drifts above
+    ///      `maxSignatures`; the leaf bitmap is the real anti-replay mechanism.
+    function test_remainingStatefulSignatures_saturatesOnDrift() public {
+        paymaster.harness_markLeafUsed(1);
+        paymaster.harness_markLeafUsed(2);
+        assertEq(paymaster.statefulLeavesUsed(), 2);
+        // Force the counter above max: reinstall with a smaller max than the used count.
+        paymaster.harness_install(verifierCommitment, 1);
+        assertEq(paymaster.remainingStatefulSignatures(), 0);
+        // Equal counts also saturate to zero.
+        paymaster.harness_install(verifierCommitment, 2);
+        assertEq(paymaster.remainingStatefulSignatures(), 0);
+    }
+
     function test_isStatefulLeafUsed_reflectsBitmap() public {
         assertFalse(paymaster.isStatefulLeafUsed(3));
         paymaster.harness_markLeafUsed(3);
         assertTrue(paymaster.isStatefulLeafUsed(3));
         assertFalse(paymaster.isStatefulLeafUsed(4));
+    }
+
+    function test_statefulLeafBitmapWord_packsConsumedLeaves() public {
+        assertEq(paymaster.statefulLeafBitmapWord(0), 0, "word 0 starts empty");
+        paymaster.harness_markLeafUsed(3);
+        paymaster.harness_markLeafUsed(7);
+        assertEq(
+            paymaster.statefulLeafBitmapWord(0),
+            (uint256(1) << 3) | (uint256(1) << 7),
+            "word 0 packs consumed leaves 3 and 7"
+        );
+        assertEq(paymaster.statefulLeafBitmapWord(1), 0, "untouched word reads zero");
     }
 }

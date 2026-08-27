@@ -15,7 +15,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { type Hex } from "viem";
+import { type Address, type Hex } from "viem";
 
 // Shrincs SDK errors extend the shared `QuipError` base from the v1 SDK so that
 // `instanceof QuipError` and the `.code` discriminator work uniformly across
@@ -156,6 +156,39 @@ export class ZeroAddressOwnerError extends QuipError {
   }
 }
 
+/// Client-side only (never a contract revert): the supplied owner is non-zero
+/// but does not match the wallet's on-chain `owner()`.
+export class OwnerMismatchError extends QuipError {
+  readonly expected: Address;
+  readonly actual: Address;
+  constructor(expected: Address, actual: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_OWNER_MISMATCH",
+      `Owner ${actual} does not match the installed owner ${expected}`,
+      opts
+    );
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+/// An `execute` call carries calldata but its target holds no code. Solady's
+/// `execute` is a raw call with no `extcodesize` guard, so a call to a codeless
+/// target is a phantom no-op that still consumes a leaf, nonce, fee, and gas
+/// while reporting success. Pure value transfers (empty calldata) are exempt —
+/// sending ETH to an EOA is legitimate.
+export class ExecuteTargetHasNoCodeError extends QuipError {
+  readonly target: Address;
+  constructor(target: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EXECUTE_TARGET_NO_CODE",
+      `execute target ${target} has no code; a call to a codeless target is a phantom no-op that consumes a leaf`,
+      opts
+    );
+    this.target = target;
+  }
+}
+
 export class ZeroAddressVerifierError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
@@ -273,6 +306,23 @@ export class StatefulBudgetExhaustedError extends QuipError {
   }
 }
 
+/// A used-leaf bitmap word could not be read from chain while scanning for the
+/// lowest unused leaf. Raised instead of silently treating the unreadable
+/// leaves as used: a transport failure must never be confused with an exhausted
+/// budget, because that would either waste a still-free leaf or falsely report
+/// exhaustion. Retry the read; do not sign.
+export class LeafBitmapReadError extends QuipError {
+  readonly wordIndex: number;
+  constructor(wordIndex: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_LEAF_BITMAP_READ_FAILED",
+      `Could not read used-leaf bitmap word ${wordIndex}; cannot determine the lowest unused leaf`,
+      opts
+    );
+    this.wordIndex = wordIndex;
+  }
+}
+
 /// `markLeavesUsed` was called with an empty target array. Burning the
 /// authorizing leaf for nothing is almost certainly a mistake; a deliberate
 /// single-leaf burn already exists via the empty `execute` path.
@@ -286,8 +336,9 @@ export class EmptyLeavesError extends QuipError {
   }
 }
 
-/// A `markLeavesUsed` target leaf is zero or exceeds the installed key's
-/// `maxSignatures` budget — a client bug, not a race, so the whole batch fails.
+/// A `markLeavesUsed` target leaf is outside the signing range — zero or above
+/// the installed key's `maxSignatures` budget. A client bug, not a race, so the
+/// whole batch fails.
 export class LeafOutOfRangeError extends QuipError {
   readonly leaf: number;
   readonly maxSignatures?: number;

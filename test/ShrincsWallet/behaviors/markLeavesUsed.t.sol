@@ -55,65 +55,65 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     function test_markLeavesUsed_revertsWhen_notOwner() public {
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(1), _targets(2));
+        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), _targets(SIGN_BASE + 2));
     }
 
     function test_markLeavesUsed_revertsWhen_emptyLeaves() public {
         // The empty guard runs before signature verification — no leaf is burned.
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.EmptyLeaves.selector);
-        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(1), new uint32[](0));
+        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), new uint32[](0));
         assertEq(wallet.statefulLeavesUsed(), 0, "nothing consumed on empty-array revert");
     }
 
     function test_markLeavesUsed_revertsWhen_authLeafZero() public {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.StatefulBudgetExhausted.selector);
-        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(0), _targets(2));
+        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(0), _targets(SIGN_BASE + 2));
     }
 
     function test_markLeavesUsed_revertsWhen_authLeafAlreadyUsed() public {
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
-        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(1), _targets(2));
+        wallet.markLeavesUsed(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), _targets(SIGN_BASE + 2));
     }
 
     function test_markLeavesUsed_revertsWhen_invalidSignature() public {
         SHRINCS.Signature memory sig = _wrongContextStatefulSig();
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.markLeavesUsed(_mainPk(), sig, _targets(2));
-        assertFalse(wallet.isStatefulLeafUsed(2), "target untouched on invalid signature");
+        wallet.markLeavesUsed(_mainPk(), sig, _targets(SIGN_BASE + 2));
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "target untouched on invalid signature");
     }
 
     function test_markLeavesUsed_revertsWhen_signatureBindsWrongArray() public {
         // A signature over [2] must not authorize revoking [2,3]: the payload commits to the
         // exact target array, so a submitter can neither add nor drop targets.
-        SHRINCS.Signature memory sig = _markSig(_targets(2), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(SIGN_BASE + 2), 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.markLeavesUsed(_mainPk(), sig, _targets(2, 3));
+        wallet.markLeavesUsed(_mainPk(), sig, _targets(SIGN_BASE + 2, SIGN_BASE + 3));
     }
 
     function test_markLeavesUsed_revertsWhen_staleNonceSignature() public {
         // The revocation binds the live nonce like every action; a consumed action elsewhere
         // supersedes a pending revocation signature.
-        SHRINCS.Signature memory sig = _markSig(_targets(2), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(SIGN_BASE + 2), 1);
         wallet.harness_setNonce(wallet.actionNonce() + 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.markLeavesUsed(_mainPk(), sig, _targets(2));
+        wallet.markLeavesUsed(_mainPk(), sig, _targets(SIGN_BASE + 2));
     }
 
     function test_markLeavesUsed_revertsWhen_wrongEpochSignature() public {
         // A revocation signed under epoch E is invalid after any rotation (context binds
         // keyVersion; the new epoch's bitmap namespace is empty anyway).
-        SHRINCS.Signature memory sig = _markSig(_targets(2), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(SIGN_BASE + 2), 1);
         wallet.harness_setKeyVersion(1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.markLeavesUsed(_mainPk(), sig, _targets(2));
+        wallet.markLeavesUsed(_mainPk(), sig, _targets(SIGN_BASE + 2));
     }
 
     function test_markLeavesUsed_revertsWhen_targetLeafZero() public {
@@ -123,36 +123,36 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.LeafOutOfRange.selector, 0));
         wallet.markLeavesUsed(_mainPk(), sig, _targets(0));
-        assertFalse(wallet.isStatefulLeafUsed(1), "auth-leaf consumption rolled back");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "auth-leaf consumption rolled back");
     }
 
     function test_markLeavesUsed_revertsWhen_targetLeafOverBudget() public {
         uint32 over = MAX_SIG + 1;
-        SHRINCS.Signature memory sig = _markSig(_targets(2, over), 1);
+        SHRINCS.Signature memory sig = _markSig(_targets(SIGN_BASE + 2, over), 1);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.LeafOutOfRange.selector, over));
-        wallet.markLeavesUsed(_mainPk(), sig, _targets(2, over));
+        wallet.markLeavesUsed(_mainPk(), sig, _targets(SIGN_BASE + 2, over));
     }
 
     /* ─────────────────────────────── SUCCESS / SKIPS ─────────────────────────────── */
 
     function test_markLeavesUsed_succeeds_nonceUnchanged() public {
-        uint32[] memory leaves = _targets(2, 3);
+        uint32[] memory leaves = _targets(SIGN_BASE + 2, SIGN_BASE + 3);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
         uint256 nonceBefore = wallet.actionNonce();
 
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.StatefulSignatureVerified(1, 0);
+        emit IShrincsWallet.StatefulSignatureVerified(SIGN_BASE + 1, 0);
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevoked(2, 0);
+        emit IShrincsWallet.LeafRevoked(SIGN_BASE + 2, 0);
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevoked(3, 0);
+        emit IShrincsWallet.LeafRevoked(SIGN_BASE + 3, 0);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
-        assertTrue(wallet.isStatefulLeafUsed(1), "authorizing leaf consumed");
-        assertTrue(wallet.isStatefulLeafUsed(2), "target 2 revoked");
-        assertTrue(wallet.isStatefulLeafUsed(3), "target 3 revoked");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "authorizing leaf consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "target 2 revoked");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 3), "target 3 revoked");
         assertEq(wallet.statefulLeavesUsed(), 3, "auth + 2 targets counted");
         assertEq(
             wallet.actionNonce(),
@@ -163,7 +163,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
 
     function test_markLeavesUsed_replayRejected() public {
         // The consumed authorizing leaf — not the nonce — is what blocks replaying the call.
-        uint32[] memory leaves = _targets(2);
+        uint32[] memory leaves = _targets(SIGN_BASE + 2);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
@@ -174,14 +174,14 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     }
 
     function test_markLeavesUsed_skipsAlreadyUsedTarget() public {
-        wallet.harness_markLeafUsed(2);
-        uint32[] memory leaves = _targets(2, 3);
+        wallet.harness_markLeafUsed(SIGN_BASE + 2);
+        uint32[] memory leaves = _targets(SIGN_BASE + 2, SIGN_BASE + 3);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevocationSkipped(2, 0);
+        emit IShrincsWallet.LeafRevocationSkipped(SIGN_BASE + 2, 0);
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevoked(3, 0);
+        emit IShrincsWallet.LeafRevoked(SIGN_BASE + 3, 0);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
@@ -190,13 +190,13 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     }
 
     function test_markLeavesUsed_skipsDuplicateInArray() public {
-        uint32[] memory leaves = _targets(2, 2);
+        uint32[] memory leaves = _targets(SIGN_BASE + 2, SIGN_BASE + 2);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevoked(2, 0);
+        emit IShrincsWallet.LeafRevoked(SIGN_BASE + 2, 0);
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevocationSkipped(2, 0);
+        emit IShrincsWallet.LeafRevocationSkipped(SIGN_BASE + 2, 0);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
@@ -205,13 +205,13 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
 
     function test_markLeavesUsed_skipsAuthLeafInArray() public {
         // The authorizing leaf was just consumed by the verify, so listing it degrades to a skip.
-        uint32[] memory leaves = _targets(1, 2);
+        uint32[] memory leaves = _targets(SIGN_BASE + 1, SIGN_BASE + 2);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevocationSkipped(1, 0);
+        emit IShrincsWallet.LeafRevocationSkipped(SIGN_BASE + 1, 0);
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.LeafRevoked(2, 0);
+        emit IShrincsWallet.LeafRevoked(SIGN_BASE + 2, 0);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
@@ -237,13 +237,13 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         ERC4337.PackedUserOperation memory op =
             _makeUserOp(_userOpBlob(_signErc4337(userOpHash, 5), userOpHash));
 
-        uint32[] memory leaves = _targets(3);
+        uint32[] memory leaves = _targets(SIGN_BASE + 3);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
 
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "outstanding op survives revocation");
-        assertTrue(wallet.isStatefulLeafUsed(5), "op's leaf consumed normally afterward");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 5), "op's leaf consumed normally afterward");
         assertEq(wallet.actionNonce(), 1, "only the landed op advanced the nonce");
     }
 
@@ -253,7 +253,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         ERC4337.PackedUserOperation memory op =
             _makeUserOp(_userOpBlob(_signErc4337(userOpHash, 5), userOpHash));
 
-        uint32[] memory leaves = _targets(5);
+        uint32[] memory leaves = _targets(SIGN_BASE + 5);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
@@ -269,7 +269,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         SHRINCS.Signature memory executeSig =
             _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 4);
 
-        uint32[] memory leaves = _targets(4);
+        uint32[] memory leaves = _targets(SIGN_BASE + 4);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
@@ -282,11 +282,11 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
     /* ─────────────────────────────── EPOCH SCOPING ─────────────────────────────── */
 
     function test_markLeavesUsed_rotationClearsRevocations() public {
-        uint32[] memory leaves = _targets(2, 3);
+        uint32[] memory leaves = _targets(SIGN_BASE + 2, SIGN_BASE + 3);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), sig, leaves);
-        assertTrue(wallet.isStatefulLeafUsed(2), "revoked in epoch 0");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "revoked in epoch 0");
 
         // Rotate: the new epoch's bitmap namespace is fresh — revocations do not leak across.
         (SHRINCS.StatefulRotationTarget memory t, bytes32 nextCommitment) =
@@ -297,7 +297,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         wallet.rotateKey(_mainPk(), rotateSig, t);
 
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
-        assertFalse(wallet.isStatefulLeafUsed(2), "epoch-0 revocation invisible in epoch 1");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "epoch-0 revocation invisible in epoch 1");
         assertEq(wallet.statefulLeavesUsed(), 0, "fresh epoch counter");
     }
 }

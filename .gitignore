@@ -26,3 +26,7 @@ pwCrack.ts
 
 # Local planning scratch (not committed)
 _prompt_planning/
+
+# Build output and broadcast logs (may contain RPC endpoints / calldata)
+bin/
+broadcast/

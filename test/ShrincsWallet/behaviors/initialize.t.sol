@@ -9,12 +9,11 @@ import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
-/// @dev Behavior tests for `initialize`. It verifies NO signature — only deterministic
-///      shape/suite/commitment validation of the supplied bundle — so its happy path AND every
-///      revert are fully testable from the generated keys (no signatures required).
+/// @dev Behavior tests for `initialize`: the deterministic shape/suite/commitment validation.
 contract ShrincsWallet_initialize is ShrincsWalletTest {
     /// @dev A pristine, un-initialized harness whose immutable FACTORY is the mock factory.
     ShrincsWalletHarness internal bare;
@@ -29,6 +28,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         address bareAddr = address(uint160(uint256(keccak256("bare-shrincs-wallet"))));
         vm.etch(bareAddr, address(impl).code);
         bare = ShrincsWalletHarness(payable(bareAddr));
+        factory.setCommitment(bareAddr, Codec.v1Commitment(mainCommitment, erc1271Commitment, OWNER));
     }
 
     function test_initialize_setsState() public {
@@ -188,4 +188,5 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         bare.initialize(payable(OWNER), _validInitPayload());
         vm.stopPrank();
     }
+
 }

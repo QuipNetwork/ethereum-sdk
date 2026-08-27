@@ -42,7 +42,7 @@ pragma solidity ^0.8.33;
 ///           cannot be moved without post-quantum authorization.
 ///
 ///      A vetted implementation that violates these rules can desync the
-///      factory's per-owner registry (`walletOwner` / `_vaultIds`); it
+///      factory's per-owner registry (`walletOwner` / `commitments`); it
 ///      cannot corrupt other wallets or the vetted set itself.
 interface IWallet {
     /// @notice Initializes a freshly deployed wallet proxy.

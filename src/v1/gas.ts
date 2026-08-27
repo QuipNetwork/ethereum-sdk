@@ -18,6 +18,7 @@ import {
   type Account,
   type Address,
   type PublicClient,
+  type StateOverride,
 } from "viem";
 
 import {
@@ -144,6 +145,7 @@ export interface ContractCallParams {
   args?: readonly unknown[];
   value?: bigint;
   account: Account | Address;
+  stateOverride?: StateOverride;
 }
 
 export interface PrepareTxParams {
@@ -171,9 +173,19 @@ export interface PrepareTxParams {
 export async function prepareTx(
   params: PrepareTxParams
 ): Promise<PreparedTx> {
+  return prepareTxCore(params, decodeContractError);
+}
+
+/// Shared pre-flight + gas-estimation core. `/v1` and SHRINCS bind their own
+/// `decodeContractError` so reverts map through the matching error registry.
+/// Lives here (next to the primitives it uses) so SHRINCS `gas.ts` imports it
+/// one-way from `../gas.js` — no `gas.ts` ↔ internal cycle.
+export async function prepareTxCore(
+  params: PrepareTxParams,
+  decode: (err: unknown) => QuipError | null
+): Promise<PreparedTx> {
   const { publicClient, contractParams, totalValue, opts } = params;
 
-  // Stage 1: balance.
   if (!opts?.skipPreflightChecks) {
     const acctAddr =
       typeof contractParams.account === "string"
@@ -182,32 +194,25 @@ export async function prepareTx(
     await preflightBalanceCheck(publicClient, acctAddr, totalValue);
   }
 
-  // Stage 2 + 3: gas estimation. Reverts surface as decoded `QuipError`
-  // subclasses; non-revert failures surface as `GasEstimationError`.
-  let estimate: bigint;
+  let gas: bigint;
   if (opts?.gas !== undefined) {
-    estimate = opts.gas;
+    gas = opts.gas;
   } else {
+    let estimate: bigint;
     try {
       estimate = await publicClient.estimateContractGas(
         contractParams as Parameters<PublicClient["estimateContractGas"]>[0]
       );
     } catch (err) {
-      const decoded = decodeContractError(err);
+      const decoded = decode(err);
       if (decoded) throw decoded;
-      const message =
-        err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : String(err);
       throw new GasEstimationError(message, { cause: err });
     }
+    gas = applyGasMultiplier(estimate, opts);
   }
 
-  const gas =
-    opts?.gas !== undefined ? opts.gas : applyGasMultiplier(estimate, opts);
-
-  const prepared: PreparedTx = {
-    gas,
-    fees: resolveFeeOptions(opts),
-  };
+  const prepared: PreparedTx = { gas, fees: resolveFeeOptions(opts) };
   if (opts?.nonce !== undefined) prepared.nonce = opts.nonce;
   return prepared;
 }

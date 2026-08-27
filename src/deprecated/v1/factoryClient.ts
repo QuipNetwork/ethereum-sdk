@@ -24,6 +24,7 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  keccak256,
   toHex,
   zeroAddress,
   parseEventLogs,
@@ -207,7 +208,8 @@ export class QuipClient {
       quipSigner,
       {
         functionName: "deployLatestWalletProxy",
-        argsExceptInitPayload: () => [vaultId, this.account!] as const,
+        argsExceptInitPayload: () =>
+          [vaultId, keccak256(vaultId), this.account!] as const,
       },
       txOpts
     );
@@ -230,7 +232,8 @@ export class QuipClient {
       quipSigner,
       {
         functionName: "deploySpecificWalletProxy",
-        argsExceptInitPayload: () => [vaultId, index, this.account!] as const,
+        argsExceptInitPayload: () =>
+          [vaultId, keccak256(vaultId), index, this.account!] as const,
       },
       txOpts
     );

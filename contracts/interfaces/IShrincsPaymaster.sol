@@ -146,8 +146,10 @@ interface IShrincsPaymaster is IPaymaster {
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Initializes the paymaster proxy with an owner AND its initial global SHRINCS verifier
-    ///         key. Callable once. The paymaster always has a verifier from this point on — there is
+    /// @notice Initializes the paymaster proxy with an owner AND its initial global
+    ///         SHRINCS verifier
+    ///         key. Callable once. The paymaster always has a verifier from this
+    ///         point on — there is
     ///         no way to unset it (only rotate via `rotateStatefulKey`). The full public-key bundle
     ///         is required (not just its commitment) so the installed commitment and stateful leaf
     ///         budget are DERIVED from validated key material, exactly like `rotateStatefulKey` and
@@ -228,6 +230,14 @@ interface IShrincsPaymaster is IPaymaster {
 
     /// @notice Whether stateful `leaf` has been consumed in the current verifier epoch.
     function isStatefulLeafUsed(uint256 leaf) external view returns (bool);
+
+    /// @notice The raw 256-bit used-leaf bitmap word `wordIndex` for the current verifier epoch.
+    ///         Bit `b` (0..255) of the returned word is leaf `wordIndex * 256 + b`; a set bit
+    ///         means that leaf is consumed. Lets a client read 256 leaves per call instead of
+    ///         one leaf per call. Out-of-range or all-free words read as 0.
+    function statefulLeafBitmapWord(
+        uint256 wordIndex
+    ) external view returns (uint256);
 
     /// @notice Sponsorship signatures remaining before the verifier key must be rotated.
     function remainingStatefulSignatures() external view returns (uint32);

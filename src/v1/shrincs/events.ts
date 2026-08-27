@@ -16,8 +16,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import {
   type Address,
+  type ContractEventName,
   type Hex,
   type Log,
+  type ParseEventLogsReturnType,
   type TransactionReceipt,
   parseEventLogs,
 } from "viem";
@@ -36,20 +38,30 @@ function toLogs(src: LogSource): readonly Log[] {
   return Array.isArray(src) ? src : (src as TransactionReceipt).logs;
 }
 
-function walletLogs(src: LogSource, eventName: string) {
+function walletLogs<
+  TEventName extends ContractEventName<typeof shrincsWalletAbi>
+>(
+  src: LogSource,
+  eventName: TEventName
+): ParseEventLogsReturnType<typeof shrincsWalletAbi, TEventName, true> {
   return parseEventLogs({
     abi: shrincsWalletAbi,
-    logs: toLogs(src) as Log[],
+    logs: [...toLogs(src)],
     eventName,
-  } as Parameters<typeof parseEventLogs>[0]);
+  });
 }
 
-function paymasterLogs(src: LogSource, eventName: string) {
+function paymasterLogs<
+  TEventName extends ContractEventName<typeof shrincsPaymasterAbi>
+>(
+  src: LogSource,
+  eventName: TEventName
+): ParseEventLogsReturnType<typeof shrincsPaymasterAbi, TEventName, true> {
   return parseEventLogs({
     abi: shrincsPaymasterAbi,
-    logs: toLogs(src) as Log[],
+    logs: [...toLogs(src)],
     eventName,
-  } as Parameters<typeof parseEventLogs>[0]);
+  });
 }
 
 /*  ── Wallet events (IShrincsWallet) ──────────────────────────────────────  */
@@ -62,7 +74,7 @@ export interface WalletInitializedEvent {
 }
 
 export function parseWalletInitialized(src: LogSource): WalletInitializedEvent[] {
-  return walletLogs(src, "WalletInitialized").map((l: any) => ({
+  return walletLogs(src, "WalletInitialized").map((l) => ({
     factory: l.args.factory,
     owner: l.args.owner,
     shrincsPublicKeyCommitment: l.args.shrincsPublicKeyCommitment,
@@ -78,7 +90,7 @@ export interface StatefulSignatureVerifiedEvent {
 export function parseStatefulSignatureVerified(
   src: LogSource
 ): StatefulSignatureVerifiedEvent[] {
-  return walletLogs(src, "StatefulSignatureVerified").map((l: any) => ({
+  return walletLogs(src, "StatefulSignatureVerified").map((l) => ({
     leaf: Number(l.args.leaf),
     keyVersion: l.args.keyVersion,
   }));
@@ -89,9 +101,68 @@ export interface LeafConsumedOnlyEvent {
 }
 
 export function parseLeafConsumedOnly(src: LogSource): LeafConsumedOnlyEvent[] {
-  return walletLogs(src, "LeafConsumedOnly").map((l: any) => ({
+  return walletLogs(src, "LeafConsumedOnly").map((l) => ({
     leaf: Number(l.args.leaf),
   }));
+}
+
+export interface LeafRevokedEvent {
+  leaf: number;
+  keyVersion: bigint;
+}
+
+// `LeafRevoked` and `LeafRevocationSkipped` are emitted by BOTH the wallet and
+// the paymaster (each consumes stateful leaves). Decode under both ABIs and
+// dedup: when the two ABIs share the event signature a single physical log
+// decodes under both, so it must be kept once; if the ABIs ever diverge, each
+// log decodes only under its emitter's ABI, so both sources stay covered
+// instead of one silently misparsing under the other's ABI.
+//
+// The dedup key is the log's full on-chain identity (emitter, position, and raw
+// payload), not just (address, logIndex): a re-decode of one physical log has an
+// identical identity and collapses, while two genuinely distinct emissions keep
+// their own entries even when a synthetic source reuses a logIndex.
+function mergeLeafLogs(
+  ...groups: readonly {
+    address: Address;
+    logIndex: number | null;
+    data: Hex;
+    topics: readonly Hex[];
+    args: { leaf: number | bigint; keyVersion: bigint };
+  }[][]
+): LeafRevokedEvent[] {
+  const seen = new Set<string>();
+  const out: LeafRevokedEvent[] = [];
+  for (const group of groups) {
+    for (const l of group) {
+      const key = `${l.address}:${l.logIndex}:${l.data}:${l.topics.join(",")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ leaf: Number(l.args.leaf), keyVersion: l.args.keyVersion });
+    }
+  }
+  return out;
+}
+
+export function parseLeafRevoked(src: LogSource): LeafRevokedEvent[] {
+  return mergeLeafLogs(
+    walletLogs(src, "LeafRevoked"),
+    paymasterLogs(src, "LeafRevoked")
+  );
+}
+
+export interface LeafRevocationSkippedEvent {
+  leaf: number;
+  keyVersion: bigint;
+}
+
+export function parseLeafRevocationSkipped(
+  src: LogSource
+): LeafRevocationSkippedEvent[] {
+  return mergeLeafLogs(
+    walletLogs(src, "LeafRevocationSkipped"),
+    paymasterLogs(src, "LeafRevocationSkipped")
+  );
 }
 
 export interface ExecutionSucceededEvent {
@@ -101,7 +172,7 @@ export interface ExecutionSucceededEvent {
 }
 
 export function parseExecutionSucceeded(src: LogSource): ExecutionSucceededEvent[] {
-  return walletLogs(src, "ExecutionSucceeded").map((l: any) => ({
+  return walletLogs(src, "ExecutionSucceeded").map((l) => ({
     target: l.args.target,
     value: l.args.value,
     dataHash: l.args.dataHash,
@@ -114,7 +185,7 @@ export interface Erc1271KeySetEvent {
 }
 
 export function parseErc1271KeySet(src: LogSource): Erc1271KeySetEvent[] {
-  return walletLogs(src, "Erc1271KeySet").map((l: any) => ({
+  return walletLogs(src, "Erc1271KeySet").map((l) => ({
     oldCommitment: l.args.oldCommitment,
     newCommitment: l.args.newCommitment,
   }));
@@ -127,7 +198,7 @@ export interface KeyRotatedEvent {
 }
 
 export function parseKeyRotated(src: LogSource): KeyRotatedEvent[] {
-  return walletLogs(src, "KeyRotated").map((l: any) => ({
+  return walletLogs(src, "KeyRotated").map((l) => ({
     previousCommitment: l.args.previousCommitment,
     nextCommitment: l.args.nextCommitment,
     keyVersion: l.args.keyVersion,
@@ -140,7 +211,7 @@ export interface WalletMigratedEvent {
 }
 
 export function parseWalletMigrated(src: LogSource): WalletMigratedEvent[] {
-  return walletLogs(src, "WalletMigrated").map((l: any) => ({
+  return walletLogs(src, "WalletMigrated").map((l) => ({
     shrincsPublicKeyCommitment: l.args.shrincsPublicKeyCommitment,
     keyVersion: l.args.keyVersion,
   }));
@@ -153,7 +224,7 @@ export interface UserOpValidationRejectedEvent {
 export function parseUserOpValidationRejected(
   src: LogSource
 ): UserOpValidationRejectedEvent[] {
-  return walletLogs(src, "UserOpValidationRejected").map((l: any) => ({
+  return walletLogs(src, "UserOpValidationRejected").map((l) => ({
     reason: Number(l.args.reason) as UserOpValidationFailure,
   }));
 }
@@ -167,7 +238,7 @@ export interface PaymasterInitializedEvent {
 export function parsePaymasterInitialized(
   src: LogSource
 ): PaymasterInitializedEvent[] {
-  return paymasterLogs(src, "PaymasterInitialized").map((l: any) => ({
+  return paymasterLogs(src, "PaymasterInitialized").map((l) => ({
     owner: l.args.owner,
   }));
 }
@@ -181,7 +252,7 @@ export interface ShrincsVerifierSetEvent {
 }
 
 export function parseShrincsVerifierSet(src: LogSource): ShrincsVerifierSetEvent[] {
-  return paymasterLogs(src, "ShrincsVerifierSet").map((l: any) => ({
+  return paymasterLogs(src, "ShrincsVerifierSet").map((l) => ({
     previousCommitment: l.args.previousCommitment,
     newCommitment: l.args.newCommitment,
     hashSuite: Number(l.args.hashSuite),
@@ -197,7 +268,7 @@ export interface SponsorshipVerifiedEvent {
 }
 
 export function parseSponsorshipVerified(src: LogSource): SponsorshipVerifiedEvent[] {
-  return paymasterLogs(src, "SponsorshipVerified").map((l: any) => ({
+  return paymasterLogs(src, "SponsorshipVerified").map((l) => ({
     wallet: l.args.wallet,
     leaf: Number(l.args.leaf),
     keyVersion: l.args.keyVersion,
@@ -212,7 +283,7 @@ export interface PaymasterValidationRejectedEvent {
 export function parsePaymasterValidationRejected(
   src: LogSource
 ): PaymasterValidationRejectedEvent[] {
-  return paymasterLogs(src, "PaymasterValidationRejected").map((l: any) => ({
+  return paymasterLogs(src, "PaymasterValidationRejected").map((l) => ({
     wallet: l.args.wallet,
     reason: Number(l.args.reason) as PaymasterValidationFailure,
   }));
@@ -226,7 +297,7 @@ export interface UserOpSponsoredEvent {
 }
 
 export function parseUserOpSponsored(src: LogSource): UserOpSponsoredEvent[] {
-  return paymasterLogs(src, "UserOpSponsored").map((l: any) => ({
+  return paymasterLogs(src, "UserOpSponsored").map((l) => ({
     wallet: l.args.wallet,
     mode: Number(l.args.mode),
     actualGasCost: l.args.actualGasCost,

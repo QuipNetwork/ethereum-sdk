@@ -89,8 +89,6 @@ import {
   keysHash as codecKeysHash,
   opdataHash as codecOpdataHash,
   ownershipTransferKeysHash,
-  packAccountGasLimits,
-  packGasFees,
   paymasterVerifierKeyUsedSlot,
   replaceKeysDigest,
   resetKeysetDigest,

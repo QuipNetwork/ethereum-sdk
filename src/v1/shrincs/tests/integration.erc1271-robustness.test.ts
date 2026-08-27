@@ -3,18 +3,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Pins the ERC-1271 never-revert property of `ShrincsWallet.isValidSignature`
-// against adversarial input. `Codec.decodeErc1271Signature` is pure assembly
-// pointer math after a `length < 0x60` guard, so it cannot itself revert on any
-// >=0x60 blob (`calldataload` past calldatasize reads as zero). The only
-// revert-prone surface — the nested dynamic-calldata reads inside
-// `SHRINCS.verifyStateless` — sits BEHIND the classical owner ECDSA check, which
-// runs first and short-circuits. So an adversary (anyone lacking the owner key)
-// can never drive the fragile decode: every adversary-reachable input must
-// return the ERC-1271 failure magic `0xffffffff`, never revert. ERC-1271
-// consumers staticcall this; a revert would be a DoS on the relying contract.
+// against adversarial input. `Codec.tryDecodeErc1271Signature` returns
+// `ok = false` on malformation, so the wallet returns the ERC-1271 failure
+// magic instead of reverting.
 
 import { type Address, type Hex, keccak256, toHex } from "viem";
-import { foundry } from "viem/chains";
 
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { encodeErc1271Signature } from "../shrincsCodec.js";
@@ -169,9 +162,12 @@ describe("ShrincsWallet.isValidSignature never-revert robustness", () => {
   // same hash, returns the success magic — so the battery above is rejecting
   // bad input, not a wallet that rejects everything.
   it("accepts a genuine signErc1271 blob (success magic) — battery isn't a tautology", async () => {
-    const erc1271KeyPair = wallet.signer.recoverKeyPair(wallet.erc1271VaultId, {
-      maxSignatures: wallet.maxSignatures,
-    });
+    const erc1271KeyPair = wallet.signer.recoverKeyPair(
+      wallet.erc1271DerivationIndex,
+      {
+        maxSignatures: wallet.maxSignatures,
+      }
+    );
     const blob = await wallet.client.signErc1271({
       hash,
       erc1271KeyPair,

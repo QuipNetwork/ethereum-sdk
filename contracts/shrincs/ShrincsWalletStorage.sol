@@ -18,6 +18,9 @@ pragma solidity ^0.8.33;
 
 library ShrincsWalletStorage {
     /// @custom:storage-location erc7201:quip.storage.wallet.shrincs
+    // ERC-7201 namespaced storage: field order is fixed for upgrade-safe layout;
+    // repacking would collide storage on UUPS upgrade.
+    // solhint-disable-next-line gas-struct-packing
     struct Layout {
         /// @dev Set once during `initialize`; effectively immutable after deployment.
         address payable walletFactory;
@@ -57,9 +60,11 @@ library ShrincsWalletStorage {
         /// @dev Stateful-leaf anti-replay, namespaced by `keyVersion` so a rotation starts from a
         ///      fresh (all-unused) bitmap without clearing storage. A leaf is consumable once and
         ///      in ANY order (no sequential constraint), so out-of-order transaction landing never
-        ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit `leafIndex & 0xff`
+        ///      reverts. `usedStatefulLeafBitmap[keyVersion][leafIndex >> 8]` bit
+        ///      `leafIndex & 0xff`
         ///      is set when leaf `leafIndex` is consumed.
-        mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits)) usedStatefulLeafBitmap;
+        mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits))
+            usedStatefulLeafBitmap;
     }
 
     /// @dev `keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.shrincs")) - 1))
@@ -82,7 +87,7 @@ library ShrincsWalletStorage {
     ///      `_LEAF_STATE_SLOT`. The
     ///      `usedStatefulLeafBitmap` mapping occupies the next slot and is intentionally NOT
     ///      one of the guarded slots (see its field comment).
-    bytes32 internal constant _PQ_FACTORY_SLOT =
+    bytes32 internal constant _SHRINCS_FACTORY_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
     bytes32 internal constant _SHRINCS_COMMITMENT_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01;
