@@ -6,6 +6,7 @@ import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementationHarness} from "../../harness/WOTSPlusImplementationHarness.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 
@@ -64,7 +65,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv)
     {
         bytes32 seed = keccak256(abi.encodePacked(pq.publicSeed, pq.publicKeyHash, "ownership-legacy"));
-        (pub, priv) = WOTSPlus.generateKeyPair(seed);
+        (pub, priv) = WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     function _legacyDisasterKey(WOTSPlus.WinternitzAddress memory pq)
@@ -73,7 +74,7 @@ contract WOTSPlusImplementation__reinitializeAndTransferOwnership is WOTSPlusImp
         returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv)
     {
         bytes32 seed = keccak256(abi.encodePacked(pq.publicSeed, pq.publicKeyHash, "disaster-legacy"));
-        (pub, priv) = WOTSPlus.generateKeyPair(seed);
+        (pub, priv) = WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     function _freshCtx() internal view returns (Ctx memory c) {

@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 
@@ -78,7 +79,7 @@ contract WOTSPlusImplementation_recovery is WOTSPlusImplementationTest {
     ///      sign with the i-th key by recomputing the same per-key seed.
     function _recoverySigningKeyFromBase(bytes32 base, uint256 index) internal pure returns (bytes32 priv) {
         bytes32 keySeed = keccak256(abi.encodePacked(base, "recovery", index));
-        (, priv) = WOTSPlus.generateKeyPair(keySeed);
+        (, priv) = WOTSPlusTestSigner.generateKeyPair(keySeed);
     }
 
     /// @dev Replenish recovery keys using the current PQ key. Uses

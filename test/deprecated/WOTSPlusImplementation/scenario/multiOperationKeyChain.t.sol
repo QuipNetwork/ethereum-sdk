@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 
@@ -291,7 +292,7 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
 
     function _freshKeys10(bytes32 seed) internal pure returns (WOTSPlus.WinternitzAddress[10] memory out) {
         for (uint256 i = 0; i < 10; i++) {
-            (out[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
+            (out[i],) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 
@@ -299,13 +300,13 @@ contract WOTSPlusImplementation_scenario_multiOperationKeyChain is WOTSPlusImple
     ///      output. Mirrors the `keccak256(abi.encode(seed, index))` seed
     ///      derivation used inside `_freshKeys10`.
     function _derivePrivKeyForFreshKeys10(bytes32 seed, uint256 index) internal pure returns (bytes32) {
-        (, bytes32 priv) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, index)));
+        (, bytes32 priv) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encode(seed, index)));
         return priv;
     }
 
     /// @dev Re-derive the private key for a `_generateKeyPair(seed)` output.
     function _derivePrivKey(bytes32 seed) internal pure returns (bytes32) {
-        (, bytes32 priv) = WOTSPlus.generateKeyPair(seed);
+        (, bytes32 priv) = WOTSPlusTestSigner.generateKeyPair(seed);
         return priv;
     }
 }

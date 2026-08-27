@@ -5,6 +5,7 @@ import {Test} from "forge-std-1.14.0/Test.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {QuipPaymaster} from "../../../contracts/deprecated/QuipPaymaster.sol";
 import {QuipPaymasterHarness} from "../harness/QuipPaymasterHarness.sol";
 import {IQuipPaymaster} from "../../../contracts/deprecated/interfaces/IQuipPaymaster.sol";
@@ -101,13 +102,13 @@ contract QuipPaymasterTest is Test {
         pure
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
     {
-        return WOTSPlus.generateKeyPair(seed);
+        return WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     /// @dev Sign a message with a WOTS+ private key.
     function _sign(bytes32 privateKey, bytes32 messageHash) internal pure returns (WOTSPlus.WinternitzElements memory) {
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({messageHash: messageHash});
-        bytes32[67] memory elements = WOTSPlus.sign(privateKey, message);
+        bytes32[67] memory elements = WOTSPlusTestSigner.sign(privateKey, message);
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 

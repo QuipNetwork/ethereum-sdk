@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {WOTSPlusImplementation} from "../../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 
@@ -147,7 +148,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
     function _freshKeyPair() internal returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) {
         seedCounter++;
         bytes32 seed = keccak256(abi.encodePacked("handler-fresh", seedCounter, address(this)));
-        (pub, priv) = WOTSPlus.generateKeyPair(seed);
+        (pub, priv) = WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     function _freshKeySet10() internal returns (WOTSPlus.WinternitzAddress[10] memory pubs, bytes32[10] memory privs) {
@@ -161,7 +162,7 @@ contract WOTSPlusImplementationInvariantHandler is Test {
         pure
         returns (WOTSPlus.WinternitzElements memory)
     {
-        bytes32[67] memory elements = WOTSPlus.sign(privateKey, WOTSPlus.WinternitzMessage({messageHash: messageHash}));
+        bytes32[67] memory elements = WOTSPlusTestSigner.sign(privateKey, WOTSPlus.WinternitzMessage({messageHash: messageHash}));
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 

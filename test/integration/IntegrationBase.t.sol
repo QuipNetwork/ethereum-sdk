@@ -8,6 +8,7 @@ import {WalletFactory} from "../../contracts/WalletFactory.sol";
 import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {QuipPaymaster} from "../../contracts/deprecated/QuipPaymaster.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
@@ -62,7 +63,7 @@ contract IntegrationBase is Test {
         pure
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
     {
-        return WOTSPlus.generateKeyPair(seed);
+        return WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     function _sign(
@@ -72,7 +73,7 @@ contract IntegrationBase is Test {
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: messageHash
         });
-        bytes32[67] memory elements = WOTSPlus.sign(privateKey, message);
+        bytes32[67] memory elements = WOTSPlusTestSigner.sign(privateKey, message);
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 
@@ -85,7 +86,7 @@ contract IntegrationBase is Test {
             bytes32 seed = keccak256(
                 abi.encodePacked(privateKey, "recovery", i)
             );
-            (pubkeys[i], ) = WOTSPlus.generateKeyPair(seed);
+            (pubkeys[i], ) = WOTSPlusTestSigner.generateKeyPair(seed);
         }
     }
 
@@ -102,7 +103,7 @@ contract IntegrationBase is Test {
         //   [1408:2048) verificationKeys[10] (deterministic fillers)
         // pqOwner is the primary transaction key so tests can sign with
         // alicePrivateKey against the first transaction-keyset slot.
-        (WOTSPlus.WinternitzAddress memory disaster, ) = WOTSPlus
+        (WOTSPlus.WinternitzAddress memory disaster, ) = WOTSPlusTestSigner
             .generateKeyPair(
                 keccak256(
                     abi.encodePacked(
@@ -112,7 +113,7 @@ contract IntegrationBase is Test {
                     )
                 )
             );
-        (WOTSPlus.WinternitzAddress memory ownership, ) = WOTSPlus
+        (WOTSPlus.WinternitzAddress memory ownership, ) = WOTSPlusTestSigner
             .generateKeyPair(
                 keccak256(
                     abi.encodePacked(
@@ -139,7 +140,7 @@ contract IntegrationBase is Test {
                     i
                 )
             );
-            (WOTSPlus.WinternitzAddress memory filler, ) = WOTSPlus
+            (WOTSPlus.WinternitzAddress memory filler, ) = WOTSPlusTestSigner
                 .generateKeyPair(seed);
             payload = abi.encodePacked(
                 payload,
@@ -163,7 +164,7 @@ contract IntegrationBase is Test {
                     i
                 )
             );
-            (WOTSPlus.WinternitzAddress memory filler, ) = WOTSPlus
+            (WOTSPlus.WinternitzAddress memory filler, ) = WOTSPlusTestSigner
                 .generateKeyPair(seed);
             payload = abi.encodePacked(
                 payload,

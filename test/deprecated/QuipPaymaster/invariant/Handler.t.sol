@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {QuipPaymaster} from "../../../../contracts/deprecated/QuipPaymaster.sol";
 import {IQuipPaymaster} from "../../../../contracts/deprecated/interfaces/IQuipPaymaster.sol";
@@ -143,7 +144,7 @@ contract QuipPaymasterInvariantHandler is Test {
     function _freshKeyPair() internal returns (WOTSPlus.WinternitzAddress memory pub, bytes32 priv) {
         seedCounter++;
         bytes32 seed = keccak256(abi.encodePacked("pm-handler-fresh", seedCounter, address(this)));
-        (pub, priv) = WOTSPlus.generateKeyPair(seed);
+        (pub, priv) = WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     /// @dev Snapshot the hashes of every wallet's current verifier
@@ -260,7 +261,7 @@ contract QuipPaymasterInvariantHandler is Test {
 
         bytes32 bindingHash = _userOpBindingHash(userOp);
         bytes32 digest = _paymasterApprovalDigest(curPub_, bindingHash);
-        bytes32[67] memory sig = WOTSPlus.sign(curPriv_, WOTSPlus.WinternitzMessage({messageHash: digest}));
+        bytes32[67] memory sig = WOTSPlusTestSigner.sign(curPriv_, WOTSPlus.WinternitzMessage({messageHash: digest}));
 
         userOp.paymasterAndData = abi.encodePacked(prefix, sig);
     }
