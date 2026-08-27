@@ -35,11 +35,13 @@ export {
   HARDENED_OFFSET,
   NETWORK_QUIP,
   QUIP_HD_PURPOSE,
+  assertHdIndex,
   deriveHardenedChild,
   deriveQuipSeed,
   generateMnemonic,
   masterNodeFromSeed,
   mnemonicToSeed,
+  normalizeMnemonic,
   quipHdPath,
   validateMnemonic,
 } from "./hd.js";

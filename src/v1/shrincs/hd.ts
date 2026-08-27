@@ -59,6 +59,15 @@ function splitI(i: Uint8Array): HdNode {
   return { key: i.slice(0, 32), chainCode: i.slice(32, 64) };
 }
 
+/// Throw if `index` is not an integer in the hardened domain `[0, 2^31)`.
+export function assertHdIndex(index: number, label: string): void {
+  if (!Number.isInteger(index) || index < 0 || index >= HARDENED_OFFSET) {
+    throw new ShrincsHdDerivationError(
+      `${label} must be an integer in [0, 2^31), got ${index}`
+    );
+  }
+}
+
 /// Master node: I = HMAC-SHA512(key = "QUIP seed", data = seed).
 export function masterNodeFromSeed(seed: Uint8Array): HdNode {
   if (seed.length < MIN_SEED_BYTES) {
@@ -71,9 +80,10 @@ export function masterNodeFromSeed(seed: Uint8Array): HdNode {
 
 /// Hardened CKD: I = HMAC-SHA512(chainCode, 0x00 ‖ key ‖ ser32BE(index + 2^31)).
 export function deriveHardenedChild(node: HdNode, index: number): HdNode {
-  if (!Number.isInteger(index) || index < 0 || index >= HARDENED_OFFSET) {
+  assertHdIndex(index, "derivation index");
+  if (node.key.length !== 32 || node.chainCode.length !== 32) {
     throw new ShrincsHdDerivationError(
-      `derivation index must be an integer in [0, 2^31), got ${index}`
+      `HD node must carry 32-byte key and chain code, got ${node.key.length}/${node.chainCode.length}`
     );
   }
   const data = new Uint8Array(1 + 32 + 4);
@@ -130,16 +140,22 @@ export function generateMnemonic(strength: 128 | 256 = 128): string {
   return bip39.generateMnemonic(wordlist, strength);
 }
 
+/// Trim and collapse internal whitespace runs to a single space.
+export function normalizeMnemonic(mnemonic: string): string {
+  return mnemonic.trim().replace(/\s+/g, " ");
+}
+
 /// True if the mnemonic passes English-wordlist and checksum validation.
 export function validateMnemonic(mnemonic: string): boolean {
-  return bip39.validateMnemonic(mnemonic, wordlist);
+  return bip39.validateMnemonic(normalizeMnemonic(mnemonic), wordlist);
 }
 
 /// Standard BIP-39 seed derivation (PBKDF2-HMAC-SHA512, 2048 rounds, 64
 /// bytes). Validates the mnemonic first; `@scure/bip39` alone does not.
 export function mnemonicToSeed(mnemonic: string, passphrase = ""): Uint8Array {
-  if (!validateMnemonic(mnemonic)) {
+  const normalized = normalizeMnemonic(mnemonic);
+  if (!validateMnemonic(normalized)) {
     throw new ShrincsInvalidMnemonicError();
   }
-  return bip39.mnemonicToSeedSync(mnemonic, passphrase);
+  return bip39.mnemonicToSeedSync(normalized, passphrase);
 }

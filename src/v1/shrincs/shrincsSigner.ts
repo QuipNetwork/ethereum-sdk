@@ -247,13 +247,15 @@ export class ShrincsSigner {
 
   /// Load the WASM signing backend and construct a signer whose keys derive
   /// from `masterSeed` under the QUIP HD path. `masterSeed` is any >=16-byte
-  /// secret — typically the 64-byte BIP-39 seed (see `fromMnemonic`).
+  /// secret — typically the 64-byte BIP-39 seed (see `fromMnemonic`). The
+  /// 16-byte minimum seed length is checked at first derivation, not at
+  /// construction.
   static async create(
     masterSeed: Uint8Array,
     opts: QuipHdPathOptions = {}
   ): Promise<ShrincsSigner> {
     const wasm = await loadShrincsWasm();
-    return new ShrincsSigner(wasm, Uint8Array.from(masterSeed), opts);
+    return new ShrincsSigner(wasm, Uint8Array.from(masterSeed), { ...opts });
   }
 
   /// Construct a signer from a BIP-39 English mnemonic (and optional

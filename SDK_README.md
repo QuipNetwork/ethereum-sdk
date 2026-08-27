@@ -249,6 +249,8 @@ have no external standard, so QUIP defines its own:
   same keys on every EVM chain.
 - `account` defaults to `0`.
 - `index` is the `derivationIndex` the wallet and paymaster clients pass.
+- `index` and `account` must be integers in `[0, 2^31)` (the hardened
+  index domain).
 
 Construct a signer from a BIP-39 mnemonic or a raw seed:
 

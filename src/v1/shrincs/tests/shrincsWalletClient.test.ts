@@ -16,6 +16,7 @@ import {
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   OwnerMismatchError,
+  ShrincsHdDerivationError,
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
 } from "../errors.js";
@@ -243,6 +244,24 @@ describe("ShrincsWalletClient owner mismatch", () => {
         owner: localAccount(WRONG_OWNER),
       })
     ).rejects.toThrow(OwnerMismatchError);
+  });
+});
+
+describe("ShrincsWalletClient derivationIndex", () => {
+  it("throws ShrincsHdDerivationError when derivationIndex is -1", () => {
+    expect(
+      () =>
+        new ShrincsWalletClient({
+          walletAddress: WALLET,
+          publicClient: {} as PublicClient,
+          walletClient: {} as WalletClient,
+          keypair,
+          commitment: seed("vault"),
+          derivationIndex: -1,
+          chainId: CHAIN_ID,
+          account: ACCOUNT,
+        })
+    ).toThrow(ShrincsHdDerivationError);
   });
 });
 

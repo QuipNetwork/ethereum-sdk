@@ -5,7 +5,10 @@
 import { keccak_256 } from "@noble/hashes/sha3";
 import { keccak256, toHex } from "viem";
 
-import { ShrincsInvalidMnemonicError } from "../errors.js";
+import {
+  ShrincsHdDerivationError,
+  ShrincsInvalidMnemonicError,
+} from "../errors.js";
 import { deriveQuipSeed, generateMnemonic, mnemonicToSeed } from "../hd.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
@@ -173,6 +176,11 @@ describe("ShrincsSigner", () => {
       await expect(
         ShrincsSigner.fromMnemonic("abandon abandon abandon")
       ).rejects.toThrow(ShrincsInvalidMnemonicError);
+    });
+
+    it("throws ShrincsHdDerivationError on first derivation of a sub-16-byte seed", async () => {
+      const short = await ShrincsSigner.create(new Uint8Array(15));
+      expect(() => short.deriveSeedHex(0)).toThrow(ShrincsHdDerivationError);
     });
 
     it("passphrase and account separate key material", async () => {

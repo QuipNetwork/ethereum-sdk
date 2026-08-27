@@ -49,6 +49,12 @@ describe("masterNodeFromSeed", () => {
       ShrincsHdDerivationError
     );
   });
+
+  it("accepts a 16-byte seed", () => {
+    const node = masterNodeFromSeed(new Uint8Array(16).fill(1));
+    expect(node.key).toHaveLength(32);
+    expect(node.chainCode).toHaveLength(32);
+  });
 });
 
 describe("deriveHardenedChild", () => {
@@ -76,6 +82,15 @@ describe("deriveHardenedChild", () => {
         ShrincsHdDerivationError
       );
     }
+  });
+
+  it("rejects a node whose key is not 32 bytes", () => {
+    expect(() =>
+      deriveHardenedChild({ key: node.key.slice(0, 16), chainCode: node.chainCode }, 0)
+    ).toThrow(ShrincsHdDerivationError);
+    expect(() =>
+      deriveHardenedChild({ key: new Uint8Array(33), chainCode: node.chainCode }, 0)
+    ).toThrow(ShrincsHdDerivationError);
   });
 });
 
@@ -159,5 +174,14 @@ describe("BIP-39 helpers", () => {
   it("passphrase changes the seed", () => {
     const m = generateMnemonic();
     expect(toHex(mnemonicToSeed(m))).not.toBe(toHex(mnemonicToSeed(m, "x")));
+  });
+
+  it("tolerates leading, trailing, and doubled whitespace", () => {
+    const mnemonic = generateMnemonic();
+    const firstSpace = mnemonic.indexOf(" ");
+    const doubled = `${mnemonic.slice(0, firstSpace)}  ${mnemonic.slice(firstSpace + 1)}`;
+    const dirty = ` ${doubled}\n`;
+    expect(validateMnemonic(dirty)).toBe(true);
+    expect(toHex(mnemonicToSeed(dirty))).toBe(toHex(mnemonicToSeed(mnemonic)));
   });
 });
