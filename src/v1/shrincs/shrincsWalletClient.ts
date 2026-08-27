@@ -30,6 +30,7 @@ import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { tryMulticall } from "../internal/multicall.js";
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
 import { HASH_SUITE_KECCAK_256 } from "./constants.js";
+import { assertHdIndex } from "./hd.js";
 import {
   AuthLeafInTargetsError,
   CommitmentMismatchError,
@@ -301,6 +302,9 @@ export class ShrincsWalletClient {
     this.signer = params.signer;
     this.keypair = params.keypair;
     this.commitment = params.commitment;
+    if (params.derivationIndex !== undefined) {
+      assertHdIndex(params.derivationIndex, "derivationIndex");
+    }
     this.derivationIndex = params.derivationIndex;
     this.chainId = params.chainId;
     this.account = params.account;

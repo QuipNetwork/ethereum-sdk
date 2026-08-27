@@ -30,6 +30,22 @@ export type {
   ShrincsKeygenOptions,
   DeriveKeyPairParams,
 } from "./shrincsSigner.js";
+export {
+  ALGORITHM_EXPERIMENTAL,
+  HARDENED_OFFSET,
+  NETWORK_QUIP,
+  QUIP_HD_PURPOSE,
+  assertHdIndex,
+  deriveHardenedChild,
+  deriveQuipSeed,
+  generateMnemonic,
+  masterNodeFromSeed,
+  mnemonicToSeed,
+  normalizeMnemonic,
+  quipHdPath,
+  validateMnemonic,
+} from "./hd.js";
+export type { HdNode, QuipHdPathOptions } from "./hd.js";
 export { ShrincsWalletClient, fetchShrincsWalletState } from "./shrincsWalletClient.js";
 export type {
   ShrincsWalletState,

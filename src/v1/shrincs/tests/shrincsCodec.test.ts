@@ -28,7 +28,7 @@ let mainKey: ShrincsKeyPair;
 let erc1271Key: ShrincsKeyPair;
 
 beforeAll(async () => {
-  const signer = await ShrincsSigner.create(new TextEncoder().encode("codec-test"));
+  const signer = await ShrincsSigner.create(new TextEncoder().encode("codec-test (hd seed padding)"));
   mainKey = signer.keygenFromSeedHex(seed("shrincs codec main key seed"), {
     maxSignatures: MAX_SIG,
   });

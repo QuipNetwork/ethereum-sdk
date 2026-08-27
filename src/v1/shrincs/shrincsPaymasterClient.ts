@@ -26,6 +26,7 @@ import {
 import { assertProviderState, boundChain } from "../internal/providerState.js";
 import { tryMulticall } from "../internal/multicall.js";
 import { shrincsPaymasterAbi } from "./abi/ShrincsPaymaster.js";
+import { assertHdIndex } from "./hd.js";
 import {
   EmptyLeavesError,
   StatefulBudgetExhaustedError,
@@ -111,6 +112,9 @@ export class ShrincsPaymasterClient {
     this.walletClient = params.walletClient;
     this.signer = params.signer;
     this.commitment = params.commitment;
+    if (params.derivationIndex !== undefined) {
+      assertHdIndex(params.derivationIndex, "derivationIndex");
+    }
     this.derivationIndex = params.derivationIndex;
     this.chainId = params.chainId;
     this.account = params.account;

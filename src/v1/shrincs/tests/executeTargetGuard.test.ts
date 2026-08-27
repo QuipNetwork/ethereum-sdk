@@ -24,7 +24,7 @@ const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 let keypair: ShrincsKeyPair;
 
 beforeAll(async () => {
-  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
+  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   keypair = signer.keygenFromSeedHex(seed("execute guard key seed"), {
     maxSignatures: 8,
   });

@@ -5,6 +5,11 @@
 import { keccak_256 } from "@noble/hashes/sha3";
 import { keccak256, toHex } from "viem";
 
+import {
+  ShrincsHdDerivationError,
+  ShrincsInvalidMnemonicError,
+} from "../errors.js";
+import { deriveQuipSeed, generateMnemonic, mnemonicToSeed } from "../hd.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
   type ActionContext,
@@ -25,7 +30,7 @@ let main: ShrincsKeyPair;
 let erc1271: ShrincsKeyPair;
 
 beforeAll(async () => {
-  signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
+  signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
     maxSignatures: MAX_SIG,
   });
@@ -42,7 +47,7 @@ describe("ShrincsSigner", () => {
     expect(again.publicKey).toEqual(main.publicKey);
     // A different signer instance with a different master secret does not
     // matter for keygenFromSeedHex — the seed is the sole input.
-    const other = await ShrincsSigner.create(new TextEncoder().encode("other"));
+    const other = await ShrincsSigner.create(new TextEncoder().encode("other (hd seed padding)"));
     expect(
       other.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
         maxSignatures: MAX_SIG,
@@ -149,6 +154,45 @@ describe("ShrincsSigner", () => {
     const a = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
     const b = signer.recoverKeyPair(2, { maxSignatures: MAX_SIG });
     expect(a.publicKeyCommitment).not.toBe(b.publicKeyCommitment);
+  });
+
+  describe("QUIP HD derivation", () => {
+    it("deriveSeedHex walks the QUIP HD path", async () => {
+      const seedBytes = new TextEncoder().encode("hd parity master seed...");
+      const s = await ShrincsSigner.create(seedBytes);
+      expect(s.deriveSeedHex(0)).toBe(deriveQuipSeed(seedBytes, 0));
+      expect(s.deriveSeedHex(9)).toBe(deriveQuipSeed(seedBytes, 9));
+    });
+
+    it("fromMnemonic matches manual mnemonic → seed → derive", async () => {
+      const mnemonic = generateMnemonic();
+      const s = await ShrincsSigner.fromMnemonic(mnemonic);
+      expect(s.deriveSeedHex(0)).toBe(
+        deriveQuipSeed(mnemonicToSeed(mnemonic), 0)
+      );
+    });
+
+    it("fromMnemonic rejects an invalid mnemonic", async () => {
+      await expect(
+        ShrincsSigner.fromMnemonic("abandon abandon abandon")
+      ).rejects.toThrow(ShrincsInvalidMnemonicError);
+    });
+
+    it("throws ShrincsHdDerivationError on first derivation of a sub-16-byte seed", async () => {
+      const short = await ShrincsSigner.create(new Uint8Array(15));
+      expect(() => short.deriveSeedHex(0)).toThrow(ShrincsHdDerivationError);
+    });
+
+    it("passphrase and account separate key material", async () => {
+      const mnemonic = generateMnemonic();
+      const base = await ShrincsSigner.fromMnemonic(mnemonic);
+      const withPass = await ShrincsSigner.fromMnemonic(mnemonic, {
+        passphrase: "p",
+      });
+      const acct1 = await ShrincsSigner.fromMnemonic(mnemonic, { account: 1 });
+      expect(withPass.deriveSeedHex(0)).not.toBe(base.deriveSeedHex(0));
+      expect(acct1.deriveSeedHex(0)).not.toBe(base.deriveSeedHex(0));
+    });
   });
 });
 

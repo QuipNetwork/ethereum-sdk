@@ -16,6 +16,7 @@ import {
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   OwnerMismatchError,
+  ShrincsHdDerivationError,
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
 } from "../errors.js";
@@ -41,7 +42,7 @@ const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 let keypair: ShrincsKeyPair;
 
 beforeAll(async () => {
-  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
+  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   keypair = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
     maxSignatures: MAX_SIG,
   });
@@ -245,6 +246,24 @@ describe("ShrincsWalletClient owner mismatch", () => {
         owner: localAccount(WRONG_OWNER),
       })
     ).rejects.toThrow(OwnerMismatchError);
+  });
+});
+
+describe("ShrincsWalletClient derivationIndex", () => {
+  it("throws ShrincsHdDerivationError when derivationIndex is -1", () => {
+    expect(
+      () =>
+        new ShrincsWalletClient({
+          walletAddress: WALLET,
+          publicClient: {} as PublicClient,
+          walletClient: {} as WalletClient,
+          keypair,
+          commitment: seed("vault"),
+          derivationIndex: -1,
+          chainId: CHAIN_ID,
+          account: ACCOUNT,
+        })
+    ).toThrow(ShrincsHdDerivationError);
   });
 });
 

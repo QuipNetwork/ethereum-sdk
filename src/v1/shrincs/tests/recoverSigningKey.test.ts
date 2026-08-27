@@ -56,7 +56,7 @@ describe("ShrincsWalletClient.recoverSigningKey (injected keypair)", () => {
 
   beforeAll(async () => {
     const signer = await ShrincsSigner.create(
-      new TextEncoder().encode("any master")
+      new TextEncoder().encode("any master (hd seed padding)")
     );
     keypair = signer.keygenFromSeedHex(seed("injected keypair seed"), {
       maxSignatures: MAX_SIG,
@@ -84,7 +84,7 @@ describe("ShrincsWalletClient.recoverSigningKey (injected keypair)", () => {
 describe("ShrincsWalletClient.recoverSigningKey (signer fallback)", () => {
   it("throws when the signer fallback is reached without derivationIndex", async () => {
     const signer = await ShrincsSigner.create(
-      new TextEncoder().encode("any master")
+      new TextEncoder().encode("any master (hd seed padding)")
     );
     const client = new ShrincsWalletClient({
       walletAddress: WALLET,
