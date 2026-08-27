@@ -122,7 +122,9 @@ export async function setupShrincsAnvilStack(
   const account = opts.account ?? DEFAULT_ACCOUNT;
   const maxFee = opts.maxFee ?? DEFAULT_MAX_FEE;
 
-  const factoryArtifact = readForgeArtifact("out/WalletFactory.sol/WalletFactory.json");
+  const factoryArtifact = readForgeArtifact(
+    "out/WalletFactory.sol/WalletFactory.json"
+  );
   const walletArtifact = readForgeArtifact(
     "out/ShrincsWallet.sol/ShrincsWallet.json"
   );
@@ -134,9 +136,6 @@ export async function setupShrincsAnvilStack(
   );
   const sphincsSiblingArtifact = readForgeArtifact(
     "out/SPHINCSPlusC256sKeccak.sol/SPHINCSPlusC256sKeccak.json"
-  );
-  const preQSalt1Artifact = readForgeArtifact(
-    "out/PreQSalt1Wallets.sol/PreQSalt1Wallets.json"
   );
   const entryPointFixture = JSON.parse(
     readFileSync(
@@ -217,29 +216,8 @@ export async function setupShrincsAnvilStack(
   });
   await publicClient.waitForTransactionReceipt({ hash: factoryInitHash });
 
-  // Empty pre-QSalt1 registry so the factory policy gate has a live pointer.
-  const registryHash = await walletClient.deployContract({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    abi: preQSalt1Artifact.abi as any,
-    bytecode: preQSalt1Artifact.bytecode.object as Hex,
-    args: [account.address],
-    account,
-    chain: foundry,
-  });
-  const registryReceipt = await publicClient.waitForTransactionReceipt({
-    hash: registryHash,
-  });
-  const setRegistryHash = await walletClient.writeContract({
-    chain: foundry,
-    address: factoryAddress,
-    abi: walletFactoryAbi,
-    functionName: "setPreQSalt1Wallets",
-    args: [registryReceipt.contractAddress!],
-    account,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: setRegistryHash });
-
-  // 2. ShrincsWallet impl (no library linking — empty linkReferences) + vet.
+  // 2. ShrincsWallet impl (no library linking — empty linkReferences), vet,
+  // and certify it for full-width V1 identity deployments.
   const implHash = await walletClient.deployContract({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     abi: walletArtifact.abi as any,
@@ -262,6 +240,16 @@ export async function setupShrincsAnvilStack(
     account,
   });
   await publicClient.waitForTransactionReceipt({ hash: vetHash });
+
+  const compatibilityHash = await walletClient.writeContract({
+    chain: foundry,
+    address: factoryAddress,
+    abi: walletFactoryAbi,
+    functionName: "setV1Compatibility",
+    args: [shrincsWalletImpl, true],
+    account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: compatibilityHash });
 
   // 3. ShrincsPaymaster impl (same pinned-verifier ctor arg) + ERC-1967 proxy.
   const pmImplHash = await walletClient.deployContract({
@@ -305,7 +293,9 @@ export async function stopShrincsAnvilStack(
 
 /// Construct a `ShrincsSigner` from a 32-byte quantum secret filled with
 /// `seedByte` (the FE master-secret analog).
-export async function makeShrincsSigner(seedByte: number): Promise<ShrincsSigner> {
+export async function makeShrincsSigner(
+  seedByte: number
+): Promise<ShrincsSigner> {
   return ShrincsSigner.create(new Uint8Array(32).fill(seedByte));
 }
 
