@@ -8,18 +8,40 @@ import {
   type PublicClient,
   type TransactionReceipt,
   type WalletClient,
+  keccak256,
+  toHex,
   zeroAddress,
 } from "viem";
 
+import { computeCreate3Address } from "../../addresses.js";
 import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
   TransactionRevertedError,
 } from "../errors.js";
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
+import {
+  getShrincsWalletAddress,
+  v1Commitment,
+} from "../addresses.js";
+import { encodeInitPayload } from "../shrincsCodec.js";
 import { ShrincsFactoryClient } from "../shrincsFactoryClient.js";
-import { type ShrincsKeyPair, type ShrincsSigner } from "../shrincsSigner.js";
-import { type ShrincsPublicKey } from "../types.js";
+import {
+  ShrincsSigner,
+  type ShrincsKeyPair,
+} from "../shrincsSigner.js";
+
+// A real main keypair (the dummy signer below hands it back from `recoverKeyPair`).
+let realKeypair: ShrincsKeyPair;
+beforeAll(async () => {
+  const signer = await ShrincsSigner.create(
+    new TextEncoder().encode("factory-client-test")
+  );
+  realKeypair = signer.keygenFromSeedHex(
+    keccak256(toHex("factory client seed")),
+    { maxSignatures: 40 }
+  );
+});
 
 const FACTORY = "0x00000000000000000000000000000000000000f1" as Address;
 const IMPL = "0x00000000000000000000000000000000000000f2" as Address;
@@ -33,23 +55,9 @@ const VAULT_ID =
 const ERC1271_COMMITMENT =
   "0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
 
-function dummyPublicKey(): ShrincsPublicKey {
-  const h32 = (n: string) => (`0x${n.repeat(32)}`) as Hex;
-  return {
-    publicKeyCommitment: h32("11"),
-    pkSeed: h32("22"),
-    hypertreeRoot: h32("33"),
-    statefulPublicKey: h32("44"),
-  };
-}
-
 function dummySigner(): ShrincsSigner {
-  const publicKey = dummyPublicKey();
   return {
-    recoverKeyPair: () => ({
-      publicKey,
-      publicKeyCommitment: publicKey.publicKeyCommitment,
-    }),
+    recoverKeyPair: () => realKeypair,
   } as unknown as ShrincsSigner;
 }
 
@@ -76,6 +84,7 @@ function makeFactory(
   opts: {
     receiptStatus?: TransactionReceipt["status"];
     reads?: Record<string, unknown>;
+    captureWriteArgs?: (args: unknown[]) => void;
   } = {}
 ): ShrincsFactoryClient {
   const publicClient = {
@@ -92,7 +101,10 @@ function makeFactory(
   } as unknown as PublicClient;
   const walletClient = {
     getAddresses: async () => [ACCOUNT],
-    writeContract: async () => TX_HASH,
+    writeContract: async (req: { args?: unknown[] }) => {
+      if (opts.captureWriteArgs && req.args) opts.captureWriteArgs(req.args);
+      return TX_HASH;
+    },
   } as unknown as WalletClient;
   return new ShrincsFactoryClient({
     publicClient,
@@ -105,19 +117,67 @@ function makeFactory(
 }
 
 describe("ShrincsFactoryClient.createShrincsWallet", () => {
+  const createParams = {
+    signer: dummySigner(),
+    maxSignatures: 8,
+    derivationIndex: 1,
+    erc1271: { commitment: ERC1271_COMMITMENT },
+  } as const;
+
   it("throws TransactionRevertedError when the deploy receipt status is reverted", async () => {
     const factory = makeFactory({ receiptStatus: "reverted" });
     await expect(
-      factory.createShrincsWallet(
-        {
-          signer: dummySigner(),
-          maxSignatures: 8,
-          vaultId: VAULT_ID,
-          erc1271: { commitment: ERC1271_COMMITMENT },
-        },
-        { gas: 100_000n, skipPreflightChecks: true }
-      )
+      factory.createShrincsWallet(createParams, {
+        gas: 100_000n,
+        skipPreflightChecks: true,
+      })
     ).rejects.toThrow(TransactionRevertedError);
+  });
+
+  it("builds V1 deploy args with commitment from key material and no deploy authorization", async () => {
+    let capturedArgs: unknown[] | undefined;
+    const factory = makeFactory({
+      receiptStatus: "reverted",
+      captureWriteArgs: (args) => {
+        capturedArgs = args;
+      },
+    });
+    await expect(
+      factory.createShrincsWallet(createParams, {
+        gas: 100_000n,
+        skipPreflightChecks: true,
+      })
+    ).rejects.toThrow(TransactionRevertedError);
+
+    expect(capturedArgs).toBeDefined();
+    const args = capturedArgs as unknown[];
+    const statefulC = realKeypair.publicKeyCommitment;
+    const commitment = v1Commitment(statefulC, ERC1271_COMMITMENT, ACCOUNT);
+    expect(args[0]).toBe(commitment);
+    expect(args[1]).toBe(0n);
+    expect(args[2]).toBe(ACCOUNT);
+    expect(args[3]).toBe(
+      encodeInitPayload({
+        mainBundle: realKeypair.publicKey,
+        erc1271Commitment: ERC1271_COMMITMENT,
+      })
+    );
+    expect(args).toHaveLength(4);
+  });
+});
+
+describe("getShrincsWalletAddress (CREATE3 predictor)", () => {
+  it("equals computeCreate3Address(factory, v1Commitment)", () => {
+    const statefulC = `0x${"11".repeat(32)}` as Hex;
+    const statelessC = `0x${"22".repeat(32)}` as Hex;
+    expect(
+      getShrincsWalletAddress(FACTORY, statefulC, statelessC, ACCOUNT)
+    ).toBe(
+      computeCreate3Address(
+        FACTORY,
+        v1Commitment(statefulC, statelessC, ACCOUNT)
+      )
+    );
   });
 });
 
@@ -194,7 +254,7 @@ describe("ShrincsFactoryClient.openShrincsWallet", () => {
     } as unknown as ShrincsKeyPair;
 
     await expect(
-      factory.openShrincsWallet({ vaultId: VAULT_ID, keypair })
+      factory.openShrincsWallet({ commitment: VAULT_ID, keypair })
     ).rejects.toThrow(CommitmentMismatchError);
   });
 });

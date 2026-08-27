@@ -146,17 +146,17 @@ export class RegistryDesyncError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
       "REGISTRY_DESYNC",
-      "Factory registry mutation returned false — _vaultIds set diverged from walletOwner source of truth",
+      "Factory registry mutation returned false — _commitments set diverged from walletOwner source of truth",
       opts
     );
   }
 }
 
-export class ZeroVaultIdError extends QuipError {
+export class ZeroCommitmentError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(
-      "ZERO_VAULT_ID",
-      "vaultId must be non-zero; bytes32(0) is reserved as a registry sentinel",
+      "ZERO_COMMITMENT",
+      "commitment must be non-zero; bytes32(0) is reserved as a registry sentinel",
       opts
     );
   }

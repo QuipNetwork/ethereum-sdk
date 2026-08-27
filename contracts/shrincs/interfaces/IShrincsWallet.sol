@@ -62,6 +62,8 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
+    /// @notice Thrown when the V1 commitment (salt) does not recompute from the install payload.
+    error IdentityMismatch();
 
     /// @notice Thrown when a stateful signature's leaf index has already been consumed in the
     ///         current key epoch (used-leaf bitmap anti-replay).
@@ -217,7 +219,8 @@ interface IShrincsWallet is IWallet {
         Ok,
         BadSignatureLength,
         InvalidEcdsaSignature,
-        InvalidShrincsSignature
+        InvalidShrincsSignature,
+        MalformedErc1271Payload
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

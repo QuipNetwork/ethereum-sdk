@@ -35,21 +35,25 @@ export type {
   ShrincsWalletState,
   ShrincsWalletClientParams,
   ShrincsTxKeyOptions,
+  ExecuteParams,
+  ExecuteCostEstimate,
+  PreparedExecute,
   ShrincsCall,
   UserOpEnvelope,
 } from "./shrincsWalletClient.js";
+export type { CostEstimate } from "./estimateCost.js";
 export { ShrincsPaymasterClient } from "./shrincsPaymasterClient.js";
 export type {
   ShrincsVerifierState,
   ShrincsPaymasterClientParams,
 } from "./shrincsPaymasterClient.js";
-export {
-  ShrincsFactoryClient,
-  randomVaultId,
-} from "./shrincsFactoryClient.js";
+export { ShrincsFactoryClient } from "./shrincsFactoryClient.js";
 export type {
   ShrincsFactoryClientParams,
   CreateShrincsWalletParams,
+  GetShrincsWalletParams,
+  EstimateCreationCostParams,
+  CreationCostEstimate,
   Erc1271KeySpec,
 } from "./shrincsFactoryClient.js";
 

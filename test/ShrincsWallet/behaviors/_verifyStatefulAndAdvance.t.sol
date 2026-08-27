@@ -38,16 +38,16 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
     }
 
     function test_verifyStatefulAndAdvance_revertsWhen_leafAlreadyUsed() public {
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
-        wallet.exposed_verifyStatefulAndAdvance(_pk(), _statefulSigWithLeaf(1), ACTION, PAYLOAD);
+        wallet.exposed_verifyStatefulAndAdvance(_pk(), _statefulSigWithLeaf(SIGN_BASE + 1), ACTION, PAYLOAD);
     }
 
     function test_verifyStatefulAndAdvance_revertsWhen_invalidSignature() public {
         SHRINCS.Signature memory sig = _wrongContextStatefulSig();
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.exposed_verifyStatefulAndAdvance(_pk(), sig, ACTION, PAYLOAD);
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on invalid signature");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed on invalid signature");
     }
 
     function test_verifyStatefulAndAdvance_consumesLeafOnSuccess() public {
@@ -57,11 +57,11 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
         SHRINCS.Signature memory sig = _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.StatefulSignatureVerified(1, 0);
+        emit IShrincsWallet.StatefulSignatureVerified(SIGN_BASE + 1, 0);
         uint32 leaf = wallet.exposed_verifyStatefulAndAdvance(_pk(), sig, Codec.ACTION_EXECUTE, payloadHash);
 
-        assertEq(leaf, 1, "consumed leaf returned");
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 marked used");
+        assertEq(leaf, SIGN_BASE + 1, "consumed leaf returned");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 marked used");
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
@@ -92,7 +92,7 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
 
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.exposed_verifyStatefulAndAdvance(_pk(), sig, Codec.ACTION_EXECUTE, payloadHash);
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on stale nonce");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed on stale nonce");
         assertEq(wallet.statefulLeavesUsed(), 0, "counter untouched");
     }
 
@@ -103,12 +103,12 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
         SHRINCS.Signature memory sig = _signStatefulAction(Codec.ACTION_ERC4337_EXECUTE, payloadHash, 2);
 
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.StatefulSignatureVerified(2, 0);
+        emit IShrincsWallet.StatefulSignatureVerified(SIGN_BASE + 2, 0);
         uint32 leaf = wallet.exposed_verifyStatefulAndAdvance(_pk(), sig, Codec.ACTION_ERC4337_EXECUTE, payloadHash);
 
-        assertEq(leaf, 2, "leaf 2 consumed");
-        assertTrue(wallet.isStatefulLeafUsed(2), "leaf 2 marked used");
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf 1 untouched");
+        assertEq(leaf, SIGN_BASE + 2, "leaf 2 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "leaf 2 marked used");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 untouched");
         assertEq(wallet.statefulLeavesUsed(), 1, "exactly one leaf consumed");
     }
 
@@ -123,7 +123,7 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
             address(shrincsVerifier), abi.encodeWithSelector(IERC7913SignatureVerifier.verify.selector)
         );
         uint32 leaf = wallet.exposed_verifyStatefulAndAdvance(_pk(), sig, Codec.ACTION_EXECUTE, payloadHash);
-        assertEq(leaf, 1, "leaf consumed through the external verifier");
+        assertEq(leaf, SIGN_BASE + 1, "leaf consumed through the external verifier");
     }
 
     /// @dev Nothing verifies in-wallet anymore: with the verifier's code stripped, even a VALID
@@ -148,12 +148,12 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
             _signStatefulAction(Codec.ACTION_MARK_LEAVES_USED, payloadHash, 1);
 
         vm.expectEmit(true, true, false, false, address(wallet));
-        emit IShrincsWallet.StatefulSignatureVerified(1, 0);
+        emit IShrincsWallet.StatefulSignatureVerified(SIGN_BASE + 1, 0);
         uint32 leaf =
             wallet.exposed_verifyStatefulAndConsume(_pk(), sig, Codec.ACTION_MARK_LEAVES_USED, payloadHash);
 
-        assertEq(leaf, 1, "consumed leaf returned");
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 marked used");
+        assertEq(leaf, SIGN_BASE + 1, "consumed leaf returned");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 marked used");
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
         assertEq(wallet.actionNonce(), 0, "consume variant must NOT advance the action nonce");
     }
@@ -210,7 +210,7 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
     /// @dev Any in-budget leaf already present in the bitmap is rejected `StaleStatefulLeaf` before
     ///      verification, regardless of which leaf it is.
     function testFuzz_verifyStatefulAndAdvance_replayGuard(uint256 leaf) public {
-        leaf = bound(leaf, 1, MAX_SIG);
+        leaf = bound(leaf, SIGN_BASE + 1, MAX_SIG);
         wallet.harness_markLeafUsed(uint32(leaf));
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
         wallet.exposed_verifyStatefulAndAdvance(_pk(), _statefulSigWithLeaf(leaf), ACTION, PAYLOAD);

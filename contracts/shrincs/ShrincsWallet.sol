@@ -353,6 +353,14 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             uint32 maxSignatures
         ) = _decodeAndValidateInstall(payload);
 
+        bytes32 walletCommitment = IWalletFactory(FACTORY).commitmentOf(address(this));
+        if (
+            walletCommitment !=
+            Codec.v1Commitment(commitment, erc1271Commitment, newOwner)
+        ) {
+            revert IdentityMismatch();
+        }
+
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
         $.walletFactory = FACTORY;
@@ -1256,11 +1264,16 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ) internal view returns (Erc1271ValidationResult) {
         if (signature.length < 0x60)
             return Erc1271ValidationResult.BadSignatureLength;
+        // Non-reverting decode: a malformed blob (out-of-bounds ABI tail offsets) must return the
+        // ERC-1271 failure magic, never revert — a revert here is a DoS on the staticcalling
+        // relying contract. The reverting decoders remain on the transaction paths.
         (
+            bool ok,
             SHRINCS.PublicKey calldata pk,
             SPHINCSPlusC.Signature calldata sig,
             bytes calldata ecdsaSig
-        ) = Codec.decodeErc1271Signature(signature);
+        ) = Codec.tryDecodeErc1271Signature(signature);
+        if (!ok) return Erc1271ValidationResult.MalformedErc1271Payload;
 
         address recovered = ECDSA.tryRecoverCalldata(
             quipSignedHashEcdsaTarget(hash),

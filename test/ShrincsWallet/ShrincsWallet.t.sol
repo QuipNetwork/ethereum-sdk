@@ -27,7 +27,11 @@ import {MockShrincsFactory} from "../mocks/MockShrincsFactory.sol";
 ///      canonical contexts live against the wallet's current state.
 contract ShrincsWalletTest is Test {
     uint256 internal constant CHAIN_ID = 31337;
-    uint32 internal constant MAX_SIG = 8;
+    // `SIGN_BASE` is an arbitrary offset so tests sign at `SIGN_BASE + k` instead of low leaf
+    // numbers; any leaf in `[1..maxSignatures]` is a valid signing leaf. The budget is sized to
+    // leave 8 usable signing leaves above the offset.
+    uint32 internal constant SIGN_BASE = 32;
+    uint32 internal constant MAX_SIG = SIGN_BASE + 8;
 
     // Fixed harness address (kept stable so tests may hardcode `op.sender` etc.).
     address internal constant WALLET = 0x5B38Da6a701c568545dCfcB03FcB875f56beddC4;
@@ -38,7 +42,7 @@ contract ShrincsWalletTest is Test {
     // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
     // sibling (`SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER`); the sibling's code must live
     // there or every stateless verification reverts on empty code.
-    address internal constant SPHINCS_SIBLING = 0xf1Bd3aE9d3907bA59FB22A77eAcCbd278b51f88A;
+    address internal constant SPHINCS_SIBLING = 0x97B3726F44e3B7521199CE4e0fC160A32A597d31;
 
     ShrincsWalletHarness internal wallet;
     MockShrincsFactory internal factory;
@@ -189,7 +193,11 @@ contract ShrincsWalletTest is Test {
     /*                    SIGNING HELPERS                     */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Signs the wallet's canonical STATEFUL action message with the main key at `leaf`.
+    /// @dev Signs the wallet's canonical STATEFUL action message with the main key at signing
+    ///      slot `leaf`. The `leaf` argument is a slot number offset by the arbitrary `SIGN_BASE`,
+    ///      so slot `k` consumes actual leaf `SIGN_BASE + k` (any leaf in `[1..maxSignatures]` is
+    ///      valid). Callers pass small slot numbers; the wallet consumes/reports `SIGN_BASE + k`,
+    ///      which is why bitmap/event assertions are written as `SIGN_BASE + k`.
     function _signStatefulAction(bytes32 actionType, bytes32 payloadHash, uint32 leaf)
         internal
         view
@@ -199,7 +207,7 @@ contract ShrincsWalletTest is Test {
         bytes memory message =
             abi.encodePacked(SHRINCS.statefulActionMessageHash(wallet.getShrincsPublicKeyCommitment(), ctx));
         bool ok;
-        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, leaf, message);
+        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, SIGN_BASE + leaf, message);
         require(ok, "stateful sign failed");
     }
 
@@ -357,4 +365,5 @@ contract ShrincsWalletTest is Test {
         op.sender = WALLET;
         op.signature = signature;
     }
+
 }

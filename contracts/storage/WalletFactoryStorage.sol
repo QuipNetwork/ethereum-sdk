@@ -31,21 +31,21 @@ library WalletFactoryStorage {
         /// @dev Fee charged on PQ-authenticated wallet operations. Capped by
         ///      the implementation's immutable `MAX_FEE`.
         uint256 executeFee;
-        /// @dev Wallet deployed at `vaultId` (a GLOBAL CREATE3 salt — the
+        /// @dev Wallet deployed at `commitment` (a GLOBAL CREATE3 salt — the
         ///      address is a pure function of (factory address, salt)).
         ///      Write-once in `_deployProxy`.
-        mapping(bytes32 vaultId => address wallet) wallets;
+        mapping(bytes32 commitment => address wallet) wallets;
         /// @dev Reverse of `wallets`. `bytes32(0)` means "not deployed by
         ///      this factory" — the `OnlyWallet` gate in `updateWalletOwner`.
         ///      Write-once in `_deployProxy`.
-        mapping(address wallet => bytes32 vaultId) vaultIdOf;
+        mapping(address wallet => bytes32 commitment) commitmentOf;
         /// @dev Authoritative CURRENT classical owner of each wallet —
         ///      rotated only by the wallet's `updateWalletOwner` callback.
         mapping(address wallet => address owner) walletOwner;
-        /// @dev Per-owner set of vaultIds. Tracks CURRENT classical owner —
+        /// @dev Per-owner set of commitments. Tracks CURRENT classical owner —
         ///      the wallet's PQ ownership-transfer flow calls back into
         ///      `updateWalletOwner` to move the entry between owners.
-        mapping(address owner => EnumerableSetLib.Bytes32Set) vaultIds;
+        mapping(address owner => EnumerableSetLib.Bytes32Set) commitments;
         /// @dev Insertion-ordered set of vetted implementation codehashes.
         ///      Deprecated entries remain in the set to preserve index
         ///      stability.

@@ -319,8 +319,9 @@ export class EmptyLeavesError extends QuipError {
   }
 }
 
-/// A `markLeavesUsed` target leaf is zero or exceeds the installed key's
-/// `maxSignatures` budget — a client bug, not a race, so the whole batch fails.
+/// A `markLeavesUsed` target leaf is outside the signing range — zero or above
+/// the installed key's `maxSignatures` budget. A client bug, not a race, so the
+/// whole batch fails.
 export class LeafOutOfRangeError extends QuipError {
   readonly leaf: number;
   readonly maxSignatures?: number;

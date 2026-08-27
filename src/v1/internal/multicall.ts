@@ -67,7 +67,7 @@ interface TryMulticallOptions {
 ///   - the caller asked for the sequential path explicitly.
 ///
 /// Always returns `{status, result}` per call (allowFailure semantics) so
-/// out-of-bounds array reads (`vaultIds[N]` past the end) become `failure`
+/// out-of-bounds array reads (`commitments[N]` past the end) become `failure`
 /// entries instead of throwing.
 export async function tryMulticall<
   TCalls extends readonly ContractFunctionParameters[],
