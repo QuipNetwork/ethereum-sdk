@@ -60,9 +60,8 @@ import {
 export const ANVIL_PRIV_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as const;
 
-export const DEFAULT_ACCOUNT: PrivateKeyAccount = privateKeyToAccount(
-  ANVIL_PRIV_KEY
-);
+export const DEFAULT_ACCOUNT: PrivateKeyAccount =
+  privateKeyToAccount(ANVIL_PRIV_KEY);
 
 /// Factory MAX_FEE used across local-anvil integration tests. The fork test
 /// uses a larger value (1 ETH) and constructs its own; keep this in sync with
@@ -138,9 +137,7 @@ export function loadForgeArtifacts(): ForgeArtifacts {
   const paymasterArtifact = readForgeArtifact(
     "out/QuipPaymaster.sol/QuipPaymaster.json"
   );
-  const wotsPlusArtifact = readForgeArtifact(
-    "out/WOTSPlus.sol/WOTSPlus.json"
-  );
+  const wotsPlusArtifact = readForgeArtifact("out/WOTSPlus.sol/WOTSPlus.json");
   const entryPointFixture = JSON.parse(
     readFileSync(
       join(process.cwd(), "src/v1/tests/fixtures/entrypoint-v0.7.json"),
@@ -395,14 +392,17 @@ export async function createFreshWallet(
 
   const disasterKey = signer.generateKeyPair(vaultId).publicKey;
   const ownershipKey = signer.generateKeyPair(vaultId).publicKey;
-  const transactionKeys = Array.from({ length: MAX_KEYS }, () =>
-    signer.generateKeyPair(vaultId).publicKey
+  const transactionKeys = Array.from(
+    { length: MAX_KEYS },
+    () => signer.generateKeyPair(vaultId).publicKey
   );
-  const recoveryKeys = Array.from({ length: MAX_KEYS }, () =>
-    signer.generateKeyPair(vaultId).publicKey
+  const recoveryKeys = Array.from(
+    { length: MAX_KEYS },
+    () => signer.generateKeyPair(vaultId).publicKey
   );
-  const verificationKeys = Array.from({ length: MAX_KEYS }, () =>
-    signer.generateKeyPair(vaultId).publicKey
+  const verificationKeys = Array.from(
+    { length: MAX_KEYS },
+    () => signer.generateKeyPair(vaultId).publicKey
   );
   const initPayload = encodeInit(
     disasterKey,

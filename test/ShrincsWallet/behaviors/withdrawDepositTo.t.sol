@@ -31,7 +31,7 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     function test_withdraw_revertsWhen_notOwner() public {
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.withdrawDepositTo(_pk(), _statefulSigWithLeaf(1), TO, 1 ether);
+        wallet.withdrawDepositTo(_pk(), _statefulSigWithLeaf(SIGN_BASE + 1), TO, 1 ether);
     }
 
     function test_withdraw_revertsWhen_leafZero() public {
@@ -47,10 +47,10 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     }
 
     function test_withdraw_revertsWhen_leafAlreadyUsed() public {
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
-        wallet.withdrawDepositTo(_pk(), _statefulSigWithLeaf(1), TO, 1 ether);
+        wallet.withdrawDepositTo(_pk(), _statefulSigWithLeaf(SIGN_BASE + 1), TO, 1 ether);
     }
 
     function test_withdraw_revertsWhen_invalidSignature() public {
@@ -68,7 +68,7 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
             _signStatefulAction(Codec.ACTION_WITHDRAW, Codec.withdrawPayloadHash(TO, 0), 1);
         vm.prank(OWNER);
         wallet.withdrawDepositTo(_pk(), sig, TO, 0);
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
 }

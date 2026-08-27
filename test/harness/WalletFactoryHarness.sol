@@ -19,11 +19,12 @@ contract WalletFactoryHarness is WalletFactory {
         return _guardInitializeOwner();
     }
 
-    function exposed_deployProxy(address impl, bytes32 vaultId, address payable to, bytes calldata payload)
-        external
-        payable
-        returns (address)
-    {
-        return _deployProxy(impl, vaultId, to, payload);
+    function exposed_deployProxy(
+        address impl,
+        bytes32 commitment,
+        address payable to,
+        bytes calldata payload
+    ) external payable returns (address) {
+        return _deployProxy(impl, commitment, to, payload);
     }
 }

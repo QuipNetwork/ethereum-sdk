@@ -77,6 +77,28 @@ library ShrincsWalletCodec {
         keccak256("quip.shrincs.rotation.transferOwnership");
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                    IDENTITY (V1)                       */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Domain separator committed inside the full-width V1 identity hash.
+    bytes32 internal constant V1_IDENTITY_DOMAIN =
+        keccak256("QUIP_SHRINCS_IDENTITY_V1");
+
+    /// @dev Full-width identity commitment binding both key commitments and the intended
+    ///      owner. The version domain lives inside the hash preimage so all 256 output bits
+    ///      retain second-preimage strength. Mirrors the SDK helper byte-for-byte.
+    function v1Commitment(
+        bytes32 statefulC,
+        bytes32 statelessC,
+        address owner
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(V1_IDENTITY_DOMAIN, statefulC, statelessC, owner)
+            );
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                       DECODERS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 

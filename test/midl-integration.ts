@@ -79,7 +79,7 @@ function isMidlNetwork(chainId: number): boolean {
 
 function getVaultAddress(
   initialOwnerAddress: string,
-  vaultId: string,
+  commitment: string,
   chainId?: number
 ): string {
   // Simplified version for tests - just validates input format
@@ -90,7 +90,7 @@ function getVaultAddress(
   const hash = ethers.keccak256(
     ethers.solidityPacked(
       ["address", "bytes32", "address"],
-      [initialOwnerAddress, vaultId, networkAddresses.QuipFactory]
+      [initialOwnerAddress, commitment, networkAddresses.QuipFactory]
     )
   );
   return ethers.getAddress(`0x${hash.slice(-40)}`);

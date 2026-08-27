@@ -20,19 +20,19 @@ contract ShrincsWallet_setErc1271Key is ShrincsWalletTest {
     function test_setErc1271Key_revertsWhen_notOwner() public {
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(1), NEW_COMMITMENT, SUITE);
+        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), NEW_COMMITMENT, SUITE);
     }
 
     function test_setErc1271Key_revertsWhen_zeroCommitment() public {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.ZeroErc1271Commitment.selector);
-        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(1), bytes32(0), SUITE);
+        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), bytes32(0), SUITE);
     }
 
     function test_setErc1271Key_revertsWhen_unsupportedHashSuite() public {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
-        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(1), NEW_COMMITMENT, SHRINCS.HASH_SUITE_UNSUPPORTED);
+        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), NEW_COMMITMENT, SHRINCS.HASH_SUITE_UNSUPPORTED);
     }
 
     function test_setErc1271Key_revertsWhen_leafZero() public {
@@ -48,10 +48,10 @@ contract ShrincsWallet_setErc1271Key is ShrincsWalletTest {
     }
 
     function test_setErc1271Key_revertsWhen_leafAlreadyUsed() public {
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
-        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(1), NEW_COMMITMENT, SUITE);
+        wallet.setErc1271Key(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), NEW_COMMITMENT, SUITE);
     }
 
     function test_setErc1271Key_revertsWhen_invalidSignature() public {
@@ -71,7 +71,7 @@ contract ShrincsWallet_setErc1271Key is ShrincsWalletTest {
         vm.prank(OWNER);
         wallet.setErc1271Key(_mainPk(), sig, NEW_COMMITMENT, SUITE);
         assertEq(wallet.getErc1271Commitment(), NEW_COMMITMENT);
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
 }
