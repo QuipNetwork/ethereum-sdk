@@ -11,10 +11,16 @@ import {
   QUIP_HD_PURPOSE,
   deriveHardenedChild,
   deriveQuipSeed,
+  generateMnemonic,
   masterNodeFromSeed,
+  mnemonicToSeed,
   quipHdPath,
+  validateMnemonic,
 } from "../hd.js";
-import { ShrincsHdDerivationError } from "../errors.js";
+import {
+  ShrincsHdDerivationError,
+  ShrincsInvalidMnemonicError,
+} from "../errors.js";
 
 const SEED = new TextEncoder().encode("a deterministic test seed 32b+..");
 
@@ -120,5 +126,38 @@ describe("QUIP HD v1 regression vectors", () => {
     expect(deriveQuipSeed(VECTOR_SEED, 0)).toBe("0xe384e03583d60da36e3fdbad396a0f3a9c98512007bd07999d9f8db870db8bb2");
     expect(deriveQuipSeed(VECTOR_SEED, 1)).toBe("0xafe51b913c23f2baf73026cdc8c6cdf2477a01116e525f30ba0f224a76198700");
     expect(deriveQuipSeed(VECTOR_SEED, 2147483646)).toBe("0xd20cef6c7abf8265603938a64a5028948867107a63f4d9f086aa9cf6f8e475c9");
+  });
+});
+
+describe("BIP-39 helpers", () => {
+  it("generates valid 12- and 24-word mnemonics", () => {
+    const m12 = generateMnemonic();
+    const m24 = generateMnemonic(256);
+    expect(m12.split(" ")).toHaveLength(12);
+    expect(m24.split(" ")).toHaveLength(24);
+    expect(validateMnemonic(m12)).toBe(true);
+    expect(validateMnemonic(m24)).toBe(true);
+  });
+
+  it("rejects an invalid mnemonic", () => {
+    expect(validateMnemonic("abandon abandon abandon")).toBe(false);
+    expect(() => mnemonicToSeed("abandon abandon abandon")).toThrow(
+      ShrincsInvalidMnemonicError
+    );
+  });
+
+  it("matches the reference BIP-39 vector (Trezor vector 1)", () => {
+    const mnemonic =
+      "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    const seed = mnemonicToSeed(mnemonic, "TREZOR");
+    expect(seed).toHaveLength(64);
+    expect(toHex(seed)).toBe(
+      "0xc55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
+    );
+  });
+
+  it("passphrase changes the seed", () => {
+    const m = generateMnemonic();
+    expect(toHex(mnemonicToSeed(m))).not.toBe(toHex(mnemonicToSeed(m, "x")));
   });
 });

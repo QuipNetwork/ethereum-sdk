@@ -17,9 +17,14 @@
 
 import { hmac } from "@noble/hashes/hmac";
 import { sha512 } from "@noble/hashes/sha2";
+import * as bip39 from "@scure/bip39";
+import { wordlist } from "@scure/bip39/wordlists/english";
 import { toHex, type Hex } from "viem";
 
-import { ShrincsHdDerivationError } from "./errors.js";
+import {
+  ShrincsHdDerivationError,
+  ShrincsInvalidMnemonicError,
+} from "./errors.js";
 
 /// QUIP HD derivation v1 — hardened-only, SLIP-0010-style HMAC-SHA512 chains.
 /// Hash-based keys have no parent-to-child public-key relation, so every
@@ -117,4 +122,24 @@ export function quipHdPath(
   opts: QuipHdPathOptions = {}
 ): string {
   return "m/" + pathLevels(index, opts).map((l) => `${l}'`).join("/");
+}
+
+/// Generate a BIP-39 English mnemonic. 128 bits → 12 words (default),
+/// 256 bits → 24 words.
+export function generateMnemonic(strength: 128 | 256 = 128): string {
+  return bip39.generateMnemonic(wordlist, strength);
+}
+
+/// True if the mnemonic passes English-wordlist and checksum validation.
+export function validateMnemonic(mnemonic: string): boolean {
+  return bip39.validateMnemonic(mnemonic, wordlist);
+}
+
+/// Standard BIP-39 seed derivation (PBKDF2-HMAC-SHA512, 2048 rounds, 64
+/// bytes). Validates the mnemonic first; `@scure/bip39` alone does not.
+export function mnemonicToSeed(mnemonic: string, passphrase = ""): Uint8Array {
+  if (!validateMnemonic(mnemonic)) {
+    throw new ShrincsInvalidMnemonicError();
+  }
+  return bip39.mnemonicToSeedSync(mnemonic, passphrase);
 }
