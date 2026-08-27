@@ -335,6 +335,26 @@ contract ShrincsWalletTest is Test {
         );
     }
 
+    /// @dev Init/migrate payload for an entirely FRESH bundle (new stateful and stateless trees),
+    ///      as a migration must present. Returns the payload and the fresh bundle's commitment.
+    function _freshInitPayload(bytes memory seed)
+        internal
+        view
+        returns (bytes memory payload, bytes32 commitment)
+    {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
+        require(ok, "fresh keygen");
+        commitment = _commitment32(pk);
+        payload = _buildInitPayload(
+            commitment,
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            erc1271Commitment,
+            HashSuite.HASH_SUITE_ID
+        );
+    }
+
     function _toBytes32(bytes memory b) internal pure returns (bytes32 out) {
         require(b.length == 32, "not 32 bytes");
         assembly {

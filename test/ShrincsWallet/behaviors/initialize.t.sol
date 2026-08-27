@@ -47,6 +47,29 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         assertFalse(bare.isStatefulLeafUsed(1), "epoch-0 bitmap empty");
     }
 
+    function test_initialize_spendsInstalledTrees() public {
+        bytes32 statefulId = _treeIdOf(mainPk.statefulPublicKey);
+        bytes32 statelessId = keccak256(abi.encodePacked(_toBytes32(mainPk.pkSeed), _toBytes32(mainPk.hypertreeRoot)));
+        assertFalse(bare.harness_isStatefulTreeSpent(statefulId), "stateful unspent before init");
+        assertFalse(bare.harness_isStatelessTreeSpent(statelessId), "stateless unspent before init");
+
+        vm.prank(address(factory));
+        bare.initialize(payable(OWNER), _validInitPayload());
+
+        assertTrue(bare.harness_isStatefulTreeSpent(statefulId), "initialize spends the stateful tree");
+        assertTrue(bare.harness_isStatelessTreeSpent(statelessId), "initialize spends the stateless tree");
+    }
+
+    function _treeIdOf(bytes memory spk) internal pure returns (bytes32) {
+        bytes32 pkSeed;
+        bytes32 root;
+        assembly {
+            pkSeed := mload(add(spk, 32))
+            root := mload(add(spk, 64))
+        }
+        return keccak256(abi.encodePacked(pkSeed, root));
+    }
+
     function test_initialize_emitsWalletInitialized() public {
         vm.recordLogs();
         vm.prank(address(factory));

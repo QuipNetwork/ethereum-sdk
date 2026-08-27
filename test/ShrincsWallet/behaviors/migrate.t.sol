@@ -20,18 +20,20 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         wallet.harness_markLeafUsed(SIGN_BASE + 1);
         assertEq(wallet.statefulLeavesUsed(), 1);
 
-        wallet.harness_migrateInUpgradeContext(_validInitPayload());
+        (bytes memory payload, bytes32 freshCommitment) = _freshInitPayload("migrate-fresh-bundle");
+        wallet.harness_migrateInUpgradeContext(payload);
 
         assertEq(wallet.keyVersion(), 1, "keyVersion bumped");
         assertEq(wallet.statefulLeavesUsed(), 0, "leaves-used reset");
-        assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment, "commitment reinstalled");
+        assertEq(wallet.getShrincsPublicKeyCommitment(), freshCommitment, "fresh bundle installed");
         // Fresh epoch ⇒ the previously-marked leaf is unused again under keyVersion 1.
         assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "fresh namespace");
     }
 
     function test_migrate_doesNotAdvanceActionNonce() public {
         wallet.harness_setNonce(5);
-        wallet.harness_migrateInUpgradeContext(_validInitPayload());
+        (bytes memory payload,) = _freshInitPayload("migrate-fresh-bundle");
+        wallet.harness_migrateInUpgradeContext(payload);
         // The keyVersion bump already invalidates every outstanding context; the nonce is
         // deliberately untouched by migration.
         assertEq(wallet.actionNonce(), 5, "migrate leaves the action nonce unchanged");
@@ -39,14 +41,15 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
 
     function test_migrate_emitsWalletMigrated() public {
         vm.recordLogs();
-        wallet.harness_migrateInUpgradeContext(_validInitPayload());
+        (bytes memory payload, bytes32 freshCommitment) = _freshInitPayload("migrate-fresh-bundle");
+        wallet.harness_migrateInUpgradeContext(payload);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; i++) {
             if (logs[i].topics[0] == IShrincsWallet.WalletMigrated.selector) {
                 found = true;
-                assertEq(logs[i].topics[1], mainCommitment, "commitment indexed");
+                assertEq(logs[i].topics[1], freshCommitment, "commitment indexed");
             }
         }
         assertTrue(found, "WalletMigrated not emitted");

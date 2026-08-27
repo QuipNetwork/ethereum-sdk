@@ -62,6 +62,11 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
+    /// @notice The stateful tree (pkSeed, root) was installed on this wallet before. Trees are
+    ///         one-time material for their lifetime; re-installing one would reset its leaf bitmap.
+    error StatefulTreeSpent(bytes32 treeId);
+    /// @notice The stateless tree (pkSeed, hypertreeRoot) was installed on this wallet before.
+    error StatelessTreeSpent(bytes32 treeId);
     /// @notice Thrown when the V1 commitment (salt) does not recompute from the install payload.
     error IdentityMismatch();
 

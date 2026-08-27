@@ -350,7 +350,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (
             bytes32 commitment,
             bytes32 erc1271Commitment,
-            uint32 maxSignatures
+            uint32 maxSignatures,
+            bytes32 statefulTreeId,
+            bytes32 statelessTreeId
         ) = _decodeAndValidateInstall(payload);
 
         bytes32 walletCommitment = IWalletFactory(FACTORY).commitmentOf(address(this));
@@ -363,6 +365,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
+        _spendStatefulTree(statefulTreeId);
+        _spendStatelessTree(statelessTreeId);
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
@@ -384,10 +388,16 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (
             bytes32 commitment,
             bytes32 erc1271Commitment,
-            uint32 maxSignatures
+            uint32 maxSignatures,
+            bytes32 statefulTreeId,
+            bytes32 statelessTreeId
         ) = _decodeAndValidateInstall(payload);
 
         Storage.Layout storage $ = Storage.layout();
+        // Strictly fresh trees on migration: a family round-trip (e.g. WOTS+ → SHRINCS → WOTS+ →
+        // SHRINCS) leaves earlier SHRINCS trees in this namespace.
+        _spendStatefulTree(statefulTreeId);
+        _spendStatelessTree(statelessTreeId);
         // No-drift invariant: re-establish the guarded `_SHRINCS_FACTORY_SLOT` snapshot to this
         // (the new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
         // `FACTORY` is the new source of truth; pinning storage to it keeps the snapshot slot and
@@ -575,6 +585,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (UXMSS.StatefulPublicKey memory decoded, ) = SHRINCS
             .decodeStatefulPublicKey(nextKey.statefulPublicKey);
 
+        // A stateless signature was spent: both replacement trees must be fresh.
+        _spendStatefulTree(_statefulTreeId(decoded));
+        _spendStatelessTree(_statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot));
+
         // Install the fresh bundle AND the new classical owner together — the atomic handover.
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
@@ -652,6 +666,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
 
         Storage.Layout storage $ = Storage.layout();
+        // The replacement stateful tree must never have been installed here. The stateless tree
+        // is carried forward unchanged — no stateless signature is spent by this path.
+        _spendStatefulTree(_statefulTreeId(nextStatefulKey.statefulPublicKey));
+
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
         $.maxSignatures = decoded.maxSignatures;
@@ -696,6 +714,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // declared==computed commitment); decode here only to cache the leaf budget.
         (UXMSS.StatefulPublicKey memory decoded, ) = SHRINCS
             .decodeStatefulPublicKey(nextKey.statefulPublicKey);
+
+        // A stateless signature was spent: both replacement trees must be fresh.
+        _spendStatefulTree(_statefulTreeId(decoded));
+        _spendStatelessTree(_statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot));
 
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
@@ -1032,7 +1054,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         returns (
             bytes32 commitment,
             bytes32 erc1271Commitment,
-            uint32 maxSignatures
+            uint32 maxSignatures,
+            bytes32 statefulTreeId,
+            bytes32 statelessTreeId
         )
     {
         SHRINCS.PublicKey calldata pk;
@@ -1066,6 +1090,51 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             .decodeStatefulPublicKey(pk.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
         maxSignatures = decoded.maxSignatures;
+        statefulTreeId = _statefulTreeId(decoded);
+        statelessTreeId = _statelessTreeId(pk.pkSeed, pk.hypertreeRoot);
+    }
+
+    /// @dev Tree identity of a stateful public key: keccak256(pkSeed ‖ root). Deliberately excludes
+    ///      `maxSignatures` — the same tree under a different budget is the same tree.
+    function _statefulTreeId(
+        UXMSS.StatefulPublicKey memory decoded
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(decoded.pkSeed, decoded.root);
+    }
+
+    /// @dev `_statefulTreeId` over the 68-byte encoding.
+    function _statefulTreeId(
+        bytes calldata statefulPublicKey
+    ) internal pure returns (bytes32) {
+        (UXMSS.StatefulPublicKey memory d, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(statefulPublicKey);
+        if (!ok) revert CommitmentMismatch();
+        return _statefulTreeId(d);
+    }
+
+    /// @dev Tree identity of a stateless half: keccak256(pkSeed ‖ hypertreeRoot). Both fields are
+    ///      32 bytes by the time any caller reaches this (bundle validation / width checks).
+    function _statelessTreeId(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(bytes32(pkSeed[:32]), bytes32(hypertreeRoot[:32]));
+    }
+
+    /// @dev Marks a stateful tree spent, reverting if it ever was. Trees are one-time material for
+    ///      their lifetime: the leaf bitmap resets per epoch, so re-installing a tree (including a
+    ///      cycle back to an old one) would resurrect its consumed leaves.
+    function _spendStatefulTree(bytes32 treeId) internal {
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatefulTrees[treeId]) revert StatefulTreeSpent(treeId);
+        $.spentStatefulTrees[treeId] = true;
+    }
+
+    /// @dev Stateless twin of `_spendStatefulTree`.
+    function _spendStatelessTree(bytes32 treeId) internal {
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatelessTrees[treeId]) revert StatelessTreeSpent(treeId);
+        $.spentStatelessTrees[treeId] = true;
     }
 
     /// @dev Core stateful verify + bitmap leaf consume shared by every stateful path. Reverts on

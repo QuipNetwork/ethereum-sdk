@@ -42,6 +42,16 @@ contract ShrincsPaymasterHarness is ShrincsPaymaster {
         $.maxSignatures = maxSignaturesValue;
     }
 
+    /// @dev Records the installed stateful tree as spent, mirroring what `initialize` does.
+    function harness_spendStatefulTree(bytes32 treeId) external {
+        _spendStatefulTree(treeId);
+    }
+
+    /// @dev Reads the spent-tree registry so tests can pin which install paths record trees.
+    function harness_isStatefulTreeSpent(bytes32 treeId) external view returns (bool) {
+        return Storage.layout().spentStatefulTrees[treeId];
+    }
+
     /// @dev Test-only setter to mark a stateful leaf consumed in the current epoch (e.g. to
     ///      exercise the already-consumed branch). Routes through the real `_markStatefulLeafUsed`
     ///      and bumps the per-epoch used counter exactly as the production callers do.

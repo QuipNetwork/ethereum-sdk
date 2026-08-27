@@ -65,6 +65,12 @@ library ShrincsWalletStorage {
         ///      is set when leaf `leafIndex` is consumed.
         mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits))
             usedStatefulLeafBitmap;
+        /// @dev Tree identities this wallet has ever installed, keyed by keccak256(pkSeed ‖ root).
+        ///      A hash-based tree is one-time material for its lifetime, not per epoch: the
+        ///      leaf bitmap resets on rotation, so re-installing a tree would resurrect its
+        ///      consumed leaves. Every install path rejects a spent tree. Append-only.
+        mapping(bytes32 statefulTreeId => bool) spentStatefulTrees;
+        mapping(bytes32 statelessTreeId => bool) spentStatelessTrees;
     }
 
     /// @dev `keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.shrincs")) - 1))

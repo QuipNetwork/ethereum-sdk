@@ -59,6 +59,22 @@ contract ShrincsWalletHarness is ShrincsWallet {
         $.maxSignatures = maxSignaturesValue;
     }
 
+    /// @dev Records the installed bundle's trees as spent, mirroring what `initialize` does for a
+    ///      factory-deployed wallet. Tests that omit this model a wallet predating tree tracking.
+    function harness_spendTrees(SHRINCS.PublicKey calldata pk) external {
+        _spendStatefulTree(_statefulTreeId(pk.statefulPublicKey));
+        _spendStatelessTree(_statelessTreeId(pk.pkSeed, pk.hypertreeRoot));
+    }
+
+    /// @dev Reads the spent-tree registries so tests can pin which install paths record trees.
+    function harness_isStatefulTreeSpent(bytes32 treeId) external view returns (bool) {
+        return Storage.layout().spentStatefulTrees[treeId];
+    }
+
+    function harness_isStatelessTreeSpent(bytes32 treeId) external view returns (bool) {
+        return Storage.layout().spentStatelessTrees[treeId];
+    }
+
     /// @dev Test-only setter to mark a stateful leaf consumed in the current key epoch (e.g. to
     ///      exercise the already-consumed branch). Routes through the real `_markStatefulLeafUsed`
     ///      and bumps the per-epoch used counter exactly as the production callers do.
