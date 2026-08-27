@@ -231,6 +231,39 @@ A reverted UserOp execution still **commits** the wallet's key rotation (the Ent
 
 **Strict signing-order serialization.** Every signed context binds the wallet's live `actionNonce()`, and every consumed signature advances it (sole exception: `markLeavesUsed`, below). One outstanding signed authorization at a time: sign → land → sign. Signing a second op before the first lands binds a stale nonce and is rejected (`AA24` on the 4337 path; `InvalidSignatureError` on the direct path, leaf preserved). The flip side is free mass-cancellation: landing any action (even an empty `execute`) invalidates all outstanding signed material, including ERC-1271 blobs — integrators sign 1271 blobs late and re-sign after any wallet action.
 
+### Key derivation (QUIP HD v1)
+
+`ShrincsSigner` derives every keygen seed through the QUIP HD path — a
+hardened-only, SLIP-0010-style HMAC-SHA512 chain. Hash-based HD wallets
+have no external standard, so QUIP defines its own:
+
+    m / 20814' / algorithm' / network' / account' / index'
+
+- `20814` (`0x514E`, ASCII "QN" big-endian) marks the QUIP HD scheme.
+- `algorithm` defaults to the reserved experimental identifier
+  `0x7FFFFFFF`. The SHRINCS profile is pre-standard. Registered
+  identifiers come later, below `0x7F000000`.
+- `network` defaults to `20049` (`0x4E51`, ASCII "QN" little-endian) — the
+  QUIP network chain ID. The network identifier is a fixed constant.
+  It does not follow the deployment chain, so one mnemonic yields the
+  same keys on every EVM chain.
+- `account` defaults to `0`.
+- `index` is the `derivationIndex` the wallet and paymaster clients pass.
+
+Construct a signer from a BIP-39 mnemonic or a raw seed:
+
+    import { ShrincsSigner, generateMnemonic } from "@quip.network/ethereum-sdk/v1/shrincs";
+
+    const mnemonic = generateMnemonic(); // 12 words; generateMnemonic(256) for 24
+    const signer = await ShrincsSigner.fromMnemonic(mnemonic, { passphrase: "optional" });
+    // or: await ShrincsSigner.create(rawSeedBytes)
+
+Every level uses hardened derivation. Hash-based keys have no
+parent-to-child public-key relation, so non-hardened (xpub-style)
+derivation does not exist here. Seeds derived by the pre-HD keccak
+scheme are not reachable through this path. Recover such keys with
+`keygenFromSeedHex`.
+
 ### External verifier delegation
 
 Since hashsigs-solidity 0.2.0, the wallet and paymaster implementations no longer inline the SHRINCS verification bytecode. Each pins the canonical deployed `SHRINCS256sKeccak` ERC-7913 verifier as an `immutable` (`getShrincsVerifier()` / `SHRINCS_VERIFIER()`), set at implementation deployment. The verifier is trustless by construction — no owner, no storage, no upgradability — so the pin grants it no authority: it can only answer "does this signature verify over this 32-byte hash". All state (leaf bitmap, action nonce, `keyVersion`, installed commitments) stays in the wallet.
