@@ -33,11 +33,11 @@ import { UnsupportedNetworkError } from "../errors.js";
 // what catches a changed salt string, a changed operator, or drift in the guard
 // formula — the failures that put contracts at unpublished addresses.
 const PUBLISHED = {
-  WalletFactory: "0xdCD90563B912f82D2f23d5c7988B3Fec2da63471",
-  ShrincsWalletImplementation: "0x33d3949117c8Bba7A3637C96a564a817E00c5aE0",
-  ShrincsPaymaster: "0x077C06913777777DfABf951a5A0F8CA665764ac9",
-  ShrincsPaymasterImpl: "0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3",
-  ShrincsVerifier: "0xE6F2970bA30d59e8288b7007bA755828372457c3",
+  WalletFactory: "0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8",
+  ShrincsWalletImplementation: "0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094",
+  ShrincsPaymaster: "0x430c8c89492E3541e141148Dd7a7D6dD432e5890",
+  ShrincsPaymasterImpl: "0xD0C56265b942160bb4470077f65123EE34E0Ee93",
+  ShrincsVerifier: "0xF2f9E6D692da41b089c3c261c41509669eEc5567",
 } as const;
 
 // Every derived row: published address ← the preimage it must derive from. The

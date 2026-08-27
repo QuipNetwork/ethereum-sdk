@@ -63,24 +63,27 @@ export const SHRINCS_PROFILE_ID: Hex = keccak256(toHex("shrincs-256s-keccak"));
 
 /// Live salt preimages — mirror `script/Constants.sol` exactly.
 ///
-/// One scheme, two suffixes: proxies are `V1.0.0` (the permanent public
-/// identity, meant never to move again — code changes under them via UUPS),
-/// implementations are `V1.0.0-beta` (the churning half, replaced when the
-/// verifier or the code changes). Salt strings are opaque preimages, so this
-/// split is legibility, not semantics — `V1.0.0` is not "newer than"
-/// `V1.0.0-beta`, they name different roles.
+/// One scheme, two suffixes: proxies are `V1.0.1` (the public identity of the
+/// generation — plain version, code changes under them via UUPS),
+/// implementations are `V1.0.1-beta.1.N` (the churning half, replaced when the
+/// verifier or the code changes; bumped npm-style on every relocation). Salt
+/// strings are opaque preimages, so this split is legibility, not semantics —
+/// `V1.0.1` is not "newer than" `V1.0.1-beta.1`, they name different roles.
+/// V1.0.1 is a full redeploy (V4 verifier + changed factory code); the V1.0.0
+/// generation is retired whole; impls start at `-beta.1` because the paymaster's
+/// `V1.0.1-beta` preimage was already consumed on the testnets.
 export const LIVE_SALT_PREIMAGES = {
-  WalletFactoryImpl: toHex("QUIP:WalletFactory:Impl:V1.0.0-beta"),
-  WalletFactoryProxy: toHex("QUIP:WalletFactory:Proxy:V1.0.0"),
+  WalletFactoryImpl: toHex("QUIP:WalletFactory:Impl:V1.0.1-beta.1"),
+  WalletFactoryProxy: toHex("QUIP:WalletFactory:Proxy:V1.0.1"),
   ShrincsWalletImplementation: concatHex([
-    toHex("QUIP:ShrincsWallet:Impl:V1.0.0-beta:"),
+    toHex("QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:"),
     SHRINCS_PROFILE_ID,
   ]),
   ShrincsPaymasterImpl: concatHex([
-    toHex("QUIP:ShrincsPaymaster:Impl:V1.0.0-beta:"),
+    toHex("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.1:"),
     SHRINCS_PROFILE_ID,
   ]),
-  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.0.0"),
+  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.0.1"),
 } as const;
 
 /// CREATE3: CREATE2 the proxy, then the child at the proxy's nonce 1.

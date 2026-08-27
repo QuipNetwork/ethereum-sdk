@@ -59,35 +59,39 @@ export interface ShrincsNetworkAddresses {
 // CANONICAL_OPERATOR, salt preimage) — not the bytecode — and is identical on
 // every chain reached by the same operator.
 //
-// Salt scheme: proxies are `V1.0.0` (permanent public identity), implementations
-// are `V1.0.0-beta` (replaced as code changes). The implementation preimages
-// additionally bind the verifier SCHEME tag —
-// `"QUIP:ShrincsWallet:Impl:V1.0.0-beta:" ‖ PROFILE_ID` and the paymaster-impl
+// Salt scheme: proxies are `V1.0.1` (the generation's public identity),
+// implementations are `V1.0.1-beta.1.N` (replaced as code changes). The
+// implementation preimages additionally bind the verifier SCHEME tag —
+// `"QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:" ‖ PROFILE_ID` and the paymaster-impl
 // analog, where PROFILE_ID = keccak256("shrincs-256s-keccak") is the deployed
 // verifier's constant `PROFILE_TAG()` — so implementations pinned to a different
 // cryptographic scheme land at different addresses. Proxy preimages carry no
 // tag; an ERC-1967 proxy is scheme-agnostic.
 //
-// NOTE: THIS IS THE BASE MAINNET GENERATION. hashsigs moved its verifier deploys
-// onto sender-guarded salts, relocating `SHRINCS256sKeccak` to the address
-// below; the implementations bake it in as an immutable, so their salts moved
-// with it. The PRIOR generation is still live on Base Sepolia and OP Sepolia
-// against verifier `0x9154dA0BA19600C543a8c5ed1B1c44af415B5688`, at entirely
-// different addresses (see DEPLOYMENTS.md). Those chains are legacy: this
-// registry describes the current generation only, deliberately single-valued
-// rather than per-chain, because CREATE3 ignores constructor args and a
-// per-chain verifier would put DIFFERENT code at the SAME impl address.
+// NOTE: THIS IS THE V1.0.1 GENERATION — PREDICTED, NOT YET DEPLOYED. It is a
+// full redeploy of every contract: hashsigs-solidity MR !26 (raw signatures
+// bound to the full public-key commitment) relocated `SHRINCS256sKeccak` to
+// the V4 address below, the WalletFactory code changed, and the V1.0.0
+// generation — live on Base mainnet, Base Sepolia and OP Sepolia against the
+// V2 verifier `0xE6F2970bA30d59e8288b7007bA755828372457c3` (factory proxy
+// `0xdCD90563…`, wallet impl `0x33d39491…`, paymaster proxy `0x077C0691…`) —
+// was a production-testing deployment, retired whole rather than upgraded in
+// place. Every wallet address derives from the factory proxy, so wallets move
+// with it — see DEPLOYMENTS.md. This registry describes the
+// current generation only, deliberately single-valued rather than per-chain,
+// because CREATE3 ignores constructor args and a per-chain verifier would put
+// DIFFERENT code at the SAME impl address.
 //
 // Derived for the canonical operator `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26`
 // and deployed via `script/02_DeployShrincs.s.sol` (see DEPLOYMENTS.md).
 const SHRINCS_WALLET_IMPLEMENTATION =
-  "0x33d3949117c8Bba7A3637C96a564a817E00c5aE0" as Address;
+  "0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094" as Address;
 const SHRINCS_PAYMASTER_PROXY =
-  "0x077C06913777777DfABf951a5A0F8CA665764ac9" as Address;
+  "0x430c8c89492E3541e141148Dd7a7D6dD432e5890" as Address;
 const SHRINCS_PAYMASTER_IMPL =
-  "0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3" as Address;
+  "0xD0C56265b942160bb4470077f65123EE34E0Ee93" as Address;
 const SHRINCS_VERIFIER =
-  "0xE6F2970bA30d59e8288b7007bA755828372457c3" as Address;
+  "0xF2f9E6D692da41b089c3c261c41509669eEc5567" as Address;
 
 /// Chains that share the CREATE3-deterministic (chain-independent) Shrincs
 /// addresses captured under the `default` entry of `NETWORK_ADDRESSES`.

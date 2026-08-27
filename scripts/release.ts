@@ -377,7 +377,7 @@ function main(): void {
     ),
     senderGuarded: {
       operator: DEPLOY_OPERATOR,
-      saltPreimage: "QUIP:WalletFactory:Impl:V1.0.0-beta",
+      saltPreimage: "QUIP:WalletFactory:Impl:V1.0.1-beta.1",
     },
     creationBytecode: ensureHex(factory.bytecode.object),
     constructorArgsDescription:

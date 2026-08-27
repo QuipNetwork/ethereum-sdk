@@ -52,47 +52,64 @@ library DeployConstants {
     /// code):
     ///   FOUNDRY_PROFILE=production forge script script/DeploySPHINCSPlusC256sKeccak.s.sol ...
     ///   FOUNDRY_PROFILE=production forge script script/DeploySHRINCS256sKeccak.s.sol ...
-    /// (full commands in the dep's `DEPLOYMENTS.md`). Live on Base mainnet
-    /// (8453); its stateless delegate is `0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864`.
+    /// (full commands in the dep's `DEPLOYMENTS.md`).
+    ///
+    /// This is the V4 verifier (`QUIP:SHRINCS256sKeccak:V4.0`, hashsigs-solidity
+    /// MR !26 — raw ERC-7913 signatures bound to the full public-key commitment)
+    /// with its stateless delegate `QUIP:SPHINCSPlusC256sKeccak:V3.0` at
+    /// `0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864`. NOT YET DEPLOYED on any
+    /// chain: `02_DeployShrincs` refuses to broadcast until hashsigs-solidity
+    /// has. The previous (V2) pair, live on Base mainnet / Base Sepolia /
+    /// OP Sepolia, is `0xE6F2970bA30d59e8288b7007bA755828372457c3` +
+    /// `0x97B3726F44e3B7521199CE4e0fC160A32A597d31`; see DEPLOYMENTS.md.
     address internal constant SHRINCS_EXTERNAL_VERIFIER =
         0xF2f9E6D692da41b089c3c261c41509669eEc5567;
 
     // ── Versions ─────────────────────────────────────────────────────
     //
     // ONE SCHEME, TWO SUFFIXES, applied uniformly:
-    //   proxies          V1.0.0        — the permanent public identity. A proxy
-    //                                    address is meant never to move again;
-    //                                    code changes happen under it via UUPS.
-    //   implementations  V1.0.0-beta   — the churning half. Impls are replaced
+    //   proxies          V1.0.1        — the public identity of a generation.
+    //                                    Plain version, no prerelease suffix:
+    //                                    a proxy is just a proxy, code changes
+    //                                    happen under it via UUPS.
+    //   implementations  V1.0.1-beta.1.N — the churning half. Impls are replaced
     //                                    (new verifier, new code, new vetting),
-    //                                    so they carry the prerelease suffix.
+    //                                    so they carry the prerelease suffix,
+    //                                    bumped npm-style (`-beta`, `-beta.1`,
+    //                                    `-beta.2`, ...) on every relocation
+    //                                    within a generation.
     //
     // Salt strings are OPAQUE preimages — only uniqueness matters, so the split
-    // is legibility, not semantics. `V1.0.0` is not "newer than" `V1.0.0-beta`;
+    // is legibility, not semantics. `V1.0.1` is not "newer than" `V1.0.1-beta.1`;
     // they name different roles.
     //
-    // This generation replaces the mixed V1.0.0-beta / V1.1 / V1.0.1-beta set,
-    // which is retired: the Shrincs impls had to move regardless (the verifier
-    // address they bake in as an immutable changed — see
-    // SHRINCS_EXTERNAL_VERIFIER above), and the rest follows for consistency.
-    // The prior generation stays live on Base Sepolia and OP Sepolia at its own
-    // addresses; those preimages are permanently occupied there and must never
-    // be reused. See DEPLOYMENTS.md.
+    // V1.0.1 is a full redeploy of every contract, everywhere. The V1.0.0 /
+    // V1.0.0-beta generation (Base mainnet, Base Sepolia, OP Sepolia) was a
+    // production-testing deployment and is retired whole: the V4 verifier
+    // relocated (SHRINCS_EXTERNAL_VERIFIER above), the WalletFactory code
+    // changed since the 2026-08-03 deploy (e3r commitment-bound deploy salts,
+    // deploy authorization, codehash deprecation), and rather than upgrade the
+    // old proxies in place we move the proxies too, so every wallet address
+    // derives fresh from the new factory. Impls start at `-beta.1`, not
+    // `-beta`: `QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:` was already consumed
+    // on the testnets, and the suffix is kept uniform across impls. CREATE3 ignores
+    // initcode and `CreateXHelpers` skips an occupied address, so every retired
+    // preimage must never be reused — see DEPLOYMENTS.md.
 
-    string internal constant PROXY_VERSION = "V1.0.0";
-    string internal constant IMPL_VERSION = "V1.0.0-beta";
+    string internal constant PROXY_VERSION = "V1.0.1";
+    string internal constant IMPL_VERSION = "V1.0.1-beta.1";
 
     // ── Salt preimages (sender-guarded CreateX CREATE3) ──────────────
     // The deployed address is a function of (CreateX, DEPLOY_OPERATOR,
     // preimage) — identical on every chain for the same operator.
 
-    string internal constant FACTORY_IMPL_SALT = "QUIP:WalletFactory:Impl:V1.0.0-beta";
-    string internal constant FACTORY_PROXY_SALT = "QUIP:WalletFactory:Proxy:V1.0.0";
+    string internal constant FACTORY_IMPL_SALT = "QUIP:WalletFactory:Impl:V1.0.1-beta.1";
+    string internal constant FACTORY_PROXY_SALT = "QUIP:WalletFactory:Proxy:V1.0.1";
 
     // (No PROFILE_TAG on proxy salts: an ERC-1967 proxy is scheme-agnostic —
     // schemes change under it via impl deploys.)
     string internal constant SHRINCS_PAYMASTER_PROXY_SALT =
-        "QUIP:ShrincsPaymaster:Proxy:V1.0.0";
+        "QUIP:ShrincsPaymaster:Proxy:V1.0.1";
 
     /// Both implementation salts bind the verifier scheme identifier — the
     /// constant `PROFILE_TAG()` the deployed verifier exposes to differentiate
@@ -104,12 +121,12 @@ library DeployConstants {
     /// version bump. `DeployShrincsBase._requireExpectedVerifierScheme`
     /// cross-checks the live verifier at deploy time.
     function shrincsWalletSalt() internal pure returns (bytes memory) {
-        return abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.0-beta:", SHRINCSParams.PROFILE_ID);
+        return abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:", SHRINCSParams.PROFILE_ID);
     }
 
     function shrincsPaymasterImplSalt() internal pure returns (bytes memory) {
         return abi.encodePacked(
-            "QUIP:ShrincsPaymaster:Impl:V1.0.0-beta:", SHRINCSParams.PROFILE_ID
+            "QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.1:", SHRINCSParams.PROFILE_ID
         );
     }
 }
