@@ -58,7 +58,6 @@ library WalletFactoryStorage {
         /// @dev Most recently vetted active implementation (backward-scan
         ///      recomputed on deprecate/undeprecate).
         address latestWalletImpl;
-        // --- APPEND-ONLY below this line; never reorder above ---
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.factory")) - 1))

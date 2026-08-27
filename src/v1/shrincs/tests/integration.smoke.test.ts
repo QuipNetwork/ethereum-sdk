@@ -19,13 +19,7 @@
 // consumer can deploy and operate a ShrincsWallet + ShrincsPaymaster against
 // real on-chain contracts. Each sub-flow runs as its own `it` with an isolated
 // wallet (distinct seedByte) so tests never depend on each other.
-import {
-  describe,
-  it,
-  expect,
-  beforeAll,
-  afterAll,
-} from "@jest/globals";
+import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import {
   type Address,
   type Hex,
@@ -100,10 +94,15 @@ describe("Shrincs SDK live-anvil smoke", () => {
   // ── (a) deploy + reads ───────────────────────────────────────────────
   it("a. deploys a wallet, reads expected state, and resolves the same address", async () => {
     const seedByte = 0x10;
-    const { client, signer, derivationIndex, erc1271DerivationIndex, walletAddress } =
-      await createFreshShrincsWallet(stack, seedByte, {
-        maxSignatures: MAX_SIGS,
-      });
+    const {
+      client,
+      signer,
+      derivationIndex,
+      erc1271DerivationIndex,
+      walletAddress,
+    } = await createFreshShrincsWallet(stack, seedByte, {
+      maxSignatures: MAX_SIGS,
+    });
 
     const state = await client.getWalletState();
     expect(getAddress(state.owner)).toBe(getAddress(stack.account.address));
@@ -129,7 +128,10 @@ describe("Shrincs SDK live-anvil smoke", () => {
     const factory = makeShrincsFactoryClient(stack);
     const resolved = await factory.getShrincsWallet({
       derivationIndex,
-      erc1271: { derivationIndex: erc1271DerivationIndex, maxSignatures: MAX_SIGS },
+      erc1271: {
+        derivationIndex: erc1271DerivationIndex,
+        maxSignatures: MAX_SIGS,
+      },
       owner: stack.account.address,
       signer,
       maxSignatures: MAX_SIGS,
@@ -167,7 +169,10 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxSignatures: MAX_SIGS,
     });
 
-    const r1 = await client.execute({ target: RECIPIENT, value: parseEther("0.1") });
+    const r1 = await client.execute({
+      target: RECIPIENT,
+      value: parseEther("0.1"),
+    });
     const leaves1 = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: r1.logs,
@@ -176,7 +181,10 @@ describe("Shrincs SDK live-anvil smoke", () => {
     expect(leaves1.length).toBe(1);
     expect(Number(leaves1[0].args.leaf)).toBe(LEAF_1);
 
-    const r2 = await client.execute({ target: RECIPIENT, value: parseEther("0.1") });
+    const r2 = await client.execute({
+      target: RECIPIENT,
+      value: parseEther("0.1"),
+    });
     const leaves2 = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: r2.logs,
@@ -271,9 +279,13 @@ describe("Shrincs SDK live-anvil smoke", () => {
   it("f. sponsors a wallet execute userOp via the paymaster and submits handleOps", async () => {
     // Wallet whose userOp will be sponsored. No EntryPoint deposit needed: the
     // paymaster covers prefund.
-    const { client: walletClient } = await createFreshShrincsWallet(stack, 0x60, {
-      maxSignatures: MAX_SIGS,
-    });
+    const { client: walletClient } = await createFreshShrincsWallet(
+      stack,
+      0x60,
+      {
+        maxSignatures: MAX_SIGS,
+      }
+    );
 
     // Operator signer holds the paymaster's sponsorship verifier key.
     const operatorSeed = 0x61;
@@ -305,7 +317,10 @@ describe("Shrincs SDK live-anvil smoke", () => {
     });
 
     await pmClient.deposit(parseEther("2"));
-    await pmClient.addStake({ unstakeDelaySec: 86_400, value: parseEther("1") });
+    await pmClient.addStake({
+      unstakeDelaySec: 86_400,
+      value: parseEther("1"),
+    });
 
     // Sanity: verifier commitment installed.
     const verifier = await pmClient.getShrincsVerifier();
@@ -452,8 +467,12 @@ describe("Shrincs SDK live-anvil smoke", () => {
         caught = e;
       }
       expect(caught).toBeInstanceOf(ExecuteFeeExceedsCapError);
-      expect((caught as ExecuteFeeExceedsCapError).fee).toBe(parseEther("0.002"));
-      expect((caught as ExecuteFeeExceedsCapError).maxFee).toBe(parseEther("0.001"));
+      expect((caught as ExecuteFeeExceedsCapError).fee).toBe(
+        parseEther("0.002")
+      );
+      expect((caught as ExecuteFeeExceedsCapError).maxFee).toBe(
+        parseEther("0.001")
+      );
       expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(false);
 
       // Ceiling with headroom above the live fee: lands at LEAF_2 (LEAF_1 was
@@ -499,9 +518,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
     await expect(
       client.markLeavesUsed({ leaves: [LEAF_2, LEAF_3] }, { leaf: LEAF_2 })
     ).rejects.toBeInstanceOf(AuthLeafInTargetsError);
-    await expect(
-      client.markLeavesUsed({ leaves: [0] })
-    ).rejects.toBeInstanceOf(LeafOutOfRangeError);
+    await expect(client.markLeavesUsed({ leaves: [0] })).rejects.toBeInstanceOf(
+      LeafOutOfRangeError
+    );
     await expect(
       client.markLeavesUsed({ leaves: [MAX_SIGS + 1] })
     ).rejects.toBeInstanceOf(LeafOutOfRangeError);
@@ -517,10 +536,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
       logs: receipt.logs,
       eventName: "LeafRevoked",
     });
-    expect(revoked.map((l) => Number(l.args.leaf)).sort((a, b) => a - b)).toEqual([
-      LEAF_1,
-      LEAF_3,
-    ]);
+    expect(
+      revoked.map((l) => Number(l.args.leaf)).sort((a, b) => a - b)
+    ).toEqual([LEAF_1, LEAF_3]);
     const verified = parseEventLogs({
       abi: shrincsWalletAbi,
       logs: receipt.logs,
@@ -783,11 +801,18 @@ describe("Shrincs SDK live-anvil smoke", () => {
 
     // Full sponsorship under the ROTATED key: fund, sponsor, land a real op.
     await pmClient2.deposit(parseEther("2"));
-    await pmClient2.addStake({ unstakeDelaySec: 86_400, value: parseEther("1") });
-
-    const { client: walletClient } = await createFreshShrincsWallet(stack, 0xa2, {
-      maxSignatures: MAX_SIGS,
+    await pmClient2.addStake({
+      unstakeDelaySec: 86_400,
+      value: parseEther("1"),
     });
+
+    const { client: walletClient } = await createFreshShrincsWallet(
+      stack,
+      0xa2,
+      {
+        maxSignatures: MAX_SIGS,
+      }
+    );
     await stack.testClient.setBalance({
       address: walletClient.walletAddress,
       value: parseEther("5"),
@@ -818,7 +843,9 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxFeePerGas,
       maxPriorityFeePerGas,
     });
-    const { paymasterAndData, leaf } = await pmClient2.sponsorUserOp({ userOp });
+    const { paymasterAndData, leaf } = await pmClient2.sponsorUserOp({
+      userOp,
+    });
     userOp = { ...userOp, paymasterAndData };
     const signed = await walletClient.signExecuteUserOp({
       userOp,
@@ -915,7 +942,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       });
 
     // Attacker occupies the victim's commitment with a different owner — initialize
-    // recomputes v1CommitmentTail(..., ATTACKER_OWNER) and reverts IdentityMismatch.
+    // recomputes v1Commitment(..., ATTACKER_OWNER) and reverts IdentityMismatch.
     let caught: unknown = null;
     try {
       await deploy(ATTACKER_OWNER);

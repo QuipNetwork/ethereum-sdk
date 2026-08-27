@@ -88,10 +88,6 @@ interface IWalletFactory {
     ///         set has diverged from the factory's `walletOwner` source of
     ///         truth — a "this should never happen" defense-in-depth revert.
     error RegistryDesync();
-    /// @notice Thrown when a wallet proxy is deployed at a salt that is not a V01-shaped identity
-    ///         commitment (identity-bound salts only).
-    error NotV1Commitment();
-
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

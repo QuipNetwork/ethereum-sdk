@@ -4,8 +4,6 @@ pragma solidity ^0.8.33;
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {WalletFactoryTest} from "../WalletFactory.t.sol";
 import {WalletFactoryHarness} from "../../harness/WalletFactoryHarness.sol";
-import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
-import {IWalletFactory} from "../../../contracts/interfaces/IWalletFactory.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 
 /// @dev Minimal wallet impl with a distinct codehash from WOTSPlusImplementation.
@@ -18,9 +16,7 @@ contract MockInitWallet {
 contract WalletFactory_deploy_policy is WalletFactoryTest {
     WalletFactoryHarness public harness;
     MockInitWallet public mockImpl;
-    WOTSPlusImplementation public wotsImpl;
     uint256 public mockIndex;
-    uint256 public wotsIndex;
 
     function setUp() public override {
         super.setUp();
@@ -35,51 +31,9 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         mockImpl = new MockInitWallet();
         harness.vetImplementation(address(mockImpl));
 
-        wotsImpl = new WOTSPlusImplementation(payable(address(harness)));
-        harness.vetImplementation(address(wotsImpl));
         vm.stopPrank();
 
         mockIndex = harness.getVettedCodeIndex(address(mockImpl).codehash);
-        wotsIndex = harness.getVettedCodeIndex(address(wotsImpl).codehash);
-    }
-
-    function _buildPayload() internal pure returns (bytes memory) {
-        // disaster recovery key (64 bytes): seed 500, hash 501.
-        bytes memory payload = abi.encodePacked(
-            bytes32(uint256(500)),
-            bytes32(uint256(501))
-        );
-        // ownership key (64 bytes): seed 600, hash 601.
-        payload = abi.encodePacked(
-            payload,
-            bytes32(uint256(600)),
-            bytes32(uint256(601))
-        );
-        // 10 transaction keys (640 bytes): seeds 1,3,5,...,19 / hashes 2,4,6,...,20.
-        for (uint256 i = 0; i < 10; i++) {
-            payload = abi.encodePacked(
-                payload,
-                bytes32(uint256(2 * i + 1)),
-                bytes32(uint256(2 * i + 2))
-            );
-        }
-        // 10 recovery keys (640 bytes)
-        for (uint256 i = 0; i < 10; i++) {
-            payload = abi.encodePacked(
-                payload,
-                bytes32(i + 100),
-                bytes32(i + 200)
-            );
-        }
-        // 10 verification keys (640 bytes)
-        for (uint256 i = 0; i < 10; i++) {
-            payload = abi.encodePacked(
-                payload,
-                bytes32(i + 300),
-                bytes32(i + 400)
-            );
-        }
-        return payload;
     }
 
     function test_deploySpecificWalletProxy_v1CommitmentSucceeds() public {
@@ -97,39 +51,5 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         assertTrue(wallet != address(0));
         assertEq(harness.wallets(commitment), wallet);
         assertEq(harness.commitmentOf(wallet), commitment);
-    }
-
-    function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnWotsImpl()
-        public
-    {
-        address to = makeAddr("to-wots");
-        bytes32 commitment = bytes32(uint256(2));
-        uint256 fee = harness.creationFee();
-
-        // The V01 prefix gate is unconditional: even the legacy WOTS+ impl is
-        // rejected at a non-V01 salt.
-        vm.expectRevert(IWalletFactory.NotV1Commitment.selector);
-        harness.deploySpecificWalletProxy{value: fee}(
-            commitment,
-            wotsIndex,
-            payable(to),
-            _buildPayload()
-        );
-    }
-
-    function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnV1Impl()
-        public
-    {
-        address to = makeAddr("to-nonv1");
-        bytes32 commitment = bytes32(uint256(1));
-        uint256 fee = harness.creationFee();
-
-        vm.expectRevert(IWalletFactory.NotV1Commitment.selector);
-        harness.deploySpecificWalletProxy{value: fee}(
-            commitment,
-            mockIndex,
-            payable(to),
-            ""
-        );
     }
 }

@@ -80,44 +80,22 @@ library ShrincsWalletCodec {
     /*                    IDENTITY (V1)                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev 4-byte identity marker (ASCII "QV01", 0x51563031) prefixing a V1 commitment.
-    bytes4 internal constant V1_PREFIX = 0x51563031;
+    /// @dev Domain separator committed inside the full-width V1 identity hash.
+    bytes32 internal constant V1_IDENTITY_DOMAIN =
+        keccak256("QUIP_SHRINCS_IDENTITY_V1");
 
-    /// @dev keccak bytes [4..32) of `keccak256(abi.encode(statefulC, statelessC, owner))` —
-    ///      the 28-byte segment that follows the 4-byte prefix in a `v1Commitment`.
-    function v1CommitmentTail(
-        bytes32 statefulC,
-        bytes32 statelessC,
-        address owner
-    ) internal pure returns (bytes28) {
-        return
-            bytes28(
-                keccak256(abi.encode(statefulC, statelessC, owner)) << 32
-            );
-    }
-
-    /// @dev The identity-binding V1 commitment: 32 bytes =
-    ///      `V1_PREFIX(4) ‖ v1CommitmentTail(28)`. Binds the commitment to the
-    ///      stateful/stateless public-key commitments and the intended owner, so the
-    ///      counterfactual address is a function of the wallet's identity. Mirrors
-    ///      the SDK identity helper byte-for-byte.
+    /// @dev Full-width identity commitment binding both key commitments and the intended
+    ///      owner. The version domain lives inside the hash preimage so all 256 output bits
+    ///      retain second-preimage strength. Mirrors the SDK helper byte-for-byte.
     function v1Commitment(
         bytes32 statefulC,
         bytes32 statelessC,
         address owner
     ) internal pure returns (bytes32) {
         return
-            bytes32(
-                abi.encodePacked(
-                    V1_PREFIX,
-                    v1CommitmentTail(statefulC, statelessC, owner)
-                )
+            keccak256(
+                abi.encode(V1_IDENTITY_DOMAIN, statefulC, statelessC, owner)
             );
-    }
-
-    /// @dev True when `salt` carries the V1 marker in its high 4 bytes.
-    function isV1Commitment(bytes32 salt) internal pure returns (bool) {
-        return bytes4(salt) == V1_PREFIX;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -353,7 +331,10 @@ library ShrincsWalletCodec {
                 let pkOff := calldataload(o)
                 let sigOff := calldataload(add(o, 0x20))
                 let eo := calldataload(add(o, 0x40))
-                if and(tail(pkOff, len), and(tail(sigOff, len), tail(eo, len))) {
+                if and(
+                    tail(pkOff, len),
+                    and(tail(sigOff, len), tail(eo, len))
+                ) {
                     let ecLen := calldataload(add(o, eo))
                     // The ecdsaSig bytes must fit: eo + 0x20 + ecLen <= len. `eo <= len - 0x20`
                     // was just proven, so `sub(sub(len, 0x20), eo)` cannot underflow.

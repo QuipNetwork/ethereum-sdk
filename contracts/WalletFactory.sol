@@ -25,7 +25,6 @@ import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {IWalletFactory} from "./interfaces/IWalletFactory.sol";
 import {IWallet} from "./interfaces/IWallet.sol";
 import {WalletFactoryStorage as Storage} from "./storage/WalletFactoryStorage.sol";
-import {ShrincsWalletCodec as Codec} from "./shrincs/ShrincsWalletCodec.sol";
 
 /// @title WalletFactory
 /// @notice UUPS-upgradeable behind an ERC-1967 proxy. The PROXY address is the
@@ -37,7 +36,12 @@ import {ShrincsWalletCodec as Codec} from "./shrincs/ShrincsWalletCodec.sol";
 ///         (`WalletFactoryStorage`) whose layout is append-only across upgrades.
 ///         The owner is expected to be a post-quantum wallet; upgrades are
 ///         authorized by `onlyOwner` and thus PQ-secured upstream.
-contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializable {
+contract WalletFactory is
+    IWalletFactory,
+    Ownable,
+    UUPSUpgradeable,
+    Initializable
+{
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     /// @inheritdoc IWalletFactory
@@ -87,6 +91,8 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         $.latestWalletImpl = impl;
         emit ImplementationVetted(impl, codehash);
     }
+
+    /// @inheritdoc IWalletFactory
 
     /// @inheritdoc IWalletFactory
     function undeprecateImplementation(address impl) external onlyOwner {
@@ -141,7 +147,13 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = $.vettedCode.at(index);
         if ($.deprecatedImpls[codehash]) revert ImplementationDeprecated();
-        return _deployProxy($.vettedWalletImpls[codehash], commitment, to, payload);
+        return
+            _deployProxy(
+                $.vettedWalletImpls[codehash],
+                commitment,
+                to,
+                payload
+            );
     }
 
     /// @inheritdoc IWalletFactory
@@ -252,6 +264,8 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
+
+    /// @inheritdoc IWalletFactory
     function latestWalletImpl() external view returns (address) {
         return Storage.layout().latestWalletImpl;
     }
@@ -274,7 +288,9 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
-    function getCommitmentCount(address owner_) external view returns (uint256) {
+    function getCommitmentCount(
+        address owner_
+    ) external view returns (uint256) {
         return Storage.layout().commitments[owner_].length();
     }
 
@@ -369,11 +385,12 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         }
         uint256 contractValue = msg.value - $.creationFee;
 
-        // CREATE3 salt is the commitment.
-        // Reject any commitment that is not a V01-shaped identity salt. The wallet separately proves
-        // the salt's tail binds its own key-set; the factory rejects a malformed prefix at the door.
-        if (!Codec.isV1Commitment(commitment)) revert NotV1Commitment();
-        address contractAddr = CREATE3.deployDeterministic(proxyInitcode, commitment);
+        // CREATE3 salt is the full-width identity commitment. SHRINCS wallets
+        // recompute and validate it during initialization.
+        address contractAddr = CREATE3.deployDeterministic(
+            proxyInitcode,
+            commitment
+        );
 
         // Publish the reverse `commitmentOf` entry (also the `OnlyWallet` gate for the ownership
         // callback) BEFORE the call, keyed by address.
