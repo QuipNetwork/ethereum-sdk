@@ -17,6 +17,7 @@
 
 import { hmac } from "@noble/hashes/hmac";
 import { sha512 } from "@noble/hashes/sha2";
+import { toHex, type Hex } from "viem";
 
 import { ShrincsHdDerivationError } from "./errors.js";
 
@@ -75,4 +76,45 @@ export function deriveHardenedChild(node: HdNode, index: number): HdNode {
   data.set(node.key, 1);
   new DataView(data.buffer).setUint32(33, index + HARDENED_OFFSET, false);
   return splitI(hmac(sha512, node.chainCode, data));
+}
+
+export interface QuipHdPathOptions {
+  /// Algorithm identifier level. Defaults to the reserved experimental ID.
+  algorithm?: number;
+  /// Network identifier level. Defaults to QUIP.
+  network?: number;
+  /// Account level. Defaults to 0.
+  account?: number;
+}
+
+function pathLevels(index: number, opts: QuipHdPathOptions): number[] {
+  const {
+    algorithm = ALGORITHM_EXPERIMENTAL,
+    network = NETWORK_QUIP,
+    account = 0,
+  } = opts;
+  return [QUIP_HD_PURPOSE, algorithm, network, account, index];
+}
+
+/// Walk m/purpose'/algorithm'/network'/account'/index' and return the leaf
+/// node's 32-byte key as hex — the `seedHex` for `wasm.shrincsKeygen`.
+export function deriveQuipSeed(
+  masterSeed: Uint8Array,
+  index: number,
+  opts: QuipHdPathOptions = {}
+): Hex {
+  let node = masterNodeFromSeed(masterSeed);
+  for (const level of pathLevels(index, opts)) {
+    node = deriveHardenedChild(node, level);
+  }
+  return toHex(node.key);
+}
+
+/// Human-readable path string for logs and docs, e.g.
+/// "m/20814'/2147483647'/20049'/0'/0'".
+export function quipHdPath(
+  index: number,
+  opts: QuipHdPathOptions = {}
+): string {
+  return "m/" + pathLevels(index, opts).map((l) => `${l}'`).join("/");
 }
