@@ -107,25 +107,3 @@ barrelLines.push(`export { entryPointV07Abi } from "./EntryPointV07.js";`);
 const barrelPath = join(ABI_DIR, "index.ts");
 writeFileSync(barrelPath, barrelLines.join("\n") + "\n");
 console.log(`Wrote ${barrelPath}`);
-
-// --- Bytecode extraction ---
-const addresses = JSON.parse(
-  readFileSync(join(ROOT, "src", "v1", "addresses.json"), "utf-8")
-);
-const wotsAddress = addresses.WOTSPlus.toLowerCase().replace("0x", "");
-
-const walletArtifact = JSON.parse(
-  readFileSync(join(OUT_DIR, "WOTSPlusImplementation.sol/WOTSPlusImplementation.json"), "utf-8")
-);
-let bytecode = walletArtifact.bytecode.object;
-
-// Replace library placeholder (__$<hash>$__) with actual WOTSPlus address
-bytecode = bytecode.replace(/__\$[0-9a-fA-F]{34}\$__/g, wotsAddress);
-
-// WOTS-only artifact — lives with the deprecated WOTS+ SDK tree.
-const bytecodeOut = join(ROOT, "src", "deprecated", "v1", "bytecode.json");
-writeFileSync(
-  bytecodeOut,
-  JSON.stringify({ wotsPlusImplementationCreationCode: bytecode }, null, 2) + "\n"
-);
-console.log(`Wrote ${bytecodeOut} (${bytecode.length} hex chars)`);
