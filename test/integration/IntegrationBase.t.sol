@@ -186,7 +186,6 @@ contract IntegrationBase is Test {
         walletImpl = new WOTSPlusImplementation(payable(address(factory)));
         vm.startPrank(ADMIN);
         factory.vetImplementation(address(walletImpl));
-        factory.setV1Compatibility(address(walletImpl), true);
         vm.stopPrank();
 
         (alicePubkey, alicePrivateKey) = _generateKeyPair(

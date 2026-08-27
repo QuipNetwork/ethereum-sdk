@@ -216,8 +216,7 @@ export async function setupShrincsAnvilStack(
   });
   await publicClient.waitForTransactionReceipt({ hash: factoryInitHash });
 
-  // 2. ShrincsWallet impl (no library linking — empty linkReferences), vet,
-  // and certify it for full-width V1 identity deployments.
+  // 2. ShrincsWallet impl (no library linking — empty linkReferences) + vet.
   const implHash = await walletClient.deployContract({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     abi: walletArtifact.abi as any,
@@ -240,16 +239,6 @@ export async function setupShrincsAnvilStack(
     account,
   });
   await publicClient.waitForTransactionReceipt({ hash: vetHash });
-
-  const compatibilityHash = await walletClient.writeContract({
-    chain: foundry,
-    address: factoryAddress,
-    abi: walletFactoryAbi,
-    functionName: "setV1Compatibility",
-    args: [shrincsWalletImpl, true],
-    account,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: compatibilityHash });
 
   // 3. ShrincsPaymaster impl (same pinned-verifier ctor arg) + ERC-1967 proxy.
   const pmImplHash = await walletClient.deployContract({

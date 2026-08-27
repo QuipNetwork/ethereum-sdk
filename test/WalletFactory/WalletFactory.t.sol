@@ -57,7 +57,6 @@ contract WalletFactoryTest is Test {
         );
         vm.startPrank(ADMIN);
         factory.vetImplementation(address(walletImplementation));
-        factory.setV1Compatibility(address(walletImplementation), true);
         vm.stopPrank();
     }
 

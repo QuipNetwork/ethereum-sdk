@@ -176,7 +176,6 @@ contract WalletFactory_deployLatestWalletProxy is WalletFactoryTest {
         );
         vm.startPrank(ADMIN);
         factory.vetImplementation(address(impl2));
-        factory.setV1Compatibility(address(impl2), true);
         vm.stopPrank();
 
         // Deprecate the first

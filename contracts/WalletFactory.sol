@@ -93,16 +93,6 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-    function setV1Compatibility(
-        address impl,
-        bool compatible
-    ) external onlyOwner {
-        Storage.Layout storage $ = Storage.layout();
-        bytes32 codehash = impl.codehash;
-        if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
-        $.v1CompatibleImplementations[codehash] = compatible;
-        emit V1CompatibilitySet(impl, codehash, compatible);
-    }
 
     /// @inheritdoc IWalletFactory
     function undeprecateImplementation(address impl) external onlyOwner {
@@ -274,11 +264,6 @@ contract WalletFactory is
     }
 
     /// @inheritdoc IWalletFactory
-    function v1CompatibleImplementations(
-        bytes32 codehash
-    ) external view returns (bool compatible) {
-        return Storage.layout().v1CompatibleImplementations[codehash];
-    }
 
     /// @inheritdoc IWalletFactory
     function latestWalletImpl() external view returns (address) {
@@ -400,13 +385,8 @@ contract WalletFactory is
         }
         uint256 contractValue = msg.value - $.creationFee;
 
-        bytes32 codehash = impl.codehash;
-        if (!$.v1CompatibleImplementations[codehash]) {
-            revert ImplementationNotV1Compatible(codehash);
-        }
-
-        // CREATE3 salt is the full-width identity commitment. The certified implementation
-        // recomputes and validates it during initialization.
+        // CREATE3 salt is the full-width identity commitment. SHRINCS wallets
+        // recompute and validate it during initialization.
         address contractAddr = CREATE3.deployDeterministic(
             proxyInitcode,
             commitment

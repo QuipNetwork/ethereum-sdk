@@ -180,7 +180,6 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         );
         vm.startPrank(ADMIN);
         factory.vetImplementation(address(impl2));
-        factory.setV1Compatibility(address(impl2), true);
         vm.stopPrank();
 
         bytes32 commitment = keccak256("Vault ID 1");

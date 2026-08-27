@@ -104,12 +104,6 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
             "ShrincsWallet"
         );
         _vetIfNeeded(factory, pk, impl, "ShrincsWallet");
-        IVettingFactory f = IVettingFactory(factory);
-        if (!f.v1CompatibleImplementations(impl.codehash)) {
-            vm.startBroadcast(pk);
-            f.setV1Compatibility(impl, true);
-            vm.stopBroadcast();
-        }
     }
 
     function _deployShrincsPaymaster(

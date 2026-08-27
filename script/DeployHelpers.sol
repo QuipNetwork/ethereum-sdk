@@ -8,12 +8,6 @@ import {Script, console} from "forge-std-1.14.0/Script.sol";
 interface IVettingFactory {
     function vetImplementation(address impl) external;
 
-    function setV1Compatibility(address impl, bool compatible) external;
-
-    function v1CompatibleImplementations(
-        bytes32 codehash
-    ) external view returns (bool);
-
     function getVettedCodeIndex(
         bytes32 codehash
     ) external view returns (uint256);
