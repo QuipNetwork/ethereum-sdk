@@ -16,10 +16,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { keccak_256 } from "@noble/hashes/sha3";
-import { type Hex, toBytes, toHex } from "viem";
+import { type Hex, toHex } from "viem";
 
 import { publicKeyCommitment } from "./shrincsCodec.js";
 import { ShrincsKeyDerivationSelfTestError } from "./errors.js";
+import { deriveQuipSeed, mnemonicToSeed, type QuipHdPathOptions } from "./hd.js";
 import {
   type ActionContext,
   type RotationContext,
@@ -211,11 +212,13 @@ export class ShrincsKeyPair {
   }
 }
 
-/// In-memory SHRINCS signer keyed off a single master secret (the seed-phrase
+/// In-memory SHRINCS signer keyed off a single master seed (the seed-phrase
 /// analog). Every keypair the user ever uses is deterministically derived from
 /// it plus a caller-chosen `derivationIndex`:
 ///
-///   seedHex = keccak256(keccak256(masterSecret) ‖ uint256BE(index, 32 bytes))
+///   seedHex = deriveQuipSeed(masterSeed, index, pathOptions)
+///           // m/20814'/algorithm'/network'/account'/index'
+///           // experimental algorithm and network QUIP by default
 ///   keypair = shrincsKeygen(seedHex, maxSignatures)
 ///
 /// Unlike the WOTS+ `QuipSigner`, there is **no burn set**: SHRINCS is stateful
@@ -224,31 +227,52 @@ export class ShrincsKeyPair {
 /// before every operation and signs at the lowest unused leaf.
 ///
 /// Construct via the async factory so the WASM module is loaded before any
-/// signing call:
+/// signing call. Mnemonics enter through `fromMnemonic`:
 ///
-///   const signer = await ShrincsSigner.create(masterSecret);
+///   const signer = await ShrincsSigner.create(masterSeed);
 export class ShrincsSigner {
-  private readonly masterSecret: Uint8Array;
+  private readonly masterSeed: Uint8Array;
+  private readonly pathOptions: QuipHdPathOptions;
   private readonly wasm: ShrincsWasmModule;
 
-  private constructor(wasm: ShrincsWasmModule, masterSecret: Uint8Array) {
+  private constructor(
+    wasm: ShrincsWasmModule,
+    masterSeed: Uint8Array,
+    pathOptions: QuipHdPathOptions
+  ) {
     this.wasm = wasm;
-    this.masterSecret = masterSecret;
+    this.masterSeed = masterSeed;
+    this.pathOptions = pathOptions;
   }
 
-  /// Load the WASM signing backend and construct a signer for `masterSecret`.
-  static async create(masterSecret: Uint8Array): Promise<ShrincsSigner> {
+  /// Load the WASM signing backend and construct a signer whose keys derive
+  /// from `masterSeed` under the QUIP HD path. `masterSeed` is any >=16-byte
+  /// secret — typically the 64-byte BIP-39 seed (see `fromMnemonic`).
+  static async create(
+    masterSeed: Uint8Array,
+    opts: QuipHdPathOptions = {}
+  ): Promise<ShrincsSigner> {
     const wasm = await loadShrincsWasm();
-    return new ShrincsSigner(wasm, keccak_256(masterSecret));
+    return new ShrincsSigner(wasm, Uint8Array.from(masterSeed), opts);
   }
 
-  /// Deterministic per-index seed: `keccak256(masterSecret ‖ uint256BE(index, 32))`.
+  /// Construct a signer from a BIP-39 English mnemonic (and optional
+  /// passphrase). Throws ShrincsInvalidMnemonicError on a bad mnemonic.
+  static async fromMnemonic(
+    mnemonic: string,
+    opts: QuipHdPathOptions & { passphrase?: string } = {}
+  ): Promise<ShrincsSigner> {
+    const { passphrase, ...pathOptions } = opts;
+    return ShrincsSigner.create(
+      mnemonicToSeed(mnemonic, passphrase),
+      pathOptions
+    );
+  }
+
+  /// Deterministic per-index keygen seed: the QUIP HD leaf at
+  /// m/20814'/algorithm'/network'/account'/derivationIndex'.
   deriveSeedHex(derivationIndex: number): Hex {
-    const seed = Uint8Array.from([
-      ...this.masterSecret,
-      ...toBytes(BigInt(derivationIndex), { size: 32 }),
-    ]);
-    return toHex(keccak_256(seed));
+    return deriveQuipSeed(this.masterSeed, derivationIndex, this.pathOptions);
   }
 
   /// Recover (re-derive) the keypair for a derivation index. The canonical path:

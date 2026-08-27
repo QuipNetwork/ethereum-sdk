@@ -17,7 +17,7 @@ const STATELESS_INDEX = 2;
 
 describe("ShrincsSigner.deriveKeyPair", () => {
   it("reproduces recoverKeyPair when both points are equal (homogeneous)", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("m"));
+    const signer = await ShrincsSigner.create(new TextEncoder().encode("m (hd seed padding)"));
     const derived = signer.deriveKeyPair({
       statefulIndex: STATEFUL_INDEX,
       statelessIndex: STATEFUL_INDEX,
@@ -29,7 +29,7 @@ describe("ShrincsSigner.deriveKeyPair", () => {
   });
 
   it("grafts the stateful half from t and the stateless half from s (hybrid)", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("m"));
+    const signer = await ShrincsSigner.create(new TextEncoder().encode("m (hd seed padding)"));
     const sHalf = signer.recoverKeyPair(STATELESS_INDEX, {
       maxSignatures: MAX_SIG,
     });
@@ -60,7 +60,7 @@ describe("ShrincsSigner.deriveKeyPair", () => {
   });
 
   it("signs and verifies a hybrid key on both the stateful and stateless paths", async () => {
-    const signer = await ShrincsSigner.create(new TextEncoder().encode("m"));
+    const signer = await ShrincsSigner.create(new TextEncoder().encode("m (hd seed padding)"));
     const hybrid = signer.deriveKeyPair({
       statefulIndex: STATEFUL_INDEX,
       statelessIndex: STATELESS_INDEX,

@@ -25,7 +25,7 @@ const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 let verifier: ShrincsKeyPair;
 
 beforeAll(async () => {
-  const signer = await ShrincsSigner.create(new TextEncoder().encode("any"));
+  const signer = await ShrincsSigner.create(new TextEncoder().encode("any (hd seed padding)"));
   verifier = signer.keygenFromSeedHex(seed("shrincs paymaster verifier seed"), {
     maxSignatures: MAX_SIG,
   });

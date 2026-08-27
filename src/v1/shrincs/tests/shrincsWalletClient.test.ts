@@ -41,7 +41,7 @@ const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 let keypair: ShrincsKeyPair;
 
 beforeAll(async () => {
-  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master"));
+  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   keypair = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
     maxSignatures: MAX_SIG,
   });
