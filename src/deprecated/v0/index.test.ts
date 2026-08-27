@@ -40,3 +40,38 @@ describe("v0 barrel exposes legacy surface", () => {
     expect(v0.ERRORS).toBeDefined();
   });
 });
+
+describe("QuipClient guards chains with no QuipFactory", () => {
+  // Minimal EIP-1193 stub: answers only the calls QuipClient makes during
+  // initialization (account lookup, chain id). No network.
+  const makeProvider = (chainIdHex: string): v0.WalletProvider => ({
+    request: async ({ method }) => {
+      switch (method) {
+        case "eth_chainId":
+          return chainIdHex;
+        case "net_version":
+          return String(Number.parseInt(chainIdHex, 16));
+        case "eth_accounts":
+        case "eth_requestAccounts":
+          return ["0x00000000000000000000000000000000000000aa"];
+        default:
+          return null;
+      }
+    },
+  });
+
+  test("rejects on MIDL testnet (777), where the QuipFactory is the zero address", async () => {
+    // 777 == 0x309. v0 marks MIDL with a zero QuipFactory: WOTS+ was never
+    // deployed there, so no address-compatible wallet can exist.
+    await expect(v0.QuipClient.create(makeProvider("0x309"))).rejects.toThrow(
+      /not supported on chain 777/
+    );
+  });
+
+  test("initializes on a chain with a deployed QuipFactory", async () => {
+    // 1 == 0x1. Mainnet resolves to a non-zero QuipFactory, so the guard
+    // does not fire and the client constructs.
+    const client = await v0.QuipClient.create(makeProvider("0x1"));
+    expect(client.getChainId()).toBe(1);
+  });
+});
