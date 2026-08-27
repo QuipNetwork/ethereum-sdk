@@ -42,6 +42,8 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();
+    /// @notice The stateful tree (pkSeed, root) was installed on this paymaster before.
+    error StatefulTreeSpent(bytes32 treeId);
     /// @notice Thrown when registering a verifier key with a hash suite other than the
     ///         compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this implementation
     ///         verifies; SHRINCS binds it into every canonical message hash).

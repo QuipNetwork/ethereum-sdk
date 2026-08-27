@@ -260,3 +260,87 @@ contract ShrincsPaymaster_rotateStatefulKey is ShrincsPaymasterTest {
         paymaster.rotateStatefulKey(verifierPk, target);
     }
 }
+
+/// @dev Tree retirement on the paymaster: `rotateStatefulKey` refuses any stateful tree this
+///      paymaster has ever held (the same tree, the same tree under a different budget, or a
+///      cycle back to an earlier tree), because the per-epoch bitmap would resurrect its leaves.
+contract ShrincsPaymaster_spentTrees is ShrincsPaymaster_rotateStatefulKey {
+    function setUp() public override {
+        super.setUp();
+        // Mirror a real `initialize`: the installed tree is recorded.
+        paymaster.harness_spendStatefulTree(_treeId(verifierPk.statefulPublicKey));
+    }
+
+    function _treeId(bytes memory spk) internal pure returns (bytes32) {
+        bytes32 pkSeed;
+        bytes32 root;
+        assembly {
+            pkSeed := mload(add(spk, 32))
+            root := mload(add(spk, 64))
+        }
+        return keccak256(abi.encodePacked(pkSeed, root));
+    }
+
+    function test_rotateStatefulKey_spendsNextStatefulTree() public {
+        (, SHRINCS.StatefulRotationTarget memory t,) = _rotationTarget("rotate-spends", 16);
+        bytes32 id = _treeId(t.statefulPublicKey);
+        assertFalse(paymaster.harness_isStatefulTreeSpent(id), "unspent before");
+        vm.prank(OWNER);
+        paymaster.rotateStatefulKey(verifierPk, t);
+        assertTrue(paymaster.harness_isStatefulTreeSpent(id), "rotateStatefulKey spends the next tree");
+        assertTrue(paymaster.harness_isStatefulTreeSpent(_treeId(verifierPk.statefulPublicKey)), "previous stays spent");
+    }
+
+    function test_rotateStatefulKey_revertsWhen_sameStatefulTree() public {
+        SHRINCS.StatefulRotationTarget memory same = SHRINCS.StatefulRotationTarget({
+            statefulPublicKey: verifierPk.statefulPublicKey,
+            publicKeyCommitment: verifierPk.publicKeyCommitment
+        });
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsPaymaster.StatefulTreeSpent.selector, _treeId(verifierPk.statefulPublicKey))
+        );
+        paymaster.rotateStatefulKey(verifierPk, same);
+    }
+
+    function test_rotateStatefulKey_revertsWhen_sameTreeDifferentBudget() public {
+        bytes memory spk = verifierPk.statefulPublicKey;
+        spk[67] = bytes1(uint8(spk[67]) + 1); // low byte of the trailing maxSignatures
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(spk, verifierPk.pkSeed, verifierPk.hypertreeRoot);
+        assertTrue(c != _toBytes32(verifierPk.publicKeyCommitment), "budget changes the commitment");
+        SHRINCS.StatefulRotationTarget memory t =
+            SHRINCS.StatefulRotationTarget({statefulPublicKey: spk, publicKeyCommitment: abi.encodePacked(c)});
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(IShrincsPaymaster.StatefulTreeSpent.selector, _treeId(spk)));
+        paymaster.rotateStatefulKey(verifierPk, t);
+    }
+
+    function test_rotateStatefulKey_revertsWhen_cyclingBackToEarlierTree() public {
+        (, SHRINCS.StatefulRotationTarget memory targetB, bytes32 commitmentB) = _rotationTarget("spent-B", 16);
+        vm.prank(OWNER);
+        paymaster.rotateStatefulKey(verifierPk, targetB);
+        SHRINCS.PublicKey memory bundleB = _rotatedBundle(targetB, commitmentB);
+
+        // B -> A: the initial tree was recorded at `initialize`.
+        SHRINCS.StatefulRotationTarget memory backToA = SHRINCS.StatefulRotationTarget({
+            statefulPublicKey: verifierPk.statefulPublicKey,
+            publicKeyCommitment: verifierPk.publicKeyCommitment
+        });
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsPaymaster.StatefulTreeSpent.selector, _treeId(verifierPk.statefulPublicKey))
+        );
+        paymaster.rotateStatefulKey(bundleB, backToA);
+    }
+
+    function test_rotateStatefulKey_freshTreesKeepWorking() public {
+        (, SHRINCS.StatefulRotationTarget memory t1, bytes32 c1) = _rotationTarget("spent-fresh-1", 16);
+        vm.prank(OWNER);
+        paymaster.rotateStatefulKey(verifierPk, t1);
+        (, SHRINCS.StatefulRotationTarget memory t2,) = _rotationTarget("spent-fresh-2", 16);
+        vm.prank(OWNER);
+        paymaster.rotateStatefulKey(_rotatedBundle(t1, c1), t2);
+        (, , uint256 keyVersion, , ) = paymaster.getShrincsVerifier();
+        assertEq(keyVersion, 2);
+    }
+}

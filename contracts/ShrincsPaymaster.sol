@@ -141,6 +141,7 @@ contract ShrincsPaymaster is
         // statefulLeavesUsed and the leaf bitmap start empty by default.
         $.shrincsCommitment = commitment;
         $.maxSignatures = decoded.maxSignatures;
+        _spendStatefulTree(_statefulTreeId(decoded));
 
         emit PaymasterInitialized(owner_);
         emit ShrincsVerifierSet(
@@ -254,6 +255,10 @@ contract ShrincsPaymaster is
             nextStatefulKey.publicKeyCommitment.length != 32 ||
             bytes32(nextStatefulKey.publicKeyCommitment[:32]) != nextCommitment
         ) revert CommitmentMismatch();
+
+        // Trees are one-time material for their lifetime: refuse a replacement ever installed
+        // here (the bitmap resets per epoch, so a cycle back would resurrect consumed leaves).
+        _spendStatefulTree(_statefulTreeId(decoded));
 
         bytes32 previous = $.shrincsCommitment;
         // keyVersion is monotonic: always bump, never reset. A fresh epoch gives a fresh (empty)
@@ -529,5 +534,21 @@ contract ShrincsPaymaster is
     /// @inheritdoc IShrincsPaymaster
     function getDeposit() external view returns (uint256) {
         return IEntryPointStake(ENTRY_POINT).balanceOf(address(this));
+    }
+
+    /// @dev Tree identity of a stateful public key: keccak256(pkSeed ‖ root); excludes
+    ///      `maxSignatures` — the same tree under a different budget is the same tree.
+    function _statefulTreeId(
+        UXMSS.StatefulPublicKey memory decoded
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(decoded.pkSeed, decoded.root);
+    }
+
+    /// @dev Marks a stateful tree spent, reverting if it ever was (a re-installed tree would
+    ///      resurrect its consumed leaves once the bitmap resets).
+    function _spendStatefulTree(bytes32 treeId) internal {
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatefulTrees[treeId]) revert StatefulTreeSpent(treeId);
+        $.spentStatefulTrees[treeId] = true;
     }
 }
