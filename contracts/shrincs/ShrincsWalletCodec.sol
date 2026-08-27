@@ -80,21 +80,9 @@ library ShrincsWalletCodec {
     /*                    IDENTITY (V1)                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev 4-byte identity marker (ASCII "QV01", 0x51563031) prefixing a V1 commitment.
-    bytes4 internal constant V1_PREFIX = 0x51563031;
-
-    /// @dev keccak bytes [4..32) of `keccak256(abi.encode(statefulC, statelessC, owner))` —
-    ///      the 28-byte segment that follows the 4-byte prefix in a `v1Commitment`.
-    function v1CommitmentTail(
-        bytes32 statefulC,
-        bytes32 statelessC,
-        address owner
-    ) internal pure returns (bytes28) {
-        return
-            bytes28(
-                keccak256(abi.encode(statefulC, statelessC, owner)) << 32
-            );
-    }
+    /// @dev Domain separator committed inside the full-width V1 identity hash.
+    bytes32 internal constant V1_IDENTITY_DOMAIN =
+        keccak256("QUIP_SHRINCS_IDENTITY_V1");
 
     /// @dev The identity-binding V1 commitment: 32 bytes =
     ///      `V1_PREFIX(4) ‖ v1CommitmentTail(28)`. Binds the commitment to the
@@ -107,17 +95,14 @@ library ShrincsWalletCodec {
         address owner
     ) internal pure returns (bytes32) {
         return
-            bytes32(
-                abi.encodePacked(
-                    V1_PREFIX,
-                    v1CommitmentTail(statefulC, statelessC, owner)
+            keccak256(
+                abi.encode(
+                    V1_IDENTITY_DOMAIN,
+                    statefulC,
+                    statelessC,
+                    owner
                 )
             );
-    }
-
-    /// @dev True when `salt` carries the V1 marker in its high 4 bytes.
-    function isV1Commitment(bytes32 salt) internal pure returns (bool) {
-        return bytes4(salt) == V1_PREFIX;
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

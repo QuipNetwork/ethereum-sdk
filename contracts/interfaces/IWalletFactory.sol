@@ -88,10 +88,10 @@ interface IWalletFactory {
     ///         set has diverged from the factory's `walletOwner` source of
     ///         truth — a "this should never happen" defense-in-depth revert.
     error RegistryDesync();
-    /// @notice Thrown when a wallet proxy is deployed at a salt that is not a V01-shaped identity
-    ///         commitment (identity-bound salts only).
-    error NotV1Commitment();
-
+    /// @notice Thrown when the selected implementation is not certified to enforce
+    ///         the full-width V1 identity commitment during initialization.
+    /// @param codehash The selected implementation runtime codehash.
+    error ImplementationNotV1Compatible(bytes32 codehash);
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                         EVENTS                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
@@ -102,6 +102,16 @@ interface IWalletFactory {
     /// @param impl The implementation contract address.
     /// @param codehash The codehash of the implementation.
     event ImplementationVetted(address indexed impl, bytes32 indexed codehash);
+
+    /// @notice Emitted when V1 identity compatibility changes for a vetted codehash.
+    /// @param impl The implementation address used to resolve the codehash.
+    /// @param codehash The implementation runtime codehash.
+    /// @param compatible Whether the implementation may consume V1 commitments.
+    event V1CompatibilitySet(
+        address indexed impl,
+        bytes32 indexed codehash,
+        bool compatible
+    );
 
     /// @notice Emitted when an implementation is deprecated.
     /// @param impl The implementation contract address.
@@ -188,6 +198,11 @@ interface IWalletFactory {
     ///      reconstructable from events alone. Sets `latestWalletImpl` to the new impl.
     /// @param impl The deployed implementation contract address.
     function vetImplementation(address impl) external;
+
+    /// @notice Certifies or revokes a vetted implementation codehash for V1 identity-bound deploys.
+    /// @param impl A deployed implementation whose codehash is already vetted.
+    /// @param compatible Whether the codehash enforces the full-width V1 identity on initialize.
+    function setV1Compatibility(address impl, bool compatible) external;
 
     /// @notice Marks an implementation's codehash as deprecated.
     /// @dev Only callable by the admin. The codehash remains in the set (preserving indices)
@@ -407,6 +422,11 @@ interface IWalletFactory {
     function deprecatedImpls(
         bytes32 codehash
     ) external view returns (bool isDeprecated);
+
+    /// @notice Whether a vetted implementation codehash may consume V1 commitments.
+    function v1CompatibleImplementations(
+        bytes32 codehash
+    ) external view returns (bool compatible);
 
     /// @notice Returns the most recently vetted active implementation address.
     /// @return The latest active wallet implementation address, or `address(0)` if none.

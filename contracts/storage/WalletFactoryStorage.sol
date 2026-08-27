@@ -59,6 +59,9 @@ library WalletFactoryStorage {
         ///      recomputed on deprecate/undeprecate).
         address latestWalletImpl;
         // --- APPEND-ONLY below this line; never reorder above ---
+        /// @dev Codehash-scoped certification that an implementation enforces the
+        ///      full-width V1 identity commitment during initialization.
+        mapping(bytes32 codehash => bool compatible) v1CompatibleImplementations;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("quip.storage.factory")) - 1))

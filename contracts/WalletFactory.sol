@@ -25,7 +25,6 @@ import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {IWalletFactory} from "./interfaces/IWalletFactory.sol";
 import {IWallet} from "./interfaces/IWallet.sol";
 import {WalletFactoryStorage as Storage} from "./storage/WalletFactoryStorage.sol";
-import {ShrincsWalletCodec as Codec} from "./shrincs/ShrincsWalletCodec.sol";
 
 /// @title WalletFactory
 /// @notice UUPS-upgradeable behind an ERC-1967 proxy. The PROXY address is the
@@ -86,6 +85,15 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         // so it is unconditionally the new latest active implementation.
         $.latestWalletImpl = impl;
         emit ImplementationVetted(impl, codehash);
+    }
+
+    /// @inheritdoc IWalletFactory
+    function setV1Compatibility(address impl, bool compatible) external onlyOwner {
+        Storage.Layout storage $ = Storage.layout();
+        bytes32 codehash = impl.codehash;
+        if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
+        $.v1CompatibleImplementations[codehash] = compatible;
+        emit V1CompatibilitySet(impl, codehash, compatible);
     }
 
     /// @inheritdoc IWalletFactory
@@ -252,6 +260,13 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
+    function v1CompatibleImplementations(
+        bytes32 codehash
+    ) external view returns (bool compatible) {
+        return Storage.layout().v1CompatibleImplementations[codehash];
+    }
+
+    /// @inheritdoc IWalletFactory
     function latestWalletImpl() external view returns (address) {
         return Storage.layout().latestWalletImpl;
     }
@@ -369,10 +384,14 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         }
         uint256 contractValue = msg.value - $.creationFee;
 
+        bytes32 codehash = impl.codehash;
+        if (!$.v1CompatibleImplementations[codehash]) {
+            revert ImplementationNotV1Compatible(codehash);
+        }
+
         // CREATE3 salt is the commitment.
         // Reject any commitment that is not a V01-shaped identity salt. The wallet separately proves
         // the salt's tail binds its own key-set; the factory rejects a malformed prefix at the door.
-        if (!Codec.isV1Commitment(commitment)) revert NotV1Commitment();
         address contractAddr = CREATE3.deployDeterministic(proxyInitcode, commitment);
 
         // Publish the reverse `commitmentOf` entry (also the `OnlyWallet` gate for the ownership
