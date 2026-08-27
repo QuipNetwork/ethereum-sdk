@@ -10,10 +10,9 @@ import { computeCreate3Address } from "../../addresses.js";
 import {
   CANONICAL_ENTRYPOINT_V07,
   NETWORK_ADDRESSES,
-  V1_PREFIX,
+  V1_IDENTITY_DOMAIN,
   getShrincsAddresses,
   getShrincsWalletAddress,
-  isV1Commitment,
   v1Commitment,
 } from "../addresses.js";
 import { UnsupportedNetworkError } from "../errors.js";
@@ -37,7 +36,9 @@ describe("shrincs addresses", () => {
   it("exposes the canonical deterministic Shrincs addresses on the default entry", () => {
     const d = NETWORK_ADDRESSES.default;
     expect(d.EntryPoint).toBe(CANONICAL_ENTRYPOINT_V07);
-    expect(d.ShrincsWalletImplementation).toBe(EXPECTED.ShrincsWalletImplementation);
+    expect(d.ShrincsWalletImplementation).toBe(
+      EXPECTED.ShrincsWalletImplementation
+    );
     expect(d.ShrincsPaymaster).toBe(EXPECTED.ShrincsPaymaster);
     expect(d.ShrincsPaymasterImpl).toBe(EXPECTED.ShrincsPaymasterImpl);
     expect(d.ShrincsVerifier).toBe(EXPECTED.ShrincsVerifier);
@@ -79,43 +80,40 @@ describe("V1 identity codec (byte-exact with Solidity)", () => {
   const owner = "0x00000000000000000000000000000000000000AA" as const;
 
   // The 32-byte commitment for the fixture, pinned. BOTH sides must return this
-  // exact value — it is what proves the truncation and the ABI encoding agree.
+  // exact value — it proves the domain and ABI encoding agree.
   const GOLDEN =
-    "0x515630318f6887fa095d9004d2c66b2770cce3714f8805f2484e9083e41b0764";
+    "0xd165e4bbba9307d943f384fcaeaeb3c123bd87cfb9124a19d0a14fd4a3ae57df";
 
-  it("V1_PREFIX is the 4 bytes 0x51563031", () => {
-    expect(V1_PREFIX).toBe("0x51563031");
+  it("V1 identity domain matches Solidity", () => {
+    expect(V1_IDENTITY_DOMAIN).toBe(
+      keccak256(toHex("QUIP_SHRINCS_IDENTITY_V1"))
+    );
   });
 
   it("v1Commitment matches the cross-language golden", () => {
     expect(v1Commitment(statefulC, statelessC, owner)).toBe(GOLDEN);
   });
 
-  it("v1Commitment is 32 bytes prefixed by V1_PREFIX", () => {
+  it("v1Commitment is a full 32-byte digest", () => {
     const id = v1Commitment(statefulC, statelessC, owner);
     expect((id.length - 2) / 2).toBe(32);
-    expect(id.slice(0, 10)).toBe(V1_PREFIX);
   });
 
   it("v1Commitment binds each input", () => {
     const base = v1Commitment(statefulC, statelessC, owner);
-    expect(v1Commitment(`0x${"33".repeat(32)}`, statelessC, owner)).not.toBe(base);
-    expect(v1Commitment(statefulC, `0x${"44".repeat(32)}`, owner)).not.toBe(base);
+    expect(v1Commitment(`0x${"33".repeat(32)}`, statelessC, owner)).not.toBe(
+      base
+    );
+    expect(v1Commitment(statefulC, `0x${"44".repeat(32)}`, owner)).not.toBe(
+      base
+    );
     expect(
-      v1Commitment(statefulC, statelessC, "0x00000000000000000000000000000000000000bb")
+      v1Commitment(
+        statefulC,
+        statelessC,
+        "0x00000000000000000000000000000000000000bb"
+      )
     ).not.toBe(base);
-  });
-
-  it("isV1Commitment is true for a V1 commitment", () => {
-    expect(isV1Commitment(GOLDEN)).toBe(true);
-    expect(isV1Commitment(v1Commitment(statefulC, statelessC, owner))).toBe(true);
-  });
-
-  it("isV1Commitment is false for a non-prefixed 32-byte value", () => {
-    expect(isV1Commitment(keccak256(toHex("not-a-v1-salt")))).toBe(false);
-    expect(
-      isV1Commitment("0x0000000000000000000000000000000000000000000000000000000000000001")
-    ).toBe(false);
   });
 });
 
@@ -127,10 +125,7 @@ describe("SHRINCS V1 address predictor", () => {
 
   it("getShrincsWalletAddress equals computeCreate3Address(factory, v1Commitment)", () => {
     expect(getShrincsWalletAddress(FACTORY, statefulC, statelessC, owner)).toBe(
-      computeCreate3Address(
-        FACTORY,
-        v1Commitment(statefulC, statelessC, owner)
-      )
+      computeCreate3Address(FACTORY, v1Commitment(statefulC, statelessC, owner))
     );
   });
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
+import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {WalletFactoryTest} from "../WalletFactory.t.sol";
 import {WalletFactoryHarness} from "../../harness/WalletFactoryHarness.sol";
 import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
@@ -34,6 +35,7 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
 
         mockImpl = new MockInitWallet();
         harness.vetImplementation(address(mockImpl));
+        harness.setV1Compatibility(address(mockImpl), true);
 
         wotsImpl = new WOTSPlusImplementation(payable(address(harness)));
         harness.vetImplementation(address(wotsImpl));
@@ -99,16 +101,60 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         assertEq(harness.commitmentOf(wallet), commitment);
     }
 
-    function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnWotsImpl()
+    function test_deploySpecificWalletProxy_crossImplementationFrontRunCannotOccupyPrefundedAddress()
+        public
+    {
+        address to = makeAddr("front-run-victim");
+        bytes32 commitment = Codec.v1Commitment(
+            bytes32(uint256(0x33)),
+            bytes32(uint256(0x44)),
+            to
+        );
+        address predicted = CREATE3.predictDeterministicAddress(
+            commitment,
+            address(harness)
+        );
+        vm.deal(predicted, 1 ether);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IWalletFactory.ImplementationNotV1Compatible.selector,
+                address(wotsImpl).codehash
+            )
+        );
+        harness.deploySpecificWalletProxy(
+            commitment,
+            wotsIndex,
+            payable(makeAddr("attacker")),
+            _buildPayload()
+        );
+
+        assertEq(predicted.code.length, 0);
+        assertEq(predicted.balance, 1 ether);
+
+        address wallet = harness.deploySpecificWalletProxy(
+            commitment,
+            mockIndex,
+            payable(to),
+            ""
+        );
+        assertEq(wallet, predicted);
+        assertEq(wallet.balance, 1 ether);
+    }
+
+    function test_deploySpecificWalletProxy_revertsWhen_implIsNotV1Compatible()
         public
     {
         address to = makeAddr("to-wots");
         bytes32 commitment = bytes32(uint256(2));
         uint256 fee = harness.creationFee();
 
-        // The V01 prefix gate is unconditional: even the legacy WOTS+ impl is
-        // rejected at a non-V01 salt.
-        vm.expectRevert(IWalletFactory.NotV1Commitment.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IWalletFactory.ImplementationNotV1Compatible.selector,
+                address(wotsImpl).codehash
+            )
+        );
         harness.deploySpecificWalletProxy{value: fee}(
             commitment,
             wotsIndex,
@@ -117,14 +163,21 @@ contract WalletFactory_deploy_policy is WalletFactoryTest {
         );
     }
 
-    function test_deploySpecificWalletProxy_revertsWhen_nonV1SaltOnV1Impl()
+    function test_deploySpecificWalletProxy_revertsWhen_compatibilityRevoked()
         public
     {
         address to = makeAddr("to-nonv1");
         bytes32 commitment = bytes32(uint256(1));
         uint256 fee = harness.creationFee();
 
-        vm.expectRevert(IWalletFactory.NotV1Commitment.selector);
+        vm.prank(ADMIN);
+        harness.setV1Compatibility(address(mockImpl), false);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IWalletFactory.ImplementationNotV1Compatible.selector,
+                address(mockImpl).codehash
+            )
+        );
         harness.deploySpecificWalletProxy{value: fee}(
             commitment,
             mockIndex,

@@ -36,7 +36,12 @@ import {WalletFactoryStorage as Storage} from "./storage/WalletFactoryStorage.so
 ///         (`WalletFactoryStorage`) whose layout is append-only across upgrades.
 ///         The owner is expected to be a post-quantum wallet; upgrades are
 ///         authorized by `onlyOwner` and thus PQ-secured upstream.
-contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializable {
+contract WalletFactory is
+    IWalletFactory,
+    Ownable,
+    UUPSUpgradeable,
+    Initializable
+{
     using EnumerableSetLib for EnumerableSetLib.Bytes32Set;
 
     /// @inheritdoc IWalletFactory
@@ -88,7 +93,10 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
-    function setV1Compatibility(address impl, bool compatible) external onlyOwner {
+    function setV1Compatibility(
+        address impl,
+        bool compatible
+    ) external onlyOwner {
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = impl.codehash;
         if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
@@ -149,7 +157,13 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         Storage.Layout storage $ = Storage.layout();
         bytes32 codehash = $.vettedCode.at(index);
         if ($.deprecatedImpls[codehash]) revert ImplementationDeprecated();
-        return _deployProxy($.vettedWalletImpls[codehash], commitment, to, payload);
+        return
+            _deployProxy(
+                $.vettedWalletImpls[codehash],
+                commitment,
+                to,
+                payload
+            );
     }
 
     /// @inheritdoc IWalletFactory
@@ -289,7 +303,9 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     }
 
     /// @inheritdoc IWalletFactory
-    function getCommitmentCount(address owner_) external view returns (uint256) {
+    function getCommitmentCount(
+        address owner_
+    ) external view returns (uint256) {
         return Storage.layout().commitments[owner_].length();
     }
 
@@ -389,10 +405,12 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
             revert ImplementationNotV1Compatible(codehash);
         }
 
-        // CREATE3 salt is the commitment.
-        // Reject any commitment that is not a V01-shaped identity salt. The wallet separately proves
-        // the salt's tail binds its own key-set; the factory rejects a malformed prefix at the door.
-        address contractAddr = CREATE3.deployDeterministic(proxyInitcode, commitment);
+        // CREATE3 salt is the full-width identity commitment. The certified implementation
+        // recomputes and validates it during initialization.
+        address contractAddr = CREATE3.deployDeterministic(
+            proxyInitcode,
+            commitment
+        );
 
         // Publish the reverse `commitmentOf` entry (also the `OnlyWallet` gate for the ownership
         // callback) BEFORE the call, keyed by address.

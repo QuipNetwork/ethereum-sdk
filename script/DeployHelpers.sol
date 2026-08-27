@@ -7,9 +7,21 @@ import {Script, console} from "forge-std-1.14.0/Script.sol";
 /// interface so this generic helper carries no WOTSPlus-linked dependency.
 interface IVettingFactory {
     function vetImplementation(address impl) external;
-    function getVettedCodeIndex(bytes32 codehash) external view returns (uint256);
+
+    function setV1Compatibility(address impl, bool compatible) external;
+
+    function v1CompatibleImplementations(
+        bytes32 codehash
+    ) external view returns (bool);
+
+    function getVettedCodeIndex(
+        bytes32 codehash
+    ) external view returns (uint256);
+
     function getVettedCodeCount() external view returns (uint256);
+
     function owner() external view returns (address);
+
     function latestWalletImpl() external view returns (address);
 }
 

@@ -84,11 +84,9 @@ library ShrincsWalletCodec {
     bytes32 internal constant V1_IDENTITY_DOMAIN =
         keccak256("QUIP_SHRINCS_IDENTITY_V1");
 
-    /// @dev The identity-binding V1 commitment: 32 bytes =
-    ///      `V1_PREFIX(4) ‖ v1CommitmentTail(28)`. Binds the commitment to the
-    ///      stateful/stateless public-key commitments and the intended owner, so the
-    ///      counterfactual address is a function of the wallet's identity. Mirrors
-    ///      the SDK identity helper byte-for-byte.
+    /// @dev Full-width identity commitment binding both key commitments and the intended
+    ///      owner. The version domain lives inside the hash preimage so all 256 output bits
+    ///      retain second-preimage strength. Mirrors the SDK helper byte-for-byte.
     function v1Commitment(
         bytes32 statefulC,
         bytes32 statelessC,
@@ -96,12 +94,7 @@ library ShrincsWalletCodec {
     ) internal pure returns (bytes32) {
         return
             keccak256(
-                abi.encode(
-                    V1_IDENTITY_DOMAIN,
-                    statefulC,
-                    statelessC,
-                    owner
-                )
+                abi.encode(V1_IDENTITY_DOMAIN, statefulC, statelessC, owner)
             );
     }
 
@@ -338,7 +331,10 @@ library ShrincsWalletCodec {
                 let pkOff := calldataload(o)
                 let sigOff := calldataload(add(o, 0x20))
                 let eo := calldataload(add(o, 0x40))
-                if and(tail(pkOff, len), and(tail(sigOff, len), tail(eo, len))) {
+                if and(
+                    tail(pkOff, len),
+                    and(tail(sigOff, len), tail(eo, len))
+                ) {
                     let ecLen := calldataload(add(o, eo))
                     // The ecdsaSig bytes must fit: eo + 0x20 + ecLen <= len. `eo <= len - 0x20`
                     // was just proven, so `sub(sub(len, 0x20), eo)` cannot underflow.

@@ -89,19 +89,12 @@ const SHRINCS_SUPPORTED_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
   CHAIN_IDS.MIDL_TESTNET,
 ]);
 
-/// The 4-byte marker (ASCII "QV01", `0x51563031`) that prefixes a V1 commitment.
-/// Mirrors the Solidity `V1_PREFIX`. A salt carrying this prefix is a
-/// commitment-identity salt whose low 28 bytes are `v1CommitmentTail`.
+/// Domain separator committed inside the full-width V1 identity hash.
+/// MUST match Solidity `keccak256("QUIP_SHRINCS_IDENTITY_V1")` byte-for-byte.
 export const V1_IDENTITY_DOMAIN = keccak256(toHex("QUIP_SHRINCS_IDENTITY_V1"));
 
-/// keccak bytes [4..32) of `keccak256(abi.encode(statefulC, statelessC, owner))`.
-/// MUST match on-chain `ShrincsWalletCodec.v1CommitmentTail` byte-for-byte.
-
-/// The identity-binding V1 commitment: 32 bytes =
-/// `V1_PREFIX(4) ‖ v1CommitmentTail(28)`. Binds the commitment to the
-/// stateful/stateless public-key commitments and the intended owner, so the
-/// counterfactual address is a function of the wallet's identity. MUST match the
-/// on-chain `ShrincsWalletCodec.v1Commitment` byte-for-byte.
+/// Full-width identity commitment binding both key commitments and the intended owner.
+/// MUST match on-chain `ShrincsWalletCodec.v1Commitment` byte-for-byte.
 export function v1Commitment(
   statefulC: Hex,
   statelessC: Hex,
@@ -138,7 +131,10 @@ export function getShrincsWalletAddress(
 
 /// Registry keyed by chain id, with a deterministic `default` entry shared by
 /// every chain (CREATE3 addresses are chain-independent).
-export const NETWORK_ADDRESSES: Record<number | "default", ShrincsNetworkAddresses> = {
+export const NETWORK_ADDRESSES: Record<
+  number | "default",
+  ShrincsNetworkAddresses
+> = {
   default: {
     EntryPoint: CANONICAL_ENTRYPOINT_V07,
     ShrincsWalletImplementation: SHRINCS_WALLET_IMPLEMENTATION,
@@ -159,6 +155,7 @@ export const NETWORK_ADDRESSES: Record<number | "default", ShrincsNetworkAddress
 export function getShrincsAddresses(chainId?: number): ShrincsNetworkAddresses {
   if (chainId === undefined) return NETWORK_ADDRESSES.default;
   if (chainId in NETWORK_ADDRESSES) return NETWORK_ADDRESSES[chainId];
-  if (SHRINCS_SUPPORTED_CHAIN_IDS.has(chainId)) return NETWORK_ADDRESSES.default;
+  if (SHRINCS_SUPPORTED_CHAIN_IDS.has(chainId))
+    return NETWORK_ADDRESSES.default;
   throw new UnsupportedNetworkError(chainId);
 }

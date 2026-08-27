@@ -10,7 +10,7 @@ import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWallet} from "../contracts/shrincs/ShrincsWallet.sol";
 import {DeployConstants} from "./Constants.sol";
 import {CreateXHelpers} from "./CreateXHelpers.sol";
-import {DeployHelpers} from "./DeployHelpers.sol";
+import {DeployHelpers, IVettingFactory} from "./DeployHelpers.sol";
 
 /**
  * @title DeployShrincsBase
@@ -35,10 +35,13 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
     /// verifier's constant `PROFILE_TAG()` and require it to match this
     /// build's profile.
     function _requireExpectedVerifierScheme() internal view {
-        _requireExists(DeployConstants.SHRINCS_EXTERNAL_VERIFIER, "SHRINCS256sKeccak");
+        _requireExists(
+            DeployConstants.SHRINCS_EXTERNAL_VERIFIER,
+            "SHRINCS256sKeccak"
+        );
         require(
-            SHRINCS256sKeccak(DeployConstants.SHRINCS_EXTERNAL_VERIFIER).PROFILE_TAG()
-                == SHRINCSParams.PROFILE_ID,
+            SHRINCS256sKeccak(DeployConstants.SHRINCS_EXTERNAL_VERIFIER)
+                .PROFILE_TAG() == SHRINCSParams.PROFILE_ID,
             "SHRINCS verifier scheme mismatch"
         );
     }
@@ -58,12 +61,22 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
     /// emitted by `scripts/gen-shrincs-paymaster-verifier.mjs`.
     /// `SHRINCS_VERIFIER_HASH_SUITE` defaults to `HASH_SUITE_KECCAK_256` (the only
     /// suite the on-chain library verifies).
-    function _shrincsVerifierFromEnv() internal view returns (ShrincsVerifier memory v) {
+    function _shrincsVerifierFromEnv()
+        internal
+        view
+        returns (ShrincsVerifier memory v)
+    {
         v = ShrincsVerifier({
             paymasterOwner: vm.envAddress("SHRINCS_PAYMASTER_OWNER"),
-            publicKey: abi.decode(vm.envBytes("SHRINCS_VERIFIER_PUBLIC_KEY"), (SHRINCS.PublicKey)),
+            publicKey: abi.decode(
+                vm.envBytes("SHRINCS_VERIFIER_PUBLIC_KEY"),
+                (SHRINCS.PublicKey)
+            ),
             hashSuite: uint32(
-                vm.envOr("SHRINCS_VERIFIER_HASH_SUITE", uint256(HashSuite.HASH_SUITE_ID))
+                vm.envOr(
+                    "SHRINCS_VERIFIER_HASH_SUITE",
+                    uint256(HashSuite.HASH_SUITE_ID)
+                )
             )
         });
     }
@@ -72,10 +85,11 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
     /// `latestWalletImpl` to this impl — the intended end state of a fresh
     /// deploy now that the WOTS+ family is sunset. (The Shrincs SDK always
     /// uses `deploySpecificWalletProxy`, so it is order-independent anyway.)
-    function _deployShrincsImplAndVet(address operator, uint256 pk, address factory)
-        internal
-        returns (address impl)
-    {
+    function _deployShrincsImplAndVet(
+        address operator,
+        uint256 pk,
+        address factory
+    ) internal returns (address impl) {
         _requireExists(factory, "WalletFactory");
         _requireExpectedVerifierScheme();
         bytes memory code = abi.encodePacked(
@@ -83,20 +97,34 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
             abi.encode(factory, DeployConstants.SHRINCS_EXTERNAL_VERIFIER)
         );
         impl = _createXDeploy(
-            operator, pk, code, DeployConstants.shrincsWalletSalt(), "ShrincsWallet"
+            operator,
+            pk,
+            code,
+            DeployConstants.shrincsWalletSalt(),
+            "ShrincsWallet"
         );
         _vetIfNeeded(factory, pk, impl, "ShrincsWallet");
+        IVettingFactory f = IVettingFactory(factory);
+        if (!f.v1CompatibleImplementations(impl.codehash)) {
+            vm.startBroadcast(pk);
+            f.setV1Compatibility(impl, true);
+            vm.stopBroadcast();
+        }
     }
 
-    function _deployShrincsPaymaster(address operator, uint256 pk, ShrincsVerifier memory v)
-        internal
-        returns (address proxy)
-    {
+    function _deployShrincsPaymaster(
+        address operator,
+        uint256 pk,
+        ShrincsVerifier memory v
+    ) internal returns (address proxy) {
         require(v.paymasterOwner != address(0), "SHRINCS paymaster owner zero");
         // Shallow shape check only: `initialize` performs the deep validation
         // (embedded-commitment recompute + budget decode) during forge's
         // pre-broadcast simulation, so a malformed bundle fails before any tx.
-        require(v.publicKey.publicKeyCommitment.length == 32, "SHRINCS verifier public key malformed");
+        require(
+            v.publicKey.publicKeyCommitment.length == 32,
+            "SHRINCS verifier public key malformed"
+        );
         _requireExpectedVerifierScheme();
 
         bytes memory implCode = abi.encodePacked(
@@ -114,8 +142,10 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
             ShrincsPaymaster.initialize,
             (v.paymasterOwner, v.publicKey, v.hashSuite)
         );
-        bytes memory proxyCode =
-            abi.encodePacked(type(ERC1967Proxy).creationCode, abi.encode(impl, initData));
+        bytes memory proxyCode = abi.encodePacked(
+            type(ERC1967Proxy).creationCode,
+            abi.encode(impl, initData)
+        );
         proxy = _createXDeploy(
             operator,
             pk,
