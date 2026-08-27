@@ -16,58 +16,101 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { type Hex } from "viem";
-import type {
-  ActionContext as RawActionContext,
-  ForsEntry as RawForsEntry,
-  ForsSignature as RawForsSignature,
-  HypertreeLayerSignature as RawHypertreeLayerSignature,
-  RotationContext as RawRotationContext,
-  RotationTarget as RawRotationTarget,
-  ShrincsPublicKey as RawShrincsPublicKey,
-  StatefulRotationTarget as RawStatefulRotationTarget,
-  StatefulSignature as RawStatefulSignature,
-  StatelessSignature as RawStatelessSignature,
-  WotsCSignature as RawWotsCSignature,
-} from "@quip.network/hashsigs-wasm";
 
-/// Re-types every string leaf of a wasm DTO as viem `Hex`, preserving
-/// structure; numbers/booleans pass through. Sound for the DTOs below:
-/// every string leaf the wasm emits in them is 0x-prefixed lowercase hex
-/// (audited upstream in hashsigs-ts internal/keys.ts; re-asserted at
-/// runtime by tests/hashsigsBoundary.test.ts). Do NOT apply to the module
-/// surface — e.g. `version()` returns a non-hex string.
-export type DeepHex<T> = T extends string
-  ? Hex
-  : T extends readonly (infer U)[]
-    ? DeepHex<U>[]
-    : T extends object
-      ? { [K in keyof T]: DeepHex<T[K]> }
-      : T;
-
-// The SDK's public data shapes — upstream's shapes, Hex-leaved. Upstream
-// changes (new/renamed fields) flow through automatically on version bump.
+// The SDK's public data shapes, mirroring the on-chain SHRINCS structs
+// (`SHRINCS.PublicKey`, `SHRINCS.Signature`, `SPHINCSPlusC.Signature`, and
+// the canonical context structs) with Hex leaves.
+//
+// Through hashsigs-wasm 0.2.0-rc.2 these were derived from the wasm
+// package's hex-string DTO types via a DeepHex mapped type. The current
+// hashsigs-wasm (0.2.1) exchanges opaque `Uint8Array` ABI envelopes instead
+// and ships no hex DTOs, so the SDK owns the canonical shapes and
+// shrincsSigner.ts converts at the wasm boundary
+// (`decodeStatefulEnvelope` / `decodeStatelessSignature`).
+//
 // SDK invariant note: for StatefulSignature, `authPath.length === leaf`
 // (checked by the on-chain verifier for anti-replay).
-export type ShrincsPublicKey = DeepHex<RawShrincsPublicKey>;
-export type StatefulSignature = DeepHex<RawStatefulSignature>;
-export type StatelessSignature = DeepHex<RawStatelessSignature>;
-export type ForsSignature = DeepHex<RawForsSignature>;
-export type ForsEntry = DeepHex<RawForsEntry>;
-export type WotsCSignature = DeepHex<RawWotsCSignature>;
-export type HypertreeLayerSignature = DeepHex<RawHypertreeLayerSignature>;
-export type ActionContext = DeepHex<RawActionContext>;
-export type RotationContext = DeepHex<RawRotationContext>;
-export type StatefulRotationTarget = DeepHex<RawStatefulRotationTarget>;
-export type RotationTarget = DeepHex<RawRotationTarget>;
 
-// The wasm module + live-keypair handle types, re-exported from upstream
-// verbatim. rc.2 exports WasmShrincsKeypair directly, so this is a clean
-// re-export — no ReturnType<shrincsKeygen> proxy. These describe the RAW
-// wasm surface (hex leaves typed `string`); SDK code downcasts at each output
-// site (see shrincsSigner.ts). The Hex-typed DTO aliases above are what the
-// rest of the SDK uses. Upstream signature changes now surface as compile
-// errors at the call sites.
-export type {
-  ShrincsWasmModule,
-  WasmShrincsKeypair,
-} from "@quip.network/hashsigs-wasm";
+export interface ShrincsPublicKey {
+  /// 68 bytes: stateful `pkSeed ‖ root ‖ maxSignatures(u32 BE)`.
+  statefulPublicKey: Hex;
+  /// The 32-byte installed-key commitment (the on-chain bundle identity).
+  publicKeyCommitment: Hex;
+  /// Stateless (SPHINCS+C) public seed.
+  pkSeed: Hex;
+  /// Stateless hypertree root.
+  hypertreeRoot: Hex;
+}
+
+export interface StatefulSignature {
+  randomizer: Hex;
+  counter: number;
+  chains: Hex[];
+  authPath: Hex[];
+}
+
+export interface WotsCSignature {
+  randomizer: Hex;
+  counter: number;
+  chains: Hex[];
+}
+
+export interface ForsEntry {
+  secretLeaf: Hex;
+  authPath: Hex[];
+}
+
+export interface ForsSignature {
+  randomizer: Hex;
+  counter: number;
+  entries: ForsEntry[];
+}
+
+export interface HypertreeLayerSignature {
+  wotsCPkHash: Hex;
+  wotsCSignature: WotsCSignature;
+  authPath: Hex[];
+}
+
+export interface StatelessSignature {
+  fors: ForsSignature;
+  hypertree: HypertreeLayerSignature[];
+}
+
+export interface ActionContext {
+  domainSeparator: Hex;
+  nonce: Hex;
+  keyVersion: Hex;
+  actionType: Hex;
+  payloadHash: Hex;
+}
+
+export interface RotationContext {
+  domainSeparator: Hex;
+  nonce: Hex;
+  keyVersion: Hex;
+}
+
+/// Stateful-only rotation target (`rotateKey`): the incoming stateful
+/// sub-key plus the commitment of the bundle it forms with the CURRENT
+/// stateless half.
+export interface StatefulRotationTarget {
+  statefulPublicKey: Hex;
+  publicKeyCommitment: Hex;
+}
+
+/// Full rotation target = the incoming bundle's public key (`recoverWallet` /
+/// `transferOwnership`). Structurally a ShrincsPublicKey; kept as its own
+/// name because the contracts type them separately.
+export interface RotationTarget {
+  statefulPublicKey: Hex;
+  publicKeyCommitment: Hex;
+  pkSeed: Hex;
+  hypertreeRoot: Hex;
+}
+
+// The wasm module type, re-exported from upstream verbatim. This describes
+// the RAW wasm surface (Uint8Array in/out); the Hex-typed DTOs above are
+// what the rest of the SDK uses. Upstream signature changes surface as
+// compile errors at the shrincsSigner.ts call sites.
+export type { ShrincsWasmModule } from "@quip.network/hashsigs-wasm";

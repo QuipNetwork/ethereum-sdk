@@ -94,6 +94,11 @@ export type {
   RotationTarget,
 } from "./types.js";
 
-// WASM loader (advanced; most callers go through `ShrincsSigner`).
-export { loadShrincsWasm } from "@quip.network/hashsigs-wasm";
-export type { ShrincsWasmModule, WasmShrincsKeypair } from "./types.js";
+// WASM loader (advanced; most callers go through `ShrincsSigner`), plus the
+// envelope decoders for consumers working with raw wasm signature bytes.
+export {
+  loadShrincsWasm,
+  decodeStatefulEnvelope,
+  decodeStatelessSignature,
+} from "@quip.network/hashsigs-wasm";
+export type { ShrincsWasmModule } from "./types.js";
