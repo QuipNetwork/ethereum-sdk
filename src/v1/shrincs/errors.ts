@@ -84,6 +84,25 @@ export class ShrincsKeyDerivationSelfTestError extends QuipError {
   }
 }
 
+/// A QUIP HD derivation input was invalid (seed too short, index out of the
+/// hardened range, or a malformed path component).
+export class ShrincsHdDerivationError extends QuipError {
+  constructor(message: string, opts?: QuipErrorOptions) {
+    super("SHRINCS_HD_DERIVATION_INVALID", message, opts);
+  }
+}
+
+/// A BIP-39 mnemonic failed wordlist or checksum validation.
+export class ShrincsInvalidMnemonicError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_MNEMONIC",
+      "mnemonic failed BIP-39 wordlist/checksum validation",
+      opts
+    );
+  }
+}
+
 /// The paymaster sponsorship key's commitment does not match the verifier
 /// registered on chain — signing would be rejected. Caught client-side before
 /// any signature is produced.
