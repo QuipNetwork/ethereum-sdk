@@ -111,11 +111,44 @@ export interface LeafRevokedEvent {
   keyVersion: bigint;
 }
 
+// `LeafRevoked` and `LeafRevocationSkipped` are emitted by BOTH the wallet and
+// the paymaster (each consumes stateful leaves). Decode under both ABIs and
+// dedup: when the two ABIs share the event signature a single physical log
+// decodes under both, so it must be kept once; if the ABIs ever diverge, each
+// log decodes only under its emitter's ABI, so both sources stay covered
+// instead of one silently misparsing under the other's ABI.
+//
+// The dedup key is the log's full on-chain identity (emitter, position, and raw
+// payload), not just (address, logIndex): a re-decode of one physical log has an
+// identical identity and collapses, while two genuinely distinct emissions keep
+// their own entries even when a synthetic source reuses a logIndex.
+function mergeLeafLogs(
+  ...groups: readonly {
+    address: Address;
+    logIndex: number | null;
+    data: Hex;
+    topics: readonly Hex[];
+    args: { leaf: number | bigint; keyVersion: bigint };
+  }[][]
+): LeafRevokedEvent[] {
+  const seen = new Set<string>();
+  const out: LeafRevokedEvent[] = [];
+  for (const group of groups) {
+    for (const l of group) {
+      const key = `${l.address}:${l.logIndex}:${l.data}:${l.topics.join(",")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ leaf: Number(l.args.leaf), keyVersion: l.args.keyVersion });
+    }
+  }
+  return out;
+}
+
 export function parseLeafRevoked(src: LogSource): LeafRevokedEvent[] {
-  return walletLogs(src, "LeafRevoked").map((l) => ({
-    leaf: Number(l.args.leaf),
-    keyVersion: l.args.keyVersion,
-  }));
+  return mergeLeafLogs(
+    walletLogs(src, "LeafRevoked"),
+    paymasterLogs(src, "LeafRevoked")
+  );
 }
 
 export interface LeafRevocationSkippedEvent {
@@ -126,10 +159,10 @@ export interface LeafRevocationSkippedEvent {
 export function parseLeafRevocationSkipped(
   src: LogSource
 ): LeafRevocationSkippedEvent[] {
-  return walletLogs(src, "LeafRevocationSkipped").map((l) => ({
-    leaf: Number(l.args.leaf),
-    keyVersion: l.args.keyVersion,
-  }));
+  return mergeLeafLogs(
+    walletLogs(src, "LeafRevocationSkipped"),
+    paymasterLogs(src, "LeafRevocationSkipped")
+  );
 }
 
 export interface ExecutionSucceededEvent {

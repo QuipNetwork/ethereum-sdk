@@ -87,7 +87,7 @@ library ShrincsWalletStorage {
     ///      `_LEAF_STATE_SLOT`. The
     ///      `usedStatefulLeafBitmap` mapping occupies the next slot and is intentionally NOT
     ///      one of the guarded slots (see its field comment).
-    bytes32 internal constant _PQ_FACTORY_SLOT =
+    bytes32 internal constant _SHRINCS_FACTORY_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
     bytes32 internal constant _SHRINCS_COMMITMENT_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01;

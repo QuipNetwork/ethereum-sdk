@@ -301,7 +301,7 @@ export function parseWalletDeployed(src: LogSource): WalletDeployedEvent[] {
   }).map((l) => ({
     amount: l.args.amount,
     when: l.args.when,
-    vaultId: l.args.vaultId,
+    vaultId: l.args.commitment,
     creator: l.args.creator,
     implementation: l.args.implementation,
     quip: l.args.quip,

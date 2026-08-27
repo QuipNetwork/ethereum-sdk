@@ -14,7 +14,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { type Address, type Hex, concat, keccak256, toBytes, toHex } from "viem";
+import { type Address, type Hex, concat, keccak256, toHex } from "viem";
 
 // The ERC-4337 v0.7 userOp plumbing (packed type, gas-limit packing, the
 // canonical userOpHash) is signature-scheme-agnostic, so the Shrincs SDK reuses
@@ -27,6 +27,8 @@ import {
 } from "../userOpCodec.js";
 import {
   ACTION_ERC4337_EXECUTE,
+  ACTION_PAYMASTER_APPROVE,
+  PAYMASTER_DOMAIN_TAG,
   buildActionContext,
   domainSeparator,
   encodeSponsorshipSignature,
@@ -44,12 +46,7 @@ import { type ShrincsKeyPair } from "./shrincsSigner.js";
 import { type ShrincsPublicKey, type StatefulSignature } from "./types.js";
 
 export { type PackedUserOperation, computeUserOpHash } from "../userOpCodec.js";
-
-/// Paymaster sponsorship domain/action (mirror `ShrincsPaymaster.sol`).
-export const PAYMASTER_DOMAIN_TAG = keccak256(toBytes("quip-shrincs-paymaster-v1"));
-export const ACTION_PAYMASTER_APPROVE = keccak256(
-  toBytes("quip.shrincs.action.paymasterApprove")
-);
+export { PAYMASTER_DOMAIN_TAG, ACTION_PAYMASTER_APPROVE };
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                      USEROP BUILDING                        */

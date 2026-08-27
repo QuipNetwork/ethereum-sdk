@@ -25,9 +25,10 @@
  *
  *   - LIVE contracts (WalletFactory, ShrincsWallet, ShrincsPaymaster)
  *     deploy straight through CreateX with SENDER-GUARDED salts — the
- *     address is f(CreateX, DEPLOY_OPERATOR, salt preimage), identical
- *     on every chain for the same operator. `DEPLOY_OPERATOR` is
- *     REQUIRED: there is no canonical live address without it.
+ *     address is f(CreateX, operator, salt preimage), identical on every
+ *     chain for the same operator. The operator is PINNED as
+ *     `CANONICAL_OPERATOR` below; a `DEPLOY_OPERATOR` env var that
+ *     disagrees with it is rejected rather than silently honoured.
  *   - SUNSET WOTS+-era contracts (WOTSPlus, WOTSPlusImplementation,
  *     QuipPaymaster) keep their historical derivation through the
  *     deprecated `Deployer` (itself CreateX-deployed on an unguarded
@@ -39,24 +40,31 @@
  *
  * Usage:
  *   forge build
- *   DEPLOY_OPERATOR=0x... npm run release   # or: make release
+ *   npm run release   # or: make release
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import {
-  concatHex,
   encodeAbiParameters,
   getAddress,
-  getContractAddress,
-  getCreate2Address,
   isAddress,
   keccak256,
-  padHex,
   toHex,
   type Address,
   type Hex,
 } from "viem";
+// The sender-guarded derivation lives in ONE place, shared with the SDK test
+// that re-derives the published registry (src/v1/internal/createxSalts.ts).
+import {
+  CANONICAL_OPERATOR,
+  CREATEX_ADDRESS,
+  LIVE_SALT_PREIMAGES,
+  computeCreate3Address,
+  senderGuardedAddress,
+  senderGuardedRawSalt,
+  senderGuardedSalt,
+} from "../src/v1/internal/createxSalts.js";
 
 // Anchor every path on the project root. `npm run release` and `make
 // release` both invoke this script from the package root, so `cwd()`
@@ -67,55 +75,35 @@ const OUT_DIR = path.join(ROOT, "out");
 const BYTECODE_DIR = path.join(ROOT, "deployments/bytecode");
 const ADDRESSES_FILE = path.join(ROOT, "src/v1/addresses.json");
 
-// CreateX singleton (https://github.com/pcaversaccio/createx) — the live
-// system's only deploy dependency. Live contracts deploy through its
-// sender-guarded CREATE3 path; it also (historically) bootstrapped the
-// now-deprecated Quip `Deployer` via an unguarded salt.
-const CREATEX_ADDRESS: Address = "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed";
-
-// The deploy operator. Live canonical addresses are a FUNCTION of this
-// address (sender-guarded salts), so the release cannot be computed
-// without it. Must match the `DEPLOY_OPERATOR` used by the Solidity
-// deploy scripts.
+// The deploy operator. Live canonical addresses are a FUNCTION of this address
+// (sender-guarded salts), and the value is PINNED as `CANONICAL_OPERATOR` in
+// the shared derivation module, mirroring `DeployConstants.CANONICAL_OPERATOR`.
+// A release computed for the wrong operator would rewrite `addresses.json` with
+// a plausible-looking, entirely wrong address set. `DEPLOY_OPERATOR` may still
+// be supplied (the Makefile sets it) but must AGREE.
 const DEPLOY_OPERATOR: Address = (() => {
   const raw = process.env.DEPLOY_OPERATOR;
-  if (!raw || !isAddress(raw)) {
+  if (raw === undefined || raw === "") return CANONICAL_OPERATOR;
+  if (!isAddress(raw)) {
+    throw new Error(`DEPLOY_OPERATOR is not a valid address: ${raw}`);
+  }
+  if (getAddress(raw) !== CANONICAL_OPERATOR) {
     throw new Error(
-      "DEPLOY_OPERATOR env var is required (checksummed 0x address). " +
-        "Live canonical addresses (WalletFactory, Shrincs*) are sender-guarded " +
-        "CreateX CREATE3 deployments — they are a function of the operator address.",
+      `DEPLOY_OPERATOR (${getAddress(raw)}) disagrees with the pinned ` +
+        `CANONICAL_OPERATOR (${CANONICAL_OPERATOR}). Live canonical addresses ` +
+        "(WalletFactory, Shrincs*) are a function of the operator — releasing " +
+        "under a different one publishes a wrong address set. Update the pin " +
+        "here and in script/Constants.sol together if the operator changed.",
     );
   }
-  return getAddress(raw);
+  return CANONICAL_OPERATOR;
 })();
 
-// Solady CREATE3 proxy initcode hash:
-// keccak256(hex"67363d3d37363d34f03d5260086018f3").
-const PROXY_INITCODE_HASH: Hex =
-  "0x21c35dbe1b344a2488cf3321d6ce542f8e9f305544ff09e4993a62319a497c1f";
-
 // ── Salts ───────────────────────────────────────────────────────────────
-
-// LIVE salt preimages — mirror script/DeployFactoryBase.sol and
-// script/DeployShrincsBase.sol exactly. The Shrincs implementation salts
-// bind the verifier scheme tag (`SHRINCSParams.PROFILE_ID`, the keccak of
-// the profile name) so an impl built against a different cryptographic
-// scheme structurally lands at a different address.
-const SHRINCS_PROFILE_ID = keccak256(toHex("shrincs-256s-keccak"));
-
-const LIVE_SALT_PREIMAGES = {
-  WalletFactoryImpl: toHex("QUIP:WalletFactory:Impl:V1.0.0-beta"),
-  WalletFactoryProxy: toHex("QUIP:WalletFactory:Proxy:V1.0.0-beta"),
-  ShrincsWalletImplementation: concatHex([
-    toHex("QUIP:ShrincsWallet:V1.1:"),
-    SHRINCS_PROFILE_ID,
-  ]),
-  ShrincsPaymasterImpl: concatHex([
-    toHex("QUIP:ShrincsPaymaster:Impl:V1.1:"),
-    SHRINCS_PROFILE_ID,
-  ]),
-  ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.1"),
-} as const;
+//
+// LIVE salt preimages and the sender-guarded derivation now live in the shared
+// module imported above, so the SDK test that re-derives the published registry
+// exercises the SAME code this release writes it with.
 
 // SUNSET WOTS+-era salts — mirror script/deprecated/DeployerCreate3.sol
 // consumers: keccak256("QUIP:<Name>:<Version>").
@@ -143,44 +131,6 @@ const SALTS = {
     toHex(`QUIP:QuipPaymaster:Proxy:${WOTS_ERA_VERSION}`),
   ),
 } as const;
-
-// ── CREATE3 derivation ──────────────────────────────────────────────────
-
-function computeCreate3Address(deployer: Address, salt: Hex): Address {
-  const proxy = getCreate2Address({
-    from: deployer,
-    salt,
-    bytecodeHash: PROXY_INITCODE_HASH,
-  });
-  return getContractAddress({ from: proxy, nonce: 1n });
-}
-
-// ── Sender-guarded CreateX derivation (live contracts) ──────────────────
-// Mirrors script/CreateXHelpers.sol, pinned against the real CreateX
-// singleton by test/script/Deploy.t.sol:
-//   rawSalt     = bytes20(operator) ‖ 0x00 ‖ bytes11(keccak256(preimage))
-//                 (first 20 bytes == msg.sender → permissioned salt;
-//                  21st byte 0x00 → no chainid, chain-invariant)
-//   guardedSalt = keccak256(bytes32(uint160(operator)) ‖ rawSalt)
-//   address     = CREATE3(CreateX, guardedSalt)
-// NOTE the CreateX API asymmetry: `deployCreate3` consumes the RAW salt
-// (and guards internally); address prediction consumes the GUARDED salt.
-
-function senderGuardedRawSalt(operator: Address, preimage: Hex): Hex {
-  const entropy11 = keccak256(preimage).slice(2, 2 + 22);
-  return `0x${operator.slice(2).toLowerCase()}00${entropy11}` as Hex;
-}
-
-function senderGuardedSalt(operator: Address, rawSalt: Hex): Hex {
-  return keccak256(concatHex([padHex(operator, { size: 32 }), rawSalt]));
-}
-
-function senderGuardedAddress(operator: Address, preimage: Hex): Address {
-  return computeCreate3Address(
-    CREATEX_ADDRESS,
-    senderGuardedSalt(operator, senderGuardedRawSalt(operator, preimage)),
-  );
-}
 
 const FACTORY_IMPL_ADDRESS = senderGuardedAddress(
   DEPLOY_OPERATOR,

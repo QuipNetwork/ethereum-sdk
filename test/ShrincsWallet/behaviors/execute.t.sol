@@ -52,7 +52,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
     function test_execute_revertsWhen_notOwner() public {
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
-        wallet.execute(_mainPk(), _statefulSigWithLeaf(1), TARGET, 0, "", 0);
+        wallet.execute(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), TARGET, 0, "", 0);
     }
 
     function test_execute_revertsWhen_leafZero() public {
@@ -68,10 +68,10 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
     }
 
     function test_execute_revertsWhen_leafAlreadyUsed() public {
-        wallet.harness_markLeafUsed(1);
+        wallet.harness_markLeafUsed(SIGN_BASE + 1);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
-        wallet.execute(_mainPk(), _statefulSigWithLeaf(1), TARGET, 0, "", 0);
+        wallet.execute(_mainPk(), _statefulSigWithLeaf(SIGN_BASE + 1), TARGET, 0, "", 0);
     }
 
     function test_execute_revertsWhen_invalidSignature() public {
@@ -81,7 +81,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.execute(_mainPk(), sig, TARGET, 0, "", 0);
         // The leaf must NOT be consumed on a failed verification.
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on invalid signature");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed on invalid signature");
     }
 
     function test_execute_leafAndNonceConsumedOnly() public {
@@ -91,10 +91,10 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         // outstanding signed authorization.
         SHRINCS.Signature memory sig = _executeSig(TARGET, 0, "", 1);
         vm.expectEmit(true, false, false, true, address(wallet));
-        emit IShrincsWallet.LeafConsumedOnly(1);
+        emit IShrincsWallet.LeafConsumedOnly(SIGN_BASE + 1);
         vm.prank(OWNER);
         wallet.execute(_mainPk(), sig, TARGET, 0, "", 0);
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
@@ -112,7 +112,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.execute(_mainPk(), stale, TARGET, 0, "", 0);
-        assertFalse(wallet.isStatefulLeafUsed(1), "superseded signature's leaf not consumed");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "superseded signature's leaf not consumed");
     }
 
     function test_execute_maxFeeBinding() public {
@@ -123,7 +123,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.execute(_mainPk(), sig, TARGET, 0, "", 999);
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf not consumed on invalid signature");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed on invalid signature");
     }
 
     /// @dev Cap matrix (up): a live fee raised past the signed ceiling reverts
@@ -136,7 +136,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.ExecuteFeeExceedsCap.selector, 999, 0));
         wallet.execute(_mainPk(), sig, TARGET, 0, "", 0);
-        assertFalse(wallet.isStatefulLeafUsed(1), "leaf preserved by the full revert");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf preserved by the full revert");
         assertEq(wallet.actionNonce(), 0, "nonce preserved by the full revert");
     }
 
@@ -170,7 +170,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
 
         assertEq(address(factory).balance - factoryBefore, 0.002 ether, "LIVE fee charged, not the ceiling");
         assertEq(TARGET.balance, 0.5 ether, "value delivered");
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf consumed");
     }
 
     function test_execute_transfersEth() public {
@@ -184,7 +184,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         wallet.execute(_mainPk(), sig, TARGET, 1 ether, "", 0);
 
         assertEq(TARGET.balance - targetBefore, 1 ether, "ETH delivered to target");
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
     }
 
     function test_execute_callsContract() public {
@@ -199,6 +199,6 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         wallet.execute(_mainPk(), sig, callee, 0, hex"1234", 0);
 
         assertTrue(MockCallee(callee).called(), "callee received the call");
-        assertTrue(wallet.isStatefulLeafUsed(1), "leaf 1 consumed");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
     }
 }

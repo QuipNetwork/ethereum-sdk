@@ -44,7 +44,7 @@ contract ShrincsWallet__assertGuardedSlotsUnchanged is ShrincsWalletTest {
         bytes32[8] memory snapshot = wallet.exposed_snapshotGuardedSlots();
         // Consuming a leaf writes the bitmap mapping (an un-guarded keccak-derived slot) AND bumps
         // the packed `statefulLeavesUsed` counter (the guarded leaf-state word, index 7).
-        wallet.harness_markLeafUsed(3);
+        wallet.harness_markLeafUsed(SIGN_BASE + 3);
         // The diff is reported at index 7 only: indices 0-6 are unchanged, so the bitmap mapping
         // write disturbed none of the other guarded slots (it lives outside the guarded set).
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.GuardedSlotTampered.selector, 7));
