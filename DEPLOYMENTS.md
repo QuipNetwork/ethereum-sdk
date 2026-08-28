@@ -2,7 +2,7 @@
 
 ## Live — V1.0.1 generation (Base Sepolia 84532 + OP Sepolia 11155420, deployed 2026-08-27; Base mainnet pending)
 
-### `-beta.2` implementations (spent-tree registries) — PREPARED, broadcast pending
+### `-beta.2` implementations (spent-tree registries) — deployed 2026-08-28 (Base Sepolia + OP Sepolia)
 
 The Shrincs implementations move to `V1.0.1-beta.2` for the spent-tree
 registries fix (a stateful or stateless tree can never be re-installed on a
@@ -15,8 +15,25 @@ operator on the testnets, no re-init). The `-beta.1` wallet impl stays vetted
 code is unchanged, so its impl stays at `-beta.1`. Base mainnet gets the whole
 generation fresh at these same addresses once hashsigs-solidity has deployed
 the V3/V4 verifier pair there (`02` refuses until then — the pinned verifier
-has no code on 8453 as of 2026-08-28). Dry-runs (`--sender`, no broadcast)
-against both testnets simulated exactly this path on 2026-08-28.
+has no code on 8453 as of 2026-08-28).
+
+Broadcast 2026-08-28 from commit `4588879` ("bump salts") with
+`make deploy-shrincs-<chain>`; four txs
+per chain, all in one block, all verified on Etherscan:
+
+- **Base Sepolia (84532)**, block 46054862: wallet impl
+  `0x2398d3cb…6cb9b`, vet `0x624dcb67…1954`, paymaster impl `0xcff1d7a2…6dc7`,
+  proxy `upgradeToAndCall` `0x55c3044b…1efd`.
+- **OP Sepolia (11155420)**, block 48037763: wallet impl `0x806fdc66…bd54`,
+  vet `0xcb5eba7e…03e4`, paymaster impl `0x77c526be…0696`, proxy
+  `upgradeToAndCall` `0x66a1b279…0174`.
+
+Post-state on both chains: the paymaster proxy's ERC-1967 slot reads
+`0x5E4E4003…92d2`, `latestWalletImpl()` is `0x680840c8…4FBC`, and
+`getShrincsVerifier()` is unchanged by the upgrade (commitment
+`0x538c6eb0…07bf`, epoch 0, budget 4096, 0 used). The paymaster impl runtime
+is byte-identical across the two chains; the wallet impl differs only by its
+cached EIP-712 chain-id immutables. Receipts under `broadcast/`.
 
 | | Address |
 |---|---|
@@ -24,8 +41,6 @@ against both testnets simulated exactly this path on 2026-08-28.
 | ShrincsPaymaster impl (`…:Impl:V1.0.1-beta.2:` ‖ `PROFILE_ID`) | `0x5E4E4003118a0F8825494D76E86Db2ed654992d2` |
 | ShrincsWallet impl `-beta.1` (superseded; still vetted) | `0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094` |
 | ShrincsPaymaster impl `-beta.1` (retired; proxy upgraded away) | `0xD0C56265b942160bb4470077f65123EE34E0Ee93` |
-
-_Fill in after broadcast: commit, blocks, tx hashes, verification status._
 
 ### `-beta.1` (initial deploy)
 
