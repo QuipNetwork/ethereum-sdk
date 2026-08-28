@@ -29,11 +29,20 @@ const DERIVATION_INDEX = 7;
 const ERC1271_COMMITMENT = ("0x" + "22".repeat(32)) as Hex;
 const MAX_SIGS = 40;
 
+// A real keypair derived once — the stub signer hands it back from
+// `recoverKeyPair`, because every test estimates with the same
+// (derivationIndex, maxSignatures) and each SHRINCS keygen costs seconds
+// (keygen plus the sign/verify self-test). Same pattern as
+// shrincsFactoryClient.test.ts.
 let signer: ShrincsSigner;
 beforeAll(async () => {
-  signer = await ShrincsSigner.create(
+  const realSigner = await ShrincsSigner.create(
     new TextEncoder().encode("factory-estimate-test")
   );
+  const realKeypair = realSigner.recoverKeyPair(DERIVATION_INDEX, {
+    maxSignatures: MAX_SIGS,
+  });
+  signer = { recoverKeyPair: () => realKeypair } as unknown as ShrincsSigner;
 });
 
 function createParams(

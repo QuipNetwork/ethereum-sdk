@@ -26,7 +26,7 @@ import {
   erc4337PayloadHash,
   statefulRawMessageHash,
 } from "../shrincsCodec.js";
-import { ShrincsSigner } from "../shrincsSigner.js";
+import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import {
   type PackedUserOperation,
   buildUserOp,
@@ -131,6 +131,17 @@ describe("shrincs wallet userOp", () => {
   });
 
   describe("signWalletUserOp", () => {
+    // One shared signing key: every test signs with the same immutable
+    // keypair, and each SHRINCS keygen costs seconds (keygen plus the
+    // sign/verify self-test), so derive it once for the block.
+    let main: ShrincsKeyPair;
+    beforeAll(async () => {
+      const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
+      main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
+        maxSignatures: MAX_SIG,
+      });
+    });
+
     function userOp(callData: Hex): PackedUserOperation {
       return buildUserOp({
         sender: SENDER,
@@ -141,12 +152,7 @@ describe("shrincs wallet userOp", () => {
       });
     }
 
-    it("returns a signature that decodes back to the signing key, with a consistent userOpHash", async () => {
-      const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
-      const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-        maxSignatures: MAX_SIG,
-      });
-
+    it("returns a signature that decodes back to the signing key, with a consistent userOpHash", () => {
       const callData = encodeFunctionData({
         abi: shrincsWalletAbi,
         functionName: "execute",
@@ -196,11 +202,7 @@ describe("shrincs wallet userOp", () => {
       ).toBe(true);
     });
 
-    it("is deterministic for a fixed (userOp, leaf, keyVersion)", async () => {
-      const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
-      const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-        maxSignatures: MAX_SIG,
-      });
+    it("is deterministic for a fixed (userOp, leaf, keyVersion)", () => {
       const op = userOp("0x1234" as Hex);
       const args = {
         keypair: main,
@@ -219,11 +221,7 @@ describe("shrincs wallet userOp", () => {
       expect(a.userOpHash).toBe(b.userOpHash);
     });
 
-    it("binds the wallet action nonce (different actionNonce => different signature)", async () => {
-      const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
-      const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-        maxSignatures: MAX_SIG,
-      });
+    it("binds the wallet action nonce (different actionNonce => different signature)", () => {
       const op = userOp("0x1234" as Hex);
       const base = {
         keypair: main,
@@ -243,15 +241,11 @@ describe("shrincs wallet userOp", () => {
       expect(a.signature).not.toBe(b.signature);
     });
 
-    it("binds maxFee via callData (different maxFee => different userOpHash => different signature)", async () => {
+    it("binds maxFee via callData (different maxFee => different userOpHash => different signature)", () => {
       // No fee word exists in the signed digest anymore — the cap is enforced
       // by callData coverage alone. Two ops identical except for the maxFee
       // calldata arg must produce different userOpHashes, hence different
       // signatures (a relayer cannot substitute a different ceiling).
-      const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
-      const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-        maxSignatures: MAX_SIG,
-      });
       const callDataAt = (maxFee: bigint) =>
         encodeFunctionData({
           abi: shrincsWalletAbi,
@@ -274,11 +268,7 @@ describe("shrincs wallet userOp", () => {
       expect(a.signature).not.toBe(b.signature);
     });
 
-    it("binds the wallet domain separator (different wallet => different signature)", async () => {
-      const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
-      const main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
-        maxSignatures: MAX_SIG,
-      });
+    it("binds the wallet domain separator (different wallet => different signature)", () => {
       const op = userOp("0x" as Hex);
       const base = {
         keypair: main,
