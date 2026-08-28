@@ -16,10 +16,7 @@ contract WalletFactory_withdraw is WalletFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 commitment = keccak256("Fee Vault");
-        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
-
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed1");
 
         vm.prank(ALICE);
         factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(commitment, payable(ALICE), payload);

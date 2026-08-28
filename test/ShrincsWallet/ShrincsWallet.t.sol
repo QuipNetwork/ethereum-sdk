@@ -394,6 +394,100 @@ contract ShrincsWalletTest is Test {
         );
     }
 
+    /*──────────────── malformed init/migrate payloads ────────────────*/
+    /* `initialize` and `migrate` share `_decodeAndValidateInstall`, and each entrypoint pins
+       every rejection separately. These builders keep the corruption logic in one place. */
+
+    /// @dev Valid bundle, but the ERC-1271 commitment is zero.
+    function _zeroErc1271Payload() internal view returns (bytes memory) {
+        SHRINCS.PublicKey memory pk = _mainPk();
+        return _buildInitPayload(
+            mainCommitment,
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            bytes32(0),
+            HashSuite.HASH_SUITE_ID
+        );
+    }
+
+    /// @dev Valid bundle, but the main hash-suite id is unsupported.
+    function _unsupportedHashSuitePayload() internal view returns (bytes memory) {
+        SHRINCS.PublicKey memory pk = _mainPk();
+        return _buildInitPayload(
+            mainCommitment,
+            _toBytes32(pk.pkSeed),
+            pk,
+            SHRINCS.HASH_SUITE_UNSUPPORTED,
+            erc1271Commitment,
+            HashSuite.HASH_SUITE_ID
+        );
+    }
+
+    /// @dev Valid bundle, but the ERC-1271 hash-suite id is unsupported.
+    function _unsupportedErc1271HashSuitePayload() internal view returns (bytes memory) {
+        SHRINCS.PublicKey memory pk = _mainPk();
+        return _buildInitPayload(
+            mainCommitment,
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            erc1271Commitment,
+            SHRINCS.HASH_SUITE_UNSUPPORTED
+        );
+    }
+
+    /// @dev The bundle's EMBEDDED commitment is corrupted, so `validPublicKey` fails its
+    ///      recompute check.
+    function _corruptBundlePayload() internal view returns (bytes memory) {
+        SHRINCS.PublicKey memory pk = _mainPk();
+        pk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-embedded-commitment"));
+        return _buildInitPayload(
+            mainCommitment,
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            erc1271Commitment,
+            HashSuite.HASH_SUITE_ID
+        );
+    }
+
+    /// @dev Valid bundle, but the standalone DECLARED commitment is wrong.
+    function _wrongDeclaredCommitmentPayload() internal view returns (bytes memory) {
+        SHRINCS.PublicKey memory pk = _mainPk();
+        return _buildInitPayload(
+            keccak256("wrong-commitment"),
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            erc1271Commitment,
+            HashSuite.HASH_SUITE_ID
+        );
+    }
+
+    /// @dev Zeroes the trailing 4-byte maxSignatures of the 68-byte stateful key, then recomputes
+    ///      the bundle commitment so the shape/commitment checks pass and the explicit
+    ///      `ZeroMaxSignatures` guard fires.
+    function _zeroMaxSignaturesPayload() internal view returns (bytes memory) {
+        SHRINCS.PublicKey memory pk = _mainPk();
+        bytes memory spk = pk.statefulPublicKey;
+        spk[64] = 0;
+        spk[65] = 0;
+        spk[66] = 0;
+        spk[67] = 0;
+        bytes32 newCommit = SHRINCS.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
+        pk.statefulPublicKey = spk;
+        pk.publicKeyCommitment = abi.encodePacked(newCommit);
+        return _buildInitPayload(
+            newCommit,
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            erc1271Commitment,
+            HashSuite.HASH_SUITE_ID
+        );
+    }
+
     /// @dev Stateful tree identity: keccak256(pkSeed ‖ root) of the 68-byte stateful key.
     function _treeId(bytes memory spk) internal pure returns (bytes32) {
         bytes32 pkSeed;

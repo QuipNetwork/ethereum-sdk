@@ -83,58 +83,25 @@ contract WOTSPlusImplementation_upgradeWithoutMigration is WOTSPlusImplementatio
 
     /// @dev Deploy → execute → upgrade without migration → verify state preserved → resume.
     function test_simulation_upgradeWithoutMigration() public {
-        currentPq = alicePubkey;
-        currentPrivKey = alicePrivateKey;
-
-        // Step 1: Execute a transfer before upgrading
-        {
-            (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) = _generateKeyPair("pre-upgrade-key");
-            uint256 fee = wallet.getExecuteFee();
-            bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, nextPq, BOB, 0.1 ether, "", fee);
-            WOTSPlus.WinternitzElements memory sig = _sign(currentPrivKey, msgHash);
-
-            vm.prank(ALICE);
-            wallet.execute(Codec.encodeExecute(currentPq, nextPq, sig, BOB, 0.1 ether, ""));
-
-            currentPq = nextPq;
-            currentPrivKey = nextPriv;
-        }
-
-        uint256 balBefore = address(wallet).balance;
+        uint256 balBefore;
+        (currentPq, currentPrivKey, balBefore) = _primeUpgradeScenario();
 
         // Step 2: Upgrade without migration
         (WOTSPlus.WinternitzAddress memory upgradedPq, bytes32 upgradedPriv) =
             _doUpgradeWithoutMigration(address(newImpl));
 
         // Step 3: Verify state preserved
-        // 3a: Implementation changed
-        assertEq(wallet.version(), factory.getVettedCodeIndex(address(newImpl).codehash));
+        // pqOwner is the auth's nextPqOwner (no migration override)
+        _assertUpgradePreservedBasics(address(newImpl), upgradedPq, balBefore);
 
-        // 3b: pqOwner is the auth's nextPqOwner (no migration override)
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, upgradedPq));
-
-        // 3c: Recovery keys unchanged (still the original set)
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        // Recovery keys unchanged (still the original set)
         for (uint256 i = 0; i < recoveryPubkeys.length; i++) {
             assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
         }
 
-        // 3d: Balance and owner preserved
-        assertEq(address(wallet).balance, balBefore);
-        assertEq(wallet.owner(), ALICE);
-
         // Step 4: Resume operations with the upgraded key
         currentPq = upgradedPq;
         currentPrivKey = upgradedPriv;
-
-        (WOTSPlus.WinternitzAddress memory postPq,) = _generateKeyPair("post-upgrade-key");
-        uint256 fee = wallet.getExecuteFee();
-        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), currentPq, postPq, BOB, 0.05 ether, "", fee);
-        WOTSPlus.WinternitzElements memory postSig = _sign(currentPrivKey, msgHash);
-
-        uint256 bobBal = BOB.balance;
-        vm.prank(ALICE);
-        wallet.execute(Codec.encodeExecute(currentPq, postPq, postSig, BOB, 0.05 ether, ""));
-        assertEq(BOB.balance, bobBal + 0.05 ether);
+        _resumeExecuteAfterUpgrade(currentPq, currentPrivKey, "post-upgrade-key");
     }
 }

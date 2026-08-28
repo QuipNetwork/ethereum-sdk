@@ -83,18 +83,28 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     // rotation TARGET, so each must reject BEFORE any delegation happens (pinned by the
     // zero-count expectCall).
 
-    function test_recoverWallet_revertsWhen_declaredNextCommitmentMismatch() public {
-        SHRINCS.RotationTarget memory nextKey = _nextKey();
-        SPHINCSPlusC.Signature memory recoverySig =
-            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
-        // Tamper the DECLARED commitment after signing: recompute-vs-declared must trip.
-        nextKey.publicKeyCommitment = abi.encodePacked(keccak256("not-the-recomputed-commitment"));
+    /// @dev Shared act/assert for the tampered-next-key family: the wallet must reject with
+    ///      `InvalidSignature` BEFORE any delegation to the verifier (pinned by the
+    ///      zero-call `expectCall`). Callers tamper `nextKey` between signing and this call.
+    function _expectRecoverRejected(
+        SHRINCS.RotationTarget memory nextKey,
+        SPHINCSPlusC.Signature memory recoverySig
+    ) internal {
         vm.expectCall(
             address(shrincsVerifier), abi.encodeWithSelector(SHRINCSVerifier.verifyStateless.selector), 0
         );
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.recoverWallet(_mainPk(), recoverySig, nextKey);
+    }
+
+    function test_recoverWallet_revertsWhen_declaredNextCommitmentMismatch() public {
+        SHRINCS.RotationTarget memory nextKey = _nextKey();
+        SPHINCSPlusC.Signature memory recoverySig =
+            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        // Tamper the DECLARED commitment after signing: recompute-vs-declared must trip.
+        nextKey.publicKeyCommitment = abi.encodePacked(keccak256("not-the-recomputed-commitment"));
+        _expectRecoverRejected(nextKey, recoverySig);
     }
 
     function test_recoverWallet_revertsWhen_zeroBudgetNextKey() public {
@@ -106,12 +116,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         for (uint256 i = 64; i < 68; i++) {
             nextKey.statefulPublicKey[i] = 0;
         }
-        vm.expectCall(
-            address(shrincsVerifier), abi.encodeWithSelector(SHRINCSVerifier.verifyStateless.selector), 0
-        );
-        vm.prank(OWNER);
-        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.recoverWallet(_mainPk(), recoverySig, nextKey);
+        _expectRecoverRejected(nextKey, recoverySig);
     }
 
     function test_recoverWallet_revertsWhen_badNextKeyFieldWidths() public {
@@ -119,12 +124,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         SPHINCSPlusC.Signature memory recoverySig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         nextKey.pkSeed = new bytes(31); // fixed-width fields keep the rotation preimage canonical
-        vm.expectCall(
-            address(shrincsVerifier), abi.encodeWithSelector(SHRINCSVerifier.verifyStateless.selector), 0
-        );
-        vm.prank(OWNER);
-        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
-        wallet.recoverWallet(_mainPk(), recoverySig, nextKey);
+        _expectRecoverRejected(nextKey, recoverySig);
     }
 
     /*──────────────────── spent-tree tracking ────────────────────*/

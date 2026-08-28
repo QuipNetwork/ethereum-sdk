@@ -65,6 +65,21 @@ contract WOTSPlusImplementation__validateSignature is WOTSPlusImplementationTest
         );
     }
 
+    function _assertValidateSignatureRejectsZeroNextKey(
+        WOTSPlus.WinternitzAddress memory badNext,
+        bytes32 userOpHash
+    ) internal {
+        WOTSPlus.WinternitzElements memory sig; // zero-filled is fine — short-circuits
+        bytes memory sigBytes = Codec.encodeUserOpSignature(currentKey, badNext, sig);
+
+        ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
+        vm.expectEmit(address(harnessProxy));
+        emit IWOTSPlusImplementation.UserOpValidationRejected(IWOTSPlusImplementation.UserOpValidationFailure
+            .ZeroNextKey);
+        uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
+        assertEq(rv, 1);
+    }
+
     function test_exposed_validateSignature_happyPath_returnsZeroAndRotates() public {
         (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("h-vs-next");
 
@@ -90,33 +105,17 @@ contract WOTSPlusImplementation__validateSignature is WOTSPlusImplementationTest
     }
 
     function test_exposed_validateSignature_returnsOneWhen_nextKeyZeroSeed() public {
-        WOTSPlus.WinternitzAddress memory badNext =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(1))});
-        bytes32 userOpHash = keccak256("uo-2");
-        WOTSPlus.WinternitzElements memory sig; // zero-filled is fine — short-circuits
-        bytes memory sigBytes = Codec.encodeUserOpSignature(currentKey, badNext, sig);
-
-        ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
-        vm.expectEmit(address(harnessProxy));
-        emit IWOTSPlusImplementation.UserOpValidationRejected(IWOTSPlusImplementation.UserOpValidationFailure
-            .ZeroNextKey);
-        uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
-        assertEq(rv, 1);
+        _assertValidateSignatureRejectsZeroNextKey(
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(uint256(1))}),
+            keccak256("uo-2")
+        );
     }
 
     function test_exposed_validateSignature_returnsOneWhen_nextKeyZeroHash() public {
-        WOTSPlus.WinternitzAddress memory badNext =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(0)});
-        bytes32 userOpHash = keccak256("uo-3");
-        WOTSPlus.WinternitzElements memory sig;
-        bytes memory sigBytes = Codec.encodeUserOpSignature(currentKey, badNext, sig);
-
-        ERC4337.PackedUserOperation memory op = _makeUserOp(sigBytes);
-        vm.expectEmit(address(harnessProxy));
-        emit IWOTSPlusImplementation.UserOpValidationRejected(IWOTSPlusImplementation.UserOpValidationFailure
-            .ZeroNextKey);
-        uint256 rv = harnessProxy.exposed_validateSignature(op, userOpHash);
-        assertEq(rv, 1);
+        _assertValidateSignatureRejectsZeroNextKey(
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(0)}),
+            keccak256("uo-3")
+        );
     }
 
     function test_exposed_validateSignature_returnsOneWhen_currentKeyAbsent() public {

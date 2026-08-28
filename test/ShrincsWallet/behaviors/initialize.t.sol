@@ -91,107 +91,39 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     }
 
     function test_initialize_revertsWhen_zeroErc1271Commitment() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            bytes32(0), // zero ERC-1271 commitment
-            HashSuite.HASH_SUITE_ID
-        );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.ZeroErc1271Commitment.selector);
-        bare.initialize(payable(OWNER), payload);
+        bare.initialize(payable(OWNER), _zeroErc1271Payload());
     }
 
     function test_initialize_revertsWhen_unsupportedHashSuite() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            SHRINCS.HASH_SUITE_UNSUPPORTED,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
-        bare.initialize(payable(OWNER), payload);
+        bare.initialize(payable(OWNER), _unsupportedHashSuitePayload());
     }
 
     function test_initialize_revertsWhen_unsupportedErc1271HashSuite() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
-            SHRINCS.HASH_SUITE_UNSUPPORTED
-        );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
-        bare.initialize(payable(OWNER), payload);
+        bare.initialize(payable(OWNER), _unsupportedErc1271HashSuitePayload());
     }
 
     function test_initialize_revertsWhen_invalidBundle() public {
-        // Corrupt the bundle's embedded commitment so `validPublicKey` fails its recompute check.
-        SHRINCS.PublicKey memory pk = _mainPk();
-        pk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-embedded-commitment"));
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
-        bare.initialize(payable(OWNER), payload);
+        bare.initialize(payable(OWNER), _corruptBundlePayload());
     }
 
     function test_initialize_revertsWhen_declaredCommitmentMismatch() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        // Valid bundle, but the standalone declared commitment is wrong.
-        bytes memory payload = _buildInitPayload(
-            keccak256("wrong-commitment"),
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
-        bare.initialize(payable(OWNER), payload);
+        bare.initialize(payable(OWNER), _wrongDeclaredCommitmentPayload());
     }
 
     function test_initialize_revertsWhen_zeroMaxSignatures() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        // Zero the trailing 4-byte maxSignatures of the 68-byte stateful key, then recompute the
-        // bundle commitment so the shape/commitment checks pass and the explicit guard fires.
-        bytes memory spk = pk.statefulPublicKey;
-        spk[64] = 0;
-        spk[65] = 0;
-        spk[66] = 0;
-        spk[67] = 0;
-        bytes32 newCommit = SHRINCS.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
-        pk.statefulPublicKey = spk;
-        pk.publicKeyCommitment = abi.encodePacked(newCommit);
-        bytes memory payload = _buildInitPayload(
-            newCommit,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
-
         vm.prank(address(factory));
         vm.expectRevert(IShrincsWallet.ZeroMaxSignatures.selector);
-        bare.initialize(payable(OWNER), payload);
+        bare.initialize(payable(OWNER), _zeroMaxSignaturesPayload());
     }
 
     function test_initialize_revertsWhen_alreadyInitialized() public {

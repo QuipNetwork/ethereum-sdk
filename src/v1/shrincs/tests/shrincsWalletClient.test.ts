@@ -347,16 +347,28 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
     );
   });
 
-  it("rotateKey rejection reserves no leaf (the next call still picks leaf 1)", async () => {
-    const client = makeWalletClient();
-    await expect(
-      client.rotateKey({ nextStatefulPublicKey: keypair.publicKey.statefulPublicKey })
-    ).rejects.toThrow(StatefulTreeSpentError);
-    // markLeavesUsed's own guard forbids authorizing from inside the target set:
-    // if leaf 1 had been reserved by the rejected rotation, the auto-pick would
-    // move to 2 and this would no longer be the in-set collision it asserts.
+  /**
+   * Shared assert for the rejection-reserves-no-leaf family: `call` must be
+   * rejected by the spent-tree pre-flight, and leaf 1 must still be
+   * unreserved afterwards. markLeavesUsed's own guard forbids authorizing
+   * from inside the target set: if leaf 1 had been reserved by the rejected
+   * call, the auto-pick would move to 2 and this would no longer be the
+   * in-set collision it asserts.
+   */
+  const expectRejectionReservesNoLeaf = async (
+    client: ShrincsWalletClient,
+    call: () => Promise<unknown>
+  ) => {
+    await expect(call()).rejects.toThrow(StatefulTreeSpentError);
     await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
       AuthLeafInTargetsError
+    );
+  };
+
+  it("rotateKey rejection reserves no leaf (the next call still picks leaf 1)", async () => {
+    const client = makeWalletClient();
+    await expectRejectionReservesNoLeaf(client, () =>
+      client.rotateKey({ nextStatefulPublicKey: keypair.publicKey.statefulPublicKey })
     );
   });
 
@@ -402,14 +414,8 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
 
   it("transferOwnership rejection reserves no leaf (the next call still picks leaf 1)", async () => {
     const client = makeWalletClient();
-    await expect(
+    await expectRejectionReservesNoLeaf(client, () =>
       client.transferOwnership({ nextKey: keypair.publicKey, newOwner: NEW_OWNER })
-    ).rejects.toThrow(StatefulTreeSpentError);
-    // markLeavesUsed's own guard forbids authorizing from inside the target set:
-    // if leaf 1 had been reserved by the rejected handover, the auto-pick would
-    // move to 2 and this would no longer be the in-set collision it asserts.
-    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
-      AuthLeafInTargetsError
     );
   });
 
@@ -419,15 +425,12 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
       mainBundle: keypair.publicKey,
       erc1271Commitment: ZERO32,
     });
-    await expect(
+    await expectRejectionReservesNoLeaf(client, () =>
       client.upgradeToAndCall({
         newImplementation: WRONG_OWNER,
         shouldMigrate: true,
         migratorPayload,
       })
-    ).rejects.toThrow(StatefulTreeSpentError);
-    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
-      AuthLeafInTargetsError
     );
   });
 

@@ -5,38 +5,39 @@ import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__encodeUserOpSignature is WOTSPlusCodecTest {
-    function test_exposed_encodeUserOpSignature_roundtrip() public view {
+    function _sampleUserOpSignature()
+        internal
+        view
+        returns (
+            WOTSPlus.WinternitzAddress memory cur,
+            WOTSPlus.WinternitzAddress memory nxt,
+            WOTSPlus.WinternitzElements memory sig,
+            bytes memory encoded
+        )
+    {
         bytes memory payload = _buildAuthPrefixPayload(77);
+        (cur, nxt, sig) = codec.exposed_decodeUserOpSignature(payload);
+        encoded = codec.exposed_encodeUserOpSignature(cur, nxt, sig);
+    }
+
+    function test_exposed_encodeUserOpSignature_roundtrip() public view {
         (
             WOTSPlus.WinternitzAddress memory cur,
             WOTSPlus.WinternitzAddress memory nxt,
-            WOTSPlus.WinternitzElements memory sig
-        ) = codec.exposed_decodeUserOpSignature(payload);
-
-        bytes memory encoded = codec.exposed_encodeUserOpSignature(cur, nxt, sig);
+            WOTSPlus.WinternitzElements memory sig,
+            bytes memory encoded
+        ) = _sampleUserOpSignature();
 
         (
             WOTSPlus.WinternitzAddress memory cur2,
             WOTSPlus.WinternitzAddress memory nxt2,
             WOTSPlus.WinternitzElements memory sig2
         ) = codec.exposed_decodeUserOpSignature(encoded);
-        assertEq(cur2.publicSeed, cur.publicSeed);
-        assertEq(cur2.publicKeyHash, cur.publicKeyHash);
-        assertEq(nxt2.publicSeed, nxt.publicSeed);
-        assertEq(nxt2.publicKeyHash, nxt.publicKeyHash);
-        for (uint256 i = 0; i < 67; i++) {
-            assertEq(sig2.elements[i], sig.elements[i]);
-        }
+        _assertEqAuthPrefix(cur2, cur, nxt2, nxt, sig2, sig);
     }
 
     function test_exposed_encodeUserOpSignature_producesCorrectLength() public view {
-        bytes memory payload = _buildAuthPrefixPayload(77);
-        (
-            WOTSPlus.WinternitzAddress memory cur,
-            WOTSPlus.WinternitzAddress memory nxt,
-            WOTSPlus.WinternitzElements memory sig
-        ) = codec.exposed_decodeUserOpSignature(payload);
-        bytes memory encoded = codec.exposed_encodeUserOpSignature(cur, nxt, sig);
+        (,,, bytes memory encoded) = _sampleUserOpSignature();
         assertEq(encoded.length, 2272);
     }
 

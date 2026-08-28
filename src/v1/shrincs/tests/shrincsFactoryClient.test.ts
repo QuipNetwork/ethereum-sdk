@@ -124,14 +124,20 @@ describe("ShrincsFactoryClient.createShrincsWallet", () => {
     erc1271: { commitment: ERC1271_COMMITMENT },
   } as const;
 
-  it("throws TransactionRevertedError when the deploy receipt status is reverted", async () => {
-    const factory = makeFactory({ receiptStatus: "reverted" });
-    await expect(
+  /**
+   * Shared act for the reverted-receipt family: deploys with the standard
+   * params against a mock whose receipt reverts, and asserts the typed error.
+   */
+  const expectRevertedDeploy = (factory: ReturnType<typeof makeFactory>) =>
+    expect(
       factory.createShrincsWallet(createParams, {
         gas: 100_000n,
         skipPreflightChecks: true,
       })
     ).rejects.toThrow(TransactionRevertedError);
+
+  it("throws TransactionRevertedError when the deploy receipt status is reverted", async () => {
+    await expectRevertedDeploy(makeFactory({ receiptStatus: "reverted" }));
   });
 
   it("builds V1 deploy args with commitment from key material and no deploy authorization", async () => {
@@ -142,12 +148,7 @@ describe("ShrincsFactoryClient.createShrincsWallet", () => {
         capturedArgs = args;
       },
     });
-    await expect(
-      factory.createShrincsWallet(createParams, {
-        gas: 100_000n,
-        skipPreflightChecks: true,
-      })
-    ).rejects.toThrow(TransactionRevertedError);
+    await expectRevertedDeploy(factory);
 
     expect(capturedArgs).toBeDefined();
     const args = capturedArgs as unknown[];

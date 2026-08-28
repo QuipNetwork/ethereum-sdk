@@ -62,86 +62,33 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     }
 
     function test_migrate_revertsWhen_zeroErc1271Commitment() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            bytes32(0),
-            HashSuite.HASH_SUITE_ID
-        );
         vm.expectRevert(IShrincsWallet.ZeroErc1271Commitment.selector);
-        wallet.harness_migrateInUpgradeContext(payload);
+        wallet.harness_migrateInUpgradeContext(_zeroErc1271Payload());
     }
 
     function test_migrate_revertsWhen_unsupportedHashSuite() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            SHRINCS.HASH_SUITE_UNSUPPORTED,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
-        wallet.harness_migrateInUpgradeContext(payload);
+        wallet.harness_migrateInUpgradeContext(_unsupportedHashSuitePayload());
+    }
+
+    function test_migrate_revertsWhen_unsupportedErc1271HashSuite() public {
+        vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
+        wallet.harness_migrateInUpgradeContext(_unsupportedErc1271HashSuitePayload());
     }
 
     function test_migrate_revertsWhen_invalidBundle() public {
-        // Corrupt the bundle's embedded commitment so `validPublicKey` fails its recompute check.
-        SHRINCS.PublicKey memory pk = _mainPk();
-        pk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-embedded-commitment"));
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
-        wallet.harness_migrateInUpgradeContext(payload);
+        wallet.harness_migrateInUpgradeContext(_corruptBundlePayload());
     }
 
     function test_migrate_revertsWhen_declaredCommitmentMismatch() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        // Valid bundle, but the standalone declared commitment is wrong.
-        bytes memory payload = _buildInitPayload(
-            keccak256("wrong-commitment"),
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
-        wallet.harness_migrateInUpgradeContext(payload);
+        wallet.harness_migrateInUpgradeContext(_wrongDeclaredCommitmentPayload());
     }
 
     function test_migrate_revertsWhen_zeroMaxSignatures() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        // Zero the trailing 4-byte maxSignatures, then recompute the commitment so the shape/
-        // commitment checks pass and the explicit `ZeroMaxSignatures` guard fires.
-        bytes memory spk = pk.statefulPublicKey;
-        spk[64] = 0;
-        spk[65] = 0;
-        spk[66] = 0;
-        spk[67] = 0;
-        bytes32 newCommit = SHRINCS.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
-        pk.statefulPublicKey = spk;
-        pk.publicKeyCommitment = abi.encodePacked(newCommit);
-        bytes memory payload = _buildInitPayload(
-            newCommit,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
-            HashSuite.HASH_SUITE_ID
-        );
         vm.expectRevert(IShrincsWallet.ZeroMaxSignatures.selector);
-        wallet.harness_migrateInUpgradeContext(payload);
+        wallet.harness_migrateInUpgradeContext(_zeroMaxSignaturesPayload());
     }
 
     /// @dev Proves migrate actually INSTALLS the supplied bundle (not a no-op on existing state):

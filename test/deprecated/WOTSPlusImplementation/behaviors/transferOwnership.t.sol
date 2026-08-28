@@ -95,27 +95,14 @@ contract WOTSPlusImplementation_transferOwnership is WOTSPlusImplementationTest 
 
     function test_transferOwnership_replacesAllThreeKeysets() public {
         // Sanity: original keysets installed in setUp (init populates 10 of each).
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
-        assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[0]));
+        _assertInitialKeysetsFull();
 
         bytes memory payload = _buildPayload(ownershipPubkey, ownershipPrivateKey, newOwnershipKey, BOB, newDisasterKey);
 
         vm.prank(ALICE);
         wallet.transferOwnership(payload);
 
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
-        for (uint256 i = 0; i < 10; i++) {
-            assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i]));
-            assertTrue(wallet.isKey(Codec.KeyType.Transaction, freshTxnKeys[i]));
-            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
-            assertTrue(wallet.isKey(Codec.KeyType.Recovery, freshRecoveryKeys[i]));
-            assertTrue(wallet.isKey(Codec.KeyType.Verification, freshVerificationKeys[i]));
-        }
+        _assertKeysetsReplacedWith(freshTxnKeys, freshRecoveryKeys, freshVerificationKeys);
     }
 
     function test_transferOwnership_rotatesOwnershipKey() public {

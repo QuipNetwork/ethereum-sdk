@@ -46,16 +46,7 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
 
     function test_upgradeToAndCall_upgradesImplementation() public {
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
-        WOTSPlus.WinternitzAddress memory dummyPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
-
-        bytes memory data = _buildUpgradeData(
-            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
-        );
-
-        vm.prank(ALICE);
-        wallet.upgradeToAndCall(address(newImpl), data);
+        _upgradeToNewImplNoMigration(nextPq);
 
         assertEq(wallet.owner(), ALICE);
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
@@ -82,16 +73,7 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
 
     function test_upgradeToAndCall_skipsMigrationWhenFlagUnset() public {
         (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
-        WOTSPlus.WinternitzAddress memory dummyPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
-
-        bytes memory data = _buildUpgradeData(
-            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
-        );
-
-        vm.prank(ALICE);
-        wallet.upgradeToAndCall(address(newImpl), data);
+        _upgradeToNewImplNoMigration(nextPq);
 
         // pqOwner should be nextPq (C-1 rotation, no migration)
         assertTrue(wallet.isKey(Codec.KeyType.Transaction, nextPq));
@@ -299,6 +281,19 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         );
     }
 
+    function _upgradeToNewImplNoMigration(WOTSPlus.WinternitzAddress memory nextPq) internal {
+        bytes memory data = _runUpgradeWithNextPq(nextPq, "verifier");
+        vm.prank(ALICE);
+        wallet.upgradeToAndCall(address(newImpl), data);
+    }
+
+    function _expectUpgradeRevertsZeroNextKey(WOTSPlus.WinternitzAddress memory zeroPq) internal {
+        bytes memory data = _runUpgradeWithNextPq(zeroPq, "verifier");
+        vm.prank(ALICE);
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        wallet.upgradeToAndCall(address(newImpl), data);
+    }
+
     function test_upgradeToAndCall_revertsWhen_nextKeyInRecoverySet() public {
         bytes memory data = _runUpgradeWithNextPq(recoveryPubkeys[2], "verifier-rec");
 
@@ -325,35 +320,15 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
     }
 
     function test_upgradeToAndCall_revertsWhen_nextKeySeedIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32("non-empty")});
-        WOTSPlus.WinternitzAddress memory dummyPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
-
-        bytes memory data = _buildUpgradeData(
-            address(newImpl), alicePrivateKey, alicePubkey, zeroPq, "verifier", false, dummyPq, emptyKeys
+        _expectUpgradeRevertsZeroNextKey(
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32("non-empty")})
         );
-
-        vm.prank(ALICE);
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        wallet.upgradeToAndCall(address(newImpl), data);
     }
 
     function test_upgradeToAndCall_revertsWhen_nextKeyHashIsZero() public {
-        WOTSPlus.WinternitzAddress memory zeroPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32("non-empty"), publicKeyHash: bytes32(0)});
-        WOTSPlus.WinternitzAddress memory dummyPq =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
-        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
-
-        bytes memory data = _buildUpgradeData(
-            address(newImpl), alicePrivateKey, alicePubkey, zeroPq, "verifier", false, dummyPq, emptyKeys
+        _expectUpgradeRevertsZeroNextKey(
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32("non-empty"), publicKeyHash: bytes32(0)})
         );
-
-        vm.prank(ALICE);
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        wallet.upgradeToAndCall(address(newImpl), data);
     }
 
     function test_upgradeToAndCall_revertsWhen_implementationNotVetted() public {

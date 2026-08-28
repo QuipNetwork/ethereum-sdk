@@ -108,6 +108,57 @@ contract WalletFactoryTest is Test {
         }
     }
 
+    /// @dev One-call arrange for deploy-path tests: keypair from `seed`, 10 recovery keys,
+    ///      and the encoded init payload.
+    function _freshInitPayload(
+        bytes32 seed
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress memory pubkey,
+            bytes32 privateKey,
+            bytes memory payload
+        )
+    {
+        (pubkey, privateKey) = _generateKeyPair(seed);
+        payload = _encodeInitPayload(pubkey, _generateRecoveryKeys(privateKey, 10));
+    }
+
+    /// @dev Deploys and vets a second implementation; the vetted set becomes
+    ///      [walletImplementation, impl2] with impl2 the latest.
+    function _vetSecondImpl() internal returns (WOTSPlusImplementation impl2) {
+        impl2 = new WOTSPlusImplementation(payable(address(factory)));
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(impl2));
+    }
+
+    /// @dev The commitment index for `account` is set (deploy registered the commitment).
+    function _assertCommitmentTracked(address account, bytes32 commitment) internal view {
+        assertNotEq(
+            factory.getCommitmentIndex(account, _salt(commitment)),
+            type(uint256).max
+        );
+    }
+
+    /// @dev Full post-deploy state shared by both deploy entrypoints: proxy code exists,
+    ///      factory registries point at the wallet, and the wallet is initialized for `owner`
+    ///      with the 10 recovery keys the standard payload installs.
+    function _assertDeployedWalletState(
+        address walletAddr,
+        bytes32 commitment,
+        address owner
+    ) internal view {
+        assertTrue(walletAddr.code.length > 0);
+        assertEq(factory.wallets(_salt(commitment)), walletAddr);
+        assertEq(factory.commitmentOf(walletAddr), commitment);
+        _assertCommitmentTracked(owner, commitment);
+        WOTSPlusImplementation wallet = WOTSPlusImplementation(payable(walletAddr));
+        assertEq(wallet.owner(), owner);
+        assertEq(address(wallet.quipFactory()), address(factory));
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+    }
+
     /// @dev Derive the signing key for a recovery key at a given index
     function _recoverySigningKey(
         bytes32 privateKey,

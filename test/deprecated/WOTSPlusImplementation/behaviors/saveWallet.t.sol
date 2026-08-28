@@ -59,26 +59,13 @@ contract WOTSPlusImplementation_saveWallet is WOTSPlusImplementationTest {
         WOTSPlus.WinternitzElements memory sig = _sign(disasterPriv, digest);
 
         // Sanity: original keysets full at init.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
-        assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
-        assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[0]));
+        _assertInitialKeysetsFull();
 
         // Anyone can call — saveWallet has no access gate.
         wallet.saveWallet(_encodedSavePayload(disasterPub, newDisaster, sig));
 
         // All three keysets cleared and reinstalled at full size.
-        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
-        for (uint256 i = 0; i < 10; i++) {
-            assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i]));
-            assertTrue(wallet.isKey(Codec.KeyType.Transaction, freshTxnKeys[i]));
-            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
-            assertTrue(wallet.isKey(Codec.KeyType.Recovery, freshRecoveryKeys[i]));
-            assertTrue(wallet.isKey(Codec.KeyType.Verification, freshVerificationKeys[i]));
-        }
+        _assertKeysetsReplacedWith(freshTxnKeys, freshRecoveryKeys, freshVerificationKeys);
     }
 
     function test_saveWallet_rotatesDisasterKey() public {

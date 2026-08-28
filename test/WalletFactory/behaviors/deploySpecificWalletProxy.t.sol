@@ -17,58 +17,22 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
     // ── Happy paths ──────────────────────────────────────────────────
 
     function test_deploySpecificWalletProxy_deploysProxy() public {
-        bytes32 commitment = keccak256("Vault ID 1");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 privateKey
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            privateKey,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
-
-        address expectedAddr = _computeWalletAddress(commitment, ALICE);
+        bytes32 commitment = keccak256("Specific Vault");
+        (, , bytes memory payload) = _freshInitPayload("seed-specific-proxy");
+        address expected = _computeWalletAddress(commitment, ALICE);
 
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy(
-            commitment,
-            0,
-            payable(ALICE),
-            payload
-        );
+        address walletAddr =
+            factory.deploySpecificWalletProxy(commitment, 0, payable(ALICE), payload);
 
-        assertEq(walletAddr, expectedAddr);
-        assertTrue(walletAddr.code.length > 0);
-
-        // Check factory state
-        assertEq(factory.wallets(_salt(commitment)), walletAddr);
-        assertEq(factory.commitmentOf(walletAddr), commitment);
-        assertNotEq(
-            factory.getCommitmentIndex(ALICE, _salt(commitment)),
-            type(uint256).max
-        );
-
-        // Check wallet state
-        WOTSPlusImplementation wallet = WOTSPlusImplementation(
-            payable(walletAddr)
-        );
-        assertEq(wallet.owner(), ALICE);
-        assertEq(address(wallet.quipFactory()), address(factory));
-        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(walletAddr, expected);
+        _assertDeployedWalletState(walletAddr, commitment, ALICE);
     }
 
     function test_deploySpecificWalletProxy_deploysWithBalance() public {
         bytes32 commitment = keccak256("Specific Balance");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("seed-specific");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (WOTSPlus.WinternitzAddress memory pubkey, , bytes memory payload) =
+            _freshInitPayload("seed-specific");
 
         vm.prank(ALICE);
         address walletAddr = factory.deploySpecificWalletProxy{
@@ -86,15 +50,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
 
     function test_deploySpecificWalletProxy_emitsWalletDeployedEvent() public {
         bytes32 commitment = keccak256("Vault ID 1");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 privateKey
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            privateKey,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed1");
 
         vm.prank(ALICE);
         vm.recordLogs();
@@ -128,98 +84,38 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
     }
 
     function test_deploySpecificWalletProxy_tracksCommitments() public {
-        bytes32 commitment1 = keccak256("Vault 1");
-        bytes32 commitment2 = keccak256("Vault 2");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey1,
-            bytes32 privateKey1
-        ) = _generateKeyPair("seed1");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey2,
-            bytes32 privateKey2
-        ) = _generateKeyPair("seed2");
-        WOTSPlus.WinternitzAddress[] memory rKeys1 = _generateRecoveryKeys(
-            privateKey1,
-            10
-        );
-        WOTSPlus.WinternitzAddress[] memory rKeys2 = _generateRecoveryKeys(
-            privateKey2,
-            10
-        );
+        bytes32 commitmentA = keccak256("Specific Vault A");
+        bytes32 commitmentB = keccak256("Specific Vault B");
+        (, , bytes memory payloadA) = _freshInitPayload("seed-specific-a");
+        (, , bytes memory payloadB) = _freshInitPayload("seed-specific-b");
 
         vm.startPrank(ALICE);
-        factory.deploySpecificWalletProxy(
-            commitment1,
-            0,
-            payable(ALICE),
-            _encodeInitPayload(pubkey1, rKeys1)
-        );
-        factory.deploySpecificWalletProxy(
-            commitment2,
-            0,
-            payable(ALICE),
-            _encodeInitPayload(pubkey2, rKeys2)
-        );
+        factory.deploySpecificWalletProxy(commitmentA, 0, payable(ALICE), payloadA);
+        factory.deploySpecificWalletProxy(commitmentB, 0, payable(ALICE), payloadB);
         vm.stopPrank();
 
-        assertEq(factory.getCommitmentCount(ALICE), 2);
-        assertNotEq(
-            factory.getCommitmentIndex(ALICE, _salt(commitment1)),
-            type(uint256).max
-        );
-        assertNotEq(
-            factory.getCommitmentIndex(ALICE, _salt(commitment2)),
-            type(uint256).max
-        );
+        assertEq(factory.getCommitmentCount(ALICE), 2, "both specific deploys tracked");
+        _assertCommitmentTracked(ALICE, commitmentA);
+        _assertCommitmentTracked(ALICE, commitmentB);
     }
 
     function test_deploySpecificWalletProxy_deploysWithSpecificImpl() public {
-        // Deploy and vet a second implementation
-        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(
-            payable(address(factory))
-        );
-        vm.startPrank(ADMIN);
-        factory.vetImplementation(address(impl2));
-        vm.stopPrank();
+        _vetSecondImpl();
 
-        bytes32 commitment = keccak256("Vault ID 1");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 privateKey
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            privateKey,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        bytes32 commitment = keccak256("Specific Impl Index 1");
+        (, , bytes memory payload) = _freshInitPayload("seed-specific-impl");
 
-        // Deploy using the second implementation (index 1)
+        // Deploy using the second implementation (index 1); the first stays active.
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy(
-            commitment,
-            1,
-            payable(ALICE),
-            payload
-        );
+        address walletAddr =
+            factory.deploySpecificWalletProxy(commitment, 1, payable(ALICE), payload);
 
-        assertTrue(walletAddr.code.length > 0);
-        WOTSPlusImplementation wallet = WOTSPlusImplementation(
-            payable(walletAddr)
-        );
-        assertEq(wallet.owner(), ALICE);
+        _assertDeployedWalletState(walletAddr, commitment, ALICE);
     }
 
     function test_deploySpecificWalletProxy_deploysWithZeroValue() public {
         bytes32 commitment = keccak256("Zero Vault");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed1");
 
         vm.prank(ALICE);
         address walletAddr = factory.deploySpecificWalletProxy(
@@ -240,15 +136,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 commitment = keccak256("Fee Retention");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("seed-fee");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed-fee");
 
         uint256 factoryBalBefore = address(factory).balance;
         uint256 deposit = INITIAL_DEPOSIT + CREATION_FEE;
@@ -270,15 +158,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 commitment = keccak256("Exact Fee");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("seed-exact");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed-exact");
 
         vm.prank(ALICE);
         address walletAddr = factory.deploySpecificWalletProxy{
@@ -289,32 +169,14 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
     }
 
     function test_deploySpecificWalletProxy_deployerIsNotOwner() public {
-        bytes32 commitment = keccak256("Deployed For BOB");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("seed-for-bob");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        bytes32 commitment = keccak256("Specific Deployed For BOB");
+        (, , bytes memory payload) = _freshInitPayload("seed-specific-bob");
 
         vm.prank(ALICE);
-        address walletAddr = factory.deploySpecificWalletProxy(
-            commitment,
-            0,
-            payable(BOB),
-            payload
-        );
+        address walletAddr =
+            factory.deploySpecificWalletProxy(commitment, 0, payable(BOB), payload);
 
-        WOTSPlusImplementation w = WOTSPlusImplementation(payable(walletAddr));
-        assertEq(w.owner(), BOB);
-        assertEq(factory.wallets(_salt(commitment)), walletAddr);
-        assertNotEq(
-            factory.getCommitmentIndex(BOB, _salt(commitment)),
-            type(uint256).max
-        );
+        _assertDeployedWalletState(walletAddr, commitment, BOB);
     }
 
     // ── Reverts ──────────────────────────────────────────────────────
@@ -323,15 +185,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         public
     {
         bytes32 commitment = keccak256("OOB Vault");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed1");
 
         vm.prank(ALICE);
         vm.expectRevert(EnumerableSetLib.IndexOutOfBounds.selector);
@@ -348,15 +202,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         factory.deprecateImplementation(address(walletImplementation));
 
         bytes32 commitment = keccak256("Vault ID 1");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 privateKey
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            privateKey,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed1");
 
         vm.prank(ALICE);
         vm.expectRevert(IWalletFactory.ImplementationDeprecated.selector);
@@ -375,15 +221,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 commitment = keccak256("Underfunded Specific");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("seed-under");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("seed-under");
 
         uint256 sent = CREATION_FEE - 1;
         vm.prank(ALICE);
@@ -406,15 +244,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         public
     {
         bytes32 commitment = keccak256("Duplicate Vault");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey1,
-            bytes32 pk1
-        ) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys1 = _generateRecoveryKeys(
-            pk1,
-            10
-        );
-        bytes memory payload1 = _encodeInitPayload(pubkey1, rKeys1);
+        (, , bytes memory payload1) = _freshInitPayload("seed1");
 
         vm.prank(ALICE);
         factory.deploySpecificWalletProxy(
@@ -425,15 +255,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         );
 
         // Second deploy with same commitment should revert (CREATE3 collision)
-        (
-            WOTSPlus.WinternitzAddress memory pubkey2,
-            bytes32 pk2
-        ) = _generateKeyPair("seed2");
-        WOTSPlus.WinternitzAddress[] memory rKeys2 = _generateRecoveryKeys(
-            pk2,
-            10
-        );
-        bytes memory payload2 = _encodeInitPayload(pubkey2, rKeys2);
+        (, , bytes memory payload2) = _freshInitPayload("seed2");
 
         vm.prank(ALICE);
         vm.expectRevert(CREATE3.DeploymentFailed.selector);
@@ -449,15 +271,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         public
     {
         bytes32 commitment = keccak256("Shared Vault");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey1,
-            bytes32 pk1
-        ) = _generateKeyPair("seed-alice");
-        WOTSPlus.WinternitzAddress[] memory rKeys1 = _generateRecoveryKeys(
-            pk1,
-            10
-        );
-        bytes memory payload1 = _encodeInitPayload(pubkey1, rKeys1);
+        (, , bytes memory payload1) = _freshInitPayload("seed-alice");
 
         vm.prank(ALICE);
         factory.deploySpecificWalletProxy(
@@ -468,15 +282,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         );
 
         // Bob tries same commitment — CREATE3 collision
-        (
-            WOTSPlus.WinternitzAddress memory pubkey2,
-            bytes32 pk2
-        ) = _generateKeyPair("seed-bob");
-        WOTSPlus.WinternitzAddress[] memory rKeys2 = _generateRecoveryKeys(
-            pk2,
-            10
-        );
-        bytes memory payload2 = _encodeInitPayload(pubkey2, rKeys2);
+        (, , bytes memory payload2) = _freshInitPayload("seed-bob");
 
         vm.prank(BOB);
         vm.expectRevert(CREATE3.DeploymentFailed.selector);
@@ -492,15 +298,7 @@ contract WalletFactory_deploySpecificWalletProxy is WalletFactoryTest {
         public
     {
         bytes32 commitment = keccak256("Specific Zero Owner");
-        (
-            WOTSPlus.WinternitzAddress memory pubkey,
-            bytes32 pk
-        ) = _generateKeyPair("specific-seed-zero");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(
-            pk,
-            10
-        );
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
+        (, , bytes memory payload) = _freshInitPayload("specific-seed-zero");
 
         vm.prank(ALICE);
         vm.expectRevert(IWalletFactory.ZeroAddressOwner.selector);

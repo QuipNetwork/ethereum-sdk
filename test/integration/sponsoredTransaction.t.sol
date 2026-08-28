@@ -309,12 +309,19 @@ contract Integration_sponsoredTransaction is IntegrationBase {
         IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
     }
 
-    /// @dev `validAfter` in the future must cause the EntryPoint to reject the
-    ///      op with `AA32 paymaster expired or not due` (time-range half of
-    ///      validationData is packed correctly).
-    function test_integration_sponsored_revertsWhen_validAfterInFuture() public {
-        (WOTSPlus.WinternitzAddress memory nextWalletPq,) = _generateKeyPair("future-wallet-key");
-        (WOTSPlus.WinternitzAddress memory nextVerifier,) = _generateKeyPair("future-next-verifier");
+    /// @dev Shared driver for the validity-window family: builds a fully signed sponsored op
+    ///      whose paymaster approval carries `(validUntil, validAfter)`, then expects the
+    ///      EntryPoint to reject it with `AA32 paymaster expired or not due` (pins that the
+    ///      time-range half of validationData is packed correctly).
+    function _expectSponsoredWindowRejected(
+        bytes32 keySeedPrefix,
+        uint48 validUntil,
+        uint48 validAfter
+    ) internal {
+        (WOTSPlus.WinternitzAddress memory nextWalletPq,) =
+            _generateKeyPair(keccak256(abi.encodePacked(keySeedPrefix, "wallet-key")));
+        (WOTSPlus.WinternitzAddress memory nextVerifier,) =
+            _generateKeyPair(keccak256(abi.encodePacked(keySeedPrefix, "next-verifier")));
 
         bytes memory callData_ = abi.encodeWithSelector(
             bytes4(keccak256("execute(address,uint256,bytes)")), BOB, uint256(0.01 ether), bytes("")
@@ -331,12 +338,7 @@ contract Integration_sponsoredTransaction is IntegrationBase {
             paymasterAndData: "",
             signature: ""
         });
-        userOp = _attachPaymasterApproval(
-            userOp,
-            nextVerifier,
-            uint48(block.timestamp + 1 days), // validUntil > validAfter
-            uint48(block.timestamp + 1 hours) // validAfter in future
-        );
+        userOp = _attachPaymasterApproval(userOp, nextVerifier, validUntil, validAfter);
 
         bytes32 userOpHash = IEntryPointExt(ENTRY_POINT).getUserOpHash(userOp);
         bytes32 walletDigest = Codec.erc4337ExecuteDigest(
@@ -359,56 +361,20 @@ contract Integration_sponsoredTransaction is IntegrationBase {
         IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
     }
 
-    /// @dev `validUntil` already elapsed must also cause EntryPoint to reject
-    ///      with `AA32 paymaster expired or not due`.
+    /// @dev `validAfter` in the future: the window's LOWER bound rejects a not-yet-due op.
+    function test_integration_sponsored_revertsWhen_validAfterInFuture() public {
+        _expectSponsoredWindowRejected(
+            "future",
+            uint48(block.timestamp + 1 days), // validUntil > validAfter
+            uint48(block.timestamp + 1 hours) // validAfter in future
+        );
+    }
+
+    /// @dev `validUntil` already elapsed: the window's UPPER bound rejects an expired op.
     function test_integration_sponsored_revertsWhen_validUntilExpired() public {
         // Skip forward so `validUntil = block.timestamp - 1` is strictly past.
         vm.warp(block.timestamp + 2 hours);
-
-        (WOTSPlus.WinternitzAddress memory nextWalletPq,) = _generateKeyPair("expired-wallet-key");
-        (WOTSPlus.WinternitzAddress memory nextVerifier,) = _generateKeyPair("expired-next-verifier");
-
-        bytes memory callData_ = abi.encodeWithSelector(
-            bytes4(keccak256("execute(address,uint256,bytes)")), BOB, uint256(0.01 ether), bytes("")
-        );
-
-        PackedUserOperation memory userOp = PackedUserOperation({
-            sender: address(wallet),
-            nonce: 0,
-            initCode: "",
-            callData: callData_,
-            accountGasLimits: bytes32((uint256(5_000_000) << 128) | uint256(500_000)),
-            preVerificationGas: 100_000,
-            gasFees: bytes32((uint256(1 gwei) << 128) | uint256(10 gwei)),
-            paymasterAndData: "",
-            signature: ""
-        });
-        userOp = _attachPaymasterApproval(
-            userOp,
-            nextVerifier,
-            uint48(block.timestamp - 1), // validUntil in the past
-            uint48(0)
-        );
-
-        bytes32 userOpHash = IEntryPointExt(ENTRY_POINT).getUserOpHash(userOp);
-        bytes32 walletDigest = Codec.erc4337ExecuteDigest(
-            address(wallet),
-            block.chainid,
-            alicePubkey.publicSeed,
-            alicePubkey.publicKeyHash,
-            nextWalletPq.publicSeed,
-            nextWalletPq.publicKeyHash,
-            userOpHash,
-            wallet.getExecuteFee()
-        );
-        userOp.signature = Codec.encodeUserOpSignature(alicePubkey, nextWalletPq, _sign(alicePrivateKey, walletDigest));
-
-        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
-        ops[0] = userOp;
-        vm.expectRevert(
-            abi.encodeWithSignature("FailedOp(uint256,string)", uint256(0), "AA32 paymaster expired or not due")
-        );
-        IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
+        _expectSponsoredWindowRejected("expired", uint48(block.timestamp - 1), uint48(0));
     }
 
     /// @dev Paymaster whitelist enforcement: a wallet with no registered

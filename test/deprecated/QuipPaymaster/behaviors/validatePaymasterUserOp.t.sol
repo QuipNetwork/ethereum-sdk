@@ -7,6 +7,69 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 
 contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
+    /*─────────────────────────── helpers ───────────────────────────────*/
+
+    /// @dev Signed userOp over the default WALLET envelope with a caller-supplied
+    ///      current key and next verifier.
+    function _signedUserOp(
+        WOTSPlus.WinternitzAddress memory currentPub,
+        bytes32 currentPriv,
+        WOTSPlus.WinternitzAddress memory nextKey
+    ) internal view returns (PackedUserOperation memory) {
+        uint48 validUntil = uint48(block.timestamp + 1 hours);
+        uint48 validAfter = uint48(block.timestamp);
+        bytes memory paymasterAndData =
+            _buildPaymasterAndData(WALLET, 0, "", validUntil, validAfter, currentPub, currentPriv, nextKey);
+        return _mockUserOp(paymasterAndData);
+    }
+
+    /// @dev Signed userOp using the installed verifier and a fresh next key
+    ///      derived from `"verifier-seed-1"`.
+    function _defaultSignedUserOp()
+        internal
+        view
+        returns (PackedUserOperation memory userOp, WOTSPlus.WinternitzAddress memory nextKey)
+    {
+        (nextKey,) = _generateKeyPair("verifier-seed-1");
+        userOp = _signedUserOp(verifierPubkey, verifierPrivateKey, nextKey);
+    }
+
+    /// @dev UserOp whose paymasterAndData carries `nextKey` and a dummy signature
+    ///      (not bound to the envelope). Used by checks that fire before WOTS+ verify.
+    function _userOpWithUnsignedNextKey(WOTSPlus.WinternitzAddress memory nextKey)
+        internal
+        view
+        returns (PackedUserOperation memory)
+    {
+        uint48 validUntil = uint48(block.timestamp + 1 hours);
+        uint48 validAfter = uint48(block.timestamp);
+        WOTSPlus.WinternitzElements memory dummySig = _sign(verifierPrivateKey, bytes32(0));
+        bytes memory paymasterAndData = abi.encodePacked(
+            address(paymaster),
+            uint128(_DEFAULT_PM_VERIFICATION_GAS),
+            uint128(_DEFAULT_PM_POSTOP_GAS),
+            validUntil,
+            validAfter,
+            nextKey.publicSeed,
+            nextKey.publicKeyHash,
+            dummySig.elements
+        );
+        return _mockUserOp(paymasterAndData);
+    }
+
+    /// @dev Call `validatePaymasterUserOp` as the EntryPoint and assert it
+    ///      emits `PaymasterValidationRejected` with `reason` and returns 1.
+    function _assertValidateRejected(
+        PackedUserOperation memory userOp,
+        IQuipPaymaster.PaymasterValidationFailure reason
+    ) internal {
+        vm.prank(ENTRY_POINT);
+        vm.expectEmit(address(paymaster));
+        emit IQuipPaymaster.PaymasterValidationRejected(WALLET, reason);
+        (, uint256 validationData) = paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
+        assertEq(validationData, 1);
+    }
+
     function test_validatePaymasterUserOp_validSignature() public {
         uint48 validUntil = uint48(block.timestamp + 1 hours);
         uint48 validAfter = uint48(block.timestamp);
@@ -34,14 +97,7 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
     }
 
     function test_validatePaymasterUserOp_rotatesVerifierKey() public {
-        uint48 validUntil = uint48(block.timestamp + 1 hours);
-        uint48 validAfter = uint48(block.timestamp);
-
-        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("verifier-seed-1");
-
-        bytes memory paymasterAndData =
-            _buildPaymasterAndData(WALLET, 0, "", validUntil, validAfter, verifierPubkey, verifierPrivateKey, nextKey);
-        PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
+        (PackedUserOperation memory userOp, WOTSPlus.WinternitzAddress memory nextKey) = _defaultSignedUserOp();
 
         vm.prank(ENTRY_POINT);
         paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
@@ -53,14 +109,7 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
     }
 
     function test_validatePaymasterUserOp_emitsPqVerifierRotated() public {
-        uint48 validUntil = uint48(block.timestamp + 1 hours);
-        uint48 validAfter = uint48(block.timestamp);
-
-        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("verifier-seed-1");
-
-        bytes memory paymasterAndData =
-            _buildPaymasterAndData(WALLET, 0, "", validUntil, validAfter, verifierPubkey, verifierPrivateKey, nextKey);
-        PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
+        (PackedUserOperation memory userOp, WOTSPlus.WinternitzAddress memory nextKey) = _defaultSignedUserOp();
 
         vm.prank(ENTRY_POINT);
         vm.expectEmit(true, false, false, true);
@@ -88,26 +137,14 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
     }
 
     function test_validatePaymasterUserOp_wrongSigner() public {
-        uint48 validUntil = uint48(block.timestamp + 1 hours);
-        uint48 validAfter = uint48(block.timestamp);
-
         // Sign with a different (wrong) private key
         (WOTSPlus.WinternitzAddress memory wrongPubkey, bytes32 wrongPrivateKey) = _generateKeyPair("wrong-signer");
         (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("verifier-seed-1");
 
-        bytes memory paymasterAndData =
-            _buildPaymasterAndData(WALLET, 0, "", validUntil, validAfter, wrongPubkey, wrongPrivateKey, nextKey);
-        PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
-
-        vm.prank(ENTRY_POINT);
-        vm.expectEmit(address(paymaster));
-        emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET, IQuipPaymaster.PaymasterValidationFailure.InvalidSignature
+        _assertValidateRejected(
+            _signedUserOp(wrongPubkey, wrongPrivateKey, nextKey),
+            IQuipPaymaster.PaymasterValidationFailure.InvalidSignature
         );
-        (, uint256 validationData) = paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
-
-        // Should return SIG_VALIDATION_FAILED (1)
-        assertEq(validationData, 1);
     }
 
     function test_validatePaymasterUserOp_unregisteredWallet() public {
@@ -133,97 +170,31 @@ contract QuipPaymaster_validatePaymasterUserOp is QuipPaymasterTest {
     }
 
     function test_validatePaymasterUserOp_differentCallData() public {
-        uint48 validUntil = uint48(block.timestamp + 1 hours);
-        uint48 validAfter = uint48(block.timestamp);
-
-        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("verifier-seed-1");
-
+        (PackedUserOperation memory userOp,) = _defaultSignedUserOp();
         // Sign for empty callData but submit UserOp with different callData
-        bytes memory paymasterAndData =
-            _buildPaymasterAndData(WALLET, 0, "", validUntil, validAfter, verifierPubkey, verifierPrivateKey, nextKey);
-        PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
         userOp.callData = hex"deadbeef";
 
-        vm.prank(ENTRY_POINT);
-        vm.expectEmit(address(paymaster));
-        emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET, IQuipPaymaster.PaymasterValidationFailure.InvalidSignature
-        );
-        (, uint256 validationData) = paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
-
-        // Signature was for empty callData but UserOp has different callData, so validation fails
-        assertEq(validationData, 1);
+        _assertValidateRejected(userOp, IQuipPaymaster.PaymasterValidationFailure.InvalidSignature);
     }
 
     function test_validatePaymasterUserOp_zeroNextKey() public {
-        uint48 validUntil = uint48(block.timestamp + 1 hours);
-        uint48 validAfter = uint48(block.timestamp);
-
         // Build paymasterAndData manually with zero nextVerifierKey
         WOTSPlus.WinternitzAddress memory zeroKey =
             WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)});
-        WOTSPlus.WinternitzElements memory dummySig = _sign(verifierPrivateKey, bytes32(0));
-
-        bytes memory paymasterAndData = abi.encodePacked(
-            address(paymaster),
-            uint128(100_000),
-            uint128(50_000),
-            validUntil,
-            validAfter,
-            zeroKey.publicSeed,
-            zeroKey.publicKeyHash,
-            dummySig.elements
+        _assertValidateRejected(
+            _userOpWithUnsignedNextKey(zeroKey), IQuipPaymaster.PaymasterValidationFailure.ZeroNextVerifier
         );
-        PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
-
-        vm.prank(ENTRY_POINT);
-        vm.expectEmit(address(paymaster));
-        emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET, IQuipPaymaster.PaymasterValidationFailure.ZeroNextVerifier
-        );
-        (, uint256 validationData) = paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
-
-        assertEq(validationData, 1);
     }
 
     function test_validatePaymasterUserOp_keyReuse() public {
-        uint48 validUntil = uint48(block.timestamp + 1 hours);
-        uint48 validAfter = uint48(block.timestamp);
-
         // Try to set nextKey = currentKey (key reuse)
-        WOTSPlus.WinternitzElements memory dummySig = _sign(verifierPrivateKey, bytes32(0));
-
-        bytes memory paymasterAndData = abi.encodePacked(
-            address(paymaster),
-            uint128(100_000),
-            uint128(50_000),
-            validUntil,
-            validAfter,
-            verifierPubkey.publicSeed,
-            verifierPubkey.publicKeyHash,
-            dummySig.elements
+        _assertValidateRejected(
+            _userOpWithUnsignedNextKey(verifierPubkey), IQuipPaymaster.PaymasterValidationFailure.NextEqualsCurrent
         );
-        PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
-
-        vm.prank(ENTRY_POINT);
-        vm.expectEmit(address(paymaster));
-        emit IQuipPaymaster.PaymasterValidationRejected(
-            WALLET, IQuipPaymaster.PaymasterValidationFailure.NextEqualsCurrent
-        );
-        (, uint256 validationData) = paymaster.validatePaymasterUserOp(userOp, bytes32(0), 1 ether);
-
-        assertEq(validationData, 1);
     }
 
     function test_validatePaymasterUserOp_revertsWhen_notEntryPoint() public {
-        uint48 validUntil = uint48(block.timestamp + 1 hours);
-        uint48 validAfter = uint48(block.timestamp);
-
-        (WOTSPlus.WinternitzAddress memory nextKey,) = _generateKeyPair("verifier-seed-1");
-
-        bytes memory paymasterAndData =
-            _buildPaymasterAndData(WALLET, 0, "", validUntil, validAfter, verifierPubkey, verifierPrivateKey, nextKey);
-        PackedUserOperation memory userOp = _mockUserOp(paymasterAndData);
+        (PackedUserOperation memory userOp,) = _defaultSignedUserOp();
 
         vm.prank(ALICE);
         vm.expectRevert(IQuipPaymaster.InvalidEntryPoint.selector);

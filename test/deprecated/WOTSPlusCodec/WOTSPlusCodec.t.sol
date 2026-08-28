@@ -231,4 +231,51 @@ contract WOTSPlusCodecTest is Test {
             uint8(uint256(seed) % 2 == 0 ? 27 : 28)
         );
     }
+
+    // --- Equality helpers ---
+
+    function _assertEqWinternitzAddress(
+        WOTSPlus.WinternitzAddress memory actual,
+        WOTSPlus.WinternitzAddress memory expected
+    ) internal pure {
+        assertEq(actual.publicSeed, expected.publicSeed);
+        assertEq(actual.publicKeyHash, expected.publicKeyHash);
+    }
+
+    function _assertEqAuthPrefix(
+        WOTSPlus.WinternitzAddress memory dCur,
+        WOTSPlus.WinternitzAddress memory cur,
+        WOTSPlus.WinternitzAddress memory dNxt,
+        WOTSPlus.WinternitzAddress memory nxt,
+        WOTSPlus.WinternitzElements memory dSig,
+        WOTSPlus.WinternitzElements memory sig
+    ) internal pure {
+        _assertEqWinternitzAddress(dCur, cur);
+        _assertEqWinternitzAddress(dNxt, nxt);
+        for (uint256 i = 0; i < 67; i++) {
+            assertEq(dSig.elements[i], sig.elements[i]);
+        }
+    }
+
+    function _assertEqKeysets10(
+        WOTSPlus.WinternitzAddress[10] memory dTxn,
+        WOTSPlus.WinternitzAddress[10] memory txn,
+        WOTSPlus.WinternitzAddress[10] memory dRec,
+        WOTSPlus.WinternitzAddress[10] memory rec,
+        WOTSPlus.WinternitzAddress[10] memory dVer,
+        WOTSPlus.WinternitzAddress[10] memory ver
+    ) internal pure {
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(dTxn[i].publicSeed, txn[i].publicSeed);
+            assertEq(dTxn[i].publicKeyHash, txn[i].publicKeyHash);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(dRec[i].publicSeed, rec[i].publicSeed);
+            assertEq(dRec[i].publicKeyHash, rec[i].publicKeyHash);
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            assertEq(dVer[i].publicSeed, ver[i].publicSeed);
+            assertEq(dVer[i].publicKeyHash, ver[i].publicKeyHash);
+        }
+    }
 }

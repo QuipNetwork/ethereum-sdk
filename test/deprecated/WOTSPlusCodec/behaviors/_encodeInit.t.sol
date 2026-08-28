@@ -31,6 +31,26 @@ contract WOTSPlusCodec__encodeInit is WOTSPlusCodecTest {
         }
     }
 
+    function _assertDecodedInit(
+        bytes memory encoded,
+        WOTSPlus.WinternitzAddress memory disaster,
+        WOTSPlus.WinternitzAddress memory ownership,
+        WOTSPlus.WinternitzAddress[10] memory txn,
+        WOTSPlus.WinternitzAddress[10] memory rec,
+        WOTSPlus.WinternitzAddress[10] memory ver
+    ) internal view {
+        (
+            WOTSPlus.WinternitzAddress memory dDisaster,
+            WOTSPlus.WinternitzAddress memory dOwnership,
+            WOTSPlus.WinternitzAddress[10] memory dTxn,
+            WOTSPlus.WinternitzAddress[10] memory dRec,
+            WOTSPlus.WinternitzAddress[10] memory dVer
+        ) = codec.exposed_decodeInit(encoded);
+        _assertEqWinternitzAddress(dDisaster, disaster);
+        _assertEqWinternitzAddress(dOwnership, ownership);
+        _assertEqKeysets10(dTxn, txn, dRec, rec, dVer, ver);
+    }
+
     function test_exposed_encodeInit_producesCorrectLength() public view {
         bytes memory encoded =
             codec.exposed_encodeInit(_sampleDisaster(), _sampleOwnership(), _sampleTxn(), _sampleRec(), _sampleVer());
@@ -45,31 +65,7 @@ contract WOTSPlusCodec__encodeInit is WOTSPlusCodecTest {
         WOTSPlus.WinternitzAddress[10] memory ver = _sampleVer();
 
         bytes memory encoded = codec.exposed_encodeInit(disaster, ownership, txn, rec, ver);
-
-        (
-            WOTSPlus.WinternitzAddress memory dDisaster,
-            WOTSPlus.WinternitzAddress memory dOwnership,
-            WOTSPlus.WinternitzAddress[10] memory dTxn,
-            WOTSPlus.WinternitzAddress[10] memory dRec,
-            WOTSPlus.WinternitzAddress[10] memory dVer
-        ) = codec.exposed_decodeInit(encoded);
-
-        assertEq(dDisaster.publicSeed, disaster.publicSeed);
-        assertEq(dDisaster.publicKeyHash, disaster.publicKeyHash);
-        assertEq(dOwnership.publicSeed, ownership.publicSeed);
-        assertEq(dOwnership.publicKeyHash, ownership.publicKeyHash);
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dTxn[i].publicSeed, txn[i].publicSeed);
-            assertEq(dTxn[i].publicKeyHash, txn[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dRec[i].publicSeed, rec[i].publicSeed);
-            assertEq(dRec[i].publicKeyHash, rec[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dVer[i].publicSeed, ver[i].publicSeed);
-            assertEq(dVer[i].publicKeyHash, ver[i].publicKeyHash);
-        }
+        _assertDecodedInit(encoded, disaster, ownership, txn, rec, ver);
     }
 
     /// @dev Property: encode → decode preserves every field for any seed.
@@ -84,30 +80,6 @@ contract WOTSPlusCodec__encodeInit is WOTSPlusCodecTest {
 
         bytes memory encoded = codec.exposed_encodeInit(disaster, ownership, txn, rec, ver);
         assertEq(encoded.length, 2048);
-
-        (
-            WOTSPlus.WinternitzAddress memory dDisaster,
-            WOTSPlus.WinternitzAddress memory dOwnership,
-            WOTSPlus.WinternitzAddress[10] memory dTxn,
-            WOTSPlus.WinternitzAddress[10] memory dRec,
-            WOTSPlus.WinternitzAddress[10] memory dVer
-        ) = codec.exposed_decodeInit(encoded);
-
-        assertEq(dDisaster.publicSeed, disaster.publicSeed);
-        assertEq(dDisaster.publicKeyHash, disaster.publicKeyHash);
-        assertEq(dOwnership.publicSeed, ownership.publicSeed);
-        assertEq(dOwnership.publicKeyHash, ownership.publicKeyHash);
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dTxn[i].publicSeed, txn[i].publicSeed);
-            assertEq(dTxn[i].publicKeyHash, txn[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dRec[i].publicSeed, rec[i].publicSeed);
-            assertEq(dRec[i].publicKeyHash, rec[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dVer[i].publicSeed, ver[i].publicSeed);
-            assertEq(dVer[i].publicKeyHash, ver[i].publicKeyHash);
-        }
+        _assertDecodedInit(encoded, disaster, ownership, txn, rec, ver);
     }
 }

@@ -178,62 +178,14 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
     }
 
     function test_exposed_replaceKeysDigest_changesOnWalletChange() public view {
-        bytes32 d1 = codec.exposed_replaceKeysDigest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3,
-            WALLET,
-            CHAIN_ID,
-            bytes32(uint256(1)),
-            bytes32(uint256(2)),
-            bytes32(uint256(3)),
-            bytes32(uint256(4)),
-            bytes32(uint256(5)),
-            bytes32(uint256(6))
-        );
-        bytes32 d2 = codec.exposed_replaceKeysDigest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3,
-            address(0xBEEF),
-            CHAIN_ID,
-            bytes32(uint256(1)),
-            bytes32(uint256(2)),
-            bytes32(uint256(3)),
-            bytes32(uint256(4)),
-            bytes32(uint256(5)),
-            bytes32(uint256(6))
-        );
+        bytes32 d1 = _digestAt(WALLET, CHAIN_ID);
+        bytes32 d2 = _digestAt(address(0xBEEF), CHAIN_ID);
         assertTrue(d1 != d2);
     }
 
     function test_exposed_replaceKeysDigest_changesOnChainIdChange() public view {
-        bytes32 d1 = codec.exposed_replaceKeysDigest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3,
-            WALLET,
-            CHAIN_ID,
-            bytes32(uint256(1)),
-            bytes32(uint256(2)),
-            bytes32(uint256(3)),
-            bytes32(uint256(4)),
-            bytes32(uint256(5)),
-            bytes32(uint256(6))
-        );
-        bytes32 d2 = codec.exposed_replaceKeysDigest(
-            Codec.KeyType.Transaction,
-            Codec.KeyType.Recovery,
-            3,
-            WALLET,
-            CHAIN_ID + 1,
-            bytes32(uint256(1)),
-            bytes32(uint256(2)),
-            bytes32(uint256(3)),
-            bytes32(uint256(4)),
-            bytes32(uint256(5)),
-            bytes32(uint256(6))
-        );
+        bytes32 d1 = _digestAt(WALLET, CHAIN_ID);
+        bytes32 d2 = _digestAt(WALLET, CHAIN_ID + 1);
         assertTrue(d1 != d2);
     }
 
@@ -295,6 +247,22 @@ contract WOTSPlusCodec__replaceKeysDigest is WOTSPlusCodecTest {
             bytes32(uint256(0xB2)),
             bytes32(uint256(0xC1)),
             bytes32(uint256(0xC2))
+        );
+    }
+
+    function _digestAt(address wallet, uint256 chainId) internal view returns (bytes32) {
+        return codec.exposed_replaceKeysDigest(
+            Codec.KeyType.Transaction,
+            Codec.KeyType.Recovery,
+            3,
+            wallet,
+            chainId,
+            bytes32(uint256(1)),
+            bytes32(uint256(2)),
+            bytes32(uint256(3)),
+            bytes32(uint256(4)),
+            bytes32(uint256(5)),
+            bytes32(uint256(6))
         );
     }
 }

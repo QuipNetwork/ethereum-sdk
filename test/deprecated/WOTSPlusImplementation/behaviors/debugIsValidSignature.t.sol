@@ -15,13 +15,8 @@ contract WOTSPlusImplementation_debugIsValidSignature is WOTSPlusImplementationT
 
     function test_debugIsValidSignature_returnsOkOnValidSig() public {
         (WOTSPlus.WinternitzAddress[] memory keys, bytes32[] memory priv) = _seedVerificationKeys(3);
-
         bytes32 msgHash = keccak256("erc1271-debug-ok");
-        bytes32 digest = _buildErc1271MessageHash(address(wallet), keys[1], msgHash);
-        WOTSPlus.WinternitzElements memory sig = _sign(priv[1], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, _buildErc1271EcdsaTarget(address(wallet), msgHash));
-
-        bytes memory encoded = Codec.encodeErc1271Signature(keys[1], sig, ecdsa);
+        bytes memory encoded = _encodeValidErc1271Signature(keys[1], priv[1], msgHash);
         assertEq(
             uint8(wallet.debugIsValidSignature(msgHash, encoded)),
             uint8(IWOTSPlusImplementation.Erc1271ValidationResult.Ok)
@@ -168,19 +163,12 @@ contract WOTSPlusImplementation_debugIsValidSignature is WOTSPlusImplementationT
     /// @dev `debugIsValidSignature` must be a pure read — calling it twice with
     ///      the same valid input must not consume the verifier key.
     function test_debugIsValidSignature_doesNotMutateSet() public {
-        (WOTSPlus.WinternitzAddress[] memory keys, bytes32[] memory priv) = _seedVerificationKeys(3);
-
-        uint256 before = wallet.keyCount(Codec.KeyType.Verification);
-        bytes32 msgHash = keccak256("erc1271-debug-nomutate");
-        bytes32 digest = _buildErc1271MessageHash(address(wallet), keys[0], msgHash);
-        WOTSPlus.WinternitzElements memory sig = _sign(priv[0], digest);
-        bytes memory ecdsa = _ecdsaSign(ALICE_KEY, _buildErc1271EcdsaTarget(address(wallet), msgHash));
-        bytes memory encoded = Codec.encodeErc1271Signature(keys[0], sig, ecdsa);
+        (bytes32 msgHash, WOTSPlus.WinternitzAddress memory key, bytes memory encoded, uint256 before) =
+            _prepareErc1271MutationCheck("erc1271-debug-nomutate");
 
         wallet.debugIsValidSignature(msgHash, encoded);
         wallet.debugIsValidSignature(msgHash, encoded);
 
-        assertEq(wallet.keyCount(Codec.KeyType.Verification), before);
-        assertTrue(wallet.isKey(Codec.KeyType.Verification, keys[0]));
+        _assertVerificationKeyUnconsumed(before, key);
     }
 }

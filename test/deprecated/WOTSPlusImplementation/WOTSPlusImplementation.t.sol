@@ -341,4 +341,110 @@ contract WOTSPlusImplementationTest is WalletFactoryTest {
                 migratorPayload
             );
     }
+
+    /// @dev Encodes a valid ERC-1271 payload. The ECDSA half signs the EIP-712
+    ///      wrap, not the raw `msgHash`.
+    function _encodeValidErc1271Signature(
+        WOTSPlus.WinternitzAddress memory verifier,
+        bytes32 priv,
+        bytes32 msgHash
+    ) internal view returns (bytes memory) {
+        bytes32 digest = _buildErc1271MessageHash(address(wallet), verifier, msgHash);
+        WOTSPlus.WinternitzElements memory sig = _sign(priv, digest);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ALICE_KEY, _buildErc1271EcdsaTarget(address(wallet), msgHash));
+        bytes memory ecdsa = abi.encodePacked(r, s, v);
+        return Codec.encodeErc1271Signature(verifier, sig, ecdsa);
+    }
+
+    function _prepareErc1271MutationCheck(string memory hashTag)
+        internal
+        returns (
+            bytes32 msgHash,
+            WOTSPlus.WinternitzAddress memory key,
+            bytes memory encoded,
+            uint256 countBefore
+        )
+    {
+        (WOTSPlus.WinternitzAddress[] memory keys, bytes32[] memory priv) = _seedVerificationKeys(3);
+        msgHash = keccak256(bytes(hashTag));
+        key = keys[0];
+        encoded = _encodeValidErc1271Signature(key, priv[0], msgHash);
+        countBefore = wallet.keyCount(Codec.KeyType.Verification);
+    }
+
+    function _assertVerificationKeyUnconsumed(uint256 countBefore, WOTSPlus.WinternitzAddress memory key)
+        internal
+        view
+    {
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), countBefore);
+        assertTrue(wallet.isKey(Codec.KeyType.Verification, key));
+    }
+
+    function _assertInitialKeysetsFull() internal view {
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[0]));
+        assertTrue(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[0]));
+    }
+
+    function _assertKeysetsReplacedWith(
+        WOTSPlus.WinternitzAddress[10] memory newTxn,
+        WOTSPlus.WinternitzAddress[10] memory newRec,
+        WOTSPlus.WinternitzAddress[10] memory newVer
+    ) internal view {
+        assertEq(wallet.keyCount(Codec.KeyType.Transaction), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(wallet.keyCount(Codec.KeyType.Verification), 10);
+        for (uint256 i = 0; i < 10; i++) {
+            assertFalse(wallet.isKey(Codec.KeyType.Transaction, aliceTxnPubkeys[i]));
+            assertTrue(wallet.isKey(Codec.KeyType.Transaction, newTxn[i]));
+            assertFalse(wallet.isKey(Codec.KeyType.Recovery, recoveryPubkeys[i]));
+            assertTrue(wallet.isKey(Codec.KeyType.Recovery, newRec[i]));
+            assertTrue(wallet.isKey(Codec.KeyType.Verification, newVer[i]));
+        }
+    }
+
+    /// @dev Execute a transfer so the wallet is operational, then snapshot balance.
+    function _primeUpgradeScenario()
+        internal
+        returns (WOTSPlus.WinternitzAddress memory pq, bytes32 priv, uint256 balBefore)
+    {
+        (WOTSPlus.WinternitzAddress memory nextPq, bytes32 nextPriv) = _generateKeyPair("pre-upgrade-key");
+        uint256 fee = wallet.getExecuteFee();
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), alicePubkey, nextPq, BOB, 0.1 ether, "", fee);
+        WOTSPlus.WinternitzElements memory sig = _sign(alicePrivateKey, msgHash);
+        vm.prank(ALICE);
+        wallet.execute(Codec.encodeExecute(alicePubkey, nextPq, sig, BOB, 0.1 ether, ""));
+        pq = nextPq;
+        priv = nextPriv;
+        balBefore = address(wallet).balance;
+    }
+
+    function _assertUpgradePreservedBasics(
+        address impl,
+        WOTSPlus.WinternitzAddress memory expectedTxnKey,
+        uint256 balBefore
+    ) internal view {
+        assertEq(wallet.version(), factory.getVettedCodeIndex(impl.codehash));
+        assertTrue(wallet.isKey(Codec.KeyType.Transaction, expectedTxnKey));
+        assertEq(wallet.keyCount(Codec.KeyType.Recovery), 10);
+        assertEq(address(wallet).balance, balBefore);
+        assertEq(wallet.owner(), ALICE);
+    }
+
+    function _resumeExecuteAfterUpgrade(
+        WOTSPlus.WinternitzAddress memory current,
+        bytes32 currentPriv,
+        bytes32 nextTag
+    ) internal {
+        (WOTSPlus.WinternitzAddress memory postPq,) = _generateKeyPair(nextTag);
+        uint256 fee = wallet.getExecuteFee();
+        bytes32 msgHash = _buildExecuteMessageHash(address(wallet), current, postPq, BOB, 0.05 ether, "", fee);
+        WOTSPlus.WinternitzElements memory postSig = _sign(currentPriv, msgHash);
+        uint256 bobBal = BOB.balance;
+        vm.prank(ALICE);
+        wallet.execute(Codec.encodeExecute(current, postPq, postSig, BOB, 0.05 ether, ""));
+        assertEq(BOB.balance, bobBal + 0.05 ether);
+    }
 }
