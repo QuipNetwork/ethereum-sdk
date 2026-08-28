@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {console} from "forge-std-1.14.0/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
@@ -152,6 +153,24 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
             bytes(DeployConstants.SHRINCS_PAYMASTER_PROXY_SALT),
             "ShrincsPaymaster proxy"
         );
+        // In-place upgrade path: the proxy already exists (idempotent skip) but
+        // delegates to an earlier impl of this generation. Storage is ERC-7201
+        // append-only, so a plain UUPS upgrade with no re-init moves it to THIS
+        // build's impl. `_authorizeUpgrade` is `onlyOwner`, so the broadcast key
+        // must be the proxy owner.
+        address current = _erc1967Impl(proxy);
+        if (current != impl) {
+            require(current != address(0), "ShrincsPaymaster proxy: not an ERC-1967 proxy");
+            require(
+                ShrincsPaymaster(payable(proxy)).owner() == vm.addr(pk),
+                "ShrincsPaymaster proxy: PRIVATE_KEY is not the proxy owner (upgrade is onlyOwner)"
+            );
+            vm.startBroadcast(pk);
+            ShrincsPaymaster(payable(proxy)).upgradeToAndCall(impl, "");
+            vm.stopBroadcast();
+            console.log("  - ShrincsPaymaster proxy upgraded from:", current);
+            console.log("  - ShrincsPaymaster proxy upgraded to:  ", impl);
+        }
         // Identity before the owner check: on the idempotent-skip path the owner
         // read alone would happily accept any contract that answers `owner()`.
         _assertErc1967Proxy(proxy, impl, "ShrincsPaymaster proxy");
