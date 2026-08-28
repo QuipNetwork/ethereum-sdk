@@ -42,7 +42,7 @@ Checked via `_enforceDifferentPqOwner`: both `publicSeed` and `publicKeyHash` ar
 
 Both components must differ — checking only one would allow an attacker to submit a key that shares one component, weakening domain separation.
 
-**Contracts:** QuipWallet
+**Contracts:** QuipWallet (WOTS+). The SHRINCS analogue — lifetime spent-tree registries on every install path — is invariant 25.
 
 **Violation consequence:** WOTS+ security is fundamentally broken when a key pair is used more than once. An attacker observing two signatures under the same key can forge arbitrary signatures.
 
@@ -350,6 +350,7 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 - **`keyVersion` is MONOTONIC** (mirrors the wallet): every rotation bumps it, it never resets, and it namespaces `usedStatefulLeafBitmap` — a rotated key always starts from an all-unused namespace, and no epoch's namespace is ever reused. Old-epoch sponsorships die twice over: the context binds `keyVersion`, and the old bundle fails the commitment match.
 - **No wrapper nonce in the sponsorship context** (`nonce: 0` constant, unlike the wallet's action nonce): anti-replay is the one-time leaf plus the `userOp.sender`/`userOp.nonce` binding inside `_userOpBindingHash`. A sequential nonce would serialize ALL sponsored ops globally and turn every landed op into a mass-invalidation of pending ones — any-order landing is a design requirement.
 - **Revocation spends budget.** `markLeavesUsed` mirrors the wallet's batch semantics (idempotent skip on already-used targets and in-batch duplicates; out-of-range reverts the whole batch) and increments `statefulLeavesUsed` per fresh mark, so `remainingStatefulSignatures() = maxSignatures − statefulLeavesUsed` always counts every leaf as available, sponsored, or revoked — the three partitions sum to the budget.
+- **A stateful tree is installed at most once per paymaster lifetime.** `initialize` and `rotateStatefulKey` record `keccak256(pkSeed ‖ root)` in `spentStatefulTrees` and revert `StatefulTreeSpent` on any repeat — same tree, same tree under a re-declared budget, or a cycle back to an earlier epoch's tree. Without this, epoch monotonicity alone is insufficient: re-installing a tree under a new epoch hands it a blank bitmap and resurrects every leaf it already consumed (see 25).
 - **All sponsorship state lives in the paymaster** (bitmap, counter, epoch, commitment). This is forced, not chosen: ERC-7562 permits validation-phase writes only to the validating entity's own storage, so validation-time leaf consumption cannot be delegated to any other contract.
 
 **Contracts:** ShrincsPaymaster
@@ -401,6 +402,7 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 - The budget counts distinct messages SIGNED, an off-chain act no contract can meter. The dep's example wrapper counts on-chain verifications on its mutating paths, but ERC-1271 is a staticcall — even that wrapper's counter cannot advance through `isValidSignature`. On-chain enforcement is impossible for the 1271 key, not merely omitted.
 - **Main key: safe by construction.** Its stateless half signs only in `recoverWallet` / `transferOwnership` rotation contexts, and both install a full fresh bundle (new `pkSeed`/`hypertreeRoot`), so each stateless root ever authorizes at most ONE accepted signature. This property is load-bearing: a rotation path that carried the stateless root forward while consuming a stateless signature would start accumulating uncounted uses (the wallet's stateful-only `rotateKey` deliberately consumes a STATEFUL signature for exactly this reason).
+- **Enforced on-chain, not just by construction:** the stateless root is also recorded in `spentStatelessTrees` at install and `recoverWallet` / `transferOwnership` / `migrate` reject any root ever held (`StatelessTreeSpent`), so a carried-forward or recycled stateless root cannot silently accumulate uses (25).
 - **ERC-1271 key: the client counts.** The SDK/signer must track how many distinct hashes the dedicated 1271 key has signed and rotate it via `setErc1271Key` (fresh key, stateful-authorized) well before `STATELESS_SIGNATURE_LIMIT`. Failed or repeated on-chain VERIFICATIONS of the same blob are free; only new signed hashes spend budget.
 - Signing past the budget degrades SPHINCS+-C's few-time-signature security margin gradually (forgery probability grows with signature count) — it is not a cliff, which is why a generous safety margin, not precision, is the requirement.
 
@@ -424,6 +426,24 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 **Violation consequence:** Dropping the co-signature (or verifying it over a shared domain) reduces the EntryPoint route to single-key PQ authorization — a stolen SHRINCS key could drain the wallet through any bundler while the direct path still demands the classical owner.
 
+---
+
+## 25. Shrincs Tree Non-Reinstallation (Lifetime Spent-Tree Registries)
+
+**A hash-based tree, once installed on a ShrincsWallet or ShrincsPaymaster, can never be installed on that contract again. Every install path checks and records the tree in an append-only lifetime registry before it becomes current.**
+
+- **Identity is the tree, not the commitment.** Stateful: `keccak256(pkSeed ‖ root)` of the 68-byte key, deliberately excluding the trailing `maxSignatures` — re-declaring the budget changes the commitment but not the tree, and must not mint a "new" identity. Stateless: `keccak256(pkSeed ‖ hypertreeRoot)`.
+- **Why epoch namespacing is not enough.** The leaf bitmap is keyed by `keyVersion`, and every install bumps the epoch. Re-installing tree A after A→B therefore lands A in a blank namespace: leaves consumed in A's first epoch verify again under the same key material. The registry closes this; the epoch stays what it was (a namespace), not a reuse guard.
+- **Wallet paths and what they spend:** `initialize` and `migrate` spend both trees of the installed bundle; `rotateKey` spends the next stateful tree (the stateless root is carried forward, already spent at install); `recoverWallet` and `transferOwnership` spend both trees of `nextKey`. The paymaster's `initialize` and `rotateStatefulKey` spend the stateful tree (its stateless half is inert).
+- **Migration is strictly fresh on both halves.** A family round-trip (WOTS+ → SHRINCS → WOTS+ → SHRINCS) leaves earlier SHRINCS trees recorded in this namespace, and `migrate` presents an arbitrary bundle — so it is treated like any other install: `StatefulTreeSpent` / `StatelessTreeSpent` on anything ever held, including the current bundle.
+- **Check-then-record, single primitive.** `_spendStatefulTree` / `_spendStatelessTree` are the only writers; each reverts if the id is set and sets it otherwise. No path may read the registry without writing, and nothing ever clears an entry (ERC-7201 append-only slots; upgrades preserve them).
+- **No backfill.** Deployed from a fresh generation: the registry is authoritative from the first `initialize`; there is no migration of pre-registry wallets.
+- **Not in scope:** the dedicated ERC-1271 key is a many-time stateless key by design and is not recorded (23); replacing it via `setErc1271Key` performs no spent check.
+
+**Contracts:** ShrincsWallet, ShrincsPaymaster
+
+**Violation consequence:** Re-installing a spent tree resets its leaf bitmap under a fresh epoch, so every leaf already revealed on-chain becomes valid again — an attacker replays captured signatures (or, having observed a leaf's one-time secret, forges under it) after the owner "rotates" back, and the budget gauge overstates remaining capacity. Skipping the stateless registry would let a recovery root authorize more than one accepted signature, eroding the ≤1-use construction in 23.
+
 These invariants form a security web — they depend on each other:
 
 1. **Key Rotation (1) + Reuse Prevention (2):** Rotation must happen AND the new key must differ. Either failing alone breaks WOTS+ security.
@@ -434,4 +454,6 @@ These invariants form a security web — they depend on each other:
 
 4. **Vetting (7) + Initialization (4):** Only vetted code is deployed. During init, the wallet binds to its factory. Failing to vet or mismatching the factory breaks upgrade security.
 
-5. **ERC-4337 Validation Phasing (1) + Execution Reversion:** Key rotation in the validation phase survives execution-phase reverts. Moving rotation to execution would create a window where a revealed key remains active.
+5. **Epoch Namespacing (17, 20) + Spent-Tree Registries (25):** The epoch gives a rotated key a blank bitmap; the registry guarantees the key is genuinely new. Epochs without the registry resurrect consumed leaves on re-install; the registry without epochs would leak leaf state across keys.
+
+6. **ERC-4337 Validation Phasing (1) + Execution Reversion:** Key rotation in the validation phase survives execution-phase reverts. Moving rotation to execution would create a window where a revealed key remains active.

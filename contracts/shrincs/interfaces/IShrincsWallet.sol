@@ -62,10 +62,12 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
-    /// @notice The stateful tree (pkSeed, root) was installed on this wallet before. Trees are
-    ///         one-time material for their lifetime; re-installing one would reset its leaf bitmap.
+    /// @notice The stateful tree was installed on this wallet before. Trees are one-time
+    ///         material for the wallet's lifetime; re-installing one would reset its leaf bitmap.
+    /// @param treeId `keccak256(pkSeed ‖ root)` of the 68-byte stateful key (budget excluded).
     error StatefulTreeSpent(bytes32 treeId);
-    /// @notice The stateless tree (pkSeed, hypertreeRoot) was installed on this wallet before.
+    /// @notice The stateless tree was installed on this wallet before.
+    /// @param treeId `keccak256(pkSeed ‖ hypertreeRoot)`.
     error StatelessTreeSpent(bytes32 treeId);
     /// @notice Thrown when the V1 commitment (salt) does not recompute from the install payload.
     error IdentityMismatch();
@@ -232,7 +234,8 @@ interface IShrincsWallet is IWallet {
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Initializes the wallet. Called once by the factory.
+    /// @notice Initializes the wallet. Called once by the factory. Records both installed trees
+    ///         as spent (`StatefulTreeSpent` / `StatelessTreeSpent` on any later re-install).
     /// @param newOwner The classical owner (ERC-1271 ECDSA gate + factory registry only).
     /// @param payload Packed init data: `[0:32)` main commitment, `[32:64)` pkSeed, then the
     ///        ABI-encoded `(PublicKey mainBundle, uint32 hashSuite, bytes32 erc1271Commitment,
@@ -243,6 +246,8 @@ interface IShrincsWallet is IWallet {
     ) external override;
 
     /// @notice Re-installs PQ state during an upgrade. Only valid inside `upgradeToAndCall`.
+    ///         Both trees in the payload must be strictly fresh (never held by this wallet) and
+    ///         are recorded as spent; reverts `StatefulTreeSpent` / `StatelessTreeSpent`.
     function migrate(bytes calldata payload) external;
 
     /// @notice SHRINCS-gated UUPS upgrade. Authorized by a stateful signature from the main key.
@@ -295,6 +300,8 @@ interface IShrincsWallet is IWallet {
     ///         fresh bundle, and the current STATEFUL signature cross-binding `newOwner` to that
     ///         bundle (so the two cannot be mixed across attempts). Consumes one stateful leaf and
     ///         one stateless-budget unit; bumps the key epoch and notifies the factory registry.
+    ///         Both trees of `nextKey` must be fresh and are recorded as spent (reverts
+    ///         `StatefulTreeSpent` / `StatelessTreeSpent`).
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param ownerBindingSignature Stateful signature over `(newOwner, nextKey.commitment)`.
     /// @param recoverySignature Stateless recovery signature authorizing the fresh bundle.
@@ -341,7 +348,9 @@ interface IShrincsWallet is IWallet {
 
     /// @notice Routine stateful rotation of the main key's stateful subkey (reusing the
     ///         stateless recovery root). Authorized by a stateful signature; resets the leaf
-    ///         budget. Use before `maxSignatures` is exhausted.
+    ///         budget. Use before `maxSignatures` is exhausted. The next stateful tree must be
+    ///         fresh (never held, under any budget) and is recorded as spent; reverts
+    ///         `StatefulTreeSpent`.
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param signature The stateful signature authorizing the rotation.
     /// @param nextStatefulKey The replacement stateful subkey target.
@@ -355,7 +364,8 @@ interface IShrincsWallet is IWallet {
     ///         key's recovery half, it installs an entirely fresh key bundle (new stateful key
     ///         AND new stateless recovery root). Use when the stateful key is exhausted or
     ///         compromised. Ownership is unchanged; for a handover to a new party use
-    ///         `transferOwnership`.
+    ///         `transferOwnership`. Both trees of `nextKey` must be fresh and are recorded as
+    ///         spent (reverts `StatefulTreeSpent` / `StatelessTreeSpent`).
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param recoverySignature The stateless recovery signature authorizing the rotation.
     /// @param nextKey The replacement full key bundle.
