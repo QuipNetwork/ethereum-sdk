@@ -31,6 +31,7 @@ import {
   EmptyLeavesError,
   StatefulBudgetExhaustedError,
   VerifierMismatchError,
+  StatefulTreeSpentError,
 } from "./errors.js";
 import {
   LeafReservationStore,
@@ -39,6 +40,7 @@ import {
 } from "./leafReservation.js";
 import {
   buildStatefulRotationTarget,
+  statefulTreeId,
   publicKeyToAbi,
 } from "./shrincsCodec.js";
 import { prepareTx, type TxOptions } from "./gas.js";
@@ -316,6 +318,12 @@ export class ShrincsPaymasterClient {
       keypair.publicKeyCommitment.toLowerCase() !== verifier.commitment.toLowerCase()
     ) {
       throw new VerifierMismatchError(keypair.publicKeyCommitment, verifier.commitment);
+    }
+    // Trees never come back: refuse the installed tree (any budget) before
+    // sending; older trees are refused on-chain (`StatefulTreeSpentError`).
+    const nextTree = statefulTreeId(params.nextStatefulPublicKey);
+    if (nextTree === statefulTreeId(keypair.publicKey.statefulPublicKey)) {
+      throw new StatefulTreeSpentError(nextTree);
     }
     const nextStatefulKey = buildStatefulRotationTarget({
       nextStatefulPublicKey: params.nextStatefulPublicKey,

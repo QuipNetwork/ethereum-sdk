@@ -41,6 +41,8 @@ import {
   OwnerMismatchError,
   StatefulBudgetExhaustedError,
   ZeroAddressOwnerError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
   ZeroErc1271CommitmentError,
 } from "./errors.js";
 import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
@@ -71,6 +73,8 @@ import {
   buildActionContext,
   buildRotationContext,
   buildStatefulRotationTarget,
+  statefulTreeId,
+  statelessTreeId,
   dataHash as keccakData,
   domainSeparator,
   encodeErc1271Signature,
@@ -520,9 +524,31 @@ export class ShrincsWalletClient {
   /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
   /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
   /// are responsible for their own exclusion guard (see `markLeavesUsed`).
+  /// Pre-flight mirror of the wallet's spent-tree registry for the one case the
+  /// client can see: the next stateful tree equals the INSTALLED one (same
+  /// tree, or the same tree under a re-declared budget). Cycles back to an
+  /// older tree are only caught on-chain (`StatefulTreeSpentError` decoded).
+  private assertFreshStatefulTree(nextStatefulPublicKey: Hex, current: ShrincsPublicKey): void {
+    const next = statefulTreeId(nextStatefulPublicKey);
+    if (next === statefulTreeId(current.statefulPublicKey)) {
+      throw new StatefulTreeSpentError(next);
+    }
+  }
+
+  /// Pre-flight for full-bundle installs (`recoverWallet` / `transferOwnership`):
+  /// both halves of `nextKey` must differ from the installed bundle.
+  private assertFreshBundle(nextKey: ShrincsPublicKey, current: ShrincsPublicKey): void {
+    this.assertFreshStatefulTree(nextKey.statefulPublicKey, current);
+    const next = statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot);
+    if (next === statelessTreeId(current.pkSeed, current.hypertreeRoot)) {
+      throw new StatelessTreeSpentError(next);
+    }
+  }
+
   private async prepareStatefulOp(
     keyOpts?: ShrincsTxKeyOptions,
-    excludeLeaves?: ReadonlySet<number>
+    excludeLeaves?: ReadonlySet<number>,
+    preflight?: (keypair: ShrincsKeyPair, state: ShrincsWalletState) => void
   ): Promise<{
     keypair: ShrincsKeyPair;
     state: ShrincsWalletState;
@@ -535,6 +561,10 @@ export class ShrincsWalletClient {
       state.maxSignatures,
       state.shrincsPublicKeyCommitment
     );
+    // Caller pre-flights (e.g. spent-tree checks) run BEFORE any leaf is
+    // reserved: reservations have no release API, so a rejected call must not
+    // burn a signing leaf.
+    preflight?.(keypair, state);
     // Validate the excluded leaves BEFORE reserving. `excludeLeaves` carries the
     // revocation targets (`markLeavesUsed`), which must be valid signing leaves
     // `[1..maxSignatures]`. Rejecting a malformed target here — before any leaf
@@ -859,6 +889,8 @@ export class ShrincsWalletClient {
   /// Routine stateful rotation: refresh the stateful subkey, reuse the stateless
   /// recovery root. `nextStatefulPublicKey` is the fresh stateful key's encoded
   /// 68-byte public key (from a freshly keygen'd bundle under a new commitment).
+  /// Pre-flights `StatefulTreeSpentError` when it is the installed tree (any
+  /// budget); older trees are refused on-chain — trees never come back.
   async rotateKey(
     params: { nextStatefulPublicKey: Hex },
     opts: TxOptions & ShrincsTxKeyOptions = {}
@@ -868,7 +900,9 @@ export class ShrincsWalletClient {
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(opts, undefined, (kp) =>
+      this.assertFreshStatefulTree(params.nextStatefulPublicKey, kp.publicKey)
+    );
     const nextStatefulKey = buildStatefulRotationTarget({
       nextStatefulPublicKey: params.nextStatefulPublicKey,
       currentPkSeed: keypair.publicKey.pkSeed,
@@ -1004,7 +1038,9 @@ export class ShrincsWalletClient {
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(opts, undefined, (kp) =>
+      this.assertFreshBundle(params.nextKey, kp.publicKey)
+    );
     const rotationTarget = toRotationTarget(params.nextKey);
 
     const ownerCtx = buildActionContext({
@@ -1047,6 +1083,8 @@ export class ShrincsWalletClient {
 
   /// Break-glass recovery: install an entirely fresh bundle authorized by the
   /// stateless recovery signature. Ownership unchanged. No leaf consumed.
+  /// Both halves of `nextKey` must be fresh: the installed trees pre-flight
+  /// `StatefulTreeSpentError` / `StatelessTreeSpentError`; older ones on-chain.
   async recoverWallet(
     params: { nextKey: ShrincsPublicKey },
     opts: TxOptions = {}
@@ -1057,6 +1095,7 @@ export class ShrincsWalletClient {
       state.maxSignatures,
       state.shrincsPublicKeyCommitment
     );
+    this.assertFreshBundle(params.nextKey, keypair.publicKey);
     const rotationTarget: RotationTarget = toRotationTarget(params.nextKey);
     const rctx = buildRotationContext({
       domainSeparator: rotationDomainSeparator(

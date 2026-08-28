@@ -2031,6 +2031,28 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
+    "name": "StatefulTreeSpent",
+    "inputs": [
+      {
+        "name": "treeId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "StatelessTreeSpent",
+    "inputs": [
+      {
+        "name": "treeId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "StorageStoreDisabled",
     "inputs": []
   },

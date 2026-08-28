@@ -19,9 +19,11 @@ import {
   type AbiParameter,
   type Address,
   type Hex,
+  bytesToHex,
   concat,
   decodeAbiParameters,
   encodeAbiParameters,
+  hexToBytes,
   keccak256,
   pad,
   toBytes,
@@ -582,6 +584,31 @@ export function encodeErc1271Signature(params: {
 /// Build the `StatefulRotationTarget` for `rotateKey` from a fresh stateful
 /// public key, reusing the current bundle's stateless half. `publicKeyCommitment`
 /// is derived to match the on-chain commitment formula.
+/// Lifetime identity of a stateful tree: `keccak256(pkSeed ‖ root)` over the
+/// first 64 bytes of the 68-byte encoded stateful public key. The trailing
+/// `maxSignatures` is deliberately excluded — re-declaring the budget does not
+/// make a new tree. Mirrors `ShrincsWallet._statefulTreeId`.
+export function statefulTreeId(statefulPublicKey: Hex): Hex {
+  const bytes = hexToBytes(statefulPublicKey);
+  if (bytes.length !== 68) {
+    throw new Error(
+      `statefulPublicKey must be 68 bytes, got ${bytes.length}`
+    );
+  }
+  return keccak256(bytes.subarray(0, 64));
+}
+
+/// Lifetime identity of a stateless tree: `keccak256(pkSeed ‖ hypertreeRoot)`
+/// over the first 32 bytes of each field. Mirrors `ShrincsWallet._statelessTreeId`.
+export function statelessTreeId(pkSeed: Hex, hypertreeRoot: Hex): Hex {
+  const seed = hexToBytes(pkSeed);
+  const root = hexToBytes(hypertreeRoot);
+  if (seed.length < 32 || root.length < 32) {
+    throw new Error("pkSeed and hypertreeRoot must be at least 32 bytes");
+  }
+  return keccak256(concat([bytesToHex(seed.subarray(0, 32)), bytesToHex(root.subarray(0, 32))]));
+}
+
 export function buildStatefulRotationTarget(params: {
   nextStatefulPublicKey: Hex;
   currentPkSeed: Hex;

@@ -75,6 +75,36 @@ describe("shrincsCodec", () => {
     expect(target.publicKeyCommitment).not.toBe(mainKey.publicKeyCommitment);
   });
 
+  it("statefulTreeId hashes pkSeed ‖ root and ignores the trailing maxSignatures", () => {
+    const spk = mainKey.publicKey.statefulPublicKey;
+    expect(toBytes(spk).length).toBe(68);
+    expect(Codec.statefulTreeId(spk)).toBe(keccak256(sliceHex(spk, 0, 64)));
+    // Re-declaring the budget changes the commitment, not the tree.
+    const bytes = toBytes(spk);
+    bytes[67] = (bytes[67] + 1) & 0xff;
+    const rebudgeted = toHex(bytes);
+    expect(rebudgeted).not.toBe(spk);
+    expect(Codec.statefulTreeId(rebudgeted)).toBe(Codec.statefulTreeId(spk));
+    // Distinct trees differ.
+    expect(Codec.statefulTreeId(erc1271Key.publicKey.statefulPublicKey)).not.toBe(
+      Codec.statefulTreeId(spk)
+    );
+    expect(() => Codec.statefulTreeId(sliceHex(spk, 0, 67))).toThrow(/68 bytes/);
+  });
+
+  it("statelessTreeId hashes pkSeed ‖ hypertreeRoot", () => {
+    const { pkSeed, hypertreeRoot } = mainKey.publicKey;
+    expect(Codec.statelessTreeId(pkSeed, hypertreeRoot)).toBe(
+      keccak256(concat([sliceHex(pkSeed, 0, 32), sliceHex(hypertreeRoot, 0, 32)]))
+    );
+    expect(
+      Codec.statelessTreeId(erc1271Key.publicKey.pkSeed, erc1271Key.publicKey.hypertreeRoot)
+    ).not.toBe(Codec.statelessTreeId(pkSeed, hypertreeRoot));
+    expect(() => Codec.statelessTreeId(sliceHex(pkSeed, 0, 31), hypertreeRoot)).toThrow(
+      /at least 32 bytes/
+    );
+  });
+
   it("domain separator binds tag, chainId, and address", () => {
     const base = Codec.domainSeparator(CHAIN_ID, WALLET);
     expect(base).toMatch(/^0x[0-9a-f]{64}$/);

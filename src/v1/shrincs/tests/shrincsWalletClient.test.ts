@@ -11,6 +11,7 @@ import {
   type WalletClient,
   keccak256,
   toHex,
+  toBytes,
 } from "viem";
 
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
@@ -19,6 +20,9 @@ import {
   ShrincsHdDerivationError,
   ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
+  AuthLeafInTargetsError,
 } from "../errors.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
@@ -40,10 +44,14 @@ const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as Address;
 const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let keypair: ShrincsKeyPair;
+let freshKey: ShrincsKeyPair;
 
 beforeAll(async () => {
   const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   keypair = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
+    maxSignatures: MAX_SIG,
+  });
+  freshKey = signer.keygenFromSeedHex(seed("shrincs wallet fresh key seed"), {
     maxSignatures: MAX_SIG,
   });
 });
@@ -280,6 +288,112 @@ describe("ShrincsWalletClient setErc1271Key", () => {
     await expect(
       client.setErc1271Key({ newCommitment: "" as Hex })
     ).rejects.toThrow(ZeroErc1271CommitmentError);
+  });
+});
+
+describe("ShrincsWalletClient spent-tree pre-flights", () => {
+  const NEW_OWNER = "0x00000000000000000000000000000000000000c3" as Address;
+
+  /// The installed stateful key with its trailing `maxSignatures` re-declared:
+  /// a different commitment, the same tree.
+  function rebudgeted(statefulPublicKey: Hex): Hex {
+    const bytes = toBytes(statefulPublicKey);
+    bytes[67] = (bytes[67] + 1) & 0xff;
+    return toHex(bytes);
+  }
+
+  /// Fresh stateful subkey grafted onto the INSTALLED stateless half.
+  const carriedStateless = () => ({
+    ...freshKey.publicKey,
+    pkSeed: keypair.publicKey.pkSeed,
+    hypertreeRoot: keypair.publicKey.hypertreeRoot,
+  });
+
+  /// Runs `fn` and asserts it did NOT fail the spent-tree pre-flight (it is
+  /// expected to fail later, at the unmocked send layer).
+  async function passesPreflight(fn: () => Promise<unknown>): Promise<void> {
+    let caught: unknown;
+    try {
+      await fn();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeInstanceOf(StatefulTreeSpentError);
+    expect(caught).not.toBeInstanceOf(StatelessTreeSpentError);
+  }
+
+  it("rotateKey refuses the installed stateful tree", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.rotateKey({ nextStatefulPublicKey: keypair.publicKey.statefulPublicKey })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("rotateKey refuses the installed tree under a re-declared budget", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.rotateKey({ nextStatefulPublicKey: rebudgeted(keypair.publicKey.statefulPublicKey) })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("rotateKey lets a fresh stateful tree through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.rotateKey({ nextStatefulPublicKey: freshKey.publicKey.statefulPublicKey })
+    );
+  });
+
+  it("rotateKey rejection reserves no leaf (the next call still picks leaf 1)", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.rotateKey({ nextStatefulPublicKey: keypair.publicKey.statefulPublicKey })
+    ).rejects.toThrow(StatefulTreeSpentError);
+    // markLeavesUsed's own guard forbids authorizing from inside the target set:
+    // if leaf 1 had been reserved by the rejected rotation, the auto-pick would
+    // move to 2 and this would no longer be the in-set collision it asserts.
+    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
+      AuthLeafInTargetsError
+    );
+  });
+
+  it("recoverWallet refuses the installed bundle", async () => {
+    const client = makeWalletClient();
+    await expect(client.recoverWallet({ nextKey: keypair.publicKey })).rejects.toThrow(
+      StatefulTreeSpentError
+    );
+  });
+
+  it("recoverWallet refuses a carried-forward stateless tree", async () => {
+    const client = makeWalletClient();
+    await expect(client.recoverWallet({ nextKey: carriedStateless() })).rejects.toThrow(
+      StatelessTreeSpentError
+    );
+  });
+
+  it("recoverWallet lets a fresh bundle through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() => client.recoverWallet({ nextKey: freshKey.publicKey }));
+  });
+
+  it("transferOwnership refuses the installed bundle", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.transferOwnership({ nextKey: keypair.publicKey, newOwner: NEW_OWNER })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("transferOwnership refuses a carried-forward stateless tree", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.transferOwnership({ nextKey: carriedStateless(), newOwner: NEW_OWNER })
+    ).rejects.toThrow(StatelessTreeSpentError);
+  });
+
+  it("transferOwnership lets a fresh bundle through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.transferOwnership({ nextKey: freshKey.publicKey, newOwner: NEW_OWNER })
+    );
   });
 });
 

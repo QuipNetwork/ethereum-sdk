@@ -30,6 +30,8 @@ import {
   CommitmentMismatchError,
   ZeroErc1271CommitmentError,
   ZeroMaxSignaturesError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
   UnsupportedHashSuiteError,
   StaleStatefulLeafError,
   StaleActionNonceError,
@@ -72,6 +74,10 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   CommitmentMismatch: (_, o) => new CommitmentMismatchError(undefined, undefined, o),
   ZeroErc1271Commitment: (_, o) => new ZeroErc1271CommitmentError(o),
   ZeroMaxSignatures: (_, o) => new ZeroMaxSignaturesError(o),
+  // `StatefulTreeSpent(bytes32 treeId)` (wallet + paymaster).
+  StatefulTreeSpent: (args, o) => new StatefulTreeSpentError(args[0] as Hex, o),
+  // `StatelessTreeSpent(bytes32 treeId)` (wallet).
+  StatelessTreeSpent: (args, o) => new StatelessTreeSpentError(args[0] as Hex, o),
   UnsupportedHashSuite: (_, o) => new UnsupportedHashSuiteError(o),
   StaleStatefulLeaf: (_, o) => new StaleStatefulLeafError(undefined, o),
   StaleActionNonce: (args, o) =>

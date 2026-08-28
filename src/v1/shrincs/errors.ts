@@ -262,6 +262,40 @@ export class ZeroMaxSignaturesError extends QuipError {
   }
 }
 
+/// The stateful tree (`keccak256(pkSeed ‖ root)`, budget excluded) was installed
+/// on this wallet/paymaster before. Trees are one-time material for the
+/// contract's lifetime; re-installing one would reset its leaf bitmap.
+export class StatefulTreeSpentError extends QuipError {
+  readonly treeId?: Hex;
+  constructor(treeId?: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATEFUL_TREE_SPENT",
+      treeId === undefined
+        ? "Stateful tree was already installed on this contract — keygen a fresh key"
+        : `Stateful tree ${treeId} was already installed on this contract — keygen a fresh key`,
+      opts
+    );
+    this.treeId = treeId;
+  }
+}
+
+/// The stateless tree (`keccak256(pkSeed ‖ hypertreeRoot)`) was installed on
+/// this wallet before. `recoverWallet` / `transferOwnership` / `migrate` must
+/// present a bundle whose stateless half is entirely fresh.
+export class StatelessTreeSpentError extends QuipError {
+  readonly treeId?: Hex;
+  constructor(treeId?: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATELESS_TREE_SPENT",
+      treeId === undefined
+        ? "Stateless tree was already installed on this wallet — keygen a fresh bundle"
+        : `Stateless tree ${treeId} was already installed on this wallet — keygen a fresh bundle`,
+      opts
+    );
+    this.treeId = treeId;
+  }
+}
+
 /// A declared hash suite other than `HASH_SUITE_KECCAK_256` was supplied at
 /// install/rotate time (wallet initialize/migrate/setErc1271Key, paymaster
 /// initialize).
