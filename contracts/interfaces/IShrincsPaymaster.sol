@@ -42,7 +42,9 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();
-    /// @notice The stateful tree (pkSeed, root) was installed on this paymaster before.
+    /// @notice The stateful tree was installed on this paymaster before. Trees are one-time
+    ///         material for the paymaster's lifetime; re-installing one would reset its bitmap.
+    /// @param treeId `keccak256(pkSeed ‖ root)` of the 68-byte stateful key (budget excluded).
     error StatefulTreeSpent(bytes32 treeId);
     /// @notice Thrown when registering a verifier key with a hash suite other than the
     ///         compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this implementation
@@ -155,7 +157,8 @@ interface IShrincsPaymaster is IPaymaster {
     ///         no way to unset it (only rotate via `rotateStatefulKey`). The full public-key bundle
     ///         is required (not just its commitment) so the installed commitment and stateful leaf
     ///         budget are DERIVED from validated key material, exactly like `rotateStatefulKey` and
-    ///         the wallet's `initialize` — the budget is never a trusted free parameter.
+    ///         the wallet's `initialize` — the budget is never a trusted free parameter. The
+    ///         installed stateful tree is recorded as spent.
     /// @param owner_ The paymaster owner.
     /// @param publicKey The initial verifier public-key bundle. Its embedded commitment must
     ///        recompute (`SHRINCS.validPublicKey`); the stateful leaf budget is decoded from
@@ -180,7 +183,9 @@ interface IShrincsPaymaster is IPaymaster {
     ///         applies, the installed commitment changes and a replay fails the pin).
     ///         Bumps the verifier epoch (fresh leaf-bitmap
     ///         namespace), resets the leaf-used counter, and installs the new stateful budget
-    ///         decoded from `nextStatefulKey.statefulPublicKey`. Cannot unset the key.
+    ///         decoded from `nextStatefulKey.statefulPublicKey`. Cannot unset the key. The next
+    ///         stateful tree must be fresh (never held, under any budget) and is recorded as
+    ///         spent; reverts `StatefulTreeSpent`.
     /// @param currentPublicKey The full currently installed public-key bundle; pinned against the
     ///        stored commitment so its stateless half is trustworthy to carry forward.
     /// @param nextStatefulKey The replacement stateful subkey and the declared next-bundle
