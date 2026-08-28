@@ -17,8 +17,21 @@
 //
 // Env: SHRINCS_OPERATOR_SECRET (0x + 32 bytes), PRIVATE_KEY (paymaster owner),
 //      SHRINCS_VERIFIER_MAX_SIGNATURES (budget for the NEXT stateful key).
+//      ROTATE_CURRENT_STATELESS_INDEX defaults to 0 (a stateful-only rotation
+//      does not move the live stateless index).
+//      ROTATE_NEXT_INDEX must be greater than ROTATE_CURRENT_STATEFUL_INDEX.
+//      Pre-registry trees on upgraded proxies are not covered on-chain, so a
+//      lower next index would succeed there. Set ROTATE_ALLOW_NONMONOTONIC=1
+//      to allow a lower next index for recovery (equality is still rejected).
 
-import { createPublicClient, createWalletClient, http, hexToBytes, isHex } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  hexToBytes,
+  isHex,
+  isAddress,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   ShrincsSigner,
@@ -32,23 +45,56 @@ function req(name) {
   return v;
 }
 function idx(name, dflt) {
-  const v = process.env[name] ?? dflt;
+  const v = dflt === undefined ? req(name) : (process.env[name] ?? dflt);
   const n = Number(v);
-  if (!Number.isInteger(n) || n < 0 || n >= 2 ** 31) throw new Error(`${name} must be an integer in [0, 2^31)`);
+  if (!Number.isInteger(n) || n < 0 || n >= 2 ** 31) {
+    throw new Error(`${name} must be an integer in [0, 2^31)`);
+  }
   return n;
 }
 
 const broadcast = process.argv.includes("--broadcast");
 const secretHex = req("SHRINCS_OPERATOR_SECRET");
-if (!isHex(secretHex) || hexToBytes(secretHex).length !== 32) throw new Error("SHRINCS_OPERATOR_SECRET must be 0x + 32 bytes");
+if (!isHex(secretHex) || hexToBytes(secretHex).length !== 32) {
+  throw new Error("SHRINCS_OPERATOR_SECRET must be 0x + 32 bytes");
+}
 const rpcUrl = req("ROTATE_RPC_URL");
 const chainId = Number(req("ROTATE_CHAIN_ID"));
+if (!Number.isInteger(chainId) || chainId <= 0) {
+  throw new Error("ROTATE_CHAIN_ID must be a positive integer");
+}
 const paymasterAddress = req("ROTATE_PAYMASTER");
+if (!isAddress(paymasterAddress)) {
+  throw new Error("ROTATE_PAYMASTER must be a valid address");
+}
 const currentStatefulIndex = idx("ROTATE_CURRENT_STATEFUL_INDEX", "0");
-const currentStatelessIndex = idx("ROTATE_CURRENT_STATELESS_INDEX", String(currentStatefulIndex));
+const currentStatelessIndex = idx("ROTATE_CURRENT_STATELESS_INDEX", "0");
 const nextIndex = idx("ROTATE_NEXT_INDEX");
 const maxSignatures = Number(req("SHRINCS_VERIFIER_MAX_SIGNATURES"));
-if (nextIndex === currentStatefulIndex) throw new Error("ROTATE_NEXT_INDEX must differ from the current stateful index");
+if (
+  !Number.isInteger(maxSignatures) ||
+  maxSignatures <= 0 ||
+  maxSignatures > 2 ** 32 - 1
+) {
+  throw new Error(
+    "SHRINCS_VERIFIER_MAX_SIGNATURES must be an integer in [1, 2^32)"
+  );
+}
+// Pre-registry trees on upgraded proxies are not covered on-chain, so a
+// rotation back to an older HD index would succeed. Monotonic indices make
+// cycling back impossible from this script. Set ROTATE_ALLOW_NONMONOTONIC=1
+// to restore the old !== check for recovery.
+if (process.env.ROTATE_ALLOW_NONMONOTONIC === "1") {
+  if (nextIndex === currentStatefulIndex) {
+    throw new Error(
+      "ROTATE_NEXT_INDEX must differ from the current stateful index"
+    );
+  }
+} else if (nextIndex <= currentStatefulIndex) {
+  throw new Error(
+    "ROTATE_NEXT_INDEX must be greater than the current stateful index"
+  );
+}
 
 const account = privateKeyToAccount(req("PRIVATE_KEY"));
 const chain = { id: chainId, name: `chain-${chainId}`, nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 }, rpcUrls: { default: { http: [rpcUrl] } } };
@@ -106,7 +152,32 @@ if (!broadcast) {
 const hash = await walletClient.writeContract({ ...sim.request, account });
 console.log(`sent     tx ${hash}`);
 const receipt = await publicClient.waitForTransactionReceipt({ hash });
-console.log(`rotated  tx ${receipt.transactionHash}  block ${receipt.blockNumber}  status ${receipt.status}`);
-const [c2, , v2] = await publicClient.readContract({ address: paymasterAddress, abi: shrincsPaymasterAbi, functionName: "getShrincsVerifier" });
+if (receipt.status !== "success") {
+  console.error(
+    `rotation tx ${receipt.transactionHash} reverted ` +
+      `(status ${receipt.status})`
+  );
+  process.exit(1);
+}
+console.log(
+  `rotated  tx ${receipt.transactionHash}  block ${receipt.blockNumber}  ` +
+    `status ${receipt.status}`
+);
+const [c2, , v2] = await publicClient.readContract({
+  address: paymasterAddress,
+  abi: shrincsPaymasterAbi,
+  functionName: "getShrincsVerifier",
+});
+if (c2.toLowerCase() !== target.publicKeyCommitment.toLowerCase()) {
+  console.error(
+    `live commitment ${c2} does not match expected ` +
+      `${target.publicKeyCommitment}`
+  );
+  process.exit(1);
+}
 console.log(`live now         commitment ${c2}  epoch ${v2}`);
-console.log(`\nSponsor client config for this chain: deriveKeyPair({ statefulIndex: ${nextIndex}, statelessIndex: ${currentStatelessIndex}, maxSignatures: ${maxSignatures} })`);
+console.log(
+  `\nSponsor client config for this chain: deriveKeyPair({ ` +
+    `statefulIndex: ${nextIndex}, statelessIndex: ${currentStatelessIndex}, ` +
+    `maxSignatures: ${maxSignatures} })`
+);

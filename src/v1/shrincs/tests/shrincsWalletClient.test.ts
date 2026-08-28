@@ -16,14 +16,16 @@ import {
 
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
+  AuthLeafInTargetsError,
+  GasEstimationError,
   OwnerMismatchError,
   ShrincsHdDerivationError,
-  ZeroAddressOwnerError,
-  ZeroErc1271CommitmentError,
   StatefulTreeSpentError,
   StatelessTreeSpentError,
-  AuthLeafInTargetsError,
+  ZeroAddressOwnerError,
+  ZeroErc1271CommitmentError,
 } from "../errors.js";
+import { encodeInitPayload } from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
 import { type PackedUserOperation } from "../../userOpCodec.js";
@@ -318,6 +320,8 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
     } catch (e) {
       caught = e;
     }
+    expect(caught).toBeDefined();
+    expect(caught).toBeInstanceOf(GasEstimationError);
     expect(caught).not.toBeInstanceOf(StatefulTreeSpentError);
     expect(caught).not.toBeInstanceOf(StatelessTreeSpentError);
   }
@@ -393,6 +397,51 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
     const client = makeWalletClient();
     await passesPreflight(() =>
       client.transferOwnership({ nextKey: freshKey.publicKey, newOwner: NEW_OWNER })
+    );
+  });
+
+  it("transferOwnership rejection reserves no leaf (the next call still picks leaf 1)", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.transferOwnership({ nextKey: keypair.publicKey, newOwner: NEW_OWNER })
+    ).rejects.toThrow(StatefulTreeSpentError);
+    // markLeavesUsed's own guard forbids authorizing from inside the target set:
+    // if leaf 1 had been reserved by the rejected handover, the auto-pick would
+    // move to 2 and this would no longer be the in-set collision it asserts.
+    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
+      AuthLeafInTargetsError
+    );
+  });
+
+  it("upgradeToAndCall migrate refuses the installed bundle before reserving a leaf", async () => {
+    const client = makeWalletClient();
+    const migratorPayload = encodeInitPayload({
+      mainBundle: keypair.publicKey,
+      erc1271Commitment: ZERO32,
+    });
+    await expect(
+      client.upgradeToAndCall({
+        newImplementation: WRONG_OWNER,
+        shouldMigrate: true,
+        migratorPayload,
+      })
+    ).rejects.toThrow(StatefulTreeSpentError);
+    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
+      AuthLeafInTargetsError
+    );
+  });
+
+  it("upgradeToAndCall migrate lets a fresh-bundle payload through the pre-flight", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.upgradeToAndCall({
+        newImplementation: WRONG_OWNER,
+        shouldMigrate: true,
+        migratorPayload: encodeInitPayload({
+          mainBundle: freshKey.publicKey,
+          erc1271Commitment: ZERO32,
+        }),
+      })
     );
   });
 });

@@ -138,6 +138,41 @@ contract ShrincsWalletTest is Test {
         });
     }
 
+    /// @dev Full rotation target that recomputes to the installed bundle.
+    function _sameBundleTarget() internal view returns (SHRINCS.RotationTarget memory) {
+        return SHRINCS.RotationTarget({
+            statefulPublicKey: mainPk.statefulPublicKey,
+            publicKeyCommitment: mainPk.publicKeyCommitment,
+            pkSeed: mainPk.pkSeed,
+            hypertreeRoot: mainPk.hypertreeRoot
+        });
+    }
+
+    /// @dev Full rotation target: fresh stateful tree, CURRENT stateless tree carried forward.
+    function _freshStatefulSameStatelessTarget(bytes memory seed)
+        internal
+        view
+        returns (SHRINCS.RotationTarget memory target)
+    {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
+        require(ok, "keygen");
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
+        target = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(c),
+            pkSeed: mainPk.pkSeed,
+            hypertreeRoot: mainPk.hypertreeRoot
+        });
+    }
+
+    /// @dev Public-key view of a full rotation target (for the tree-identity helpers).
+    function _bundleOf(SHRINCS.RotationTarget memory t) internal pure returns (SHRINCS.PublicKey memory pk) {
+        pk.statefulPublicKey = t.statefulPublicKey;
+        pk.publicKeyCommitment = t.publicKeyCommitment;
+        pk.pkSeed = t.pkSeed;
+        pk.hypertreeRoot = t.hypertreeRoot;
+    }
+
     /// @dev Generates a fresh stateful-only subkey target for `rotateKey`, reusing the CURRENT
     ///      main key's stateless seed/root in the recomputed next-bundle commitment.
     function _makeStatefulRotationTarget(bytes memory seed)
@@ -338,13 +373,15 @@ contract ShrincsWalletTest is Test {
     }
 
     /// @dev Init/migrate payload for an entirely FRESH bundle (new stateful and stateless trees),
-    ///      as a migration must present. Returns the payload and the fresh bundle's commitment.
+    ///      as a migration must present. Returns the payload, the fresh bundle's commitment, and
+    ///      the generated public key so callers that also need the key do not re-keygen.
     function _freshInitPayload(bytes memory seed)
         internal
         view
-        returns (bytes memory payload, bytes32 commitment)
+        returns (bytes memory payload, bytes32 commitment, SHRINCS.PublicKey memory pk)
     {
-        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
+        bool ok;
+        (, pk, ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
         require(ok, "fresh keygen");
         commitment = _commitment32(pk);
         payload = _buildInitPayload(

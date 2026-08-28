@@ -109,6 +109,18 @@ library DeployConstants {
     string internal constant PROXY_VERSION = "V1.0.1";
     string internal constant IMPL_VERSION = "V1.0.1-beta.2";
 
+    /// The retired `V1.0.1-beta.1` ShrincsPaymaster implementation — the ONLY
+    /// implementation `02_DeployShrincs` is allowed to upgrade the paymaster
+    /// proxy away from. It is the same address on every chain of this
+    /// generation (sender-guarded CREATE3), and it is published in the retired
+    /// table in DEPLOYMENTS.md. An implementation slot that is neither this
+    /// build's impl nor this address is unknown to this build, so the deploy
+    /// refuses rather than overwrite it (re-running an older checkout would
+    /// otherwise downgrade a live proxy). Add a predecessor here — never
+    /// widen the check — when a later generation supersedes `-beta.2`.
+    address internal constant RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1 =
+        0xD0C56265b942160bb4470077f65123EE34E0Ee93;
+
     // ── Salt preimages (sender-guarded CreateX CREATE3) ──────────────
     // The deployed address is a function of (CreateX, DEPLOY_OPERATOR,
     // preimage) — identical on every chain for the same operator.

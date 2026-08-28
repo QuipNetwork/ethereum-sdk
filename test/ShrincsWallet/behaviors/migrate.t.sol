@@ -20,7 +20,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         wallet.harness_markLeafUsed(SIGN_BASE + 1);
         assertEq(wallet.statefulLeavesUsed(), 1);
 
-        (bytes memory payload, bytes32 freshCommitment) = _freshInitPayload("migrate-fresh-bundle");
+        (bytes memory payload, bytes32 freshCommitment,) = _freshInitPayload("migrate-fresh-bundle");
         wallet.harness_migrateInUpgradeContext(payload);
 
         assertEq(wallet.keyVersion(), 1, "keyVersion bumped");
@@ -32,7 +32,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
 
     function test_migrate_doesNotAdvanceActionNonce() public {
         wallet.harness_setNonce(5);
-        (bytes memory payload,) = _freshInitPayload("migrate-fresh-bundle");
+        (bytes memory payload,,) = _freshInitPayload("migrate-fresh-bundle");
         wallet.harness_migrateInUpgradeContext(payload);
         // The keyVersion bump already invalidates every outstanding context; the nonce is
         // deliberately untouched by migration.
@@ -41,7 +41,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
 
     function test_migrate_emitsWalletMigrated() public {
         vm.recordLogs();
-        (bytes memory payload, bytes32 freshCommitment) = _freshInitPayload("migrate-fresh-bundle");
+        (bytes memory payload, bytes32 freshCommitment,) = _freshInitPayload("migrate-fresh-bundle");
         wallet.harness_migrateInUpgradeContext(payload);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -173,11 +173,9 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     /*──────────────────── spent-tree tracking ────────────────────*/
 
     function test_migrate_spendsBothInstalledTrees() public {
-        (, SHRINCS.PublicKey memory fresh, bool ok) = SHRINCSTestSigner.keygen("migrate-spends", MAX_SIG);
-        require(ok, "keygen");
+        (bytes memory payload,, SHRINCS.PublicKey memory fresh) = _freshInitPayload("migrate-spends");
         _assertTreesUnspent(fresh);
 
-        (bytes memory payload,) = _freshInitPayload("migrate-spends");
         wallet.harness_migrateInUpgradeContext(payload);
 
         _assertTreesSpent(fresh);
@@ -206,7 +204,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     }
 
     function test_migrate_revertsWhen_cyclingBackToEarlierBundle() public {
-        (bytes memory fresh,) = _freshInitPayload("migrate-cycle-B");
+        (bytes memory fresh,,) = _freshInitPayload("migrate-cycle-B");
         wallet.harness_migrateInUpgradeContext(fresh);
         assertEq(wallet.keyVersion(), 1);
         // Back to the original bundle: its stateful tree was spent at install.

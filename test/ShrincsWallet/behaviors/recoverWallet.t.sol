@@ -10,7 +10,6 @@ import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
-import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for break-glass `recoverWallet` (stateless full-bundle rotation, same owner).
@@ -130,41 +129,6 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     /*──────────────────── spent-tree tracking ────────────────────*/
 
-    /// @dev Full rotation target that recomputes to the installed bundle.
-    function _sameBundleTarget() internal view returns (SHRINCS.RotationTarget memory) {
-        return SHRINCS.RotationTarget({
-            statefulPublicKey: mainPk.statefulPublicKey,
-            publicKeyCommitment: mainPk.publicKeyCommitment,
-            pkSeed: mainPk.pkSeed,
-            hypertreeRoot: mainPk.hypertreeRoot
-        });
-    }
-
-    /// @dev Full rotation target: fresh stateful tree, CURRENT stateless tree carried forward.
-    function _freshStatefulSameStatelessTarget(bytes memory seed)
-        internal
-        view
-        returns (SHRINCS.RotationTarget memory target)
-    {
-        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
-        require(ok, "keygen");
-        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
-        target = SHRINCS.RotationTarget({
-            statefulPublicKey: pk.statefulPublicKey,
-            publicKeyCommitment: abi.encodePacked(c),
-            pkSeed: mainPk.pkSeed,
-            hypertreeRoot: mainPk.hypertreeRoot
-        });
-    }
-
-    /// @dev Public-key view of a full rotation target (for the tree-identity helpers).
-    function _bundleOf(SHRINCS.RotationTarget memory t) internal pure returns (SHRINCS.PublicKey memory pk) {
-        pk.statefulPublicKey = t.statefulPublicKey;
-        pk.publicKeyCommitment = t.publicKeyCommitment;
-        pk.pkSeed = t.pkSeed;
-        pk.hypertreeRoot = t.hypertreeRoot;
-    }
-
     function test_recoverWallet_spendsBothNextTrees() public {
         (SHRINCS.RotationTarget memory t,) = _makeRotationTarget("recover-spends");
         SHRINCS.PublicKey memory next = _bundleOf(t);
@@ -192,5 +156,24 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));
         wallet.recoverWallet(_mainPk(), sig, t);
+    }
+
+    function test_recoverWallet_revertsWhen_cyclingBackToEarlierBundle() public {
+        SHRINCS.RotationTarget memory backToA = _sameBundleTarget();
+        (SHRINCS.RotationTarget memory b, SHRINCS.SigningKey memory bKey) = _makeRotationTarget("recover-cycle-B");
+        SPHINCSPlusC.Signature memory sigAB = _signFullRotation(b, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        vm.prank(OWNER);
+        wallet.recoverWallet(_mainPk(), sigAB, b);
+        assertEq(wallet.keyVersion(), 1);
+
+        // Sign the B → A attempt with B (now installed). A's trees were spent at initialize.
+        mainKey = bKey;
+        mainPk = _bundleOf(b);
+        SPHINCSPlusC.Signature memory sigBA = _signFullRotation(backToA, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(backToA.statefulPublicKey))
+        );
+        wallet.recoverWallet(_mainPk(), sigBA, backToA);
     }
 }

@@ -350,7 +350,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (
             bytes32 commitment,
             bytes32 erc1271Commitment,
-            uint32 maxSignatures,
+            uint32 installedMaxSignatures,
             bytes32 statefulTreeId,
             bytes32 statelessTreeId
         ) = _decodeAndValidateInstall(payload);
@@ -370,7 +370,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
-        $.maxSignatures = maxSignatures;
+        $.maxSignatures = installedMaxSignatures;
         // Epoch 0's leaf bitmap is empty by default; statefulLeavesUsed starts at 0.
 
         emit WalletInitialized(
@@ -388,7 +388,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (
             bytes32 commitment,
             bytes32 erc1271Commitment,
-            uint32 maxSignatures,
+            uint32 installedMaxSignatures,
             bytes32 statefulTreeId,
             bytes32 statelessTreeId
         ) = _decodeAndValidateInstall(payload);
@@ -405,7 +405,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271StatelessCommitment = erc1271Commitment;
-        $.maxSignatures = maxSignatures;
+        $.maxSignatures = installedMaxSignatures;
         // The action nonce is deliberately NOT advanced here: the `keyVersion` bump below
         // already invalidates every outstanding signed context.
         unchecked {
@@ -1045,7 +1045,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @dev Decodes and fully validates an install/migrate key-bundle payload — the block shared
     ///      byte-for-byte by `initialize` and `migrate`: non-zero ERC-1271 commitment, declared
     ///      hash suites, main-bundle shape + commitment recompute, and a non-zero leaf budget.
-    ///      Returns exactly the three values both callers persist. Pure: touches no storage.
+    ///      Returns the three values both callers persist (`commitment`, `erc1271Commitment`,
+    ///      `installedMaxSignatures`) plus the two tree identities (`statefulTreeId`,
+    ///      `statelessTreeId`) both callers record as spent. Pure: touches no storage.
     function _decodeAndValidateInstall(
         bytes calldata payload
     )
@@ -1054,7 +1056,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         returns (
             bytes32 commitment,
             bytes32 erc1271Commitment,
-            uint32 maxSignatures,
+            uint32 installedMaxSignatures,
             bytes32 statefulTreeId,
             bytes32 statelessTreeId
         )
@@ -1089,7 +1091,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
             .decodeStatefulPublicKey(pk.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
-        maxSignatures = decoded.maxSignatures;
+        installedMaxSignatures = decoded.maxSignatures;
         statefulTreeId = _statefulTreeId(decoded);
         statelessTreeId = _statelessTreeId(pk.pkSeed, pk.hypertreeRoot);
     }

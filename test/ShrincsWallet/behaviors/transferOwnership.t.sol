@@ -9,7 +9,6 @@ import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
-import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for the atomic ownership-handover `transferOwnership`. Access control, input
@@ -114,41 +113,6 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     }
 
     /*──────────────────── spent-tree tracking ────────────────────*/
-
-    /// @dev Full rotation target that recomputes to the installed bundle.
-    function _sameBundleTarget() internal view returns (SHRINCS.RotationTarget memory) {
-        return SHRINCS.RotationTarget({
-            statefulPublicKey: mainPk.statefulPublicKey,
-            publicKeyCommitment: mainPk.publicKeyCommitment,
-            pkSeed: mainPk.pkSeed,
-            hypertreeRoot: mainPk.hypertreeRoot
-        });
-    }
-
-    /// @dev Full rotation target: fresh stateful tree, CURRENT stateless tree carried forward.
-    function _freshStatefulSameStatelessTarget(bytes memory seed)
-        internal
-        view
-        returns (SHRINCS.RotationTarget memory target)
-    {
-        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
-        require(ok, "keygen");
-        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
-        target = SHRINCS.RotationTarget({
-            statefulPublicKey: pk.statefulPublicKey,
-            publicKeyCommitment: abi.encodePacked(c),
-            pkSeed: mainPk.pkSeed,
-            hypertreeRoot: mainPk.hypertreeRoot
-        });
-    }
-
-    /// @dev Public-key view of a full rotation target (for the tree-identity helpers).
-    function _bundleOf(SHRINCS.RotationTarget memory t) internal pure returns (SHRINCS.PublicKey memory pk) {
-        pk.statefulPublicKey = t.statefulPublicKey;
-        pk.publicKeyCommitment = t.publicKeyCommitment;
-        pk.pkSeed = t.pkSeed;
-        pk.hypertreeRoot = t.hypertreeRoot;
-    }
 
     function test_transferOwnership_spendsBothNextTrees() public {
         (SHRINCS.RotationTarget memory t,) = _makeRotationTarget("transfer-spends");

@@ -15,12 +15,12 @@ import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import {
   GuardedSlotTamperedError,
-  StatefulTreeSpentError,
-  StatelessTreeSpentError,
+  InvalidSignatureError,
   MalformedCodecPayloadError,
   StaleStatefulLeafError,
   StatefulBudgetExhaustedError,
-  InvalidSignatureError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
   UnknownContractError,
 } from "../errors.js";
 import { decodeRevertBytes } from "../internal/decodeError.js";
@@ -76,6 +76,24 @@ describe("shrincs error decoding", () => {
       expect(decoded.treeId).toBe(treeId);
       expect(decoded.selector).toBe(toFunctionSelector("StatefulTreeSpent(bytes32)"));
     }
+  });
+
+  it("decodes truncated StatefulTreeSpent args as treeId undefined", () => {
+    const selector = toFunctionSelector("StatefulTreeSpent(bytes32)");
+    const truncated = `${selector}abcd` as Hex;
+    const decoded = decodeRevertBytes(truncated) as StatefulTreeSpentError;
+    expect(decoded).toBeInstanceOf(StatefulTreeSpentError);
+    expect(decoded.code).toBe("SHRINCS_STATEFUL_TREE_SPENT");
+    expect(decoded.treeId).toBeUndefined();
+  });
+
+  it("StatefulTreeSpentError(undefined) uses the no-id message", () => {
+    const err = new StatefulTreeSpentError(undefined);
+    expect(err.treeId).toBeUndefined();
+    expect(err.code).toBe("SHRINCS_STATEFUL_TREE_SPENT");
+    expect(err.message).toBe(
+      "Stateful tree was already installed on this contract — keygen a fresh key"
+    );
   });
 
   it("decodes StatelessTreeSpent(bytes32) preserving treeId", () => {

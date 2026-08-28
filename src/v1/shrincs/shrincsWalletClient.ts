@@ -40,9 +40,9 @@ import {
   ExecuteTargetHasNoCodeError,
   OwnerMismatchError,
   StatefulBudgetExhaustedError,
-  ZeroAddressOwnerError,
   StatefulTreeSpentError,
   StatelessTreeSpentError,
+  ZeroAddressOwnerError,
   ZeroErc1271CommitmentError,
 } from "./errors.js";
 import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
@@ -73,9 +73,8 @@ import {
   buildActionContext,
   buildRotationContext,
   buildStatefulRotationTarget,
-  statefulTreeId,
-  statelessTreeId,
   dataHash as keccakData,
+  decodeInitPayload,
   domainSeparator,
   encodeErc1271Signature,
   encodeUpgradeData,
@@ -87,6 +86,8 @@ import {
   rotationDomainSeparator,
   setErc1271KeyPayloadHash,
   SHRINCS_PROFILE_NAME,
+  statefulTreeId,
+  statelessTreeId,
   toRotationTarget,
   transferOwnershipPayloadHash,
   upgradePayloadHash,
@@ -520,10 +521,6 @@ export class ShrincsWalletClient {
     return keypair;
   }
 
-  /// Common stateful-op preamble: assert provider, read state, recover key, pick
-  /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
-  /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
-  /// are responsible for their own exclusion guard (see `markLeavesUsed`).
   /// Pre-flight mirror of the wallet's spent-tree registry for the one case the
   /// client can see: the next stateful tree equals the INSTALLED one (same
   /// tree, or the same tree under a re-declared budget). Cycles back to an
@@ -535,8 +532,9 @@ export class ShrincsWalletClient {
     }
   }
 
-  /// Pre-flight for full-bundle installs (`recoverWallet` / `transferOwnership`):
-  /// both halves of `nextKey` must differ from the installed bundle.
+  /// Pre-flight for full-bundle installs (`recoverWallet` / `transferOwnership` /
+  /// `upgradeToAndCall` migrate): both halves of `nextKey` must differ from the
+  /// installed bundle.
   private assertFreshBundle(nextKey: ShrincsPublicKey, current: ShrincsPublicKey): void {
     this.assertFreshStatefulTree(nextKey.statefulPublicKey, current);
     const next = statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot);
@@ -545,10 +543,14 @@ export class ShrincsWalletClient {
     }
   }
 
+  /// Common stateful-op preamble: assert provider, read state, recover key, pick
+  /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
+  /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
+  /// are responsible for their own exclusion guard (see `markLeavesUsed`).
   private async prepareStatefulOp(
     keyOpts?: ShrincsTxKeyOptions,
     excludeLeaves?: ReadonlySet<number>,
-    preflight?: (keypair: ShrincsKeyPair, state: ShrincsWalletState) => void
+    preflight?: (keypair: ShrincsKeyPair) => void
   ): Promise<{
     keypair: ShrincsKeyPair;
     state: ShrincsWalletState;
@@ -564,7 +566,7 @@ export class ShrincsWalletClient {
     // Caller pre-flights (e.g. spent-tree checks) run BEFORE any leaf is
     // reserved: reservations have no release API, so a rejected call must not
     // burn a signing leaf.
-    preflight?.(keypair, state);
+    preflight?.(keypair);
     // Validate the excluded leaves BEFORE reserving. `excludeLeaves` carries the
     // revocation targets (`markLeavesUsed`), which must be valid signing leaves
     // `[1..maxSignatures]`. Rejecting a malformed target here — before any leaf
@@ -993,7 +995,17 @@ export class ShrincsWalletClient {
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(
+      opts,
+      undefined,
+      shouldMigrate
+        ? (kp) =>
+            this.assertFreshBundle(
+              decodeInitPayload(migratorPayload),
+              kp.publicKey
+            )
+        : undefined
+    );
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,

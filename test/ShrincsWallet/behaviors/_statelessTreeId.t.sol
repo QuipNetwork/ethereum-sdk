@@ -25,7 +25,20 @@ contract ShrincsWallet__statelessTreeId is ShrincsWalletTest {
 
     function test_statelessTreeId_revertsWhen_fieldShorterThan32() public {
         bytes memory short = new bytes(31);
+        // Calldata slice `pkSeed[:32]` on a 31-byte field reverts with empty returndata
+        // (Solidity sliceOutOfBounds — no custom error / Panic selector to pin).
         vm.expectRevert();
         wallet.exposed_statelessTreeId(short, mainPk.hypertreeRoot);
+    }
+
+    /// @dev Shared SDK↔contract vector. The same constants are asserted in
+    ///      `src/v1/shrincs/tests/shrincsCodec.test.ts` so SDK and contract can never drift silently.
+    function test_statelessTreeId_matchesSharedSdkVector() public view {
+        bytes memory pkSeed = hex"1111111111111111111111111111111111111111111111111111111111111111";
+        bytes memory hypertreeRoot = hex"2222222222222222222222222222222222222222222222222222222222222222";
+        assertEq(
+            wallet.exposed_statelessTreeId(pkSeed, hypertreeRoot),
+            bytes32(0x3e92e0db88d6afea9edc4eedf62fffa4d92bcdfc310dccbe943747fe8302e871)
+        );
     }
 }
