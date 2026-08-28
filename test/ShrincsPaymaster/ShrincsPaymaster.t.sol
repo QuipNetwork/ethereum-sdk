@@ -63,6 +63,19 @@ contract ShrincsPaymasterTest is Test {
 
         paymaster.harness_setOwner(OWNER);
         paymaster.harness_install(verifierCommitment, MAX_SIG);
+        // Mirror a real `initialize`: the installed tree is recorded as spent.
+        paymaster.exposed_spendStatefulTree(_treeId(verifierPk.statefulPublicKey));
+    }
+
+    /// @dev Stateful tree identity: keccak256(pkSeed ‖ root) of the 68-byte stateful key.
+    function _treeId(bytes memory spk) internal pure returns (bytes32) {
+        bytes32 pkSeed;
+        bytes32 root;
+        assembly {
+            pkSeed := mload(add(spk, 32))
+            root := mload(add(spk, 64))
+        }
+        return keccak256(abi.encodePacked(pkSeed, root));
     }
 
     function test_setUp() public view virtual {

@@ -48,8 +48,8 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     }
 
     function test_initialize_spendsInstalledTrees() public {
-        bytes32 statefulId = _treeIdOf(mainPk.statefulPublicKey);
-        bytes32 statelessId = keccak256(abi.encodePacked(_toBytes32(mainPk.pkSeed), _toBytes32(mainPk.hypertreeRoot)));
+        bytes32 statefulId = _treeId(mainPk.statefulPublicKey);
+        bytes32 statelessId = _statelessId(mainPk);
         assertFalse(bare.harness_isStatefulTreeSpent(statefulId), "stateful unspent before init");
         assertFalse(bare.harness_isStatelessTreeSpent(statelessId), "stateless unspent before init");
 
@@ -58,16 +58,6 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
 
         assertTrue(bare.harness_isStatefulTreeSpent(statefulId), "initialize spends the stateful tree");
         assertTrue(bare.harness_isStatelessTreeSpent(statelessId), "initialize spends the stateless tree");
-    }
-
-    function _treeIdOf(bytes memory spk) internal pure returns (bytes32) {
-        bytes32 pkSeed;
-        bytes32 root;
-        assembly {
-            pkSeed := mload(add(spk, 32))
-            root := mload(add(spk, 64))
-        }
-        return keccak256(abi.encodePacked(pkSeed, root));
     }
 
     function test_initialize_emitsWalletInitialized() public {

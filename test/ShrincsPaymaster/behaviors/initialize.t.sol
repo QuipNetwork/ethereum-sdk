@@ -52,14 +52,7 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
     }
 
     function test_initialize_spendsStatefulTree() public {
-        bytes memory spk = verifierPk.statefulPublicKey;
-        bytes32 pkSeed;
-        bytes32 root;
-        assembly {
-            pkSeed := mload(add(spk, 32))
-            root := mload(add(spk, 64))
-        }
-        bytes32 id = keccak256(abi.encodePacked(pkSeed, root));
+        bytes32 id = _treeId(verifierPk.statefulPublicKey);
         assertFalse(bare.harness_isStatefulTreeSpent(id), "unspent before init");
 
         bare.initialize(OWNER, _pk(), SUITE);

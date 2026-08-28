@@ -42,8 +42,9 @@ contract ShrincsPaymasterHarness is ShrincsPaymaster {
         $.maxSignatures = maxSignaturesValue;
     }
 
-    /// @dev Records the installed stateful tree as spent, mirroring what `initialize` does.
-    function harness_spendStatefulTree(bytes32 treeId) external {
+    /// @dev Wraps the check-and-record spend primitive (also used by the fixture to mirror
+    ///      what `initialize` records).
+    function exposed_spendStatefulTree(bytes32 treeId) external {
         _spendStatefulTree(treeId);
     }
 

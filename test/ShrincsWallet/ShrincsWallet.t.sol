@@ -87,6 +87,8 @@ contract ShrincsWalletTest is Test {
         wallet = ShrincsWalletHarness(payable(WALLET));
 
         wallet.harness_install(OWNER, mainCommitment, erc1271Commitment, MAX_SIG);
+        // Mirror a factory-deployed wallet: `initialize` records the installed trees as spent.
+        wallet.harness_spendTrees(mainPk);
 
         statelessSigner = new SHRINCSStatelessVectorSigner();
     }
@@ -353,6 +355,32 @@ contract ShrincsWalletTest is Test {
             erc1271Commitment,
             HashSuite.HASH_SUITE_ID
         );
+    }
+
+    /// @dev Stateful tree identity: keccak256(pkSeed ‖ root) of the 68-byte stateful key.
+    function _treeId(bytes memory spk) internal pure returns (bytes32) {
+        bytes32 pkSeed;
+        bytes32 root;
+        assembly {
+            pkSeed := mload(add(spk, 32))
+            root := mload(add(spk, 64))
+        }
+        return keccak256(abi.encodePacked(pkSeed, root));
+    }
+
+    /// @dev Stateless tree identity: keccak256(pkSeed ‖ hypertreeRoot).
+    function _statelessId(SHRINCS.PublicKey memory pk) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(_toBytes32(pk.pkSeed), _toBytes32(pk.hypertreeRoot)));
+    }
+
+    function _assertTreesUnspent(SHRINCS.PublicKey memory pk) internal view {
+        assertFalse(wallet.harness_isStatefulTreeSpent(_treeId(pk.statefulPublicKey)), "stateful unspent before");
+        assertFalse(wallet.harness_isStatelessTreeSpent(_statelessId(pk)), "stateless unspent before");
+    }
+
+    function _assertTreesSpent(SHRINCS.PublicKey memory pk) internal view {
+        assertTrue(wallet.harness_isStatefulTreeSpent(_treeId(pk.statefulPublicKey)), "stateful spent after");
+        assertTrue(wallet.harness_isStatelessTreeSpent(_statelessId(pk)), "stateless spent after");
     }
 
     function _toBytes32(bytes memory b) internal pure returns (bytes32 out) {
