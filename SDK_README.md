@@ -136,7 +136,7 @@ Every SHRINCS address is a sender-guarded CREATE3 value — identical on every c
 |---|---|
 | Base Sepolia (84532) | live |
 | OP Sepolia (11155420) | live |
-| Base (8453) | not deployed — awaits the V4/V3 verifier pair |
+| Base (8453) | live (2026-08-28) — creation fee 0.0004 ETH, execute fee 0.000004 ETH; paymaster verifier at QUIP HD stateful index 1 / stateless index 0 |
 | Ethereum (1), Sepolia (11155111), Optimism (10), MIDL (777) | not deployed |
 
 | Contract | Address |
@@ -147,7 +147,7 @@ Every SHRINCS address is a sender-guarded CREATE3 value — identical on every c
 | SHRINCS256sKeccak verifier (V4) | `0xF2f9E6D692da41b089c3c261c41509669eEc5567` |
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 
-The paymaster's sponsorship key on both testnets has commitment `0x538c6eb0aa2a22531068031057e7baac0b1d5dea46a8473bbe96c0aad4e807bf` (`maxSignatures` 4096, QUIP HD derivation index 0). Its EntryPoint deposit is not yet funded, so sponsored userOps fail with `AA31` until it is. Full salt/derivation records live in `DEPLOYMENTS.md` of the contracts repo. The previous V1.0.0 generation (factory `0xdCD90563…`) is retired; wallets created through it are not reachable from this SDK version.
+The paymaster's sponsorship key on both testnets has commitment `0x538c6eb0aa2a22531068031057e7baac0b1d5dea46a8473bbe96c0aad4e807bf` (`maxSignatures` 4096, QUIP HD derivation index 0). On Base mainnet it is a graft — `deriveKeyPair({ statefulIndex: 1, statelessIndex: 0, maxSignatures: 4096 })`, commitment `0x0727577159d5862d456780f62343b8a0b02e89ac084de267ea42288b55c56857`, epoch 1 — pass it as `keypair` to `ShrincsPaymasterClient`. Its EntryPoint deposit is not yet funded, so sponsored userOps fail with `AA31` until it is. Full salt/derivation records live in `DEPLOYMENTS.md` of the contracts repo. The previous V1.0.0 generation (factory `0xdCD90563…`) is retired; wallets created through it are not reachable from this SDK version.
 
 ---
 
