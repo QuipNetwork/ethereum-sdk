@@ -60,9 +60,9 @@ export interface ShrincsNetworkAddresses {
 // every chain reached by the same operator.
 //
 // Salt scheme: proxies are `V1.0.1` (the generation's public identity),
-// implementations are `V1.0.1-beta.1.N` (replaced as code changes). The
+// implementations are `V1.0.1-beta.2.N` (replaced as code changes). The
 // implementation preimages additionally bind the verifier SCHEME tag —
-// `"QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:" ‖ PROFILE_ID` and the paymaster-impl
+// `"QUIP:ShrincsWallet:Impl:V1.0.1-beta.2:" ‖ PROFILE_ID` and the paymaster-impl
 // analog, where PROFILE_ID = keccak256("shrincs-256s-keccak") is the deployed
 // verifier's constant `PROFILE_TAG()` — so implementations pinned to a different
 // cryptographic scheme land at different addresses. Proxy preimages carry no
@@ -86,11 +86,11 @@ export interface ShrincsNetworkAddresses {
 // Derived for the canonical operator `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26`
 // and deployed via `script/02_DeployShrincs.s.sol` (see DEPLOYMENTS.md).
 const SHRINCS_WALLET_IMPLEMENTATION =
-  "0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094" as Address;
+  "0x680840c831c6D147404a0e00edA08a5360564FBC" as Address;
 const SHRINCS_PAYMASTER_PROXY =
   "0x430c8c89492E3541e141148Dd7a7D6dD432e5890" as Address;
 const SHRINCS_PAYMASTER_IMPL =
-  "0xD0C56265b942160bb4470077f65123EE34E0Ee93" as Address;
+  "0x5E4E4003118a0F8825494D76E86Db2ed654992d2" as Address;
 const SHRINCS_VERIFIER =
   "0xF2f9E6D692da41b089c3c261c41509669eEc5567" as Address;
 

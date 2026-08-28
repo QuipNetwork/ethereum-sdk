@@ -2,6 +2,33 @@
 
 ## Live — V1.0.1 generation (Base Sepolia 84532 + OP Sepolia 11155420, deployed 2026-08-27; Base mainnet pending)
 
+### `-beta.2` implementations (spent-tree registries) — PREPARED, broadcast pending
+
+The Shrincs implementations move to `V1.0.1-beta.2` for the spent-tree
+registries fix (a stateful or stateless tree can never be re-installed on a
+wallet or paymaster — INVARIANTS §25; the same-key rotation that reset the
+leaf bitmap). Storage is ERC-7201 append-only, so **both proxies keep their
+addresses**; `02_DeployShrincs` now (a) deploys the two new impls, (b) vets the
+wallet impl, and (c) `upgradeToAndCall`s the paymaster proxy in place (owner =
+operator on the testnets, no re-init). The `-beta.1` wallet impl stays vetted
+(not deprecated). The WalletFactory
+code is unchanged, so its impl stays at `-beta.1`. Base mainnet gets the whole
+generation fresh at these same addresses once hashsigs-solidity has deployed
+the V3/V4 verifier pair there (`02` refuses until then — the pinned verifier
+has no code on 8453 as of 2026-08-28). Dry-runs (`--sender`, no broadcast)
+against both testnets simulated exactly this path on 2026-08-28.
+
+| | Address |
+|---|---|
+| ShrincsWallet impl (`…:Impl:V1.0.1-beta.2:` ‖ `PROFILE_ID`) | `0x680840c831c6D147404a0e00edA08a5360564FBC` |
+| ShrincsPaymaster impl (`…:Impl:V1.0.1-beta.2:` ‖ `PROFILE_ID`) | `0x5E4E4003118a0F8825494D76E86Db2ed654992d2` |
+| ShrincsWallet impl `-beta.1` (superseded; still vetted) | `0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094` |
+| ShrincsPaymaster impl `-beta.1` (retired; proxy upgraded away) | `0xD0C56265b942160bb4470077f65123EE34E0Ee93` |
+
+_Fill in after broadcast: commit, blocks, tx hashes, verification status._
+
+### `-beta.1` (initial deploy)
+
 A **full redeploy of every contract on every chain**. Three things moved at
 once: `script/Constants.sol` now pins the **V4** `SHRINCS256sKeccak` verifier
 from hashsigs-solidity MR !26 (raw ERC-7913 signatures bound to the full

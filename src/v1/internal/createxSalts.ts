@@ -71,16 +71,19 @@ export const SHRINCS_PROFILE_ID: Hex = keccak256(toHex("shrincs-256s-keccak"));
 /// `V1.0.1` is not "newer than" `V1.0.1-beta.1`, they name different roles.
 /// V1.0.1 is a full redeploy (V4 verifier + changed factory code); the V1.0.0
 /// generation is retired whole; impls start at `-beta.1` because the paymaster's
-/// `V1.0.1-beta` preimage was already consumed on the testnets.
+/// `V1.0.1-beta` preimage was already consumed on the testnets. The Shrincs
+/// impls moved to `-beta.2` for the spent-tree registries fix (proxies and the
+/// unchanged WalletFactory impl stay put; the testnet proxies were upgraded in
+/// place).
 export const LIVE_SALT_PREIMAGES = {
   WalletFactoryImpl: toHex("QUIP:WalletFactory:Impl:V1.0.1-beta.1"),
   WalletFactoryProxy: toHex("QUIP:WalletFactory:Proxy:V1.0.1"),
   ShrincsWalletImplementation: concatHex([
-    toHex("QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:"),
+    toHex("QUIP:ShrincsWallet:Impl:V1.0.1-beta.2:"),
     SHRINCS_PROFILE_ID,
   ]),
   ShrincsPaymasterImpl: concatHex([
-    toHex("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.1:"),
+    toHex("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.2:"),
     SHRINCS_PROFILE_ID,
   ]),
   ShrincsPaymasterProxy: toHex("QUIP:ShrincsPaymaster:Proxy:V1.0.1"),

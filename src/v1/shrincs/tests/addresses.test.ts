@@ -34,9 +34,9 @@ import { UnsupportedNetworkError } from "../errors.js";
 // formula — the failures that put contracts at unpublished addresses.
 const PUBLISHED = {
   WalletFactory: "0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8",
-  ShrincsWalletImplementation: "0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094",
+  ShrincsWalletImplementation: "0x680840c831c6D147404a0e00edA08a5360564FBC",
   ShrincsPaymaster: "0x430c8c89492E3541e141148Dd7a7D6dD432e5890",
-  ShrincsPaymasterImpl: "0xD0C56265b942160bb4470077f65123EE34E0Ee93",
+  ShrincsPaymasterImpl: "0x5E4E4003118a0F8825494D76E86Db2ed654992d2",
   ShrincsVerifier: "0xF2f9E6D692da41b089c3c261c41509669eEc5567",
 } as const;
 

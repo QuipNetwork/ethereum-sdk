@@ -142,7 +142,7 @@ Every SHRINCS address is a sender-guarded CREATE3 value — identical on every c
 | Contract | Address |
 |---|---|
 | WalletFactory proxy | `0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8` |
-| ShrincsWallet implementation | `0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094` |
+| ShrincsWallet implementation (`V1.0.1-beta.2`) | `0x680840c831c6D147404a0e00edA08a5360564FBC` |
 | ShrincsPaymaster proxy | `0x430c8c89492E3541e141148Dd7a7D6dD432e5890` |
 | SHRINCS256sKeccak verifier (V4) | `0xF2f9E6D692da41b089c3c261c41509669eEc5567` |
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
