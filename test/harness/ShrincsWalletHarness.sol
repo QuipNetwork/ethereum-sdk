@@ -60,10 +60,31 @@ contract ShrincsWalletHarness is ShrincsWallet {
     }
 
     /// @dev Records the installed bundle's trees as spent, mirroring what `initialize` does for a
-    ///      factory-deployed wallet. Tests that omit this model a wallet predating tree tracking.
+    ///      factory-deployed wallet.
     function harness_spendTrees(SHRINCS.PublicKey calldata pk) external {
         _spendStatefulTree(_statefulTreeId(pk.statefulPublicKey));
         _spendStatelessTree(_statelessTreeId(pk.pkSeed, pk.hypertreeRoot));
+    }
+
+    /// @dev Wraps the tree-identity primitives.
+    function exposed_statefulTreeId(bytes calldata statefulPublicKey) external pure returns (bytes32) {
+        return _statefulTreeId(statefulPublicKey);
+    }
+
+    function exposed_statelessTreeId(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) external pure returns (bytes32) {
+        return _statelessTreeId(pkSeed, hypertreeRoot);
+    }
+
+    /// @dev Wraps the check-and-record spend primitives.
+    function exposed_spendStatefulTree(bytes32 treeId) external {
+        _spendStatefulTree(treeId);
+    }
+
+    function exposed_spendStatelessTree(bytes32 treeId) external {
+        _spendStatelessTree(treeId);
     }
 
     /// @dev Reads the spent-tree registries so tests can pin which install paths record trees.

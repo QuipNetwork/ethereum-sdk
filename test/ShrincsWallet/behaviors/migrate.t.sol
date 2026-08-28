@@ -169,4 +169,50 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         assertEq(wallet.getErc1271HashSuite(), HashSuite.HASH_SUITE_ID, "erc1271 suite installed");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
     }
+
+    /*──────────────────── spent-tree tracking ────────────────────*/
+
+    function test_migrate_spendsBothInstalledTrees() public {
+        (, SHRINCS.PublicKey memory fresh, bool ok) = SHRINCSTestSigner.keygen("migrate-spends", MAX_SIG);
+        require(ok, "keygen");
+        _assertTreesUnspent(fresh);
+
+        (bytes memory payload,) = _freshInitPayload("migrate-spends");
+        wallet.harness_migrateInUpgradeContext(payload);
+
+        _assertTreesSpent(fresh);
+    }
+
+    function test_migrate_revertsWhen_currentBundle() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(mainPk.statefulPublicKey))
+        );
+        wallet.harness_migrateInUpgradeContext(_validInitPayload());
+    }
+
+    function test_migrate_revertsWhen_statelessTreeCarriedForward() public {
+        // Fresh stateful tree, current stateless tree: migration is strictly fresh on both halves.
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("migrate-carry-stateless", MAX_SIG);
+        require(ok, "keygen");
+        pk.pkSeed = mainPk.pkSeed;
+        pk.hypertreeRoot = mainPk.hypertreeRoot;
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, pk.pkSeed, pk.hypertreeRoot);
+        pk.publicKeyCommitment = abi.encodePacked(c);
+        bytes memory payload = _buildInitPayload(
+            c, _toBytes32(pk.pkSeed), pk, HashSuite.HASH_SUITE_ID, erc1271Commitment, HashSuite.HASH_SUITE_ID
+        );
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));
+        wallet.harness_migrateInUpgradeContext(payload);
+    }
+
+    function test_migrate_revertsWhen_cyclingBackToEarlierBundle() public {
+        (bytes memory fresh,) = _freshInitPayload("migrate-cycle-B");
+        wallet.harness_migrateInUpgradeContext(fresh);
+        assertEq(wallet.keyVersion(), 1);
+        // Back to the original bundle: its stateful tree was spent at install.
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(mainPk.statefulPublicKey))
+        );
+        wallet.harness_migrateInUpgradeContext(_validInitPayload());
+    }
 }
