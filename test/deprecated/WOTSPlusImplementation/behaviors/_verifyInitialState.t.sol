@@ -31,6 +31,20 @@ contract WOTSPlusImplementation__verifyInitialState is WOTSPlusImplementationTes
         harnessProxy = WOTSPlusImplementationHarness(payable(proxyAddr));
     }
 
+    /// @dev Uninitialized harness with factory + disaster key populated so later
+    ///      gates (ownership, txn count) can fire independently.
+    function _bareWithFactoryAndDisaster() internal returns (WOTSPlusImplementationHarness bare) {
+        bare = new WOTSPlusImplementationHarness(payable(address(factory)));
+        vm.store(address(bare), STORAGE_BASE, bytes32(uint256(uint160(address(factory)))));
+        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 1), bytes32(uint256(1)));
+        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 2), bytes32(uint256(2)));
+    }
+
+    function _expectVerifyInitialStateRevert(WOTSPlusImplementationHarness bare, bytes4 selector) internal {
+        vm.expectRevert(selector);
+        bare.exposed_verifyInitialState();
+    }
+
     function test_exposed_verifyInitialState_passesWhenValid() public view {
         harnessProxy.exposed_verifyInitialState();
     }
@@ -42,17 +56,12 @@ contract WOTSPlusImplementation__verifyInitialState is WOTSPlusImplementationTes
     }
 
     function test_exposed_verifyInitialState_revertsWhen_wrongTransactionKeyCount() public {
-        WOTSPlusImplementationHarness bare = new WOTSPlusImplementationHarness(payable(address(factory)));
-        // Set quipFactory (slot 0), disasterRecoveryKey (slots 1 + 2), ownershipKey
-        // (slots 3 + 4) to non-zero — txn keyset remains empty, so the count check
-        // should fire.
-        vm.store(address(bare), STORAGE_BASE, bytes32(uint256(uint160(address(factory)))));
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 1), bytes32(uint256(1)));
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 2), bytes32(uint256(2)));
+        WOTSPlusImplementationHarness bare = _bareWithFactoryAndDisaster();
+        // Set ownershipKey (slots 3 + 4) to non-zero — txn keyset remains empty,
+        // so the count check should fire.
         vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 3), bytes32(uint256(3)));
         vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 4), bytes32(uint256(4)));
-        vm.expectRevert(IWOTSPlusImplementation.IncorrectTransactionKeyAmount.selector);
-        bare.exposed_verifyInitialState();
+        _expectVerifyInitialStateRevert(bare, IWOTSPlusImplementation.IncorrectTransactionKeyAmount.selector);
     }
 
     function test_exposed_verifyInitialState_revertsWhen_disasterKeyZero() public {
@@ -64,14 +73,9 @@ contract WOTSPlusImplementation__verifyInitialState is WOTSPlusImplementationTes
     }
 
     function test_exposed_verifyInitialState_revertsWhen_ownershipKeyZero() public {
-        WOTSPlusImplementationHarness bare = new WOTSPlusImplementationHarness(payable(address(factory)));
-        // Set quipFactory (slot 0) and disasterRecoveryKey (slots 1 + 2). Leave
-        // ownershipKey (slots 3 + 4) zero; the ownership-key check should fire.
-        vm.store(address(bare), STORAGE_BASE, bytes32(uint256(uint160(address(factory)))));
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 1), bytes32(uint256(1)));
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 2), bytes32(uint256(2)));
-        vm.expectRevert(IWOTSPlusImplementation.UnknownOwnershipKey.selector);
-        bare.exposed_verifyInitialState();
+        WOTSPlusImplementationHarness bare = _bareWithFactoryAndDisaster();
+        // Leave ownershipKey (slots 3 + 4) zero; the ownership-key check should fire.
+        _expectVerifyInitialStateRevert(bare, IWOTSPlusImplementation.UnknownOwnershipKey.selector);
     }
 
     function test_exposed_verifyInitialState_revertsWhen_disasterKeySeedZero() public {
@@ -94,26 +98,17 @@ contract WOTSPlusImplementation__verifyInitialState is WOTSPlusImplementationTes
     }
 
     function test_exposed_verifyInitialState_revertsWhen_ownershipKeySeedZero() public {
-        WOTSPlusImplementationHarness bare = new WOTSPlusImplementationHarness(payable(address(factory)));
-        vm.store(address(bare), STORAGE_BASE, bytes32(uint256(uint160(address(factory)))));
-        // Valid disaster key (both fields non-zero).
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 1), bytes32(uint256(1)));
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 2), bytes32(uint256(2)));
+        WOTSPlusImplementationHarness bare = _bareWithFactoryAndDisaster();
         // ownership.seed stays zero; ownership.hash non-zero.
         vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 4), bytes32(uint256(0x33)));
-        vm.expectRevert(IWOTSPlusImplementation.UnknownOwnershipKey.selector);
-        bare.exposed_verifyInitialState();
+        _expectVerifyInitialStateRevert(bare, IWOTSPlusImplementation.UnknownOwnershipKey.selector);
     }
 
     function test_exposed_verifyInitialState_revertsWhen_ownershipKeyHashZero() public {
-        WOTSPlusImplementationHarness bare = new WOTSPlusImplementationHarness(payable(address(factory)));
-        vm.store(address(bare), STORAGE_BASE, bytes32(uint256(uint160(address(factory)))));
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 1), bytes32(uint256(1)));
-        vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 2), bytes32(uint256(2)));
+        WOTSPlusImplementationHarness bare = _bareWithFactoryAndDisaster();
         // ownership.seed non-zero, ownership.hash stays zero.
         vm.store(address(bare), bytes32(uint256(STORAGE_BASE) + 3), bytes32(uint256(0x44)));
-        vm.expectRevert(IWOTSPlusImplementation.UnknownOwnershipKey.selector);
-        bare.exposed_verifyInitialState();
+        _expectVerifyInitialStateRevert(bare, IWOTSPlusImplementation.UnknownOwnershipKey.selector);
     }
 
     // Transaction keyset correctly sized but recovery count wrong — the recovery

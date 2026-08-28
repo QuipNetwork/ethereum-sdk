@@ -44,18 +44,14 @@ contract WalletFactory_undeprecateImplementation is WalletFactoryTest {
     ///      the highest-index entry, then undeprecate it. `latestWalletImpl`
     ///      must restore to that entry, not stay at the lower-index fallback.
     function test_undeprecateImplementation_restoresLatestForLastIndexEntry() public {
-        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(factory)));
-        vm.prank(ADMIN);
-        factory.vetImplementation(address(impl2));
-        // Set is now [walletImplementation, impl2]; latest = impl2.
-
-        vm.prank(ADMIN);
+        // Set becomes [walletImplementation, impl2]; latest = impl2. Deprecating the
+        // highest-index entry falls back, and undeprecating it must RESTORE it.
+        WOTSPlusImplementation impl2 = _vetSecondImpl();
+        vm.startPrank(ADMIN);
         factory.deprecateImplementation(address(impl2));
-        assertEq(factory.latestWalletImpl(), address(walletImplementation));
-
-        vm.prank(ADMIN);
         factory.undeprecateImplementation(address(impl2));
-        assertEq(factory.latestWalletImpl(), address(impl2));
+        vm.stopPrank();
+        assertEq(factory.latestWalletImpl(), address(impl2), "restored as latest");
     }
 
     /// @dev Mirror of the original `reVetDoesNotChangeLatestWhenOneActive`

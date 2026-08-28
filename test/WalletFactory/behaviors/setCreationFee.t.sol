@@ -20,12 +20,9 @@ contract WalletFactory_setCreationFee is WalletFactoryTest {
         factory.setCreationFee(CREATION_FEE);
 
         bytes32 commitment = keccak256("Vault 1");
-        (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey) = _generateKeyPair("seed1");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privateKey, 10);
+        (, , bytes memory payload) = _freshInitPayload("seed1");
 
         uint256 factoryBalBefore = address(factory).balance;
-
-        bytes memory payload = _encodeInitPayload(pubkey, rKeys);
 
         vm.prank(ALICE);
         factory.deployLatestWalletProxy{value: INITIAL_DEPOSIT + CREATION_FEE}(commitment, payable(ALICE), payload);

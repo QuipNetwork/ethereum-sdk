@@ -61,19 +61,29 @@ contract WOTSPlusImplementation_recoveryUpgrade is WOTSPlusImplementationTest {
         return Codec.encodeRecoveryUpgrade(rKey, newRKey, sig, vPub, vSig);
     }
 
+    function _signedRecoveryUpgradePayload(address impl, uint256 keyIndex, bytes32 verifierSeed)
+        internal
+        view
+        returns (bytes memory)
+    {
+        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[keyIndex];
+        WOTSPlus.WinternitzAddress memory newRKey = _replacementKey(keyIndex);
+        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, keyIndex);
+
+        bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), impl, rKey, newRKey);
+        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
+
+        return _buildRecoveryUpgradePayload(rKey, newRKey, sig, impl, verifierSeed);
+    }
+
     function _doRecoveryUpgrade(address impl, uint256 keyIndex)
         internal
         returns (WOTSPlus.WinternitzAddress memory rKey, WOTSPlus.WinternitzAddress memory newRKey)
     {
         rKey = recoveryPubkeys[keyIndex];
         newRKey = _replacementKey(keyIndex);
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, keyIndex);
-
-        bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), impl, rKey, newRKey);
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        bytes memory payload = _buildRecoveryUpgradePayload(
-            rKey, newRKey, sig, impl, keccak256(abi.encodePacked("recovery-verifier", keyIndex))
+        bytes memory payload = _signedRecoveryUpgradePayload(
+            impl, keyIndex, keccak256(abi.encodePacked("recovery-verifier", keyIndex))
         );
 
         vm.prank(ALICE);
@@ -122,15 +132,7 @@ contract WOTSPlusImplementation_recoveryUpgrade is WOTSPlusImplementationTest {
     }
 
     function test_recoveryUpgrade_emitsRecoveryUpgrade() public {
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        WOTSPlus.WinternitzAddress memory newRKey = _replacementKey(0);
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-
-        bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), rKey, newRKey);
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        bytes memory payload =
-            _buildRecoveryUpgradePayload(rKey, newRKey, sig, address(newImpl), keccak256("emit-verifier"));
+        bytes memory payload = _signedRecoveryUpgradePayload(address(newImpl), 0, keccak256("emit-verifier"));
 
         vm.prank(ALICE);
         vm.recordLogs();
@@ -190,15 +192,7 @@ contract WOTSPlusImplementation_recoveryUpgrade is WOTSPlusImplementationTest {
     // ── Reverts ─────────────────────────────────────────────────────
 
     function test_recoveryUpgrade_revertsWhen_callerNotOwner() public {
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        WOTSPlus.WinternitzAddress memory newRKey = _replacementKey(0);
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-
-        bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), rKey, newRKey);
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        bytes memory payload =
-            _buildRecoveryUpgradePayload(rKey, newRKey, sig, address(newImpl), keccak256("notOwner-verifier"));
+        bytes memory payload = _signedRecoveryUpgradePayload(address(newImpl), 0, keccak256("notOwner-verifier"));
 
         vm.prank(makeAddr("bob"));
         vm.expectRevert(SoladyOwnable.Unauthorized.selector);
@@ -279,15 +273,7 @@ contract WOTSPlusImplementation_recoveryUpgrade is WOTSPlusImplementationTest {
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(newImpl));
 
-        WOTSPlus.WinternitzAddress memory rKey = recoveryPubkeys[0];
-        WOTSPlus.WinternitzAddress memory newRKey = _replacementKey(0);
-        bytes32 rPrivKey = _recoverySigningKey(alicePrivateKey, 0);
-
-        bytes32 msgHash = _buildRecoveryUpgradeMessageHash(address(wallet), address(newImpl), rKey, newRKey);
-        WOTSPlus.WinternitzElements memory sig = _sign(rPrivKey, msgHash);
-
-        bytes memory payload =
-            _buildRecoveryUpgradePayload(rKey, newRKey, sig, address(newImpl), keccak256("deprecated-verifier"));
+        bytes memory payload = _signedRecoveryUpgradePayload(address(newImpl), 0, keccak256("deprecated-verifier"));
 
         vm.prank(ALICE);
         vm.expectRevert(IWOTSPlusImplementation.ImplementationDeprecated.selector);

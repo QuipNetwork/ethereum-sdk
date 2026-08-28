@@ -133,34 +133,23 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     }
 
     function test_migrate_revertsWhen_unsupportedHashSuite() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            SHRINCS.HASH_SUITE_UNSUPPORTED,
-            erc1271Pk,
-            HashSuite.HASH_SUITE_ID
-        );
         _migrateViaUpgradeExpect(
-            payload, abi.encodeWithSelector(IShrincsWallet.UnsupportedHashSuite.selector)
+            _unsupportedHashSuitePayload(_mainPk()),
+            abi.encodeWithSelector(IShrincsWallet.UnsupportedHashSuite.selector)
+        );
+    }
+
+    function test_migrate_revertsWhen_unsupportedErc1271HashSuite() public {
+        _migrateViaUpgradeExpect(
+            _unsupportedErc1271HashSuitePayload(_mainPk()),
+            abi.encodeWithSelector(IShrincsWallet.UnsupportedHashSuite.selector)
         );
     }
 
     function test_migrate_revertsWhen_invalidBundle() public {
-        // Corrupt the bundle's embedded commitment so `validPublicKey` fails its recompute check.
-        SHRINCS.PublicKey memory pk = _mainPk();
-        pk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-embedded-commitment"));
-        bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Pk,
-            HashSuite.HASH_SUITE_ID
-        );
         _migrateViaUpgradeExpect(
-            payload, abi.encodeWithSelector(IShrincsWallet.CommitmentMismatch.selector)
+            _corruptBundlePayload(_mainPk()),
+            abi.encodeWithSelector(IShrincsWallet.CommitmentMismatch.selector)
         );
     }
 
@@ -170,41 +159,16 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         (, SHRINCS.PublicKey memory pk, bool ok) =
             SHRINCSTestSigner.keygen("migrate-wrong-declared", MAX_SIG);
         require(ok, "keygen");
-        bytes memory payload = _buildInitPayload(
-            keccak256("wrong-commitment"),
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Pk,
-            HashSuite.HASH_SUITE_ID
-        );
         _migrateViaUpgradeExpect(
-            payload, abi.encodeWithSelector(IShrincsWallet.CommitmentMismatch.selector)
+            _wrongDeclaredCommitmentPayload(pk),
+            abi.encodeWithSelector(IShrincsWallet.CommitmentMismatch.selector)
         );
     }
 
     function test_migrate_revertsWhen_zeroMaxSignatures() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        // Zero the trailing 4-byte maxSignatures, then recompute the commitment so the shape/
-        // commitment checks pass and the explicit `ZeroMaxSignatures` guard fires.
-        bytes memory spk = pk.statefulPublicKey;
-        spk[64] = 0;
-        spk[65] = 0;
-        spk[66] = 0;
-        spk[67] = 0;
-        bytes32 newCommit = SHRINCS.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
-        pk.statefulPublicKey = spk;
-        pk.publicKeyCommitment = abi.encodePacked(newCommit);
-        bytes memory payload = _buildInitPayload(
-            newCommit,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            erc1271Pk,
-            HashSuite.HASH_SUITE_ID
-        );
         _migrateViaUpgradeExpect(
-            payload, abi.encodeWithSelector(IShrincsWallet.ZeroMaxSignatures.selector)
+            _zeroMaxSignaturesPayload(_mainPk()),
+            abi.encodeWithSelector(IShrincsWallet.ZeroMaxSignatures.selector)
         );
     }
 

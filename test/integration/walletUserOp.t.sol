@@ -59,21 +59,29 @@ contract Integration_walletUserOp is IntegrationBase {
     ///      EntryPoint with the canonical `AA24 signature error` FailedOp.
     ///      Proves the v0.7 signature-failure error string still matches what the
     ///      wallet's `_validateSignature` returns (validationData = 1).
-    function test_integration_handleOps_revertsWhen_walletSigTampered() public {
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("integration-badsig-key");
-
+    /// @dev Shared arrange for the single-op handleOps family: builds and signs one op
+    ///      transferring 0.01 ether to BOB, rotating to a key derived from `seed`.
+    function _signedOps(bytes32 seed)
+        internal
+        returns (PackedUserOperation[] memory ops, WOTSPlus.WinternitzAddress memory nextPq)
+    {
+        (nextPq,) = _generateKeyPair(seed);
         PackedUserOperation memory userOp = _buildUserOp(BOB, 0.01 ether, "");
         _signUserOp(userOp, alicePrivateKey, alicePubkey, nextPq);
+        ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+    }
+
+    function test_integration_handleOps_revertsWhen_walletSigTampered() public {
+        (PackedUserOperation[] memory ops,) = _signedOps("integration-badsig-key");
 
         // Corrupt one byte deep inside the WOTS+ signature element bytes —
         // past the (currentKey, nextKey) header so the pre-verify branches pass
         // and verification itself fails.
-        bytes memory sig = userOp.signature;
+        bytes memory sig = ops[0].signature;
         sig[200] ^= bytes1(0xFF);
-        userOp.signature = sig;
+        ops[0].signature = sig;
 
-        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
-        ops[0] = userOp;
         vm.expectRevert(abi.encodeWithSignature("FailedOp(uint256,string)", uint256(0), "AA24 signature error"));
         IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
     }
@@ -115,13 +123,7 @@ contract Integration_walletUserOp is IntegrationBase {
     ///      the nonce advanced *and* the signing key was rotated out of the set.
     ///      Proves one-time-key semantics at the EntryPoint level.
     function test_integration_handleOps_revertsWhen_replay() public {
-        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("integration-replay-key");
-
-        PackedUserOperation memory userOp = _buildUserOp(BOB, 0.01 ether, "");
-        _signUserOp(userOp, alicePrivateKey, alicePubkey, nextPq);
-
-        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
-        ops[0] = userOp;
+        (PackedUserOperation[] memory ops,) = _signedOps("integration-replay-key");
         IEntryPoint(ENTRY_POINT).handleOps(ops, BENEFICIARY);
 
         // Second submission of the exact same op. The EntryPoint's nonce

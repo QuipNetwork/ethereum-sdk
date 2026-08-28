@@ -102,10 +102,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_noStorageCollision_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         h.add2(A5);
         assertFalse(h.contains2(A1));
         assertTrue(h.contains2(A5));
@@ -132,10 +129,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_length_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertEq(h.length(), 4);
         h.add(A5);
         assertEq(h.length(), 5);
@@ -158,19 +152,14 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_add_duplicate_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertFalse(h.add(A1));
         assertFalse(h.add(A4));
         assertEq(h.length(), 4);
     }
 
     function test_add_transitionsToEager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
+        _addLazyThree();
         assertTrue(h.add(A4));
         assertEq(h.length(), 4);
         assertTrue(h.contains(A1));
@@ -180,29 +169,16 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_add_sameSeedDifferentHash_lazy() public {
-        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A1.publicSeed, A2.publicKeyHash);
-        assertTrue(h.add(A1));
-        assertTrue(h.add(a));
-        assertEq(h.length(), 2);
-        assertTrue(h.contains(A1));
-        assertTrue(h.contains(a));
+        _addAndAssertDistinctPair(WOTSPlus.WinternitzAddress(A1.publicSeed, A2.publicKeyHash));
     }
 
     function test_add_differentSeedSameHash_lazy() public {
-        WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A2.publicSeed, A1.publicKeyHash);
-        assertTrue(h.add(A1));
-        assertTrue(h.add(a));
-        assertEq(h.length(), 2);
-        assertTrue(h.contains(A1));
-        assertTrue(h.contains(a));
+        _addAndAssertDistinctPair(WOTSPlus.WinternitzAddress(A2.publicSeed, A1.publicKeyHash));
     }
 
     function test_add_sameSeedDifferentHash_eager() public {
         WOTSPlus.WinternitzAddress memory a = WOTSPlus.WinternitzAddress(A1.publicSeed, A2.publicKeyHash);
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertTrue(h.add(a));
         assertEq(h.length(), 5);
         assertTrue(h.contains(A1));
@@ -247,18 +223,14 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_contains_lazy() public {
-        h.add(A1);
-        h.add(A2);
+        _addLazyTwo();
         assertTrue(h.contains(A1));
         assertTrue(h.contains(A2));
         assertFalse(h.contains(A3));
     }
 
     function test_contains_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertTrue(h.contains(A1));
         assertTrue(h.contains(A4));
         assertFalse(h.contains(A5));
@@ -285,10 +257,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_nonExistent_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertFalse(h.remove(A5));
         assertEq(h.length(), 4);
     }
@@ -301,9 +270,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_lazy_first() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
+        _addLazyThree();
         assertTrue(h.remove(A1));
         assertEq(h.length(), 2);
         assertFalse(h.contains(A1));
@@ -316,9 +283,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_lazy_middle() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
+        _addLazyThree();
         assertTrue(h.remove(A2));
         assertEq(h.length(), 2);
         WOTSPlus.WinternitzAddress memory r0 = h.at(0);
@@ -330,9 +295,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_lazy_last() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
+        _addLazyThree();
         assertTrue(h.remove(A3));
         assertEq(h.length(), 2);
         assertTrue(h.contains(A1));
@@ -340,52 +303,33 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_lazy_twoElements_removeFirst() public {
-        h.add(A1);
-        h.add(A2);
-        h.remove(A1);
-        assertEq(h.length(), 1);
-        h.remove(A2);
-        assertEq(h.length(), 0);
+        _addLazyTwo();
+        _removeAndAssertLength(A1, 1);
+        _removeAndAssertLength(A2, 0);
     }
 
     function test_remove_lazy_twoElements_removeLast() public {
-        h.add(A1);
-        h.add(A2);
-        h.remove(A2);
-        assertEq(h.length(), 1);
-        h.remove(A1);
-        assertEq(h.length(), 0);
+        _addLazyTwo();
+        _removeAndAssertLength(A2, 1);
+        _removeAndAssertLength(A1, 0);
     }
 
     function test_remove_lazy_threeElements_reverseOrder() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.remove(A3);
-        assertEq(h.length(), 2);
-        h.remove(A2);
-        assertEq(h.length(), 1);
-        h.remove(A1);
-        assertEq(h.length(), 0);
+        _addLazyThree();
+        _removeAndAssertLength(A3, 2);
+        _removeAndAssertLength(A2, 1);
+        _removeAndAssertLength(A1, 0);
     }
 
     function test_remove_lazy_threeElements_forwardOrder() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.remove(A1);
-        assertEq(h.length(), 2);
-        h.remove(A2);
-        assertEq(h.length(), 1);
-        h.remove(A3);
-        assertEq(h.length(), 0);
+        _addLazyThree();
+        _removeAndAssertLength(A1, 2);
+        _removeAndAssertLength(A2, 1);
+        _removeAndAssertLength(A3, 0);
     }
 
     function test_remove_eager_swapAndPop() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertTrue(h.remove(A2));
         assertEq(h.length(), 3);
         assertFalse(h.contains(A2));
@@ -399,10 +343,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_eager_first() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertTrue(h.remove(A1));
         assertEq(h.length(), 3);
         assertFalse(h.contains(A1));
@@ -413,44 +354,22 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_eager_last() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         assertTrue(h.remove(A4));
         assertEq(h.length(), 3);
         assertFalse(h.contains(A4));
     }
 
     function test_remove_eager_reverseOrder() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        h.remove(A4);
-        h.remove(A3);
-        h.remove(A2);
-        h.remove(A1);
-        assertEq(h.length(), 0);
+        _addEagerFourThenRemoveAll(true);
     }
 
     function test_remove_eager_forwardOrder() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        h.remove(A1);
-        h.remove(A2);
-        h.remove(A3);
-        h.remove(A4);
-        assertEq(h.length(), 0);
+        _addEagerFourThenRemoveAll(false);
     }
 
     function test_remove_eager_thenAddAgain() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         h.remove(A2);
         assertTrue(h.add(A2));
         assertEq(h.length(), 4);
@@ -458,15 +377,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_remove_allFromEager_thenReAdd() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        h.remove(A1);
-        h.remove(A2);
-        h.remove(A3);
-        h.remove(A4);
-        assertEq(h.length(), 0);
+        _addEagerFourThenRemoveAll(false);
         // Set stays in eager mode (lazyLength != 0). Verify it still works.
         assertTrue(h.add(A5));
         assertEq(h.length(), 1);
@@ -511,8 +422,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     function test_at_lazy() public {
-        h.add(A1);
-        h.add(A2);
+        _addLazyTwo();
         WOTSPlus.WinternitzAddress memory r0 = h.at(0);
         assertEq(r0.publicSeed, A1.publicSeed);
         assertEq(r0.publicKeyHash, A1.publicKeyHash);
@@ -522,10 +432,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_at_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         WOTSPlus.WinternitzAddress memory r3 = h.at(3);
         assertEq(r3.publicSeed, A4.publicSeed);
         assertEq(r3.publicKeyHash, A4.publicKeyHash);
@@ -543,10 +450,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_at_revertsWhen_outOfBounds_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         vm.expectRevert(EnumerableWinternitzAddressSet.IndexOutOfBounds.selector);
         h.at(4);
     }
@@ -567,8 +471,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_values_lazy() public {
-        h.add(A1);
-        h.add(A2);
+        _addLazyTwo();
         WOTSPlus.WinternitzAddress[] memory vals = h.values();
         assertEq(vals.length, 2);
         assertEq(vals[0].publicSeed, A1.publicSeed);
@@ -578,11 +481,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_values_eager() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        h.add(A5);
+        _addEagerFive();
         WOTSPlus.WinternitzAddress[] memory vals = h.values();
         assertEq(vals.length, 5);
         assertEq(vals[0].publicSeed, A1.publicSeed);
@@ -592,11 +491,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_values_matchesAt() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        h.add(A5);
+        _addEagerFive();
         WOTSPlus.WinternitzAddress[] memory vals = h.values();
         for (uint256 i; i < vals.length; ++i) {
             WOTSPlus.WinternitzAddress memory r = h.at(i);
@@ -606,10 +501,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_values_afterRemoval() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         h.remove(A2);
         WOTSPlus.WinternitzAddress[] memory vals = h.values();
         assertEq(vals.length, 3);
@@ -639,20 +531,15 @@ contract EnumerableWinternitzAddressSetTest is Test {
     }
 
     function test_clear_lazyTwo() public {
-        h.add(A1);
-        h.add(A2);
-        assertEq(h.clear(), 2);
-        assertEq(h.length(), 0);
+        _addLazyTwo();
+        _assertCleared(2);
         assertFalse(h.contains(A1));
         assertFalse(h.contains(A2));
     }
 
     function test_clear_lazyFull() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        assertEq(h.clear(), 3);
-        assertEq(h.length(), 0);
+        _addLazyThree();
+        _assertCleared(3);
         assertFalse(h.contains(A1));
         assertFalse(h.contains(A2));
         assertFalse(h.contains(A3));
@@ -660,36 +547,21 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
     function test_clear_eagerSmall() public {
         // 4 elements forces transition to eager phase.
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        assertEq(h.clear(), 4);
-        assertEq(h.length(), 0);
-        assertFalse(h.contains(A1));
-        assertFalse(h.contains(A2));
-        assertFalse(h.contains(A3));
-        assertFalse(h.contains(A4));
+        _addEagerFour();
+        _assertCleared(4);
+        _assertAbsent4(A1, A2, A3, A4);
     }
 
     function test_clear_eagerFull() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        h.add(A5);
-        assertEq(h.clear(), 5);
-        assertEq(h.length(), 0);
+        _addEagerFive();
+        _assertCleared(5);
     }
 
     // Clear must wipe the position-mapping slots (eager phase) so that a
     // subsequent re-add of the same address starts clean — without this the
     // position mapping would still point into stale element slots.
     function test_clear_eager_thenReuse() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         h.clear();
 
         // Re-add the same addresses; they must be `add() == true` (i.e., not
@@ -707,10 +579,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     // after clear should land in lazy slots and the length() helper must
     // reflect the correct count via the lazy-phase scan.
     function test_clear_eager_resetsToLazyPhase() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
+        _addEagerFour();
         h.clear();
         h.add(A1);
         assertEq(h.length(), 1);
@@ -720,26 +589,17 @@ contract EnumerableWinternitzAddressSetTest is Test {
     // After eager-phase removals leave a hole in the array, clear must still
     // wipe every slot the library considers populated (length() before clear).
     function test_clear_eagerAfterRemoval() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-        h.add(A5);
+        _addEagerFive();
         h.remove(A2); // length now 4, A5 swapped into A2's index
-        assertEq(h.clear(), 4);
-        assertEq(h.length(), 0);
-        assertFalse(h.contains(A1));
-        assertFalse(h.contains(A3));
-        assertFalse(h.contains(A4));
-        assertFalse(h.contains(A5));
+        _assertCleared(4);
+        _assertAbsent4(A1, A3, A4, A5);
     }
 
     // Clear on one set must not touch a sibling set sharing the same parent
     // contract — i.e., it correctly scopes to the rootSlot derived from the
     // set's storage slot.
     function test_clear_doesNotAffectOtherSet() public {
-        h.add(A1);
-        h.add(A2);
+        _addLazyTwo();
         h.add2(A3);
         h.add2(A4);
 
@@ -761,28 +621,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     ///      seeds are guaranteed via the loop index so dedup never silently
     ///      shrinks the populated size below `bound(...)`.
     function test_fuzz_clear_lazyPhase(uint256 n) public {
-        LibPRNG.PRNG memory prng;
-        prng.state = n;
-        uint256 size = bound(prng.next(), 1, 3);
-
-        bytes32[] memory hashes = new bytes32[](size);
-        for (uint256 i; i < size; ++i) {
-            // Distinct seed per iteration → no add() collisions.
-            hashes[i] = bytes32(prng.next() | 1); // non-zero hash
-            h.add(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i]));
-        }
-        assertEq(h.length(), size, "all distinct adds landed (lazy)");
-
-        uint256 cleared = h.clear();
-        assertEq(cleared, size, "cleared count vs prior length");
-        assertEq(h.length(), 0, "length after clear");
-
-        for (uint256 i; i < size; ++i) {
-            assertFalse(
-                h.contains(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i])),
-                "stale residue after lazy-phase clear"
-            );
-        }
+        _fuzzClearPhase(n, 1, 3, "all distinct adds landed (lazy)", "stale residue after lazy-phase clear");
     }
 
     /// @dev Force eager phase: 4..16 distinct elements, then clear. Same
@@ -790,27 +629,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
     ///      exercises the position-mapping wipe inside `clear`'s eager
     ///      branch, which is the bit a regression would silently break.
     function test_fuzz_clear_eagerPhase(uint256 n) public {
-        LibPRNG.PRNG memory prng;
-        prng.state = n;
-        uint256 size = bound(prng.next(), 4, 16);
-
-        bytes32[] memory hashes = new bytes32[](size);
-        for (uint256 i; i < size; ++i) {
-            hashes[i] = bytes32(prng.next() | 1);
-            h.add(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i]));
-        }
-        assertEq(h.length(), size, "all distinct adds landed (eager)");
-
-        uint256 cleared = h.clear();
-        assertEq(cleared, size, "cleared count vs prior length");
-        assertEq(h.length(), 0, "length after clear");
-
-        for (uint256 i; i < size; ++i) {
-            assertFalse(
-                h.contains(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i])),
-                "stale residue after eager-phase clear"
-            );
-        }
+        _fuzzClearPhase(n, 4, 16, "all distinct adds landed (eager)", "stale residue after eager-phase clear");
     }
 
     /// @dev Random churn (adds + removes against a reference model), but
@@ -819,12 +638,45 @@ contract EnumerableWinternitzAddressSetTest is Test {
     ///      and we assert clear's returned count matches the reference's
     ///      final size — so we know clear was actually invoked on a
     ///      meaningful state, not silently on an empty set.
+    /// @dev Shared setup for the PRNG churn fuzzers: seeded PRNG, empty packed reference
+    ///      model, and a small address-space mask.
+    function _churnSetup(uint256 n)
+        internal
+        pure
+        returns (LibPRNG.PRNG memory prng, uint256[] memory ref, uint256 mask)
+    {
+        prng.state = n;
+        ref = _makePackedArray(0);
+        mask = prng.next() % 2 == 0 ? 7 : 15;
+    }
+
+    /// @dev One PRNG-driven churn step: adds or removes a small-mask address and mirrors the
+    ///      mutation in the packed reference model. Returns the address and whether it was
+    ///      an add, so callers can layer their own per-step assertions.
+    function _churnStep(LibPRNG.PRNG memory prng, uint256 mask, uint256[] memory ref)
+        internal
+        returns (WOTSPlus.WinternitzAddress memory addr, bool added)
+    {
+        unchecked {
+            uint256 seed = (prng.next() & mask) + 1;
+            uint256 hash_ = (prng.next() & mask) + 1;
+            uint256 packed = (seed << 128) | hash_;
+            addr = WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_));
+
+            if (prng.next() % 2 == 0) {
+                h.add(addr);
+                _addToPacked(ref, packed);
+                added = true;
+            } else {
+                h.remove(addr);
+                _removeFromPacked(ref, packed);
+            }
+        }
+    }
+
     function test_fuzz_clear_afterRandomChurn(uint256 n) public {
         unchecked {
-            LibPRNG.PRNG memory prng;
-            prng.state = n;
-            uint256[] memory ref = _makePackedArray(0);
-            uint256 mask = prng.next() % 2 == 0 ? 7 : 15;
+            (LibPRNG.PRNG memory prng, uint256[] memory ref, uint256 mask) = _churnSetup(n);
 
             // Guarantee non-empty starting state so clear is never trivial.
             // Distinct seed (0xfeed...) avoids collision with the churn loop's
@@ -838,19 +690,7 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
             uint256 iters;
             do {
-                uint256 seed = (prng.next() & mask) + 1;
-                uint256 hash_ = (prng.next() & mask) + 1;
-                uint256 packed = (seed << 128) | hash_;
-                WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_));
-
-                if (prng.next() % 2 == 0) {
-                    h.add(addr);
-                    _addToPacked(ref, packed);
-                } else {
-                    h.remove(addr);
-                    _removeFromPacked(ref, packed);
-                }
-
+                _churnStep(prng, mask, ref);
                 ++iters;
                 if (iters == 256) break;
             } while (prng.next() % 8 != 0);
@@ -989,28 +829,17 @@ contract EnumerableWinternitzAddressSetTest is Test {
     /// @dev Open-ended fuzz: random interleaved adds/removes against a dynamic reference model.
     function test_fuzz_openEndedAddRemove(uint256 n) public {
         unchecked {
-            LibPRNG.PRNG memory prng;
-            prng.state = n;
-            uint256[] memory ref = _makePackedArray(0);
-            uint256 mask = prng.next() % 2 == 0 ? 7 : 15;
+            (LibPRNG.PRNG memory prng, uint256[] memory ref, uint256 mask) = _churnSetup(n);
             uint256 iters;
 
             do {
-                uint256 seed = (prng.next() & mask) + 1;
-                uint256 hash_ = (prng.next() & mask) + 1;
-                uint256 packed = (seed << 128) | hash_;
-                WOTSPlus.WinternitzAddress memory addr = WOTSPlus.WinternitzAddress(bytes32(seed), bytes32(hash_));
-
-                if (prng.next() % 2 == 0) {
-                    h.add(addr);
-                    _addToPacked(ref, packed);
+                (WOTSPlus.WinternitzAddress memory addr, bool added) = _churnStep(prng, mask, ref);
+                // Unlike the clear-focused churn, every step pins membership + length.
+                if (added) {
                     assertTrue(h.contains(addr));
                 } else {
-                    h.remove(addr);
-                    _removeFromPacked(ref, packed);
                     assertFalse(h.contains(addr));
                 }
-
                 assertEq(h.length(), ref.length, "length mismatch");
 
                 // Periodic cross-checks.
@@ -1077,6 +906,112 @@ contract EnumerableWinternitzAddressSetTest is Test {
             assertEq(r.publicSeed, vals[i].publicSeed);
             assertEq(r.publicKeyHash, vals[i].publicKeyHash);
             assertTrue(h.contains(vals[i]));
+        }
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                      TEST HELPERS                             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    function _addLazyTwo() internal {
+        h.add(A1);
+        h.add(A2);
+    }
+
+    function _addLazyThree() internal {
+        _addLazyTwo();
+        h.add(A3);
+    }
+
+    function _addEagerFour() internal {
+        _addLazyThree();
+        h.add(A4);
+    }
+
+    function _addEagerFive() internal {
+        _addEagerFour();
+        h.add(A5);
+    }
+
+    function _addAndAssertDistinctPair(WOTSPlus.WinternitzAddress memory a) internal {
+        assertTrue(h.add(A1));
+        assertTrue(h.add(a));
+        assertEq(h.length(), 2);
+        assertTrue(h.contains(A1));
+        assertTrue(h.contains(a));
+    }
+
+    function _removeAndAssertLength(WOTSPlus.WinternitzAddress memory addr, uint256 expectedLen) internal {
+        h.remove(addr);
+        assertEq(h.length(), expectedLen);
+    }
+
+    function _removeAllEager(bool reverse) internal {
+        if (reverse) {
+            h.remove(A4);
+            h.remove(A3);
+            h.remove(A2);
+            h.remove(A1);
+        } else {
+            h.remove(A1);
+            h.remove(A2);
+            h.remove(A3);
+            h.remove(A4);
+        }
+    }
+
+    function _addEagerFourThenRemoveAll(bool reverse) internal {
+        _addEagerFour();
+        _removeAllEager(reverse);
+        assertEq(h.length(), 0);
+    }
+
+    function _assertCleared(uint256 expectedCleared) internal {
+        assertEq(h.clear(), expectedCleared);
+        assertEq(h.length(), 0);
+    }
+
+    function _assertAbsent4(
+        WOTSPlus.WinternitzAddress memory a,
+        WOTSPlus.WinternitzAddress memory b,
+        WOTSPlus.WinternitzAddress memory c,
+        WOTSPlus.WinternitzAddress memory d
+    ) internal view {
+        assertFalse(h.contains(a));
+        assertFalse(h.contains(b));
+        assertFalse(h.contains(c));
+        assertFalse(h.contains(d));
+    }
+
+    /// @dev Add `lo..hi` distinct-seed addresses, clear, and assert no residue.
+    function _fuzzClearPhase(
+        uint256 n,
+        uint256 lo,
+        uint256 hi,
+        string memory landedMsg,
+        string memory residueMsg
+    ) internal {
+        LibPRNG.PRNG memory prng;
+        prng.state = n;
+        uint256 size = bound(prng.next(), lo, hi);
+
+        bytes32[] memory hashes = new bytes32[](size);
+        for (uint256 i; i < size; ++i) {
+            // Distinct seed per iteration → no add() collisions.
+            hashes[i] = bytes32(prng.next() | 1); // non-zero hash
+            h.add(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i]));
+        }
+        assertEq(h.length(), size, landedMsg);
+
+        uint256 cleared = h.clear();
+        assertEq(cleared, size, "cleared count vs prior length");
+        assertEq(h.length(), 0, "length after clear");
+
+        for (uint256 i; i < size; ++i) {
+            assertFalse(
+                h.contains(WOTSPlus.WinternitzAddress(bytes32(uint256(i) + 1), hashes[i])),
+                residueMsg
+            );
         }
     }
 
@@ -1172,16 +1107,8 @@ contract EnumerableWinternitzAddressSetTest is Test {
 
     /// @dev Verify that removing an element clears the publicKeyHash slot (no ghost data).
     function test_remove_clearsPublicKeyHashSlot() public {
-        h.add(A1);
-        h.add(A2);
-        h.add(A3);
-        h.add(A4);
-
-        // Remove all elements.
-        h.remove(A1);
-        h.remove(A2);
-        h.remove(A3);
-        h.remove(A4);
+        _addEagerFour();
+        _removeAllEager(false);
 
         // Add a fresh element. It goes to index 0.
         h.add(A5);
@@ -1191,9 +1118,6 @@ contract EnumerableWinternitzAddressSetTest is Test {
         assertEq(h.length(), 1);
 
         // Only A5 should exist.
-        assertFalse(h.contains(A1));
-        assertFalse(h.contains(A2));
-        assertFalse(h.contains(A3));
-        assertFalse(h.contains(A4));
+        _assertAbsent4(A1, A2, A3, A4);
     }
 }
