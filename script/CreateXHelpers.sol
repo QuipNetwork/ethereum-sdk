@@ -197,6 +197,12 @@ abstract contract CreateXHelpers is Script {
         return address(uint160(uint256(_identityWord(target, selector, name))));
     }
 
+    /// @dev The implementation an ERC-1967 proxy currently delegates to. Zero when
+    ///      the address holds no proxy — including when it holds no code at all.
+    function _erc1967Impl(address proxy) internal view returns (address) {
+        return address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
+    }
+
     /// @dev Identity check for a canonical ERC-1967 proxy address, run on BOTH the
     ///      fresh-deploy and the idempotent-skip path — the skip alone proves only
     ///      that *something* has code there.
@@ -206,13 +212,8 @@ abstract contract CreateXHelpers is Script {
     ///      the factory and the paymaster are upgradeable. So require a non-zero
     ///      implementation slot — which foreign, non-proxy code will not have — and
     ///      surface a divergent target loudly instead of failing on it.
-    /// The implementation an ERC-1967 proxy currently delegates to (zero if none).
-    function _erc1967Impl(address proxy) internal view returns (address) {
-        return address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
-    }
-
     function _assertErc1967Proxy(address proxy, address impl, string memory name) internal view {
-        address current = address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
+        address current = _erc1967Impl(proxy);
         require(
             current != address(0),
             string.concat(name, ": code at the canonical proxy address is not an ERC-1967 proxy")

@@ -41,10 +41,10 @@ import {
   ExecuteTargetHasNoCodeError,
   OwnerMismatchError,
   StatefulBudgetExhaustedError,
-  ZeroAddressOwnerError,
   StatefulTreeSpentError,
   StatelessTreeSpentError,
   UnsupportedByWalletVersionError,
+  ZeroAddressOwnerError,
 } from "./errors.js";
 import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
@@ -74,9 +74,8 @@ import {
   buildActionContext,
   buildRotationContext,
   buildStatefulRotationTarget,
-  statefulTreeId,
-  statelessTreeId,
   dataHash as keccakData,
+  decodeInitPayload,
   domainSeparator,
   encodeErc1271Signature,
   encodeProbeVector,
@@ -92,6 +91,8 @@ import {
   SHRINCS_PROFILE_NAME,
   statefulRawMessageHash,
   statelessRawMessageHash,
+  statefulTreeId,
+  statelessTreeId,
   toRotationTarget,
   transferOwnershipPayloadHash,
   upgradePayloadHash,
@@ -596,10 +597,6 @@ export class ShrincsWalletClient {
     return keypair;
   }
 
-  /// Common stateful-op preamble: assert provider, read state, recover key, pick
-  /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
-  /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
-  /// are responsible for their own exclusion guard (see `markLeavesUsed`).
   /// Pre-flight mirror of the wallet's spent-tree registry for the one case the
   /// client can see: the next stateful tree equals the INSTALLED one (same
   /// tree, or the same tree under a re-declared budget). Cycles back to an
@@ -612,8 +609,33 @@ export class ShrincsWalletClient {
   }
 
   /// Pre-flight for full-bundle installs (`recoverWallet` / `transferOwnership`
-  /// / `setErc1271Key`): both halves of `nextKey` must differ from the
-  /// installed main bundle.
+  /// / `setErc1271Key` / `upgradeToAndCall` migrate): both halves of `nextKey`
+  /// must differ from the installed main bundle.
+  /// Pre-flight mirror of what `migrate` spends: all four trees of the payload
+  /// (main + ERC-1271, stateful + stateless). The client can see the installed
+  /// main bundle and the installed 1271 commitment, so it checks both payload
+  /// bundles against the main bundle, the 1271 bundle against the installed
+  /// 1271 commitment, and the two payload bundles against each other — the
+  /// wallet installs main first, so a shared tree trips on the 1271 install.
+  private assertFreshMigration(
+    migratorPayload: Hex,
+    current: ShrincsPublicKey,
+    state: ShrincsWalletState
+  ): void {
+    const { mainBundle, erc1271Bundle } = decodeInitPayload(migratorPayload);
+    this.assertFreshBundle(mainBundle, current);
+    this.assertFreshBundle(erc1271Bundle, current);
+    if (
+      erc1271Bundle.publicKeyCommitment.toLowerCase() ===
+      state.erc1271PublicKeyCommitment.toLowerCase()
+    ) {
+      throw new StatefulTreeSpentError(
+        statefulTreeId(erc1271Bundle.statefulPublicKey)
+      );
+    }
+    this.assertFreshBundle(erc1271Bundle, mainBundle);
+  }
+
   private assertFreshBundle(nextKey: ShrincsPublicKey, current: ShrincsPublicKey): void {
     this.assertFreshStatefulTree(nextKey.statefulPublicKey, current);
     const next = statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot);
@@ -622,6 +644,10 @@ export class ShrincsWalletClient {
     }
   }
 
+  /// Common stateful-op preamble: assert provider, read state, recover key, pick
+  /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
+  /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
+  /// are responsible for their own exclusion guard (see `markLeavesUsed`).
   private async prepareStatefulOp(
     keyOpts?: ShrincsTxKeyOptions,
     excludeLeaves?: ReadonlySet<number>,
@@ -1108,7 +1134,13 @@ export class ShrincsWalletClient {
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(
+      opts,
+      undefined,
+      shouldMigrate
+        ? (kp, st) => this.assertFreshMigration(migratorPayload, kp.publicKey, st)
+        : undefined
+    );
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,

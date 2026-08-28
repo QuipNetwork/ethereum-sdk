@@ -4,6 +4,8 @@ pragma solidity ^0.8.33;
 import {ShrincsPaymaster} from "../../contracts/ShrincsPaymaster.sol";
 import {ShrincsPaymasterStorage as Storage} from "../../contracts/storage/ShrincsPaymasterStorage.sol";
 import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 
 /// @dev Test harness exposing `ShrincsPaymaster` internals and a direct storage installer so
 ///      behavior tests can set up arbitrary verifier state without an owner-gated registration.
@@ -42,7 +44,14 @@ contract ShrincsPaymasterHarness is ShrincsPaymaster {
         $.maxSignatures = maxSignaturesValue;
     }
 
-    /// @dev Wraps the check-and-record install primitive (also used by the fixture to mirror
+    /// @dev Wraps `_statefulTreeId` over the 68-byte encoding (decode, then keccak256(pkSeed ‖ root)).
+    function exposed_statefulTreeId(bytes calldata statefulPublicKey) external pure returns (bytes32) {
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS.decodeStatefulPublicKey(statefulPublicKey);
+        require(ok, "statefulPublicKey");
+        return _statefulTreeId(decoded);
+    }
+
+    /// @dev Wraps the check-and-record spend primitive (also used by the fixture to mirror
     ///      what `initialize` records).
     function exposed_safeInstallStatefulKey(bytes calldata statefulPublicKey) external {
         _safeInstallStatefulKey(statefulPublicKey);

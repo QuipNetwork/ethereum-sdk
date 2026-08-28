@@ -101,7 +101,29 @@ describe("shrincsCodec", () => {
       Codec.statelessTreeId(erc1271Key.publicKey.pkSeed, erc1271Key.publicKey.hypertreeRoot)
     ).not.toBe(Codec.statelessTreeId(pkSeed, hypertreeRoot));
     expect(() => Codec.statelessTreeId(sliceHex(pkSeed, 0, 31), hypertreeRoot)).toThrow(
-      /at least 32 bytes/
+      /32 bytes/
+    );
+    expect(() =>
+      Codec.statelessTreeId(concat([pkSeed, "0x00"]), hypertreeRoot)
+    ).toThrow(/32 bytes/);
+  });
+
+  // Same constants are asserted in
+  // test/ShrincsWallet/behaviors/_statefulTreeId.t.sol and
+  // test/ShrincsWallet/behaviors/_statelessTreeId.t.sol.
+  it("tree ids match the Foundry cross-language vectors", () => {
+    const sequential68 =
+      "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f40414243" as Hex;
+    expect(Codec.statefulTreeId(sequential68)).toBe(
+      "0x002030bde3d4cf89919649775cd71875c4d0ab1708a380e03fefc3a28aa24831"
+    );
+    expect(
+      Codec.statelessTreeId(
+        ("0x" + "11".repeat(32)) as Hex,
+        ("0x" + "22".repeat(32)) as Hex
+      )
+    ).toBe(
+      "0x3e92e0db88d6afea9edc4eedf62fffa4d92bcdfc310dccbe943747fe8302e871"
     );
   });
 
@@ -214,6 +236,10 @@ describe("shrincsCodec", () => {
     );
     expect(pk).toEqual(Codec.publicKeyToAbi(mainKey.publicKey));
     expect(erc1271Pk).toEqual(Codec.publicKeyToAbi(erc1271Key.publicKey));
+    expect(Codec.decodeInitPayload(payload)).toEqual({
+      mainBundle: mainKey.publicKey,
+      erc1271Bundle: erc1271Key.publicKey,
+    });
   });
 
   it("encodeUpgradeData matches the wallet decodeUpgradeAuth head layout", () => {

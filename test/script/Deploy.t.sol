@@ -9,6 +9,7 @@ import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts
 import {SPHINCSPlusC256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC256sKeccak.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {IShrincsPaymaster} from "../../contracts/interfaces/IShrincsPaymaster.sol";
 import {DeployConstants} from "../../script/Constants.sol";
 import {IVettingFactory} from "../../script/DeployHelpers.sol";
 import {DeployShrincsBase} from "../../script/DeployShrincsBase.sol";
@@ -91,6 +92,16 @@ contract DeployScriptsTest is Test {
     // read to recover an impl address from behind its ERC-1967 proxy.
     bytes32 internal constant ERC1967_IMPL_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+
+    // ERC-7201 base slot of `ShrincsPaymasterStorage.Layout`
+    // (`contracts/storage/ShrincsPaymasterStorage.sol`). The field order declared
+    // there fixes the offsets the upgrade tests read and write: +0
+    // `shrincsCommitment`, +1 `maxSignatures` ‖ `statefulLeavesUsed` (packed), +2
+    // `keyVersion`, +3 `usedStatefulLeafBitmap`, +4 `spentStatefulTrees`. The
+    // paymaster publishes no getter for the spent-tree registry, so the tests
+    // reach it through this slot.
+    bytes32 internal constant PM_STORAGE_BASE =
+        0xf7105c87ba7715caaefb344b6f917b23c0076d42eb62a45375e3717cb7ad3900;
 
     address internal owner; // doubles as the DEPLOY_OPERATOR (sender-guarded salts)
     DeployHarness internal h;
@@ -225,22 +236,30 @@ contract DeployScriptsTest is Test {
         assertEq(sPm1, sPm2, "shrincs paymaster stable");
     }
 
+    /*──────────────── in-place upgrade of an existing proxy ────────────────*/
+
+    /// Points the live proxy at the retired `-beta.1` implementation address,
+    /// with this build's runtime etched there (a UUPS target must answer
+    /// `proxiableUUID`). Using the published constant rather than an arbitrary
+    /// address also pins the predecessor the deploy is willing to upgrade away
+    /// from.
+    function _pointAtRetiredBeta1Impl(address sPm) internal returns (address canonicalImpl) {
+        canonicalImpl = address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT))));
+        address retired = DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1;
+        vm.etch(retired, canonicalImpl.code);
+        vm.store(sPm, ERC1967_IMPL_SLOT, bytes32(uint256(uint160(retired))));
+    }
+
     /// In-place generation bump: a chain that already holds the paymaster proxy
-    /// delegating to an EARLIER impl gets upgraded to this build's impl (owner
-    /// UUPS upgrade, no re-init) instead of failing the identity assert.
+    /// delegating to the retired `-beta.1` impl gets upgraded to this build's
+    /// impl (owner UUPS upgrade, no re-init) instead of failing the identity
+    /// assert.
     function test_upgradeInPlace_existingPaymasterProxyMovesToThisImpl() public {
         h.factory(owner, PK, owner, MAX_FEE);
         address sPm =
             h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
-        address canonicalImpl = address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT))));
-
-        // Simulate the previous generation: same code at another address (a
-        // UUPS target must be a real UUPS impl for `proxiableUUID`), pointed at
-        // by the live proxy.
-        address oldImpl = makeAddr("previous-paymaster-impl");
-        vm.etch(oldImpl, canonicalImpl.code);
-        vm.store(sPm, ERC1967_IMPL_SLOT, bytes32(uint256(uint160(oldImpl))));
-        (bytes32 commitmentBefore,,,,) = IShrincsVerifierView(sPm).getShrincsVerifier();
+        address canonicalImpl = _pointAtRetiredBeta1Impl(sPm);
+        (bytes32 commitmentBefore,,,,) = IShrincsPaymaster(sPm).getShrincsVerifier();
 
         address sPm2 =
             h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
@@ -250,26 +269,239 @@ contract DeployScriptsTest is Test {
             canonicalImpl,
             "proxy upgraded back to this build's impl"
         );
-        (bytes32 commitmentAfter,,,,) = IShrincsVerifierView(sPm).getShrincsVerifier();
+        (bytes32 commitmentAfter,,,,) = IShrincsPaymaster(sPm).getShrincsVerifier();
         assertEq(commitmentAfter, commitmentBefore, "state preserved across the upgrade");
     }
 
-    /// The upgrade is `onlyOwner`: a proxy owned by someone else refuses before
-    /// any broadcast.
-    function test_upgradeInPlace_revertsWhen_keyIsNotProxyOwner() public {
+    /// The upgrade is `onlyOwner` and the paymaster owner is meant to become a
+    /// post-quantum wallet, so a non-owner broadcaster must not break the deploy:
+    /// the run SKIPS the upgrade (logging the call the owner has to make) and
+    /// leaves the proxy on its predecessor.
+    function test_upgradeInPlace_skipsWhen_keyIsNotProxyOwner() public {
         h.factory(owner, PK, owner, MAX_FEE);
         address other = makeAddr("other-paymaster-owner");
         address sPm =
             h.shrincsPaymaster(owner, PK, other, verifierPk, HashSuite.HASH_SUITE_ID);
+        _pointAtRetiredBeta1Impl(sPm);
+
+        address sPm2 = h.shrincsPaymaster(owner, PK, other, verifierPk, HashSuite.HASH_SUITE_ID);
+
+        assertEq(sPm2, sPm, "proxy address stable");
+        assertEq(
+            address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT)))),
+            DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1,
+            "upgrade skipped: proxy still on its predecessor"
+        );
+        // The run completing at all is the point: the deploy base's own
+        // `owner() == paymasterOwner` assert ran after the skip.
+    }
+
+    /// The upgrade only ever moves FORWARD. An implementation this build does not
+    /// know — a later generation, or foreign code — is refused, so re-running an
+    /// older checkout can never downgrade a live proxy.
+    function test_upgradeInPlace_revertsWhen_liveImplIsUnknown() public {
+        h.factory(owner, PK, owner, MAX_FEE);
+        address sPm =
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
         address canonicalImpl = address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT))));
-        address oldImpl = makeAddr("previous-paymaster-impl");
-        vm.etch(oldImpl, canonicalImpl.code);
-        vm.store(sPm, ERC1967_IMPL_SLOT, bytes32(uint256(uint160(oldImpl))));
+
+        address unknownImpl = makeAddr("unlisted-paymaster-impl");
+        vm.etch(unknownImpl, canonicalImpl.code);
+        vm.store(sPm, ERC1967_IMPL_SLOT, bytes32(uint256(uint160(unknownImpl))));
 
         vm.expectRevert(
-            bytes("ShrincsPaymaster proxy: PRIVATE_KEY is not the proxy owner (upgrade is onlyOwner)")
+            bytes("ShrincsPaymaster proxy: live impl is neither this build nor a known predecessor")
         );
-        h.shrincsPaymaster(owner, PK, other, verifierPk, HashSuite.HASH_SUITE_ID);
+        h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+    }
+
+    /// ACCEPTED RESIDUAL RISK — INVARIANTS §25, "Registry provenance".
+    ///
+    /// `upgradeToAndCall(impl, "")` runs no initializer, so a proxy initialized
+    /// under `-beta.1` (no registry) carries an installed tree that the `-beta.2`
+    /// registry has never heard of. The §25 guard cannot bind on that tree: on
+    /// the upgraded proxy, rotating BACK to the currently installed tree still
+    /// succeeds and still resurrects its consumed leaves. This test pins that
+    /// behavior so it stays a known, documented gap rather than a surprise. The
+    /// two testnet paymaster proxies were upgraded with 0 consumed leaves, so
+    /// nothing is presently resurrectable, and the mitigations are operational:
+    /// `ShrincsPaymasterClient.rotateStatefulKey` refuses a target tree equal to
+    /// the installed one before it sends, and
+    /// `scripts/rotate-shrincs-paymaster-key.mjs` additionally requires a next
+    /// derivation index greater than the current one, so it cannot cycle back.
+    function test_upgradeInPlace_beta1Provenance_installedTreeStaysUnregistered() public {
+        h.factory(owner, PK, owner, MAX_FEE);
+        address sPm =
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+
+        bytes32 installedTreeId = _statefulTreeId(verifierPk.statefulPublicKey);
+        bytes32 registrySlot = _spentStatefulTreeSlot(installedTreeId);
+        // Positive control. This build's `initialize` DID record the tree, which
+        // is also what proves the slot derivation above — a wrong derivation
+        // fails here instead of making the "not recorded" assert a tautology.
+        assertEq(uint256(vm.load(sPm, registrySlot)), 1, "beta.2 initialize records the installed tree");
+
+        // Rewrite the proxy into a `-beta.1` state: no registry entry for the
+        // installed tree, and leaf 1 already consumed under epoch 0.
+        vm.store(sPm, registrySlot, bytes32(0));
+        _markLeafUsed(sPm, 0, 1);
+        _setStatefulLeavesUsed(sPm, 2);
+        assertTrue(IShrincsPaymaster(sPm).isStatefulLeafUsed(1), "precondition: leaf 1 consumed");
+        (,,, uint32 maxBefore, uint32 usedBefore) = IShrincsPaymaster(sPm).getShrincsVerifier();
+        assertEq(maxBefore, VERIFIER_MAX_SIGS, "packed slot write left maxSignatures intact");
+        assertEq(usedBefore, 2, "precondition: 2 leaves consumed");
+
+        address canonicalImpl = _pointAtRetiredBeta1Impl(sPm);
+        h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+        assertEq(
+            address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT)))),
+            canonicalImpl,
+            "proxy upgraded to this build's impl"
+        );
+
+        // (a) The upgrade backfills nothing.
+        assertEq(
+            uint256(vm.load(sPm, registrySlot)), 0, "code-only upgrade does not register the installed tree"
+        );
+
+        // So the §25 guard does not bind here: the same-tree rotation that a
+        // `-beta.2`-initialized paymaster rejects with `StatefulTreeSpent`
+        // succeeds, and the consumed leaf comes back.
+        SHRINCS.StatefulRotationTarget memory sameTree = SHRINCS.StatefulRotationTarget({
+            statefulPublicKey: verifierPk.statefulPublicKey,
+            publicKeyCommitment: verifierPk.publicKeyCommitment
+        });
+        vm.prank(owner);
+        IShrincsPaymaster(sPm).rotateStatefulKey(verifierPk, sameTree);
+
+        (,, uint256 keyVersion,, uint32 usedAfter) = IShrincsPaymaster(sPm).getShrincsVerifier();
+        assertEq(keyVersion, 1, "same-tree rotation accepted and epoch bumped");
+        assertEq(usedAfter, 0, "budget gauge reset");
+        assertFalse(IShrincsPaymaster(sPm).isStatefulLeafUsed(1), "consumed leaf resurrected");
+    }
+
+    /// (b) The appended `-beta.2` storage is LIVE on an upgraded proxy, not just
+    /// addressable: the registry entry `initialize` wrote survives the upgrade,
+    /// a rotation through the upgraded proxy records the incoming tree, the
+    /// pre-existing fields move exactly as designed, and the guard then rejects a
+    /// rotation back to a recorded tree.
+    function test_upgradeInPlace_spentTreeRegistryIsLiveOnTheUpgradedProxy() public {
+        h.factory(owner, PK, owner, MAX_FEE);
+        address sPm =
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+        bytes32 installedTreeId = _statefulTreeId(verifierPk.statefulPublicKey);
+        (bytes32 commitmentBefore,, uint256 versionBefore,,) = IShrincsPaymaster(sPm).getShrincsVerifier();
+
+        address canonicalImpl = _pointAtRetiredBeta1Impl(sPm);
+        h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+        assertEq(
+            address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT)))),
+            canonicalImpl,
+            "proxy upgraded to this build's impl"
+        );
+
+        // The pre-existing fields are untouched by the code-only upgrade, and the
+        // appended registry still holds what `initialize` wrote.
+        (bytes32 commitmentAfter,, uint256 versionAfter, uint32 maxAfter, uint32 usedAfter) =
+            IShrincsPaymaster(sPm).getShrincsVerifier();
+        assertEq(commitmentAfter, commitmentBefore, "commitment preserved");
+        assertEq(versionAfter, versionBefore, "keyVersion preserved");
+        assertEq(maxAfter, VERIFIER_MAX_SIGS, "maxSignatures preserved");
+        assertEq(usedAfter, 0, "statefulLeavesUsed preserved");
+        assertEq(
+            uint256(vm.load(sPm, _spentStatefulTreeSlot(installedTreeId))),
+            1,
+            "registry entry survives the upgrade"
+        );
+
+        // A real rotation through the upgraded proxy exercises the appended
+        // mapping as a writer.
+        (SHRINCS.StatefulRotationTarget memory target, bytes32 nextCommitment) =
+            _freshRotationTarget("quip.deploy.test.rotate.fresh", VERIFIER_MAX_SIGS);
+        vm.prank(owner);
+        IShrincsPaymaster(sPm).rotateStatefulKey(verifierPk, target);
+
+        bytes32 freshTreeId = _statefulTreeId(target.statefulPublicKey);
+        assertEq(
+            uint256(vm.load(sPm, _spentStatefulTreeSlot(freshTreeId))),
+            1,
+            "rotation records the incoming tree"
+        );
+        (bytes32 rotatedCommitment,, uint256 rotatedVersion,, uint32 rotatedUsed) =
+            IShrincsPaymaster(sPm).getShrincsVerifier();
+        assertEq(rotatedCommitment, nextCommitment, "commitment rotated");
+        assertEq(rotatedVersion, versionBefore + 1, "epoch bumped once");
+        assertEq(rotatedUsed, 0, "counter reset");
+
+        // And the guard binds: the ORIGINAL tree is recorded, so rotating back to
+        // it is rejected.
+        SHRINCS.PublicKey memory rotatedBundle;
+        rotatedBundle.statefulPublicKey = target.statefulPublicKey;
+        rotatedBundle.publicKeyCommitment = abi.encodePacked(nextCommitment);
+        rotatedBundle.pkSeed = verifierPk.pkSeed;
+        rotatedBundle.hypertreeRoot = verifierPk.hypertreeRoot;
+        SHRINCS.StatefulRotationTarget memory backToOriginal = SHRINCS.StatefulRotationTarget({
+            statefulPublicKey: verifierPk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(commitmentBefore)
+        });
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsPaymaster.StatefulTreeSpent.selector, installedTreeId)
+        );
+        IShrincsPaymaster(sPm).rotateStatefulKey(rotatedBundle, backToOriginal);
+    }
+
+    /// Storage slot of `spentStatefulTrees[treeId]` (layout offset +4).
+    function _spentStatefulTreeSlot(bytes32 treeId) internal pure returns (bytes32) {
+        return keccak256(abi.encode(treeId, uint256(PM_STORAGE_BASE) + 4));
+    }
+
+    /// Stateful tree identity: keccak256(pkSeed ‖ root) over the encoded stateful
+    /// public key, excluding the trailing `maxSignatures`.
+    function _statefulTreeId(bytes memory spk) internal pure returns (bytes32) {
+        bytes32 pkSeed;
+        bytes32 root;
+        assembly {
+            pkSeed := mload(add(spk, 32))
+            root := mload(add(spk, 64))
+        }
+        return keccak256(abi.encodePacked(pkSeed, root));
+    }
+
+    /// Sets `usedStatefulLeafBitmap[keyVersion][leaf >> 8]` bit `leaf & 0xff`
+    /// (layout offset +3), standing in for a leaf consumed before the upgrade.
+    function _markLeafUsed(address pm, uint256 keyVersion, uint256 leaf) internal {
+        bytes32 epochRoot = keccak256(abi.encode(keyVersion, uint256(PM_STORAGE_BASE) + 3));
+        bytes32 wordSlot = keccak256(abi.encode(leaf >> 8, epochRoot));
+        vm.store(
+            pm, wordSlot, bytes32(uint256(vm.load(pm, wordSlot)) | (uint256(1) << (leaf & 0xff)))
+        );
+    }
+
+    /// Writes `statefulLeavesUsed` (bytes 4-7 of the packed slot +1) while leaving
+    /// `maxSignatures` (bytes 0-3) alone.
+    function _setStatefulLeavesUsed(address pm, uint32 used) internal {
+        bytes32 slot = bytes32(uint256(PM_STORAGE_BASE) + 1);
+        uint256 packed = uint256(vm.load(pm, slot));
+        vm.store(pm, slot, bytes32((packed & type(uint32).max) | (uint256(used) << 32)));
+    }
+
+    /// A rotation target the way the operator builds one: a fresh stateful subkey
+    /// recombined with the INSTALLED bundle's stateless half.
+    function _freshRotationTarget(bytes memory seed, uint32 maxSig)
+        internal
+        view
+        returns (SHRINCS.StatefulRotationTarget memory target, bytes32 nextCommitment)
+    {
+        (, SHRINCS.PublicKey memory freshPk, bool ok) = SHRINCSTestSigner.keygen(seed, maxSig);
+        require(ok, "rotation keygen failed");
+        nextCommitment = SHRINCS.publicKeyCommitmentFromParts(
+            freshPk.statefulPublicKey, verifierPk.pkSeed, verifierPk.hypertreeRoot
+        );
+        target = SHRINCS.StatefulRotationTarget({
+            statefulPublicKey: freshPk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(nextCommitment)
+        });
     }
 
     /// Squat-proofing, first line: the deploy helper refuses before broadcast when
@@ -376,8 +608,4 @@ contract DeployScriptsTest is Test {
 /// ADDRESS the deploy reaches, not what lands there.
 contract Tiny {
     uint256 public x = 1;
-}
-
-interface IShrincsVerifierView {
-    function getShrincsVerifier() external view returns (bytes32, uint32, uint256, uint32, uint32);
 }

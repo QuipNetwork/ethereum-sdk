@@ -19,19 +19,20 @@ import {
   type AbiParameter,
   type Address,
   type Hex,
-  bytesToHex,
   concat,
   decodeAbiParameters,
   encodeAbiParameters,
-  hexToBytes,
   keccak256,
   pad,
+  size,
+  sliceHex,
   toBytes,
   toHex,
 } from "viem";
 
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
 import { HASH_SUITE_KECCAK_256 } from "./constants.js";
+import { MalformedCodecPayloadError } from "./errors.js";
 import {
   type ActionContext,
   type RotationContext,
@@ -439,6 +440,19 @@ function publicKeyFromAbi(t: {
 /*                    BLOB ENCODE / DECODE                     */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+/// Factory init / migrate payload ABI: `abi.encode(bytes32 commitment,
+/// bytes32 pkSeed, PublicKey mainBundle, uint32 hashSuite, PublicKey
+/// erc1271Bundle, uint32 erc1271HashSuite)`. Head words land at `[0:32)
+/// commitment, [32:64) pkSeed` by ABI order.
+const INIT_PAYLOAD_PARAMS: AbiParameter[] = [
+  { name: "commitment", type: "bytes32" },
+  { name: "pkSeed", type: "bytes32" },
+  PUBLIC_KEY_TUPLE,
+  { name: "hashSuite", type: "uint32" },
+  PUBLIC_KEY_TUPLE,
+  { name: "erc1271HashSuite", type: "uint32" },
+];
+
 /// Factory init payload: `abi.encode(bytes32 commitment, bytes32 pkSeed,
 /// PublicKey mainBundle, uint32 hashSuite, PublicKey erc1271Bundle, uint32
 /// erc1271HashSuite)`. Both suites default to keccak-256 — the only suite the
@@ -453,24 +467,33 @@ export function encodeInitPayload(params: {
 }): Hex {
   const commitment = params.mainBundle.publicKeyCommitment;
   const pkSeed = params.mainBundle.pkSeed;
-  return encodeAbiParameters(
-    [
-      { name: "commitment", type: "bytes32" },
-      { name: "pkSeed", type: "bytes32" },
-      PUBLIC_KEY_TUPLE,
-      { name: "hashSuite", type: "uint32" },
-      PUBLIC_KEY_TUPLE,
-      { name: "erc1271HashSuite", type: "uint32" },
-    ],
-    [
-      commitment,
-      pkSeed,
-      publicKeyToAbi(params.mainBundle),
-      params.hashSuite ?? HASH_SUITE_KECCAK_256,
-      publicKeyToAbi(params.erc1271Bundle),
-      params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
-    ]
-  );
+  return encodeAbiParameters(INIT_PAYLOAD_PARAMS, [
+    commitment,
+    pkSeed,
+    publicKeyToAbi(params.mainBundle),
+    params.hashSuite ?? HASH_SUITE_KECCAK_256,
+    publicKeyToAbi(params.erc1271Bundle),
+    params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
+  ]);
+}
+
+/// Invert `encodeInitPayload`: recover both bundles from an install / migrate
+/// payload. Malformed blobs throw `MalformedCodecPayloadError` (same 0xc0-byte
+/// floor as on-chain `decodeInit`).
+export function decodeInitPayload(payload: Hex): {
+  mainBundle: ShrincsPublicKey;
+  erc1271Bundle: ShrincsPublicKey;
+} {
+  try {
+    const decoded = decodeAbiParameters(INIT_PAYLOAD_PARAMS, payload);
+    type AbiPublicKey = Parameters<typeof publicKeyFromAbi>[0];
+    return {
+      mainBundle: publicKeyFromAbi(decoded[2] as AbiPublicKey),
+      erc1271Bundle: publicKeyFromAbi(decoded[4] as AbiPublicKey),
+    };
+  } catch {
+    throw new MalformedCodecPayloadError(0xc0n, BigInt(size(payload)));
+  }
 }
 
 /// ERC-4337 `userOp.signature` = `abi.encode(PublicKey, StatefulSignature,
@@ -624,34 +647,36 @@ export function encodeErc1271Signature(params: {
 /*               ROTATION-TARGET HELPERS / ABI                */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-/// Build the `StatefulRotationTarget` for `rotateKey` from a fresh stateful
-/// public key, reusing the current bundle's stateless half. `publicKeyCommitment`
-/// is derived to match the on-chain commitment formula.
 /// Lifetime identity of a stateful tree: `keccak256(pkSeed ‖ root)` over the
 /// first 64 bytes of the 68-byte encoded stateful public key. The trailing
 /// `maxSignatures` is deliberately excluded — re-declaring the budget does not
 /// make a new tree. Mirrors `ShrincsWallet._statefulTreeId`.
 export function statefulTreeId(statefulPublicKey: Hex): Hex {
-  const bytes = hexToBytes(statefulPublicKey);
-  if (bytes.length !== 68) {
-    throw new Error(
-      `statefulPublicKey must be 68 bytes, got ${bytes.length}`
-    );
+  const n = size(statefulPublicKey);
+  if (n !== 68) {
+    throw new Error(`statefulPublicKey must be 68 bytes, got ${n}`);
   }
-  return keccak256(bytes.subarray(0, 64));
+  return keccak256(sliceHex(statefulPublicKey, 0, 64));
 }
 
 /// Lifetime identity of a stateless tree: `keccak256(pkSeed ‖ hypertreeRoot)`
 /// over the first 32 bytes of each field. Mirrors `ShrincsWallet._statelessTreeId`.
 export function statelessTreeId(pkSeed: Hex, hypertreeRoot: Hex): Hex {
-  const seed = hexToBytes(pkSeed);
-  const root = hexToBytes(hypertreeRoot);
-  if (seed.length < 32 || root.length < 32) {
-    throw new Error("pkSeed and hypertreeRoot must be at least 32 bytes");
+  const seedN = size(pkSeed);
+  const rootN = size(hypertreeRoot);
+  if (seedN !== 32 || rootN !== 32) {
+    throw new Error(
+      `pkSeed and hypertreeRoot must be 32 bytes, got ${seedN} and ${rootN}`
+    );
   }
-  return keccak256(concat([bytesToHex(seed.subarray(0, 32)), bytesToHex(root.subarray(0, 32))]));
+  return keccak256(
+    concat([sliceHex(pkSeed, 0, 32), sliceHex(hypertreeRoot, 0, 32)])
+  );
 }
 
+/// Build the `StatefulRotationTarget` for `rotateKey` from a fresh stateful
+/// public key, reusing the current bundle's stateless half. `publicKeyCommitment`
+/// is derived to match the on-chain commitment formula.
 export function buildStatefulRotationTarget(params: {
   nextStatefulPublicKey: Hex;
   currentPkSeed: Hex;

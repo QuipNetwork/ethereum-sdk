@@ -156,23 +156,46 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         // In-place upgrade path: the proxy already exists (idempotent skip) but
         // delegates to an earlier impl of this generation. Storage is ERC-7201
         // append-only, so a plain UUPS upgrade with no re-init moves it to THIS
-        // build's impl. `_authorizeUpgrade` is `onlyOwner`, so the broadcast key
-        // must be the proxy owner.
+        // build's impl.
+        //
+        // The upgrade is direction-blind on its own — it would move the proxy to
+        // whatever impl the CHECKOUT BEING RUN builds — so it is gated twice:
+        //  1. `current` must be a predecessor this build knows (the retired
+        //     `-beta.1` impl). Re-running an older checkout against an upgraded
+        //     proxy therefore reverts instead of silently downgrading it.
+        //  2. `_authorizeUpgrade` is `onlyOwner`. The paymaster owner is meant to
+        //     become a post-quantum wallet, which the deploy key is not, so a
+        //     non-owner broadcaster SKIPS the upgrade with the exact call to hand
+        //     to the owner. The whole deploy must stay runnable after ownership
+        //     moves; `_assertErc1967Proxy` below reports the still-stale impl.
         address current = _erc1967Impl(proxy);
         if (current != impl) {
             require(current != address(0), "ShrincsPaymaster proxy: not an ERC-1967 proxy");
             require(
-                ShrincsPaymaster(payable(proxy)).owner() == vm.addr(pk),
-                "ShrincsPaymaster proxy: PRIVATE_KEY is not the proxy owner (upgrade is onlyOwner)"
+                current == DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1,
+                "ShrincsPaymaster proxy: live impl is neither this build nor a known predecessor"
             );
-            vm.startBroadcast(pk);
-            ShrincsPaymaster(payable(proxy)).upgradeToAndCall(impl, "");
-            vm.stopBroadcast();
-            console.log("  - ShrincsPaymaster proxy upgraded from:", current);
-            console.log("  - ShrincsPaymaster proxy upgraded to:  ", impl);
+            address proxyOwner = ShrincsPaymaster(payable(proxy)).owner();
+            if (proxyOwner == vm.addr(pk)) {
+                vm.startBroadcast(pk);
+                ShrincsPaymaster(payable(proxy)).upgradeToAndCall(impl, "");
+                vm.stopBroadcast();
+                console.log("  - ShrincsPaymaster proxy upgraded from:", current);
+                console.log("  - ShrincsPaymaster proxy upgraded to:  ", impl);
+            } else {
+                console.log("  - WARNING: ShrincsPaymaster proxy upgrade SKIPPED.");
+                console.log("    The broadcast key is not the proxy owner, and the upgrade is onlyOwner.");
+                console.log("    The owner must send upgradeToAndCall(impl, \"\") to proxy:", proxy);
+                console.log("    impl argument:", impl);
+                console.log("    owner that must send it:", proxyOwner);
+            }
         }
-        // Identity before the owner check: on the idempotent-skip path the owner
-        // read alone would happily accept any contract that answers `owner()`.
+        // Final identity gate, on every path: fresh deploy, idempotent skip,
+        // just-upgraded, and upgrade-skipped. It requires a non-zero ERC-1967
+        // implementation slot, which foreign code that merely answers `owner()`
+        // would not have, and it REPORTS rather than rejects a divergent impl —
+        // the skipped-upgrade path above deliberately leaves the proxy on its
+        // predecessor.
         _assertErc1967Proxy(proxy, impl, "ShrincsPaymaster proxy");
         require(
             ShrincsPaymaster(payable(proxy)).owner() == v.paymasterOwner,

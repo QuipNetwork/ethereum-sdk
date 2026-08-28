@@ -30,8 +30,8 @@ import { assertHdIndex } from "./hd.js";
 import {
   EmptyLeavesError,
   StatefulBudgetExhaustedError,
-  VerifierMismatchError,
   StatefulTreeSpentError,
+  VerifierMismatchError,
 } from "./errors.js";
 import {
   LeafReservationStore,
