@@ -857,6 +857,17 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "error",
+    "name": "StatefulTreeSpent",
+    "inputs": [
+      {
+        "name": "treeId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "Unauthorized",
     "inputs": []
   },

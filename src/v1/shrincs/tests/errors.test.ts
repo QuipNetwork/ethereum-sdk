@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { encodeErrorResult, toFunctionSelector } from "viem";
+import { type Hex, encodeErrorResult, toFunctionSelector } from "viem";
 
 import { wotsPlusImplementationAbi } from "../../abi/WOTSPlusImplementation.js";
 import {
@@ -11,9 +11,12 @@ import {
 } from "../../errors.js";
 import { makeErrorDecoder } from "../../internal/errorDecoder.js";
 import { decodeRevertBytes as decodeV1RevertBytes } from "../../internal/decodeError.js";
+import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import {
   GuardedSlotTamperedError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
   MalformedCodecPayloadError,
   StaleStatefulLeafError,
   StatefulBudgetExhaustedError,
@@ -61,6 +64,31 @@ describe("shrincs error decoding", () => {
     const decoded = decodeRevertBytes(data) as GuardedSlotTamperedError;
     expect(decoded).toBeInstanceOf(GuardedSlotTamperedError);
     expect(decoded.slotIndex).toBe(7);
+  });
+
+  it("decodes StatefulTreeSpent(bytes32) from the wallet and paymaster ABIs preserving treeId", () => {
+    const treeId = ("0x" + "ab".repeat(32)) as Hex;
+    for (const abi of [shrincsWalletAbi, shrincsPaymasterAbi]) {
+      const data = encodeErrorResult({ abi, errorName: "StatefulTreeSpent", args: [treeId] });
+      const decoded = decodeRevertBytes(data) as StatefulTreeSpentError;
+      expect(decoded).toBeInstanceOf(StatefulTreeSpentError);
+      expect(decoded.code).toBe("SHRINCS_STATEFUL_TREE_SPENT");
+      expect(decoded.treeId).toBe(treeId);
+      expect(decoded.selector).toBe(toFunctionSelector("StatefulTreeSpent(bytes32)"));
+    }
+  });
+
+  it("decodes StatelessTreeSpent(bytes32) preserving treeId", () => {
+    const treeId = ("0x" + "cd".repeat(32)) as Hex;
+    const data = encodeErrorResult({
+      abi: shrincsWalletAbi,
+      errorName: "StatelessTreeSpent",
+      args: [treeId],
+    });
+    const decoded = decodeRevertBytes(data) as StatelessTreeSpentError;
+    expect(decoded).toBeInstanceOf(StatelessTreeSpentError);
+    expect(decoded.code).toBe("SHRINCS_STATELESS_TREE_SPENT");
+    expect(decoded.treeId).toBe(treeId);
   });
 
   it("maps an unknown 4-byte selector to UnknownContractError, and empty data to null", () => {
