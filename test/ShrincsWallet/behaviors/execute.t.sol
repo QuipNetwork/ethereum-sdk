@@ -15,7 +15,7 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 contract MockCallee {
     bool public called;
 
-    fallback() external {
+    fallback() external payable {
         called = true;
     }
 }
@@ -198,7 +198,89 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         vm.prank(OWNER);
         wallet.execute(_mainPk(), sig, callee, 0, hex"1234", 0);
 
-        assertTrue(MockCallee(callee).called(), "callee received the call");
+        assertTrue(MockCallee(payable(callee)).called(), "callee received the call");
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
+    }
+
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /*             VALUE ACCOUNTING (WALLET BALANCE)             */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev `msg.value == value`, plain ETH transfer (data.length == 0): the caller-attached
+    ///      ETH funds the transfer, so the wallet's own balance is UNCHANGED.
+    function test_execute_msgValueEqualsValue_ethTransfer_walletBalanceUnchanged() public {
+        uint256 value = 0.7 ether;
+        vm.deal(WALLET, 1 ether);
+        vm.deal(OWNER, value);
+        SHRINCS.Signature memory sig = _executeSig(TARGET, value, "", 1);
+        uint256 walletBefore = WALLET.balance;
+        uint256 targetBefore = TARGET.balance;
+        uint256 ownerBefore = OWNER.balance;
+
+        vm.prank(OWNER);
+        wallet.execute{value: value}(_mainPk(), sig, TARGET, value, "", 0);
+
+        assertEq(WALLET.balance, walletBefore, "wallet balance unchanged: msg.value funded the transfer");
+        assertEq(TARGET.balance - targetBefore, value, "target received value");
+        assertEq(ownerBefore - OWNER.balance, value, "caller's attached ETH was spent");
+    }
+
+    /// @dev `msg.value == 0`, `value > 0`, plain ETH transfer (data.length == 0): the transfer
+    ///      is paid from the wallet's pre-funded reserves, so its balance drops by exactly `value`.
+    function test_execute_zeroMsgValue_ethTransfer_walletBalanceDebited() public {
+        uint256 value = 0.7 ether;
+        vm.deal(WALLET, 1 ether);
+        SHRINCS.Signature memory sig = _executeSig(TARGET, value, "", 1);
+        uint256 walletBefore = WALLET.balance;
+        uint256 targetBefore = TARGET.balance;
+
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), sig, TARGET, value, "", 0);
+
+        assertEq(walletBefore - WALLET.balance, value, "wallet debited exactly value");
+        assertEq(WALLET.balance, walletBefore - value, "wallet keeps the remainder");
+        assertEq(TARGET.balance - targetBefore, value, "target received value");
+    }
+
+    /// @dev `msg.value == value`, contract call (data.length != 0): the caller-attached ETH
+    ///      rides along with the call, so the wallet's own balance is UNCHANGED.
+    function test_execute_msgValueEqualsValue_contractCall_walletBalanceUnchanged() public {
+        uint256 value = 0.7 ether;
+        address callee = address(0xCA11);
+        vm.etch(callee, address(new MockCallee()).code);
+        vm.deal(WALLET, 1 ether);
+        vm.deal(OWNER, value);
+        SHRINCS.Signature memory sig = _executeSig(callee, value, hex"1234", 1);
+        uint256 walletBefore = WALLET.balance;
+        uint256 calleeBefore = callee.balance;
+        uint256 ownerBefore = OWNER.balance;
+
+        vm.prank(OWNER);
+        wallet.execute{value: value}(_mainPk(), sig, callee, value, hex"1234", 0);
+
+        assertEq(WALLET.balance, walletBefore, "wallet balance unchanged: msg.value funded the call");
+        assertEq(callee.balance - calleeBefore, value, "callee received value");
+        assertEq(ownerBefore - OWNER.balance, value, "caller's attached ETH was spent");
+        assertTrue(MockCallee(payable(callee)).called(), "callee received the call");
+    }
+
+    /// @dev `msg.value == 0`, `value > 0`, contract call (data.length != 0): the call's value is
+    ///      paid from the wallet's pre-funded reserves, so its balance drops by exactly `value`.
+    function test_execute_zeroMsgValue_contractCall_walletBalanceDebited() public {
+        uint256 value = 0.7 ether;
+        address callee = address(0xCA11);
+        vm.etch(callee, address(new MockCallee()).code);
+        vm.deal(WALLET, 1 ether);
+        SHRINCS.Signature memory sig = _executeSig(callee, value, hex"1234", 1);
+        uint256 walletBefore = WALLET.balance;
+        uint256 calleeBefore = callee.balance;
+
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), sig, callee, value, hex"1234", 0);
+
+        assertEq(walletBefore - WALLET.balance, value, "wallet debited exactly value");
+        assertEq(WALLET.balance, walletBefore - value, "wallet keeps the remainder");
+        assertEq(callee.balance - calleeBefore, value, "callee received value");
+        assertTrue(MockCallee(payable(callee)).called(), "callee received the call");
     }
 }
