@@ -15,7 +15,8 @@ export interface LeafReservationKey {
   keyVersion: bigint;
 }
 
-function keyId(key: LeafReservationKey): string {
+/// Cache/lock identity of a keyspace: commitment (case-insensitive) plus epoch.
+export function leafReservationKeyId(key: LeafReservationKey): string {
   return `${key.commitment.toLowerCase()}:${key.keyVersion.toString()}`;
 }
 
@@ -49,7 +50,7 @@ export class LeafReservationStore {
     key: LeafReservationKey,
     fn: (reserved: Set<number>) => Promise<T> | T
   ): Promise<T> {
-    const id = keyId(key);
+    const id = leafReservationKeyId(key);
     const prior = this.tails.get(id) ?? Promise.resolve();
     const run = prior.then(() => fn(this.reservedSet(id)));
     // Keep the chain alive regardless of this caller's outcome.
@@ -96,5 +97,28 @@ export function reserveExplicitLeaf(
 ): Promise<void> {
   return store.withKeyLock(key, (reserved) => {
     reserved.add(leaf);
+  });
+}
+
+/// Reserves the leaf chosen by `select`, which runs under the key lock and is
+/// handed an `isReserved` predicate so its search can skip leaves already
+/// handed out in-process. Serializing selection is what keeps two concurrent
+/// callers from signing two messages at one one-time leaf, so the on-chain
+/// bitmap read belongs inside `select` rather than before it. Throws
+/// `StatefulBudgetExhaustedError` when `select` finds no leaf.
+export function reserveSelectedLeaf(
+  store: LeafReservationStore,
+  key: LeafReservationKey,
+  select: (isReserved: (leaf: number) => boolean) => Promise<number | undefined>,
+  maxSignatures: number,
+  statefulLeavesUsed: number
+): Promise<number> {
+  return store.withKeyLock(key, async (reserved) => {
+    const leaf = await select((candidate) => reserved.has(candidate));
+    if (leaf === undefined) {
+      throw new StatefulBudgetExhaustedError(maxSignatures, statefulLeavesUsed);
+    }
+    reserved.add(leaf);
+    return leaf;
   });
 }
