@@ -191,29 +191,29 @@ describe("shrincsCodec", () => {
   it("encodeInitPayload matches the wallet decodeInit head layout", () => {
     const payload = Codec.encodeInitPayload({
       mainBundle: mainKey.publicKey,
-      erc1271Commitment: erc1271Key.publicKeyCommitment,
+      erc1271Bundle: erc1271Key.publicKey,
     });
-    // Fixed 6-word head: commitment ‖ pkSeed ‖ PublicKey offset ‖ hashSuite ‖
-    // erc1271Commitment ‖ erc1271HashSuite (what `Codec.decodeInit` slices).
+    // Fixed 6-word head: commitment ‖ pkSeed ‖ mainBundle offset ‖ hashSuite ‖
+    // erc1271Bundle offset ‖ erc1271HashSuite (what `Codec.decodeInit` slices).
     const word = (i: number): Hex => sliceHex(payload, i * 32, (i + 1) * 32);
     expect(word(0)).toBe(mainKey.publicKeyCommitment);
     expect(word(1)).toBe(mainKey.publicKey.pkSeed);
     expect(BigInt(word(3))).toBe(BigInt(HASH_SUITE_KECCAK_256));
-    expect(word(4)).toBe(erc1271Key.publicKeyCommitment);
     expect(BigInt(word(5))).toBe(BigInt(HASH_SUITE_KECCAK_256));
-    // The embedded PublicKey tuple decodes back to the main bundle.
-    const [, , pk] = decodeAbiParameters(
+    // Both embedded PublicKey tuples decode back to their bundles.
+    const [, , pk, , erc1271Pk] = decodeAbiParameters(
       [
         { name: "commitment", type: "bytes32" },
         { name: "pkSeed", type: "bytes32" },
         Codec.abiTuples.publicKey,
         { name: "hashSuite", type: "uint32" },
-        { name: "erc1271Commitment", type: "bytes32" },
+        Codec.abiTuples.publicKey,
         { name: "erc1271HashSuite", type: "uint32" },
       ],
       payload
     );
     expect(pk).toEqual(Codec.publicKeyToAbi(mainKey.publicKey));
+    expect(erc1271Pk).toEqual(Codec.publicKeyToAbi(erc1271Key.publicKey));
   });
 
   it("encodeUpgradeData matches the wallet decodeUpgradeAuth head layout", () => {

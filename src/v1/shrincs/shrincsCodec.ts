@@ -440,12 +440,14 @@ function publicKeyFromAbi(t: {
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 /// Factory init payload: `abi.encode(bytes32 commitment, bytes32 pkSeed,
-/// PublicKey, uint32 hashSuite, bytes32 erc1271Commitment, uint32
+/// PublicKey mainBundle, uint32 hashSuite, PublicKey erc1271Bundle, uint32
 /// erc1271HashSuite)`. Both suites default to keccak-256 — the only suite the
-/// wallet accepts.
+/// wallet accepts. The ERC-1271 key travels as a FULL bundle: the wallet
+/// derives its commitment on-chain and spends all four trees (main + 1271,
+/// stateful + stateless) in the lifetime registries.
 export function encodeInitPayload(params: {
   mainBundle: ShrincsPublicKey;
-  erc1271Commitment: Hex;
+  erc1271Bundle: ShrincsPublicKey;
   hashSuite?: number;
   erc1271HashSuite?: number;
 }): Hex {
@@ -457,7 +459,7 @@ export function encodeInitPayload(params: {
       { name: "pkSeed", type: "bytes32" },
       PUBLIC_KEY_TUPLE,
       { name: "hashSuite", type: "uint32" },
-      { name: "erc1271Commitment", type: "bytes32" },
+      PUBLIC_KEY_TUPLE,
       { name: "erc1271HashSuite", type: "uint32" },
     ],
     [
@@ -465,7 +467,7 @@ export function encodeInitPayload(params: {
       pkSeed,
       publicKeyToAbi(params.mainBundle),
       params.hashSuite ?? HASH_SUITE_KECCAK_256,
-      params.erc1271Commitment,
+      publicKeyToAbi(params.erc1271Bundle),
       params.erc1271HashSuite ?? HASH_SUITE_KECCAK_256,
     ]
   );

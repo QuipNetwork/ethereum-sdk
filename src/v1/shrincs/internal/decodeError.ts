@@ -28,7 +28,6 @@ import {
   InvalidFactoryError,
   InvalidSignatureError,
   CommitmentMismatchError,
-  ZeroErc1271CommitmentError,
   ZeroMaxSignaturesError,
   StatefulTreeSpentError,
   StatelessTreeSpentError,
@@ -72,7 +71,6 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   InvalidFactory: (_, o) => new InvalidFactoryError(o),
   InvalidSignature: (_, o) => new InvalidSignatureError(o),
   CommitmentMismatch: (_, o) => new CommitmentMismatchError(undefined, undefined, o),
-  ZeroErc1271Commitment: (_, o) => new ZeroErc1271CommitmentError(o),
   ZeroMaxSignatures: (_, o) => new ZeroMaxSignaturesError(o),
   // `StatefulTreeSpent(bytes32 treeId)` (wallet + paymaster).
   StatefulTreeSpent: (args, o) => new StatefulTreeSpentError(args[0] as Hex, o),

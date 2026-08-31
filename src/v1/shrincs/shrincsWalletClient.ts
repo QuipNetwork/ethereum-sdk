@@ -43,7 +43,6 @@ import {
   ZeroAddressOwnerError,
   StatefulTreeSpentError,
   StatelessTreeSpentError,
-  ZeroErc1271CommitmentError,
 } from "./errors.js";
 import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
@@ -102,7 +101,6 @@ import {
 } from "./userOp.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
-const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
 
 const shrincsWalletDomain = (chainId: number, walletAddress: Address) =>
   ({
@@ -148,7 +146,7 @@ export interface ShrincsWalletState {
   version: bigint;
   executeFee: bigint;
   shrincsPublicKeyCommitment: Hex;
-  erc1271Commitment: Hex;
+  erc1271PublicKeyCommitment: Hex;
   hashSuite: number;
   erc1271HashSuite: number;
   keyVersion: bigint;
@@ -239,7 +237,7 @@ export async function fetchShrincsWalletState(
     "version",
     "getExecuteFee",
     "getShrincsPublicKeyCommitment",
-    "getErc1271Commitment",
+    "getErc1271PublicKeyCommitment",
     "getHashSuite",
     "getErc1271HashSuite",
     "keyVersion",
@@ -268,7 +266,7 @@ export async function fetchShrincsWalletState(
     version: BigInt(get(1)),
     executeFee: BigInt(get(2)),
     shrincsPublicKeyCommitment: get(3),
-    erc1271Commitment: get(4),
+    erc1271PublicKeyCommitment: get(4),
     hashSuite: Number(get(5)),
     erc1271HashSuite: Number(get(6)),
     keyVersion: BigInt(get(7)),
@@ -535,8 +533,9 @@ export class ShrincsWalletClient {
     }
   }
 
-  /// Pre-flight for full-bundle installs (`recoverWallet` / `transferOwnership`):
-  /// both halves of `nextKey` must differ from the installed bundle.
+  /// Pre-flight for full-bundle installs (`recoverWallet` / `transferOwnership`
+  /// / `setErc1271Key`): both halves of `nextKey` must differ from the
+  /// installed main bundle.
   private assertFreshBundle(nextKey: ShrincsPublicKey, current: ShrincsPublicKey): void {
     this.assertFreshStatefulTree(nextKey.statefulPublicKey, current);
     const next = statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot);
@@ -851,36 +850,58 @@ export class ShrincsWalletClient {
     return this.submit("addDeposit", [], amount, opts);
   }
 
-  /// Install a dedicated ERC-1271 stateless verifier key (authorized by a
-  /// stateful signature from the main key).
+  /// Rotate the dedicated ERC-1271 verifier key (authorized by a stateful
+  /// signature from the main key). The new key travels as a FULL bundle: the
+  /// wallet derives its commitment on-chain and spends both of its trees in
+  /// the lifetime registries, so the bundle must be entirely fresh — never
+  /// held by this wallet under either role. Pre-flights the collisions the
+  /// client can see (the installed main bundle's trees, and re-installing the
+  /// installed 1271 bundle); older trees are only caught on-chain
+  /// (`StatefulTreeSpentError` / `StatelessTreeSpentError` decoded). A
+  /// rejected bundle consumes no leaf: the wallet installs before verifying,
+  /// and the client pre-flights before reserving.
   async setErc1271Key(
-    params: { newCommitment: Hex; newHashSuite?: number },
+    params: { newErc1271Key: ShrincsPublicKey; newHashSuite?: number },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    if (
-      !params.newCommitment ||
-      params.newCommitment.toLowerCase() === ZERO32
-    ) {
-      throw new ZeroErc1271CommitmentError();
-    }
     const hashSuite = params.newHashSuite ?? HASH_SUITE_KECCAK_256;
     const {
       keypair,
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(opts, undefined, (kp, st) => {
+      this.assertFreshBundle(params.newErc1271Key, kp.publicKey);
+      // Re-installing the CURRENT 1271 bundle: equal commitments mean equal
+      // bundles, and the wallet refuses its stateful half first.
+      if (
+        params.newErc1271Key.publicKeyCommitment.toLowerCase() ===
+        st.erc1271PublicKeyCommitment.toLowerCase()
+      ) {
+        throw new StatefulTreeSpentError(
+          statefulTreeId(params.newErc1271Key.statefulPublicKey)
+        );
+      }
+    });
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_SET_ERC1271_KEY,
-      payloadHash: setErc1271KeyPayloadHash(params.newCommitment, hashSuite),
+      payloadHash: setErc1271KeyPayloadHash(
+        params.newErc1271Key.publicKeyCommitment,
+        hashSuite
+      ),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     return this.submit(
       "setErc1271Key",
-      [publicKeyToAbi(keypair.publicKey), signature, params.newCommitment, hashSuite],
+      [
+        publicKeyToAbi(keypair.publicKey),
+        signature,
+        publicKeyToAbi(params.newErc1271Key),
+        hashSuite,
+      ],
       0n,
       opts
     );
@@ -1125,7 +1146,7 @@ export class ShrincsWalletClient {
   ///      browser wallet can sign it via `eth_signTypedData_v4`).
   /// The ERC-1271 verifier key is a separate vault branch from the main key, so
   /// the caller supplies its recovered keypair (its commitment must match the
-  /// installed `erc1271Commitment`). The `owner` must sign for the wallet's
+  /// installed `erc1271PublicKeyCommitment`). The `owner` must sign for the wallet's
   /// on-chain `owner()`.
   ///
   /// FRESHNESS: the blob binds the wallet's LIVE `actionNonce()`, so it is
@@ -1142,11 +1163,11 @@ export class ShrincsWalletClient {
 
     if (
       params.erc1271KeyPair.publicKeyCommitment.toLowerCase() !==
-      state.erc1271Commitment.toLowerCase()
+      state.erc1271PublicKeyCommitment.toLowerCase()
     ) {
       throw new CommitmentMismatchError(
         params.erc1271KeyPair.publicKeyCommitment,
-        state.erc1271Commitment
+        state.erc1271PublicKeyCommitment
       );
     }
     if (params.owner.address.toLowerCase() === ZERO_ADDRESS) {

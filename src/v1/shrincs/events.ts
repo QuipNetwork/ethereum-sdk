@@ -70,7 +70,7 @@ export interface WalletInitializedEvent {
   factory: Address;
   owner: Address;
   shrincsPublicKeyCommitment: Hex;
-  erc1271StatelessCommitment: Hex;
+  erc1271PublicKeyCommitment: Hex;
 }
 
 export function parseWalletInitialized(src: LogSource): WalletInitializedEvent[] {
@@ -78,7 +78,7 @@ export function parseWalletInitialized(src: LogSource): WalletInitializedEvent[]
     factory: l.args.factory,
     owner: l.args.owner,
     shrincsPublicKeyCommitment: l.args.shrincsPublicKeyCommitment,
-    erc1271StatelessCommitment: l.args.erc1271StatelessCommitment,
+    erc1271PublicKeyCommitment: l.args.erc1271PublicKeyCommitment,
   }));
 }
 

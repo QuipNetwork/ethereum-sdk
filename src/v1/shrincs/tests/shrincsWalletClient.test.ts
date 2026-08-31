@@ -19,7 +19,6 @@ import {
   OwnerMismatchError,
   ShrincsHdDerivationError,
   ZeroAddressOwnerError,
-  ZeroErc1271CommitmentError,
   StatefulTreeSpentError,
   StatelessTreeSpentError,
   AuthLeafInTargetsError,
@@ -72,7 +71,7 @@ function walletRead(
       return EXECUTE_FEE;
     case "getShrincsPublicKeyCommitment":
       return keypair.publicKeyCommitment;
-    case "getErc1271Commitment":
+    case "getErc1271PublicKeyCommitment":
       return ZERO32;
     case "getHashSuite":
       return HASH_SUITE_KECCAK_256;
@@ -213,7 +212,7 @@ function localAccount(address: Address): LocalAccount {
 describe("ShrincsWalletClient owner mismatch", () => {
   it("signErc1271 throws OwnerMismatchError when the owner is non-zero but wrong", async () => {
     const client = makeWalletClient({
-      getErc1271Commitment: keypair.publicKeyCommitment,
+      getErc1271PublicKeyCommitment: keypair.publicKeyCommitment,
     });
     const err = await client
       .signErc1271({
@@ -234,7 +233,7 @@ describe("ShrincsWalletClient owner mismatch", () => {
 
   it("signErc1271 throws ZeroAddressOwnerError when the owner address is zero", async () => {
     const client = makeWalletClient({
-      getErc1271Commitment: keypair.publicKeyCommitment,
+      getErc1271PublicKeyCommitment: keypair.publicKeyCommitment,
     });
     await expect(
       client.signErc1271({
@@ -272,22 +271,6 @@ describe("ShrincsWalletClient derivationIndex", () => {
           account: ACCOUNT,
         })
     ).toThrow(ShrincsHdDerivationError);
-  });
-});
-
-describe("ShrincsWalletClient setErc1271Key", () => {
-  it("throws ZeroErc1271CommitmentError for the 32-byte zero word", async () => {
-    const client = makeWalletClient();
-    await expect(
-      client.setErc1271Key({ newCommitment: ZERO32 })
-    ).rejects.toThrow(ZeroErc1271CommitmentError);
-  });
-
-  it("throws ZeroErc1271CommitmentError for an empty commitment", async () => {
-    const client = makeWalletClient();
-    await expect(
-      client.setErc1271Key({ newCommitment: "" as Hex })
-    ).rejects.toThrow(ZeroErc1271CommitmentError);
   });
 });
 
@@ -393,6 +376,41 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
     const client = makeWalletClient();
     await passesPreflight(() =>
       client.transferOwnership({ nextKey: freshKey.publicKey, newOwner: NEW_OWNER })
+    );
+  });
+
+  it("setErc1271Key refuses a bundle sharing the installed main stateful tree", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.setErc1271Key({
+        newErc1271Key: {
+          ...freshKey.publicKey,
+          statefulPublicKey: keypair.publicKey.statefulPublicKey,
+        },
+      })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("setErc1271Key refuses a bundle carrying the installed main stateless root", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.setErc1271Key({ newErc1271Key: carriedStateless() })
+    ).rejects.toThrow(StatelessTreeSpentError);
+  });
+
+  it("setErc1271Key refuses re-installing the installed 1271 bundle", async () => {
+    const client = makeWalletClient({
+      getErc1271PublicKeyCommitment: freshKey.publicKeyCommitment,
+    });
+    await expect(
+      client.setErc1271Key({ newErc1271Key: freshKey.publicKey })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("setErc1271Key lets a fresh bundle through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.setErc1271Key({ newErc1271Key: freshKey.publicKey })
     );
   });
 });

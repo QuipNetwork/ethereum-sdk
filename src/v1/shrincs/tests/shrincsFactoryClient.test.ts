@@ -17,6 +17,8 @@ import { computeCreate3Address } from "../../addresses.js";
 import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
   TransactionRevertedError,
 } from "../errors.js";
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
@@ -31,14 +33,20 @@ import {
   type ShrincsKeyPair,
 } from "../shrincsSigner.js";
 
-// A real main keypair (the dummy signer below hands it back from `recoverKeyPair`).
+// A real main keypair (the dummy signer below hands it back from `recoverKeyPair`)
+// plus an independent ERC-1271 bundle (deploys now ship the FULL bundle).
 let realKeypair: ShrincsKeyPair;
+let erc1271Keypair: ShrincsKeyPair;
 beforeAll(async () => {
   const signer = await ShrincsSigner.create(
     new TextEncoder().encode("factory-client-test")
   );
   realKeypair = signer.keygenFromSeedHex(
     keccak256(toHex("factory client seed")),
+    { maxSignatures: 40 }
+  );
+  erc1271Keypair = signer.keygenFromSeedHex(
+    keccak256(toHex("factory client erc1271 seed")),
     { maxSignatures: 40 }
   );
 });
@@ -52,8 +60,6 @@ const TX_HASH =
 const CODE = "0x60016000" as Hex;
 const VAULT_ID =
   "0x1111111111111111111111111111111111111111111111111111111111111111" as Hex;
-const ERC1271_COMMITMENT =
-  "0x2222222222222222222222222222222222222222222222222222222222222222" as Hex;
 
 function dummySigner(): ShrincsSigner {
   return {
@@ -117,17 +123,18 @@ function makeFactory(
 }
 
 describe("ShrincsFactoryClient.createShrincsWallet", () => {
-  const createParams = {
-    signer: dummySigner(),
-    maxSignatures: 8,
-    derivationIndex: 1,
-    erc1271: { commitment: ERC1271_COMMITMENT },
-  } as const;
+  const createParams = () =>
+    ({
+      signer: dummySigner(),
+      maxSignatures: 8,
+      derivationIndex: 1,
+      erc1271: { publicKey: erc1271Keypair.publicKey },
+    }) as const;
 
   it("throws TransactionRevertedError when the deploy receipt status is reverted", async () => {
     const factory = makeFactory({ receiptStatus: "reverted" });
     await expect(
-      factory.createShrincsWallet(createParams, {
+      factory.createShrincsWallet(createParams(), {
         gas: 100_000n,
         skipPreflightChecks: true,
       })
@@ -143,7 +150,7 @@ describe("ShrincsFactoryClient.createShrincsWallet", () => {
       },
     });
     await expect(
-      factory.createShrincsWallet(createParams, {
+      factory.createShrincsWallet(createParams(), {
         gas: 100_000n,
         skipPreflightChecks: true,
       })
@@ -152,17 +159,61 @@ describe("ShrincsFactoryClient.createShrincsWallet", () => {
     expect(capturedArgs).toBeDefined();
     const args = capturedArgs as unknown[];
     const statefulC = realKeypair.publicKeyCommitment;
-    const commitment = v1Commitment(statefulC, ERC1271_COMMITMENT, ACCOUNT);
+    const commitment = v1Commitment(
+      statefulC,
+      erc1271Keypair.publicKeyCommitment,
+      ACCOUNT
+    );
     expect(args[0]).toBe(commitment);
     expect(args[1]).toBe(0n);
     expect(args[2]).toBe(ACCOUNT);
     expect(args[3]).toBe(
       encodeInitPayload({
         mainBundle: realKeypair.publicKey,
-        erc1271Commitment: ERC1271_COMMITMENT,
+        erc1271Bundle: erc1271Keypair.publicKey,
       })
     );
     expect(args).toHaveLength(4);
+  });
+
+  // Deploy-time mirror of the wallet's install registries: initialize spends
+  // all four trees, so a 1271 bundle sharing one with the main bundle can
+  // never deploy — the client refuses before sending.
+  it("pre-flights a 1271 bundle sharing the main stateful tree", async () => {
+    const factory = makeFactory();
+    await expect(
+      factory.createShrincsWallet(
+        {
+          ...createParams(),
+          erc1271: {
+            publicKey: {
+              ...erc1271Keypair.publicKey,
+              statefulPublicKey: realKeypair.publicKey.statefulPublicKey,
+            },
+          },
+        },
+        { gas: 100_000n, skipPreflightChecks: true }
+      )
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("pre-flights a 1271 bundle carrying the main stateless root", async () => {
+    const factory = makeFactory();
+    await expect(
+      factory.createShrincsWallet(
+        {
+          ...createParams(),
+          erc1271: {
+            publicKey: {
+              ...erc1271Keypair.publicKey,
+              pkSeed: realKeypair.publicKey.pkSeed,
+              hypertreeRoot: realKeypair.publicKey.hypertreeRoot,
+            },
+          },
+        },
+        { gas: 100_000n, skipPreflightChecks: true }
+      )
+    ).rejects.toThrow(StatelessTreeSpentError);
   });
 });
 
@@ -214,7 +265,7 @@ describe("ShrincsFactoryClient.openShrincsWallet", () => {
       version: 1n,
       getExecuteFee: 0n,
       getShrincsPublicKeyCommitment: onChainCommitment,
-      getErc1271Commitment: (`0x${"00".repeat(32)}`) as Hex,
+      getErc1271PublicKeyCommitment: (`0x${"00".repeat(32)}`) as Hex,
       getHashSuite: HASH_SUITE_KECCAK_256,
       getErc1271HashSuite: HASH_SUITE_KECCAK_256,
       keyVersion: 0n,

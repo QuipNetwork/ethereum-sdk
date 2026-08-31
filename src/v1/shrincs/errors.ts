@@ -250,12 +250,6 @@ export class CommitmentMismatchError extends QuipError {
   }
 }
 
-export class ZeroErc1271CommitmentError extends QuipError {
-  constructor(opts?: QuipErrorOptions) {
-    super("SHRINCS_ZERO_ERC1271_COMMITMENT", "ERC-1271 commitment is zero", opts);
-  }
-}
-
 export class ZeroMaxSignaturesError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_ZERO_MAX_SIGNATURES", "maxSignatures is zero", opts);

@@ -26,7 +26,7 @@ const FACTORY = "0x00000000000000000000000000000000000000f1" as Address;
 const IMPLEMENTATION = "0x00000000000000000000000000000000000000e1" as Address;
 const CREATION_FEE = 1_000_000_000_000_000n;
 const DERIVATION_INDEX = 7;
-const ERC1271_COMMITMENT = ("0x" + "22".repeat(32)) as Hex;
+const ERC1271_INDEX = DERIVATION_INDEX + 1000;
 const MAX_SIGS = 40;
 
 let signer: ShrincsSigner;
@@ -43,7 +43,7 @@ function createParams(
     signer,
     maxSignatures: MAX_SIGS,
     derivationIndex: DERIVATION_INDEX,
-    erc1271: { commitment: ERC1271_COMMITMENT },
+    erc1271: { derivationIndex: ERC1271_INDEX, maxSignatures: MAX_SIGS },
     ...overrides,
   };
 }
@@ -183,9 +183,12 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
     const mainKey = signer.recoverKeyPair(DERIVATION_INDEX, {
       maxSignatures: MAX_SIGS,
     });
+    const erc1271Key = signer.recoverKeyPair(ERC1271_INDEX, {
+      maxSignatures: MAX_SIGS,
+    });
     const commitment = v1Commitment(
       mainKey.publicKeyCommitment,
-      ERC1271_COMMITMENT,
+      erc1271Key.publicKeyCommitment,
       ACCOUNT
     );
 
