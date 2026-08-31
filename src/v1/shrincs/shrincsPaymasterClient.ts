@@ -36,7 +36,7 @@ import {
 import {
   LeafReservationStore,
   reserveExplicitLeaf,
-  reserveLowestLeaf,
+  reserveSelectedLeaf,
 } from "./leafReservation.js";
 import {
   buildStatefulRotationTarget,
@@ -46,10 +46,11 @@ import {
 import { prepareTx, type TxOptions } from "./gas.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
 import {
-  bitmapWordCount,
-  usedLeavesFromWords,
+  type BitmapWordReader,
+  findLowestUnusedLeaf,
   wordsFromResults,
 } from "./internal/leafBitmap.js";
+import { LeafScanFrontier } from "./internal/leafFrontier.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
@@ -107,6 +108,9 @@ export class ShrincsPaymasterClient {
   /// so concurrent `sponsorUserOp` calls cannot race to the same lowest-unused
   /// leaf and sign two messages at one one-time leaf.
   private readonly leafReservations = new LeafReservationStore();
+  /// Per-epoch memory of how far the bitmap is consumed, so a scan skips the
+  /// exhausted prefix instead of re-reading it on every sponsorship.
+  private readonly leafFrontier = new LeafScanFrontier();
 
   constructor(params: ShrincsPaymasterClientParams) {
     this.paymasterAddress = params.paymasterAddress;
@@ -176,25 +180,44 @@ export class ShrincsPaymasterClient {
     ) as Promise<boolean>;
   }
 
-  /// The set of `1..maxSignatures` leaves the on-chain bitmap reports as used,
-  /// read one 256-bit word per call via `statefulLeafBitmapWord` (256 leaves per
-  /// call instead of one). Throws `LeafBitmapReadError` if any word cannot be
-  /// read: an unread word leaves the used state of its 256 leaves unknown, and
-  /// signing at a leaf that is not confirmed free risks one-time-signature reuse.
-  private async fetchUsedLeaves(maxSignatures: number): Promise<Set<number>> {
-    const wordCount = bitmapWordCount(maxSignatures);
-    if (wordCount === 0) return new Set();
+  /// Reads `count` consecutive bitmap words from `startWord` in one multicall.
+  /// Throws `LeafBitmapReadError` if any word cannot be read: an unread word
+  /// leaves the used state of its 256 leaves unknown, and signing at a leaf
+  /// that is not confirmed free risks one-time-signature reuse.
+  private readonly readBitmapWords: BitmapWordReader = async (startWord, count) => {
     const calls = [];
-    for (let word = 0; word < wordCount; word++) {
+    for (let offset = 0; offset < count; offset++) {
       calls.push({
         address: this.paymasterAddress,
         abi: shrincsPaymasterAbi,
         functionName: "statefulLeafBitmapWord" as const,
-        args: [BigInt(word)] as const,
+        args: [BigInt(startWord + offset)] as const,
       });
     }
     const results = await tryMulticall(this.publicClient, calls);
-    return usedLeavesFromWords(wordsFromResults(results), maxSignatures);
+    return wordsFromResults(results, startWord);
+  };
+
+  /// Lowest sponsorship leaf the on-chain bitmap reports as free and `skip`
+  /// accepts, or `undefined` when the epoch offers none. Resumes from the
+  /// cached frontier and stops at the first word holding a usable leaf, so the
+  /// cost does not grow with `maxSignatures`.
+  private async scanLowestUnusedLeaf(
+    verifier: ShrincsVerifierState,
+    skip?: (leaf: number) => boolean
+  ): Promise<number | undefined> {
+    const epoch = {
+      commitment: verifier.commitment,
+      keyVersion: verifier.keyVersion,
+    };
+    const { leaf, frontierWord } = await findLowestUnusedLeaf({
+      maxSignatures: verifier.maxSignatures,
+      readWords: this.readBitmapWords,
+      startWord: this.leafFrontier.startWord(epoch),
+      skip,
+    });
+    this.leafFrontier.advance(epoch, frontierWord);
+    return leaf;
   }
 
   /// Lowest unused sponsorship leaf in `1..maxSignatures` for the current
@@ -206,14 +229,14 @@ export class ShrincsPaymasterClient {
         verifier.statefulLeavesUsed
       );
     }
-    const used = await this.fetchUsedLeaves(verifier.maxSignatures);
-    for (let leaf = 1; leaf <= verifier.maxSignatures; leaf++) {
-      if (!used.has(leaf)) return leaf;
+    const leaf = await this.scanLowestUnusedLeaf(verifier);
+    if (leaf === undefined) {
+      throw new StatefulBudgetExhaustedError(
+        verifier.maxSignatures,
+        verifier.statefulLeavesUsed
+      );
     }
-    throw new StatefulBudgetExhaustedError(
-      verifier.maxSignatures,
-      verifier.statefulLeavesUsed
-    );
+    return leaf;
   }
 
   /*  ── sponsorship ─────────────────────────────────────────────────────  */
@@ -259,12 +282,12 @@ export class ShrincsPaymasterClient {
           verifier.statefulLeavesUsed
         );
       }
-      const used = await this.fetchUsedLeaves(verifier.maxSignatures);
-      leaf = await reserveLowestLeaf(
+      leaf = await reserveSelectedLeaf(
         this.leafReservations,
         reservationKey,
-        (candidate) => used.has(candidate),
-        verifier.maxSignatures
+        (isReserved) => this.scanLowestUnusedLeaf(verifier, isReserved),
+        verifier.maxSignatures,
+        verifier.statefulLeavesUsed
       );
     }
     const paymasterAndData = signPaymasterUserOp({
