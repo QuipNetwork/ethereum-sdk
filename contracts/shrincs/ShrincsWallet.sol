@@ -348,14 +348,20 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
         (
-            bytes32 commitment,
-            bytes32 erc1271Commitment,
+            bytes32 declaredCommitment,
             uint32 maxSignatures,
-            bytes32 statefulTreeId,
-            bytes32 statelessTreeId
+            SHRINCS.PublicKey calldata mainKey,
+            SHRINCS.PublicKey calldata erc1271Key
         ) = _decodeAndValidateInstall(payload);
 
+        // safe installing bundles prevent key reuse
+        bytes32 commitment = _safeInstallKeyBundle(mainKey);
+        if (commitment != declaredCommitment) revert CommitmentMismatch();
+
+        bytes32 erc1271Commitment = _safeInstallKeyBundle(erc1271Key);
+
         bytes32 walletCommitment = IWalletFactory(FACTORY).commitmentOf(address(this));
+
         if (
             walletCommitment !=
             Codec.v1Commitment(commitment, erc1271Commitment, newOwner)
@@ -365,11 +371,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         _initializeOwner(newOwner);
         Storage.Layout storage $ = Storage.layout();
-        _spendStatefulTree(statefulTreeId);
-        _spendStatelessTree(statelessTreeId);
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
-        $.erc1271StatelessCommitment = erc1271Commitment;
+        $.erc1271PublicKeyCommitment = erc1271Commitment;
         $.maxSignatures = maxSignatures;
         // Epoch 0's leaf bitmap is empty by default; statefulLeavesUsed starts at 0.
 
@@ -386,25 +390,26 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         if (_upgradeGuard() == 0) revert NotUpgrading();
 
         (
-            bytes32 commitment,
-            bytes32 erc1271Commitment,
+            bytes32 declaredCommitment,
             uint32 maxSignatures,
-            bytes32 statefulTreeId,
-            bytes32 statelessTreeId
+            SHRINCS.PublicKey calldata mainKey,
+            SHRINCS.PublicKey calldata erc1271Key
         ) = _decodeAndValidateInstall(payload);
 
         Storage.Layout storage $ = Storage.layout();
-        // Strictly fresh trees on migration: a family round-trip (e.g. WOTS+ → SHRINCS → WOTS+ →
-        // SHRINCS) leaves earlier SHRINCS trees in this namespace.
-        _spendStatefulTree(statefulTreeId);
-        _spendStatelessTree(statelessTreeId);
+        // Strictly fresh trees on migration (main AND ERC-1271 bundles): a family round-trip
+        // (e.g. WOTS+ → SHRINCS → WOTS+ → SHRINCS) leaves earlier SHRINCS trees in this
+        // namespace. 
+        bytes32 commitment = _safeInstallKeyBundle(mainKey);
+        if (commitment != declaredCommitment) revert CommitmentMismatch();
+        bytes32 erc1271Commitment = _safeInstallKeyBundle(erc1271Key);
         // No-drift invariant: re-establish the guarded `_SHRINCS_FACTORY_SLOT` snapshot to this
         // (the new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
         // `FACTORY` is the new source of truth; pinning storage to it keeps the snapshot slot and
         // the `walletFactory()` getter from ever diverging from the immutable after an upgrade.
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
-        $.erc1271StatelessCommitment = erc1271Commitment;
+        $.erc1271PublicKeyCommitment = erc1271Commitment;
         $.maxSignatures = maxSignatures;
         // The action nonce is deliberately NOT advanced here: the `keyVersion` bump below
         // already invalidates every outstanding signed context.
@@ -585,9 +590,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (UXMSS.StatefulPublicKey memory decoded, ) = SHRINCS
             .decodeStatefulPublicKey(nextKey.statefulPublicKey);
 
-        // A stateless signature was spent: both replacement trees must be fresh.
-        _spendStatefulTree(_statefulTreeId(decoded));
-        _spendStatelessTree(_statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot));
+        // A stateless signature was spent: both replacement key halves must be fresh.
+        _safeInstallStatefulKey(nextKey.statefulPublicKey);
+        _safeInstallStatelessKey(nextKey.pkSeed, nextKey.hypertreeRoot);
 
         // Install the fresh bundle AND the new classical owner together — the atomic handover.
         bytes32 prev = $.shrincsPublicKeyCommitment;
@@ -609,12 +614,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     function setErc1271Key(
         SHRINCS.PublicKey calldata publicKey,
         SHRINCS.Signature calldata signature,
-        bytes32 newErc1271Commitment,
+        SHRINCS.PublicKey calldata newErc1271Key,
         uint32 newErc1271HashSuite
     ) external payable onlyOwner {
-        if (newErc1271Commitment == bytes32(0)) revert ZeroErc1271Commitment();
         if (newErc1271HashSuite != HashSuite.HASH_SUITE_ID)
             revert UnsupportedHashSuite();
+
+        bytes32 newErc1271Commitment = _safeInstallKeyBundle(newErc1271Key);
         bytes32 payloadHash = Codec.setErc1271KeyPayloadHash(
             newErc1271Commitment,
             newErc1271HashSuite
@@ -627,8 +633,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
 
         Storage.Layout storage $ = Storage.layout();
-        bytes32 old = $.erc1271StatelessCommitment;
-        $.erc1271StatelessCommitment = newErc1271Commitment;
+        bytes32 old = $.erc1271PublicKeyCommitment;
+        $.erc1271PublicKeyCommitment = newErc1271Commitment;
         emit Erc1271KeySet(old, newErc1271Commitment);
     }
 
@@ -666,9 +672,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
 
         Storage.Layout storage $ = Storage.layout();
-        // The replacement stateful tree must never have been installed here. The stateless tree
+        // The replacement stateful key must never have been installed here. The stateless tree
         // is carried forward unchanged — no stateless signature is spent by this path.
-        _spendStatefulTree(_statefulTreeId(nextStatefulKey.statefulPublicKey));
+        _safeInstallStatefulKey(nextStatefulKey.statefulPublicKey);
 
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
@@ -715,9 +721,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (UXMSS.StatefulPublicKey memory decoded, ) = SHRINCS
             .decodeStatefulPublicKey(nextKey.statefulPublicKey);
 
-        // A stateless signature was spent: both replacement trees must be fresh.
-        _spendStatefulTree(_statefulTreeId(decoded));
-        _spendStatelessTree(_statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot));
+        // A stateless signature was spent: both replacement key halves must be fresh.
+        _safeInstallStatefulKey(nextKey.statefulPublicKey);
+        _safeInstallStatelessKey(nextKey.pkSeed, nextKey.hypertreeRoot);
 
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
@@ -963,8 +969,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
-    function getErc1271Commitment() external view returns (bytes32) {
-        return Storage.layout().erc1271StatelessCommitment;
+    function getErc1271PublicKeyCommitment() external view returns (bytes32) {
+        return Storage.layout().erc1271PublicKeyCommitment;
     }
 
     /// @inheritdoc IShrincsWallet
@@ -1042,36 +1048,28 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         return uint32(signature.authPath.length);
     }
 
-    /// @dev Decodes and fully validates an install/migrate key-bundle payload — the block shared
-    ///      byte-for-byte by `initialize` and `migrate`: non-zero ERC-1271 commitment, declared
-    ///      hash suites, main-bundle shape + commitment recompute, and a non-zero leaf budget.
-    ///      Returns exactly the three values both callers persist. Pure: touches no storage.
+    /// @dev Decodes an install payload, checks the declared hash suites, and enforces the MAIN
+    ///      bundle's signing budget (`maxSignatures != 0` — its stateful half is the wallet's
+    ///      signing key; the ERC-1271 bundle's stateful half is inert and unconstrained).
+    ///      Bundle validation and registry recording happen in `_safeInstallKeyBundle`; the
+    ///      caller must additionally check `declaredCommitment` against the main bundle's
+    ///      derived commitment.
     function _decodeAndValidateInstall(
         bytes calldata payload
     )
         internal
         pure
         returns (
-            bytes32 commitment,
-            bytes32 erc1271Commitment,
+            bytes32 declaredCommitment,
             uint32 maxSignatures,
-            bytes32 statefulTreeId,
-            bytes32 statelessTreeId
+            SHRINCS.PublicKey calldata mainKey,
+            SHRINCS.PublicKey calldata erc1271Key
         )
     {
-        SHRINCS.PublicKey calldata pk;
         uint32 hashSuite;
         uint32 erc1271HashSuite;
-        (
-            commitment,
-            ,
-            pk,
-            hashSuite,
-            erc1271Commitment,
-            erc1271HashSuite
-        ) = Codec.decodeInit(payload);
-
-        if (erc1271Commitment == bytes32(0)) revert ZeroErc1271Commitment();
+        (declaredCommitment, , mainKey, hashSuite, erc1271Key, erc1271HashSuite) = Codec
+            .decodeInit(payload);
 
         // The SHRINCS library hardcodes HASH_SUITE_KECCAK_256 into every canonical message
         // hash, so the declared suites are a client-agreement check, not a dispatch choice.
@@ -1080,18 +1078,52 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             erc1271HashSuite != HashSuite.HASH_SUITE_ID
         ) revert UnsupportedHashSuite();
 
-        // Validate the supplied main bundle's fixed shape and the declared commitment
-        // (validPublicKey already checks the embedded commitment recomputes).
-        if (!SHRINCS.validPublicKey(pk)) revert CommitmentMismatch();
-        if (SHRINCS.publicKeyCommitment(pk) != commitment)
-            revert CommitmentMismatch();
-
         (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
-            .decodeStatefulPublicKey(pk.statefulPublicKey);
+            .decodeStatefulPublicKey(mainKey.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
         maxSignatures = decoded.maxSignatures;
-        statefulTreeId = _statefulTreeId(decoded);
-        statelessTreeId = _statelessTreeId(pk.pkSeed, pk.hypertreeRoot);
+    }
+
+    /// @dev Installs a full key bundle, whatever its role (main or dedicated ERC-1271):
+    ///      validates the bundle's fixed shape and embedded-commitment recompute
+    ///      (`validPublicKey`), derives its commitment on-chain, and records both halves in the
+    ///      lifetime registries — `StatefulTreeSpent` / `StatelessTreeSpent` on any tree this
+    ///      wallet ever held, in either role, so a contract-signing key can never double as,
+    ///      or recycle, a recovery root (23/25).
+    /// @return commitment The bundle commitment, derived on-chain.
+    function _safeInstallKeyBundle(
+        SHRINCS.PublicKey calldata pk
+    ) internal returns (bytes32 commitment) {
+        if (!SHRINCS.validPublicKey(pk)) revert CommitmentMismatch();
+        commitment = SHRINCS.publicKeyCommitment(pk);
+        _safeInstallStatefulKey(pk.statefulPublicKey);
+        _safeInstallStatelessKey(pk.pkSeed, pk.hypertreeRoot);
+    }
+
+    /// @dev Installs one stateful key half (68-byte encoding): derives its tree ID and records
+    ///      it in the lifetime registry, reverting `StatefulTreeSpent` if this wallet ever held
+    ///      it. Trees are one-time material: the leaf bitmap resets per epoch, so re-installing
+    ///      a tree (including a cycle back to an old one) would resurrect its consumed leaves.
+    function _safeInstallStatefulKey(bytes calldata statefulPublicKey) internal {
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(statefulPublicKey);
+        if (!ok) revert CommitmentMismatch();
+        bytes32 treeId = _statefulTreeId(decoded);
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatefulTrees[treeId]) revert StatefulTreeSpent(treeId);
+        $.spentStatefulTrees[treeId] = true;
+    }
+
+    /// @dev Stateless twin of `_safeInstallStatefulKey`: derives the tree ID and records it in
+    ///      the lifetime registry, reverting `StatelessTreeSpent` if this wallet ever held it.
+    function _safeInstallStatelessKey(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) internal {
+        bytes32 treeId = _statelessTreeId(pkSeed, hypertreeRoot);
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatelessTrees[treeId]) revert StatelessTreeSpent(treeId);
+        $.spentStatelessTrees[treeId] = true;
     }
 
     /// @dev Tree identity of a stateful public key: keccak256(pkSeed ‖ root). Deliberately excludes
@@ -1102,16 +1134,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         return EfficientHashLib.hash(decoded.pkSeed, decoded.root);
     }
 
-    /// @dev `_statefulTreeId` over the 68-byte encoding.
-    function _statefulTreeId(
-        bytes calldata statefulPublicKey
-    ) internal pure returns (bytes32) {
-        (UXMSS.StatefulPublicKey memory d, bool ok) = SHRINCS
-            .decodeStatefulPublicKey(statefulPublicKey);
-        if (!ok) revert CommitmentMismatch();
-        return _statefulTreeId(d);
-    }
-
     /// @dev Tree identity of a stateless half: keccak256(pkSeed ‖ hypertreeRoot). Both fields are
     ///      32 bytes by the time any caller reaches this (bundle validation / width checks).
     function _statelessTreeId(
@@ -1119,22 +1141,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         bytes calldata hypertreeRoot
     ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(bytes32(pkSeed[:32]), bytes32(hypertreeRoot[:32]));
-    }
-
-    /// @dev Marks a stateful tree spent, reverting if it ever was. Trees are one-time material for
-    ///      their lifetime: the leaf bitmap resets per epoch, so re-installing a tree (including a
-    ///      cycle back to an old one) would resurrect its consumed leaves.
-    function _spendStatefulTree(bytes32 treeId) internal {
-        Storage.Layout storage $ = Storage.layout();
-        if ($.spentStatefulTrees[treeId]) revert StatefulTreeSpent(treeId);
-        $.spentStatefulTrees[treeId] = true;
-    }
-
-    /// @dev Stateless twin of `_spendStatefulTree`.
-    function _spendStatelessTree(bytes32 treeId) internal {
-        Storage.Layout storage $ = Storage.layout();
-        if ($.spentStatelessTrees[treeId]) revert StatelessTreeSpent(treeId);
-        $.spentStatelessTrees[treeId] = true;
     }
 
     /// @dev Core stateful verify + bitmap leaf consume shared by every stateful path. Reverts on
@@ -1381,9 +1387,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // computed locally; bundle checks + FORS-C/hypertree crypto delegated
         if (
             !_tryVerifyStateless(
-                $.erc1271StatelessCommitment,
+                $.erc1271PublicKeyCommitment,
                 SHRINCS.statelessActionMessageHash(
-                    $.erc1271StatelessCommitment,
+                    $.erc1271PublicKeyCommitment,
                     ctx
                 ),
                 abi.encode(pk, sig)

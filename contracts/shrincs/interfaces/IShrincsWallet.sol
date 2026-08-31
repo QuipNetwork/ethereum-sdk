@@ -50,11 +50,9 @@ interface IShrincsWallet is IWallet {
 
     /// @notice Thrown when a SHRINCS signature fails verification (stateful or stateless).
     error InvalidSignature();
-    /// @notice Thrown when the supplied public-key bundle does not recompute to the
-    ///         declared/installed commitment during `initialize`.
+    /// @notice Thrown when a supplied public-key bundle (main or ERC-1271) fails shape
+    ///         validation or does not recompute to the declared/installed commitment.
     error CommitmentMismatch();
-    /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
-    error ZeroErc1271Commitment();
     /// @notice Thrown when an install payload declares a hash suite other than
     ///         the compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this
     ///         implementation verifies; SHRINCS binds it into every canonical message hash).
@@ -112,7 +110,7 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a delegatecall body (the `upgradeToAndCall` verify probe) modified one
     ///         of the eight slots the upgrade path snapshots and re-checks.
     /// @param slotIndex 0=owner, 1=ERC-1967 impl, 2=walletFactory, 3=shrincsPublicKeyCommitment,
-    ///                  4=erc1271StatelessCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
+    ///                  4=erc1271PublicKeyCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
     error GuardedSlotTampered(uint256 slotIndex);
     /// @notice Thrown when `storageStore` is called. Raw storage writes are disabled because they
     ///         could clear consumed-leaf bits in the bitmap and re-enable
@@ -138,12 +136,12 @@ interface IShrincsWallet is IWallet {
     /// @param factory The WalletFactory that created this wallet.
     /// @param owner The classical owner address (ERC-1271 ECDSA gate + factory registry only).
     /// @param shrincsPublicKeyCommitment The installed main-key bundle commitment.
-    /// @param erc1271StatelessCommitment The installed ERC-1271 verifier-key commitment.
+    /// @param erc1271PublicKeyCommitment The installed ERC-1271 verifier-key commitment.
     event WalletInitialized(
         address indexed factory,
         address indexed owner,
         bytes32 indexed shrincsPublicKeyCommitment,
-        bytes32 erc1271StatelessCommitment
+        bytes32 erc1271PublicKeyCommitment
     );
 
     /// @notice Emitted when a stateful signature is consumed (its leaf marked used).
@@ -234,20 +232,24 @@ interface IShrincsWallet is IWallet {
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Initializes the wallet. Called once by the factory. Records both installed trees
-    ///         as spent (`StatefulTreeSpent` / `StatelessTreeSpent` on any later re-install).
+    /// @notice Initializes the wallet. Called once by the factory. Records all four installed
+    ///         trees — both halves of the main bundle AND of the dedicated ERC-1271 bundle — as
+    ///         spent (`StatefulTreeSpent` / `StatelessTreeSpent` on any later re-install). A
+    ///         payload whose ERC-1271 bundle shares any tree with the main bundle reverts: the
+    ///         contract-signing key must never be the recovery authority.
     /// @param newOwner The classical owner (ERC-1271 ECDSA gate + factory registry only).
-    /// @param payload Packed init data: `[0:32)` main commitment, `[32:64)` pkSeed, then the
-    ///        ABI-encoded `(PublicKey mainBundle, uint32 hashSuite, bytes32 erc1271Commitment,
-    ///        uint32 erc1271HashSuite)`.
+    /// @param payload ABI-encoded `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle,
+    ///        uint32 hashSuite, PublicKey erc1271Bundle, uint32 erc1271HashSuite)`; the ERC-1271
+    ///        commitment is derived on-chain from `erc1271Bundle`.
     function initialize(
         address payable newOwner,
         bytes calldata payload
     ) external override;
 
     /// @notice Re-installs PQ state during an upgrade. Only valid inside `upgradeToAndCall`.
-    ///         Both trees in the payload must be strictly fresh (never held by this wallet) and
-    ///         are recorded as spent; reverts `StatefulTreeSpent` / `StatelessTreeSpent`.
+    ///         All four trees in the payload (main and ERC-1271 bundles) must be strictly fresh
+    ///         (never held by this wallet) and are recorded as spent; reverts
+    ///         `StatefulTreeSpent` / `StatelessTreeSpent`. Same payload layout as `initialize`.
     function migrate(bytes calldata payload) external;
 
     /// @notice SHRINCS-gated UUPS upgrade. Authorized by a stateful signature from the main key.
@@ -316,11 +318,19 @@ interface IShrincsWallet is IWallet {
     ) external payable;
 
     /// @notice (Re)installs the dedicated ERC-1271 stateless verifier key, authorized by a
-    ///         stateful SHRINCS action from the main key.
+    ///         stateful SHRINCS action from the main key. The new bundle's commitment is derived
+    ///         on-chain and both of its trees are recorded as spent BEFORE the signature check,
+    ///         so any bundle sharing a tree with anything this wallet ever held (the current or
+    ///         a former main key, or a former ERC-1271 key) reverts `StatefulTreeSpent` /
+    ///         `StatelessTreeSpent` without consuming a leaf.
+    /// @param publicKey The current main-key bundle (re-validated against the commitment).
+    /// @param signature Stateful signature over `setErc1271KeyPayloadHash(commitment, suite)`.
+    /// @param newErc1271Key The full replacement ERC-1271 bundle (only its stateless half signs).
+    /// @param newErc1271HashSuite Must equal the compiled `HashSuite.HASH_SUITE_ID`.
     function setErc1271Key(
         SHRINCS.PublicKey calldata publicKey,
         SHRINCS.Signature calldata signature,
-        bytes32 newErc1271Commitment,
+        SHRINCS.PublicKey calldata newErc1271Key,
         uint32 newErc1271HashSuite
     ) external payable;
 
@@ -417,7 +427,7 @@ interface IShrincsWallet is IWallet {
     function getShrincsPublicKeyCommitment() external view returns (bytes32);
 
     /// @notice The installed ERC-1271 verifier-key commitment.
-    function getErc1271Commitment() external view returns (bytes32);
+    function getErc1271PublicKeyCommitment() external view returns (bytes32);
 
     /// @notice The hash-suite id the installed main key was validated against. Always the
     ///         compiled keccak `HashSuite.HASH_SUITE_ID`: the id is not stored —

@@ -141,7 +141,7 @@ contract ShrincsPaymaster is
         // statefulLeavesUsed and the leaf bitmap start empty by default.
         $.shrincsCommitment = commitment;
         $.maxSignatures = decoded.maxSignatures;
-        _spendStatefulTree(_statefulTreeId(decoded));
+        _safeInstallStatefulKey(publicKey.statefulPublicKey);
 
         emit PaymasterInitialized(owner_);
         emit ShrincsVerifierSet(
@@ -258,7 +258,7 @@ contract ShrincsPaymaster is
 
         // Trees are one-time material for their lifetime: refuse a replacement ever installed
         // here (the bitmap resets per epoch, so a cycle back would resurrect consumed leaves).
-        _spendStatefulTree(_statefulTreeId(decoded));
+        _safeInstallStatefulKey(nextStatefulKey.statefulPublicKey);
 
         bytes32 previous = $.shrincsCommitment;
         // keyVersion is monotonic: always bump, never reset. A fresh epoch gives a fresh (empty)
@@ -544,9 +544,15 @@ contract ShrincsPaymaster is
         return EfficientHashLib.hash(decoded.pkSeed, decoded.root);
     }
 
-    /// @dev Marks a stateful tree spent, reverting if it ever was (a re-installed tree would
-    ///      resurrect its consumed leaves once the bitmap resets).
-    function _spendStatefulTree(bytes32 treeId) internal {
+    /// @dev Installs one stateful key half (68-byte encoding): derives its tree ID and records
+    ///      it in the lifetime registry, reverting `StatefulTreeSpent` if it was ever installed
+    ///      here (a re-installed tree would resurrect its consumed leaves once the bitmap
+    ///      resets).
+    function _safeInstallStatefulKey(bytes calldata statefulPublicKey) internal {
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(statefulPublicKey);
+        if (!ok) revert CommitmentMismatch();
+        bytes32 treeId = _statefulTreeId(decoded);
         Storage.Layout storage $ = Storage.layout();
         if ($.spentStatefulTrees[treeId]) revert StatefulTreeSpent(treeId);
         $.spentStatefulTrees[treeId] = true;

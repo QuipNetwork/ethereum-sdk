@@ -31,11 +31,15 @@ library ShrincsWalletStorage {
         ///      re-validates against this commitment. Changes only via `rotateKey`
         ///      (stateful) or `recoverWallet` (stateless break-glass).
         bytes32 shrincsPublicKeyCommitment;
-        /// @dev Commitment to a SEPARATE, dedicated SHRINCS bundle used solely for ERC-1271
-        ///      contract-signature verification (stateless, view-safe). Isolated from the
-        ///      main key so contract-signing never touches the recovery authority. Rotated
+        /// @dev Full-bundle commitment (same shape as `shrincsPublicKeyCommitment`) of the
+        ///      SEPARATE, dedicated SHRINCS bundle used solely for ERC-1271 contract-signature
+        ///      verification — only its stateless half ever signs (view-safe). Isolated from the
+        ///      main key so contract-signing never touches the recovery authority — enforced,
+        ///      not assumed: every install path receives the full 1271 bundle and records both
+        ///      of its trees in `spentStatefulTrees` / `spentStatelessTrees`, so it can never
+        ///      share a tree with the main key (past or present) nor be reinstalled. Rotated
         ///      via `setErc1271Key` (a stateful action from the main key).
-        bytes32 erc1271StatelessCommitment;
+        bytes32 erc1271PublicKeyCommitment;
         /// @dev Installed-key epoch. Bound into every canonical action/rotation context and
         ///      incremented on every key rotation (`rotateKey` / `recoverWallet`) and on
         ///      migration, so signatures from a prior key epoch cannot be replayed.

@@ -104,7 +104,11 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the factory-supplied init payload, the ABI encoding of
     ///      `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle, uint32 hashSuite,
-    ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
+    ///       PublicKey erc1271Bundle, uint32 erc1271HashSuite)`.
+    ///      The ERC-1271 key travels as a FULL bundle (not a bare commitment) so the wallet
+    ///      can derive its tree identities and record them in the lifetime spent-tree
+    ///      registries: the dedicated 1271 key must never share a tree with the main key,
+    ///      past or present, nor be reinstalled (INVARIANTS 23/25).
     ///      The payload is opaque to the factory; `commitment`/`pkSeed` landing at
     ///      `payload[0:32]` / `[32:64]` is just natural ABI head-word order, not a
     ///      layout constraint.
@@ -118,11 +122,11 @@ library ShrincsWalletCodec {
             bytes32 pkSeed,
             SHRINCS.PublicKey calldata mainBundle,
             uint32 hashSuite,
-            bytes32 erc1271Commitment,
+            SHRINCS.PublicKey calldata erc1271Bundle,
             uint32 erc1271HashSuite
         )
     {
-        // Head is six 32-byte words (one is the PublicKey tail offset).
+        // Head is six 32-byte words (two are PublicKey tail offsets).
         if (payload.length < 0xc0)
             revert MalformedPayload(0xc0, payload.length);
         bytes4 malformed = MalformedPayload.selector;
@@ -148,7 +152,9 @@ library ShrincsWalletCodec {
             // Solidity calldata accessors downstream, which bounds-check against calldatasize.
             mainBundle := add(o, mbOff)
             hashSuite := and(calldataload(add(o, 0x60)), 0xffffffff)
-            erc1271Commitment := calldataload(add(o, 0x80))
+            let ebOff := calldataload(add(o, 0x80))
+            reqTail(ebOff, len, malformed)
+            erc1271Bundle := add(o, ebOff)
             erc1271HashSuite := and(calldataload(add(o, 0xa0)), 0xffffffff)
         }
     }
