@@ -49,7 +49,7 @@ contract ShrincsWallet_initialize_v1 is ShrincsWalletTest {
             "main commitment"
         );
         assertEq(
-            bare.getErc1271Commitment(),
+            bare.getErc1271PublicKeyCommitment(),
             erc1271Commitment,
             "erc1271 commitment"
         );

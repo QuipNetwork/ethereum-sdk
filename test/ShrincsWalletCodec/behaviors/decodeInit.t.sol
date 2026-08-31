@@ -12,22 +12,28 @@ import {ShrincsWalletCodecTest} from "../ShrincsWalletCodec.t.sol";
 contract ShrincsWalletCodec_decodeInit is ShrincsWalletCodecTest {
     function test_decodeInit_roundTrip() public view {
         SHRINCS.PublicKey memory pk = _samplePublicKey();
+        SHRINCS.PublicKey memory epk = _sampleErc1271PublicKey();
         bytes32 commitment = keccak256("commit");
         bytes32 pkSeed = keccak256("seed");
-        bytes32 erc1271Commitment = keccak256("erc1271");
         bytes memory payload = abi.encode(
-            commitment, pkSeed, pk, HashSuite.HASH_SUITE_ID, erc1271Commitment, uint32(2)
+            commitment, pkSeed, pk, HashSuite.HASH_SUITE_ID, epk, uint32(2)
         );
 
-        (bytes32 c, bytes32 ps, SHRINCS.PublicKey memory mb, uint32 hs, bytes32 ec, uint32 ehs) =
-            codec.exposed_decodeInit(payload);
+        (
+            bytes32 c,
+            bytes32 ps,
+            SHRINCS.PublicKey memory mb,
+            uint32 hs,
+            SHRINCS.PublicKey memory eb,
+            uint32 ehs
+        ) = codec.exposed_decodeInit(payload);
 
         assertEq(c, commitment, "commitment");
         assertEq(ps, pkSeed, "pkSeed");
         assertEq(hs, HashSuite.HASH_SUITE_ID, "hashSuite");
-        assertEq(ec, erc1271Commitment, "erc1271Commitment");
         assertEq(ehs, 2, "erc1271HashSuite");
         _assertPkEq(mb, pk);
+        _assertPkEq(eb, epk);
     }
 
     function test_decodeInit_revertsWhen_tooShort() public {
@@ -45,7 +51,6 @@ contract ShrincsWalletCodec_decodeInit is ShrincsWalletCodecTest {
         bytes32 commitment,
         bytes32 pkSeed,
         uint32 hashSuite,
-        bytes32 erc1271Commitment,
         uint32 erc1271HashSuite,
         bytes memory statefulPublicKey,
         bytes memory pkCommitment,
@@ -57,17 +62,30 @@ contract ShrincsWalletCodec_decodeInit is ShrincsWalletCodecTest {
         pk.publicKeyCommitment = pkCommitment;
         pk.pkSeed = innerPkSeed;
         pk.hypertreeRoot = hypertreeRoot;
+        // A second, distinct bundle for the ERC-1271 slot (derived from the fuzzed fields so the
+        // two tails differ and any offset mix-up is caught).
+        SHRINCS.PublicKey memory epk;
+        epk.statefulPublicKey = bytes.concat(hypertreeRoot, hex"01");
+        epk.publicKeyCommitment = bytes.concat(innerPkSeed, hex"02");
+        epk.pkSeed = bytes.concat(pkCommitment, hex"03");
+        epk.hypertreeRoot = bytes.concat(statefulPublicKey, hex"04");
 
-        bytes memory payload = abi.encode(commitment, pkSeed, pk, hashSuite, erc1271Commitment, erc1271HashSuite);
+        bytes memory payload = abi.encode(commitment, pkSeed, pk, hashSuite, epk, erc1271HashSuite);
 
-        (bytes32 c, bytes32 ps, SHRINCS.PublicKey memory mb, uint32 hs, bytes32 ec, uint32 ehs) =
-            codec.exposed_decodeInit(payload);
+        (
+            bytes32 c,
+            bytes32 ps,
+            SHRINCS.PublicKey memory mb,
+            uint32 hs,
+            SHRINCS.PublicKey memory eb,
+            uint32 ehs
+        ) = codec.exposed_decodeInit(payload);
 
         assertEq(c, commitment, "commitment");
         assertEq(ps, pkSeed, "pkSeed");
         assertEq(hs, hashSuite, "hashSuite");
-        assertEq(ec, erc1271Commitment, "erc1271Commitment");
         assertEq(ehs, erc1271HashSuite, "erc1271HashSuite");
         _assertPkEq(mb, pk);
+        _assertPkEq(eb, epk);
     }
 }

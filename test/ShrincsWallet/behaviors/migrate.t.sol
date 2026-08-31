@@ -61,17 +61,15 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         wallet.migrate(_validInitPayload());
     }
 
-    function test_migrate_revertsWhen_zeroErc1271Commitment() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
+    function test_migrate_revertsWhen_invalidErc1271Bundle() public {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("migrate-bad-1271", MAX_SIG);
+        require(ok, "keygen");
+        SHRINCS.PublicKey memory epk = _freshErc1271Pk("migrate-bad-1271");
+        epk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-erc1271-commitment"));
         bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            bytes32(0),
-            HashSuite.HASH_SUITE_ID
+            _commitment32(pk), _toBytes32(pk.pkSeed), pk, HashSuite.HASH_SUITE_ID, epk, HashSuite.HASH_SUITE_ID
         );
-        vm.expectRevert(IShrincsWallet.ZeroErc1271Commitment.selector);
+        vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
         wallet.harness_migrateInUpgradeContext(payload);
     }
 
@@ -82,7 +80,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             SHRINCS.HASH_SUITE_UNSUPPORTED,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.UnsupportedHashSuite.selector);
@@ -98,7 +96,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
@@ -106,14 +104,16 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     }
 
     function test_migrate_revertsWhen_declaredCommitmentMismatch() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
-        // Valid bundle, but the standalone declared commitment is wrong.
+        // A FRESH valid bundle (the current one would trip the spent-tree registry first),
+        // but the standalone declared commitment is wrong.
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("migrate-wrong-declared", MAX_SIG);
+        require(ok, "keygen");
         bytes memory payload = _buildInitPayload(
             keccak256("wrong-commitment"),
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
@@ -137,7 +137,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(IShrincsWallet.ZeroMaxSignatures.selector);
@@ -151,7 +151,8 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         (, SHRINCS.PublicKey memory next, bool ok) = SHRINCSTestSigner.keygen("migrated-main-key", MAX_SIG);
         assertTrue(ok, "next keygen");
         bytes32 nextCommit = _commitment32(next);
-        bytes32 newErc1271 = keccak256("migrated-erc1271");
+        SHRINCS.PublicKey memory newErc1271Pk = _freshErc1271Pk("migrated-erc1271");
+        bytes32 newErc1271 = _commitment32(newErc1271Pk);
         assertTrue(nextCommit != wallet.getShrincsPublicKeyCommitment(), "precondition: a different bundle");
 
         bytes memory payload = _buildInitPayload(
@@ -159,28 +160,87 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
             keccak256("indexing-handle"), // top-level pkSeed slot — ignored by migrate
             next,
             HashSuite.HASH_SUITE_ID,
-            newErc1271,
+            newErc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         wallet.harness_migrateInUpgradeContext(payload);
 
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommit, "new main commitment installed");
-        assertEq(wallet.getErc1271Commitment(), newErc1271, "new erc1271 commitment installed");
+        assertEq(wallet.getErc1271PublicKeyCommitment(), newErc1271, "new erc1271 commitment installed");
         assertEq(wallet.getErc1271HashSuite(), HashSuite.HASH_SUITE_ID, "erc1271 suite installed");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
     }
 
     /*──────────────────── spent-tree tracking ────────────────────*/
 
-    function test_migrate_spendsBothInstalledTrees() public {
+    function test_migrate_spendsAllFourInstalledTrees() public {
         (, SHRINCS.PublicKey memory fresh, bool ok) = SHRINCSTestSigner.keygen("migrate-spends", MAX_SIG);
         require(ok, "keygen");
+        SHRINCS.PublicKey memory fresh1271 = _freshErc1271Pk("migrate-spends");
         _assertTreesUnspent(fresh);
+        _assertTreesUnspent(fresh1271);
 
         (bytes memory payload,) = _freshInitPayload("migrate-spends");
         wallet.harness_migrateInUpgradeContext(payload);
 
         _assertTreesSpent(fresh);
+        _assertTreesSpent(fresh1271);
+    }
+
+    /// @dev Regression (audit): migration must present a fresh ERC-1271 bundle too — carrying
+    ///      the current one forward is a re-install of a held tree.
+    function test_migrate_revertsWhen_erc1271BundleCarriedForward() public {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("migrate-carry-1271", MAX_SIG);
+        require(ok, "keygen");
+        bytes memory payload = _buildInitPayload(
+            _commitment32(pk), _toBytes32(pk.pkSeed), pk, HashSuite.HASH_SUITE_ID, erc1271Pk, HashSuite.HASH_SUITE_ID
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(erc1271Pk.statefulPublicKey))
+        );
+        wallet.harness_migrateInUpgradeContext(payload);
+    }
+
+    /// @dev Regression (audit): the ERC-1271 bundle may not be the (fresh) main bundle.
+    function test_migrate_revertsWhen_erc1271BundleEqualsMain() public {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("migrate-1271-eq-main", MAX_SIG);
+        require(ok, "keygen");
+        bytes memory payload = _buildInitPayload(
+            _commitment32(pk), _toBytes32(pk.pkSeed), pk, HashSuite.HASH_SUITE_ID, pk, HashSuite.HASH_SUITE_ID
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(pk.statefulPublicKey))
+        );
+        wallet.harness_migrateInUpgradeContext(payload);
+    }
+
+    /// @dev Regression (audit): a 1271 bundle reusing the OLD main key's stateless root under a
+    ///      fresh stateful subkey (new commitment, held recovery root) is rejected.
+    function test_migrate_revertsWhen_erc1271SharesFormerMainStatelessRoot() public {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("migrate-1271-old-root", MAX_SIG);
+        require(ok, "keygen");
+        SHRINCS.PublicKey memory epk = _bundleSharingStatelessRoot("migrate-1271-old-root-sub", mainPk);
+        bytes memory payload = _buildInitPayload(
+            _commitment32(pk), _toBytes32(pk.pkSeed), pk, HashSuite.HASH_SUITE_ID, epk, HashSuite.HASH_SUITE_ID
+        );
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));
+        wallet.harness_migrateInUpgradeContext(payload);
+    }
+
+    /// @dev Regression (audit): the reverse cross-role direction — a NEW MAIN bundle may not
+    ///      reuse the dedicated ERC-1271 key's stateless root.
+    function test_migrate_revertsWhen_mainSharesErc1271StatelessRoot() public {
+        SHRINCS.PublicKey memory pk = _bundleSharingStatelessRoot("migrate-main-1271-root", erc1271Pk);
+        bytes memory payload = _buildInitPayload(
+            _commitment32(pk),
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            _freshErc1271Pk("migrate-main-1271-root"),
+            HashSuite.HASH_SUITE_ID
+        );
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(erc1271Pk)));
+        wallet.harness_migrateInUpgradeContext(payload);
     }
 
     function test_migrate_revertsWhen_currentBundle() public {
@@ -199,7 +259,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, pk.pkSeed, pk.hypertreeRoot);
         pk.publicKeyCommitment = abi.encodePacked(c);
         bytes memory payload = _buildInitPayload(
-            c, _toBytes32(pk.pkSeed), pk, HashSuite.HASH_SUITE_ID, erc1271Commitment, HashSuite.HASH_SUITE_ID
+            c, _toBytes32(pk.pkSeed), pk, HashSuite.HASH_SUITE_ID, erc1271Pk, HashSuite.HASH_SUITE_ID
         );
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));
         wallet.harness_migrateInUpgradeContext(payload);

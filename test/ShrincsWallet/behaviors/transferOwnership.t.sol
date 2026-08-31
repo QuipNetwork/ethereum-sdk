@@ -174,6 +174,25 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, same, NEW_OWNER);
     }
 
+    /// @dev Regression (audit): a handover bundle may not reuse the dedicated ERC-1271 key's
+    ///      stateless root — its trees are in the same lifetime registries as the main key's.
+    function test_transferOwnership_revertsWhen_erc1271StatelessRootReused() public {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("transfer-erc1271-root", MAX_SIG);
+        require(ok, "keygen");
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, erc1271Pk.pkSeed, erc1271Pk.hypertreeRoot);
+        SHRINCS.RotationTarget memory t = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(c),
+            pkSeed: erc1271Pk.pkSeed,
+            hypertreeRoot: erc1271Pk.hypertreeRoot
+        });
+        SPHINCSPlusC.Signature memory recoverySig = _signFullRotation(t, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
+        SHRINCS.Signature memory ownerSig = _ownerBindingSig(NEW_OWNER, c);
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(erc1271Pk)));
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, t, NEW_OWNER);
+    }
+
     function test_transferOwnership_revertsWhen_statelessTreeCarriedForward() public {
         SHRINCS.RotationTarget memory t = _freshStatefulSameStatelessTarget("transfer-carry-stateless");
         SPHINCSPlusC.Signature memory recoverySig = _signFullRotation(t, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);

@@ -42,10 +42,10 @@ contract ShrincsPaymasterHarness is ShrincsPaymaster {
         $.maxSignatures = maxSignaturesValue;
     }
 
-    /// @dev Wraps the check-and-record spend primitive (also used by the fixture to mirror
+    /// @dev Wraps the check-and-record install primitive (also used by the fixture to mirror
     ///      what `initialize` records).
-    function exposed_spendStatefulTree(bytes32 treeId) external {
-        _spendStatefulTree(treeId);
+    function exposed_safeInstallStatefulKey(bytes calldata statefulPublicKey) external {
+        _safeInstallStatefulKey(statefulPublicKey);
     }
 
     /// @dev Reads the spent-tree registry so tests can pin which install paths record trees.

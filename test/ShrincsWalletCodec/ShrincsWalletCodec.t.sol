@@ -30,6 +30,13 @@ contract ShrincsWalletCodecTest is Test {
         pk.hypertreeRoot = abi.encodePacked(keccak256("hypertreeRoot"));
     }
 
+    function _sampleErc1271PublicKey() internal pure returns (SHRINCS.PublicKey memory pk) {
+        pk.statefulPublicKey = abi.encodePacked(keccak256("epk-a"), keccak256("epk-b"), uint32(8));
+        pk.publicKeyCommitment = abi.encodePacked(keccak256("epk-commit"));
+        pk.pkSeed = abi.encodePacked(keccak256("epk-seed"));
+        pk.hypertreeRoot = abi.encodePacked(keccak256("epk-root"));
+    }
+
     function _sampleStatefulSig() internal pure returns (SHRINCS.Signature memory sig) {
         sig.randomizer = keccak256("randomizer");
         sig.counter = 7;

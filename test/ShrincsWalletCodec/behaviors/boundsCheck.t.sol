@@ -19,11 +19,24 @@ contract ShrincsWalletCodec_boundsCheck is ShrincsWalletCodecTest {
 
     function test_decodeInit_boundsHappyPath() public view {
         SHRINCS.PublicKey memory pk = _samplePublicKey();
+        SHRINCS.PublicKey memory epk = _sampleErc1271PublicKey();
         bytes memory payload = abi.encode(
-            keccak256("commit"), keccak256("seed"), pk, HashSuite.HASH_SUITE_ID, keccak256("erc1271"), uint32(2)
+            keccak256("commit"), keccak256("seed"), pk, HashSuite.HASH_SUITE_ID, epk, uint32(2)
         );
-        (,, SHRINCS.PublicKey memory mb,,,) = codec.exposed_decodeInit(payload);
+        (,, SHRINCS.PublicKey memory mb,, SHRINCS.PublicKey memory eb,) = codec.exposed_decodeInit(payload);
         _assertPkEq(mb, pk);
+        _assertPkEq(eb, epk);
+    }
+
+    function test_decodeInit_revertsWhen_erc1271TailOffsetOutOfBounds() public {
+        // word[2] (main bundle) points at a valid in-range tail head; word[4] (erc1271 bundle)
+        // points at the slice end so its pointed-to head word spills past `len`.
+        bytes memory payload = bytes.concat(
+            bytes32(0), bytes32(0), bytes32(uint256(0xc0)), bytes32(0), bytes32(uint256(0xe0)), bytes32(0),
+            bytes32(0) // one word of tail so the main offset (0xc0) is in range; 0xe0 is not
+        );
+        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0x100, 0xe0));
+        codec.exposed_decodeInit(payload);
     }
 
     function test_decodeInit_revertsWhen_tailOffsetOutOfBounds() public {

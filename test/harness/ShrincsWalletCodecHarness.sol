@@ -18,17 +18,23 @@ contract ShrincsWalletCodecHarness {
             bytes32 pkSeed,
             SHRINCS.PublicKey memory mainBundle,
             uint32 hashSuite,
-            bytes32 erc1271Commitment,
+            SHRINCS.PublicKey memory erc1271Bundle,
             uint32 erc1271HashSuite
         )
     {
-        (bytes32 _c, bytes32 _ps, SHRINCS.PublicKey calldata _mb, uint32 _hs, bytes32 _ec, uint32 _ehs) =
-            Codec.decodeInit(payload);
+        (
+            bytes32 _c,
+            bytes32 _ps,
+            SHRINCS.PublicKey calldata _mb,
+            uint32 _hs,
+            SHRINCS.PublicKey calldata _eb,
+            uint32 _ehs
+        ) = Codec.decodeInit(payload);
         commitment = _c;
         pkSeed = _ps;
         mainBundle = _mb;
         hashSuite = _hs;
-        erc1271Commitment = _ec;
+        erc1271Bundle = _eb;
         erc1271HashSuite = _ehs;
     }
 

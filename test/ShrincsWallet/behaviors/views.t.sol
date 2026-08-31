@@ -25,7 +25,7 @@ contract ShrincsWallet_views is ShrincsWalletTest {
 
     function test_getCommitments() public view {
         assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment);
-        assertEq(wallet.getErc1271Commitment(), erc1271Commitment);
+        assertEq(wallet.getErc1271PublicKeyCommitment(), erc1271Commitment);
     }
 
     function test_getHashSuites() public view {

@@ -38,7 +38,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         assertEq(bare.owner(), OWNER, "owner installed");
         assertEq(bare.walletFactory(), address(factory), "factory installed");
         assertEq(bare.getShrincsPublicKeyCommitment(), mainCommitment, "main commitment");
-        assertEq(bare.getErc1271Commitment(), erc1271Commitment, "erc1271 commitment");
+        assertEq(bare.getErc1271PublicKeyCommitment(), erc1271Commitment, "erc1271 commitment");
         assertEq(bare.getHashSuite(), HashSuite.HASH_SUITE_ID, "hash suite");
         assertEq(bare.getErc1271HashSuite(), HashSuite.HASH_SUITE_ID, "erc1271 hash suite");
         assertEq(bare.maxSignatures(), MAX_SIG, "maxSignatures decoded from the bundle");
@@ -90,18 +90,50 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
         bare.initialize(payable(address(0)), _validInitPayload());
     }
 
-    function test_initialize_revertsWhen_zeroErc1271Commitment() public {
-        SHRINCS.PublicKey memory pk = _mainPk();
+    function test_initialize_revertsWhen_invalidErc1271Bundle() public {
+        SHRINCS.PublicKey memory epk = erc1271Pk;
+        epk.publicKeyCommitment = abi.encodePacked(keccak256("corrupted-erc1271-commitment"));
         bytes memory payload = _buildInitPayload(
-            mainCommitment,
-            _toBytes32(pk.pkSeed),
-            pk,
-            HashSuite.HASH_SUITE_ID,
-            bytes32(0), // zero ERC-1271 commitment
-            HashSuite.HASH_SUITE_ID
+            mainCommitment, _toBytes32(mainPk.pkSeed), _mainPk(), HashSuite.HASH_SUITE_ID, epk, HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
-        vm.expectRevert(IShrincsWallet.ZeroErc1271Commitment.selector);
+        vm.expectRevert(IShrincsWallet.CommitmentMismatch.selector);
+        bare.initialize(payable(OWNER), payload);
+    }
+
+    function test_initialize_spendsErc1271Trees() public {
+        assertFalse(bare.harness_isStatefulTreeSpent(_treeId(erc1271Pk.statefulPublicKey)), "1271 stateful unspent before");
+        assertFalse(bare.harness_isStatelessTreeSpent(_statelessId(erc1271Pk)), "1271 stateless unspent before");
+        vm.prank(address(factory));
+        bare.initialize(payable(OWNER), _validInitPayload());
+        assertTrue(bare.harness_isStatefulTreeSpent(_treeId(erc1271Pk.statefulPublicKey)), "1271 stateful spent");
+        assertTrue(bare.harness_isStatelessTreeSpent(_statelessId(erc1271Pk)), "1271 stateless spent");
+    }
+
+    /// @dev Regression (audit): the ERC-1271 slot may never be the main key. Equal bundles trip
+    ///      the registry on the 1271 bundle's trees (spent by the main bundle in the same call,
+    ///      before the factory-side identity check is reached).
+    function test_initialize_revertsWhen_erc1271BundleEqualsMain() public {
+        bytes memory payload = _buildInitPayload(
+            mainCommitment, _toBytes32(mainPk.pkSeed), _mainPk(), HashSuite.HASH_SUITE_ID, _mainPk(), HashSuite.HASH_SUITE_ID
+        );
+        vm.prank(address(factory));
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(mainPk.statefulPublicKey))
+        );
+        bare.initialize(payable(OWNER), payload);
+    }
+
+    /// @dev Regression (audit): a 1271 bundle with a FRESH stateful subkey but the main key's
+    ///      stateless root — a different commitment over the same recovery authority — is
+    ///      rejected on the stateless registry. A commitment-equality check would let this through.
+    function test_initialize_revertsWhen_erc1271SharesMainStatelessRoot() public {
+        SHRINCS.PublicKey memory epk = _bundleSharingStatelessRoot("init-1271-shares-root", mainPk);
+        bytes memory payload = _buildInitPayload(
+            mainCommitment, _toBytes32(mainPk.pkSeed), _mainPk(), HashSuite.HASH_SUITE_ID, epk, HashSuite.HASH_SUITE_ID
+        );
+        vm.prank(address(factory));
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));
         bare.initialize(payable(OWNER), payload);
     }
 
@@ -112,7 +144,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             SHRINCS.HASH_SUITE_UNSUPPORTED,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
@@ -127,7 +159,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             SHRINCS.HASH_SUITE_UNSUPPORTED
         );
         vm.prank(address(factory));
@@ -144,7 +176,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
@@ -160,7 +192,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
         vm.prank(address(factory));
@@ -185,7 +217,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
 

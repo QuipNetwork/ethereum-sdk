@@ -87,8 +87,10 @@ contract ShrincsWalletTest is Test {
         wallet = ShrincsWalletHarness(payable(WALLET));
 
         wallet.harness_install(OWNER, mainCommitment, erc1271Commitment, MAX_SIG);
-        // Mirror a factory-deployed wallet: `initialize` records the installed trees as spent.
+        // Mirror a factory-deployed wallet: `initialize` records all four installed trees
+        // (main + dedicated ERC-1271 bundles) as spent.
         wallet.harness_spendTrees(mainPk);
+        wallet.harness_spendTrees(erc1271Pk);
 
         statelessSigner = new SHRINCSStatelessVectorSigner();
     }
@@ -96,7 +98,7 @@ contract ShrincsWalletTest is Test {
     function test_setUp() public view virtual {
         assertEq(wallet.owner(), OWNER);
         assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment);
-        assertEq(wallet.getErc1271Commitment(), erc1271Commitment);
+        assertEq(wallet.getErc1271PublicKeyCommitment(), erc1271Commitment);
         assertEq(wallet.statefulLeavesUsed(), 0);
         assertFalse(wallet.isStatefulLeafUsed(1));
         assertEq(wallet.maxSignatures(), MAX_SIG);
@@ -236,8 +238,8 @@ contract ShrincsWalletTest is Test {
         bytes memory message =
             abi.encodePacked(
                 SHRINCS.statelessRawMessageHash(
-                    wallet.getErc1271Commitment(),
-                    SHRINCS.statelessActionMessageHash(wallet.getErc1271Commitment(), ctx)
+                    wallet.getErc1271PublicKeyCommitment(),
+                    SHRINCS.statelessActionMessageHash(wallet.getErc1271PublicKeyCommitment(), ctx)
                 )
             );
         return _signStatelessRaw(erc1271Key, erc1271Pk, message);
@@ -308,18 +310,18 @@ contract ShrincsWalletTest is Test {
     /*                    PAYLOAD BUILDERS                    */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @dev Builds the factory-supplied `initialize`/`migrate` payload exactly as
-    ///      `ShrincsWalletCodec.decodeInit` expects: `abi.encode(commitment, pkSeed, PublicKey,
-    ///      hashSuite, erc1271Commitment, erc1271HashSuite)`.
+    /// @dev ABI-encodes an `initialize`/`migrate` payload: `(commitment, pkSeed, mainBundle,
+    ///      hashSuite, erc1271Bundle, erc1271HashSuite)`. The ERC-1271 key is a full bundle;
+    ///      the wallet derives its commitment and spends its trees.
     function _buildInitPayload(
         bytes32 commitment,
         bytes32 pkSeed,
         SHRINCS.PublicKey memory pk,
         uint32 hashSuite,
-        bytes32 erc1271Commitment_,
+        SHRINCS.PublicKey memory erc1271Pk_,
         uint32 erc1271HashSuite
     ) internal pure returns (bytes memory) {
-        return abi.encode(commitment, pkSeed, pk, hashSuite, erc1271Commitment_, erc1271HashSuite);
+        return abi.encode(commitment, pkSeed, pk, hashSuite, erc1271Pk_, erc1271HashSuite);
     }
 
     /// @dev Builds a valid `initialize` payload from the generated main/erc1271 keys. Since
@@ -332,13 +334,20 @@ contract ShrincsWalletTest is Test {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            erc1271Pk,
             HashSuite.HASH_SUITE_ID
         );
     }
 
-    /// @dev Init/migrate payload for an entirely FRESH bundle (new stateful and stateless trees),
-    ///      as a migration must present. Returns the payload and the fresh bundle's commitment.
+    /// @dev Fresh, never-installed ERC-1271 bundle derived from `seed`.
+    function _freshErc1271Pk(bytes memory seed) internal view returns (SHRINCS.PublicKey memory pk) {
+        bool ok;
+        (, pk, ok) = SHRINCSTestSigner.keygen(abi.encodePacked(seed, "-erc1271"), MAX_SIG);
+        require(ok, "fresh erc1271 keygen");
+    }
+
+    /// @dev Init/migrate payload for entirely FRESH bundles (new main AND ERC-1271 trees), as a
+    ///      migration must present. Returns the payload and the fresh main bundle's commitment.
     function _freshInitPayload(bytes memory seed)
         internal
         view
@@ -352,8 +361,26 @@ contract ShrincsWalletTest is Test {
             _toBytes32(pk.pkSeed),
             pk,
             HashSuite.HASH_SUITE_ID,
-            erc1271Commitment,
+            _freshErc1271Pk(seed),
             HashSuite.HASH_SUITE_ID
+        );
+    }
+
+    /// @dev A bundle that carries `donor`'s STATELESS half under a fresh stateful subkey — a
+    ///      brand-new commitment over an already-held recovery root. The exact shape a
+    ///      commitment-equality check would miss.
+    function _bundleSharingStatelessRoot(bytes memory seed, SHRINCS.PublicKey memory donor)
+        internal
+        view
+        returns (SHRINCS.PublicKey memory pk)
+    {
+        bool ok;
+        (, pk, ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
+        require(ok, "keygen");
+        pk.pkSeed = donor.pkSeed;
+        pk.hypertreeRoot = donor.hypertreeRoot;
+        pk.publicKeyCommitment = abi.encodePacked(
+            SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, pk.pkSeed, pk.hypertreeRoot)
         );
     }
 

@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {ShrincsWallet} from "../../contracts/shrincs/ShrincsWallet.sol";
 import {ShrincsWalletStorage as Storage} from "../../contracts/shrincs/ShrincsWalletStorage.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 
 /// @dev Test harness exposing `ShrincsWallet` internals and a direct storage installer so
 ///      behavior tests can set up arbitrary state without threading a factory deploy.
@@ -55,20 +56,24 @@ contract ShrincsWalletHarness is ShrincsWallet {
         Storage.Layout storage $ = Storage.layout();
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
-        $.erc1271StatelessCommitment = erc1271Commitment;
+        $.erc1271PublicKeyCommitment = erc1271Commitment;
         $.maxSignatures = maxSignaturesValue;
     }
 
     /// @dev Records the installed bundle's trees as spent, mirroring what `initialize` does for a
     ///      factory-deployed wallet.
     function harness_spendTrees(SHRINCS.PublicKey calldata pk) external {
-        _spendStatefulTree(_statefulTreeId(pk.statefulPublicKey));
-        _spendStatelessTree(_statelessTreeId(pk.pkSeed, pk.hypertreeRoot));
+        _safeInstallStatefulKey(pk.statefulPublicKey);
+        _safeInstallStatelessKey(pk.pkSeed, pk.hypertreeRoot);
     }
 
-    /// @dev Wraps the tree-identity primitives.
+    /// @dev Wraps the tree-identity primitives (decoding the 68-byte stateful encoding first,
+    ///      mirroring `_safeInstallStatefulKey`).
     function exposed_statefulTreeId(bytes calldata statefulPublicKey) external pure returns (bytes32) {
-        return _statefulTreeId(statefulPublicKey);
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(statefulPublicKey);
+        if (!ok) revert CommitmentMismatch();
+        return _statefulTreeId(decoded);
     }
 
     function exposed_statelessTreeId(
@@ -78,13 +83,35 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _statelessTreeId(pkSeed, hypertreeRoot);
     }
 
-    /// @dev Wraps the check-and-record spend primitives.
-    function exposed_spendStatefulTree(bytes32 treeId) external {
-        _spendStatefulTree(treeId);
+    /// @dev Wraps the whole-bundle install (validate + derive commitment + install both halves).
+    function exposed_safeInstallKeyBundle(SHRINCS.PublicKey calldata pk) external returns (bytes32) {
+        return _safeInstallKeyBundle(pk);
     }
 
-    function exposed_spendStatelessTree(bytes32 treeId) external {
-        _spendStatelessTree(treeId);
+    /// @dev Wraps the install-payload decoder/validator.
+    function exposed_decodeAndValidateInstall(bytes calldata payload)
+        external
+        pure
+        returns (
+            bytes32 declaredCommitment,
+            uint32 maxSignatures,
+            SHRINCS.PublicKey memory mainKey,
+            SHRINCS.PublicKey memory erc1271Key
+        )
+    {
+        return _decodeAndValidateInstall(payload);
+    }
+
+    /// @dev Wraps the check-and-record install primitives.
+    function exposed_safeInstallStatefulKey(bytes calldata statefulPublicKey) external {
+        _safeInstallStatefulKey(statefulPublicKey);
+    }
+
+    function exposed_safeInstallStatelessKey(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) external {
+        _safeInstallStatelessKey(pkSeed, hypertreeRoot);
     }
 
     /// @dev Reads the spent-tree registries so tests can pin which install paths record trees.

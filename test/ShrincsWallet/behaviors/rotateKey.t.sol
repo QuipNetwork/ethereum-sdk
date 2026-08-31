@@ -161,6 +161,22 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
         wallet.rotateKey(_mainPk(), sig, t);
     }
 
+    /// @dev Regression (audit): the dedicated ERC-1271 bundle's STATEFUL tree is registered at
+    ///      install too — rotating the main key onto it is refused.
+    function test_rotateKey_revertsWhen_erc1271StatefulTreeReused() public {
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(erc1271Pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
+        SHRINCS.StatefulRotationTarget memory t = SHRINCS.StatefulRotationTarget({
+            statefulPublicKey: erc1271Pk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(c)
+        });
+        SHRINCS.Signature memory sig = _rotateSig(c, 1);
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(erc1271Pk.statefulPublicKey))
+        );
+        wallet.rotateKey(_mainPk(), sig, t);
+    }
+
     function test_rotateKey_revertsWhen_cyclingBackToEarlierTree() public {
         // Consume a leaf under tree A, rotate A -> B, then try B -> A.
         wallet.harness_markLeafUsed(SIGN_BASE + 3);

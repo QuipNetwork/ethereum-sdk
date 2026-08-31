@@ -186,6 +186,25 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         wallet.recoverWallet(_mainPk(), sig, same);
     }
 
+    /// @dev Regression (audit): the dedicated ERC-1271 bundle's trees live in the same lifetime
+    ///      registries, so a recovery bundle may not reuse the 1271 key's stateless root either
+    ///      (before the 1271 bundle was registered, this would have been silently accepted).
+    function test_recoverWallet_revertsWhen_erc1271StatelessRootReused() public {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("recover-erc1271-root", MAX_SIG);
+        require(ok, "keygen");
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, erc1271Pk.pkSeed, erc1271Pk.hypertreeRoot);
+        SHRINCS.RotationTarget memory t = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(c),
+            pkSeed: erc1271Pk.pkSeed,
+            hypertreeRoot: erc1271Pk.hypertreeRoot
+        });
+        SPHINCSPlusC.Signature memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(erc1271Pk)));
+        wallet.recoverWallet(_mainPk(), sig, t);
+    }
+
     function test_recoverWallet_revertsWhen_statelessTreeCarriedForward() public {
         SHRINCS.RotationTarget memory t = _freshStatefulSameStatelessTarget("recover-carry-stateless");
         SPHINCSPlusC.Signature memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
