@@ -68,11 +68,23 @@ interface IDeployedWallet {
 ///        forgery (the exact message the bare implementation checks, signed with a real key)
 ///        and it still fails — unforgeable, not merely malformed.
 contract ShrincsForkUpgradeFromDeployed is Test {
+    /// @dev Required: `vm.envString` HARD-FAILS when unset — this suite must always run, never
+    ///      silently skip.
     string internal constant BASE_RPC_ENV = "API_URL_BASE";
+
+    /// @dev Pinned fork block (Base mainnet; a few hundred behind the head as of 2026-09-02),
+    ///      so runs are reproducible. Bump deliberately to re-prove the boundary on newer state.
+    uint256 internal constant FORK_BLOCK_NUMBER = 50_754_000;
 
     /// @dev Live WalletFactory proxy (`src/v1/addresses.json`; CreateX-deterministic, identical
     ///      on Base mainnet + testnets).
     address internal constant FACTORY = 0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8;
+
+    /// @dev The live `latestWalletImpl()` this boundary is proven against: the ShrincsWallet
+    ///      implementation `V1.0.1-beta.2` (see DEPLOYMENTS.md). Pinned so that if mainnet ever
+    ///      vets a newer implementation, setUp fails LOUDLY instead of silently testing a
+    ///      different upgrade boundary than the one this file documents.
+    address internal constant EXPECTED_LATEST_IMPL = 0x680840c831c6D147404a0e00edA08a5360564FBC;
 
     // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
     bytes32 internal constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
@@ -100,7 +112,7 @@ contract ShrincsForkUpgradeFromDeployed is Test {
     address internal OWNER;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString(BASE_RPC_ENV));
+        vm.createSelectFork(vm.envString(BASE_RPC_ENV), FORK_BLOCK_NUMBER);
         OWNER = makeAddr("fork-upgrade-owner");
         vm.deal(OWNER, 10 ether);
         statelessSigner = new SHRINCSStatelessVectorSigner();
@@ -118,7 +130,11 @@ contract ShrincsForkUpgradeFromDeployed is Test {
 
         // ── 1. Deploy a wallet through the LIVE factory: it runs the DEPLOYED implementation ──
         deployedImpl = factory.latestWalletImpl();
-        assertTrue(deployedImpl != address(0), "live latestWalletImpl");
+        assertEq(
+            deployedImpl,
+            EXPECTED_LATEST_IMPL,
+            "live latestWalletImpl is no longer V1.0.1-beta.2 - this file tests a stale boundary"
+        );
         // DEPLOYED 6-word init format: (commitment, pkSeed, mainBundle, hashSuite,
         // erc1271Commitment, erc1271HashSuite) — erc1271 is a bytes32, not a bundle.
         bytes memory initPayload = abi.encode(
