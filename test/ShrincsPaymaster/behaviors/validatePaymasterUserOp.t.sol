@@ -298,4 +298,78 @@ contract ShrincsPaymaster_validatePaymasterUserOp is ShrincsPaymasterTest {
         assertEq(abi.decode(context, (address)), SPONSOR_SENDER);
         assertTrue(paymaster.isStatefulLeafUsed(leaf), "leaf consumed");
     }
+
+    /* ───────────────────── NESTED ABI FRAMING (fail-closed) ───────────────────── */
+
+    /// @dev Bytes of `paymasterAndData` before the sponsorship blob: the 52-byte ERC-4337
+    ///      header (paymaster, gas limits) plus `validUntil`/`validAfter` (mirrors the contract's
+    ///      `_PAYMASTER_DATA_OFFSET + _CUSTOM_SIG_OFFSET`).
+    uint256 internal constant BLOB_OFFSET = 52 + 12;
+
+    /// @dev The codec bounds-checks only the blob's TOP-LEVEL tail offsets; a NESTED offset (inside
+    ///      the PublicKey / Signature tails) that runs past calldatasize trips Solidity's own
+    ///      calldata bounds check at `_leafIndex` — a bare revert in the paymaster's frame, before
+    ///      the soft-fail branches, reachable by anyone (no co-signature on the sponsorship blob).
+    ///      Accepted fail-closed policy (INVARIANTS §19): the EntryPoint's try/catch maps AA33 and
+    ///      AA34 alike to a per-op rejection. This test pins the exact edge: an `authPath` offset
+    ///      whose length word is the LAST word of calldata is still read (adjacent-calldata
+    ///      garbage: the empty `userOp.signature` length word -> leaf 0 -> graceful
+    ///      `StatefulBudgetExhausted`); one byte further reverts.
+    function test_validate_failsClosed_onCorruptedNestedOffset() public {
+        bytes memory pmData = _pmData(_pk(), _statefulSigWithLeaf(1));
+        PackedUserOperation memory op = _userOp(SENDER, pmData);
+        bytes memory outer = abi.encodeCall(paymaster.validatePaymasterUserOp, (op, bytes32(0), 1 ether));
+
+        // `paymasterAndData` is the second-to-last tail; the empty `signature` length word follows it.
+        assertEq(pmData.length % 0x20, 0, "pmData word-aligned (layout assumption)");
+        uint256 pmStart = outer.length - 0x20 - pmData.length;
+        assertEq(keccak256(_slice(outer, pmStart, pmData.length)), keccak256(pmData), "located pmData");
+
+        uint256 sigOff = _wordAt(pmData, BLOB_OFFSET + 0x20); // blob head word 1: Signature tail
+        uint256 sigBase = pmStart + BLOB_OFFSET + sigOff; // absolute calldata position of the sig struct
+        uint256 authPathWord = BLOB_OFFSET + sigOff + 0x60; // 4th head word of the Signature tail
+        uint256 lastWordRel = outer.length - 0x20 - sigBase;
+
+        // (a) length word == last calldata word: read, not a revert; graceful reject.
+        _setWordAt(pmData, authPathWord, lastWordRel);
+        op.paymasterAndData = pmData;
+        (uint256 reason, uint256 vd) = _rejectReason(op);
+        assertEq(reason, uint256(IShrincsPaymaster.PaymasterValidationFailure.StatefulBudgetExhausted));
+        assertEq(vd, 1);
+
+        // (b) one byte past calldatasize: bare revert (fail-closed).
+        _setWordAt(pmData, authPathWord, lastWordRel + 1);
+        op.paymasterAndData = pmData;
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert();
+        paymaster.validatePaymasterUserOp(op, bytes32(0), 1 ether);
+
+        // (c) far out of range: same bare revert, from any caller's blob.
+        _setWordAt(pmData, authPathWord, 1 << 64);
+        op.paymasterAndData = pmData;
+        vm.prank(ENTRY_POINT);
+        vm.expectRevert();
+        paymaster.validatePaymasterUserOp(op, bytes32(0), 1 ether);
+
+        assertEq(paymaster.statefulLeavesUsed(), 0, "nothing consumed");
+    }
+
+    function _wordAt(bytes memory b, uint256 at) internal pure returns (uint256 w) {
+        assembly {
+            w := mload(add(add(b, 0x20), at))
+        }
+    }
+
+    function _setWordAt(bytes memory b, uint256 at, uint256 w) internal pure {
+        assembly {
+            mstore(add(add(b, 0x20), at), w)
+        }
+    }
+
+    function _slice(bytes memory b, uint256 start, uint256 len) internal pure returns (bytes memory out) {
+        out = new bytes(len);
+        for (uint256 i; i < len; ++i) {
+            out[i] = b[start + i];
+        }
+    }
 }

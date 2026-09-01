@@ -177,12 +177,21 @@ contract ShrincsPaymaster is
         // classes are handled differently on purpose:
         //   - Too short to hold the ABI head: SOFT fail (the `return ("", 1)`
         //     above). The bundler drops the op without penalising the sender.
-        //   - Long enough to pass that check but carrying an offset that runs
-        //     past the blob: HARD `MalformedPayload` revert from the codec
-        //     inside `_verifyAndAdvance`. Such an offset cannot come from an
-        //     honest operator, and decoding it could read adjacent calldata, so
-        //     reverting to reject the op outright is the intended fail-closed
-        //     behaviour, not a soft rejection.
+        //   - Long enough to pass that check but carrying a TOP-LEVEL offset
+        //     that runs past the blob: HARD `MalformedPayload` revert from the
+        //     codec inside `_verifyAndAdvance`. A NESTED offset (inside the
+        //     PublicKey/Signature tails, which the codec does not walk) that
+        //     runs past calldatasize is caught by Solidity's own calldata bounds
+        //     check at `_leafIndex` / `abi.encode(pk, sig)` — a bare revert, not
+        //     `MalformedPayload`, outside the verifier try/catch. Reachable by
+        //     anyone (the sponsorship blob carries no co-signature), and accepted:
+        //     the EntryPoint's own try/catch turns the revert (AA33) into the same
+        //     per-op rejection a `return ("", 1)` (AA34) produces — nothing is
+        //     written and no ERC-7562 reputation counter moves (INVARIANTS §19).
+        //     Such offsets cannot come from an honest operator, and decoding
+        //     them could read adjacent calldata, so reverting to reject the op
+        //     outright is the intended fail-closed behaviour, not a soft
+        //     rejection.
         if (!_verifyAndAdvance(userOp)) return ("", 1);
 
         bytes calldata paymasterData = userOp

@@ -198,6 +198,25 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "erc1271Envelope",
+    "inputs": [
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "execute",
     "inputs": [
       {
@@ -2007,6 +2026,11 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "RenounceDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SelfCallOnly",
     "inputs": []
   },
   {

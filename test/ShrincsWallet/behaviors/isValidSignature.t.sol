@@ -140,4 +140,71 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         bytes memory freshBlob = _blob(erc1271Pk, fresh, _ownerEcdsa(HASH));
         assertEq(wallet.isValidSignature(HASH, freshBlob), MAGIC, "re-signed blob valid");
     }
+
+
+    /* ───────────────────── NESTED ABI FRAMING (never-revert) ───────────────────── */
+
+    /// @dev The codec bounds-checks only a blob's TOP-LEVEL tail offsets. The owner ECDSA half of
+    ///      a 1271 blob is reusable, so anyone holding a previously shared blob can keep it and
+    ///      corrupt a NESTED tail offset (inside the PublicKey / Signature tails); Solidity's
+    ///      calldata accessors revert on that overrun. `_checkErc1271Signature` contains it behind
+    ///      the `erc1271Envelope` self-staticcall and must return FAIL + `MalformedErc1271Payload`
+    ///      — a revert here is a DoS on the relying contract (INVARIANTS §19).
+    function test_isValidSignature_neverReverts_onCorruptedNestedOffsets() public {
+        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
+        bytes memory legit = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
+        assertEq(wallet.isValidSignature(HASH, legit), MAGIC, "legit blob valid");
+
+        uint256 pkOff = _word(legit, 0x00);
+        uint256 sigOff = _word(legit, 0x20);
+
+        // PublicKey tail, first head word: `statefulPublicKey` offset -> overrun.
+        bytes memory pkCorrupt = _clone(legit);
+        _setWord(pkCorrupt, pkOff, 1 << 64);
+        _neverRevertsMalformed(pkCorrupt, "nested pk offset 2^64");
+
+        // SPHINCS+C Signature tail, second head word: `hypertree` offset -> overrun.
+        bytes memory sigCorrupt = _clone(legit);
+        _setWord(sigCorrupt, sigOff + 0x20, 1 << 64);
+        _neverRevertsMalformed(sigCorrupt, "nested sig offset 2^64");
+
+        // Exact edge: the blob ends where calldata ends, so an offset whose length word starts one
+        // byte past the blob is one byte past calldatasize.
+        bytes memory edgeCorrupt = _clone(legit);
+        _setWord(edgeCorrupt, pkOff, legit.length - pkOff - 0x20 + 1);
+        _neverRevertsMalformed(edgeCorrupt, "nested pk offset 1 byte past calldata");
+    }
+
+    /// @dev `erc1271Envelope` is a self-call target only.
+    function test_erc1271Envelope_revertsWhen_notSelf() public {
+        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
+        vm.expectRevert(IShrincsWallet.SelfCallOnly.selector);
+        wallet.erc1271Envelope(blob);
+    }
+
+    function _neverRevertsMalformed(bytes memory blob, string memory name) internal view {
+        _neverReverts(blob, name);
+        assertEq(
+            uint8(wallet.debugIsValidSignature(HASH, blob)),
+            uint8(IShrincsWallet.Erc1271ValidationResult.MalformedErc1271Payload),
+            name
+        );
+    }
+
+    function _word(bytes memory b, uint256 at) internal pure returns (uint256 w) {
+        assembly {
+            w := mload(add(add(b, 0x20), at))
+        }
+    }
+
+    function _setWord(bytes memory b, uint256 at, uint256 w) internal pure {
+        assembly {
+            mstore(add(add(b, 0x20), at), w)
+        }
+    }
+
+    function _clone(bytes memory b) internal pure returns (bytes memory) {
+        return abi.encodePacked(b);
+    }
 }

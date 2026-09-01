@@ -159,8 +159,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @dev ERC-4337 hybrid validation: owner-ECDSA co-signature AND stateful SHRINCS
     ///      signature, with MonotonicIndex leaf advance. State is advanced during validation
     ///      (the revealed stateful leaf is consumed regardless of whether the execution phase
-    ///      later succeeds). Never reverts on signature failure — returns 1 so the EntryPoint's
-    ///      refund accounting stays clean.
+    ///      later succeeds). Never reverts on signature FAILURE (bad crypto, bad co-signature,
+    ///      stale leaf/nonce) — returns 1 so the EntryPoint's refund accounting stays clean.
+    ///      Malformed ABI framing is the deliberate exception (fail-closed; see the inline
+    ///      policy note and INVARIANTS §19).
     ///
     ///      By convention `userOp.signature` is the ABI encoding of `(PublicKey publicKey,
     ///      StatefulSignature signature, bytes ecdsaSig)` — the SHRINCS structs plus the
@@ -190,12 +192,20 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         //   - Too short to hold the three offsets: SOFT fail (the `return 1`
         //     above). The bundler drops the op as SIG_VALIDATION_FAILED without
         //     penalising the sender.
-        //   - Long enough to pass that check but carrying an offset that runs
-        //     past the payload: HARD `MalformedPayload` revert from the codec
-        //     below. Such an offset cannot come from an honest client, and
-        //     decoding it could read adjacent calldata, so reverting to reject
-        //     the op outright is the intended fail-closed behaviour, not a soft
-        //     rejection.
+        //   - Long enough to pass that check but carrying a TOP-LEVEL offset
+        //     that runs past the payload: HARD `MalformedPayload` revert from
+        //     the codec below. A NESTED offset (inside the PublicKey/Signature
+        //     tails, which the codec does not walk) that runs past calldatasize
+        //     is caught later by Solidity's own calldata bounds check at
+        //     `_leafIndex` / `abi.encode(pk, sig)` — a bare revert, not
+        //     `MalformedPayload`, in this frame outside the verifier try/catch.
+        //     Both are fail-closed on purpose: such offsets cannot come from an
+        //     honest client, decoding them could read adjacent calldata, and the
+        //     EntryPoint's own try/catch turns the revert (AA23) into the same
+        //     per-op rejection a `return 1` (AA24) produces — no shared state,
+        //     no ERC-7562 reputation effect. The nested case is reachable only
+        //     behind the owner co-signature (a replayed blob with corrupted
+        //     internals).
         (
             SHRINCS.PublicKey calldata pk,
             SHRINCS.Signature calldata sig,
@@ -845,6 +855,25 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
+    function erc1271Envelope(
+        bytes calldata signature
+    ) external view returns (bytes memory) {
+        if (msg.sender != address(this)) revert SelfCallOnly();
+        (
+            bool ok,
+            SHRINCS.PublicKey calldata pk,
+            SPHINCSPlusC.Signature calldata sig,
+
+        ) = Codec.tryDecodeErc1271Signature(signature);
+        // Unreachable from `_checkErc1271Signature` (it returns on `!ok` first); kept so the
+        // function never dereferences the zero-length failure slices.
+        if (!ok) revert InvalidSignature();
+        // Solidity's calldata accessors bounds-check every nested tail here and revert on an
+        // overrun; the caller's try/catch is the containment.
+        return abi.encode(pk, sig);
+    }
+
+    /// @inheritdoc IShrincsWallet
     function debugIsValidSignature(
         bytes32 hash,
         bytes calldata signature
@@ -1188,9 +1217,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      internals (attacker-controlled array lengths inside `userOp.signature` or an
     ///      ERC-1271 blob) REVERT inside the verifier instead of returning 0xffffffff, and
     ///      the dep is explicit that "a caller that needs a boolean must treat a revert as
-    ///      its own policy decision". This wallet's contract is never-revert validation
-    ///      (ERC-4337 returns 1) and never-revert ERC-1271, so EVERY verifier revert maps
-    ///      to "invalid signature". Accepted trade-off: an inner out-of-gas is also
+    ///      its own policy decision". This wallet's contract is never-revert-on-bad-signature
+    ///      validation (ERC-4337 returns 1) and never-revert ERC-1271, so EVERY verifier revert
+    ///      maps to "invalid signature". Malformed ABI framing of the blob itself is handled
+    ///      before the verifier is reached (fail-closed on the 4337 paths, self-staticcall on
+    ///      the 1271 path — INVARIANTS §19). Accepted trade-off: an inner out-of-gas is also
     ///      reported as an invalid signature instead of propagating.
     function _tryVerifyStateful(
         bytes32 expectedCommitment,
@@ -1359,6 +1390,20 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             Codec.ACTION_ERC1271,
             hash
         );
+        // The codec bounds-checks only the blob's TOP-LEVEL tail offsets; the nested
+        // PublicKey/Signature tail offsets are first touched by the `abi.encode(pk, sig)`
+        // re-encode, where Solidity's calldata accessors REVERT on an overrun. That revert
+        // would surface in THIS frame, outside `_tryVerifyStateless`'s try/catch, and the
+        // owner ECDSA half of a blob is reusable, so anyone holding a previously shared blob
+        // could trigger it. The re-encode therefore runs behind a self-staticcall so the
+        // overrun maps to the failure magic like every other rejection (INVARIANTS §19).
+        bytes memory envelope;
+        try this.erc1271Envelope(signature) returns (bytes memory encoded) {
+            envelope = encoded;
+        } catch {
+            return Erc1271ValidationResult.MalformedErc1271Payload;
+        }
+
         // Stateless verification via the pinned verifier: canonical stateless action hash
         // computed locally; bundle checks + FORS-C/hypertree crypto delegated
         if (
@@ -1368,7 +1413,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
                     $.erc1271PublicKeyCommitment,
                     ctx
                 ),
-                abi.encode(pk, sig)
+                envelope
             )
         ) return Erc1271ValidationResult.InvalidShrincsSignature;
 

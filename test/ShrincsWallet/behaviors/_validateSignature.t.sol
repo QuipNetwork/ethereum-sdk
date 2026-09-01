@@ -268,4 +268,74 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
             assertFalse(wallet.isStatefulLeafUsed(leaf), "in-budget leaf not consumed on verify-fail");
         }
     }
+
+
+    /* ───────────────────── NESTED ABI FRAMING (fail-closed) ───────────────────── */
+
+    /// @dev The codec bounds-checks only a blob's TOP-LEVEL tail offsets; a NESTED offset (inside
+    ///      the PublicKey / Signature tails) that runs past calldatasize trips Solidity's own
+    ///      calldata bounds check at `_leafIndex` / `abi.encode(pk, sig)` — a bare revert in this
+    ///      frame, before the soft-fail branches. That is the intended fail-closed policy
+    ///      (INVARIANTS §19): the EntryPoint's try/catch maps AA23 and AA24 alike to a per-op
+    ///      rejection. Reachable only by replaying a legit blob (the owner co-signature bytes are
+    ///      reusable) with its internals corrupted; nothing is consumed.
+    function test_validateSignature_failsClosed_onCorruptedNestedOffset() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        bytes memory legit = op.signature;
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "legit op passes");
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "untouched replay soft-fails");
+
+        uint256 pkOff = _word(legit, 0x00);
+        uint256 sigOff = _word(legit, 0x20);
+
+        // Signature tail, 4th head word: `authPath` offset -> reverts at `_leafIndex`.
+        op.signature = _clone(legit);
+        _setWord(op.signature, sigOff + 0x60, 1 << 64);
+        vm.expectRevert();
+        wallet.exposed_validateSignature(op, userOpHash);
+
+        // PublicKey tail, 1st head word: `statefulPublicKey` offset. On the replayed (consumed)
+        // op this is masked: `_leafIndex` reads fine and the stale-leaf branch soft-fails first.
+        op.signature = _clone(legit);
+        _setWord(op.signature, pkOff, 1 << 64);
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "pk corruption masked by stale leaf");
+
+        // Same corruption on a FRESH (unconsumed, e.g. mempool-observed) op: the leaf guards pass
+        // and the `abi.encode(pk, sig)` re-encode reverts (outside the verifier try/catch).
+        (ERC4337.PackedUserOperation memory fresh, bytes32 freshHash) = _erc4337Op(2);
+        _setWord(fresh.signature, _word(fresh.signature, 0x00), 1 << 64);
+        vm.expectRevert();
+        wallet.exposed_validateSignature(fresh, freshHash);
+
+        assertEq(wallet.statefulLeavesUsed(), 1, "only the legit op consumed a leaf");
+        assertEq(wallet.actionNonce(), 1, "only the legit op advanced the nonce");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "fresh op's leaf untouched");
+    }
+
+    /// @dev Without a valid owner co-signature the nested reads are never reached: soft fail.
+    function test_validateSignature_corruptedNestedOffset_softFailsWithoutEcdsa() public {
+        bytes32 userOpHash = keccak256("no-cosig");
+        bytes memory blob = abi.encode(_mainPk(), _signErc4337(userOpHash, 1), new bytes(65));
+        _setWord(blob, _word(blob, 0x20) + 0x60, 1 << 64);
+        ERC4337.PackedUserOperation memory op = _makeUserOp(blob);
+        vm.recordLogs();
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "soft fail");
+        assertEq(_lastRejectionReason(), uint256(IShrincsWallet.UserOpValidationFailure.InvalidEcdsaSignature));
+    }
+
+    function _word(bytes memory b, uint256 at) internal pure returns (uint256 w) {
+        assembly {
+            w := mload(add(add(b, 0x20), at))
+        }
+    }
+
+    function _setWord(bytes memory b, uint256 at, uint256 w) internal pure {
+        assembly {
+            mstore(add(add(b, 0x20), at), w)
+        }
+    }
+
+    function _clone(bytes memory b) internal pure returns (bytes memory) {
+        return abi.encodePacked(b);
+    }
 }

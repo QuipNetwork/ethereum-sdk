@@ -149,7 +149,8 @@ library ShrincsWalletCodec {
             let mbOff := calldataload(add(o, 0x40))
             reqTail(mbOff, len, malformed)
             // Nested PublicKey tail bounds are out of scope here; those fields are read through
-            // Solidity calldata accessors downstream, which bounds-check against calldatasize.
+            // Solidity calldata accessors downstream, which bounds-check against calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
             mainBundle := add(o, mbOff)
             hashSuite := and(calldataload(add(o, 0x60)), 0xffffffff)
             let ebOff := calldataload(add(o, 0x80))
@@ -198,7 +199,8 @@ library ShrincsWalletCodec {
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
+            // through Solidity calldata accessors downstream, which bounds-check calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
             signature := add(o, sigOff)
             let eo := calldataload(add(o, 0x40))
             reqTail(eo, len, malformed)
@@ -254,7 +256,8 @@ library ShrincsWalletCodec {
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
+            // through Solidity calldata accessors downstream, which bounds-check calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
             signature := add(o, sigOff)
         }
     }
@@ -304,7 +307,8 @@ library ShrincsWalletCodec {
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
+            // through Solidity calldata accessors downstream, which bounds-check calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
             signature := add(o, sigOff)
             shouldMigrate := iszero(iszero(calldataload(add(o, 0x40))))
             let mo := calldataload(add(o, 0x60))
@@ -374,7 +378,8 @@ library ShrincsWalletCodec {
             let bo := calldataload(o)
             reqTail(bo, len, malformed)
             // Nested struct tail bounds are out of scope here; those fields are read through
-            // Solidity calldata accessors downstream, which bounds-check against calldatasize.
+            // Solidity calldata accessors downstream, which bounds-check against calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
             bundle := add(o, bo)
             let sfo := calldataload(add(o, 0x20))
             reqTail(sfo, len, malformed)
@@ -401,9 +406,12 @@ library ShrincsWalletCodec {
     ///      caller returns on `!ok` and never dereferences them.
     ///
     ///      Nested `PublicKey`/`Signature` tail bounds stay out of scope here — those fields are
-    ///      read downstream through Solidity calldata accessors (which bounds-check calldatasize
-    ///      and revert), but that read sits BEHIND the owner ECDSA gate and is unreachable to an
-    ///      adversary, so its revert is not a DoS surface.
+    ///      read downstream through Solidity calldata accessors, which bounds-check calldatasize
+    ///      and revert (a bare revert, not `MalformedPayload`). The owner ECDSA gate does NOT
+    ///      make that read unreachable: the ECDSA half of a blob is reusable, so anyone holding a
+    ///      previously shared blob can corrupt a nested offset. `_checkErc1271Signature`
+    ///      therefore performs the nested reads behind a self-staticcall and maps the revert to
+    ///      `MalformedErc1271Payload`.
     function tryDecodeErc1271Signature(
         bytes calldata sig
     )

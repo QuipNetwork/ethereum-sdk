@@ -95,6 +95,9 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when the classical `transferOwnership(address)` is called directly.
     /// @dev Only the SHRINCS-authenticated `transferOwnership(bytes)` path is permitted.
     error ClassicalTransferOwnershipDisabled();
+    /// @notice Thrown when a self-call-only helper (`erc1271Envelope`) is called by anyone
+    ///         other than the wallet itself.
+    error SelfCallOnly();
     /// @notice Thrown when any of Solady's inherited two-step ownership handover entry
     ///         points is called. This wallet supports only the SHRINCS-authenticated
     ///         `transferOwnership(bytes)` path, which cryptographically commits to `newOwner`.
@@ -385,6 +388,18 @@ interface IShrincsWallet is IWallet {
         SPHINCSPlusC.Signature calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
     ) external payable;
+
+    /// @notice Self-call target of `isValidSignature`: re-encodes the SHRINCS half of an
+    ///         ERC-1271 blob into the verifier envelope `abi.encode(publicKey, signature)`.
+    /// @dev Callable only by the wallet itself (`SelfCallOnly`). It exists purely to put a call
+    ///      boundary around the nested-calldata reads: the codec bounds-checks only a blob's
+    ///      top-level tail offsets, and a nested offset past calldatasize makes Solidity's
+    ///      calldata accessors revert. Wrapping the re-encode in `try this.erc1271Envelope`
+    ///      lets `isValidSignature` map that revert to `0xffffffff` instead of propagating it to
+    ///      the relying contract that staticcalled it (INVARIANTS §19).
+    function erc1271Envelope(
+        bytes calldata signature
+    ) external view returns (bytes memory);
 
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
     /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
