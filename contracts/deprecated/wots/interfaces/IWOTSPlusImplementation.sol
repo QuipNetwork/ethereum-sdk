@@ -430,7 +430,7 @@ interface IWOTSPlusImplementation is IWallet {
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data
-    ) external view;
+    ) external view override;
 
     /// @notice Scheme-compatibility probe run on the new implementation during
     ///         `recoveryUpgrade`. NOT a second authorization factor.
@@ -445,12 +445,6 @@ interface IWOTSPlusImplementation is IWallet {
         address newImplementation,
         bytes calldata data
     ) external view;
-
-    /// @notice Context-free WOTS+ self-test, STATICCALLed on THIS implementation when a
-    ///         previous implementation upgrades into it (the frozen `IWallet` seam).
-    /// @param payload Packed probe vector: [0:64) WinternitzAddress, [64:96) digest,
-    ///        [96:2240) WinternitzElements signature.
-    function probeUpgrade(bytes calldata payload) external view override;
 
     /// @notice Initializes the wallet with its classical owner, disaster recovery key,
     ///         ownership key, transaction keys, recovery keys, and verification keys.

@@ -12,8 +12,9 @@ import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWall
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for `migrate`. Like `initialize` it verifies NO signature, so its success
-///      path and reverts are fully testable; gating to the `upgradeToAndCall` transient context is
-///      driven via the harness helper `harness_migrateInUpgradeContext`.
+///      path and reverts are fully testable; the mid-upgrade shape it gates on (the wallet's OWN
+///      ERC-1967 pointer still holding the previous implementation) is emulated via the harness
+///      helper `harness_migrateInUpgradeContext`.
 contract ShrincsWallet_migrate is ShrincsWalletTest {
     function test_migrate_reinstallsAndResets() public {
         // Dirty the per-epoch counter first, so the reset is observable.
@@ -56,7 +57,7 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
     }
 
     function test_migrate_revertsWhen_notUpgrading() public {
-        // Called directly (outside the transient upgrade guard) it must revert.
+        // Called directly (no upgrade in flight: the ERC-1967 pointer is empty or self) it must revert.
         vm.expectRevert(IShrincsWallet.NotUpgrading.selector);
         wallet.migrate(_validInitPayload());
     }

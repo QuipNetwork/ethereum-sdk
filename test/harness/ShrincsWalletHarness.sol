@@ -35,15 +35,6 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _shrincsDomainSeparator();
     }
 
-    /// @dev Wraps the eight-slot guard snapshot.
-    function exposed_snapshotGuardedSlots()
-        external
-        view
-        returns (bytes32[8] memory)
-    {
-        return _snapshotGuardedSlots();
-    }
-
     /// @dev Test-only direct install of the wallet's PQ state, bypassing the factory
     ///      `initialize` path. NOT a production function.
     function harness_install(
@@ -202,14 +193,6 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _tryVerifyStateless(expectedCommitment, messageHash, envelope);
     }
 
-    /// @dev Wraps the guarded-slot tamper check so each of the eight slots can be mutated and the
-    ///      `GuardedSlotTampered(index)` revert asserted.
-    function exposed_assertGuardedSlotsUnchanged(
-        bytes32[8] memory snapshot
-    ) external view {
-        _assertGuardedSlotsUnchanged(snapshot);
-    }
-
     /// @dev Wraps the per-op execute-fee collection.
     function exposed_collectExecuteFee(uint256 maxFee) external {
         _collectExecuteFee(maxFee);
@@ -242,18 +225,27 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _guardInitializeOwner();
     }
 
-    /// @dev Drives `migrate` inside the transient upgrade-guard context (mirrors the production
-    ///      `upgradeToAndCall` gating) so the success path and `NotUpgrading` guard are testable
-    ///      without a full UUPS round-trip.
+    /// @dev Drives `migrate` in the mid-upgrade shape `upgradeToAndCall` produces: `migrate`
+    ///      gates on the wallet's OWN ERC-1967 pointer (`installed != 0`, `installed != _SELF`),
+    ///      so park a sentinel "previous implementation" in the slot for the duration of the
+    ///      call and restore it after — no full UUPS round-trip needed. (The self-call executes
+    ///      this same etched code; the test wallet is not a proxy, so dispatch is unaffected.)
     function harness_migrateInUpgradeContext(bytes calldata payload) external {
-        uint256 slot = uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) -
-            1;
+        // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
+        uint256 slot = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+        uint256 prev;
         assembly {
-            tstore(slot, 1)
+            prev := sload(slot)
+            sstore(slot, 0xdead)
         }
         this.migrate(payload);
         assembly {
-            tstore(slot, 0)
+            sstore(slot, prev)
         }
+    }
+
+    /// @dev Exposes the `migrate` entry gate for direct unit testing.
+    function exposed_enforceUpgradeInFlight() external view {
+        _enforceUpgradeInFlight();
     }
 }

@@ -73,7 +73,8 @@ contract ShrincsWalletCodecHarness {
             SHRINCS.Signature memory signature,
             bool shouldMigrate,
             bytes memory migratorPayload,
-            uint256 nonce
+            uint256 nonce,
+            bytes memory probePayload
         )
     {
         (
@@ -81,13 +82,34 @@ contract ShrincsWalletCodecHarness {
             SHRINCS.Signature calldata _sig,
             bool _m,
             bytes calldata _p,
-            uint256 _n
+            uint256 _n,
+            bytes calldata _pp
         ) = Codec.decodeUpgradeAuth(data);
         publicKey = _pk;
         signature = _sig;
         shouldMigrate = _m;
         migratorPayload = _p;
         nonce = _n;
+        probePayload = _pp;
+    }
+
+    function exposed_decodeProbePayload(bytes calldata payload)
+        external
+        pure
+        returns (
+            SHRINCS.PublicKey memory bundle,
+            SHRINCS.Signature memory statefulSig,
+            SPHINCSPlusC.Signature memory statelessSig
+        )
+    {
+        (
+            SHRINCS.PublicKey calldata _b,
+            SHRINCS.Signature calldata _sf,
+            SPHINCSPlusC.Signature calldata _sl
+        ) = Codec.decodeProbePayload(payload);
+        bundle = _b;
+        statefulSig = _sf;
+        statelessSig = _sl;
     }
 
     function exposed_tryDecodeErc1271Signature(bytes calldata sig)

@@ -250,18 +250,24 @@ interface IShrincsWallet is IWallet {
     /// @notice SHRINCS-gated UUPS upgrade. Authorized by a stateful signature from the main key.
     ///         The `data` blob carries the action nonce the signer bound; it must equal the live
     ///         `actionNonce()` or the call reverts `StaleActionNonce`. STATICCALLs the NEW
-    ///         implementation's `probeUpgrade` before switching.
+    ///         implementation's `verifyUpgrade` probe before switching.
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
     ) external payable;
 
-    /// @notice Context-free SHRINCS self-test, STATICCALLed on the NEW implementation
-    ///         during `upgradeToAndCall` (the frozen `IWallet` seam).
-    /// @param payload ABI-encoded `(PublicKey bundle, bytes32 digest, Signature statefulSig,
-    ///        SPHINCSPlusC.Signature statelessSig)`; `digest` must verify under BOTH halves
-    ///        of the (throwaway) bundle or the call reverts `InvalidSignature`.
-    function probeUpgrade(bytes calldata payload) external view override;
+    /// @notice A PROBE (the frozen `IWallet` seam): context-free SHRINCS self-test,
+    ///         STATICCALLed on the NEW implementation during `upgradeToAndCall`.
+    /// @param newImplementation The upgrade target; the probe digest is its hashed word.
+    /// @param data The probe vector `abi.encode(PublicKey bundle, Signature statefulSig,
+    ///        SPHINCSPlusC.Signature statelessSig)` — or, deployed-implementation compat, a
+    ///        full upgrade-auth blob whose `probePayload` field carries that vector. The
+    ///        digest must verify under BOTH halves of the (throwaway) bundle or the call
+    ///        reverts `InvalidSignature`.
+    function verifyUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) external view override;
 
     /// @notice Executes a single call authorized by a stateful SHRINCS signature.
     /// @param publicKey The main-key bundle (re-validated against the installed commitment).
