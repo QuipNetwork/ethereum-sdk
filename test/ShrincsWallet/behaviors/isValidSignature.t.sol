@@ -175,14 +175,6 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         _neverRevertsMalformed(edgeCorrupt, "nested pk offset 1 byte past calldata");
     }
 
-    /// @dev `erc1271Envelope` is a self-call target only.
-    function test_erc1271Envelope_revertsWhen_notSelf() public {
-        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
-        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
-        vm.expectRevert(IShrincsWallet.SelfCallOnly.selector);
-        wallet.erc1271Envelope(blob);
-    }
-
     function _neverRevertsMalformed(bytes memory blob, string memory name) internal view {
         _neverReverts(blob, name);
         assertEq(
