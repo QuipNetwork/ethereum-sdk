@@ -215,7 +215,7 @@ Hardcoded constant, enforced by `onlyEntryPoint` modifier inherited from the ERC
 
 Prevents accidental or social-engineered admin abandonment.
 
-**Contracts:** QuipWallet, WalletFactory, QuipPaymaster
+**Contracts:** QuipWallet, ShrincsWallet, WalletFactory, QuipPaymaster, ShrincsPaymaster
 
 **Violation consequence:** Renouncing factory ownership disables fee changes, implementation vetting, and fund withdrawal — permanently bricking the system.
 

@@ -881,6 +881,11 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "error",
+    "name": "RenounceDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "SelfCallOnly",
     "inputs": []
   },
