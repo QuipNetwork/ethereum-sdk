@@ -55,7 +55,7 @@ interface ISHRINCSProfileTag {
 ///         (`rotateKey`) is stateful; the main key's stateless half is reserved as break-glass
 ///         recovery authority (`recoverWallet`). ERC-1271 uses a separate dedicated stateless
 ///         verifier key plus a classical `owner()` ECDSA AND-gate.
-//          The inline verifier calls (at `_validateSignature`, `probeUpgrade`,
+//          The inline verifier calls (at `_validateSignature`, `verifyUpgrade`,
 //          `_verifyStatefulAndConsume`, `_checkErc1271Signature`) and `_statelessRotate` below
 //          are the ONLY paths to signature cryptography: canonical message hash computed locally,
 //          everything else delegated to the pinned SHRINCS_VERIFIER. The full delegation model —
@@ -73,10 +73,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      state (leaf bitmap, nonce, keyVersion, installed commitments).
     address public immutable SHRINCS_VERIFIER;
 
-    /// @dev Transient storage slot gating `migrate` to the `upgradeToAndCall` context.
-    /// @notice REQUIRES EIP-1153 (TSTORE/TLOAD).
-    uint256 private constant _UPGRADE_GUARD_SLOT =
-        uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) - 1;
+    /// @dev This implementation's own deploy address, captured at construction. `migrate`'s
+    ///      mid-upgrade gate compares it against the wallet's installed (ERC-1967)
+    ///      implementation: they differ exactly while a DIFFERENT implementation is
+    ///      migrating the wallet into this code (family-neutral, the frozen `IWallet` seam).
+    address private immutable _SELF = address(this);
 
     /// @dev EIP-712 type hash nesting the ERC-1271 `hash` before ECDSA recovery, binding the
     ///      classical signature to this wallet's domain (mirrors Safe's `SafeMessage`).
@@ -388,7 +389,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function migrate(bytes calldata payload) external {
-        if (_upgradeGuard() == 0) revert NotUpgrading();
+        _enforceUpgradeInFlight();
 
         (
             bytes32 declaredCommitment,
@@ -458,20 +459,18 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         _verifyStatefulAndAdvance(pk, sig, Codec.ACTION_UPGRADE, payloadHash);
 
-        IWallet(newImplementation).probeUpgrade(probePayload);
+        // A PROBE of the NEW implementation.
+        // NB: 
+        // - view call so cannot change state
+        // - intention is purely a sanity check; ensure the cloent is providing the 
+        //   correct data for the scheme being migrated to
+        IWallet(newImplementation).verifyUpgrade(newImplementation, probePayload);
 
         if (shouldMigrate) {
-            uint256 slot = _UPGRADE_GUARD_SLOT;
-            assembly {
-                tstore(slot, 1)
-            }
             LibCall.delegateCallContract(
                 newImplementation,
                 abi.encodeCall(this.migrate, (migratorPayload))
             );
-            assembly {
-                tstore(slot, 0)
-            }
         }
 
         super.upgradeToAndCall(newImplementation, data[0:0]);
@@ -854,19 +853,27 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
-    function probeUpgrade(bytes calldata payload) external view {
-        // Context-free self-test (the frozen `IWallet` seam): everything verified here rides
-        // in the payload — no storage reads, no `address(this)`, no caller assumptions. The
-        // bundle is expected to be a THROWAWAY key (the main key's stateless half is ≤1-use
-        // and must never sign probes). Proves this implementation's codec and pinned-verifier
-        // wiring end-to-end: the digest must verify under BOTH halves of the supplied bundle.
+    function verifyUpgrade(
+        address newImplementation,
+        bytes calldata data
+    ) external view {
+        // NB: context free probe into new implementation to verify
+        //     signing scheme is the one expected
+        bytes calldata vector = data;
+        // ShrincsWallet beta-v1.0.2 requires this branch
+        // for compatibility
+        if (data.length >= 0x20 && uint256(bytes32(data[0:0x20])) == 0xc0) {
+            (, , , , , vector) = Codec.decodeUpgradeAuth(data);
+        }
         (
             SHRINCS.PublicKey calldata bundle,
-            bytes32 digest,
             SHRINCS.Signature calldata statefulSig,
             SPHINCSPlusC.Signature calldata statelessSig
-        ) = Codec.decodeProbePayload(payload);
+        ) = Codec.decodeProbePayload(vector);
+
+        bytes32 digest = Codec.probeDigest(newImplementation);
         bytes32 commitment = SHRINCS.publicKeyCommitment(bundle);
+
         if (!_tryVerifyStateful(commitment, digest, abi.encode(bundle, statefulSig)))
             revert InvalidSignature();
         if (!_tryVerifyStateless(commitment, digest, abi.encode(bundle, statelessSig)))
@@ -1398,11 +1405,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Reads the transient upgrade guard flag.
-    function _upgradeGuard() internal view returns (uint256 v) {
-        uint256 slot = _UPGRADE_GUARD_SLOT;
-        assembly {
-            v := tload(slot)
-        }
+    /// @dev Reverts unless an upgrade into this code is in flight — the sole gate on
+    ///      `migrate`. 
+    ///       NB: migragte is always called via `delegateCallthis` hence
+    ///           `installed` is the address in storage of the CURRENT implementation
+    ///           whereas `_SELF` is the address of whichever implementations code
+    ///           is currently being run in this current context
+    ///           therefore `_SELF` will only be different when a `delegateCall is
+    ///           is happening to a new implementation`
+    function _enforceUpgradeInFlight() internal view {
+        address installed = _msgImplementation();
+        if (installed == address(0) || installed == _SELF) revert NotUpgrading();
     }
+
 }

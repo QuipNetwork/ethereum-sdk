@@ -337,9 +337,10 @@ library ShrincsWalletCodec {
         }
     }
 
-    /// @dev Decodes the SHRINCS `probeUpgrade` vector (the frozen `IWallet` seam), the ABI
-    ///      encoding of `(PublicKey bundle, bytes32 digest, SHRINCS.Signature statefulSig,
-    ///      SPHINCSPlusC.Signature statelessSig)`.
+    /// @dev Decodes the SHRINCS `verifyUpgrade` probe vector (the frozen `IWallet` seam),
+    ///      the ABI encoding of `(PublicKey bundle, SHRINCS.Signature statefulSig,
+    ///      SPHINCSPlusC.Signature statelessSig)`. The signed digest is not carried — it is
+    ///      recomputed on-chain via `probeDigest(newImplementation)`.
     function decodeProbePayload(
         bytes calldata payload
     )
@@ -347,21 +348,20 @@ library ShrincsWalletCodec {
         pure
         returns (
             SHRINCS.PublicKey calldata bundle,
-            bytes32 digest,
             SHRINCS.Signature calldata statefulSig,
             SPHINCSPlusC.Signature calldata statelessSig
         )
     {
-        // Head is four 32-byte words (three are tail offsets).
-        if (payload.length < 0x80) {
-            revert MalformedPayload(0x80, payload.length);
+        // Head is three 32-byte words (all tail offsets).
+        if (payload.length < 0x60) {
+            revert MalformedPayload(0x60, payload.length);
         }
         bytes4 malformed = MalformedPayload.selector;
         assembly {
             let o := payload.offset
             let len := payload.length
             // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0x80` here, so `sub(len, 0x20)` never
+            // points at is inside the slice. `len >= 0x60` here, so `sub(len, 0x20)` never
             // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
@@ -376,14 +376,19 @@ library ShrincsWalletCodec {
             // Nested struct tail bounds are out of scope here; those fields are read through
             // Solidity calldata accessors downstream, which bounds-check against calldatasize.
             bundle := add(o, bo)
-            digest := calldataload(add(o, 0x20))
-            let sfo := calldataload(add(o, 0x40))
+            let sfo := calldataload(add(o, 0x20))
             reqTail(sfo, len, malformed)
             statefulSig := add(o, sfo)
-            let slo := calldataload(add(o, 0x60))
+            let slo := calldataload(add(o, 0x40))
             reqTail(slo, len, malformed)
             statelessSig := add(o, slo)
         }
+    }
+
+    /// @dev The digest a SHRINCS probe vector signs: the upgrade target address as a single
+    ///      hashed word — binds the probe to `verifyUpgrade`'s `newImplementation`.
+    function probeDigest(address newImplementation) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(uint256(uint160(newImplementation)));
     }
 
     /// @dev Decodes the ERC-1271 `signature` blob, the ABI encoding of
