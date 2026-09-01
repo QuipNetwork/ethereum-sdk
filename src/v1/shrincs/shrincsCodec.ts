@@ -532,18 +532,57 @@ export function encodePublicKeyBundle(publicKey: ShrincsPublicKey): Hex {
   return encodeAbiParameters([PUBLIC_KEY_TUPLE], [publicKeyToAbi(publicKey)]);
 }
 
+/// The digest a `verifyUpgrade` probe vector signs: the upgrade target address
+/// hashed as a single 32-byte word. Mirrors `ShrincsWalletCodec.probeDigest`
+/// (`EfficientHashLib.hash(uint256(uint160(newImplementation)))`) — it binds the
+/// probe to the implementation being upgraded to, and the wallet RECOMPUTES it,
+/// so the vector never carries it.
+export function probeDigest(newImplementation: Address): Hex {
+  return keccak256(
+    encodeAbiParameters([{ type: "uint256" }], [BigInt(newImplementation)])
+  );
+}
+
+/// The bare `verifyUpgrade` probe vector = `abi.encode(PublicKey bundle,
+/// StatefulSignature statefulSig, StatelessSignature statelessSig)` — the frozen
+/// `IWallet` seam a throwaway bundle presents so `verifyUpgrade` can confirm the
+/// target implementation speaks this signing scheme. Head word[0] == 0x60
+/// (three tail offsets), the shape the wallet's shape-sniff reads as "bare
+/// vector" (vs 0xc0 for a full auth blob it must unwrap first).
+export function encodeProbeVector(params: {
+  bundle: ShrincsPublicKey;
+  statefulSig: StatefulSignature;
+  statelessSig: StatelessSignature;
+}): Hex {
+  return encodeAbiParameters(
+    [PUBLIC_KEY_TUPLE, STATEFUL_SIGNATURE_TUPLE, STATELESS_SIGNATURE_TUPLE],
+    [publicKeyToAbi(params.bundle), params.statefulSig, params.statelessSig]
+  );
+}
+
 /// UUPS `upgradeToAndCall` data = `abi.encode(PublicKey, StatefulSignature,
-/// bool shouldMigrate, bytes migratorPayload, uint256 nonce)`. The signed
-/// action nonce rides in the blob (5th head word) so the wallet's
-/// `verifyUpgrade` probe can rebuild the exact signed context both before and
-/// after consumption; `upgradeToAndCall` requires it to equal the live
-/// `actionNonce()` (else `StaleActionNonce`).
+/// bool shouldMigrate, bytes migratorPayload, uint256 nonce, bytes probePayload)`.
+/// Head word[0] == 0xc0 (six words), the shape the wallet's `verifyUpgrade`
+/// shape-sniff reads as "full auth blob" and unwraps to reach `probePayload`.
+///
+/// The 6th field, `probePayload`, is the bare `encodeProbeVector` output the
+/// wallet forwards to the NEW implementation's `verifyUpgrade` — a reachability
+/// probe of the target's signing scheme, distinct from the caller's own auth
+/// signature (fields 1-2). This one blob works for BOTH the deployed
+/// V1.0.1-beta.2 caller (whose 5-field decoder reads fields 1-5 and forwards the
+/// WHOLE blob to the probe) and later callers (which read all 6 fields directly).
+///
+/// The signed action nonce rides in the blob (5th head word) so the probe can
+/// rebuild the exact signed context both before and after consumption;
+/// `upgradeToAndCall` requires it to equal the live `actionNonce()` (else
+/// `StaleActionNonce`).
 export function encodeUpgradeData(params: {
   publicKey: ShrincsPublicKey;
   signature: StatefulSignature;
   shouldMigrate: boolean;
   migratorPayload: Hex;
   nonce: bigint;
+  probePayload: Hex;
 }): Hex {
   return encodeAbiParameters(
     [
@@ -552,6 +591,7 @@ export function encodeUpgradeData(params: {
       { name: "shouldMigrate", type: "bool" },
       { name: "migratorPayload", type: "bytes" },
       { name: "nonce", type: "uint256" },
+      { name: "probePayload", type: "bytes" },
     ],
     [
       publicKeyToAbi(params.publicKey),
@@ -559,6 +599,7 @@ export function encodeUpgradeData(params: {
       params.shouldMigrate,
       params.migratorPayload,
       params.nonce,
+      params.probePayload,
     ]
   );
 }

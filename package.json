@@ -63,10 +63,10 @@
     "typecheck": "tsc --noEmit",
     "test": "forge test",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathIgnorePatterns /node_modules/ integration",
-    "test:smoke": "forge build && node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern integration.smoke",
+    "test:smoke": "forge build && node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern integration.smoke.test",
     "test:all": "forge build && node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs",
     "smoke:tarball": "bash scripts/smoke-tarball.sh",
-    "smoke:fork": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern smoke.fork",
+    "smoke:fork": "forge build && node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs --testPathPattern smoke.fork",
     "setup": "forge soldeer install && npm install",
     "release": "forge build && npx tsx scripts/release.ts"
   },

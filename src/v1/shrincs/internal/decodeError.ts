@@ -18,6 +18,7 @@ import { type Hex } from "viem";
 
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
+import { shrincsWalletBeta2Abi } from "../versions/v1_0_1_beta2/abi.js";
 
 import {
   QuipError,
@@ -43,6 +44,10 @@ import {
   ImplementationDeprecatedError,
   NotUpgradingError,
   GuardedSlotTamperedError,
+  IdentityMismatchError,
+  VerifierProfileMismatchError,
+  UpgradeFailedError,
+  ZeroErc1271CommitmentError,
   MalformedCodecPayloadError,
   RenounceDisabledError,
   ClassicalWithdrawDisabledError,
@@ -91,7 +96,17 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
     new StatefulBudgetExhaustedError(undefined, undefined, o),
   ImplementationNotVetted: (_, o) => new ImplementationNotVettedError(o),
   ImplementationDeprecated: (_, o) => new ImplementationDeprecatedError(o),
+  IdentityMismatch: (_, o) => new IdentityMismatchError(o),
+  VerifierProfileMismatch: (_, o) => new VerifierProfileMismatchError(o),
+  // `UpgradeFailed()` (solady UUPS) — bad `proxiableUUID` on the new impl.
+  UpgradeFailed: (_, o) => new UpgradeFailedError(o),
+  // `ZeroErc1271Commitment()` — V1.0.1-beta.2 `setErc1271Key` guard.
+  ZeroErc1271Commitment: (_, o) => new ZeroErc1271CommitmentError(o),
   NotUpgrading: (_, o) => new NotUpgradingError(o),
+  // `GuardedSlotTampered(uint256 slotIndex)` — REMOVED from the current wallet
+  // (the STATICCALL probe replaced the guarded-slot snapshot), but the deployed
+  // V1.0.1-beta.2 wallets still throw it, so it stays decodable via the frozen
+  // beta.2 ABI below.
   GuardedSlotTampered: (args, o) =>
     new GuardedSlotTamperedError(Number(args[0]), o),
   // `ShrincsWalletCodec.MalformedPayload(uint256 expectedMin, uint256 actual)`.
@@ -111,10 +126,17 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   // Generic (solady/oz)
   Unauthorized: (_, o) => new UnauthorizedError(o),
   AlreadyInitialized: (_, o) => new AlreadyInitializedError(o),
+  // solady `Initializable` throws `InvalidInitialization()` (not
+  // `AlreadyInitialized`) on a re-`initialize`; map it to the same typed class.
+  InvalidInitialization: (_, o) => new AlreadyInitializedError(o),
 };
 
 const decoder = makeErrorDecoder({
-  abis: [shrincsWalletAbi, shrincsPaymasterAbi],
+  // The frozen beta.2 ABI is included so errors that exist ONLY on deployed
+  // older generations (e.g. `GuardedSlotTampered`) still decode. The combiner
+  // dedups by name+signature, so errors shared with the current ABI are not
+  // duplicated.
+  abis: [shrincsWalletAbi, shrincsPaymasterAbi, shrincsWalletBeta2Abi],
   errorMap: ERROR_REGISTRY,
   unknownError: (name, args, opts) => new UnknownContractError(name, args, opts),
 });

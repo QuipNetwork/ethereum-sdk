@@ -218,26 +218,54 @@ describe("shrincsCodec", () => {
 
   it("encodeUpgradeData matches the wallet decodeUpgradeAuth head layout", () => {
     const signature = mainKey.signStatefulRawAt(keccak256(toHex("upgrade auth")), 2);
+    const statelessSig = mainKey.signStatelessRaw(keccak256(toHex("probe")));
     const nonce = 7n;
+    const probePayload = Codec.encodeProbeVector({
+      bundle: mainKey.publicKey,
+      statefulSig: signature,
+      statelessSig,
+    });
     const blob = Codec.encodeUpgradeData({
       publicKey: mainKey.publicKey,
       signature,
       shouldMigrate: true,
       migratorPayload: "0xdeadbeef",
       nonce,
+      probePayload,
     });
-    // Fixed 5-word head: PublicKey offset ‖ StatefulSignature offset ‖
-    // shouldMigrate ‖ migratorPayload offset ‖ nonce (what
-    // `Codec.decodeUpgradeAuth` slices; the nonce word is at head[4] so the
-    // prior offsets are unmoved from the 4-field layout).
+    // Fixed 6-word head: PublicKey offset ‖ StatefulSignature offset ‖
+    // shouldMigrate ‖ migratorPayload offset ‖ nonce ‖ probePayload offset.
+    // head[0] == 0xc0 is exactly what the wallet's `verifyUpgrade` shape-sniff
+    // reads as "full auth blob" (vs 0x60 for a bare probe vector); the nonce
+    // stays at head[4] so the beta.2 5-field decoder still reads it.
     const word = (i: number): Hex => sliceHex(blob, i * 32, (i + 1) * 32);
+    expect(BigInt(word(0))).toBe(0xc0n); // PublicKey offset == full-blob sniff value
     expect(BigInt(word(2))).toBe(1n); // shouldMigrate
     expect(BigInt(word(4))).toBe(nonce); // blob-borne action nonce
-    // Head offsets 0/1/3 point past the 5-word head (0xa0), not the old 4-word
-    // head (0x80) — pins that consumers re-encoded for the new layout.
-    expect(BigInt(word(0)) >= 0xa0n).toBe(true);
-    expect(BigInt(word(1)) >= 0xa0n).toBe(true);
-    expect(BigInt(word(3)) >= 0xa0n).toBe(true);
+    // Dynamic-field offsets 0/1/3/5 point past the 6-word head (0xc0).
+    expect(BigInt(word(1)) >= 0xc0n).toBe(true);
+    expect(BigInt(word(3)) >= 0xc0n).toBe(true);
+    expect(BigInt(word(5)) >= 0xc0n).toBe(true);
+  });
+
+  it("encodeProbeVector head[0] is 0x60 (bare vector shape-sniff value)", () => {
+    const statefulSig = mainKey.signStatefulRawAt(keccak256(toHex("probe sf")), 1);
+    const statelessSig = mainKey.signStatelessRaw(keccak256(toHex("probe sl")));
+    const vector = Codec.encodeProbeVector({
+      bundle: mainKey.publicKey,
+      statefulSig,
+      statelessSig,
+    });
+    const word0 = sliceHex(vector, 0, 32);
+    expect(BigInt(word0)).toBe(0x60n); // three tail offsets → PublicKey at 0x60
+  });
+
+  it("probeDigest mirrors the on-chain keccak256(uint256(uint160(impl)))", () => {
+    const impl = "0x000000000000000000000000000000000000bEEF" as `0x${string}`;
+    const expected = keccak256(
+      `0x${BigInt(impl).toString(16).padStart(64, "0")}` as Hex
+    );
+    expect(Codec.probeDigest(impl)).toBe(expected);
   });
 
   it("round-trips the userOp.signature ABI blob with a live signature", () => {

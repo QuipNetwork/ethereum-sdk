@@ -87,6 +87,15 @@ export interface ShrincsNetworkAddresses {
 // and deployed via `script/02_DeployShrincs.s.sol` (see DEPLOYMENTS.md).
 const SHRINCS_WALLET_IMPLEMENTATION =
   "0x680840c831c6D147404a0e00edA08a5360564FBC" as Address;
+
+/// The DEPLOYED ShrincsWallet implementation `V1.0.1-beta.2` — the generation
+/// existing wallets still run. Pinned here (byte-identical to the current
+/// `SHRINCS_WALLET_IMPLEMENTATION`, since beta.2 is the live generation) so the
+/// version resolver can recognize a beta.2 wallet from its installed ERC-1967
+/// pointer even after `SHRINCS_WALLET_IMPLEMENTATION` advances to a newer
+/// generation. See `versions/`.
+export const SHRINCS_WALLET_BETA2_IMPLEMENTATION =
+  "0x680840c831c6D147404a0e00edA08a5360564FBC" as Address;
 const SHRINCS_PAYMASTER_PROXY =
   "0x430c8c89492E3541e141148Dd7a7D6dD432e5890" as Address;
 const SHRINCS_PAYMASTER_IMPL =

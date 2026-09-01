@@ -22,7 +22,9 @@ import {
   StatefulTreeSpentError,
   StatelessTreeSpentError,
   AuthLeafInTargetsError,
+  UnsupportedByWalletVersionError,
 } from "../errors.js";
+import { SHRINCS_WALLET_BETA2_IMPLEMENTATION } from "../addresses.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
 import { type PackedUserOperation } from "../../userOpCodec.js";
@@ -44,9 +46,16 @@ const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let keypair: ShrincsKeyPair;
 let freshKey: ShrincsKeyPair;
+let signer: ShrincsSigner;
+
+// A non-beta.2 implementation address, padded to a full ERC-1967 slot word, so
+// the version resolver reads these mock wallets as the `latest` generation
+// (whose ABI matches the current-getter names `walletRead` returns).
+const LATEST_IMPL_SLOT =
+  "0x00000000000000000000000000000000000000000000000000000000c0de1a7e" as Hex;
 
 beforeAll(async () => {
-  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
+  signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   keypair = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
     maxSignatures: MAX_SIG,
   });
@@ -91,6 +100,8 @@ function walletRead(
       return false;
     case "statefulLeafBitmapWord":
       return 0n;
+    case "verifyUpgrade":
+      return undefined; // view probe: resolves (no revert) in these mocks
     default:
       throw new Error(`unexpected wallet read: ${functionName}`);
   }
@@ -105,6 +116,7 @@ describe("ShrincsWalletClient fee-free writes", () => {
     const publicClient = {
       getChainId: async () => CHAIN_ID,
       getCode: async () => "0x6000" as Hex,
+      getStorageAt: async () => LATEST_IMPL_SLOT,
       multicall: async ({
         contracts,
       }: {
@@ -133,6 +145,8 @@ describe("ShrincsWalletClient fee-free writes", () => {
       walletAddress: WALLET,
       publicClient,
       walletClient,
+      // A signer is required to build the verifyUpgrade probe vector.
+      signer,
       keypair,
       commitment: seed("vault"),
       chainId: CHAIN_ID,
@@ -179,6 +193,7 @@ function makeWalletClient(
   const publicClient = {
     getChainId: async () => CHAIN_ID,
     getCode: async () => "0x6000" as Hex,
+    getStorageAt: async () => LATEST_IMPL_SLOT,
     multicall: async ({
       contracts,
     }: {
@@ -198,6 +213,7 @@ function makeWalletClient(
     walletAddress: WALLET,
     publicClient,
     walletClient,
+    signer,
     keypair,
     commitment: seed("vault"),
     chainId: CHAIN_ID,
@@ -208,6 +224,57 @@ function makeWalletClient(
 function localAccount(address: Address): LocalAccount {
   return { address } as LocalAccount;
 }
+
+describe("ShrincsWalletClient version gating", () => {
+  // A client whose wallet resolves to the frozen V1.0.1-beta.2 generation
+  // (getStorageAt returns the beta.2 implementation in the ERC-1967 slot).
+  function makeBeta2Client(): ShrincsWalletClient {
+    const beta2Slot =
+      `0x${SHRINCS_WALLET_BETA2_IMPLEMENTATION.slice(2).toLowerCase().padStart(64, "0")}` as Hex;
+    const publicClient = {
+      getChainId: async () => CHAIN_ID,
+      getCode: async () => "0x6000" as Hex,
+      getStorageAt: async () => beta2Slot,
+    } as unknown as PublicClient;
+    const walletClient = {
+      getAddresses: async () => [ACCOUNT],
+    } as unknown as WalletClient;
+    return new ShrincsWalletClient({
+      walletAddress: WALLET,
+      publicClient,
+      walletClient,
+      signer,
+      keypair,
+      commitment: seed("vault"),
+      chainId: CHAIN_ID,
+      account: ACCOUNT,
+    });
+  }
+
+  it("resolveVersion recognizes a beta.2 wallet", async () => {
+    const version = await makeBeta2Client().resolveVersion();
+    expect(version.id).toBe("v1.0.1-beta.2");
+  });
+
+  it("setErc1271Key throws UnsupportedByWalletVersionError on a beta.2 wallet", async () => {
+    const client = makeBeta2Client();
+    const err = await client
+      .setErc1271Key({ newErc1271Key: keypair.publicKey })
+      .then(
+        () => {
+          throw new Error("expected UnsupportedByWalletVersionError");
+        },
+        (e: unknown) => e
+      );
+    expect(err).toBeInstanceOf(UnsupportedByWalletVersionError);
+    expect((err as UnsupportedByWalletVersionError).operation).toBe(
+      "setErc1271Key"
+    );
+    expect((err as UnsupportedByWalletVersionError).versionLabel).toBe(
+      "V1.0.1-beta.2"
+    );
+  });
+});
 
 describe("ShrincsWalletClient owner mismatch", () => {
   it("signErc1271 throws OwnerMismatchError when the owner is non-zero but wrong", async () => {
@@ -446,6 +513,7 @@ describe("ShrincsWalletClient prepareExecute signs once", () => {
     const publicClient = {
       getChainId: async () => CHAIN_ID,
       getCode: async () => "0x6000" as Hex,
+      getStorageAt: async () => LATEST_IMPL_SLOT,
       multicall: async ({
         contracts,
       }: {

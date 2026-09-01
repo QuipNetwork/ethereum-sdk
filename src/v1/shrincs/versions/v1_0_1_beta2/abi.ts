@@ -1,7 +1,10 @@
-// Auto-generated from out/ShrincsWallet.sol/ShrincsWallet.json — do not edit by hand.
-// Regenerate with `npm run copy-abi` after `forge build` when the contract interface changes.
+// FROZEN ABI snapshot of the DEPLOYED ShrincsWallet implementation V1.0.1-beta.2
+// (0x680840c831c6D147404a0e00edA08a5360564FBC on Base mainnet + testnets).
+// Compiled from git ref deploy/op-base-sepolia (commit 6725f26). DO NOT EDIT or regenerate
+// from the working tree: this is the on-chain surface existing wallets still run, and the
+// SDK needs it verbatim to keep operating and UPGRADING beta.2 wallets. See versions/index.ts.
 
-export const shrincsWalletAbi = [
+export const shrincsWalletBeta2Abi = [
   {
     "type": "constructor",
     "inputs": [
@@ -433,6 +436,19 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "getErc1271Commitment",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getErc1271HashSuite",
     "inputs": [],
     "outputs": [
@@ -443,19 +459,6 @@ export const shrincsWalletAbi = [
       }
     ],
     "stateMutability": "pure"
-  },
-  {
-    "type": "function",
-    "name": "getErc1271PublicKeyCommitment",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1079,31 +1082,9 @@ export const shrincsWalletAbi = [
         ]
       },
       {
-        "name": "newErc1271Key",
-        "type": "tuple",
-        "internalType": "struct SHRINCS.PublicKey",
-        "components": [
-          {
-            "name": "statefulPublicKey",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "publicKeyCommitment",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "pkSeed",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "hypertreeRoot",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
+        "name": "newErc1271Commitment",
+        "type": "bytes32",
+        "internalType": "bytes32"
       },
       {
         "name": "newErc1271HashSuite",
@@ -1113,25 +1094,6 @@ export const shrincsWalletAbi = [
     ],
     "outputs": [],
     "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "statefulLeafBitmapWord",
-    "inputs": [
-      {
-        "name": "wordIndex",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -1844,7 +1806,7 @@ export const shrincsWalletAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "erc1271PublicKeyCommitment",
+        "name": "erc1271StatelessCommitment",
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
@@ -1924,8 +1886,14 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
-    "name": "IdentityMismatch",
-    "inputs": []
+    "name": "GuardedSlotTampered",
+    "inputs": [
+      {
+        "name": "slotIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2042,28 +2010,6 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "error",
-    "name": "StatefulTreeSpent",
-    "inputs": [
-      {
-        "name": "treeId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "StatelessTreeSpent",
-    "inputs": [
-      {
-        "name": "treeId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "StorageStoreDisabled",
     "inputs": []
   },
@@ -2105,6 +2051,11 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "ZeroAddressVerifier",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroErc1271Commitment",
     "inputs": []
   },
   {

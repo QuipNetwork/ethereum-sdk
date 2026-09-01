@@ -277,6 +277,10 @@ describe("ShrincsFactoryClient.openShrincsWallet", () => {
     const publicClient = {
       getChainId: async () => CHAIN_ID,
       getCode: async () => "0x6000" as Hex,
+      // ERC-1967 slot read for wallet-version resolution: a non-beta.2 address
+      // padded to a slot word ⇒ resolves to the `latest` generation.
+      getStorageAt: async () =>
+        `0x${IMPL.slice(2).toLowerCase().padStart(64, "0")}` as Hex,
       multicall: async ({
         contracts,
       }: {

@@ -13,6 +13,7 @@ import { makeErrorDecoder } from "../../internal/errorDecoder.js";
 import { decodeRevertBytes as decodeV1RevertBytes } from "../../internal/decodeError.js";
 import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
+import { shrincsWalletBeta2Abi } from "../versions/v1_0_1_beta2/abi.js";
 import {
   GuardedSlotTamperedError,
   StatefulTreeSpentError,
@@ -21,6 +22,11 @@ import {
   StaleStatefulLeafError,
   StatefulBudgetExhaustedError,
   InvalidSignatureError,
+  IdentityMismatchError,
+  VerifierProfileMismatchError,
+  UpgradeFailedError,
+  ZeroErc1271CommitmentError,
+  AlreadyInitializedError,
   UnknownContractError,
 } from "../errors.js";
 import { decodeRevertBytes } from "../internal/decodeError.js";
@@ -55,9 +61,55 @@ describe("shrincs error decoding", () => {
     expect(decoded.actual).toBe(12n);
   });
 
-  it("decodes GuardedSlotTampered(uint256) preserving the slot index", () => {
+  it("decodes IdentityMismatch and VerifierProfileMismatch (current wallet)", () => {
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({ abi: shrincsWalletAbi, errorName: "IdentityMismatch" })
+      )
+    ).toBeInstanceOf(IdentityMismatchError);
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({
+          abi: shrincsWalletAbi,
+          errorName: "VerifierProfileMismatch",
+        })
+      )
+    ).toBeInstanceOf(VerifierProfileMismatchError);
+  });
+
+  it("decodes UpgradeFailed (solady UUPS) and InvalidInitialization", () => {
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({ abi: shrincsWalletAbi, errorName: "UpgradeFailed" })
+      )
+    ).toBeInstanceOf(UpgradeFailedError);
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({
+          abi: shrincsWalletAbi,
+          errorName: "InvalidInitialization",
+        })
+      )
+    ).toBeInstanceOf(AlreadyInitializedError);
+  });
+
+  it("decodes ZeroErc1271Commitment from a beta.2 wallet", () => {
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({
+          abi: shrincsWalletBeta2Abi,
+          errorName: "ZeroErc1271Commitment",
+        })
+      )
+    ).toBeInstanceOf(ZeroErc1271CommitmentError);
+  });
+
+  // `GuardedSlotTampered` was removed from the CURRENT wallet (the STATICCALL
+  // probe replaced the guarded-slot snapshot) but deployed V1.0.1-beta.2 wallets
+  // still throw it, so it must stay decodable via the frozen beta.2 ABI.
+  it("decodes GuardedSlotTampered(uint256) from a beta.2 wallet, preserving the slot index", () => {
     const data = encodeErrorResult({
-      abi: shrincsWalletAbi,
+      abi: shrincsWalletBeta2Abi,
       errorName: "GuardedSlotTampered",
       args: [7n],
     });
