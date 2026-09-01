@@ -7,6 +7,7 @@ import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
+import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 
 /// @dev Behavior tests for the wallet's view getters.
 contract ShrincsWallet_views is ShrincsWalletTest {
@@ -19,7 +20,7 @@ contract ShrincsWallet_views is ShrincsWalletTest {
     }
 
     function test_getExecuteFee_reflectsFactory() public {
-        factory.setExecuteFee(123);
+        _setExecuteFee(123);
         assertEq(wallet.getExecuteFee(), 123);
     }
 
@@ -90,10 +91,16 @@ contract ShrincsWallet_views is ShrincsWalletTest {
         assertEq(wallet.ownershipHandoverExpiresAt(address(0xCAFE)), 0);
     }
 
-    function test_version_unvettedThenVetted() public {
-        // The etched harness has a zero ERC-1967 implementation slot ⇒ impl codehash is 0.
-        assertEq(wallet.version(), type(uint256).max, "unvetted sentinel");
-        factory.vet(bytes32(0), 5);
-        assertEq(wallet.version(), 5, "vetted index surfaced");
+    function test_version_vettedIndex() public view {
+        // The factory-deployed wallet points at the vetted harness implementation (index 0).
+        assertEq(wallet.version(), 0, "vetted index surfaced");
+    }
+
+    function test_version_unvettedSentinel() public {
+        // A bare implementation instance (not behind a proxy) has an empty ERC-1967 slot, so
+        // its installed-impl codehash reads 0 — never vetted, and the sentinel surfaces.
+        ShrincsWalletHarness bare =
+            new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier));
+        assertEq(bare.version(), type(uint256).max, "unvetted sentinel");
     }
 }

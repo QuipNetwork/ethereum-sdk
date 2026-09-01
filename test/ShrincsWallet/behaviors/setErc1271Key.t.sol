@@ -25,6 +25,16 @@ contract ShrincsWallet_setErc1271Key is ShrincsWalletTest {
         newCommitment = _commitment32(newPk);
     }
 
+    function test_setUp() public view override {
+        super.test_setUp();
+        assertTrue(newCommitment != bytes32(0), "fresh 1271 bundle derived");
+        assertTrue(newCommitment != erc1271Commitment, "replacement differs from the installed key");
+        assertFalse(
+            wallet.harness_isStatefulTreeSpent(_treeId(newPk.statefulPublicKey)),
+            "replacement trees unspent"
+        );
+    }
+
     function _sigFor(SHRINCS.PublicKey memory pk) internal view returns (SHRINCS.Signature memory) {
         return _signStatefulAction(
             Codec.ACTION_SET_ERC1271_KEY, Codec.setErc1271KeyPayloadHash(_commitment32(pk), SUITE), 1

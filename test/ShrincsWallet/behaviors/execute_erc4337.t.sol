@@ -28,6 +28,12 @@ contract ShrincsWallet_execute_erc4337 is ShrincsWalletTest {
         target = new EpTarget();
     }
 
+    function test_setUp() public view override {
+        super.test_setUp();
+        assertTrue(address(target).code.length > 0, "call target deployed");
+        assertEq(target.x(), 0, "call target pristine");
+    }
+
     function test_execute_revertsWhen_callerNotEntryPoint() public {
         vm.prank(makeAddr("notEntryPoint"));
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -44,7 +50,7 @@ contract ShrincsWallet_execute_erc4337 is ShrincsWalletTest {
     function test_execute_transfersEthAndCollectsFee() public {
         uint256 fee = 0.01 ether;
         uint256 value = 0.5 ether;
-        factory.setExecuteFee(fee);
+        _setExecuteFee(fee);
         vm.deal(WALLET, value + fee);
 
         uint256 factoryBefore = address(factory).balance;
@@ -57,14 +63,14 @@ contract ShrincsWallet_execute_erc4337 is ShrincsWalletTest {
     }
 
     function test_execute_callsContract() public {
-        factory.setExecuteFee(0);
+        _setExecuteFee(0);
         vm.prank(ENTRY_POINT);
         wallet.execute(address(target), 0, abi.encodeCall(EpTarget.setX, (42)), 0);
         assertEq(target.x(), 42, "contract call executed");
     }
 
     function test_execute_noFeeWhenZero() public {
-        factory.setExecuteFee(0);
+        _setExecuteFee(0);
         uint256 factoryBefore = address(factory).balance;
         vm.deal(WALLET, 1 ether);
         vm.prank(ENTRY_POINT);
@@ -75,7 +81,7 @@ contract ShrincsWallet_execute_erc4337 is ShrincsWalletTest {
     /// @dev Cap semantics: the LIVE fee is charged, `maxFee` is only a ceiling — a fee decrease
     ///      between signing and landing succeeds at the lower price.
     function test_execute_chargesLiveFeeBelowCap() public {
-        factory.setExecuteFee(0.01 ether);
+        _setExecuteFee(0.01 ether);
         vm.deal(WALLET, 1 ether);
         uint256 factoryBefore = address(factory).balance;
 
@@ -88,7 +94,7 @@ contract ShrincsWallet_execute_erc4337 is ShrincsWalletTest {
     /// @dev A live fee above the signed ceiling reverts in the execution phase. (The e2e suite
     ///      asserts the validation-phase leaf/nonce consumption that precedes this revert.)
     function test_execute_revertsWhen_feeExceedsCap() public {
-        factory.setExecuteFee(0.02 ether);
+        _setExecuteFee(0.02 ether);
         vm.deal(WALLET, 1 ether);
 
         vm.prank(ENTRY_POINT);

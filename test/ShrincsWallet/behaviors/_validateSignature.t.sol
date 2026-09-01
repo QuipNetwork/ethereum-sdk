@@ -217,7 +217,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     ///      enforced in the execution phase instead).
     function test_validateSignature_unaffectedByFeeChange() public {
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
-        factory.setExecuteFee(123456789); // moved between signing and validation
+        _setExecuteFee(123456789); // moved between signing and validation
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "fee change cannot break validation");
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf consumed normally");
     }

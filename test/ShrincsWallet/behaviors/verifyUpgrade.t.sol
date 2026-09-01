@@ -30,6 +30,13 @@ contract ShrincsWallet_verifyUpgrade is ShrincsWalletTest {
         targetDigest = Codec.probeDigest(TARGET);
     }
 
+    function test_setUp() public view override {
+        super.test_setUp();
+        assertEq(probePk.publicKeyCommitment.length, 32, "throwaway probe bundle generated");
+        assertEq(targetDigest, Codec.probeDigest(TARGET), "probe digest bound to TARGET");
+        assertTrue(targetDigest != bytes32(0), "probe digest nonzero");
+    }
+
     /// @dev Raw-digest stateful signature from the throwaway key (no wallet context).
     function _statefulProbeSig(bytes32 digest) internal view returns (SHRINCS.Signature memory sig) {
         bytes memory message =

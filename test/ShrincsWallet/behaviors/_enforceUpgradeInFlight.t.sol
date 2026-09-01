@@ -20,6 +20,12 @@ contract ShrincsWallet__enforceUpgradeInFlight is ShrincsWalletTest {
         bare = new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier));
     }
 
+    function test_setUp() public view override {
+        super.test_setUp();
+        assertTrue(address(bare).code.length > 0, "bare implementation deployed");
+        assertEq(vm.load(address(bare), IMPL_SLOT), bytes32(0), "bare ERC-1967 slot empty");
+    }
+
     /// @dev Mid-upgrade shape: the slot holds a DIFFERENT (previous) implementation.
     function test_exposed_enforceUpgradeInFlight_passesWhenPreviousImplementationInstalled() public {
         vm.store(address(bare), IMPL_SLOT, bytes32(uint256(uint160(address(0xD00D)))));
@@ -35,8 +41,7 @@ contract ShrincsWallet__enforceUpgradeInFlight is ShrincsWalletTest {
     /// @dev Self-installed slot: the steady state of a live wallet, where a direct call
     ///      dispatches to the installed code itself.
     function test_exposed_enforceUpgradeInFlight_revertsWhen_selfInstalled() public {
-        vm.store(address(bare), IMPL_SLOT, bytes32(uint256(uint160(address(bare)))));
         vm.expectRevert(IShrincsWallet.NotUpgrading.selector);
-        bare.exposed_enforceUpgradeInFlight();
+        wallet.exposed_enforceUpgradeInFlight();
     }
 }

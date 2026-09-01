@@ -76,7 +76,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER);
         assertEq(wallet.owner(), NEW_OWNER, "classical owner handed over");
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "fresh bundle installed for the new owner");
-        assertEq(factory.lastOwnerUpdate(address(wallet)), NEW_OWNER, "factory registry synced");
+        assertEq(factory.walletOwner(address(wallet)), NEW_OWNER, "factory registry synced");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
         // Two signatures consumed (stateful owner-binding + stateless rotation), both bound to
         // the pre-call nonce — nets exactly +2.

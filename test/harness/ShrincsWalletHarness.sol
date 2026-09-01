@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {ShrincsWallet} from "../../contracts/shrincs/ShrincsWallet.sol";
 import {ShrincsWalletStorage as Storage} from "../../contracts/shrincs/ShrincsWalletStorage.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 
 /// @dev Test harness exposing `ShrincsWallet` internals and a direct storage installer so
@@ -225,27 +226,36 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _guardInitializeOwner();
     }
 
-    /// @dev Drives `migrate` in the mid-upgrade shape `upgradeToAndCall` produces: `migrate`
-    ///      gates on the wallet's OWN ERC-1967 pointer (`installed != 0`, `installed != _SELF`),
-    ///      so park a sentinel "previous implementation" in the slot for the duration of the
-    ///      call and restore it after — no full UUPS round-trip needed. (The self-call executes
-    ///      this same etched code; the test wallet is not a proxy, so dispatch is unaffected.)
-    function harness_migrateInUpgradeContext(bytes calldata payload) external {
-        // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
-        uint256 slot = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-        uint256 prev;
-        assembly {
-            prev := sload(slot)
-            sstore(slot, 0xdead)
-        }
-        this.migrate(payload);
-        assembly {
-            sstore(slot, prev)
-        }
-    }
-
     /// @dev Exposes the `migrate` entry gate for direct unit testing.
     function exposed_enforceUpgradeInFlight() external view {
         _enforceUpgradeInFlight();
+    }
+
+    /// @dev Wraps the UUPS authorization hook (`onlyOwner`) — the defense-in-depth gate
+    ///      `super.upgradeToAndCall` runs behind the wallet's own `onlyOwner`.
+    function exposed_authorizeUpgrade(address newImplementation) external {
+        _authorizeUpgrade(newImplementation);
+    }
+
+    /// @dev Wraps the wallet's own ERC-1967 pointer read.
+    function exposed_msgImplementation() external view returns (address) {
+        return _msgImplementation();
+    }
+
+    /// @dev Wraps the single leaf-index derivation point (authPath length).
+    function exposed_leafIndex(SHRINCS.Signature calldata signature) external pure returns (uint32) {
+        return _leafIndex(signature);
+    }
+
+    /// @dev Wraps the stateless full-rotation validator (shape checks + commitment recompute +
+    ///      recovery-signature verify; zero return = reject).
+    function exposed_statelessRotate(
+        bytes32 expectedCommitment,
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SHRINCS.RotationContext memory ctx,
+        SPHINCSPlusC.Signature calldata recoverySignature,
+        SHRINCS.RotationTarget calldata nextKey
+    ) external view returns (bytes32) {
+        return _statelessRotate(expectedCommitment, currentPublicKey, ctx, recoverySignature, nextKey);
     }
 }

@@ -1245,7 +1245,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         SHRINCS.RotationContext memory ctx,
         SPHINCSPlusC.Signature calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
-    ) private view returns (bytes32) {
+    ) internal view returns (bytes32) {
         // The replacement bundle's four fields have fixed widths.
         if (
             nextKey.statefulPublicKey.length !=

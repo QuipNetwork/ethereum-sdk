@@ -131,7 +131,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
     ///      leaf), the direct path rolls the WHOLE call back — leaf and nonce included.
     function test_execute_revertsWhen_feeExceedsCap() public {
         SHRINCS.Signature memory sig = _executeSig(TARGET, 0, "", 1, 0);
-        factory.setExecuteFee(999);
+        _setExecuteFee(999);
         vm.deal(WALLET, 1 ether);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.ExecuteFeeExceedsCap.selector, 999, 0));
@@ -142,7 +142,7 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
 
     /// @dev Cap matrix (equal): live fee == maxFee succeeds and charges exactly the fee.
     function test_execute_liveFeeEqualsCap() public {
-        factory.setExecuteFee(0.01 ether);
+        _setExecuteFee(0.01 ether);
         vm.deal(WALLET, 1 ether);
         SHRINCS.Signature memory sig = _executeSig(TARGET, 0.5 ether, "", 1, 0.01 ether);
         uint256 factoryBefore = address(factory).balance;
@@ -158,11 +158,11 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
     ///      lower live fee — the deliberate `<=` semantics (previously this was an
     ///      `InvalidSignature` digest mismatch that bricked the in-flight signature).
     function test_execute_feeDecreaseSucceedsChargingLiveFee() public {
-        factory.setExecuteFee(0.01 ether);
+        _setExecuteFee(0.01 ether);
         vm.deal(WALLET, 1 ether);
         SHRINCS.Signature memory sig = _executeSig(TARGET, 0.5 ether, "", 1, 0.01 ether);
 
-        factory.setExecuteFee(0.002 ether); // fee lowered after signing
+        _setExecuteFee(0.002 ether); // fee lowered after signing
         uint256 factoryBefore = address(factory).balance;
 
         vm.prank(OWNER);
