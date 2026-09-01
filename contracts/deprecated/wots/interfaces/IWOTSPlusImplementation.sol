@@ -446,6 +446,12 @@ interface IWOTSPlusImplementation is IWallet {
         bytes calldata data
     ) external view;
 
+    /// @notice Context-free WOTS+ self-test, STATICCALLed on THIS implementation when a
+    ///         previous implementation upgrades into it (the frozen `IWallet` seam).
+    /// @param payload Packed probe vector: [0:64) WinternitzAddress, [64:96) digest,
+    ///        [96:2240) WinternitzElements signature.
+    function probeUpgrade(bytes calldata payload) external view override;
+
     /// @notice Initializes the wallet with its classical owner, disaster recovery key,
     ///         ownership key, transaction keys, recovery keys, and verification keys.
     /// @dev Can only be called once by the FACTORY. Uses Solady's `initializer` modifier.
@@ -465,7 +471,7 @@ interface IWOTSPlusImplementation is IWallet {
     ///      so that it executes against proxy storage.
     ///      Payload layout matches `initialize` (2048 bytes).
     /// @param payload Packed migration data matching the init layout.
-    function migrate(bytes calldata payload) external;
+    function migrate(bytes calldata payload) external override;
 
     /// @notice Executes a post-quantum authenticated operation: either a pure ETH transfer
     ///         or an arbitrary contract call.

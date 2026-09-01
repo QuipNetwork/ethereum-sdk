@@ -261,10 +261,11 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the UUPS `upgradeToAndCall` `data` blob, the ABI encoding of
     ///      `(PublicKey publicKey, SHRINCS.Signature signature, bool shouldMigrate,
-    ///       bytes migratorPayload, uint256 nonce)`. The action nonce the signer bound rides in
-    ///      the blob (rather than being read live) so `verifyUpgrade` can rebuild the exact
-    ///      signed context at any moment — both in the SDK's pre-flight staticcall (live nonce
-    ///      == blob nonce) and in the post-consumption reachability probe (live == blob + 1).
+    ///       bytes migratorPayload, uint256 nonce, bytes probePayload)`. The action nonce the
+    ///      signer bound rides in the blob so the wallet can assert exact freshness
+    ///      (`StaleActionNonce` unless blob nonce == live nonce). The trailing
+    ///      `migratorPayload` / `probePayload` are OPAQUE bytes for the NEW implementation
+    ///      (the frozen `IWallet` seam) — this codec frames them, never interprets them.
     function decodeUpgradeAuth(
         bytes calldata data
     )
@@ -275,18 +276,19 @@ library ShrincsWalletCodec {
             SHRINCS.Signature calldata signature,
             bool shouldMigrate,
             bytes calldata migratorPayload,
-            uint256 nonce
+            uint256 nonce,
+            bytes calldata probePayload
         )
     {
-        if (data.length < 0xa0) {
-            revert MalformedPayload(0xa0, data.length);
+        if (data.length < 0xc0) {
+            revert MalformedPayload(0xc0, data.length);
         }
         bytes4 malformed = MalformedPayload.selector;
         assembly {
             let o := data.offset
             let len := data.length
             // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0xa0` here, so `sub(len, 0x20)` never
+            // points at is inside the slice. `len >= 0xc0` here, so `sub(len, 0x20)` never
             // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
@@ -319,6 +321,68 @@ library ShrincsWalletCodec {
             migratorPayload.offset := add(o, add(mo, 0x20))
             migratorPayload.length := mLen
             nonce := calldataload(add(o, 0x80))
+            let po := calldataload(add(o, 0xa0))
+            reqTail(po, len, malformed)
+            let pLen := calldataload(add(o, po))
+            // Same fit proof as migratorPayload: `po <= len - 0x20` was just proven, so
+            // `sub(sub(len, 0x20), po)` cannot underflow — no wrapped-sum trust.
+            if gt(pLen, sub(sub(len, 0x20), po)) {
+                mstore(0x00, malformed)
+                mstore(0x04, add(add(po, 0x20), pLen))
+                mstore(0x24, len)
+                revert(0x00, 0x44)
+            }
+            probePayload.offset := add(o, add(po, 0x20))
+            probePayload.length := pLen
+        }
+    }
+
+    /// @dev Decodes the SHRINCS `probeUpgrade` vector (the frozen `IWallet` seam), the ABI
+    ///      encoding of `(PublicKey bundle, bytes32 digest, SHRINCS.Signature statefulSig,
+    ///      SPHINCSPlusC.Signature statelessSig)`.
+    function decodeProbePayload(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            SHRINCS.PublicKey calldata bundle,
+            bytes32 digest,
+            SHRINCS.Signature calldata statefulSig,
+            SPHINCSPlusC.Signature calldata statelessSig
+        )
+    {
+        // Head is four 32-byte words (three are tail offsets).
+        if (payload.length < 0x80) {
+            revert MalformedPayload(0x80, payload.length);
+        }
+        bytes4 malformed = MalformedPayload.selector;
+        assembly {
+            let o := payload.offset
+            let len := payload.length
+            // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
+            // points at is inside the slice. `len >= 0x80` here, so `sub(len, 0x20)` never
+            // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
+            function reqTail(off, l, m) {
+                if gt(off, sub(l, 0x20)) {
+                    mstore(0x00, m)
+                    mstore(0x04, add(off, 0x20))
+                    mstore(0x24, l)
+                    revert(0x00, 0x44)
+                }
+            }
+            let bo := calldataload(o)
+            reqTail(bo, len, malformed)
+            // Nested struct tail bounds are out of scope here; those fields are read through
+            // Solidity calldata accessors downstream, which bounds-check against calldatasize.
+            bundle := add(o, bo)
+            digest := calldataload(add(o, 0x20))
+            let sfo := calldataload(add(o, 0x40))
+            reqTail(sfo, len, malformed)
+            statefulSig := add(o, sfo)
+            let slo := calldataload(add(o, 0x60))
+            reqTail(slo, len, malformed)
+            statelessSig := add(o, slo)
         }
     }
 

@@ -107,11 +107,6 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
 
-    /// @notice Thrown when a delegatecall body (the `upgradeToAndCall` verify probe) modified one
-    ///         of the eight slots the upgrade path snapshots and re-checks.
-    /// @param slotIndex 0=owner, 1=ERC-1967 impl, 2=walletFactory, 3=shrincsPublicKeyCommitment,
-    ///                  4=erc1271PublicKeyCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
-    error GuardedSlotTampered(uint256 slotIndex);
     /// @notice Thrown when `storageStore` is called. Raw storage writes are disabled because they
     ///         could clear consumed-leaf bits in the bitmap and re-enable
     ///         one-time-signature replay.
@@ -250,23 +245,23 @@ interface IShrincsWallet is IWallet {
     ///         All four trees in the payload (main and ERC-1271 bundles) must be strictly fresh
     ///         (never held by this wallet) and are recorded as spent; reverts
     ///         `StatefulTreeSpent` / `StatelessTreeSpent`. Same payload layout as `initialize`.
-    function migrate(bytes calldata payload) external;
+    function migrate(bytes calldata payload) external override;
 
     /// @notice SHRINCS-gated UUPS upgrade. Authorized by a stateful signature from the main key.
     ///         The `data` blob carries the action nonce the signer bound; it must equal the live
-    ///         `actionNonce()` or the call reverts `StaleActionNonce`.
+    ///         `actionNonce()` or the call reverts `StaleActionNonce`. STATICCALLs the NEW
+    ///         implementation's `probeUpgrade` before switching.
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
     ) external payable;
 
-    /// @notice New-implementation reachability probe, delegatecalled during `upgradeToAndCall`.
-    ///         Rebuilds the signed context from the blob-borne nonce (never the live one), so the
-    ///         same auth blob re-verifies both before and after its consumption.
-    function verifyUpgrade(
-        address newImplementation,
-        bytes calldata data
-    ) external view;
+    /// @notice Context-free SHRINCS self-test, STATICCALLed on the NEW implementation
+    ///         during `upgradeToAndCall` (the frozen `IWallet` seam).
+    /// @param payload ABI-encoded `(PublicKey bundle, bytes32 digest, Signature statefulSig,
+    ///        SPHINCSPlusC.Signature statelessSig)`; `digest` must verify under BOTH halves
+    ///        of the (throwaway) bundle or the call reverts `InvalidSignature`.
+    function probeUpgrade(bytes calldata payload) external view override;
 
     /// @notice Executes a single call authorized by a stateful SHRINCS signature.
     /// @param publicKey The main-key bundle (re-validated against the installed commitment).

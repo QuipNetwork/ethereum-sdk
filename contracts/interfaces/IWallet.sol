@@ -40,6 +40,12 @@ pragma solidity ^0.8.33;
 ///        3. The classical (non-PQ) ownership entry points inherited from
 ///           the implementation's ownable base are disabled, so `owner()`
 ///           cannot be moved without post-quantum authorization.
+///        4. `probeUpgrade` reads no storage; `migrate` never clears a
+///           consumed leaf/key marker (used-leaf bit, spent-tree entry)
+///           for state it leaves live.
+///        5. `upgradeToAndCall` forwards the auth blob's opaque
+///           `probePayload` / `migratorPayload` UNPARSED to the new
+///           implementation's `probeUpgrade` / `migrate`.
 ///
 ///      A vetted implementation that violates these rules can desync the
 ///      factory's per-owner registry (`walletOwner` / `commitments`); it
@@ -64,4 +70,20 @@ interface IWallet {
     ///      (vetting-contract rule 2). Exposed here so the factory does not
     ///      depend on any particular ownable base's types.
     function owner() external view returns (address);
+
+    /// @notice Context-free self-test of an implementation's signature scheme.
+    /// @dev Frozen upgrade seam (with `migrate`): STATICCALLed on the NEW implementation
+    ///      by the previous one's `upgradeToAndCall`. The payload is a scheme-defined
+    ///      verification vector (throwaway key, digest, signature(s)) and the probe needs
+    ///      no context beyond it. Verifies → return; else revert. The selector may never
+    ///      change.
+    /// @param payload Scheme-defined probe vector, opaque to the caller.
+    function probeUpgrade(bytes calldata payload) external view;
+
+    /// @notice Re-installs the wallet's PQ state during an upgrade.
+    /// @dev Second half of the frozen seam: delegatecalled by the previous
+    ///      implementation's `upgradeToAndCall`. Layout is defined and validated by the
+    ///      NEW family's codec; vetting rule 4 gates its writes.
+    /// @param payload Scheme-defined migration data, opaque to the caller.
+    function migrate(bytes calldata payload) external;
 }

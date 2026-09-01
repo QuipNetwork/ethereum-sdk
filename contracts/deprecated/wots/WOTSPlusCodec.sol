@@ -417,6 +417,31 @@ library WOTSPlusCodec {
         }
     }
 
+    /// @dev Decodes the context-free `probeUpgrade` vector (the frozen `IWallet` seam).
+    ///      Packed layout: [0:64) verifier, [64:96) digest,
+    ///      [96:96+32·NumSignatureChunks) verifySig — 2240 bytes total.
+    /// @param payload The packed probe vector.
+    function decodeProbePayload(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            bytes32 digest,
+            WOTSPlus.WinternitzElements calldata verifySig
+        )
+    {
+        uint256 expected = 96 + 32 * uint256(WOTSPlus.NumSignatureChunks);
+        if (payload.length != expected)
+            revert MalformedPayload(expected, payload.length);
+        assembly {
+            verifier := payload.offset
+            digest := calldataload(add(payload.offset, 64))
+            verifySig := add(payload.offset, 96)
+        }
+    }
+
     /// @dev Decodes the upgradeToAndCall payload's migration portion.
     ///      Layout: [4480] shouldMigrate, [4481:6529) migratorPayload.
     /// @param data The packed upgrade payload (6529 bytes).

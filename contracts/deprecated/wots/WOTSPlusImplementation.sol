@@ -978,6 +978,22 @@ contract WOTSPlusImplementation is
     }
 
     /// @inheritdoc IWOTSPlusImplementation
+    function probeUpgrade(bytes calldata payload) external view {
+        (
+            WOTSPlus.WinternitzAddress calldata verifier,
+            bytes32 digest,
+            WOTSPlus.WinternitzElements calldata verifySig
+        ) = Codec.decodeProbePayload(payload);
+        if (
+            !WOTSPlus.verify(
+                verifier,
+                WOTSPlus.WinternitzMessage({messageHash: digest}),
+                verifySig
+            )
+        ) revert InvalidSignature();
+    }
+
+    /// @inheritdoc IWOTSPlusImplementation
     function quipFactory() public view returns (address payable) {
         return Storage.layout().quipFactory;
     }

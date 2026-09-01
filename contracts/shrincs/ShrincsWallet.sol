@@ -35,6 +35,7 @@ import {
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "./interfaces/IShrincsWallet.sol";
+import {IWallet} from "../interfaces/IWallet.sol";
 import {IWalletFactory} from "../interfaces/IWalletFactory.sol";
 import {ShrincsWalletCodec as Codec} from "./ShrincsWalletCodec.sol";
 import {ShrincsWalletStorage as Storage} from "./ShrincsWalletStorage.sol";
@@ -54,7 +55,7 @@ interface ISHRINCSProfileTag {
 ///         (`rotateKey`) is stateful; the main key's stateless half is reserved as break-glass
 ///         recovery authority (`recoverWallet`). ERC-1271 uses a separate dedicated stateless
 ///         verifier key plus a classical `owner()` ECDSA AND-gate.
-//          The inline verifier calls (at `_validateSignature`, `verifyUpgrade`,
+//          The inline verifier calls (at `_validateSignature`, `probeUpgrade`,
 //          `_verifyStatefulAndConsume`, `_checkErc1271Signature`) and `_statelessRotate` below
 //          are the ONLY paths to signature cryptography: canonical message hash computed locally,
 //          everything else delegated to the pinned SHRINCS_VERIFIER. The full delegation model —
@@ -403,7 +404,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         bytes32 commitment = _safeInstallKeyBundle(mainKey);
         if (commitment != declaredCommitment) revert CommitmentMismatch();
         bytes32 erc1271Commitment = _safeInstallKeyBundle(erc1271Key);
-        // No-drift invariant: re-establish the guarded `_SHRINCS_FACTORY_SLOT` snapshot to this
+        // No-drift invariant: re-establish the `_SHRINCS_FACTORY_SLOT` factory pin to this
         // (the new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
         // `FACTORY` is the new source of truth; pinning storage to it keeps the snapshot slot and
         // the `walletFactory()` getter from ever diverging from the immutable after an upgrade.
@@ -441,7 +442,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             SHRINCS.Signature calldata sig,
             bool shouldMigrate,
             bytes calldata migratorPayload,
-            uint256 blobNonce
+            uint256 blobNonce,
+            bytes calldata probePayload
         ) = Codec.decodeUpgradeAuth(data);
 
         uint256 liveNonce = Storage.layout().nonce;
@@ -454,17 +456,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             EfficientHashLib.hashCalldata(migratorPayload)
         );
 
-        // The guard snapshot is taken AFTER the nonce advance, so the
-        // guarded nonce slot (idx 6) is checked against its post-advance value
         _verifyStatefulAndAdvance(pk, sig, Codec.ACTION_UPGRADE, payloadHash);
 
-        // verifyUpgrade is view here, but executes the NEW impl's bytecode in our storage context.
-        bytes32[8] memory verifyGuard = _snapshotGuardedSlots();
-        LibCall.delegateCallContract(
-            newImplementation,
-            abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
-        );
-        _assertGuardedSlotsUnchanged(verifyGuard);
+        IWallet(newImplementation).probeUpgrade(probePayload);
 
         if (shouldMigrate) {
             uint256 slot = _UPGRADE_GUARD_SLOT;
@@ -860,48 +854,23 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
-    function verifyUpgrade(
-        address newImplementation,
-        bytes calldata data
-    ) external view {
-        // Reachability probe: re-run the stateful verify over the upgrade context as proof the
-        // new impl's SHRINCS verifier is reachable in this storage context. Self-consistency,
-        // not authorization (the authorization already happened in `upgradeToAndCall`).
+    function probeUpgrade(bytes calldata payload) external view {
+        // Context-free self-test (the frozen `IWallet` seam): everything verified here rides
+        // in the payload — no storage reads, no `address(this)`, no caller assumptions. The
+        // bundle is expected to be a THROWAWAY key (the main key's stateless half is ≤1-use
+        // and must never sign probes). Proves this implementation's codec and pinned-verifier
+        // wiring end-to-end: the digest must verify under BOTH halves of the supplied bundle.
         (
-            SHRINCS.PublicKey calldata pk,
-            SHRINCS.Signature calldata sig,
-            bool shouldMigrate,
-            bytes calldata migratorPayload,
-            uint256 blobNonce
-        ) = Codec.decodeUpgradeAuth(data);
-
-        Storage.Layout storage $ = Storage.layout();
-        // Rebuild the context from the BLOB-borne nonce, never the live one: at the SDK's
-        // pre-flight staticcall the live nonce equals the blob's, but in the post-consumption
-        // delegatecall from `upgradeToAndCall` the live nonce has already advanced past it —
-        // a live-nonce read here would make the same signature fail to re-verify and brick
-        // every upgrade. Freshness was already enforced by the `StaleActionNonce` gate.
-        SHRINCS.ActionContext memory ctx = Codec.buildActionContext(
-            _shrincsDomainSeparator(),
-            blobNonce,
-            $.keyVersion,
-            Codec.ACTION_UPGRADE,
-            Codec.upgradePayloadHash(
-                newImplementation,
-                shouldMigrate,
-                EfficientHashLib.hashCalldata(migratorPayload)
-            )
-        );
-        // Stateful verification via the pinned verifier (the probe proves the NEW impl's
-        // pinned verifier is reachable; see EXTERNAL VERIFIER DELEGATION).
-        bytes32 commitment = $.shrincsPublicKeyCommitment;
-        if (
-            !_tryVerifyStateful(
-                commitment,
-                SHRINCS.statefulActionMessageHash(commitment, ctx),
-                abi.encode(pk, sig)
-            )
-        ) revert InvalidSignature();
+            SHRINCS.PublicKey calldata bundle,
+            bytes32 digest,
+            SHRINCS.Signature calldata statefulSig,
+            SPHINCSPlusC.Signature calldata statelessSig
+        ) = Codec.decodeProbePayload(payload);
+        bytes32 commitment = SHRINCS.publicKeyCommitment(bundle);
+        if (!_tryVerifyStateful(commitment, digest, abi.encode(bundle, statefulSig)))
+            revert InvalidSignature();
+        if (!_tryVerifyStateless(commitment, digest, abi.encode(bundle, statelessSig)))
+            revert InvalidSignature();
     }
 
     /// @inheritdoc IShrincsWallet
@@ -958,7 +927,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function walletFactory() external view returns (address payable) {
-        // Exposes the guarded `_SHRINCS_FACTORY_SLOT` snapshot value, which `initialize`/`migrate`
+        // Exposes the `_SHRINCS_FACTORY_SLOT` factory pin value, which `initialize`/`migrate`
         // re-establish to `FACTORY`, so it is invariantly equal to the immutable source of truth.
         return Storage.layout().walletFactory;
     }
@@ -1434,77 +1403,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         uint256 slot = _UPGRADE_GUARD_SLOT;
         assembly {
             v := tload(slot)
-        }
-    }
-
-    /// @dev Snapshots the eight guarded slots: owner, ERC-1967 impl, factory, main commitment,
-    ///      ERC-1271 commitment, keyVersion, nonce, packed leaf-state word.
-    function _snapshotGuardedSlots()
-        internal
-        view
-        returns (bytes32[8] memory snapshot)
-    {
-        /// @solidity memory-safe-assembly
-        assembly {
-            mstore(snapshot, sload(_OWNER_SLOT))
-            mstore(add(snapshot, 0x20), sload(_ERC1967_IMPLEMENTATION_SLOT))
-            mstore(add(snapshot, 0x40), sload(_SHRINCS_FACTORY_SLOT))
-            mstore(add(snapshot, 0x60), sload(_SHRINCS_COMMITMENT_SLOT))
-            mstore(add(snapshot, 0x80), sload(_ERC1271_COMMITMENT_SLOT))
-            mstore(add(snapshot, 0xa0), sload(_KEY_VERSION_SLOT))
-            mstore(add(snapshot, 0xc0), sload(_NONCE_SLOT))
-            mstore(add(snapshot, 0xe0), sload(_LEAF_STATE_SLOT))
-        }
-    }
-
-    /// @dev Reverts with `GuardedSlotTampered(slotIndex)` if any guarded slot changed since the
-    ///      snapshot. Index mapping documented on the error in `IShrincsWallet`.
-    function _assertGuardedSlotsUnchanged(
-        bytes32[8] memory snapshot
-    ) internal view {
-        bytes4 selector = GuardedSlotTampered.selector;
-        /// @solidity memory-safe-assembly
-        assembly {
-            function revertWithIndex(sel, idx) {
-                mstore(0x00, sel)
-                mstore(0x04, idx)
-                revert(0x00, 0x24)
-            }
-            if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {
-                revertWithIndex(selector, 0)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0x20)),
-                    sload(_ERC1967_IMPLEMENTATION_SLOT)
-                )
-            ) {
-                revertWithIndex(selector, 1)
-            }
-            if iszero(eq(mload(add(snapshot, 0x40)), sload(_SHRINCS_FACTORY_SLOT))) {
-                revertWithIndex(selector, 2)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0x60)), sload(_SHRINCS_COMMITMENT_SLOT))
-            ) {
-                revertWithIndex(selector, 3)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0x80)), sload(_ERC1271_COMMITMENT_SLOT))
-            ) {
-                revertWithIndex(selector, 4)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0xa0)), sload(_KEY_VERSION_SLOT))
-            ) {
-                revertWithIndex(selector, 5)
-            }
-            if iszero(eq(mload(add(snapshot, 0xc0)), sload(_NONCE_SLOT))) {
-                revertWithIndex(selector, 6)
-            }
-            if iszero(eq(mload(add(snapshot, 0xe0)), sload(_LEAF_STATE_SLOT))) {
-                revertWithIndex(selector, 7)
-            }
         }
     }
 }
