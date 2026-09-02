@@ -37,6 +37,13 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Thrown when the external SHRINCS verifier address is zero at implementation
     ///         deployment.
     error ZeroAddressVerifier();
+    /// @notice Thrown when the external SHRINCS verifier address has no deployed code at
+    ///         implementation deployment.
+    /// @dev Defence in depth against a deployment mistake, independent of the deploy scripts'
+    ///      own existence check. A codeless verifier would not be exploitable — every
+    ///      `verify` call would revert on return-data decoding, outside the try/catch — but
+    ///      it would ship a paymaster that can never sponsor until the impl is redeployed.
+    error VerifierHasNoCode();
     /// @notice Thrown when the caller is not the ERC-4337 EntryPoint.
     error InvalidEntryPoint();
     /// @notice Thrown when the self-call-only helper (`sponsorshipEnvelope`) is called by anyone
