@@ -171,7 +171,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     }
 
     function test_recoverWallet_revertsWhen_statelessTreeCarriedForward() public {
-        SHRINCS.RotationTarget memory t = _freshStatefulSameStatelessTarget("recover-carry-stateless");
+        (SHRINCS.RotationTarget memory t,) = _freshStatefulSameStatelessTarget("recover-carry-stateless");
         SPHINCSPlusC.Signature memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));

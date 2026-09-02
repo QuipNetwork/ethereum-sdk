@@ -31,6 +31,27 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _checkErc1271Signature(hash, signature);
     }
 
+    /// @dev Wraps the internal `transferOwnership` acceptance check (the incoming party's
+    ///      hybrid proof of control); returns the acceptance leaf on success.
+    function exposed_verifyOwnershipAcceptance(
+        SHRINCS.RotationTarget calldata nextKey,
+        bytes32 nextCommitment,
+        address newOwner,
+        uint32 nextMaxSignatures,
+        SHRINCS.Signature calldata keyAcceptance,
+        bytes calldata ownerAcceptance
+    ) external view returns (uint32) {
+        return
+            _verifyOwnershipAcceptance(
+                nextKey,
+                nextCommitment,
+                newOwner,
+                nextMaxSignatures,
+                keyAcceptance,
+                ownerAcceptance
+            );
+    }
+
     /// @dev Wraps the canonical SHRINCS signing-domain separator.
     function exposed_shrincsDomainSeparator() external view returns (bytes32) {
         return _shrincsDomainSeparator();

@@ -571,6 +571,8 @@ library ShrincsWalletCodec {
     /// @dev `payloadHash` for the `transferOwnership` (atomic handover) path. Cross-binds the new
     ///      classical owner to the incoming key bundle so the stateful owner-binding signature and
     ///      the stateless rotation signature cannot be mixed across separate handover attempts.
+    ///      The incoming key's acceptance signs the same payload under the same action tag; the
+    ///      two messages differ by the commitment they are bound to (installed vs. incoming).
     function transferOwnershipPayloadHash(
         address newOwner,
         bytes32 nextCommitment

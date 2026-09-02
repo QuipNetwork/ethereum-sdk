@@ -248,9 +248,11 @@ contract ShrincsWalletTest is Test {
     function _freshStatefulSameStatelessTarget(bytes memory seed)
         internal
         view
-        returns (SHRINCS.RotationTarget memory target)
+        returns (SHRINCS.RotationTarget memory target, SHRINCS.SigningKey memory key)
     {
-        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
+        SHRINCS.PublicKey memory pk;
+        bool ok;
+        (key, pk, ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
         require(ok, "keygen");
         bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
         target = SHRINCS.RotationTarget({
@@ -347,6 +349,52 @@ contract ShrincsWalletTest is Test {
         bool ok;
         (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, SIGN_BASE + leaf, message);
         require(ok, "stateful sign failed");
+    }
+
+    /// @dev Signs an arbitrary canonical STATEFUL action message with `key` (whose bundle
+    ///      commitment is `commitment`) at the ACTUAL leaf `leaf` — no `SIGN_BASE` offset. For
+    ///      keys other than the installed main key (e.g. an incoming handover bundle).
+    function _signStatefulActionWith(
+        SHRINCS.SigningKey memory key,
+        bytes32 commitment,
+        SHRINCS.ActionContext memory ctx,
+        uint32 leaf
+    ) internal view returns (SHRINCS.Signature memory sig) {
+        bytes memory message = abi.encodePacked(
+            SHRINCS.statefulRawMessageHash(commitment, SHRINCS.statefulActionMessageHash(commitment, ctx))
+        );
+        bool ok;
+        (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(key, leaf, message);
+        require(ok, "stateful sign failed");
+    }
+
+    /// @dev The incoming bundle's `transferOwnership` acceptance: `ACTION_TRANSFER_OWNERSHIP` over
+    ///      `(newOwner, commitment)` at nonce 0 / epoch 0 (deliberately not live values — see
+    ///      `_verifyOwnershipAcceptance`), bound to the INCOMING commitment, signed by `key` at `leaf`.
+    function _signKeyAcceptance(SHRINCS.SigningKey memory key, bytes32 commitment, address newOwner, uint32 leaf)
+        internal
+        view
+        returns (SHRINCS.Signature memory)
+    {
+        SHRINCS.ActionContext memory ctx = Codec.buildActionContext(
+            wallet.exposed_shrincsDomainSeparator(),
+            0,
+            0,
+            Codec.ACTION_TRANSFER_OWNERSHIP,
+            Codec.transferOwnershipPayloadHash(newOwner, commitment)
+        );
+        return _signStatefulActionWith(key, commitment, ctx, leaf);
+    }
+
+    /// @dev The incoming classical owner's acceptance: `pk` signs the wallet's typed-data target.
+    function _signOwnerAcceptance(uint256 pk, address newOwner, bytes32 commitment)
+        internal
+        view
+        returns (bytes memory)
+    {
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(pk, wallet.quipSignedHashEcdsaTarget(Codec.transferOwnershipPayloadHash(newOwner, commitment)));
+        return abi.encodePacked(r, s, v);
     }
 
     /// @dev Signs an arbitrary raw stateless message with the given key via the staged signer.
