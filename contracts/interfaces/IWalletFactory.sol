@@ -39,7 +39,8 @@ interface IWalletFactory {
     /// @param maxFee The maximum allowed fee.
     error FeeExceedsMax(uint256 fee, uint256 maxFee);
 
-    /// @notice Thrown when the implementation address has no deployed code.
+    /// @notice Thrown when the implementation address has no deployed code (zero code
+    ///         length — an EOA, touched or not, or a never-used address).
     error EmptyCode();
     /// @notice Thrown when the implementation's codehash is not in the vetted set.
     error ImplementationNotVetted();
@@ -177,7 +178,9 @@ interface IWalletFactory {
     function initialize(address payable initialOwner) external;
 
     /// @notice Approves a fresh implementation's codehash for proxy deployment.
-    /// @dev Only callable by the admin. Computes `extcodehash` of `impl` and adds it
+    /// @dev Only callable by the admin. Reverts with `EmptyCode` unless `impl` has a
+    ///      nonzero code length (a codehash check alone would admit a touched EOA, whose
+    ///      `extcodehash` is `keccak256("")`). Computes `extcodehash` of `impl` and adds it
     ///      to the vetted set as a new entry. Reverts with `AlreadyVetted` if the
     ///      codehash is already present (whether active or deprecated) — reactivation
     ///      flows through `undeprecateImplementation` so the lifecycle stays

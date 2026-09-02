@@ -43,6 +43,34 @@ contract WalletFactory__deployProxy is WalletFactoryTest {
         return payload;
     }
 
+    /// @dev Pins the hazard `vetImplementation`'s code-length guard exists for: a proxy whose
+    ///      implementation is a touched EOA delegatecalls into nothing, so `initialize` and the
+    ///      ETH forward both succeed silently and the deposit is stranded. `_deployProxy` itself
+    ///      has no guard — it trusts the vetted set — so this is reachable only through the
+    ///      harness, never through `deployLatestWalletProxy` / `deploySpecificWalletProxy`.
+    function test_exposed_deployProxy_touchedEoaImpl_succeedsSilently_andStrandsEth() public {
+        address eoa = address(0xE0A4);
+        vm.deal(eoa, 1 wei);
+        assertEq(eoa.codehash, keccak256(""));
+
+        bytes32 commitment = keccak256("eoa-impl");
+        address proxy =
+            harness.exposed_deployProxy{value: 1 ether}(eoa, commitment, payable(ALICE), _buildPayload());
+
+        // Deployment "succeeded": registry populated, deposit (minus fee) sits in the proxy.
+        assertEq(harness.wallets(_salt(commitment)), proxy);
+        assertEq(proxy.balance, 1 ether - harness.creationFee());
+        // ...but there is no logic behind it: every call succeeds with empty return data, so
+        // no typed call (including an upgrade) can ever reach the funds.
+        (bool ok, bytes memory ret) = proxy.call(abi.encodeWithSignature("owner()"));
+        assertTrue(ok);
+        assertEq(ret.length, 0);
+        (ok, ret) = proxy.call(abi.encodeWithSignature("upgradeToAndCall(address,bytes)", address(impl), ""));
+        assertTrue(ok);
+        assertEq(ret.length, 0);
+        assertEq(proxy.balance, 1 ether - harness.creationFee());
+    }
+
     function test_exposed_deployProxy_deploysAndInitializes() public {
         bytes memory payload = _buildPayload();
         address proxy =

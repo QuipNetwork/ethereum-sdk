@@ -138,6 +138,9 @@ Protected slots:
 
 - Implementations stored by codehash in `_vettedCode` set
 - Each codehash maps to an implementation address in `vettedWalletImpls`
+- `vetImplementation` requires nonzero code LENGTH (not merely nonzero codehash): a touched
+  EOA has codehash `keccak256("")` and a proxy pointing at it delegatecalls into nothing, so
+  `initialize` and the ETH forward succeed silently and the deposit is stranded
 - `deprecatedImpls` flag prevents use of known-bad implementations
 - Both `upgradeToAndCall` and `recoveryUpgrade` verify the target is vetted and not deprecated
 - A `verifyUpgrade` delegatecall to the new implementation provides scheme-specific validation

@@ -51,6 +51,46 @@ contract WalletFactory_vetImplementation is WalletFactoryTest {
         factory.vetImplementation(address(0xdead));
     }
 
+    /// @dev EIP-1052: a codeless account that has held a balance reports
+    ///      `keccak256("")`, not zero. A `codehash == 0` guard would admit it; the
+    ///      code-length guard must not.
+    function test_vetImplementation_revertsWhen_touchedEoa_balance() public {
+        address eoa = address(0xE0A1);
+        vm.deal(eoa, 1 wei);
+        assertEq(eoa.codehash, keccak256(""), "precondition: touched EOA has nonzero codehash");
+        assertEq(eoa.code.length, 0);
+
+        vm.prank(ADMIN);
+        vm.expectRevert(IWalletFactory.EmptyCode.selector);
+        factory.vetImplementation(eoa);
+        assertEq(factory.getVettedCodeCount(), 1);
+        assertEq(factory.latestWalletImpl(), address(walletImplementation));
+    }
+
+    /// @dev Same trap via a nonzero nonce (an address that has sent a transaction).
+    function test_vetImplementation_revertsWhen_touchedEoa_nonce() public {
+        address eoa = address(0xE0A2);
+        vm.setNonce(eoa, 1);
+        assertEq(eoa.codehash, keccak256(""), "precondition: touched EOA has nonzero codehash");
+
+        vm.prank(ADMIN);
+        vm.expectRevert(IWalletFactory.EmptyCode.selector);
+        factory.vetImplementation(eoa);
+        assertEq(factory.getVettedCodeCount(), 1);
+    }
+
+    /// @dev The empty codehash must never enter the vetted set: it is shared by every
+    ///      touched EOA, so one entry would "vet" all of them.
+    function test_vetImplementation_neverVetsEmptyCodehash() public {
+        address eoa = address(0xE0A3);
+        vm.deal(eoa, 1 ether);
+        vm.prank(ADMIN);
+        vm.expectRevert(IWalletFactory.EmptyCode.selector);
+        factory.vetImplementation(eoa);
+        assertEq(factory.getVettedCodeIndex(keccak256("")), type(uint256).max);
+        assertEq(factory.vettedWalletImpls(keccak256("")), address(0));
+    }
+
     function test_vetImplementation_revertsWhen_callerNotOwner() public {
         vm.prank(ALICE);
         vm.expectRevert(Ownable.Unauthorized.selector);
