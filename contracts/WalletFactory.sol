@@ -99,9 +99,10 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
         if (!$.vettedCode.contains(codehash)) revert ImplementationNotVetted();
         if (!$.deprecatedImpls[codehash]) revert NotDeprecated();
         $.deprecatedImpls[codehash] = false;
-        // Re-bind the address pointer so a redeploy of the same bytecode at a
-        // different address can replace the original. Same-codehash means same
-        // behavior, so this is a benign address swap, not a security boundary.
+        // Re-bind the pointer to any address carrying the vetted bytes (same code,
+        // same behaviour). A self-assign for the deployed wallet families: their
+        // code embeds `address(this)` in immutables, so a redeploy is a new,
+        // unvetted codehash (vet it as a new entry, then deprecate the old).
         $.vettedWalletImpls[codehash] = impl;
         // Recompute via the insertion-order backward scan: if the reactivated
         // entry is at the highest index among non-deprecated entries it becomes

@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {IWalletFactory} from "../../../contracts/interfaces/IWalletFactory.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -59,5 +60,46 @@ contract ShrincsWallet_constructor is ShrincsWalletTest {
             shrincsVerifier.PROFILE_TAG(),
             "PROFILE_NAME keccak must equal the pinned verifier's PROFILE_TAG"
         );
+    }
+
+    /// @dev Address-bound runtime code: `address(this)` lives in immutables (Solady EIP712's
+    ///      cached domain fields and the wallet's `_SELF`), so two deployments of the same source
+    ///      with identical constructor args have DIFFERENT codehashes. Consequences for the
+    ///      factory's codehash-keyed registry: a redeploy is unvetted, so
+    ///      `undeprecateImplementation`'s same-codehash re-bind can never move the pointer off
+    ///      the original address for this family, and replacing an implementation with a redeploy
+    ///      is the two-call vet-new / deprecate-old flow.
+    function test_constructor_redeployHasDistinctCodehash_undeprecateCannotRebind() public {
+        ShrincsWalletHarness redeploy =
+            new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier));
+        assertTrue(address(redeploy) != address(walletImplementation));
+        assertEq(redeploy.FACTORY(), walletImplementation.FACTORY(), "same constructor args");
+        assertEq(redeploy.SHRINCS_VERIFIER(), walletImplementation.SHRINCS_VERIFIER(), "same constructor args");
+        assertTrue(
+            address(redeploy).codehash != address(walletImplementation).codehash,
+            "address(this) immutables make every deployment a distinct codehash"
+        );
+
+        // The redeploy cannot ride the original's vetting.
+        vm.prank(ADMIN);
+        factory.deprecateImplementation(address(walletImplementation));
+        vm.prank(ADMIN);
+        vm.expectRevert(IWalletFactory.ImplementationNotVetted.selector);
+        factory.undeprecateImplementation(address(redeploy));
+
+        // Only the original address can be reactivated — the re-bind is a self-assign.
+        vm.prank(ADMIN);
+        factory.undeprecateImplementation(address(walletImplementation));
+        assertEq(factory.vettedWalletImpls(address(walletImplementation).codehash), address(walletImplementation));
+        assertEq(factory.latestWalletImpl(), address(walletImplementation));
+
+        // The documented replacement path: vet the redeploy as a NEW entry, deprecate the old.
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(redeploy));
+        assertEq(factory.latestWalletImpl(), address(redeploy), "redeploy vets as a new entry and becomes latest");
+        vm.prank(ADMIN);
+        factory.deprecateImplementation(address(walletImplementation));
+        assertEq(factory.latestWalletImpl(), address(redeploy));
+        assertEq(factory.getVettedCodeCount(), 2, "two distinct codehashes for one source");
     }
 }

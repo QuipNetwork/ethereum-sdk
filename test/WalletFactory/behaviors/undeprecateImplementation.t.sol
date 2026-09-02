@@ -76,14 +76,15 @@ contract WalletFactory_undeprecateImplementation is WalletFactoryTest {
         assertEq(factory.latestWalletImpl(), address(impl2));
     }
 
-    /// @dev Address re-bind: a redeploy of identical bytecode at a different
-    ///      address (e.g. CREATE2/CREATE3 with a different salt on another
-    ///      chain) can replace the address pointer for the same codehash.
-    ///      Same code = same behavior, so the security boundary (codehash) is
-    ///      unchanged. We use `vm.etch` to copy the runtime bytecode to a
-    ///      fresh address — `EXTCODEHASH` is `keccak256(runtime_code)`, so
-    ///      identical bytes at a different address yield the same codehash by
-    ///      definition.
+    /// @dev Address re-bind: identical runtime bytes at a different address share
+    ///      the codehash, so the pointer can move to them. Same code = same
+    ///      behavior, so the security boundary (codehash) is unchanged. `vm.etch`
+    ///      is the ONLY way to reach this for the deployed wallet families: their
+    ///      runtime code embeds `address(this)` in immutables, so a real redeploy of
+    ///      the same source has a different codehash and is rejected as unvetted
+    ///      (pinned in `test/ShrincsWallet/behaviors/constructor.t.sol`). The
+    ///      factory is family-agnostic, so the path stays for address-independent
+    ///      implementations.
     function test_undeprecateImplementation_rebindsAddressForSameCodehash() public {
         bytes32 codehash = address(walletImplementation).codehash;
 
