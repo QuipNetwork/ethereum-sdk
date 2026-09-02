@@ -279,7 +279,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      `callData`, so the SHRINCS signature over userOpHash binds it with no digest work,
     ///      and validation never has to read the factory's live fee (ERC-7562). A live fee above
     ///      the cap reverts here — in the execution phase, after the leaf was consumed during
-    ///      validation (an inherent property of stateful signatures; see ERC7562_COMPLIANCE.md).
+    ///      validation (an inherent property of stateful signatures; see INVARIANTS.md §18).
     function execute(
         address target,
         uint256 value,

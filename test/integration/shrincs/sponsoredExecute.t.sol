@@ -86,8 +86,8 @@ contract ShrincsE2E_sponsoredExecute is ShrincsE2EBase {
     /// @dev Fee raised past the signed ceiling AFTER signing: validation passes (it reads no fee
     ///      — ERC-7562), so the op is included and the EXECUTION phase reverts on the cap. The
     ///      leaf and action nonce were consumed during validation and stay consumed — the
-    ///      documented N-3a property of validation-phase stateful-signature consumption
-    ///      (ERC7562_COMPLIANCE.md); the execution effect itself does not happen.
+    ///      documented property of validation-phase stateful-signature consumption
+    ///      (INVARIANTS.md §18); the execution effect itself does not happen.
     function test_e2e_feeIncreasePastCap_executionRevertsLeafBurned() public {
         PackedUserOperation memory op = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1); // maxFee 0
         factory.setExecuteFee(0.01 ether); // raised past the signed ceiling after signing

@@ -204,9 +204,9 @@ Operations requiring PQ auth cannot be bypassed via classical owner alone and vi
 
 **Only the official ERC-4337 v0.7 EntryPoint (`0x0000000071727De22E5E9d8BAf0edAc6f37da032`) can call validation and execution methods.**
 
-Hardcoded constant, enforced by `onlyEntryPoint` modifier inherited from the ERC-4337 base.
+Hardcoded constant. The wallets (`ShrincsWallet`, `QuipWallet`) inherit Solady's `ERC4337` base and enforce it through its `onlyEntryPoint` modifier, which compares `msg.sender` against the base's `entryPoint()` (neither wallet overrides it). The paymasters (`ShrincsPaymaster`, `QuipPaymaster`) do not inherit that base: each declares its own `ENTRY_POINT` constant and checks `msg.sender != ENTRY_POINT` inline at the top of `validatePaymasterUserOp` and `postOp`, reverting `InvalidEntryPoint`.
 
-**Contracts:** QuipWallet, QuipPaymaster
+**Contracts:** ShrincsWallet, ShrincsPaymaster, QuipWallet, QuipPaymaster
 
 **Violation consequence:** A malicious caller impersonating the EntryPoint could trigger validation/execution without proper bundling guarantees.
 
@@ -313,11 +313,11 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 
 **`ShrincsWallet._validateSignature`'s only external call is the staticcall to the pinned, storage-free SHRINCS verifier; fee pricing happens only in the execution phase, capped by the signed `maxFee`.**
 
-- The validation frame touches only the wallet's own storage (STO-010: leaf bitmap, `statefulLeavesUsed`, action nonce), pure SHRINCS context/hash helpers, and one staticcall to the immutable `SHRINCS_VERIFIER` (compliant: a deployed target that touches no storage and uses no banned opcodes — see invariant 19 and `ERC7562_COMPLIANCE.md`). In particular it must never read `factory.executeFee()` — mutable non-associated storage that conformant bundlers reject under STO-033 (finding F-1, `ERC7562_COMPLIANCE.md`).
+- The validation frame touches only the wallet's own storage (STO-010: leaf bitmap, `statefulLeavesUsed`, action nonce), pure SHRINCS context/hash helpers, and one staticcall to the immutable `SHRINCS_VERIFIER` (compliant: a deployed target that touches no storage and uses no banned opcodes — see invariant 19). In particular it must never read `factory.executeFee()` — mutable storage of a non-associated contract, which conformant bundlers reject under STO-033.
 - The signer's fee authorization is the `maxFee` calldata parameter of the capped `execute`/`executeBatch` variants; `userOpHash` covers `callData`, so the SHRINCS signature binds it with no digest work. The direct signed path binds `maxFee` as the 4th `executePayloadHash` field.
 - Execution (`_collectExecuteFee(maxFee)`) reads the live fee exactly once, reverts `ExecuteFeeExceedsCap` only if it exceeds the cap, and charges the LIVE fee — decreases succeed at the lower price (deliberately `<=`, not `==`).
 - The inherited un-capped `execute(address,uint256,bytes)` / `executeBatch(Call[])` selectors revert `StandardExecuteDisabled`, so no execution path escapes the cap.
-- On the 4337 path a cap-exceeded revert happens after validation consumed the leaf and advanced the nonce — an inherent property of validation-phase stateful-signature consumption (N-3a), not a violation.
+- On the 4337 path a cap-exceeded revert happens after validation consumed the leaf and advanced the nonce — an inherent property of validation-phase stateful-signature consumption, not a violation.
 
 **Contracts:** ShrincsWallet
 
