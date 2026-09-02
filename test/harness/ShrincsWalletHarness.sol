@@ -73,6 +73,36 @@ contract ShrincsWalletHarness is ShrincsWallet {
         $.maxSignatures = maxSignaturesValue;
     }
 
+    /// @dev Storage-layout drift probe: writes a distinct sentinel into EVERY `Layout` field
+    ///      through `Storage.layout()`, so a test can pin each field to its expected slot with
+    ///      `vm.load`. Mapping entries are written under the given keys. NOT a production function.
+    function harness_writeLayoutProbe(
+        uint256 bitmapKeyVersion,
+        uint256 bitmapWord,
+        bytes32 statefulTreeId,
+        bytes32 statelessTreeId
+    ) external {
+        Storage.Layout storage $ = Storage.layout();
+        $.walletFactory = payable(address(uint160(0xA1)));
+        $.shrincsPublicKeyCommitment = bytes32(uint256(0xA2));
+        $.erc1271PublicKeyCommitment = bytes32(uint256(0xA3));
+        $.keyVersion = 0xA4;
+        $.nonce = 0xA5;
+        $.statefulLeavesUsed = 0xA6;
+        $.maxSignatures = 0xA7;
+        $.usedStatefulLeafBitmap[bitmapKeyVersion][bitmapWord] = 0xA8;
+        $.spentStatefulTrees[statefulTreeId] = true;
+        $.spentStatelessTrees[statelessTreeId] = true;
+    }
+
+    /// @dev The slot `Storage.layout()` resolves to.
+    function exposed_layoutSlot() external pure returns (bytes32 slot) {
+        Storage.Layout storage $ = Storage.layout();
+        assembly {
+            slot := $.slot
+        }
+    }
+
     /// @dev Records the installed bundle's trees as spent, mirroring what `initialize` does for a
     ///      factory-deployed wallet.
     function harness_spendTrees(SHRINCS.PublicKey calldata pk) external {

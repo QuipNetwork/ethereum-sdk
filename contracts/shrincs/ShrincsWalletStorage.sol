@@ -78,21 +78,14 @@ library ShrincsWalletStorage {
     }
 
     /// @dev `keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.shrincs")) - 1))
-    ///      & ~bytes32(uint256(0xff))`.
-    ///      Single source of truth for the ERC-7201 namespace base. The derived per-field
-    ///      constant below is read by `ShrincsWallet`'s Yul from the same slot the library's
-    ///      `layout()` writes to. Solidity's inline assembly only accepts direct numeric
-    ///      constants, which is why the derived offset is its own hex literal rather than
-    ///      `base + N`.
+    ///      & ~bytes32(uint256(0xff))` — the ERC-7201 namespace base.
+    ///
+    ///      Drift gate: `test/ShrincsWallet/behaviors/_storageLayout.t.sol` recomputes this
+    ///      base from the namespace string and pins every `Layout` field (and the packing of
+    ///      the two `uint32`s) to its slot by writing through `layout()` and reading back
+    ///      with `vm.load`. A namespace rename, a field reorder or an insertion fails the
+    ///      suite; appending a field at the end does not (it is upgrade-safe).
     bytes32 internal constant _SHRINCS_STORAGE_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
-
-    /// @dev Slot of `Layout.walletFactory` (field 0 of the namespace above). Read by
-    ///      `initialize`/`migrate` Yul to re-establish the factory pin without an extra
-    ///      keccak. `test/fixtures/ShrincsWallet.storageLayout.json` pins each field's slot
-    ///      offset and fails the suite on any drift; a namespace rename above must
-    ///      regenerate this literal with it.
-    bytes32 internal constant _SHRINCS_FACTORY_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
 
     /// @dev Returns the ERC-7201 namespaced storage layout.

@@ -94,25 +94,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     bytes32 private constant _QUIP_USER_OP_HASH_TYPEHASH =
         keccak256("QuipUserOpHash(bytes32 userOpHash)");
 
-    /// @dev SHRINCS guarded-slot values mirrored as direct hex literals. `ShrincsWalletStorage`
-    ///      holds the canonical copies; Solidity's inline assembly (the guard snapshot/check below)
-    ///      accepts only a direct number constant or a reference to one — NOT a library member
-    ///      (`Storage.X`) or a `base + N` expression — so these must be retyped here rather than
-    ///      aliased. `test/fixtures/ShrincsWallet.storageLayout.json` pins each `Layout` field's
-    ///      slot and fails the suite if this mirror drifts from the field order.
-    bytes32 private constant _SHRINCS_FACTORY_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
-    bytes32 private constant _SHRINCS_COMMITMENT_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01;
-    bytes32 private constant _ERC1271_COMMITMENT_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc02;
-    bytes32 private constant _KEY_VERSION_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03;
-    bytes32 private constant _NONCE_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc04;
-    bytes32 private constant _LEAF_STATE_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc05;
-
     constructor(address payable factory_, address shrincsVerifier_) {
         if (factory_ == address(0)) revert ZeroAddressFactory();
         if (shrincsVerifier_ == address(0)) revert ZeroAddressVerifier();
@@ -423,10 +404,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         bytes32 commitment = _safeInstallKeyBundle(mainKey);
         if (commitment != declaredCommitment) revert CommitmentMismatch();
         bytes32 erc1271Commitment = _safeInstallKeyBundle(erc1271Key);
-        // No-drift invariant: re-establish the `_SHRINCS_FACTORY_SLOT` factory pin to this
-        // (the new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
-        // `FACTORY` is the new source of truth; pinning storage to it keeps the snapshot slot and
-        // the `walletFactory()` getter from ever diverging from the immutable after an upgrade.
+        // No-drift invariant: re-establish the `walletFactory` storage pin to this
+        // implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so `FACTORY`
+        // is the new source of truth; pinning storage to it keeps the `walletFactory()` getter
+        // from ever diverging from the immutable after an upgrade.
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
         $.erc1271PublicKeyCommitment = erc1271Commitment;
@@ -1009,8 +990,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function walletFactory() external view returns (address payable) {
-        // Exposes the `_SHRINCS_FACTORY_SLOT` factory pin value, which `initialize`/`migrate`
-        // re-establish to `FACTORY`, so it is invariantly equal to the immutable source of truth.
+        // Exposes the `walletFactory` storage pin, which `initialize`/`migrate` re-establish to
+        // `FACTORY`, so it is invariantly equal to the immutable source of truth.
         return Storage.layout().walletFactory;
     }
 
