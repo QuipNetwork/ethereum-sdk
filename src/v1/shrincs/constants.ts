@@ -36,4 +36,17 @@ export const DEFAULT_VERIFICATION_GAS_LIMIT = 2_500_000n;
 export const DEFAULT_CALL_GAS_LIMIT = 500_000n;
 export const DEFAULT_PRE_VERIFICATION_GAS = 100_000n;
 export const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT = 2_500_000n;
+
+/// Default sponsorship lifetime: `validUntil = now + this` when a caller does
+/// not set `validUntil` explicitly. A sponsorship is a single-use leaf that
+/// already binds sender, calldata and gas caps, so expiry is the ONLY control
+/// that makes an issued-but-unsubmitted approval go stale by itself — and an
+/// unbounded one (`validUntil: 0`) must be an explicit choice, never the
+/// result of an omitted argument. Sized to cover an owner co-signature (a
+/// hardware wallet included) plus bundler inclusion; every sponsorship that
+/// expires unused strands its leaf until it is burned via `markLeavesUsed`.
+export const DEFAULT_SPONSORSHIP_VALIDITY_SECONDS = 15 * 60;
+
+/// Largest value the packed 6-byte `validUntil` / `validAfter` fields hold.
+export const MAX_PAYMASTER_TIMESTAMP = 2 ** 48 - 1;
 export const DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT = 100_000n;
