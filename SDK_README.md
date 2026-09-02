@@ -108,17 +108,21 @@ One global SHRINCS stateful key sponsors every wallet: the operator signs each u
 
 **Admin is owner-fiat.** `rotateStatefulKey` and `markLeavesUsed` carry no PQ signature of their own — the paymaster's owner is expected to be a post-quantum wallet, which secures the admin path upstream. This is deliberate: a compromised or lost sponsorship key must never gate its own replacement.
 
-**Rotation rotates the stateful subkey ONLY.** `rotateStatefulKey({ nextStatefulPublicKey })` takes a fresh key's encoded 68-byte stateful public key (keygen it under a NEW vaultId of the same signer) and carries the installed bundle's stateless half forward. The new `maxSignatures` budget rides inside the encoding. The client pre-flights the current keypair against the on-chain commitment (`VerifierMismatchError` before any tx).
+**One sponsorship key per chain.** The used-leaf bitmap lives in one paymaster contract and the signing domain binds `chainid`, so a key installed on two chains would sign two different messages at the same one-time leaf. Sponsorship keys therefore derive under `m/20814'/algorithm'/<chainId>'/account'/<epoch>'`: create the signer with `{ network: chainId }` and use the per-chain rotation epoch as `derivationIndex` (`scripts/gen-shrincs-paymaster-verifier.mjs` does this). Never install one bundle on a second chain.
 
-**After a rotation, the live bundle is a cross-vault graft** — the new vault's stateful secrets under the ORIGINAL vault's stateless half. A plain `recoverKeyPair` on either vault reproduces the wrong commitment; build the operator keypair explicitly and pass it as the `keypair` constructor param:
+**Rotation rotates the stateful subkey ONLY.** `rotateStatefulKey({ nextStatefulPublicKey })` takes a fresh key's encoded 68-byte stateful public key (keygen it under the NEXT epoch of the same chain-scoped signer) and carries the installed bundle's stateless half forward. The new `maxSignatures` budget rides inside the encoding. The client pre-flights the current keypair against the on-chain commitment (`VerifierMismatchError` before any tx).
+
+**After a rotation, the live bundle is a graft** — the new epoch's stateful secrets under the ORIGINAL bundle's stateless half. A plain `recoverKeyPair` on either index reproduces the wrong commitment; build the operator keypair explicitly and pass it as the `keypair` constructor param. The two halves may sit under different HD `network` levels (a pre-convention key rotated to a chain-scoped one), so each half takes its own path options:
 
 ```ts
 const grafted = signer.deriveKeyPair({
-  statefulVaultId: newVault,      // rotated-in stateful key
-  statelessVaultId: originalVault, // stateless half never rotates
+  statefulIndex: nextEpoch,                    // rotated-in stateful key
+  statefulPath: { network: chainId },          // chain-scoped
+  statelessIndex: originalIndex,               // stateless half never rotates
+  statelessPath: { network: originalNetwork }, // 20049 for pre-convention keys
   maxSignatures: NEW_MAX,
 });
-const pmClient = new ShrincsPaymasterClient({ ...params, vaultId: newVault, keypair: grafted });
+const pmClient = new ShrincsPaymasterClient({ ...params, keypair: grafted });
 ```
 
 **Revocation spends budget.** `markLeavesUsed(leaves)` kills outstanding sponsorship signatures by marking their leaves used (idempotent per leaf; out-of-range reverts the batch). Every fresh mark decrements `remainingStatefulSignatures()` — a leaf is available, sponsored, or revoked, and the three always sum to the budget.

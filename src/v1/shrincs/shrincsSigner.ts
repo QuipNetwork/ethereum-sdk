@@ -77,6 +77,13 @@ export interface DeriveKeyPairParams {
   statefulIndex: number;
   statelessIndex: number;
   maxSignatures: number;
+  /// HD path levels for the stateful half, merged over the signer's own path
+  /// options. Lets a graft span two `network` levels — e.g. a paymaster whose
+  /// stateless half was derived under the default network and whose stateful
+  /// half is chain-scoped (`{ network: chainId }`) after a rotation.
+  statefulPath?: QuipHdPathOptions;
+  /// HD path levels for the stateless half; see `statefulPath`.
+  statelessPath?: QuipHdPathOptions;
 }
 
 /// One derived key half at the wasm boundary: the 264-byte flat signing key
@@ -380,8 +387,13 @@ export class ShrincsSigner {
 
   /// Deterministic per-index keygen seed: the QUIP HD leaf at
   /// m/20814'/algorithm'/network'/account'/derivationIndex'.
-  deriveSeedHex(derivationIndex: number): Hex {
-    return deriveQuipSeed(this.masterSeed, derivationIndex, this.pathOptions);
+  /// `pathOverride` replaces individual levels of the signer's path options for
+  /// this derivation only (e.g. `{ network: chainId }` for a chain-scoped key).
+  deriveSeedHex(derivationIndex: number, pathOverride?: QuipHdPathOptions): Hex {
+    return deriveQuipSeed(this.masterSeed, derivationIndex, {
+      ...this.pathOptions,
+      ...pathOverride,
+    });
   }
 
   /// Recover (re-derive) the keypair for a derivation index. The canonical path:
@@ -395,17 +407,19 @@ export class ShrincsSigner {
   }
 
   deriveKeyPair(params: DeriveKeyPairParams): ShrincsKeyPair {
-    const stateful = this.keyMaterial(
-      this.deriveSeedHex(params.statefulIndex),
-      params.maxSignatures
+    const statefulSeed = this.deriveSeedHex(
+      params.statefulIndex,
+      params.statefulPath
     );
+    const statelessSeed = this.deriveSeedHex(
+      params.statelessIndex,
+      params.statelessPath
+    );
+    const stateful = this.keyMaterial(statefulSeed, params.maxSignatures);
     const stateless =
-      params.statelessIndex === params.statefulIndex
+      statelessSeed === statefulSeed
         ? stateful
-        : this.keyMaterial(
-            this.deriveSeedHex(params.statelessIndex),
-            params.maxSignatures
-          );
+        : this.keyMaterial(statelessSeed, params.maxSignatures);
     const pair = new ShrincsKeyPair(this.wasm, stateful, stateless);
     this.runSelfTest(pair);
     return pair;
