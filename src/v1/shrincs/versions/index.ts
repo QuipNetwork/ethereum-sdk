@@ -57,6 +57,7 @@ export const LATEST_WALLET_VERSION: WalletVersionDescriptor = {
     erc1271KeyArgument: "publicKeyBundle",
     hasStatefulLeafBitmapWord: true,
     enforcesSpentTreeFreshnessOnMigrate: true,
+    handoverAcceptance: "hybrid",
   },
 };
 

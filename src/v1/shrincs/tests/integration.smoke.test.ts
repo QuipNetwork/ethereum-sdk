@@ -25,7 +25,9 @@ import {
   type Hex,
   BaseError,
   ContractFunctionRevertedError,
+  createWalletClient,
   getAddress,
+  http,
   parseEther,
   parseEventLogs,
   toFunctionSelector,
@@ -46,6 +48,7 @@ import {
   EmptyLeavesError,
   Erc1271ValidationResult,
   ExecuteFeeExceedsCapError,
+  InvalidOwnerAcceptanceError,
   LeafOutOfRangeError,
   StaleStatefulLeafError,
   VerifierMismatchError,
@@ -53,6 +56,10 @@ import {
 import { v1Commitment } from "../addresses.js";
 import { encodeInitPayload, publicKeyCommitment } from "../shrincsCodec.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
+import {
+  ShrincsWalletClient,
+  signOwnershipAcceptance,
+} from "../shrincsWalletClient.js";
 import {
   DEFAULT_ACCOUNT,
   SHRINCS_ANVIL_PORTS,
@@ -983,4 +990,104 @@ describe("Shrincs SDK live-anvil smoke", () => {
     });
     expect(receipt.status).toBe("success");
   }, 120_000);
+
+  // ── (l) two-party ownership handover ────────────────────────────────
+  // The TS acceptance digests (EIP-712 QuipSignedHash over the handover
+  // payload; the stateful context at nonce 0 / epoch 0 bound to the incoming
+  // commitment) are verified by the CONTRACT here — the cross-language check
+  // the unit tests cannot give.
+  it("l. transferOwnership with the recipient's hybrid acceptance hands over; the new owner operates at the next leaf", async () => {
+    const { client } = await createFreshShrincsWallet(stack, 0xc0, {
+      maxSignatures: MAX_SIGS,
+    });
+    const walletAddress = client.walletAddress;
+
+    // Recipient: anvil dev account #1 with its OWN SHRINCS signer and a fresh
+    // bundle. It never sees the current owner's keys; it only signs the
+    // acceptance and hands the current owner the bundle plus both halves.
+    const recipient = privateKeyToAccount(
+      "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+    );
+    const recipientSigner = await makeShrincsSigner(0xc1);
+    const nextKeyPair = recipientSigner.recoverKeyPair(0xc1, {
+      maxSignatures: MAX_SIGS,
+    });
+    const acceptance = await signOwnershipAcceptance({
+      chainId: foundry.id,
+      walletAddress,
+      nextKeyPair,
+      newOwner: recipient,
+    });
+
+    // Audit scenario: the current owner mistypes the destination. Nobody
+    // accepted that address, so the SDK refuses before a leaf is reserved or a
+    // signature produced — the wallet state is untouched.
+    const before = await client.getWalletState();
+    await expect(
+      client.transferOwnership({ ...acceptance, newOwner: RECIPIENT })
+    ).rejects.toThrow(InvalidOwnerAcceptanceError);
+    expect(await client.getWalletState()).toEqual(before);
+
+    // The genuine handover, submitted by the CURRENT owner.
+    const receipt = await client.transferOwnership(acceptance);
+    expect(receipt.status).toBe("success");
+
+    const after = await client.getWalletState();
+    expect(getAddress(after.owner)).toBe(getAddress(recipient.address));
+    expect(after.shrincsPublicKeyCommitment.toLowerCase()).toBe(
+      nextKeyPair.publicKeyCommitment.toLowerCase()
+    );
+    expect(after.keyVersion).toBe(before.keyVersion + 1n);
+    // Two current-key signatures consumed (stateful binding + stateless
+    // rotation); the acceptance binds no nonce.
+    expect(after.actionNonce).toBe(before.actionNonce + 2n);
+    // The new epoch opens with exactly the acceptance leaf spent.
+    expect(after.statefulLeavesUsed).toBe(1);
+    expect(await client.isStatefulLeafUsed(LEAF_1)).toBe(true);
+    expect(await client.isStatefulLeafUsed(LEAF_2)).toBe(false);
+    const registered = await stack.publicClient.readContract({
+      address: stack.factoryAddress,
+      abi: walletFactoryAbi,
+      functionName: "walletOwner",
+      args: [walletAddress],
+    });
+    expect(getAddress(registered as Address)).toBe(getAddress(recipient.address));
+
+    // The recipient operates the wallet with their own client. Its automatic
+    // leaf pick re-reads the bitmap and skips the spent acceptance leaf.
+    await stack.testClient.setBalance({
+      address: recipient.address,
+      value: parseEther("10"),
+    });
+    const newOwnerClient = new ShrincsWalletClient({
+      walletAddress,
+      publicClient: stack.publicClient,
+      walletClient: createWalletClient({
+        chain: foundry,
+        transport: http(`http://127.0.0.1:${stack.anvil.port}`),
+        account: recipient,
+      }),
+      signer: recipientSigner,
+      keypair: nextKeyPair,
+      commitment: client.commitment,
+      chainId: foundry.id,
+      account: recipient.address,
+    });
+    const exec = await newOwnerClient.execute({
+      target: RECIPIENT,
+      value: parseEther("0.01"),
+    });
+    expect(exec.status).toBe("success");
+    expect(await newOwnerClient.isStatefulLeafUsed(LEAF_2)).toBe(true);
+    expect((await newOwnerClient.getWalletState()).statefulLeavesUsed).toBe(2);
+
+    // The previous owner is out.
+    let caught: unknown = null;
+    try {
+      await client.execute({ target: RECIPIENT, value: parseEther("0.01") });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeNull();
+  }, 180_000);
 });

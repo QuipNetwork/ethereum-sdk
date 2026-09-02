@@ -28,6 +28,8 @@ import {
   StatefulTreeSpentError,
   StatelessTreeSpentError,
   UnknownContractError,
+  InvalidOwnerAcceptanceError,
+  InvalidKeyAcceptanceError,
 } from "../errors.js";
 import { decodeRevertBytes } from "../internal/decodeError.js";
 
@@ -47,6 +49,21 @@ describe("shrincs error decoding", () => {
     expect(
       decodeRevertBytes(encodeErrorResult({ abi: shrincsWalletAbi, errorName: "InvalidSignature" }))
     ).toBeInstanceOf(InvalidSignatureError);
+  });
+
+  it("decodes the transferOwnership acceptance errors (current wallet)", () => {
+    const owner = decodeRevertBytes(
+      encodeErrorResult({ abi: shrincsWalletAbi, errorName: "InvalidOwnerAcceptance" })
+    );
+    expect(owner).toBeInstanceOf(InvalidOwnerAcceptanceError);
+    expect(owner?.code).toBe("SHRINCS_INVALID_OWNER_ACCEPTANCE");
+    expect(owner?.selector).toBe(toFunctionSelector("InvalidOwnerAcceptance()"));
+    const key = decodeRevertBytes(
+      encodeErrorResult({ abi: shrincsWalletAbi, errorName: "InvalidKeyAcceptance" })
+    );
+    expect(key).toBeInstanceOf(InvalidKeyAcceptanceError);
+    expect(key?.code).toBe("SHRINCS_INVALID_KEY_ACCEPTANCE");
+    expect(key?.selector).toBe(toFunctionSelector("InvalidKeyAcceptance()"));
   });
 
   it("decodes MalformedPayload(uint256,uint256) preserving args", () => {

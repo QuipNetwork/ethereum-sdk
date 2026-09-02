@@ -49,8 +49,13 @@ export {
   validateMnemonic,
 } from "./hd.js";
 export type { HdNode, QuipHdPathOptions } from "./hd.js";
-export { ShrincsWalletClient, fetchShrincsWalletState } from "./shrincsWalletClient.js";
+export {
+  ShrincsWalletClient,
+  fetchShrincsWalletState,
+  signOwnershipAcceptance,
+} from "./shrincsWalletClient.js";
 export type {
+  OwnershipAcceptance,
   ShrincsWalletState,
   ShrincsWalletClientParams,
   ShrincsTxKeyOptions,

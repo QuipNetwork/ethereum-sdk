@@ -14,10 +14,15 @@ import {
   toBytes,
 } from "viem";
 
+import { privateKeyToAccount } from "viem/accounts";
+
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
+import * as Codec from "../shrincsCodec.js";
 import {
   AuthLeafInTargetsError,
   GasEstimationError,
+  InvalidKeyAcceptanceError,
+  InvalidOwnerAcceptanceError,
   OwnerMismatchError,
   ShrincsHdDerivationError,
   ZeroAddressOwnerError,
@@ -28,7 +33,11 @@ import {
 import { SHRINCS_WALLET_BETA2_IMPLEMENTATION } from "../addresses.js";
 import { encodeInitPayload } from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
-import { ShrincsWalletClient } from "../shrincsWalletClient.js";
+import {
+  ShrincsWalletClient,
+  signOwnershipAcceptance,
+  type OwnershipAcceptance,
+} from "../shrincsWalletClient.js";
 import { type PackedUserOperation } from "../../userOpCodec.js";
 
 const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
@@ -449,11 +458,25 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
     ).rejects.toThrow(StatelessTreeSpentError);
   });
 
-  it("transferOwnership lets a fresh bundle through", async () => {
+  it("transferOwnership lets a fresh, accepted bundle through", async () => {
     const client = makeWalletClient();
-    await passesPreflight(() =>
-      client.transferOwnership({ nextKey: freshKey.publicKey, newOwner: NEW_OWNER })
-    );
+    const recipient = privateKeyToAccount(seed("preflight recipient"));
+    const acceptance = await signOwnershipAcceptance({
+      chainId: CHAIN_ID,
+      walletAddress: WALLET,
+      nextKeyPair: freshKey,
+      newOwner: recipient,
+    });
+    let caught: unknown;
+    try {
+      await client.transferOwnership(acceptance);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeInstanceOf(StatefulTreeSpentError);
+    expect(caught).not.toBeInstanceOf(StatelessTreeSpentError);
+    expect(caught).not.toBeInstanceOf(InvalidOwnerAcceptanceError);
+    expect(caught).not.toBeInstanceOf(InvalidKeyAcceptanceError);
   });
 
   it("setErc1271Key refuses a bundle sharing the installed main stateful tree", async () => {
@@ -693,5 +716,188 @@ describe("ShrincsWalletClient prepareExecute signs once", () => {
     // Sequential from leaf 1: no deploy reservation under V1, and the in-memory
     // store keeps un-sent prepares from being reused.
     expect(used).toEqual([1, 2, 3]);
+  });
+});
+
+describe("ShrincsWalletClient transferOwnership acceptance", () => {
+  const RECIPIENT = privateKeyToAccount(seed("handover recipient"));
+  const STRANGER = privateKeyToAccount(seed("handover stranger"));
+  const sendOpts = { gas: 100_000n, skipPreflightChecks: true } as const;
+
+  /// A write-capable client that records the args handed to `writeContract`.
+  function makeCapturingClient(overrides: Record<string, unknown> = {}, slot: Hex = LATEST_IMPL_SLOT): {
+    client: ShrincsWalletClient;
+    captured: () => { functionName: string; args: readonly unknown[]; abi: readonly unknown[] } | undefined;
+  } {
+    let call: { functionName: string; args: readonly unknown[]; abi: readonly unknown[] } | undefined;
+    const publicClient = {
+      getChainId: async () => CHAIN_ID,
+      getCode: async ({ address }: { address: Address }) =>
+        address.toLowerCase() === WALLET.toLowerCase() ? ("0x6000" as Hex) : ("0x" as Hex),
+      getStorageAt: async () => slot,
+      multicall: async ({ contracts }: { contracts: readonly { functionName: string }[] }) =>
+        contracts.map((c) => ({ status: "success" as const, result: walletRead(c.functionName, overrides) })),
+      readContract: async ({ functionName }: { functionName: string }) => walletRead(functionName, overrides),
+      waitForTransactionReceipt: async () =>
+        ({ status: "success", transactionHash: TX_HASH }) as unknown as TransactionReceipt,
+    } as unknown as PublicClient;
+    const walletClient = {
+      getAddresses: async () => [ACCOUNT],
+      writeContract: async (params: { functionName: string; args: readonly unknown[]; abi: readonly unknown[] }) => {
+        call = { functionName: params.functionName, args: params.args, abi: params.abi };
+        return TX_HASH;
+      },
+    } as unknown as WalletClient;
+    const client = new ShrincsWalletClient({
+      walletAddress: WALLET,
+      publicClient,
+      walletClient,
+      signer,
+      keypair,
+      commitment: seed("vault"),
+      chainId: CHAIN_ID,
+      account: ACCOUNT,
+    });
+    return { client, captured: () => call };
+  }
+
+  async function accepted(newOwner = RECIPIENT, nextKeyPair: ShrincsKeyPair = freshKey): Promise<OwnershipAcceptance> {
+    return signOwnershipAcceptance({ chainId: CHAIN_ID, walletAddress: WALLET, nextKeyPair, newOwner });
+  }
+
+  it("signOwnershipAcceptance produces both halves bound to (newOwner, bundle)", async () => {
+    const acceptance = await accepted();
+    expect(acceptance.newOwner).toBe(RECIPIENT.address);
+    expect(acceptance.nextKey).toEqual(freshKey.publicKey);
+    expect(acceptance.keyAcceptance.authPath.length).toBe(1);
+    expect(acceptance.ownerAcceptance).toMatch(/^0x[0-9a-f]{130}$/i);
+    // The classical half is the wallet's QuipSignedHash typed-data signature
+    // over the handover payload hash — what a browser wallet would sign.
+    const { recoverTypedDataAddress } = await import("viem");
+    const payloadHash = Codec.transferOwnershipPayloadHash(RECIPIENT.address, freshKey.publicKeyCommitment);
+    const { quipSignedHashTypedData } = await import("../shrincsWalletClient.js");
+    expect(
+      await recoverTypedDataAddress({
+        ...quipSignedHashTypedData(payloadHash, CHAIN_ID, WALLET),
+        signature: acceptance.ownerAcceptance,
+      })
+    ).toBe(RECIPIENT.address);
+    // Explicit leaf.
+    const atLeaf3 = await signOwnershipAcceptance({
+      chainId: CHAIN_ID, walletAddress: WALLET, nextKeyPair: freshKey, newOwner: RECIPIENT, leaf: 3,
+    });
+    expect(atLeaf3.keyAcceptance.authPath.length).toBe(3);
+  });
+
+  it("submits the seven-argument handover on a current wallet", async () => {
+    const { client, captured } = makeCapturingClient();
+    const acceptance = await accepted();
+    await client.transferOwnership(acceptance, sendOpts);
+    const call = captured();
+    expect(call?.functionName).toBe("transferOwnership");
+    expect(call?.args).toHaveLength(7);
+    expect(call?.args[4]).toBe(RECIPIENT.address);
+    expect(call?.args[5]).toEqual(acceptance.keyAcceptance);
+    expect(call?.args[6]).toBe(acceptance.ownerAcceptance);
+  });
+
+  it("submits the legacy five-argument handover on a beta.2 wallet and ignores the acceptance", async () => {
+    const beta2Slot =
+      `0x${SHRINCS_WALLET_BETA2_IMPLEMENTATION.slice(2).toLowerCase().padStart(64, "0")}` as Hex;
+    const { client, captured } = makeCapturingClient({ getErc1271Commitment: ZERO32 }, beta2Slot);
+    await client.transferOwnership({ nextKey: freshKey.publicKey, newOwner: RECIPIENT.address }, sendOpts);
+    const call = captured();
+    expect(call?.functionName).toBe("transferOwnership");
+    expect(call?.args).toHaveLength(5);
+    expect(call?.args[4]).toBe(RECIPIENT.address);
+    const abi = (call?.abi ?? []) as ReadonlyArray<{ type: string; name?: string; inputs?: unknown[] }>;
+    const legacyEntry = abi.find(
+      (e) => e.type === "function" && e.name === "transferOwnership" && (e.inputs?.length ?? 0) === 5
+    );
+    expect(legacyEntry).toBeDefined();
+  });
+
+  it("rejects a missing acceptance before spending anything", async () => {
+    const { client, captured } = makeCapturingClient();
+    await expect(
+      client.transferOwnership({ nextKey: freshKey.publicKey, newOwner: RECIPIENT.address }, sendOpts)
+    ).rejects.toThrow(InvalidOwnerAcceptanceError);
+    const acceptance = await accepted();
+    await expect(
+      client.transferOwnership({ ...acceptance, keyAcceptance: undefined }, sendOpts)
+    ).rejects.toThrow(InvalidKeyAcceptanceError);
+    expect(captured()).toBeUndefined();
+  });
+
+  it("rejects the audit scenario: a mistyped newOwner nobody accepted", async () => {
+    const { client, captured } = makeCapturingClient();
+    const acceptance = await accepted();
+    await expect(
+      client.transferOwnership({ ...acceptance, newOwner: STRANGER.address }, sendOpts)
+    ).rejects.toThrow(InvalidOwnerAcceptanceError);
+    expect(captured()).toBeUndefined();
+  });
+
+  it("rejects an owner acceptance signed by someone other than newOwner", async () => {
+    const { client } = makeCapturingClient();
+    const acceptance = await accepted();
+    const forged = await accepted(STRANGER);
+    await expect(
+      client.transferOwnership({ ...acceptance, ownerAcceptance: forged.ownerAcceptance }, sendOpts)
+    ).rejects.toThrow(InvalidOwnerAcceptanceError);
+  });
+
+  it("rejects a key acceptance from a bundle other than nextKey", async () => {
+    const { client } = makeCapturingClient();
+    const acceptance = await accepted();
+    // Signed by the INSTALLED key (bound to its own commitment) — not the incoming one.
+    const byInstalled = keypair.signOwnershipAcceptance(
+      Codec.domainSeparator(CHAIN_ID, WALLET),
+      RECIPIENT.address
+    );
+    await expect(
+      client.transferOwnership({ ...acceptance, keyAcceptance: byInstalled }, sendOpts)
+    ).rejects.toThrow(InvalidKeyAcceptanceError);
+  });
+
+  it("rejects a key acceptance for another owner or another wallet", async () => {
+    const { client } = makeCapturingClient();
+    const acceptance = await accepted();
+    const forStranger = await accepted(STRANGER);
+    await expect(
+      client.transferOwnership({ ...acceptance, keyAcceptance: forStranger.keyAcceptance }, sendOpts)
+    ).rejects.toThrow(InvalidKeyAcceptanceError);
+    const otherWallet = await signOwnershipAcceptance({
+      chainId: CHAIN_ID,
+      walletAddress: "0x00000000000000000000000000000000000000d4" as Address,
+      nextKeyPair: freshKey,
+      newOwner: RECIPIENT,
+    });
+    await expect(
+      client.transferOwnership({ ...acceptance, keyAcceptance: otherWallet.keyAcceptance }, sendOpts)
+    ).rejects.toThrow(InvalidKeyAcceptanceError);
+  });
+
+  it("rejects a key acceptance leaf outside the incoming key's budget", async () => {
+    const { client } = makeCapturingClient();
+    const acceptance = await accepted();
+    const overBudget = {
+      ...acceptance.keyAcceptance,
+      authPath: Array.from({ length: MAX_SIG + 1 }, () => ZERO32),
+    };
+    await expect(
+      client.transferOwnership({ ...acceptance, keyAcceptance: overBudget }, sendOpts)
+    ).rejects.toThrow(/leaf 9 outside \[1, 8\]/);
+  });
+
+  it("signOwnershipAcceptance refuses the zero address", async () => {
+    await expect(
+      signOwnershipAcceptance({
+        chainId: CHAIN_ID,
+        walletAddress: WALLET,
+        nextKeyPair: freshKey,
+        newOwner: { address: ZERO_ADDRESS, signTypedData: async () => "0x" } as unknown as LocalAccount,
+      })
+    ).rejects.toThrow(ZeroAddressOwnerError);
   });
 });

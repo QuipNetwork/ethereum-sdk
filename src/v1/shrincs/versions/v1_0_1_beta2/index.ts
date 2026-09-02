@@ -40,5 +40,6 @@ export const v1_0_1_beta2: WalletVersionDescriptor = {
     erc1271KeyArgument: "bytes32Commitment",
     hasStatefulLeafBitmapWord: false,
     enforcesSpentTreeFreshnessOnMigrate: false,
+    handoverAcceptance: "none",
   },
 };

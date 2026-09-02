@@ -102,6 +102,33 @@ const { userOp: signed, userOpHash, leaf } = await client.signExecuteUserOp({
 
 `signExecuteUserOp` reads state per call (leaf, keyVersion, live `actionNonce`), binds `userOpHash`, and collects the owner's ECDSA co-signature. **Every userOp is hybrid**: `userOp.signature` is `abi.encode(PublicKey, StatefulSignature, bytes ecdsaSig)`, where the third field is the owner's signature over the wallet's `quipUserOpHashEcdsaTarget(userOpHash)` EIP-712 digest — the 4337 route requires BOTH the SHRINCS key and the classical owner, exactly like the `onlyOwner` direct path (INVARIANTS §24). The co-signature domain is deliberately distinct from the ERC-1271 `quipSignedHashEcdsaTarget`, so a dApp-harvested message signature can never authorize a userOp. The paymaster's sponsorship blob is unaffected (plain `(PublicKey, StatefulSignature)` pair — its admin authority is owner-fiat). Direct-path writes (`execute`, `withdrawDepositTo`, `setErc1271Key`, `rotateKey`, `markLeavesUsed`, `upgradeToAndCall`, `transferOwnership`, `recoverWallet`) are fully synchronous: sign → simulate → broadcast → `waitForTransactionReceipt`.
 
+### Ownership handover (`transferOwnership`)
+
+A handover is **two-party** (INVARIANTS §26). The current owner's signatures prove intent; they cannot prove that `newOwner` is an address anyone controls or that the incoming bundle is one anyone can sign with — and every path on the wallet, recovery included, is gated behind both. So the recipient signs an **acceptance** first, and the wallet refuses to install a destination that did not accept (`InvalidOwnerAcceptanceError` / `InvalidKeyAcceptanceError`).
+
+**Recipient** (no wallet client, no chain read — the acceptance binds the wallet, chain, `newOwner` and the bundle, never the nonce):
+
+```ts
+import { signOwnershipAcceptance } from "@quip.network/ethereum-sdk/v1/shrincs";
+
+const nextKeyPair = recipientSigner.recoverKeyPair(freshIndex, { maxSignatures });
+const acceptance = await signOwnershipAcceptance({
+  chainId,
+  walletAddress,
+  nextKeyPair,          // a FRESH bundle: both trees never held by the wallet
+  newOwner: recipient,  // LocalAccount — signs the QuipSignedHash typed data
+});
+// hand `acceptance` to the current owner (it carries nextKey + newOwner + both halves)
+```
+
+**Current owner:**
+
+```ts
+await client.transferOwnership(acceptance);
+```
+
+The client verifies both halves locally **before** reserving a leaf or producing either of its own signatures, so a bad acceptance costs nothing; the wallet verifies them again on-chain. One handover per bundle: the PQ half is a one-time signature (leaf 1 by default), and the wallet records that leaf as used in the new epoch, so the recipient's first operation lands at leaf 2. Deployed V1.0.1-beta.2 wallets predate the acceptance; the client detects them and sends the legacy single-step call.
+
 ### Sponsorship paymaster (`ShrincsPaymasterClient`)
 
 One global SHRINCS stateful key sponsors every wallet: the operator signs each userOp it will pay for, bound to that op's `sender` + `nonce`, so signatures can't be replayed across wallets and land in ANY order (no wrapper nonce — anti-replay is the one-time leaf). Signing order in the 4337 flow: the paymaster fills `paymasterAndData` FIRST (`sponsorUserOp`), then the wallet signs the final `userOpHash` over it.

@@ -1371,6 +1371,38 @@ export const shrincsWalletAbi = [
         "name": "newOwner",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "keyAcceptance",
+        "type": "tuple",
+        "internalType": "struct SHRINCS.Signature",
+        "components": [
+          {
+            "name": "randomizer",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "counter",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "chains",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          },
+          {
+            "name": "authPath",
+            "type": "bytes32[]",
+            "internalType": "bytes32[]"
+          }
+        ]
+      },
+      {
+        "name": "ownerAcceptance",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [],
@@ -1993,6 +2025,16 @@ export const shrincsWalletAbi = [
   {
     "type": "error",
     "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidKeyAcceptance",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidOwnerAcceptance",
     "inputs": []
   },
   {
