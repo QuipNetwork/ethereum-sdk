@@ -200,7 +200,9 @@ library ShrincsWalletCodec {
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
             // through Solidity calldata accessors downstream, which bounds-check calldatasize
-            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
+            // (bare revert, not `MalformedPayload`). `validateUserOp` runs this decoder and those
+            // reads behind the `userOpEnvelope` self-staticcall, so the revert maps to a soft
+            // fail there (INVARIANTS §19).
             signature := add(o, sigOff)
             let eo := calldataload(add(o, 0x40))
             reqTail(eo, len, malformed)
@@ -257,7 +259,9 @@ library ShrincsWalletCodec {
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
             // through Solidity calldata accessors downstream, which bounds-check calldatasize
-            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
+            // (bare revert, not `MalformedPayload`). `validatePaymasterUserOp` runs this decoder
+            // and those reads behind the `sponsorshipEnvelope` self-staticcall, so the revert
+            // maps to a soft fail there (INVARIANTS §19).
             signature := add(o, sigOff)
         }
     }

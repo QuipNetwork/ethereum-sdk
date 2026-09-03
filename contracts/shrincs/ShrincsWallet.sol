@@ -166,9 +166,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///
     ///      By convention `userOp.signature` is the ABI encoding of `(PublicKey publicKey,
     ///      StatefulSignature signature, bytes ecdsaSig)` — the SHRINCS structs plus the
-    ///      owner's ECDSA co-signature over `quipUserOpHashEcdsaTarget(userOpHash)`. The ECDSA
-    ///      check runs FIRST (cheap check before the expensive SHRINCS verify), and its failure
-    ///      consumes nothing — leaf and nonce are untouched.
+    ///      owner's ECDSA co-signature over `quipUserOpHashEcdsaTarget(userOpHash)`. The blob is
+    ///      decoded behind the `userOpEnvelope` self-staticcall (never-revert framing), then the
+    ///      ECDSA check runs (cheap check before the expensive SHRINCS verify); neither failure
+    ///      consumes anything — leaf and nonce are untouched.
     function _validateSignature(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
@@ -187,35 +188,42 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             );
             return 1;
         }
-        // Fail-closed policy for a malformed signature. Two failure classes are
-        // handled differently on purpose:
-        //   - Too short to hold the three offsets: SOFT fail (the `return 1`
-        //     above). The bundler drops the op as SIG_VALIDATION_FAILED without
-        //     penalising the sender.
-        //   - Long enough to pass that check but carrying a TOP-LEVEL offset
-        //     that runs past the payload: HARD `MalformedPayload` revert from
-        //     the codec below. A NESTED offset (inside the PublicKey/Signature
-        //     tails, which the codec does not walk) that runs past calldatasize
-        //     is caught later by Solidity's own calldata bounds check at
-        //     `_leafIndex` / `abi.encode(pk, sig)` — a bare revert, not
-        //     `MalformedPayload`, in this frame outside the verifier try/catch.
-        //     Both are fail-closed on purpose: such offsets cannot come from an
-        //     honest client, decoding them could read adjacent calldata, and the
-        //     EntryPoint's own try/catch turns the revert (AA23) into the same
-        //     per-op rejection a `return 1` (AA24) produces — no shared state,
-        //     no ERC-7562 reputation effect. The nested case is reachable only
-        //     behind the owner co-signature (a replayed blob with corrupted
-        //     internals).
-        (
-            SHRINCS.PublicKey calldata pk,
-            SHRINCS.Signature calldata sig,
-            bytes calldata ecdsaSig
-        ) = Codec.decodeUserOpSignature(userOp.signature);
+        // Never-revert framing policy. The codec bounds-checks only the blob's
+        // TOP-LEVEL tail offsets (hard `MalformedPayload` revert); a NESTED
+        // offset (inside the PublicKey/Signature tails, which the codec does not
+        // walk) that runs past calldatasize is caught by Solidity's own calldata
+        // bounds check at the first field read — `_leafIndex` or the
+        // `abi.encode(pk, sig)` re-encode — as a bare revert. Both reads run
+        // behind the `userOpEnvelope` self-staticcall so either revert maps to
+        // the same soft fail as every other rejection (`return 1`, AA24) instead
+        // of reverting out of validation (AA23). Inside the self-call the blob
+        // is the whole calldata, so a nested offset can no longer resolve into
+        // adjacent userOp fields either. Nothing is consumed (INVARIANTS §19).
+        // The corrupted-blob case is reachable by replaying a previously
+        // broadcast blob with its internals corrupted (the owner co-signature
+        // bytes are reusable), hence the framing check precedes the ECDSA gate.
+        uint32 leaf;
+        bytes memory envelope;
+        bytes memory ecdsaSig;
+        try this.userOpEnvelope(userOp.signature) returns (
+            uint32 decodedLeaf,
+            bytes memory encoded,
+            bytes memory ecdsa
+        ) {
+            leaf = decodedLeaf;
+            envelope = encoded;
+            ecdsaSig = ecdsa;
+        } catch {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.MalformedSignature
+            );
+            return 1;
+        }
 
         // Hybrid gate half 1: the classical owner co-signs the exact userOpHash under the
         // dedicated userOp EIP-712 domain (see _QUIP_USER_OP_HASH_TYPEHASH). ERC-7562 clean:
         // ecrecover is an allowed precompile and the owner slot is the wallet's own storage.
-        address recovered = ECDSA.tryRecoverCalldata(
+        address recovered = ECDSA.tryRecover(
             quipUserOpHashEcdsaTarget(userOpHash),
             ecdsaSig
         );
@@ -228,7 +236,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
-        uint32 leaf = _leafIndex(sig);
         if (leaf == 0 || leaf > $.maxSignatures) {
             emit UserOpValidationRejected(
                 UserOpValidationFailure.StatefulBudgetExhausted
@@ -263,7 +270,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             !_tryVerifyStateful(
                 commitment,
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
-                abi.encode(pk, sig)
+                envelope
             )
         ) {
             emit UserOpValidationRejected(
@@ -855,6 +862,27 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
+    function userOpEnvelope(
+        bytes calldata signature
+    )
+        external
+        view
+        returns (uint32 leaf, bytes memory envelope, bytes memory ecdsaSig)
+    {
+        if (msg.sender != address(this)) revert SelfCallOnly();
+        (
+            SHRINCS.PublicKey calldata pk,
+            SHRINCS.Signature calldata sig,
+            bytes calldata ecdsa
+        ) = Codec.decodeUserOpSignature(signature);
+        // Solidity's calldata accessors bounds-check every nested tail here and revert on an
+        // overrun; the caller's try/catch is the containment.
+        leaf = _leafIndex(sig);
+        envelope = abi.encode(pk, sig);
+        ecdsaSig = ecdsa;
+    }
+
+    /// @inheritdoc IShrincsWallet
     function erc1271Envelope(
         bytes calldata signature
     ) external view returns (bytes memory) {
@@ -1220,8 +1248,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      its own policy decision". This wallet's contract is never-revert-on-bad-signature
     ///      validation (ERC-4337 returns 1) and never-revert ERC-1271, so EVERY verifier revert
     ///      maps to "invalid signature". Malformed ABI framing of the blob itself is handled
-    ///      before the verifier is reached (fail-closed on the 4337 paths, self-staticcall on
-    ///      the 1271 path — INVARIANTS §19). Accepted trade-off: an inner out-of-gas is also
+    ///      before the verifier is reached (behind the `userOpEnvelope` / `erc1271Envelope`
+    ///      self-staticcalls on the validation paths — INVARIANTS §19). Accepted trade-off: an
+    ///      inner out-of-gas is also
     ///      reported as an invalid signature instead of propagating.
     function _tryVerifyStateful(
         bytes32 expectedCommitment,

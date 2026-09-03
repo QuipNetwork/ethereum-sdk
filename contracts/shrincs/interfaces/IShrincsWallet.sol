@@ -95,8 +95,8 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when the classical `transferOwnership(address)` is called directly.
     /// @dev Only the SHRINCS-authenticated `transferOwnership(bytes)` path is permitted.
     error ClassicalTransferOwnershipDisabled();
-    /// @notice Thrown when a self-call-only helper (`erc1271Envelope`) is called by anyone
-    ///         other than the wallet itself.
+    /// @notice Thrown when a self-call-only helper (`userOpEnvelope`, `erc1271Envelope`) is
+    ///         called by anyone other than the wallet itself.
     error SelfCallOnly();
     /// @notice Thrown when any of Solady's inherited two-step ownership handover entry
     ///         points is called. This wallet supports only the SHRINCS-authenticated
@@ -209,7 +209,11 @@ interface IShrincsWallet is IWallet {
         StaleStatefulLeaf,
         StatefulBudgetExhausted,
         InvalidSignature,
-        InvalidEcdsaSignature
+        InvalidEcdsaSignature,
+        /// @dev The `userOp.signature` blob's ABI framing is malformed (a top-level or nested
+        ///      tail offset / length runs past the blob), detected by the `userOpEnvelope`
+        ///      self-staticcall reverting. Appended last: earlier values are wire-stable.
+        MalformedSignature
     }
 
     /// @notice Emitted on each `validationData == 1` exit of `_validateSignature`.
@@ -400,6 +404,28 @@ interface IShrincsWallet is IWallet {
     function erc1271Envelope(
         bytes calldata signature
     ) external view returns (bytes memory);
+
+    /// @notice Self-call target of `validateUserOp`: decodes the hybrid `userOp.signature` blob
+    ///         `abi.encode(PublicKey, Signature, bytes ecdsaSig)`, derives the stateful leaf
+    ///         index, and re-encodes the SHRINCS half into the verifier envelope
+    ///         `abi.encode(publicKey, signature)`.
+    /// @dev Callable only by the wallet itself (`SelfCallOnly`). Twin of `erc1271Envelope` for
+    ///      the ERC-4337 path: the codec bounds-checks only a blob's top-level tail offsets, and
+    ///      a nested offset past calldatasize makes Solidity's calldata accessors revert at the
+    ///      first field read (`_leafIndex`, the re-encode). Running every such read behind
+    ///      `try this.userOpEnvelope` lets `_validateSignature` map that revert — and the codec's
+    ///      own `MalformedPayload` — to `validationData == 1` + `MalformedSignature` instead of
+    ///      reverting out of validation (INVARIANTS §19). Inside the self-call the blob is the
+    ///      whole calldata, so the compiler's check is effectively against the blob's own end.
+    /// @return leaf The stateful leaf index the signature reveals (`authPath.length`).
+    /// @return envelope `abi.encode(publicKey, signature)`.
+    /// @return ecdsaSig The owner's ECDSA co-signature bytes carried in the blob.
+    function userOpEnvelope(
+        bytes calldata signature
+    )
+        external
+        view
+        returns (uint32 leaf, bytes memory envelope, bytes memory ecdsaSig);
 
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
     /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base

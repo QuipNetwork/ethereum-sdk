@@ -39,6 +39,9 @@ interface IShrincsPaymaster is IPaymaster {
     error ZeroAddressVerifier();
     /// @notice Thrown when the caller is not the ERC-4337 EntryPoint.
     error InvalidEntryPoint();
+    /// @notice Thrown when the self-call-only helper (`sponsorshipEnvelope`) is called by anyone
+    ///         other than the paymaster itself.
+    error SelfCallOnly();
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();
@@ -220,6 +223,26 @@ interface IShrincsPaymaster is IPaymaster {
 
     /// @notice Withdraws unlocked stake from the EntryPoint. Owner-only.
     function withdrawStake(address payable to) external;
+
+    /// @notice Self-call target of `validatePaymasterUserOp`: decodes the sponsorship blob
+    ///         `abi.encode(PublicKey, Signature)` (the tail of `paymasterAndData`), derives the
+    ///         stateful leaf index, and re-encodes it into the verifier envelope
+    ///         `abi.encode(publicKey, signature)`.
+    /// @dev Callable only by the paymaster itself (`SelfCallOnly`). Mirrors the wallet's
+    ///      `userOpEnvelope`: the codec bounds-checks only the blob's top-level tail offsets,
+    ///      and a nested offset past calldatasize makes Solidity's calldata accessors revert at
+    ///      the first field read. Running the decode, leaf read and re-encode behind
+    ///      `try this.sponsorshipEnvelope` lets `validatePaymasterUserOp` map that revert — and
+    ///      the codec's own `MalformedPayload` — to `validationData == 1` +
+    ///      `PaymasterValidationFailure.MalformedPayload` instead of reverting out of validation.
+    ///      The sponsorship blob carries no co-signature, so this path is reachable by anyone;
+    ///      inside the self-call the blob is the whole calldata, so a nested offset can no longer
+    ///      resolve into adjacent userOp fields either.
+    /// @return leaf The stateful leaf index the signature reveals (`authPath.length`).
+    /// @return envelope `abi.encode(publicKey, signature)`.
+    function sponsorshipEnvelope(
+        bytes calldata blob
+    ) external view returns (uint32 leaf, bytes memory envelope);
 
     /// @notice Returns the registered global verifier state. `hashSuite` is always
     ///         `HASH_SUITE_KECCAK_256`: the id is not stored — registration rejects every

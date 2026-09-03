@@ -173,25 +173,18 @@ contract ShrincsPaymaster is
             return ("", 1);
         }
 
-        // Fail-closed policy for a malformed sponsorship blob. Two failure
-        // classes are handled differently on purpose:
-        //   - Too short to hold the ABI head: SOFT fail (the `return ("", 1)`
-        //     above). The bundler drops the op without penalising the sender.
-        //   - Long enough to pass that check but carrying a TOP-LEVEL offset
-        //     that runs past the blob: HARD `MalformedPayload` revert from the
-        //     codec inside `_verifyAndAdvance`. A NESTED offset (inside the
-        //     PublicKey/Signature tails, which the codec does not walk) that
-        //     runs past calldatasize is caught by Solidity's own calldata bounds
-        //     check at `_leafIndex` / `abi.encode(pk, sig)` — a bare revert, not
-        //     `MalformedPayload`, outside the verifier try/catch. Reachable by
-        //     anyone (the sponsorship blob carries no co-signature), and accepted:
-        //     the EntryPoint's own try/catch turns the revert (AA33) into the same
-        //     per-op rejection a `return ("", 1)` (AA34) produces — nothing is
-        //     written and no ERC-7562 reputation counter moves (INVARIANTS §19).
-        //     Such offsets cannot come from an honest operator, and decoding
-        //     them could read adjacent calldata, so reverting to reject the op
-        //     outright is the intended fail-closed behaviour, not a soft
-        //     rejection.
+        // Never-revert framing policy. A blob too short to hold the ABI head
+        // soft-fails above. A longer blob whose TOP-LEVEL offset runs past the
+        // blob (the codec's `MalformedPayload` revert) or whose NESTED offset
+        // (inside the PublicKey/Signature tails, which the codec does not walk)
+        // runs past calldatasize (Solidity's own calldata bounds check at
+        // `_leafIndex` / `abi.encode(pk, sig)`, a bare revert) is decoded behind
+        // the `sponsorshipEnvelope` self-staticcall inside `_verifyAndAdvance`,
+        // so both map to the same `return ("", 1)` (AA34) + `MalformedPayload`
+        // reason as every other rejection instead of reverting out of
+        // validation (AA33). The sponsorship blob carries no co-signature, so
+        // this path is reachable by anyone; nothing is written either way
+        // (INVARIANTS §19).
         if (!_verifyAndAdvance(userOp)) return ("", 1);
 
         bytes calldata paymasterData = userOp
@@ -372,13 +365,26 @@ contract ShrincsPaymaster is
 
         bytes calldata blob = userOp.paymasterAndData[_PAYMASTER_DATA_OFFSET +
             _CUSTOM_SIG_OFFSET:];
-        (
-            SHRINCS.PublicKey calldata pk,
-            SHRINCS.Signature calldata sig
-        ) = Codec.decodeSponsorshipSignature(blob);
+        // Decode + leaf read + re-encode behind a self-staticcall: every framing revert (the
+        // codec's `MalformedPayload` or Solidity's nested calldata bounds check) lands in the
+        // catch and becomes a soft `MalformedPayload` rejection (INVARIANTS §19).
+        uint32 leaf;
+        bytes memory envelope;
+        try this.sponsorshipEnvelope(blob) returns (
+            uint32 decodedLeaf,
+            bytes memory encoded
+        ) {
+            leaf = decodedLeaf;
+            envelope = encoded;
+        } catch {
+            emit PaymasterValidationRejected(
+                userOp.sender,
+                PaymasterValidationFailure.MalformedPayload
+            );
+            return false;
+        }
 
         uint256 epoch = $.keyVersion;
-        uint32 leaf = _leafIndex(sig);
         if (leaf == 0 || leaf > $.maxSignatures) {
             emit PaymasterValidationRejected(
                 userOp.sender,
@@ -409,7 +415,7 @@ contract ShrincsPaymaster is
             IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
                 abi.encodePacked(commitment),
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
-                abi.encode(pk, sig)
+                envelope
             )
         returns (bytes4 result) {
             sponsorshipValid =
@@ -491,6 +497,21 @@ contract ShrincsPaymaster is
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    VIEW FUNCTIONS                      */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @inheritdoc IShrincsPaymaster
+    function sponsorshipEnvelope(
+        bytes calldata blob
+    ) external view returns (uint32 leaf, bytes memory envelope) {
+        if (msg.sender != address(this)) revert SelfCallOnly();
+        (
+            SHRINCS.PublicKey calldata pk,
+            SHRINCS.Signature calldata sig
+        ) = Codec.decodeSponsorshipSignature(blob);
+        // Solidity's calldata accessors bounds-check every nested tail here and revert on an
+        // overrun; the caller's try/catch is the containment.
+        leaf = _leafIndex(sig);
+        envelope = abi.encode(pk, sig);
+    }
 
     /// @inheritdoc IShrincsPaymaster
     function getShrincsVerifier()
