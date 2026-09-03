@@ -47,6 +47,12 @@ export enum UserOpValidationFailure {
   StaleStatefulLeaf = 1,
   StatefulBudgetExhausted = 2,
   InvalidSignature = 3,
+  /// The owner's ECDSA co-signature in the hybrid blob did not recover to `owner()`.
+  InvalidEcdsaSignature = 4,
+  /// The `userOp.signature` blob's ABI framing is malformed (a top-level or nested
+  /// tail offset / length runs past the blob); the `userOpEnvelope` self-staticcall
+  /// reverted and the wallet soft-failed instead of reverting out of validation.
+  MalformedSignature = 5,
 }
 
 /// `IShrincsWallet.Erc1271ValidationResult` — the diagnostic result from
@@ -56,6 +62,9 @@ export enum Erc1271ValidationResult {
   BadSignatureLength = 1,
   InvalidEcdsaSignature = 2,
   InvalidShrincsSignature = 3,
+  /// The 1271 blob's ABI framing is malformed (top-level decode failed, or a nested
+  /// tail offset made the `erc1271Envelope` self-staticcall revert).
+  MalformedErc1271Payload = 4,
 }
 
 /// `IShrincsPaymaster.PaymasterValidationFailure` — the reason in a

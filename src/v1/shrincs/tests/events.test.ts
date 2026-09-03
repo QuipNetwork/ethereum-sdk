@@ -282,6 +282,8 @@ describe("shrincs event parsers", () => {
         UserOpValidationFailure.StaleStatefulLeaf,
         UserOpValidationFailure.StatefulBudgetExhausted,
         UserOpValidationFailure.InvalidSignature,
+        UserOpValidationFailure.InvalidEcdsaSignature,
+        UserOpValidationFailure.MalformedSignature,
       ]) {
         const log = makeLog(
           shrincsWalletAbi as Abi,

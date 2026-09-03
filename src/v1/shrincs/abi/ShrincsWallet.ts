@@ -1409,6 +1409,35 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
+    "name": "userOpEnvelope",
+    "inputs": [
+      {
+        "name": "signature",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "envelope",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "ecdsaSig",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "validateUserOp",
     "inputs": [
       {
