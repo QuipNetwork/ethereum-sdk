@@ -84,8 +84,8 @@ contract DeployScriptsTest is Test {
     address internal constant CANONICAL_OPERATOR_PUBLISHED = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26;
     address internal constant PUBLISHED_FACTORY_IMPL = 0x77622e199DfF602f937fC5E5eB6479aE4b18161F;
     address internal constant PUBLISHED_FACTORY_PROXY = 0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8;
-    address internal constant PUBLISHED_SHRINCS_WALLET = 0x680840c831c6D147404a0e00edA08a5360564FBC;
-    address internal constant PUBLISHED_SHRINCS_PM_IMPL = 0x5E4E4003118a0F8825494D76E86Db2ed654992d2;
+    address internal constant PUBLISHED_SHRINCS_WALLET = 0xc4E4652898bB12C4f0Ba9083829689B1963135E7;
+    address internal constant PUBLISHED_SHRINCS_PM_IMPL = 0xAd31002F1a0ea4A1DbBA827b1eF0f15e9FF86Ca4;
     address internal constant PUBLISHED_SHRINCS_PM_PROXY = 0x430c8c89492E3541e141148Dd7a7D6dD432e5890;
 
     // eip1967.proxy.implementation slot (keccak256("eip1967.proxy.implementation") - 1),
@@ -170,8 +170,8 @@ contract DeployScriptsTest is Test {
     function _livePreimages() internal pure returns (bytes[5] memory p) {
         p[0] = FACTORY_IMPL_PREIMAGE;
         p[1] = FACTORY_PROXY_PREIMAGE;
-        p[2] = abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.2:", PROFILE_ID_INDEPENDENT);
-        p[3] = abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.2:", PROFILE_ID_INDEPENDENT);
+        p[2] = abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.3:", PROFILE_ID_INDEPENDENT);
+        p[3] = abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.3:", PROFILE_ID_INDEPENDENT);
         p[4] = SHRINCS_PM_PROXY_PREIMAGE;
     }
 
@@ -238,16 +238,18 @@ contract DeployScriptsTest is Test {
 
     /*──────────────── in-place upgrade of an existing proxy ────────────────*/
 
-    /// Points the live proxy at the retired `-beta.1` implementation address,
-    /// with this build's runtime etched there (a UUPS target must answer
-    /// `proxiableUUID`). Using the published constant rather than an arbitrary
-    /// address also pins the predecessor the deploy is willing to upgrade away
-    /// from.
-    function _pointAtRetiredBeta1Impl(address sPm) internal returns (address canonicalImpl) {
+    /// Points the live proxy at a retired implementation address, with this
+    /// build's runtime etched there (a UUPS target must answer `proxiableUUID`).
+    /// Using the published constants rather than an arbitrary address also pins
+    /// the predecessors the deploy is willing to upgrade away from.
+    function _pointAtRetiredImpl(address sPm, address retired) internal returns (address canonicalImpl) {
         canonicalImpl = address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT))));
-        address retired = DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1;
         vm.etch(retired, canonicalImpl.code);
         vm.store(sPm, ERC1967_IMPL_SLOT, bytes32(uint256(uint160(retired))));
+    }
+
+    function _pointAtRetiredBeta1Impl(address sPm) internal returns (address canonicalImpl) {
+        return _pointAtRetiredImpl(sPm, DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1);
     }
 
     /// In-place generation bump: a chain that already holds the paymaster proxy
@@ -268,6 +270,30 @@ contract DeployScriptsTest is Test {
             address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT)))),
             canonicalImpl,
             "proxy upgraded back to this build's impl"
+        );
+        (bytes32 commitmentAfter,,,,) = IShrincsPaymaster(sPm).getShrincsVerifier();
+        assertEq(commitmentAfter, commitmentBefore, "state preserved across the upgrade");
+    }
+
+    /// The predecessor every LIVE proxy actually delegates to at the time of the
+    /// `-beta.3` bump is `-beta.2` (Base mainnet landed fresh on it; the testnets
+    /// were upgraded onto it). The gate must accept it, or `02_DeployShrincs`
+    /// refuses on every chain.
+    function test_upgradeInPlace_existingPaymasterProxyMovesFromBeta2ToThisImpl() public {
+        h.factory(owner, PK, owner, MAX_FEE);
+        address sPm =
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+        address canonicalImpl =
+            _pointAtRetiredImpl(sPm, DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA2);
+        (bytes32 commitmentBefore,,,,) = IShrincsPaymaster(sPm).getShrincsVerifier();
+
+        address sPm2 =
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+        assertEq(sPm2, sPm, "proxy address stable");
+        assertEq(
+            address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT)))),
+            canonicalImpl,
+            "proxy upgraded from -beta.2 to this build's impl"
         );
         (bytes32 commitmentAfter,,,,) = IShrincsPaymaster(sPm).getShrincsVerifier();
         assertEq(commitmentAfter, commitmentBefore, "state preserved across the upgrade");

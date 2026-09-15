@@ -60,9 +60,10 @@ export interface ShrincsNetworkAddresses {
 // every chain reached by the same operator.
 //
 // Salt scheme: proxies are `V1.0.1` (the generation's public identity),
-// implementations are `V1.0.1-beta.2.N` (replaced as code changes). The
-// implementation preimages additionally bind the verifier SCHEME tag —
-// `"QUIP:ShrincsWallet:Impl:V1.0.1-beta.2:" ‖ PROFILE_ID` and the paymaster-impl
+// implementations are `V1.0.1-beta.N` (replaced as code changes; `-beta.3` is
+// the live one). The implementation preimages additionally bind the verifier
+// SCHEME tag —
+// `"QUIP:ShrincsWallet:Impl:V1.0.1-beta.3:" ‖ PROFILE_ID` and the paymaster-impl
 // analog, where PROFILE_ID = keccak256("shrincs-256s-keccak") is the deployed
 // verifier's constant `PROFILE_TAG()` — so implementations pinned to a different
 // cryptographic scheme land at different addresses. Proxy preimages carry no
@@ -86,20 +87,19 @@ export interface ShrincsNetworkAddresses {
 // Derived for the canonical operator `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26`
 // and deployed via `script/02_DeployShrincs.s.sol` (see DEPLOYMENTS.md).
 const SHRINCS_WALLET_IMPLEMENTATION =
-  "0x680840c831c6D147404a0e00edA08a5360564FBC" as Address;
+  "0xc4E4652898bB12C4f0Ba9083829689B1963135E7" as Address;
 
 /// The DEPLOYED ShrincsWallet implementation `V1.0.1-beta.2` — the generation
-/// existing wallets still run. Pinned here (byte-identical to the current
-/// `SHRINCS_WALLET_IMPLEMENTATION`, since beta.2 is the live generation) so the
-/// version resolver can recognize a beta.2 wallet from its installed ERC-1967
-/// pointer even after `SHRINCS_WALLET_IMPLEMENTATION` advances to a newer
-/// generation. See `versions/`.
+/// wallets created before the `-beta.3` bump still run until they upgrade.
+/// Pinned here, separately from `SHRINCS_WALLET_IMPLEMENTATION`, so the version
+/// resolver can recognize a beta.2 wallet from its installed ERC-1967 pointer.
+/// See `versions/`.
 export const SHRINCS_WALLET_BETA2_IMPLEMENTATION =
   "0x680840c831c6D147404a0e00edA08a5360564FBC" as Address;
 const SHRINCS_PAYMASTER_PROXY =
   "0x430c8c89492E3541e141148Dd7a7D6dD432e5890" as Address;
 const SHRINCS_PAYMASTER_IMPL =
-  "0x5E4E4003118a0F8825494D76E86Db2ed654992d2" as Address;
+  "0xAd31002F1a0ea4A1DbBA827b1eF0f15e9FF86Ca4" as Address;
 const SHRINCS_VERIFIER =
   "0xF2f9E6D692da41b089c3c261c41509669eEc5567" as Address;
 

@@ -161,8 +161,9 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         // The upgrade is direction-blind on its own — it would move the proxy to
         // whatever impl the CHECKOUT BEING RUN builds — so it is gated twice:
         //  1. `current` must be a predecessor this build knows (the retired
-        //     `-beta.1` impl). Re-running an older checkout against an upgraded
-        //     proxy therefore reverts instead of silently downgrading it.
+        //     `-beta.1` / `-beta.2` impls). Re-running an older checkout against
+        //     an upgraded proxy therefore reverts instead of silently
+        //     downgrading it.
         //  2. `_authorizeUpgrade` is `onlyOwner`. The paymaster owner is meant to
         //     become a post-quantum wallet, which the deploy key is not, so a
         //     non-owner broadcaster SKIPS the upgrade with the exact call to hand
@@ -172,7 +173,8 @@ abstract contract DeployShrincsBase is DeployHelpers, CreateXHelpers {
         if (current != impl) {
             require(current != address(0), "ShrincsPaymaster proxy: not an ERC-1967 proxy");
             require(
-                current == DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1,
+                current == DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1
+                    || current == DeployConstants.RETIRED_SHRINCS_PAYMASTER_IMPL_BETA2,
                 "ShrincsPaymaster proxy: live impl is neither this build nor a known predecessor"
             );
             address proxyOwner = ShrincsPaymaster(payable(proxy)).owner();

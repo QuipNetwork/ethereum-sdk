@@ -31,6 +31,42 @@ deposit/stake not yet funded.
 0.000004 ETH ≈ $0.01 (tx `0x25d43d2c…fa2a`, block 50545029). `MAX_FEE`
 immutable is 1 ETH. Testnet factories keep both at 0.
 
+### `-beta.3` implementations (audit fixes) — PENDING: Base Sepolia first, then OP Sepolia and Base mainnet
+
+The Shrincs implementations move to `V1.0.1-beta.3` for the audit-fix
+generation: four-tree ERC-1271 isolation (the 1271 key is a full bundle whose
+trees are spent in the registries; storage field `erc1271StatelessCommitment`
+renamed in place to `erc1271PublicKeyCommitment`, same slot), two-party
+`transferOwnership` with recipient acceptance, `renounceOwnership` disabled on
+the paymaster, the codeless-verifier constructor check, and the never-revert
+framing envelopes (INVARIANTS §19). Storage stays ERC-7201 append-only, so once
+again **both proxies keep their addresses**; `02_DeployShrincs` deploys the two
+new impls, vets the wallet impl, and `upgradeToAndCall`s the paymaster proxy in
+place from `-beta.2` (the gate in `DeployShrincsBase` now accepts `-beta.1` or
+`-beta.2` as the live predecessor). No re-init runs, so the tree each proxy
+installed under `-beta.2` stays outside the registry, exactly as the
+"Registry provenance" bullet in INVARIANTS §25 describes for `-beta.1`. The
+`-beta.2` wallet impl stays vetted; existing wallets upgrade through the SDK
+(`upgradeToAndCall` with `migrate`). The WalletFactory changed by one line
+(`vetImplementation` checks code length, not codehash) but is NOT rolled: the
+deploy has no in-place path for the factory proxy and the old check vets the
+new impl fine. Its impl stays at `-beta.1`.
+
+Predicted with `make predict-addresses` (operator `0xc68B…6A26`); fill in the
+per-chain block/tx records below as each broadcast lands.
+
+- **Base Sepolia (84532)**: _pending_
+- **OP Sepolia (11155420)**: _pending_
+- **Base mainnet (8453)**: _pending_ (paymaster owner must send the upgrade if
+  it is no longer the operator; the script prints the exact call)
+
+| | Address |
+|---|---|
+| ShrincsWallet impl (`…:Impl:V1.0.1-beta.3:` ‖ `PROFILE_ID`) | `0xc4E4652898bB12C4f0Ba9083829689B1963135E7` |
+| ShrincsPaymaster impl (`…:Impl:V1.0.1-beta.3:` ‖ `PROFILE_ID`) | `0xAd31002F1a0ea4A1DbBA827b1eF0f15e9FF86Ca4` |
+| ShrincsWallet impl `-beta.2` (superseded; still vetted) | `0x680840c831c6D147404a0e00edA08a5360564FBC` |
+| ShrincsPaymaster impl `-beta.2` (retired once each proxy is upgraded away) | `0x5E4E4003118a0F8825494D76E86Db2ed654992d2` |
+
 ### `-beta.2` implementations (spent-tree registries) — testnets upgraded in place 2026-08-28
 
 The Shrincs implementations move to `V1.0.1-beta.2` for the spent-tree

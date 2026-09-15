@@ -89,8 +89,8 @@ describe("wallet version resolution", () => {
   it("only frozen generations are address-resolvable; latest is the fallback", () => {
     expect(KNOWN_WALLET_VERSIONS.every((v) => v.id !== "latest")).toBe(true);
     expect(LATEST_WALLET_VERSION.implementations).toHaveLength(0);
-    // The beta.2 address is byte-identical to today's live latest impl, but it
-    // is registered under the frozen generation so it resolves there.
+    // The beta.2 address is registered under the frozen generation so it
+    // resolves there; the live `-beta.3` impl is unlisted and falls back to latest.
     expect(getAddress(v1_0_1_beta2.implementations[0])).toBe(
       getAddress(SHRINCS_WALLET_BETA2_IMPLEMENTATION)
     );

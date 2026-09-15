@@ -105,21 +105,43 @@ library DeployConstants {
     // the generation; on a fresh chain (Base mainnet) it lands as the first
     // impl. The WalletFactory code did not change, so its impl salt stays at
     // `-beta.1`. Retired impl addresses live in DEPLOYMENTS.md.
+    //
+    // `-beta.3` (Shrincs impls only): the audit-fix generation — four-tree
+    // ERC-1271 isolation (the 1271 key is a full bundle spent in the tree
+    // registries), two-party `transferOwnership` with recipient acceptance,
+    // renounce disabled, the codeless-verifier constructor check, and the
+    // never-revert framing envelopes (INVARIANTS §19). Storage stays
+    // ERC-7201 append-only (`erc1271StatelessCommitment` was renamed in place
+    // to `erc1271PublicKeyCommitment`, same slot; `spentStatefulTrees` /
+    // `spentStatelessTrees` appended), so once again the proxies stay put and
+    // `02_DeployShrincs` upgrades the paymaster proxy in place from `-beta.2`.
+    // The WalletFactory changed by one line (`vetImplementation` checks code
+    // length instead of codehash) but is NOT rolled here: the deploy has no
+    // in-place path for the factory proxy, and the old check still vets the
+    // new wallet impl. Its impl salt stays at `-beta.1`.
 
     string internal constant PROXY_VERSION = "V1.0.1";
-    string internal constant IMPL_VERSION = "V1.0.1-beta.2";
+    string internal constant IMPL_VERSION = "V1.0.1-beta.3";
 
-    /// The retired `V1.0.1-beta.1` ShrincsPaymaster implementation — the ONLY
-    /// implementation `02_DeployShrincs` is allowed to upgrade the paymaster
-    /// proxy away from. It is the same address on every chain of this
-    /// generation (sender-guarded CREATE3), and it is published in the retired
-    /// table in DEPLOYMENTS.md. An implementation slot that is neither this
-    /// build's impl nor this address is unknown to this build, so the deploy
-    /// refuses rather than overwrite it (re-running an older checkout would
-    /// otherwise downgrade a live proxy). Add a predecessor here — never
-    /// widen the check — when a later generation supersedes `-beta.2`.
+    /// The retired ShrincsPaymaster implementations — the ONLY implementations
+    /// `02_DeployShrincs` is allowed to upgrade the paymaster proxy away from.
+    /// Each is the same address on every chain of this generation
+    /// (sender-guarded CREATE3) and is published in the retired table in
+    /// DEPLOYMENTS.md. An implementation slot that is neither this build's impl
+    /// nor one of these is unknown to this build, so the deploy refuses rather
+    /// than overwrite it (re-running an older checkout would otherwise
+    /// downgrade a live proxy). Add a predecessor here — never widen the check
+    /// — when a later generation supersedes `-beta.3`.
+    ///
+    /// `-beta.1`: superseded 2026-08-28; no chain still runs it (testnets were
+    /// upgraded in place, Base mainnet landed fresh at `-beta.2`). Kept so a
+    /// stranded `-beta.1` proxy would still be upgradable.
     address internal constant RETIRED_SHRINCS_PAYMASTER_IMPL_BETA1 =
         0xD0C56265b942160bb4470077f65123EE34E0Ee93;
+    /// `-beta.2`: the impl every live paymaster proxy (Base mainnet, Base
+    /// Sepolia, OP Sepolia) delegates to before the `-beta.3` upgrade.
+    address internal constant RETIRED_SHRINCS_PAYMASTER_IMPL_BETA2 =
+        0x5E4E4003118a0F8825494D76E86Db2ed654992d2;
 
     // ── Salt preimages (sender-guarded CreateX CREATE3) ──────────────
     // The deployed address is a function of (CreateX, DEPLOY_OPERATOR,
@@ -143,12 +165,12 @@ library DeployConstants {
     /// version bump. `DeployShrincsBase._requireExpectedVerifierScheme`
     /// cross-checks the live verifier at deploy time.
     function shrincsWalletSalt() internal pure returns (bytes memory) {
-        return abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.2:", SHRINCSParams.PROFILE_ID);
+        return abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.3:", SHRINCSParams.PROFILE_ID);
     }
 
     function shrincsPaymasterImplSalt() internal pure returns (bytes memory) {
         return abi.encodePacked(
-            "QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.2:", SHRINCSParams.PROFILE_ID
+            "QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.3:", SHRINCSParams.PROFILE_ID
         );
     }
 }
