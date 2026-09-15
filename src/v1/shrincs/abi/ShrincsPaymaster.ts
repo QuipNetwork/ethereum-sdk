@@ -922,6 +922,11 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "error",
+    "name": "VerifierHasNoCode",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ZeroAddressOwner",
     "inputs": []
   },
