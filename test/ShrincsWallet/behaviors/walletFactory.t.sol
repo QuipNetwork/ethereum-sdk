@@ -17,8 +17,10 @@ contract ShrincsWallet_walletFactory is ShrincsWalletTest {
         wallet.harness_setWalletFactory(payable(address(0xDEAD)));
         assertEq(wallet.walletFactory(), address(0xDEAD), "slot drifted for the test");
 
-        // A migration (the post-upgrade re-init hook) must re-pin it to `FACTORY`.
-        wallet.harness_migrateInUpgradeContext(_validInitPayload());
+        // A migration (the post-upgrade re-init hook, run through a REAL signed upgrade)
+        // must re-pin it to `FACTORY`.
+        (bytes memory payload,) = _freshInitPayload("migrate-fresh-bundle");
+        _migrateViaUpgrade(payload);
 
         assertEq(
             wallet.walletFactory(),

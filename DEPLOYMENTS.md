@@ -1,6 +1,76 @@
 # Deployments
 
-## Live — V1.0.1 generation (Base Sepolia 84532 + OP Sepolia 11155420, deployed 2026-08-27; Base mainnet pending)
+## Live — V1.0.1 generation (Base mainnet 8453 deployed 2026-08-28; Base Sepolia 84532 + OP Sepolia 11155420 deployed 2026-08-27)
+
+### Base mainnet (8453) — deployed 2026-08-28 from commit `4588879`
+
+Fresh chain, so the whole generation landed directly at `-beta.2` (no
+upgrade path fired) at the same addresses as the testnets, after
+hashsigs-solidity had deployed the V3/V4 verifier pair. `01_DeployFactory`
+block 50544586 (factory impl `0x25f9cea7…c8a8`, proxy `0xf74632d4…89d0`);
+`02_DeployShrincs` block 50544701 (wallet impl `0xd942124d…8da6`, paymaster
+impl `0x1d4a1536…e0e7`, paymaster proxy `0x36d4ddcc…0c54`, vet
+`0xd2c7feea…1815`). All three Shrincs contracts + the factory verified on
+Basescan (the two impls via `forge verify-contract` after `--verify` raced
+Etherscan's queue).
+
+**Paymaster verifier key.** The proxy was initialized with the index-0
+operator key (the testnets' key — a `.env` expansion slip), then rotated the
+same day with owner-fiat `rotateStatefulKey` (tx `0x9823103a…019d`, block
+50545015) to the **index-1 stateful subkey**; the index-0 stateless half is
+carried forward (inert: the paymaster never verifies stateless signatures).
+Live: commitment `0x0727577159d5862d456780f62343b8a0b02e89ac084de267ea42288b55c56857`,
+epoch 1, budget 4096, 0 used. The sponsor keypair is the graft
+`deriveKeyPair({ statefulIndex: 1, statelessIndex: 0, maxSignatures: 4096 })`
+(see `scripts/rotate-shrincs-paymaster-key.mjs`). Epoch-0's index-0 tree is
+now spent on this paymaster and stays usable on the testnets only. EntryPoint
+deposit/stake not yet funded.
+
+**Factory fees** (owner txs, ETH ≈ $2,519 at the time): `setCreationFee`
+0.0004 ETH ≈ $1 (tx `0x918c40e7…8179`, block 50545018); `setExecuteFee`
+0.000004 ETH ≈ $0.01 (tx `0x25d43d2c…fa2a`, block 50545029). `MAX_FEE`
+immutable is 1 ETH. Testnet factories keep both at 0.
+
+### `-beta.2` implementations (spent-tree registries) — testnets upgraded in place 2026-08-28
+
+The Shrincs implementations move to `V1.0.1-beta.2` for the spent-tree
+registries fix (a stateful or stateless tree can never be re-installed on a
+wallet or paymaster — INVARIANTS §25; the same-key rotation that reset the
+leaf bitmap). Storage is ERC-7201 append-only, so **both proxies keep their
+addresses**; `02_DeployShrincs` now (a) deploys the two new impls, (b) vets the
+wallet impl, and (c) `upgradeToAndCall`s the paymaster proxy in place (owner =
+operator on the testnets, no re-init). The `-beta.1` wallet impl stays vetted
+(not deprecated). The WalletFactory
+code is unchanged, so its impl stays at `-beta.1`. Base mainnet gets the whole
+generation fresh at these same addresses (done — see the Base mainnet section
+above).
+
+Broadcast 2026-08-28 from commit `4588879` ("bump salts") with
+`make deploy-shrincs-<chain>`; four txs
+per chain, all in one block, all verified on Etherscan:
+
+- **Base Sepolia (84532)**, block 46054862: wallet impl
+  `0x2398d3cb…6cb9b`, vet `0x624dcb67…1954`, paymaster impl `0xcff1d7a2…6dc7`,
+  proxy `upgradeToAndCall` `0x55c3044b…1efd`.
+- **OP Sepolia (11155420)**, block 48037763: wallet impl `0x806fdc66…bd54`,
+  vet `0xcb5eba7e…03e4`, paymaster impl `0x77c526be…0696`, proxy
+  `upgradeToAndCall` `0x66a1b279…0174`.
+
+Post-state on both chains: the paymaster proxy's ERC-1967 slot reads
+`0x5E4E4003…92d2`, `latestWalletImpl()` is `0x680840c8…4FBC`, and
+`getShrincsVerifier()` is unchanged by the upgrade (commitment
+`0x538c6eb0…07bf`, epoch 0, budget 4096, 0 used). The paymaster impl runtime
+is byte-identical across the two chains; the wallet impl differs only by its
+cached EIP-712 chain-id immutables. Receipts under `broadcast/`.
+
+| | Address |
+|---|---|
+| ShrincsWallet impl (`…:Impl:V1.0.1-beta.2:` ‖ `PROFILE_ID`) | `0x680840c831c6D147404a0e00edA08a5360564FBC` |
+| ShrincsPaymaster impl (`…:Impl:V1.0.1-beta.2:` ‖ `PROFILE_ID`) | `0x5E4E4003118a0F8825494D76E86Db2ed654992d2` |
+| ShrincsWallet impl `-beta.1` (superseded; still vetted) | `0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094` |
+| ShrincsPaymaster impl `-beta.1` (retired; proxy upgraded away) | `0xD0C56265b942160bb4470077f65123EE34E0Ee93` |
+
+### `-beta.1` (initial deploy)
 
 A **full redeploy of every contract on every chain**. Three things moved at
 once: `script/Constants.sol` now pins the **V4** `SHRINCS256sKeccak` verifier

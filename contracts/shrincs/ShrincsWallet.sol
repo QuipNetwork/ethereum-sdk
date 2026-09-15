@@ -35,6 +35,7 @@ import {
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "./interfaces/IShrincsWallet.sol";
+import {IWallet} from "../interfaces/IWallet.sol";
 import {IWalletFactory} from "../interfaces/IWalletFactory.sol";
 import {ShrincsWalletCodec as Codec} from "./ShrincsWalletCodec.sol";
 import {ShrincsWalletStorage as Storage} from "./ShrincsWalletStorage.sol";
@@ -72,10 +73,11 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      state (leaf bitmap, nonce, keyVersion, installed commitments).
     address public immutable SHRINCS_VERIFIER;
 
-    /// @dev Transient storage slot gating `migrate` to the `upgradeToAndCall` context.
-    /// @notice REQUIRES EIP-1153 (TSTORE/TLOAD).
-    uint256 private constant _UPGRADE_GUARD_SLOT =
-        uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) - 1;
+    /// @dev This implementation's own deploy address, captured at construction. `migrate`'s
+    ///      mid-upgrade gate compares it against the wallet's installed (ERC-1967)
+    ///      implementation: they differ exactly while a DIFFERENT implementation is
+    ///      migrating the wallet into this code (family-neutral, the frozen `IWallet` seam).
+    address private immutable _SELF = address(this);
 
     /// @dev EIP-712 type hash nesting the ERC-1271 `hash` before ECDSA recovery, binding the
     ///      classical signature to this wallet's domain (mirrors Safe's `SafeMessage`).
@@ -157,14 +159,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @dev ERC-4337 hybrid validation: owner-ECDSA co-signature AND stateful SHRINCS
     ///      signature, with MonotonicIndex leaf advance. State is advanced during validation
     ///      (the revealed stateful leaf is consumed regardless of whether the execution phase
-    ///      later succeeds). Never reverts on signature failure — returns 1 so the EntryPoint's
-    ///      refund accounting stays clean.
+    ///      later succeeds). Never reverts on signature FAILURE (bad crypto, bad co-signature,
+    ///      stale leaf/nonce) — returns 1 so the EntryPoint's refund accounting stays clean.
+    ///      Malformed ABI framing is the deliberate exception (fail-closed; see the inline
+    ///      policy note and INVARIANTS §19).
     ///
     ///      By convention `userOp.signature` is the ABI encoding of `(PublicKey publicKey,
     ///      StatefulSignature signature, bytes ecdsaSig)` — the SHRINCS structs plus the
-    ///      owner's ECDSA co-signature over `quipUserOpHashEcdsaTarget(userOpHash)`. The ECDSA
-    ///      check runs FIRST (cheap check before the expensive SHRINCS verify), and its failure
-    ///      consumes nothing — leaf and nonce are untouched.
+    ///      owner's ECDSA co-signature over `quipUserOpHashEcdsaTarget(userOpHash)`. The blob is
+    ///      decoded behind the `userOpEnvelope` self-staticcall (never-revert framing), then the
+    ///      ECDSA check runs (cheap check before the expensive SHRINCS verify); neither failure
+    ///      consumes anything — leaf and nonce are untouched.
     function _validateSignature(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
@@ -183,27 +188,42 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             );
             return 1;
         }
-        // Fail-closed policy for a malformed signature. Two failure classes are
-        // handled differently on purpose:
-        //   - Too short to hold the three offsets: SOFT fail (the `return 1`
-        //     above). The bundler drops the op as SIG_VALIDATION_FAILED without
-        //     penalising the sender.
-        //   - Long enough to pass that check but carrying an offset that runs
-        //     past the payload: HARD `MalformedPayload` revert from the codec
-        //     below. Such an offset cannot come from an honest client, and
-        //     decoding it could read adjacent calldata, so reverting to reject
-        //     the op outright is the intended fail-closed behaviour, not a soft
-        //     rejection.
-        (
-            SHRINCS.PublicKey calldata pk,
-            SHRINCS.Signature calldata sig,
-            bytes calldata ecdsaSig
-        ) = Codec.decodeUserOpSignature(userOp.signature);
+        // Never-revert framing policy. The codec bounds-checks only the blob's
+        // TOP-LEVEL tail offsets (hard `MalformedPayload` revert); a NESTED
+        // offset (inside the PublicKey/Signature tails, which the codec does not
+        // walk) that runs past calldatasize is caught by Solidity's own calldata
+        // bounds check at the first field read — `_leafIndex` or the
+        // `abi.encode(pk, sig)` re-encode — as a bare revert. Both reads run
+        // behind the `userOpEnvelope` self-staticcall so either revert maps to
+        // the same soft fail as every other rejection (`return 1`, AA24) instead
+        // of reverting out of validation (AA23). Inside the self-call the blob
+        // is the whole calldata, so a nested offset can no longer resolve into
+        // adjacent userOp fields either. Nothing is consumed (INVARIANTS §19).
+        // The corrupted-blob case is reachable by replaying a previously
+        // broadcast blob with its internals corrupted (the owner co-signature
+        // bytes are reusable), hence the framing check precedes the ECDSA gate.
+        uint32 leaf;
+        bytes memory envelope;
+        bytes memory ecdsaSig;
+        try this.userOpEnvelope(userOp.signature) returns (
+            uint32 decodedLeaf,
+            bytes memory encoded,
+            bytes memory ecdsa
+        ) {
+            leaf = decodedLeaf;
+            envelope = encoded;
+            ecdsaSig = ecdsa;
+        } catch {
+            emit UserOpValidationRejected(
+                UserOpValidationFailure.MalformedSignature
+            );
+            return 1;
+        }
 
         // Hybrid gate half 1: the classical owner co-signs the exact userOpHash under the
         // dedicated userOp EIP-712 domain (see _QUIP_USER_OP_HASH_TYPEHASH). ERC-7562 clean:
         // ecrecover is an allowed precompile and the owner slot is the wallet's own storage.
-        address recovered = ECDSA.tryRecoverCalldata(
+        address recovered = ECDSA.tryRecover(
             quipUserOpHashEcdsaTarget(userOpHash),
             ecdsaSig
         );
@@ -216,7 +236,6 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         Storage.Layout storage $ = Storage.layout();
         uint256 epoch = $.keyVersion;
-        uint32 leaf = _leafIndex(sig);
         if (leaf == 0 || leaf > $.maxSignatures) {
             emit UserOpValidationRejected(
                 UserOpValidationFailure.StatefulBudgetExhausted
@@ -251,7 +270,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             !_tryVerifyStateful(
                 commitment,
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
-                abi.encode(pk, sig)
+                envelope
             )
         ) {
             emit UserOpValidationRejected(
@@ -348,12 +367,20 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
         (
-            bytes32 commitment,
-            bytes32 erc1271Commitment,
-            uint32 maxSignatures
+            bytes32 declaredCommitment,
+            uint32 maxSignatures,
+            SHRINCS.PublicKey calldata mainKey,
+            SHRINCS.PublicKey calldata erc1271Key
         ) = _decodeAndValidateInstall(payload);
 
+        // safe installing bundles prevent key reuse
+        bytes32 commitment = _safeInstallKeyBundle(mainKey);
+        if (commitment != declaredCommitment) revert CommitmentMismatch();
+
+        bytes32 erc1271Commitment = _safeInstallKeyBundle(erc1271Key);
+
         bytes32 walletCommitment = IWalletFactory(FACTORY).commitmentOf(address(this));
+
         if (
             walletCommitment !=
             Codec.v1Commitment(commitment, erc1271Commitment, newOwner)
@@ -365,7 +392,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         Storage.Layout storage $ = Storage.layout();
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
-        $.erc1271StatelessCommitment = erc1271Commitment;
+        $.erc1271PublicKeyCommitment = erc1271Commitment;
         $.maxSignatures = maxSignatures;
         // Epoch 0's leaf bitmap is empty by default; statefulLeavesUsed starts at 0.
 
@@ -379,22 +406,29 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function migrate(bytes calldata payload) external {
-        if (_upgradeGuard() == 0) revert NotUpgrading();
+        _enforceUpgradeInFlight();
 
         (
-            bytes32 commitment,
-            bytes32 erc1271Commitment,
-            uint32 maxSignatures
+            bytes32 declaredCommitment,
+            uint32 maxSignatures,
+            SHRINCS.PublicKey calldata mainKey,
+            SHRINCS.PublicKey calldata erc1271Key
         ) = _decodeAndValidateInstall(payload);
 
         Storage.Layout storage $ = Storage.layout();
-        // No-drift invariant: re-establish the guarded `_SHRINCS_FACTORY_SLOT` snapshot to this
+        // Strictly fresh trees on migration (main AND ERC-1271 bundles): a family round-trip
+        // (e.g. WOTS+ → SHRINCS → WOTS+ → SHRINCS) leaves earlier SHRINCS trees in this
+        // namespace. 
+        bytes32 commitment = _safeInstallKeyBundle(mainKey);
+        if (commitment != declaredCommitment) revert CommitmentMismatch();
+        bytes32 erc1271Commitment = _safeInstallKeyBundle(erc1271Key);
+        // No-drift invariant: re-establish the `_SHRINCS_FACTORY_SLOT` factory pin to this
         // (the new) implementation's immutable `FACTORY`. `migrate` runs in the new impl's code, so
         // `FACTORY` is the new source of truth; pinning storage to it keeps the snapshot slot and
         // the `walletFactory()` getter from ever diverging from the immutable after an upgrade.
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
-        $.erc1271StatelessCommitment = erc1271Commitment;
+        $.erc1271PublicKeyCommitment = erc1271Commitment;
         $.maxSignatures = maxSignatures;
         // The action nonce is deliberately NOT advanced here: the `keyVersion` bump below
         // already invalidates every outstanding signed context.
@@ -426,7 +460,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             SHRINCS.Signature calldata sig,
             bool shouldMigrate,
             bytes calldata migratorPayload,
-            uint256 blobNonce
+            uint256 blobNonce,
+            bytes calldata probePayload
         ) = Codec.decodeUpgradeAuth(data);
 
         uint256 liveNonce = Storage.layout().nonce;
@@ -439,30 +474,20 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             EfficientHashLib.hashCalldata(migratorPayload)
         );
 
-        // The guard snapshot is taken AFTER the nonce advance, so the
-        // guarded nonce slot (idx 6) is checked against its post-advance value
         _verifyStatefulAndAdvance(pk, sig, Codec.ACTION_UPGRADE, payloadHash);
 
-        // verifyUpgrade is view here, but executes the NEW impl's bytecode in our storage context.
-        bytes32[8] memory verifyGuard = _snapshotGuardedSlots();
-        LibCall.delegateCallContract(
-            newImplementation,
-            abi.encodeCall(this.verifyUpgrade, (newImplementation, data))
-        );
-        _assertGuardedSlotsUnchanged(verifyGuard);
+        // A PROBE of the NEW implementation.
+        // NB: 
+        // - view call so cannot change state
+        // - intention is purely a sanity check; ensure the cloent is providing the 
+        //   correct data for the scheme being migrated to
+        IWallet(newImplementation).verifyUpgrade(newImplementation, probePayload);
 
         if (shouldMigrate) {
-            uint256 slot = _UPGRADE_GUARD_SLOT;
-            assembly {
-                tstore(slot, 1)
-            }
             LibCall.delegateCallContract(
                 newImplementation,
                 abi.encodeCall(this.migrate, (migratorPayload))
             );
-            assembly {
-                tstore(slot, 0)
-            }
         }
 
         super.upgradeToAndCall(newImplementation, data[0:0]);
@@ -575,6 +600,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (UXMSS.StatefulPublicKey memory decoded, ) = SHRINCS
             .decodeStatefulPublicKey(nextKey.statefulPublicKey);
 
+        // A stateless signature was spent: both replacement key halves must be fresh.
+        _safeInstallStatefulKey(nextKey.statefulPublicKey);
+        _safeInstallStatelessKey(nextKey.pkSeed, nextKey.hypertreeRoot);
+
         // Install the fresh bundle AND the new classical owner together — the atomic handover.
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
@@ -595,12 +624,13 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     function setErc1271Key(
         SHRINCS.PublicKey calldata publicKey,
         SHRINCS.Signature calldata signature,
-        bytes32 newErc1271Commitment,
+        SHRINCS.PublicKey calldata newErc1271Key,
         uint32 newErc1271HashSuite
     ) external payable onlyOwner {
-        if (newErc1271Commitment == bytes32(0)) revert ZeroErc1271Commitment();
         if (newErc1271HashSuite != HashSuite.HASH_SUITE_ID)
             revert UnsupportedHashSuite();
+
+        bytes32 newErc1271Commitment = _safeInstallKeyBundle(newErc1271Key);
         bytes32 payloadHash = Codec.setErc1271KeyPayloadHash(
             newErc1271Commitment,
             newErc1271HashSuite
@@ -613,8 +643,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
 
         Storage.Layout storage $ = Storage.layout();
-        bytes32 old = $.erc1271StatelessCommitment;
-        $.erc1271StatelessCommitment = newErc1271Commitment;
+        bytes32 old = $.erc1271PublicKeyCommitment;
+        $.erc1271PublicKeyCommitment = newErc1271Commitment;
         emit Erc1271KeySet(old, newErc1271Commitment);
     }
 
@@ -652,6 +682,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         );
 
         Storage.Layout storage $ = Storage.layout();
+        // The replacement stateful key must never have been installed here. The stateless tree
+        // is carried forward unchanged — no stateless signature is spent by this path.
+        _safeInstallStatefulKey(nextStatefulKey.statefulPublicKey);
+
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
         $.maxSignatures = decoded.maxSignatures;
@@ -696,6 +730,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         // declared==computed commitment); decode here only to cache the leaf budget.
         (UXMSS.StatefulPublicKey memory decoded, ) = SHRINCS
             .decodeStatefulPublicKey(nextKey.statefulPublicKey);
+
+        // A stateless signature was spent: both replacement key halves must be fresh.
+        _safeInstallStatefulKey(nextKey.statefulPublicKey);
+        _safeInstallStatelessKey(nextKey.pkSeed, nextKey.hypertreeRoot);
 
         bytes32 prev = $.shrincsPublicKeyCommitment;
         $.shrincsPublicKeyCommitment = nextCommitment;
@@ -824,6 +862,46 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
+    function userOpEnvelope(
+        bytes calldata signature
+    )
+        external
+        view
+        returns (uint32 leaf, bytes memory envelope, bytes memory ecdsaSig)
+    {
+        if (msg.sender != address(this)) revert SelfCallOnly();
+        (
+            SHRINCS.PublicKey calldata pk,
+            SHRINCS.Signature calldata sig,
+            bytes calldata ecdsa
+        ) = Codec.decodeUserOpSignature(signature);
+        // Solidity's calldata accessors bounds-check every nested tail here and revert on an
+        // overrun; the caller's try/catch is the containment.
+        leaf = _leafIndex(sig);
+        envelope = abi.encode(pk, sig);
+        ecdsaSig = ecdsa;
+    }
+
+    /// @inheritdoc IShrincsWallet
+    function erc1271Envelope(
+        bytes calldata signature
+    ) external view returns (bytes memory) {
+        if (msg.sender != address(this)) revert SelfCallOnly();
+        (
+            bool ok,
+            SHRINCS.PublicKey calldata pk,
+            SPHINCSPlusC.Signature calldata sig,
+
+        ) = Codec.tryDecodeErc1271Signature(signature);
+        // Unreachable from `_checkErc1271Signature` (it returns on `!ok` first); kept so the
+        // function never dereferences the zero-length failure slices.
+        if (!ok) revert InvalidSignature();
+        // Solidity's calldata accessors bounds-check every nested tail here and revert on an
+        // overrun; the caller's try/catch is the containment.
+        return abi.encode(pk, sig);
+    }
+
+    /// @inheritdoc IShrincsWallet
     function debugIsValidSignature(
         bytes32 hash,
         bytes calldata signature
@@ -836,44 +914,27 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         address newImplementation,
         bytes calldata data
     ) external view {
-        // Reachability probe: re-run the stateful verify over the upgrade context as proof the
-        // new impl's SHRINCS verifier is reachable in this storage context. Self-consistency,
-        // not authorization (the authorization already happened in `upgradeToAndCall`).
+        // NB: context free probe into new implementation to verify
+        //     signing scheme is the one expected
+        bytes calldata vector = data;
+        // ShrincsWallet beta-v1.0.2 requires this branch
+        // for compatibility
+        if (data.length >= 0x20 && uint256(bytes32(data[0:0x20])) == 0xc0) {
+            (, , , , , vector) = Codec.decodeUpgradeAuth(data);
+        }
         (
-            SHRINCS.PublicKey calldata pk,
-            SHRINCS.Signature calldata sig,
-            bool shouldMigrate,
-            bytes calldata migratorPayload,
-            uint256 blobNonce
-        ) = Codec.decodeUpgradeAuth(data);
+            SHRINCS.PublicKey calldata bundle,
+            SHRINCS.Signature calldata statefulSig,
+            SPHINCSPlusC.Signature calldata statelessSig
+        ) = Codec.decodeProbePayload(vector);
 
-        Storage.Layout storage $ = Storage.layout();
-        // Rebuild the context from the BLOB-borne nonce, never the live one: at the SDK's
-        // pre-flight staticcall the live nonce equals the blob's, but in the post-consumption
-        // delegatecall from `upgradeToAndCall` the live nonce has already advanced past it —
-        // a live-nonce read here would make the same signature fail to re-verify and brick
-        // every upgrade. Freshness was already enforced by the `StaleActionNonce` gate.
-        SHRINCS.ActionContext memory ctx = Codec.buildActionContext(
-            _shrincsDomainSeparator(),
-            blobNonce,
-            $.keyVersion,
-            Codec.ACTION_UPGRADE,
-            Codec.upgradePayloadHash(
-                newImplementation,
-                shouldMigrate,
-                EfficientHashLib.hashCalldata(migratorPayload)
-            )
-        );
-        // Stateful verification via the pinned verifier (the probe proves the NEW impl's
-        // pinned verifier is reachable; see EXTERNAL VERIFIER DELEGATION).
-        bytes32 commitment = $.shrincsPublicKeyCommitment;
-        if (
-            !_tryVerifyStateful(
-                commitment,
-                SHRINCS.statefulActionMessageHash(commitment, ctx),
-                abi.encode(pk, sig)
-            )
-        ) revert InvalidSignature();
+        bytes32 digest = Codec.probeDigest(newImplementation);
+        bytes32 commitment = SHRINCS.publicKeyCommitment(bundle);
+
+        if (!_tryVerifyStateful(commitment, digest, abi.encode(bundle, statefulSig)))
+            revert InvalidSignature();
+        if (!_tryVerifyStateless(commitment, digest, abi.encode(bundle, statelessSig)))
+            revert InvalidSignature();
     }
 
     /// @inheritdoc IShrincsWallet
@@ -930,7 +991,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
     /// @inheritdoc IShrincsWallet
     function walletFactory() external view returns (address payable) {
-        // Exposes the guarded `_SHRINCS_FACTORY_SLOT` snapshot value, which `initialize`/`migrate`
+        // Exposes the `_SHRINCS_FACTORY_SLOT` factory pin value, which `initialize`/`migrate`
         // re-establish to `FACTORY`, so it is invariantly equal to the immutable source of truth.
         return Storage.layout().walletFactory;
     }
@@ -941,8 +1002,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
-    function getErc1271Commitment() external view returns (bytes32) {
-        return Storage.layout().erc1271StatelessCommitment;
+    function getErc1271PublicKeyCommitment() external view returns (bytes32) {
+        return Storage.layout().erc1271PublicKeyCommitment;
     }
 
     /// @inheritdoc IShrincsWallet
@@ -1020,34 +1081,28 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         return uint32(signature.authPath.length);
     }
 
-    /// @dev Decodes and fully validates an install/migrate key-bundle payload — the block shared
-    ///      byte-for-byte by `initialize` and `migrate`: non-zero ERC-1271 commitment, declared
-    ///      hash suites, main-bundle shape + commitment recompute, and a non-zero leaf budget.
-    ///      Returns exactly the three values both callers persist. Pure: touches no storage.
+    /// @dev Decodes an install payload, checks the declared hash suites, and enforces the MAIN
+    ///      bundle's signing budget (`maxSignatures != 0` — its stateful half is the wallet's
+    ///      signing key; the ERC-1271 bundle's stateful half is inert and unconstrained).
+    ///      Bundle validation and registry recording happen in `_safeInstallKeyBundle`; the
+    ///      caller must additionally check `declaredCommitment` against the main bundle's
+    ///      derived commitment.
     function _decodeAndValidateInstall(
         bytes calldata payload
     )
         internal
         pure
         returns (
-            bytes32 commitment,
-            bytes32 erc1271Commitment,
-            uint32 maxSignatures
+            bytes32 declaredCommitment,
+            uint32 maxSignatures,
+            SHRINCS.PublicKey calldata mainKey,
+            SHRINCS.PublicKey calldata erc1271Key
         )
     {
-        SHRINCS.PublicKey calldata pk;
         uint32 hashSuite;
         uint32 erc1271HashSuite;
-        (
-            commitment,
-            ,
-            pk,
-            hashSuite,
-            erc1271Commitment,
-            erc1271HashSuite
-        ) = Codec.decodeInit(payload);
-
-        if (erc1271Commitment == bytes32(0)) revert ZeroErc1271Commitment();
+        (declaredCommitment, , mainKey, hashSuite, erc1271Key, erc1271HashSuite) = Codec
+            .decodeInit(payload);
 
         // The SHRINCS library hardcodes HASH_SUITE_KECCAK_256 into every canonical message
         // hash, so the declared suites are a client-agreement check, not a dispatch choice.
@@ -1056,16 +1111,69 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             erc1271HashSuite != HashSuite.HASH_SUITE_ID
         ) revert UnsupportedHashSuite();
 
-        // Validate the supplied main bundle's fixed shape and the declared commitment
-        // (validPublicKey already checks the embedded commitment recomputes).
-        if (!SHRINCS.validPublicKey(pk)) revert CommitmentMismatch();
-        if (SHRINCS.publicKeyCommitment(pk) != commitment)
-            revert CommitmentMismatch();
-
         (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
-            .decodeStatefulPublicKey(pk.statefulPublicKey);
+            .decodeStatefulPublicKey(mainKey.statefulPublicKey);
         if (!ok || decoded.maxSignatures == 0) revert ZeroMaxSignatures();
         maxSignatures = decoded.maxSignatures;
+    }
+
+    /// @dev Installs a full key bundle, whatever its role (main or dedicated ERC-1271):
+    ///      validates the bundle's fixed shape and embedded-commitment recompute
+    ///      (`validPublicKey`), derives its commitment on-chain, and records both halves in the
+    ///      lifetime registries — `StatefulTreeSpent` / `StatelessTreeSpent` on any tree this
+    ///      wallet ever held, in either role, so a contract-signing key can never double as,
+    ///      or recycle, a recovery root (23/25).
+    /// @return commitment The bundle commitment, derived on-chain.
+    function _safeInstallKeyBundle(
+        SHRINCS.PublicKey calldata pk
+    ) internal returns (bytes32 commitment) {
+        if (!SHRINCS.validPublicKey(pk)) revert CommitmentMismatch();
+        commitment = SHRINCS.publicKeyCommitment(pk);
+        _safeInstallStatefulKey(pk.statefulPublicKey);
+        _safeInstallStatelessKey(pk.pkSeed, pk.hypertreeRoot);
+    }
+
+    /// @dev Installs one stateful key half (68-byte encoding): derives its tree ID and records
+    ///      it in the lifetime registry, reverting `StatefulTreeSpent` if this wallet ever held
+    ///      it. Trees are one-time material: the leaf bitmap resets per epoch, so re-installing
+    ///      a tree (including a cycle back to an old one) would resurrect its consumed leaves.
+    function _safeInstallStatefulKey(bytes calldata statefulPublicKey) internal {
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(statefulPublicKey);
+        if (!ok) revert CommitmentMismatch();
+        bytes32 treeId = _statefulTreeId(decoded);
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatefulTrees[treeId]) revert StatefulTreeSpent(treeId);
+        $.spentStatefulTrees[treeId] = true;
+    }
+
+    /// @dev Stateless twin of `_safeInstallStatefulKey`: derives the tree ID and records it in
+    ///      the lifetime registry, reverting `StatelessTreeSpent` if this wallet ever held it.
+    function _safeInstallStatelessKey(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) internal {
+        bytes32 treeId = _statelessTreeId(pkSeed, hypertreeRoot);
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatelessTrees[treeId]) revert StatelessTreeSpent(treeId);
+        $.spentStatelessTrees[treeId] = true;
+    }
+
+    /// @dev Tree identity of a stateful public key: keccak256(pkSeed ‖ root). Deliberately excludes
+    ///      `maxSignatures` — the same tree under a different budget is the same tree.
+    function _statefulTreeId(
+        UXMSS.StatefulPublicKey memory decoded
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(decoded.pkSeed, decoded.root);
+    }
+
+    /// @dev Tree identity of a stateless half: keccak256(pkSeed ‖ hypertreeRoot). Both fields are
+    ///      32 bytes by the time any caller reaches this (bundle validation / width checks).
+    function _statelessTreeId(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(bytes32(pkSeed[:32]), bytes32(hypertreeRoot[:32]));
     }
 
     /// @dev Core stateful verify + bitmap leaf consume shared by every stateful path. Reverts on
@@ -1137,9 +1245,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      internals (attacker-controlled array lengths inside `userOp.signature` or an
     ///      ERC-1271 blob) REVERT inside the verifier instead of returning 0xffffffff, and
     ///      the dep is explicit that "a caller that needs a boolean must treat a revert as
-    ///      its own policy decision". This wallet's contract is never-revert validation
-    ///      (ERC-4337 returns 1) and never-revert ERC-1271, so EVERY verifier revert maps
-    ///      to "invalid signature". Accepted trade-off: an inner out-of-gas is also
+    ///      its own policy decision". This wallet's contract is never-revert-on-bad-signature
+    ///      validation (ERC-4337 returns 1) and never-revert ERC-1271, so EVERY verifier revert
+    ///      maps to "invalid signature". Malformed ABI framing of the blob itself is handled
+    ///      before the verifier is reached (behind the `userOpEnvelope` / `erc1271Envelope`
+    ///      self-staticcalls on the validation paths — INVARIANTS §19). Accepted trade-off: an
+    ///      inner out-of-gas is also
     ///      reported as an invalid signature instead of propagating.
     function _tryVerifyStateful(
         bytes32 expectedCommitment,
@@ -1194,7 +1305,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         SHRINCS.RotationContext memory ctx,
         SPHINCSPlusC.Signature calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
-    ) private view returns (bytes32) {
+    ) internal view returns (bytes32) {
         // The replacement bundle's four fields have fixed widths.
         if (
             nextKey.statefulPublicKey.length !=
@@ -1308,16 +1419,30 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             Codec.ACTION_ERC1271,
             hash
         );
+        // The codec bounds-checks only the blob's TOP-LEVEL tail offsets; the nested
+        // PublicKey/Signature tail offsets are first touched by the `abi.encode(pk, sig)`
+        // re-encode, where Solidity's calldata accessors REVERT on an overrun. That revert
+        // would surface in THIS frame, outside `_tryVerifyStateless`'s try/catch, and the
+        // owner ECDSA half of a blob is reusable, so anyone holding a previously shared blob
+        // could trigger it. The re-encode therefore runs behind a self-staticcall so the
+        // overrun maps to the failure magic like every other rejection (INVARIANTS §19).
+        bytes memory envelope;
+        try this.erc1271Envelope(signature) returns (bytes memory encoded) {
+            envelope = encoded;
+        } catch {
+            return Erc1271ValidationResult.MalformedErc1271Payload;
+        }
+
         // Stateless verification via the pinned verifier: canonical stateless action hash
         // computed locally; bundle checks + FORS-C/hypertree crypto delegated
         if (
             !_tryVerifyStateless(
-                $.erc1271StatelessCommitment,
+                $.erc1271PublicKeyCommitment,
                 SHRINCS.statelessActionMessageHash(
-                    $.erc1271StatelessCommitment,
+                    $.erc1271PublicKeyCommitment,
                     ctx
                 ),
-                abi.encode(pk, sig)
+                envelope
             )
         ) return Erc1271ValidationResult.InvalidShrincsSignature;
 
@@ -1354,82 +1479,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         }
     }
 
-    /// @dev Reads the transient upgrade guard flag.
-    function _upgradeGuard() internal view returns (uint256 v) {
-        uint256 slot = _UPGRADE_GUARD_SLOT;
-        assembly {
-            v := tload(slot)
-        }
+    /// @dev Reverts unless an upgrade into this code is in flight — the sole gate on
+    ///      `migrate`. 
+    ///       NB: migragte is always called via `delegateCallthis` hence
+    ///           `installed` is the address in storage of the CURRENT implementation
+    ///           whereas `_SELF` is the address of whichever implementations code
+    ///           is currently being run in this current context
+    ///           therefore `_SELF` will only be different when a `delegateCall is
+    ///           is happening to a new implementation`
+    function _enforceUpgradeInFlight() internal view {
+        address installed = _msgImplementation();
+        if (installed == address(0) || installed == _SELF) revert NotUpgrading();
     }
 
-    /// @dev Snapshots the eight guarded slots: owner, ERC-1967 impl, factory, main commitment,
-    ///      ERC-1271 commitment, keyVersion, nonce, packed leaf-state word.
-    function _snapshotGuardedSlots()
-        internal
-        view
-        returns (bytes32[8] memory snapshot)
-    {
-        /// @solidity memory-safe-assembly
-        assembly {
-            mstore(snapshot, sload(_OWNER_SLOT))
-            mstore(add(snapshot, 0x20), sload(_ERC1967_IMPLEMENTATION_SLOT))
-            mstore(add(snapshot, 0x40), sload(_SHRINCS_FACTORY_SLOT))
-            mstore(add(snapshot, 0x60), sload(_SHRINCS_COMMITMENT_SLOT))
-            mstore(add(snapshot, 0x80), sload(_ERC1271_COMMITMENT_SLOT))
-            mstore(add(snapshot, 0xa0), sload(_KEY_VERSION_SLOT))
-            mstore(add(snapshot, 0xc0), sload(_NONCE_SLOT))
-            mstore(add(snapshot, 0xe0), sload(_LEAF_STATE_SLOT))
-        }
-    }
-
-    /// @dev Reverts with `GuardedSlotTampered(slotIndex)` if any guarded slot changed since the
-    ///      snapshot. Index mapping documented on the error in `IShrincsWallet`.
-    function _assertGuardedSlotsUnchanged(
-        bytes32[8] memory snapshot
-    ) internal view {
-        bytes4 selector = GuardedSlotTampered.selector;
-        /// @solidity memory-safe-assembly
-        assembly {
-            function revertWithIndex(sel, idx) {
-                mstore(0x00, sel)
-                mstore(0x04, idx)
-                revert(0x00, 0x24)
-            }
-            if iszero(eq(mload(snapshot), sload(_OWNER_SLOT))) {
-                revertWithIndex(selector, 0)
-            }
-            if iszero(
-                eq(
-                    mload(add(snapshot, 0x20)),
-                    sload(_ERC1967_IMPLEMENTATION_SLOT)
-                )
-            ) {
-                revertWithIndex(selector, 1)
-            }
-            if iszero(eq(mload(add(snapshot, 0x40)), sload(_SHRINCS_FACTORY_SLOT))) {
-                revertWithIndex(selector, 2)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0x60)), sload(_SHRINCS_COMMITMENT_SLOT))
-            ) {
-                revertWithIndex(selector, 3)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0x80)), sload(_ERC1271_COMMITMENT_SLOT))
-            ) {
-                revertWithIndex(selector, 4)
-            }
-            if iszero(
-                eq(mload(add(snapshot, 0xa0)), sload(_KEY_VERSION_SLOT))
-            ) {
-                revertWithIndex(selector, 5)
-            }
-            if iszero(eq(mload(add(snapshot, 0xc0)), sload(_NONCE_SLOT))) {
-                revertWithIndex(selector, 6)
-            }
-            if iszero(eq(mload(add(snapshot, 0xe0)), sload(_LEAF_STATE_SLOT))) {
-                revertWithIndex(selector, 7)
-            }
-        }
-    }
 }

@@ -11,6 +11,7 @@ import {
   type WalletClient,
   keccak256,
   toHex,
+  toBytes,
 } from "viem";
 
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
@@ -18,8 +19,12 @@ import {
   OwnerMismatchError,
   ShrincsHdDerivationError,
   ZeroAddressOwnerError,
-  ZeroErc1271CommitmentError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
+  AuthLeafInTargetsError,
+  UnsupportedByWalletVersionError,
 } from "../errors.js";
+import { SHRINCS_WALLET_BETA2_IMPLEMENTATION } from "../addresses.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
 import { type PackedUserOperation } from "../../userOpCodec.js";
@@ -40,10 +45,21 @@ const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032" as Address;
 const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let keypair: ShrincsKeyPair;
+let freshKey: ShrincsKeyPair;
+let signer: ShrincsSigner;
+
+// A non-beta.2 implementation address, padded to a full ERC-1967 slot word, so
+// the version resolver reads these mock wallets as the `latest` generation
+// (whose ABI matches the current-getter names `walletRead` returns).
+const LATEST_IMPL_SLOT =
+  "0x00000000000000000000000000000000000000000000000000000000c0de1a7e" as Hex;
 
 beforeAll(async () => {
-  const signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
+  signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   keypair = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
+    maxSignatures: MAX_SIG,
+  });
+  freshKey = signer.keygenFromSeedHex(seed("shrincs wallet fresh key seed"), {
     maxSignatures: MAX_SIG,
   });
 });
@@ -64,7 +80,7 @@ function walletRead(
       return EXECUTE_FEE;
     case "getShrincsPublicKeyCommitment":
       return keypair.publicKeyCommitment;
-    case "getErc1271Commitment":
+    case "getErc1271PublicKeyCommitment":
       return ZERO32;
     case "getHashSuite":
       return HASH_SUITE_KECCAK_256;
@@ -84,6 +100,8 @@ function walletRead(
       return false;
     case "statefulLeafBitmapWord":
       return 0n;
+    case "verifyUpgrade":
+      return undefined; // view probe: resolves (no revert) in these mocks
     default:
       throw new Error(`unexpected wallet read: ${functionName}`);
   }
@@ -98,6 +116,7 @@ describe("ShrincsWalletClient fee-free writes", () => {
     const publicClient = {
       getChainId: async () => CHAIN_ID,
       getCode: async () => "0x6000" as Hex,
+      getStorageAt: async () => LATEST_IMPL_SLOT,
       multicall: async ({
         contracts,
       }: {
@@ -126,6 +145,8 @@ describe("ShrincsWalletClient fee-free writes", () => {
       walletAddress: WALLET,
       publicClient,
       walletClient,
+      // A signer is required to build the verifyUpgrade probe vector.
+      signer,
       keypair,
       commitment: seed("vault"),
       chainId: CHAIN_ID,
@@ -172,6 +193,7 @@ function makeWalletClient(
   const publicClient = {
     getChainId: async () => CHAIN_ID,
     getCode: async () => "0x6000" as Hex,
+    getStorageAt: async () => LATEST_IMPL_SLOT,
     multicall: async ({
       contracts,
     }: {
@@ -191,6 +213,7 @@ function makeWalletClient(
     walletAddress: WALLET,
     publicClient,
     walletClient,
+    signer,
     keypair,
     commitment: seed("vault"),
     chainId: CHAIN_ID,
@@ -202,10 +225,61 @@ function localAccount(address: Address): LocalAccount {
   return { address } as LocalAccount;
 }
 
+describe("ShrincsWalletClient version gating", () => {
+  // A client whose wallet resolves to the frozen V1.0.1-beta.2 generation
+  // (getStorageAt returns the beta.2 implementation in the ERC-1967 slot).
+  function makeBeta2Client(): ShrincsWalletClient {
+    const beta2Slot =
+      `0x${SHRINCS_WALLET_BETA2_IMPLEMENTATION.slice(2).toLowerCase().padStart(64, "0")}` as Hex;
+    const publicClient = {
+      getChainId: async () => CHAIN_ID,
+      getCode: async () => "0x6000" as Hex,
+      getStorageAt: async () => beta2Slot,
+    } as unknown as PublicClient;
+    const walletClient = {
+      getAddresses: async () => [ACCOUNT],
+    } as unknown as WalletClient;
+    return new ShrincsWalletClient({
+      walletAddress: WALLET,
+      publicClient,
+      walletClient,
+      signer,
+      keypair,
+      commitment: seed("vault"),
+      chainId: CHAIN_ID,
+      account: ACCOUNT,
+    });
+  }
+
+  it("resolveVersion recognizes a beta.2 wallet", async () => {
+    const version = await makeBeta2Client().resolveVersion();
+    expect(version.id).toBe("v1.0.1-beta.2");
+  });
+
+  it("setErc1271Key throws UnsupportedByWalletVersionError on a beta.2 wallet", async () => {
+    const client = makeBeta2Client();
+    const err = await client
+      .setErc1271Key({ newErc1271Key: keypair.publicKey })
+      .then(
+        () => {
+          throw new Error("expected UnsupportedByWalletVersionError");
+        },
+        (e: unknown) => e
+      );
+    expect(err).toBeInstanceOf(UnsupportedByWalletVersionError);
+    expect((err as UnsupportedByWalletVersionError).operation).toBe(
+      "setErc1271Key"
+    );
+    expect((err as UnsupportedByWalletVersionError).versionLabel).toBe(
+      "V1.0.1-beta.2"
+    );
+  });
+});
+
 describe("ShrincsWalletClient owner mismatch", () => {
   it("signErc1271 throws OwnerMismatchError when the owner is non-zero but wrong", async () => {
     const client = makeWalletClient({
-      getErc1271Commitment: keypair.publicKeyCommitment,
+      getErc1271PublicKeyCommitment: keypair.publicKeyCommitment,
     });
     const err = await client
       .signErc1271({
@@ -226,7 +300,7 @@ describe("ShrincsWalletClient owner mismatch", () => {
 
   it("signErc1271 throws ZeroAddressOwnerError when the owner address is zero", async () => {
     const client = makeWalletClient({
-      getErc1271Commitment: keypair.publicKeyCommitment,
+      getErc1271PublicKeyCommitment: keypair.publicKeyCommitment,
     });
     await expect(
       client.signErc1271({
@@ -267,19 +341,144 @@ describe("ShrincsWalletClient derivationIndex", () => {
   });
 });
 
-describe("ShrincsWalletClient setErc1271Key", () => {
-  it("throws ZeroErc1271CommitmentError for the 32-byte zero word", async () => {
-    const client = makeWalletClient();
-    await expect(
-      client.setErc1271Key({ newCommitment: ZERO32 })
-    ).rejects.toThrow(ZeroErc1271CommitmentError);
+describe("ShrincsWalletClient spent-tree pre-flights", () => {
+  const NEW_OWNER = "0x00000000000000000000000000000000000000c3" as Address;
+
+  /// The installed stateful key with its trailing `maxSignatures` re-declared:
+  /// a different commitment, the same tree.
+  function rebudgeted(statefulPublicKey: Hex): Hex {
+    const bytes = toBytes(statefulPublicKey);
+    bytes[67] = (bytes[67] + 1) & 0xff;
+    return toHex(bytes);
+  }
+
+  /// Fresh stateful subkey grafted onto the INSTALLED stateless half.
+  const carriedStateless = () => ({
+    ...freshKey.publicKey,
+    pkSeed: keypair.publicKey.pkSeed,
+    hypertreeRoot: keypair.publicKey.hypertreeRoot,
   });
 
-  it("throws ZeroErc1271CommitmentError for an empty commitment", async () => {
+  /// Runs `fn` and asserts it did NOT fail the spent-tree pre-flight (it is
+  /// expected to fail later, at the unmocked send layer).
+  async function passesPreflight(fn: () => Promise<unknown>): Promise<void> {
+    let caught: unknown;
+    try {
+      await fn();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeInstanceOf(StatefulTreeSpentError);
+    expect(caught).not.toBeInstanceOf(StatelessTreeSpentError);
+  }
+
+  it("rotateKey refuses the installed stateful tree", async () => {
     const client = makeWalletClient();
     await expect(
-      client.setErc1271Key({ newCommitment: "" as Hex })
-    ).rejects.toThrow(ZeroErc1271CommitmentError);
+      client.rotateKey({ nextStatefulPublicKey: keypair.publicKey.statefulPublicKey })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("rotateKey refuses the installed tree under a re-declared budget", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.rotateKey({ nextStatefulPublicKey: rebudgeted(keypair.publicKey.statefulPublicKey) })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("rotateKey lets a fresh stateful tree through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.rotateKey({ nextStatefulPublicKey: freshKey.publicKey.statefulPublicKey })
+    );
+  });
+
+  it("rotateKey rejection reserves no leaf (the next call still picks leaf 1)", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.rotateKey({ nextStatefulPublicKey: keypair.publicKey.statefulPublicKey })
+    ).rejects.toThrow(StatefulTreeSpentError);
+    // markLeavesUsed's own guard forbids authorizing from inside the target set:
+    // if leaf 1 had been reserved by the rejected rotation, the auto-pick would
+    // move to 2 and this would no longer be the in-set collision it asserts.
+    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
+      AuthLeafInTargetsError
+    );
+  });
+
+  it("recoverWallet refuses the installed bundle", async () => {
+    const client = makeWalletClient();
+    await expect(client.recoverWallet({ nextKey: keypair.publicKey })).rejects.toThrow(
+      StatefulTreeSpentError
+    );
+  });
+
+  it("recoverWallet refuses a carried-forward stateless tree", async () => {
+    const client = makeWalletClient();
+    await expect(client.recoverWallet({ nextKey: carriedStateless() })).rejects.toThrow(
+      StatelessTreeSpentError
+    );
+  });
+
+  it("recoverWallet lets a fresh bundle through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() => client.recoverWallet({ nextKey: freshKey.publicKey }));
+  });
+
+  it("transferOwnership refuses the installed bundle", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.transferOwnership({ nextKey: keypair.publicKey, newOwner: NEW_OWNER })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("transferOwnership refuses a carried-forward stateless tree", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.transferOwnership({ nextKey: carriedStateless(), newOwner: NEW_OWNER })
+    ).rejects.toThrow(StatelessTreeSpentError);
+  });
+
+  it("transferOwnership lets a fresh bundle through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.transferOwnership({ nextKey: freshKey.publicKey, newOwner: NEW_OWNER })
+    );
+  });
+
+  it("setErc1271Key refuses a bundle sharing the installed main stateful tree", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.setErc1271Key({
+        newErc1271Key: {
+          ...freshKey.publicKey,
+          statefulPublicKey: keypair.publicKey.statefulPublicKey,
+        },
+      })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("setErc1271Key refuses a bundle carrying the installed main stateless root", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.setErc1271Key({ newErc1271Key: carriedStateless() })
+    ).rejects.toThrow(StatelessTreeSpentError);
+  });
+
+  it("setErc1271Key refuses re-installing the installed 1271 bundle", async () => {
+    const client = makeWalletClient({
+      getErc1271PublicKeyCommitment: freshKey.publicKeyCommitment,
+    });
+    await expect(
+      client.setErc1271Key({ newErc1271Key: freshKey.publicKey })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("setErc1271Key lets a fresh bundle through", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.setErc1271Key({ newErc1271Key: freshKey.publicKey })
+    );
   });
 });
 
@@ -314,6 +513,7 @@ describe("ShrincsWalletClient prepareExecute signs once", () => {
     const publicClient = {
       getChainId: async () => CHAIN_ID,
       getCode: async () => "0x6000" as Hex,
+      getStorageAt: async () => LATEST_IMPL_SLOT,
       multicall: async ({
         contracts,
       }: {

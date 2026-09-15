@@ -430,7 +430,7 @@ interface IWOTSPlusImplementation is IWallet {
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data
-    ) external view;
+    ) external view override;
 
     /// @notice Scheme-compatibility probe run on the new implementation during
     ///         `recoveryUpgrade`. NOT a second authorization factor.
@@ -465,7 +465,7 @@ interface IWOTSPlusImplementation is IWallet {
     ///      so that it executes against proxy storage.
     ///      Payload layout matches `initialize` (2048 bytes).
     /// @param payload Packed migration data matching the init layout.
-    function migrate(bytes calldata payload) external;
+    function migrate(bytes calldata payload) external override;
 
     /// @notice Executes a post-quantum authenticated operation: either a pure ETH transfer
     ///         or an arbitrary contract call.

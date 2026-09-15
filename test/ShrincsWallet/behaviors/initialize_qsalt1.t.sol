@@ -6,77 +6,52 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
-/// @dev Identity-binding checks in `initialize`: V1 recompute-and-match.
+/// @dev Identity-binding checks in `initialize`: V1 recompute-and-match, driven end to end
+///      through the real factory — the CREATE3 salt IS the identity commitment, published in
+///      `commitmentOf` before `initialize` recomputes and matches it.
 contract ShrincsWallet_initialize_v1 is ShrincsWalletTest {
-    /// @dev Runtime code of a harness whose immutable FACTORY is the mock factory.
-    bytes internal _implCode;
-    uint256 internal _bareNonce;
-
-    function setUp() public override {
-        super.setUp();
-        ShrincsWalletHarness impl = new ShrincsWalletHarness(
-            payable(address(factory)),
-            address(shrincsVerifier)
-        );
-        _implCode = address(impl).code;
-    }
-
-    function _freshBare()
+    /// @dev Deploys through the real factory with an explicit identity commitment.
+    function _deployVia(bytes32 commitment, address owner, bytes memory payload)
         internal
-        returns (ShrincsWalletHarness w, address addr)
+        returns (address)
     {
-        addr = address(
-            uint160(uint256(keccak256(abi.encode("bare-v1", ++_bareNonce))))
-        );
-        vm.etch(addr, _implCode);
-        w = ShrincsWalletHarness(payable(addr));
+        vm.prank(owner);
+        return factory.deployLatestWalletProxy(commitment, payable(owner), payload);
     }
 
     function test_initialize_v1MatchingIdentitySucceeds() public {
-        (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setCommitment(
-            bareAddr,
-            Codec.v1Commitment(mainCommitment, erc1271Commitment, OWNER)
-        );
+        (bytes memory payload, bytes32 mainC) = _freshInitPayload("v1-match");
+        bytes32 e1271C = _commitment32(_freshErc1271Pk("v1-match"));
 
-        vm.prank(address(factory));
-        bare.initialize(payable(OWNER), _validInitPayload());
+        address addr = _deployVia(Codec.v1Commitment(mainC, e1271C, OWNER), OWNER, payload);
+        ShrincsWalletHarness w = ShrincsWalletHarness(payable(addr));
 
-        assertEq(bare.owner(), OWNER, "owner installed");
-        assertEq(
-            bare.getShrincsPublicKeyCommitment(),
-            mainCommitment,
-            "main commitment"
-        );
-        assertEq(
-            bare.getErc1271Commitment(),
-            erc1271Commitment,
-            "erc1271 commitment"
-        );
+        assertEq(w.owner(), OWNER, "owner installed");
+        assertEq(w.getShrincsPublicKeyCommitment(), mainC, "main commitment");
+        assertEq(w.getErc1271PublicKeyCommitment(), e1271C, "erc1271 commitment");
     }
 
     function test_initialize_revertsWhen_v1OwnerMismatch() public {
-        (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setCommitment(
-            bareAddr,
-            Codec.v1Commitment(mainCommitment, erc1271Commitment, OWNER)
-        );
+        (bytes memory payload, bytes32 mainC) = _freshInitPayload("v1-owner-mismatch");
+        bytes32 e1271C = _commitment32(_freshErc1271Pk("v1-owner-mismatch"));
         address other = makeAddr("otherOwner");
+        vm.deal(other, 1 ether);
 
-        vm.prank(address(factory));
+        // The commitment binds OWNER, but the deploy hands ownership to `other`.
+        vm.prank(other);
         vm.expectRevert(IShrincsWallet.IdentityMismatch.selector);
-        bare.initialize(payable(other), _validInitPayload());
+        factory.deployLatestWalletProxy(
+            Codec.v1Commitment(mainC, e1271C, OWNER), payable(other), payload
+        );
     }
 
     function test_initialize_revertsWhen_v1StatelessMismatch() public {
-        (ShrincsWalletHarness bare, address bareAddr) = _freshBare();
-        factory.setCommitment(
-            bareAddr,
-            Codec.v1Commitment(mainCommitment, bytes32(uint256(0xdead)), OWNER)
-        );
+        (bytes memory payload, bytes32 mainC) = _freshInitPayload("v1-stateless-mismatch");
 
-        vm.prank(address(factory));
+        // The commitment binds a bogus ERC-1271 commitment, not the payload's real one.
         vm.expectRevert(IShrincsWallet.IdentityMismatch.selector);
-        bare.initialize(payable(OWNER), _validInitPayload());
+        _deployVia(
+            Codec.v1Commitment(mainC, bytes32(uint256(0xdead)), OWNER), OWNER, payload
+        );
     }
 }

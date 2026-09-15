@@ -47,6 +47,12 @@ export enum UserOpValidationFailure {
   StaleStatefulLeaf = 1,
   StatefulBudgetExhausted = 2,
   InvalidSignature = 3,
+  /// The owner's ECDSA co-signature in the hybrid blob did not recover to `owner()`.
+  InvalidEcdsaSignature = 4,
+  /// The `userOp.signature` blob's ABI framing is malformed (a top-level or nested
+  /// tail offset / length runs past the blob); the `userOpEnvelope` self-staticcall
+  /// reverted and the wallet soft-failed instead of reverting out of validation.
+  MalformedSignature = 5,
 }
 
 /// `IShrincsWallet.Erc1271ValidationResult` — the diagnostic result from
@@ -56,6 +62,9 @@ export enum Erc1271ValidationResult {
   BadSignatureLength = 1,
   InvalidEcdsaSignature = 2,
   InvalidShrincsSignature = 3,
+  /// The 1271 blob's ABI framing is malformed (top-level decode failed, or a nested
+  /// tail offset made the `erc1271Envelope` self-staticcall revert).
+  MalformedErc1271Payload = 4,
 }
 
 /// `IShrincsPaymaster.PaymasterValidationFailure` — the reason in a
@@ -250,15 +259,43 @@ export class CommitmentMismatchError extends QuipError {
   }
 }
 
-export class ZeroErc1271CommitmentError extends QuipError {
-  constructor(opts?: QuipErrorOptions) {
-    super("SHRINCS_ZERO_ERC1271_COMMITMENT", "ERC-1271 commitment is zero", opts);
-  }
-}
-
 export class ZeroMaxSignaturesError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_ZERO_MAX_SIGNATURES", "maxSignatures is zero", opts);
+  }
+}
+
+/// The stateful tree (`keccak256(pkSeed ‖ root)`, budget excluded) was installed
+/// on this wallet/paymaster before. Trees are one-time material for the
+/// contract's lifetime; re-installing one would reset its leaf bitmap.
+export class StatefulTreeSpentError extends QuipError {
+  readonly treeId?: Hex;
+  constructor(treeId?: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATEFUL_TREE_SPENT",
+      treeId === undefined
+        ? "Stateful tree was already installed on this contract — keygen a fresh key"
+        : `Stateful tree ${treeId} was already installed on this contract — keygen a fresh key`,
+      opts
+    );
+    this.treeId = treeId;
+  }
+}
+
+/// The stateless tree (`keccak256(pkSeed ‖ hypertreeRoot)`) was installed on
+/// this wallet before. `recoverWallet` / `transferOwnership` / `migrate` must
+/// present a bundle whose stateless half is entirely fresh.
+export class StatelessTreeSpentError extends QuipError {
+  readonly treeId?: Hex;
+  constructor(treeId?: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATELESS_TREE_SPENT",
+      treeId === undefined
+        ? "Stateless tree was already installed on this wallet — keygen a fresh bundle"
+        : `Stateless tree ${treeId} was already installed on this wallet — keygen a fresh bundle`,
+      opts
+    );
+    this.treeId = treeId;
   }
 }
 
@@ -415,6 +452,89 @@ export class ImplementationDeprecatedError extends QuipError {
 export class NotUpgradingError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_NOT_UPGRADING", "migrate() called outside an upgrade context", opts);
+  }
+}
+
+/// The deploy-time identity commitment (owner + both key commitments) did not
+/// match the CREATE3 salt the factory recorded — `initialize` rejected it.
+export class IdentityMismatchError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_IDENTITY_MISMATCH",
+      "wallet identity commitment does not match the factory-recorded salt",
+      opts
+    );
+  }
+}
+
+/// The wallet/paymaster constructor's pinned SHRINCS verifier does not match the
+/// expected profile — a wrong or incompatible verifier was supplied.
+export class VerifierProfileMismatchError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_VERIFIER_PROFILE_MISMATCH",
+      "pinned SHRINCS verifier does not match the expected profile",
+      opts
+    );
+  }
+}
+
+/// UUPS `upgradeToAndCall` rejected the new implementation (its `proxiableUUID`
+/// is not the ERC-1967 slot, or it is otherwise not a valid UUPS target). This
+/// fires AFTER the SHRINCS authorization + probe have passed.
+export class UpgradeFailedError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UPGRADE_FAILED",
+      "UUPS rejected the new implementation (bad proxiableUUID or non-UUPS target)",
+      opts
+    );
+  }
+}
+
+/// `setErc1271Key` on a V1.0.1-beta.2 wallet rejected a zero ERC-1271
+/// commitment. (Beta.2 stores the verifier as a bare `bytes32`; later
+/// generations pass a full bundle and validate it differently.)
+export class ZeroErc1271CommitmentError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_ZERO_ERC1271_COMMITMENT",
+      "ERC-1271 commitment must be non-zero",
+      opts
+    );
+  }
+}
+
+/// A wallet's installed implementation address is not a generation this SDK
+/// build knows how to talk to. Thrown only by the STRICT version resolver; the
+/// lenient default treats an unrecognized implementation as the `latest`
+/// surface the SDK was compiled against.
+export class UnknownWalletVersionError extends QuipError {
+  readonly implementation: Hex;
+  constructor(implementation: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UNKNOWN_WALLET_VERSION",
+      `installed implementation ${implementation} matches no known ShrincsWallet generation`,
+      opts
+    );
+    this.implementation = implementation;
+  }
+}
+
+/// A requested operation is not available on the wallet's deployed generation
+/// (e.g. `setErc1271Key` with a full bundle against a beta.2 wallet that only
+/// accepts a bare commitment). Caught client-side before any transaction.
+export class UnsupportedByWalletVersionError extends QuipError {
+  readonly versionLabel: string;
+  readonly operation: string;
+  constructor(versionLabel: string, operation: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UNSUPPORTED_BY_WALLET_VERSION",
+      `operation '${operation}' is not supported on ShrincsWallet ${versionLabel}`,
+      opts
+    );
+    this.versionLabel = versionLabel;
+    this.operation = operation;
   }
 }
 

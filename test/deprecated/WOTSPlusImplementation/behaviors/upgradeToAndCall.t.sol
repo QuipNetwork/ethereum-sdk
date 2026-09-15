@@ -244,6 +244,28 @@ contract WOTSPlusImplementation_upgradeToAndCall is WOTSPlusImplementationTest {
         wallet.migrate(migratorPayload);
     }
 
+    /// @dev The gate's window CLOSES with the ERC-1967 swap: after a completed upgrade the
+    ///      proxy dispatches to the new implementation, whose `_SELF` equals the installed
+    ///      pointer — a direct `migrate` is refused.
+    function test_migrate_revertsWhen_calledDirectlyAfterUpgrade() public {
+        (WOTSPlus.WinternitzAddress memory nextPq,) = _generateKeyPair("upgrade-next-pq");
+        WOTSPlus.WinternitzAddress memory dummyPq =
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(uint256(1)), publicKeyHash: bytes32(uint256(2))});
+        WOTSPlus.WinternitzAddress[] memory emptyKeys = new WOTSPlus.WinternitzAddress[](0);
+        bytes memory data = _buildUpgradeData(
+            address(newImpl), alicePrivateKey, alicePubkey, nextPq, "verifier", false, dummyPq, emptyKeys
+        );
+        vm.prank(ALICE);
+        wallet.upgradeToAndCall(address(newImpl), data);
+
+        (WOTSPlus.WinternitzAddress memory newPq,) = _generateKeyPair("migrate-direct-after");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(keccak256("migrate-r-after"), 10);
+        bytes memory migratorPayload = _encodeInitPayload(newPq, rKeys);
+        vm.prank(ALICE);
+        vm.expectRevert(IWOTSPlusImplementation.NotUpgrading.selector);
+        wallet.migrate(migratorPayload);
+    }
+
     function test_migrate_revertsWhen_initialKeyIsZero() public {
         WOTSPlus.WinternitzAddress memory zeroPq =
             WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32(0)});

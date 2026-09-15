@@ -356,6 +356,30 @@ export const shrincsPaymasterAbi = [
   },
   {
     "type": "function",
+    "name": "sponsorshipEnvelope",
+    "inputs": [
+      {
+        "name": "blob",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "leaf",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "envelope",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "statefulLeafBitmapWord",
     "inputs": [
       {
@@ -854,6 +878,22 @@ export const shrincsPaymasterAbi = [
     "type": "error",
     "name": "NotInitializing",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SelfCallOnly",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StatefulTreeSpent",
+    "inputs": [
+      {
+        "name": "treeId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",

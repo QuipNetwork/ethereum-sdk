@@ -14,6 +14,8 @@ For installation and a quickstart, see the package `README.md`. This file is the
 
 **One-time leaves, budgeted.** Normal actions sign with a stateful leaf (`leaf index = authPath.length`), each usable once per key epoch, bounded by `maxSignatures`. The client picks the lowest unused leaf automatically by reading the on-chain bitmap. Rotate before the budget exhausts (`rotateKey`); break-glass recovery (`recoverWallet`) uses the stateless half.
 
+**Trees never come back.** Every key install (`rotateKey`, `recoverWallet`, `transferOwnership`, `migrate`; paymaster `rotateStatefulKey`) must present material this contract has never held: the stateful tree is identified by `keccak256(pkSeed ‖ root)` — the trailing `maxSignatures` is excluded, so re-declaring a budget does not make a new key — and the stateless tree by `keccak256(pkSeed ‖ hypertreeRoot)`. Re-installing a tree would hand it a blank leaf bitmap under a fresh epoch and resurrect every leaf it already consumed, so the contracts keep lifetime registries and revert `StatefulTreeSpentError` / `StatelessTreeSpentError`. The clients pre-flight the one case they can see — the target equals the *installed* tree — before any leaf is reserved; a cycle back to an older tree surfaces as the decoded on-chain error. Always keygen fresh material (`ShrincsCodec.statefulTreeId` / `statelessTreeId` expose the identities).
+
 **Strict signing-order serialization.** Every signed context binds the wallet's live `actionNonce()`, and every consumed signature advances it (sole exception: `markLeavesUsed`, below). One outstanding signed authorization at a time: sign → land → sign. Signing a second op before the first lands binds a stale nonce and is rejected (`AA24` on the 4337 path; `InvalidSignatureError` on the direct path, leaf preserved). The flip side is free mass-cancellation: landing any action (even an empty `execute`) invalidates all outstanding signed material, including ERC-1271 blobs — integrators sign 1271 blobs late and re-sign after any wallet action.
 
 ### Key derivation (QUIP HD v1)
@@ -61,7 +63,7 @@ How the delegation preserves the inlined library's semantics exactly:
 - The envelope is always `abi.encode(publicKey, signature)` — byte-identical to `SHRINCS.encodeStatefulEnvelope`/`encodeStatelessEnvelope`, the formats the verifier re-tags in place.
 - The verifier re-runs the full bundle checks (installed-commitment match, key shape, key decode) before the crypto, so none of those are replicated wallet-side. For rotations, the wallet keeps only what the verifier can never see — the rotation *target*: `nextKey` structural validation and the declared-vs-recomputed next-commitment equality.
 - The library's `validActionContext`/`validRotationContext` nonzero membranes are not replicated: every context is wallet-built from keccak-derived fields, so they can never trip — with one real exception, the caller-supplied ERC-1271 `hash`, which is zero-guarded at its call site.
-- Revert model: 0.2.0 replaced the library's signature shape checks with revert-as-rejection — garbage signature *internals* (attacker-controlled array lengths inside `userOp.signature` or a 1271 blob) revert inside the verifier instead of returning `0xffffffff`, and the dep explicitly leaves the boolean policy to callers. The wallet's policy boundary is `_tryVerifyStateful`/`_tryVerifyStateless`: every verifier revert maps to "invalid signature", preserving `validateUserOp`'s never-revert-on-bad-sig property and never-revert ERC-1271. Accepted trade-off: an inner out-of-gas also reports as an invalid signature. A codeless verifier address stays loud (solc's return-data decoding error is deliberately not swallowed by try/catch) — a missing verifier is never misread as a bad signature.
+- Revert model: 0.2.0 replaced the library's signature shape checks with revert-as-rejection — garbage signature *internals* (attacker-controlled array lengths inside `userOp.signature` or a 1271 blob) revert inside the verifier instead of returning `0xffffffff`, and the dep explicitly leaves the boolean policy to callers. The wallet's policy boundary is `_tryVerifyStateful`/`_tryVerifyStateless`: every verifier revert maps to "invalid signature", preserving `validateUserOp`'s never-revert-on-bad-sig property and never-revert ERC-1271. Both properties cover ABI *framing* too: the codec bounds-checks only top-level tail offsets, and a nested `PublicKey`/`Signature` offset past calldata trips Solidity's calldata bounds check (a bare revert), so on every validation path the decode, leaf read and re-encode run behind a self-call-only staticcall (`userOpEnvelope`, `sponsorshipEnvelope`, `erc1271Envelope`) whose revert maps to a soft fail — `UserOpValidationFailure.MalformedSignature`, `PaymasterValidationFailure.MalformedPayload`, `Erc1271ValidationResult.MalformedErc1271Payload` (INVARIANTS §19). Accepted trade-off: an inner out-of-gas also reports as an invalid signature. A codeless verifier address stays loud (solc's return-data decoding error is deliberately not swallowed by try/catch) — a missing verifier is never misread as a bad signature.
 - ERC-7562: the verifier is storage-free and pure-opcode, so the validation-phase staticcall is compliant (`ERC7562_COMPLIANCE.md` N-5); the trust model is invariant 19 in `INVARIANTS.md`.
 
 ### Execute fee: signed `maxFee` ceiling, live price charged
@@ -134,18 +136,18 @@ Every SHRINCS address is a sender-guarded CREATE3 value — identical on every c
 |---|---|
 | Base Sepolia (84532) | live |
 | OP Sepolia (11155420) | live |
-| Base (8453) | not deployed — awaits the V4/V3 verifier pair |
+| Base (8453) | live (2026-08-28) — creation fee 0.0004 ETH, execute fee 0.000004 ETH; paymaster verifier at QUIP HD stateful index 1 / stateless index 0 |
 | Ethereum (1), Sepolia (11155111), Optimism (10), MIDL (777) | not deployed |
 
 | Contract | Address |
 |---|---|
 | WalletFactory proxy | `0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8` |
-| ShrincsWallet implementation | `0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094` |
+| ShrincsWallet implementation (`V1.0.1-beta.2`) | `0x680840c831c6D147404a0e00edA08a5360564FBC` |
 | ShrincsPaymaster proxy | `0x430c8c89492E3541e141148Dd7a7D6dD432e5890` |
 | SHRINCS256sKeccak verifier (V4) | `0xF2f9E6D692da41b089c3c261c41509669eEc5567` |
 | EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
 
-The paymaster's sponsorship key on both testnets has commitment `0x538c6eb0aa2a22531068031057e7baac0b1d5dea46a8473bbe96c0aad4e807bf` (`maxSignatures` 4096, QUIP HD derivation index 0). Its EntryPoint deposit is not yet funded, so sponsored userOps fail with `AA31` until it is. Full salt/derivation records live in `DEPLOYMENTS.md` of the contracts repo. The previous V1.0.0 generation (factory `0xdCD90563…`) is retired; wallets created through it are not reachable from this SDK version.
+The paymaster's sponsorship key on both testnets has commitment `0x538c6eb0aa2a22531068031057e7baac0b1d5dea46a8473bbe96c0aad4e807bf` (`maxSignatures` 4096, QUIP HD derivation index 0). On Base mainnet it is a graft — `deriveKeyPair({ statefulIndex: 1, statelessIndex: 0, maxSignatures: 4096 })`, commitment `0x0727577159d5862d456780f62343b8a0b02e89ac084de267ea42288b55c56857`, epoch 1 — pass it as `keypair` to `ShrincsPaymasterClient`. Its EntryPoint deposit is not yet funded, so sponsored userOps fail with `AA31` until it is. Full salt/derivation records live in `DEPLOYMENTS.md` of the contracts repo. The previous V1.0.0 generation (factory `0xdCD90563…`) is retired; wallets created through it are not reachable from this SDK version.
 
 ---
 

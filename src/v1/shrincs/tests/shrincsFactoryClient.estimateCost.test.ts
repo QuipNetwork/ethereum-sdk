@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { jest } from "@jest/globals";
 import {
   type Address,
   type Hex,
@@ -14,7 +15,7 @@ import {
   type CreateShrincsWalletParams,
   ShrincsFactoryClient,
 } from "../shrincsFactoryClient.js";
-import { ShrincsSigner } from "../shrincsSigner.js";
+import { type ShrincsKeyPair, ShrincsSigner } from "../shrincsSigner.js";
 import { v1Commitment } from "../addresses.js";
 import { ChainChangedError, WalletAlreadyExistsError } from "../../errors.js";
 import { applyGasMultiplier } from "../gas.js";
@@ -26,7 +27,7 @@ const FACTORY = "0x00000000000000000000000000000000000000f1" as Address;
 const IMPLEMENTATION = "0x00000000000000000000000000000000000000e1" as Address;
 const CREATION_FEE = 1_000_000_000_000_000n;
 const DERIVATION_INDEX = 7;
-const ERC1271_COMMITMENT = ("0x" + "22".repeat(32)) as Hex;
+const ERC1271_INDEX = DERIVATION_INDEX + 1000;
 const MAX_SIGS = 40;
 
 let signer: ShrincsSigner;
@@ -34,6 +35,25 @@ beforeAll(async () => {
   signer = await ShrincsSigner.create(
     new TextEncoder().encode("factory-estimate-test")
   );
+  // Derive the two keys once and hand them back from `recoverKeyPair`.
+  // `buildCreateCall` recovers both on every estimate/create, and each
+  // recovery is a full keygen + self-test (~1 s of hashing per key); the fake
+  // chain below is the subject here, not key derivation.
+  const keys = new Map<number, ShrincsKeyPair>(
+    [DERIVATION_INDEX, ERC1271_INDEX].map((index) => [
+      index,
+      signer.recoverKeyPair(index, { maxSignatures: MAX_SIGS }),
+    ])
+  );
+  jest.spyOn(signer, "recoverKeyPair").mockImplementation((index, opts) => {
+    const key = keys.get(index);
+    if (!key || opts.maxSignatures !== MAX_SIGS) {
+      throw new Error(
+        `unexpected recoverKeyPair(${index}, ${opts.maxSignatures}) in test`
+      );
+    }
+    return key;
+  });
 });
 
 function createParams(
@@ -43,7 +63,7 @@ function createParams(
     signer,
     maxSignatures: MAX_SIGS,
     derivationIndex: DERIVATION_INDEX,
-    erc1271: { commitment: ERC1271_COMMITMENT },
+    erc1271: { derivationIndex: ERC1271_INDEX, maxSignatures: MAX_SIGS },
     ...overrides,
   };
 }
@@ -183,9 +203,12 @@ describe("ShrincsFactoryClient.estimateCreationCost", () => {
     const mainKey = signer.recoverKeyPair(DERIVATION_INDEX, {
       maxSignatures: MAX_SIGS,
     });
+    const erc1271Key = signer.recoverKeyPair(ERC1271_INDEX, {
+      maxSignatures: MAX_SIGS,
+    });
     const commitment = v1Commitment(
       mainKey.publicKeyCommitment,
-      ERC1271_COMMITMENT,
+      erc1271Key.publicKeyCommitment,
       ACCOUNT
     );
 

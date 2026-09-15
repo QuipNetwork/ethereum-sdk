@@ -85,14 +85,14 @@ describe("shrincs event parsers", () => {
         factory: ADDR_B,
         owner: ADDR_C,
         shrincsPublicKeyCommitment: B32(0x11),
-        erc1271StatelessCommitment: B32(0x22),
+        erc1271PublicKeyCommitment: B32(0x22),
       });
       expect(parseWalletInitialized([log])).toEqual([
         {
           factory: ADDR_B,
           owner: ADDR_C,
           shrincsPublicKeyCommitment: B32(0x11),
-          erc1271StatelessCommitment: B32(0x22),
+          erc1271PublicKeyCommitment: B32(0x22),
         },
       ]);
     });
@@ -282,6 +282,8 @@ describe("shrincs event parsers", () => {
         UserOpValidationFailure.StaleStatefulLeaf,
         UserOpValidationFailure.StatefulBudgetExhausted,
         UserOpValidationFailure.InvalidSignature,
+        UserOpValidationFailure.InvalidEcdsaSignature,
+        UserOpValidationFailure.MalformedSignature,
       ]) {
         const log = makeLog(
           shrincsWalletAbi as Abi,

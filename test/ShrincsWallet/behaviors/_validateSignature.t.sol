@@ -217,7 +217,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     ///      enforced in the execution phase instead).
     function test_validateSignature_unaffectedByFeeChange() public {
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
-        factory.setExecuteFee(123456789); // moved between signing and validation
+        _setExecuteFee(123456789); // moved between signing and validation
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "fee change cannot break validation");
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf consumed normally");
     }
@@ -267,5 +267,176 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         if (leaf >= 1 && leaf <= MAX_SIG) {
             assertFalse(wallet.isStatefulLeafUsed(leaf), "in-budget leaf not consumed on verify-fail");
         }
+    }
+
+
+    /* ───────────────────── NESTED ABI FRAMING (never-revert) ───────────────────── */
+
+    /// @dev The codec bounds-checks only a blob's TOP-LEVEL tail offsets; a NESTED offset (inside
+    ///      the PublicKey / Signature tails) that runs past calldatasize trips Solidity's own
+    ///      calldata bounds check at `_leafIndex` / `abi.encode(pk, sig)`. Both reads run behind
+    ///      the `userOpEnvelope` self-staticcall, so the revert maps to `validationData == 1` +
+    ///      `MalformedSignature` like every other rejection (INVARIANTS §19). Reachable by
+    ///      replaying a legit blob (the owner co-signature bytes are reusable) with its internals
+    ///      corrupted; nothing is consumed.
+    function test_validateSignature_softFails_onCorruptedNestedOffset() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        bytes memory legit = op.signature;
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "legit op passes");
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "untouched replay soft-fails");
+
+        uint256 pkOff = _word(legit, 0x00);
+        uint256 sigOff = _word(legit, 0x20);
+
+        // Signature tail, 4th head word: `authPath` offset -> would revert at `_leafIndex`.
+        op.signature = _clone(legit);
+        _setWord(op.signature, sigOff + 0x60, 1 << 64);
+        _assertMalformed(op, userOpHash, "authPath offset 2^64");
+
+        // PublicKey tail, 1st head word: `statefulPublicKey` offset -> would revert in the
+        // re-encode. Framing is checked before the leaf guards, so even on the consumed op this
+        // reports MalformedSignature rather than being masked by the stale-leaf branch.
+        op.signature = _clone(legit);
+        _setWord(op.signature, pkOff, 1 << 64);
+        _assertMalformed(op, userOpHash, "pk offset 2^64");
+
+        // Exact edge: inside the self-call the blob is the whole calldata, so an offset whose
+        // length word starts one byte past the blob is one byte past calldatasize.
+        op.signature = _clone(legit);
+        _setWord(op.signature, pkOff, legit.length - pkOff - 0x20 + 1);
+        _assertMalformed(op, userOpHash, "pk offset 1 byte past blob");
+
+        // Same corruption on a FRESH (unconsumed, e.g. mempool-observed) op: still a soft fail,
+        // and the fresh leaf stays untouched.
+        (ERC4337.PackedUserOperation memory fresh, bytes32 freshHash) = _erc4337Op(2);
+        _setWord(fresh.signature, _word(fresh.signature, 0x00), 1 << 64);
+        _assertMalformed(fresh, freshHash, "fresh op pk offset 2^64");
+
+        assertEq(wallet.statefulLeavesUsed(), 1, "only the legit op consumed a leaf");
+        assertEq(wallet.actionNonce(), 1, "only the legit op advanced the nonce");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 2), "fresh op's leaf untouched");
+    }
+
+    /// @dev Framing precedes the ECDSA gate: a corrupted nested offset is reported as
+    ///      `MalformedSignature` even when the co-signature is garbage too.
+    function test_validateSignature_corruptedNestedOffset_reportedBeforeEcdsa() public {
+        bytes32 userOpHash = keccak256("no-cosig");
+        bytes memory blob = abi.encode(_mainPk(), _signErc4337(userOpHash, 1), new bytes(65));
+        _setWord(blob, _word(blob, 0x20) + 0x60, 1 << 64);
+        ERC4337.PackedUserOperation memory op = _makeUserOp(blob);
+        _assertMalformed(op, userOpHash, "malformed before ecdsa");
+        assertEq(wallet.statefulLeavesUsed(), 0, "nothing consumed");
+    }
+
+    /// @dev A TOP-LEVEL offset past the blob (the codec's own `MalformedPayload` revert) is
+    ///      contained by the same self-staticcall: soft fail, not a hard revert.
+    function test_validateSignature_softFails_onCorruptedTopLevelOffset() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        _setWord(op.signature, 0x00, 1 << 64);
+        _assertMalformed(op, userOpHash, "top-level pk offset 2^64");
+        assertEq(wallet.statefulLeavesUsed(), 0, "nothing consumed");
+    }
+
+    /// @dev Never-revert over the whole nested head-word space: ANY value in ANY of the six nested
+    ///      head words (four PublicKey `bytes` offsets, the Signature `chains` / `authPath`
+    ///      offsets) yields a return, never a revert. An in-range garbage offset decodes a
+    ///      different struct and fails verification; an out-of-range one is `MalformedSignature`.
+    function testFuzz_validateSignature_neverReverts_onAnyNestedHeadWord(uint8 slot, uint256 value) public {
+        slot = uint8(bound(slot, 0, 5));
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        (uint256 at, ) = _nestedHeadWord(op.signature, slot);
+        uint256 original = _word(op.signature, at);
+        _setWord(op.signature, at, value);
+
+        uint256 result = wallet.exposed_validateSignature(op, userOpHash);
+        if (value == original) {
+            assertEq(result, 0, "unchanged blob still validates");
+        } else {
+            assertEq(result, 1, "any corrupted nested head word soft-fails");
+            assertEq(wallet.statefulLeavesUsed(), 0, "nothing consumed");
+            assertEq(wallet.actionNonce(), 0, "nonce untouched");
+        }
+    }
+
+    /// @dev Auditor-requested case: an otherwise well-formed blob whose nested tail offset lands
+    ///      anywhere past the blob's own end is handled gracefully as `MalformedSignature`.
+    ///      Covers every offset solc treats as positive: its tail check is a SIGNED comparison
+    ///      (`slt(offset, calldatasize - base - 31)`), so the reverting range is
+    ///      (blob.length - base - 0x20, 2^255). See the `_onSignedNegativeNestedOffset` twin for
+    ///      the upper half.
+    function testFuzz_validateSignature_malformed_onNestedOffsetPastBlob(uint8 slot, uint256 overrun) public {
+        slot = uint8(bound(slot, 0, 5));
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        (uint256 at, uint256 base) = _nestedHeadWord(op.signature, slot);
+        // A head word `v` at struct base `base` points at a length word occupying
+        // [base + v, base + v + 0x20); it is past the blob iff v > blob.length - base - 0x20.
+        uint256 inRangeMax = op.signature.length - base - 0x20;
+        overrun = bound(overrun, 1, (uint256(1) << 255) - 1 - inRangeMax);
+        _setWord(op.signature, at, inRangeMax + overrun);
+
+        _assertMalformed(op, userOpHash, "nested offset past blob end");
+        assertEq(wallet.statefulLeavesUsed(), 0, "nothing consumed");
+        assertEq(wallet.actionNonce(), 0, "nonce untouched");
+    }
+
+    /// @dev Offsets >= 2^255 read as NEGATIVE in solc's signed tail check, so they pass it and
+    ///      `add(base, offset)` wraps to a BACKWARD pointer: the field decodes from earlier bytes
+    ///      of the same calldata (or as empty, when the wrapped address is past calldatasize and
+    ///      `calldataload` returns zeros). Inside the self-call that calldata is just the blob and
+    ///      its 0x44-byte call prefix, so the alias is confined to bytes the submitter already
+    ///      controls; the garbage struct then fails the leaf guards or verification. Pinned:
+    ///      never a revert, never a consumed leaf, never a pass.
+    function testFuzz_validateSignature_neverReverts_onSignedNegativeNestedOffset(uint8 slot, uint256 value) public {
+        slot = uint8(bound(slot, 0, 5));
+        value = bound(value, uint256(1) << 255, type(uint256).max);
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        (uint256 at, ) = _nestedHeadWord(op.signature, slot);
+        _setWord(op.signature, at, value);
+
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "rejected, never reverted");
+        assertEq(wallet.statefulLeavesUsed(), 0, "nothing consumed");
+        assertEq(wallet.actionNonce(), 0, "nonce untouched");
+    }
+
+    /// @dev Asserts a soft fail carrying the `MalformedSignature` reason.
+    function _assertMalformed(
+        ERC4337.PackedUserOperation memory op,
+        bytes32 userOpHash,
+        string memory name
+    ) internal {
+        vm.recordLogs();
+        assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, name);
+        assertEq(
+            _lastRejectionReason(),
+            uint256(IShrincsWallet.UserOpValidationFailure.MalformedSignature),
+            name
+        );
+    }
+
+    /// @dev Blob position of the `slot`-th nested head word and the base of the struct it belongs
+    ///      to: PublicKey `statefulPublicKey` / `publicKeyCommitment` / `pkSeed` / `hypertreeRoot`
+    ///      offsets (slots 0..3, at pk + 0x00..0x60) and Signature `chains` / `authPath` offsets
+    ///      (slots 4..5, at sig + 0x40 / 0x60, after `randomizer` and `counter`).
+    function _nestedHeadWord(bytes memory blob, uint8 slot) internal pure returns (uint256 at, uint256 base) {
+        uint256 pkOff = _word(blob, 0x00);
+        uint256 sigOff = _word(blob, 0x20);
+        if (slot < 4) return (pkOff + 0x20 * slot, pkOff);
+        return (sigOff + 0x40 + 0x20 * (slot - 4), sigOff);
+    }
+
+    function _word(bytes memory b, uint256 at) internal pure returns (uint256 w) {
+        assembly {
+            w := mload(add(add(b, 0x20), at))
+        }
+    }
+
+    function _setWord(bytes memory b, uint256 at, uint256 w) internal pure {
+        assembly {
+            mstore(add(add(b, 0x20), at), w)
+        }
+    }
+
+    function _clone(bytes memory b) internal pure returns (bytes memory) {
+        return abi.encodePacked(b);
     }
 }

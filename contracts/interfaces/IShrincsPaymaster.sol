@@ -39,9 +39,16 @@ interface IShrincsPaymaster is IPaymaster {
     error ZeroAddressVerifier();
     /// @notice Thrown when the caller is not the ERC-4337 EntryPoint.
     error InvalidEntryPoint();
+    /// @notice Thrown when the self-call-only helper (`sponsorshipEnvelope`) is called by anyone
+    ///         other than the paymaster itself.
+    error SelfCallOnly();
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();
+    /// @notice The stateful tree was installed on this paymaster before. Trees are one-time
+    ///         material for the paymaster's lifetime; re-installing one would reset its bitmap.
+    /// @param treeId `keccak256(pkSeed ‖ root)` of the 68-byte stateful key (budget excluded).
+    error StatefulTreeSpent(bytes32 treeId);
     /// @notice Thrown when registering a verifier key with a hash suite other than the
     ///         compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this implementation
     ///         verifies; SHRINCS binds it into every canonical message hash).
@@ -153,7 +160,8 @@ interface IShrincsPaymaster is IPaymaster {
     ///         no way to unset it (only rotate via `rotateStatefulKey`). The full public-key bundle
     ///         is required (not just its commitment) so the installed commitment and stateful leaf
     ///         budget are DERIVED from validated key material, exactly like `rotateStatefulKey` and
-    ///         the wallet's `initialize` — the budget is never a trusted free parameter.
+    ///         the wallet's `initialize` — the budget is never a trusted free parameter. The
+    ///         installed stateful tree is recorded as spent.
     /// @param owner_ The paymaster owner.
     /// @param publicKey The initial verifier public-key bundle. Its embedded commitment must
     ///        recompute (`SHRINCS.validPublicKey`); the stateful leaf budget is decoded from
@@ -178,7 +186,9 @@ interface IShrincsPaymaster is IPaymaster {
     ///         applies, the installed commitment changes and a replay fails the pin).
     ///         Bumps the verifier epoch (fresh leaf-bitmap
     ///         namespace), resets the leaf-used counter, and installs the new stateful budget
-    ///         decoded from `nextStatefulKey.statefulPublicKey`. Cannot unset the key.
+    ///         decoded from `nextStatefulKey.statefulPublicKey`. Cannot unset the key. The next
+    ///         stateful tree must be fresh (never held, under any budget) and is recorded as
+    ///         spent; reverts `StatefulTreeSpent`.
     /// @param currentPublicKey The full currently installed public-key bundle; pinned against the
     ///        stored commitment so its stateless half is trustworthy to carry forward.
     /// @param nextStatefulKey The replacement stateful subkey and the declared next-bundle
@@ -213,6 +223,26 @@ interface IShrincsPaymaster is IPaymaster {
 
     /// @notice Withdraws unlocked stake from the EntryPoint. Owner-only.
     function withdrawStake(address payable to) external;
+
+    /// @notice Self-call target of `validatePaymasterUserOp`: decodes the sponsorship blob
+    ///         `abi.encode(PublicKey, Signature)` (the tail of `paymasterAndData`), derives the
+    ///         stateful leaf index, and re-encodes it into the verifier envelope
+    ///         `abi.encode(publicKey, signature)`.
+    /// @dev Callable only by the paymaster itself (`SelfCallOnly`). Mirrors the wallet's
+    ///      `userOpEnvelope`: the codec bounds-checks only the blob's top-level tail offsets,
+    ///      and a nested offset past calldatasize makes Solidity's calldata accessors revert at
+    ///      the first field read. Running the decode, leaf read and re-encode behind
+    ///      `try this.sponsorshipEnvelope` lets `validatePaymasterUserOp` map that revert — and
+    ///      the codec's own `MalformedPayload` — to `validationData == 1` +
+    ///      `PaymasterValidationFailure.MalformedPayload` instead of reverting out of validation.
+    ///      The sponsorship blob carries no co-signature, so this path is reachable by anyone;
+    ///      inside the self-call the blob is the whole calldata, so a nested offset can no longer
+    ///      resolve into adjacent userOp fields either.
+    /// @return leaf The stateful leaf index the signature reveals (`authPath.length`).
+    /// @return envelope `abi.encode(publicKey, signature)`.
+    function sponsorshipEnvelope(
+        bytes calldata blob
+    ) external view returns (uint32 leaf, bytes memory envelope);
 
     /// @notice Returns the registered global verifier state. `hashSuite` is always
     ///         `HASH_SUITE_KECCAK_256`: the id is not stored — registration rejects every

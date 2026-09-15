@@ -75,6 +75,36 @@ describe("shrincsCodec", () => {
     expect(target.publicKeyCommitment).not.toBe(mainKey.publicKeyCommitment);
   });
 
+  it("statefulTreeId hashes pkSeed ‖ root and ignores the trailing maxSignatures", () => {
+    const spk = mainKey.publicKey.statefulPublicKey;
+    expect(toBytes(spk).length).toBe(68);
+    expect(Codec.statefulTreeId(spk)).toBe(keccak256(sliceHex(spk, 0, 64)));
+    // Re-declaring the budget changes the commitment, not the tree.
+    const bytes = toBytes(spk);
+    bytes[67] = (bytes[67] + 1) & 0xff;
+    const rebudgeted = toHex(bytes);
+    expect(rebudgeted).not.toBe(spk);
+    expect(Codec.statefulTreeId(rebudgeted)).toBe(Codec.statefulTreeId(spk));
+    // Distinct trees differ.
+    expect(Codec.statefulTreeId(erc1271Key.publicKey.statefulPublicKey)).not.toBe(
+      Codec.statefulTreeId(spk)
+    );
+    expect(() => Codec.statefulTreeId(sliceHex(spk, 0, 67))).toThrow(/68 bytes/);
+  });
+
+  it("statelessTreeId hashes pkSeed ‖ hypertreeRoot", () => {
+    const { pkSeed, hypertreeRoot } = mainKey.publicKey;
+    expect(Codec.statelessTreeId(pkSeed, hypertreeRoot)).toBe(
+      keccak256(concat([sliceHex(pkSeed, 0, 32), sliceHex(hypertreeRoot, 0, 32)]))
+    );
+    expect(
+      Codec.statelessTreeId(erc1271Key.publicKey.pkSeed, erc1271Key.publicKey.hypertreeRoot)
+    ).not.toBe(Codec.statelessTreeId(pkSeed, hypertreeRoot));
+    expect(() => Codec.statelessTreeId(sliceHex(pkSeed, 0, 31), hypertreeRoot)).toThrow(
+      /at least 32 bytes/
+    );
+  });
+
   it("domain separator binds tag, chainId, and address", () => {
     const base = Codec.domainSeparator(CHAIN_ID, WALLET);
     expect(base).toMatch(/^0x[0-9a-f]{64}$/);
@@ -161,53 +191,81 @@ describe("shrincsCodec", () => {
   it("encodeInitPayload matches the wallet decodeInit head layout", () => {
     const payload = Codec.encodeInitPayload({
       mainBundle: mainKey.publicKey,
-      erc1271Commitment: erc1271Key.publicKeyCommitment,
+      erc1271Bundle: erc1271Key.publicKey,
     });
-    // Fixed 6-word head: commitment ‖ pkSeed ‖ PublicKey offset ‖ hashSuite ‖
-    // erc1271Commitment ‖ erc1271HashSuite (what `Codec.decodeInit` slices).
+    // Fixed 6-word head: commitment ‖ pkSeed ‖ mainBundle offset ‖ hashSuite ‖
+    // erc1271Bundle offset ‖ erc1271HashSuite (what `Codec.decodeInit` slices).
     const word = (i: number): Hex => sliceHex(payload, i * 32, (i + 1) * 32);
     expect(word(0)).toBe(mainKey.publicKeyCommitment);
     expect(word(1)).toBe(mainKey.publicKey.pkSeed);
     expect(BigInt(word(3))).toBe(BigInt(HASH_SUITE_KECCAK_256));
-    expect(word(4)).toBe(erc1271Key.publicKeyCommitment);
     expect(BigInt(word(5))).toBe(BigInt(HASH_SUITE_KECCAK_256));
-    // The embedded PublicKey tuple decodes back to the main bundle.
-    const [, , pk] = decodeAbiParameters(
+    // Both embedded PublicKey tuples decode back to their bundles.
+    const [, , pk, , erc1271Pk] = decodeAbiParameters(
       [
         { name: "commitment", type: "bytes32" },
         { name: "pkSeed", type: "bytes32" },
         Codec.abiTuples.publicKey,
         { name: "hashSuite", type: "uint32" },
-        { name: "erc1271Commitment", type: "bytes32" },
+        Codec.abiTuples.publicKey,
         { name: "erc1271HashSuite", type: "uint32" },
       ],
       payload
     );
     expect(pk).toEqual(Codec.publicKeyToAbi(mainKey.publicKey));
+    expect(erc1271Pk).toEqual(Codec.publicKeyToAbi(erc1271Key.publicKey));
   });
 
   it("encodeUpgradeData matches the wallet decodeUpgradeAuth head layout", () => {
     const signature = mainKey.signStatefulRawAt(keccak256(toHex("upgrade auth")), 2);
+    const statelessSig = mainKey.signStatelessRaw(keccak256(toHex("probe")));
     const nonce = 7n;
+    const probePayload = Codec.encodeProbeVector({
+      bundle: mainKey.publicKey,
+      statefulSig: signature,
+      statelessSig,
+    });
     const blob = Codec.encodeUpgradeData({
       publicKey: mainKey.publicKey,
       signature,
       shouldMigrate: true,
       migratorPayload: "0xdeadbeef",
       nonce,
+      probePayload,
     });
-    // Fixed 5-word head: PublicKey offset ‖ StatefulSignature offset ‖
-    // shouldMigrate ‖ migratorPayload offset ‖ nonce (what
-    // `Codec.decodeUpgradeAuth` slices; the nonce word is at head[4] so the
-    // prior offsets are unmoved from the 4-field layout).
+    // Fixed 6-word head: PublicKey offset ‖ StatefulSignature offset ‖
+    // shouldMigrate ‖ migratorPayload offset ‖ nonce ‖ probePayload offset.
+    // head[0] == 0xc0 is exactly what the wallet's `verifyUpgrade` shape-sniff
+    // reads as "full auth blob" (vs 0x60 for a bare probe vector); the nonce
+    // stays at head[4] so the beta.2 5-field decoder still reads it.
     const word = (i: number): Hex => sliceHex(blob, i * 32, (i + 1) * 32);
+    expect(BigInt(word(0))).toBe(0xc0n); // PublicKey offset == full-blob sniff value
     expect(BigInt(word(2))).toBe(1n); // shouldMigrate
     expect(BigInt(word(4))).toBe(nonce); // blob-borne action nonce
-    // Head offsets 0/1/3 point past the 5-word head (0xa0), not the old 4-word
-    // head (0x80) — pins that consumers re-encoded for the new layout.
-    expect(BigInt(word(0)) >= 0xa0n).toBe(true);
-    expect(BigInt(word(1)) >= 0xa0n).toBe(true);
-    expect(BigInt(word(3)) >= 0xa0n).toBe(true);
+    // Dynamic-field offsets 0/1/3/5 point past the 6-word head (0xc0).
+    expect(BigInt(word(1)) >= 0xc0n).toBe(true);
+    expect(BigInt(word(3)) >= 0xc0n).toBe(true);
+    expect(BigInt(word(5)) >= 0xc0n).toBe(true);
+  });
+
+  it("encodeProbeVector head[0] is 0x60 (bare vector shape-sniff value)", () => {
+    const statefulSig = mainKey.signStatefulRawAt(keccak256(toHex("probe sf")), 1);
+    const statelessSig = mainKey.signStatelessRaw(keccak256(toHex("probe sl")));
+    const vector = Codec.encodeProbeVector({
+      bundle: mainKey.publicKey,
+      statefulSig,
+      statelessSig,
+    });
+    const word0 = sliceHex(vector, 0, 32);
+    expect(BigInt(word0)).toBe(0x60n); // three tail offsets → PublicKey at 0x60
+  });
+
+  it("probeDigest mirrors the on-chain keccak256(uint256(uint160(impl)))", () => {
+    const impl = "0x000000000000000000000000000000000000bEEF" as `0x${string}`;
+    const expected = keccak256(
+      `0x${BigInt(impl).toString(16).padStart(64, "0")}` as Hex
+    );
+    expect(Codec.probeDigest(impl)).toBe(expected);
   });
 
   it("round-trips the userOp.signature ABI blob with a live signature", () => {

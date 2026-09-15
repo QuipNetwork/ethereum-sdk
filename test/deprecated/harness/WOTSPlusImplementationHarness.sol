@@ -119,23 +119,6 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
         _authorizeUpgrade(newImpl);
     }
 
-    function exposed_upgradeGuard() external view returns (uint256) {
-        return _upgradeGuard();
-    }
-
-    function exposed_upgradeGuardInContext() external returns (uint256) {
-        // _UPGRADE_GUARD_SLOT is private; replicate the derivation
-        uint256 slot = uint256(keccak256("quip.wallet.upgrade.guard")) - 1;
-        assembly {
-            tstore(slot, 1)
-        }
-        uint256 v = _upgradeGuard();
-        assembly {
-            tstore(slot, 0)
-        }
-        return v;
-    }
-
     function exposed_validateSignature(ERC4337.PackedUserOperation calldata userOp, bytes32 userOpHash)
         external
         returns (uint256)
@@ -202,19 +185,33 @@ contract WOTSPlusImplementationHarness is WOTSPlusImplementation {
         _assertGuardedSlotsUnchanged(snapshot);
     }
 
-    /// @dev Drives `migrate(bytes)` in the upgrade tstore context so tests can
-    ///      exercise the happy path + post-guard revert branches without a full
-    ///      `upgradeToAndCall` round-trip. Transient storage is contract-scoped,
-    ///      so the tstore set here is visible when the `this.migrate` call
-    ///      re-enters this same contract.
+    /// @dev Drives `migrate(bytes)` in the mid-upgrade shape: `migrate` gates on the wallet's
+    ///      OWN ERC-1967 pointer (`installed != 0`, `installed != _SELF`), so park a sentinel
+    ///      "previous implementation" in the slot, delegatecall `migrate` on the installed
+    ///      code — exactly `upgradeToAndCall`'s delegatecall shape — and restore the slot.
+    ///      (The wallet under test is a real proxy, so a plain self-call would re-dispatch
+    ///      through the sentinel; the direct delegatecall sidesteps that.)
     function exposed_migrateInUpgradeContext(bytes calldata payload) external {
-        uint256 slot = 0x490d87f9a8524f6238d75626265800824e3fa88e60bc82c13f11bbd9042ed677;
+        // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
+        uint256 slot = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+        address impl;
         assembly {
-            tstore(slot, 1)
+            impl := sload(slot)
+            sstore(slot, 0xdead)
         }
-        this.migrate(payload);
+        (bool ok, bytes memory ret) = impl.delegatecall(abi.encodeCall(this.migrate, (payload)));
+        if (!ok) {
+            assembly {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
         assembly {
-            tstore(slot, 0)
+            sstore(slot, impl)
         }
+    }
+
+    /// @dev Exposes the `migrate` entry gate for direct unit testing.
+    function exposed_enforceUpgradeInFlight() external view {
+        _enforceUpgradeInFlight();
     }
 }

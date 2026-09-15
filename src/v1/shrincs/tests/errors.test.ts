@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { encodeErrorResult, toFunctionSelector } from "viem";
+import { type Hex, encodeErrorResult, toFunctionSelector } from "viem";
 
 import { wotsPlusImplementationAbi } from "../../abi/WOTSPlusImplementation.js";
 import {
@@ -11,13 +11,22 @@ import {
 } from "../../errors.js";
 import { makeErrorDecoder } from "../../internal/errorDecoder.js";
 import { decodeRevertBytes as decodeV1RevertBytes } from "../../internal/decodeError.js";
+import { shrincsPaymasterAbi } from "../abi/ShrincsPaymaster.js";
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
+import { shrincsWalletBeta2Abi } from "../versions/v1_0_1_beta2/abi.js";
 import {
   GuardedSlotTamperedError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
   MalformedCodecPayloadError,
   StaleStatefulLeafError,
   StatefulBudgetExhaustedError,
   InvalidSignatureError,
+  IdentityMismatchError,
+  VerifierProfileMismatchError,
+  UpgradeFailedError,
+  ZeroErc1271CommitmentError,
+  AlreadyInitializedError,
   UnknownContractError,
 } from "../errors.js";
 import { decodeRevertBytes } from "../internal/decodeError.js";
@@ -52,15 +61,86 @@ describe("shrincs error decoding", () => {
     expect(decoded.actual).toBe(12n);
   });
 
-  it("decodes GuardedSlotTampered(uint256) preserving the slot index", () => {
+  it("decodes IdentityMismatch and VerifierProfileMismatch (current wallet)", () => {
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({ abi: shrincsWalletAbi, errorName: "IdentityMismatch" })
+      )
+    ).toBeInstanceOf(IdentityMismatchError);
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({
+          abi: shrincsWalletAbi,
+          errorName: "VerifierProfileMismatch",
+        })
+      )
+    ).toBeInstanceOf(VerifierProfileMismatchError);
+  });
+
+  it("decodes UpgradeFailed (solady UUPS) and InvalidInitialization", () => {
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({ abi: shrincsWalletAbi, errorName: "UpgradeFailed" })
+      )
+    ).toBeInstanceOf(UpgradeFailedError);
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({
+          abi: shrincsWalletAbi,
+          errorName: "InvalidInitialization",
+        })
+      )
+    ).toBeInstanceOf(AlreadyInitializedError);
+  });
+
+  it("decodes ZeroErc1271Commitment from a beta.2 wallet", () => {
+    expect(
+      decodeRevertBytes(
+        encodeErrorResult({
+          abi: shrincsWalletBeta2Abi,
+          errorName: "ZeroErc1271Commitment",
+        })
+      )
+    ).toBeInstanceOf(ZeroErc1271CommitmentError);
+  });
+
+  // `GuardedSlotTampered` was removed from the CURRENT wallet (the STATICCALL
+  // probe replaced the guarded-slot snapshot) but deployed V1.0.1-beta.2 wallets
+  // still throw it, so it must stay decodable via the frozen beta.2 ABI.
+  it("decodes GuardedSlotTampered(uint256) from a beta.2 wallet, preserving the slot index", () => {
     const data = encodeErrorResult({
-      abi: shrincsWalletAbi,
+      abi: shrincsWalletBeta2Abi,
       errorName: "GuardedSlotTampered",
       args: [7n],
     });
     const decoded = decodeRevertBytes(data) as GuardedSlotTamperedError;
     expect(decoded).toBeInstanceOf(GuardedSlotTamperedError);
     expect(decoded.slotIndex).toBe(7);
+  });
+
+  it("decodes StatefulTreeSpent(bytes32) from the wallet and paymaster ABIs preserving treeId", () => {
+    const treeId = ("0x" + "ab".repeat(32)) as Hex;
+    for (const abi of [shrincsWalletAbi, shrincsPaymasterAbi]) {
+      const data = encodeErrorResult({ abi, errorName: "StatefulTreeSpent", args: [treeId] });
+      const decoded = decodeRevertBytes(data) as StatefulTreeSpentError;
+      expect(decoded).toBeInstanceOf(StatefulTreeSpentError);
+      expect(decoded.code).toBe("SHRINCS_STATEFUL_TREE_SPENT");
+      expect(decoded.treeId).toBe(treeId);
+      expect(decoded.selector).toBe(toFunctionSelector("StatefulTreeSpent(bytes32)"));
+    }
+  });
+
+  it("decodes StatelessTreeSpent(bytes32) preserving treeId", () => {
+    const treeId = ("0x" + "cd".repeat(32)) as Hex;
+    const data = encodeErrorResult({
+      abi: shrincsWalletAbi,
+      errorName: "StatelessTreeSpent",
+      args: [treeId],
+    });
+    const decoded = decodeRevertBytes(data) as StatelessTreeSpentError;
+    expect(decoded).toBeInstanceOf(StatelessTreeSpentError);
+    expect(decoded.code).toBe("SHRINCS_STATELESS_TREE_SPENT");
+    expect(decoded.treeId).toBe(treeId);
   });
 
   it("maps an unknown 4-byte selector to UnknownContractError, and empty data to null", () => {

@@ -50,11 +50,9 @@ interface IShrincsWallet is IWallet {
 
     /// @notice Thrown when a SHRINCS signature fails verification (stateful or stateless).
     error InvalidSignature();
-    /// @notice Thrown when the supplied public-key bundle does not recompute to the
-    ///         declared/installed commitment during `initialize`.
+    /// @notice Thrown when a supplied public-key bundle (main or ERC-1271) fails shape
+    ///         validation or does not recompute to the declared/installed commitment.
     error CommitmentMismatch();
-    /// @notice Thrown when the supplied ERC-1271 verifier commitment is zero at install time.
-    error ZeroErc1271Commitment();
     /// @notice Thrown when an install payload declares a hash suite other than
     ///         the compiled keccak `HashSuite.HASH_SUITE_ID` (the only suite this
     ///         implementation verifies; SHRINCS binds it into every canonical message hash).
@@ -62,6 +60,13 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when a decoded stateful public key declares `maxSignatures == 0`,
     ///         which can never produce a valid stateful signature.
     error ZeroMaxSignatures();
+    /// @notice The stateful tree was installed on this wallet before. Trees are one-time
+    ///         material for the wallet's lifetime; re-installing one would reset its leaf bitmap.
+    /// @param treeId `keccak256(pkSeed ‖ root)` of the 68-byte stateful key (budget excluded).
+    error StatefulTreeSpent(bytes32 treeId);
+    /// @notice The stateless tree was installed on this wallet before.
+    /// @param treeId `keccak256(pkSeed ‖ hypertreeRoot)`.
+    error StatelessTreeSpent(bytes32 treeId);
     /// @notice Thrown when the V1 commitment (salt) does not recompute from the install payload.
     error IdentityMismatch();
 
@@ -90,6 +95,9 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when the classical `transferOwnership(address)` is called directly.
     /// @dev Only the SHRINCS-authenticated `transferOwnership(bytes)` path is permitted.
     error ClassicalTransferOwnershipDisabled();
+    /// @notice Thrown when a self-call-only helper (`userOpEnvelope`, `erc1271Envelope`) is
+    ///         called by anyone other than the wallet itself.
+    error SelfCallOnly();
     /// @notice Thrown when any of Solady's inherited two-step ownership handover entry
     ///         points is called. This wallet supports only the SHRINCS-authenticated
     ///         `transferOwnership(bytes)` path, which cryptographically commits to `newOwner`.
@@ -102,11 +110,6 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when `migrate` is called outside the `upgradeToAndCall` context.
     error NotUpgrading();
 
-    /// @notice Thrown when a delegatecall body (the `upgradeToAndCall` verify probe) modified one
-    ///         of the eight slots the upgrade path snapshots and re-checks.
-    /// @param slotIndex 0=owner, 1=ERC-1967 impl, 2=walletFactory, 3=shrincsPublicKeyCommitment,
-    ///                  4=erc1271StatelessCommitment, 5=keyVersion, 6=nonce, 7=leaf-state word.
-    error GuardedSlotTampered(uint256 slotIndex);
     /// @notice Thrown when `storageStore` is called. Raw storage writes are disabled because they
     ///         could clear consumed-leaf bits in the bitmap and re-enable
     ///         one-time-signature replay.
@@ -131,12 +134,12 @@ interface IShrincsWallet is IWallet {
     /// @param factory The WalletFactory that created this wallet.
     /// @param owner The classical owner address (ERC-1271 ECDSA gate + factory registry only).
     /// @param shrincsPublicKeyCommitment The installed main-key bundle commitment.
-    /// @param erc1271StatelessCommitment The installed ERC-1271 verifier-key commitment.
+    /// @param erc1271PublicKeyCommitment The installed ERC-1271 verifier-key commitment.
     event WalletInitialized(
         address indexed factory,
         address indexed owner,
         bytes32 indexed shrincsPublicKeyCommitment,
-        bytes32 erc1271StatelessCommitment
+        bytes32 erc1271PublicKeyCommitment
     );
 
     /// @notice Emitted when a stateful signature is consumed (its leaf marked used).
@@ -206,7 +209,11 @@ interface IShrincsWallet is IWallet {
         StaleStatefulLeaf,
         StatefulBudgetExhausted,
         InvalidSignature,
-        InvalidEcdsaSignature
+        InvalidEcdsaSignature,
+        /// @dev The `userOp.signature` blob's ABI framing is malformed (a top-level or nested
+        ///      tail offset / length runs past the blob), detected by the `userOpEnvelope`
+        ///      self-staticcall reverting. Appended last: earlier values are wire-stable.
+        MalformedSignature
     }
 
     /// @notice Emitted on each `validationData == 1` exit of `_validateSignature`.
@@ -227,34 +234,47 @@ interface IShrincsWallet is IWallet {
     /*                       FUNCTIONS                        */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
-    /// @notice Initializes the wallet. Called once by the factory.
+    /// @notice Initializes the wallet. Called once by the factory. Records all four installed
+    ///         trees — both halves of the main bundle AND of the dedicated ERC-1271 bundle — as
+    ///         spent (`StatefulTreeSpent` / `StatelessTreeSpent` on any later re-install). A
+    ///         payload whose ERC-1271 bundle shares any tree with the main bundle reverts: the
+    ///         contract-signing key must never be the recovery authority.
     /// @param newOwner The classical owner (ERC-1271 ECDSA gate + factory registry only).
-    /// @param payload Packed init data: `[0:32)` main commitment, `[32:64)` pkSeed, then the
-    ///        ABI-encoded `(PublicKey mainBundle, uint32 hashSuite, bytes32 erc1271Commitment,
-    ///        uint32 erc1271HashSuite)`.
+    /// @param payload ABI-encoded `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle,
+    ///        uint32 hashSuite, PublicKey erc1271Bundle, uint32 erc1271HashSuite)`; the ERC-1271
+    ///        commitment is derived on-chain from `erc1271Bundle`.
     function initialize(
         address payable newOwner,
         bytes calldata payload
     ) external override;
 
     /// @notice Re-installs PQ state during an upgrade. Only valid inside `upgradeToAndCall`.
-    function migrate(bytes calldata payload) external;
+    ///         All four trees in the payload (main and ERC-1271 bundles) must be strictly fresh
+    ///         (never held by this wallet) and are recorded as spent; reverts
+    ///         `StatefulTreeSpent` / `StatelessTreeSpent`. Same payload layout as `initialize`.
+    function migrate(bytes calldata payload) external override;
 
     /// @notice SHRINCS-gated UUPS upgrade. Authorized by a stateful signature from the main key.
     ///         The `data` blob carries the action nonce the signer bound; it must equal the live
-    ///         `actionNonce()` or the call reverts `StaleActionNonce`.
+    ///         `actionNonce()` or the call reverts `StaleActionNonce`. STATICCALLs the NEW
+    ///         implementation's `verifyUpgrade` probe before switching.
     function upgradeToAndCall(
         address newImplementation,
         bytes calldata data
     ) external payable;
 
-    /// @notice New-implementation reachability probe, delegatecalled during `upgradeToAndCall`.
-    ///         Rebuilds the signed context from the blob-borne nonce (never the live one), so the
-    ///         same auth blob re-verifies both before and after its consumption.
+    /// @notice A PROBE (the frozen `IWallet` seam): context-free SHRINCS self-test,
+    ///         STATICCALLed on the NEW implementation during `upgradeToAndCall`.
+    /// @param newImplementation The upgrade target; the probe digest is its hashed word.
+    /// @param data The probe vector `abi.encode(PublicKey bundle, Signature statefulSig,
+    ///        SPHINCSPlusC.Signature statelessSig)` — or, deployed-implementation compat, a
+    ///        full upgrade-auth blob whose `probePayload` field carries that vector. The
+    ///        digest must verify under BOTH halves of the (throwaway) bundle or the call
+    ///        reverts `InvalidSignature`.
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data
-    ) external view;
+    ) external view override;
 
     /// @notice Executes a single call authorized by a stateful SHRINCS signature.
     /// @param publicKey The main-key bundle (re-validated against the installed commitment).
@@ -290,6 +310,8 @@ interface IShrincsWallet is IWallet {
     ///         fresh bundle, and the current STATEFUL signature cross-binding `newOwner` to that
     ///         bundle (so the two cannot be mixed across attempts). Consumes one stateful leaf and
     ///         one stateless-budget unit; bumps the key epoch and notifies the factory registry.
+    ///         Both trees of `nextKey` must be fresh and are recorded as spent (reverts
+    ///         `StatefulTreeSpent` / `StatelessTreeSpent`).
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param ownerBindingSignature Stateful signature over `(newOwner, nextKey.commitment)`.
     /// @param recoverySignature Stateless recovery signature authorizing the fresh bundle.
@@ -304,11 +326,19 @@ interface IShrincsWallet is IWallet {
     ) external payable;
 
     /// @notice (Re)installs the dedicated ERC-1271 stateless verifier key, authorized by a
-    ///         stateful SHRINCS action from the main key.
+    ///         stateful SHRINCS action from the main key. The new bundle's commitment is derived
+    ///         on-chain and both of its trees are recorded as spent BEFORE the signature check,
+    ///         so any bundle sharing a tree with anything this wallet ever held (the current or
+    ///         a former main key, or a former ERC-1271 key) reverts `StatefulTreeSpent` /
+    ///         `StatelessTreeSpent` without consuming a leaf.
+    /// @param publicKey The current main-key bundle (re-validated against the commitment).
+    /// @param signature Stateful signature over `setErc1271KeyPayloadHash(commitment, suite)`.
+    /// @param newErc1271Key The full replacement ERC-1271 bundle (only its stateless half signs).
+    /// @param newErc1271HashSuite Must equal the compiled `HashSuite.HASH_SUITE_ID`.
     function setErc1271Key(
         SHRINCS.PublicKey calldata publicKey,
         SHRINCS.Signature calldata signature,
-        bytes32 newErc1271Commitment,
+        SHRINCS.PublicKey calldata newErc1271Key,
         uint32 newErc1271HashSuite
     ) external payable;
 
@@ -336,7 +366,9 @@ interface IShrincsWallet is IWallet {
 
     /// @notice Routine stateful rotation of the main key's stateful subkey (reusing the
     ///         stateless recovery root). Authorized by a stateful signature; resets the leaf
-    ///         budget. Use before `maxSignatures` is exhausted.
+    ///         budget. Use before `maxSignatures` is exhausted. The next stateful tree must be
+    ///         fresh (never held, under any budget) and is recorded as spent; reverts
+    ///         `StatefulTreeSpent`.
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param signature The stateful signature authorizing the rotation.
     /// @param nextStatefulKey The replacement stateful subkey target.
@@ -350,7 +382,8 @@ interface IShrincsWallet is IWallet {
     ///         key's recovery half, it installs an entirely fresh key bundle (new stateful key
     ///         AND new stateless recovery root). Use when the stateful key is exhausted or
     ///         compromised. Ownership is unchanged; for a handover to a new party use
-    ///         `transferOwnership`.
+    ///         `transferOwnership`. Both trees of `nextKey` must be fresh and are recorded as
+    ///         spent (reverts `StatefulTreeSpent` / `StatelessTreeSpent`).
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param recoverySignature The stateless recovery signature authorizing the rotation.
     /// @param nextKey The replacement full key bundle.
@@ -359,6 +392,40 @@ interface IShrincsWallet is IWallet {
         SPHINCSPlusC.Signature calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
     ) external payable;
+
+    /// @notice Self-call target of `isValidSignature`: re-encodes the SHRINCS half of an
+    ///         ERC-1271 blob into the verifier envelope `abi.encode(publicKey, signature)`.
+    /// @dev Callable only by the wallet itself (`SelfCallOnly`). It exists purely to put a call
+    ///      boundary around the nested-calldata reads: the codec bounds-checks only a blob's
+    ///      top-level tail offsets, and a nested offset past calldatasize makes Solidity's
+    ///      calldata accessors revert. Wrapping the re-encode in `try this.erc1271Envelope`
+    ///      lets `isValidSignature` map that revert to `0xffffffff` instead of propagating it to
+    ///      the relying contract that staticcalled it (INVARIANTS §19).
+    function erc1271Envelope(
+        bytes calldata signature
+    ) external view returns (bytes memory);
+
+    /// @notice Self-call target of `validateUserOp`: decodes the hybrid `userOp.signature` blob
+    ///         `abi.encode(PublicKey, Signature, bytes ecdsaSig)`, derives the stateful leaf
+    ///         index, and re-encodes the SHRINCS half into the verifier envelope
+    ///         `abi.encode(publicKey, signature)`.
+    /// @dev Callable only by the wallet itself (`SelfCallOnly`). Twin of `erc1271Envelope` for
+    ///      the ERC-4337 path: the codec bounds-checks only a blob's top-level tail offsets, and
+    ///      a nested offset past calldatasize makes Solidity's calldata accessors revert at the
+    ///      first field read (`_leafIndex`, the re-encode). Running every such read behind
+    ///      `try this.userOpEnvelope` lets `_validateSignature` map that revert — and the codec's
+    ///      own `MalformedPayload` — to `validationData == 1` + `MalformedSignature` instead of
+    ///      reverting out of validation (INVARIANTS §19). Inside the self-call the blob is the
+    ///      whole calldata, so the compiler's check is effectively against the blob's own end.
+    /// @return leaf The stateful leaf index the signature reveals (`authPath.length`).
+    /// @return envelope `abi.encode(publicKey, signature)`.
+    /// @return ecdsaSig The owner's ECDSA co-signature bytes carried in the blob.
+    function userOpEnvelope(
+        bytes calldata signature
+    )
+        external
+        view
+        returns (uint32 leaf, bytes memory envelope, bytes memory ecdsaSig);
 
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
     /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
@@ -402,7 +469,7 @@ interface IShrincsWallet is IWallet {
     function getShrincsPublicKeyCommitment() external view returns (bytes32);
 
     /// @notice The installed ERC-1271 verifier-key commitment.
-    function getErc1271Commitment() external view returns (bytes32);
+    function getErc1271PublicKeyCommitment() external view returns (bytes32);
 
     /// @notice The hash-suite id the installed main key was validated against. Always the
     ///         compiled keccak `HashSuite.HASH_SUITE_ID`: the id is not stored —

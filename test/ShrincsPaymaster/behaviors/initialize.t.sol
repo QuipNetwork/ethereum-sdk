@@ -51,6 +51,15 @@ contract ShrincsPaymaster_initialize is ShrincsPaymasterTest {
         assertFalse(bare.isStatefulLeafUsed(1), "fresh bitmap");
     }
 
+    function test_initialize_spendsStatefulTree() public {
+        bytes32 id = _treeId(verifierPk.statefulPublicKey);
+        assertFalse(bare.harness_isStatefulTreeSpent(id), "unspent before init");
+
+        bare.initialize(OWNER, _pk(), SUITE);
+
+        assertTrue(bare.harness_isStatefulTreeSpent(id), "initialize spends the stateful tree");
+    }
+
     function test_initialize_emitsEvents() public {
         vm.recordLogs();
         bare.initialize(OWNER, _pk(), SUITE);

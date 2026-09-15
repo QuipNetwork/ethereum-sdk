@@ -104,7 +104,11 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the factory-supplied init payload, the ABI encoding of
     ///      `(bytes32 commitment, bytes32 pkSeed, PublicKey mainBundle, uint32 hashSuite,
-    ///       bytes32 erc1271Commitment, uint32 erc1271HashSuite)`.
+    ///       PublicKey erc1271Bundle, uint32 erc1271HashSuite)`.
+    ///      The ERC-1271 key travels as a FULL bundle (not a bare commitment) so the wallet
+    ///      can derive its tree identities and record them in the lifetime spent-tree
+    ///      registries: the dedicated 1271 key must never share a tree with the main key,
+    ///      past or present, nor be reinstalled (INVARIANTS 23/25).
     ///      The payload is opaque to the factory; `commitment`/`pkSeed` landing at
     ///      `payload[0:32]` / `[32:64]` is just natural ABI head-word order, not a
     ///      layout constraint.
@@ -118,11 +122,11 @@ library ShrincsWalletCodec {
             bytes32 pkSeed,
             SHRINCS.PublicKey calldata mainBundle,
             uint32 hashSuite,
-            bytes32 erc1271Commitment,
+            SHRINCS.PublicKey calldata erc1271Bundle,
             uint32 erc1271HashSuite
         )
     {
-        // Head is six 32-byte words (one is the PublicKey tail offset).
+        // Head is six 32-byte words (two are PublicKey tail offsets).
         if (payload.length < 0xc0)
             revert MalformedPayload(0xc0, payload.length);
         bytes4 malformed = MalformedPayload.selector;
@@ -145,10 +149,13 @@ library ShrincsWalletCodec {
             let mbOff := calldataload(add(o, 0x40))
             reqTail(mbOff, len, malformed)
             // Nested PublicKey tail bounds are out of scope here; those fields are read through
-            // Solidity calldata accessors downstream, which bounds-check against calldatasize.
+            // Solidity calldata accessors downstream, which bounds-check against calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
             mainBundle := add(o, mbOff)
             hashSuite := and(calldataload(add(o, 0x60)), 0xffffffff)
-            erc1271Commitment := calldataload(add(o, 0x80))
+            let ebOff := calldataload(add(o, 0x80))
+            reqTail(ebOff, len, malformed)
+            erc1271Bundle := add(o, ebOff)
             erc1271HashSuite := and(calldataload(add(o, 0xa0)), 0xffffffff)
         }
     }
@@ -192,7 +199,10 @@ library ShrincsWalletCodec {
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
+            // through Solidity calldata accessors downstream, which bounds-check calldatasize
+            // (bare revert, not `MalformedPayload`). `validateUserOp` runs this decoder and those
+            // reads behind the `userOpEnvelope` self-staticcall, so the revert maps to a soft
+            // fail there (INVARIANTS §19).
             signature := add(o, sigOff)
             let eo := calldataload(add(o, 0x40))
             reqTail(eo, len, malformed)
@@ -248,17 +258,21 @@ library ShrincsWalletCodec {
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
+            // through Solidity calldata accessors downstream, which bounds-check calldatasize
+            // (bare revert, not `MalformedPayload`). `validatePaymasterUserOp` runs this decoder
+            // and those reads behind the `sponsorshipEnvelope` self-staticcall, so the revert
+            // maps to a soft fail there (INVARIANTS §19).
             signature := add(o, sigOff)
         }
     }
 
     /// @dev Decodes the UUPS `upgradeToAndCall` `data` blob, the ABI encoding of
     ///      `(PublicKey publicKey, SHRINCS.Signature signature, bool shouldMigrate,
-    ///       bytes migratorPayload, uint256 nonce)`. The action nonce the signer bound rides in
-    ///      the blob (rather than being read live) so `verifyUpgrade` can rebuild the exact
-    ///      signed context at any moment — both in the SDK's pre-flight staticcall (live nonce
-    ///      == blob nonce) and in the post-consumption reachability probe (live == blob + 1).
+    ///       bytes migratorPayload, uint256 nonce, bytes probePayload)`. The action nonce the
+    ///      signer bound rides in the blob so the wallet can assert exact freshness
+    ///      (`StaleActionNonce` unless blob nonce == live nonce). The trailing
+    ///      `migratorPayload` / `probePayload` are OPAQUE bytes for the NEW implementation
+    ///      (the frozen `IWallet` seam) — this codec frames them, never interprets them.
     function decodeUpgradeAuth(
         bytes calldata data
     )
@@ -269,18 +283,19 @@ library ShrincsWalletCodec {
             SHRINCS.Signature calldata signature,
             bool shouldMigrate,
             bytes calldata migratorPayload,
-            uint256 nonce
+            uint256 nonce,
+            bytes calldata probePayload
         )
     {
-        if (data.length < 0xa0) {
-            revert MalformedPayload(0xa0, data.length);
+        if (data.length < 0xc0) {
+            revert MalformedPayload(0xc0, data.length);
         }
         bytes4 malformed = MalformedPayload.selector;
         assembly {
             let o := data.offset
             let len := data.length
             // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
-            // points at is inside the slice. `len >= 0xa0` here, so `sub(len, 0x20)` never
+            // points at is inside the slice. `len >= 0xc0` here, so `sub(len, 0x20)` never
             // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
             function reqTail(off, l, m) {
                 if gt(off, sub(l, 0x20)) {
@@ -296,7 +311,8 @@ library ShrincsWalletCodec {
             let sigOff := calldataload(add(o, 0x20))
             reqTail(sigOff, len, malformed)
             // Nested PublicKey/Signature tail bounds are out of scope here; those fields are read
-            // through Solidity calldata accessors downstream, which bounds-check calldatasize.
+            // through Solidity calldata accessors downstream, which bounds-check calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
             signature := add(o, sigOff)
             shouldMigrate := iszero(iszero(calldataload(add(o, 0x40))))
             let mo := calldataload(add(o, 0x60))
@@ -313,7 +329,75 @@ library ShrincsWalletCodec {
             migratorPayload.offset := add(o, add(mo, 0x20))
             migratorPayload.length := mLen
             nonce := calldataload(add(o, 0x80))
+            let po := calldataload(add(o, 0xa0))
+            reqTail(po, len, malformed)
+            let pLen := calldataload(add(o, po))
+            // Same fit proof as migratorPayload: `po <= len - 0x20` was just proven, so
+            // `sub(sub(len, 0x20), po)` cannot underflow — no wrapped-sum trust.
+            if gt(pLen, sub(sub(len, 0x20), po)) {
+                mstore(0x00, malformed)
+                mstore(0x04, add(add(po, 0x20), pLen))
+                mstore(0x24, len)
+                revert(0x00, 0x44)
+            }
+            probePayload.offset := add(o, add(po, 0x20))
+            probePayload.length := pLen
         }
+    }
+
+    /// @dev Decodes the SHRINCS `verifyUpgrade` probe vector (the frozen `IWallet` seam),
+    ///      the ABI encoding of `(PublicKey bundle, SHRINCS.Signature statefulSig,
+    ///      SPHINCSPlusC.Signature statelessSig)`. The signed digest is not carried — it is
+    ///      recomputed on-chain via `probeDigest(newImplementation)`.
+    function decodeProbePayload(
+        bytes calldata payload
+    )
+        internal
+        pure
+        returns (
+            SHRINCS.PublicKey calldata bundle,
+            SHRINCS.Signature calldata statefulSig,
+            SPHINCSPlusC.Signature calldata statelessSig
+        )
+    {
+        // Head is three 32-byte words (all tail offsets).
+        if (payload.length < 0x60) {
+            revert MalformedPayload(0x60, payload.length);
+        }
+        bytes4 malformed = MalformedPayload.selector;
+        assembly {
+            let o := payload.offset
+            let len := payload.length
+            // Reverts MalformedPayload(off + 0x20, len) unless the head word a tail offset
+            // points at is inside the slice. `len >= 0x60` here, so `sub(len, 0x20)` never
+            // underflows and `add(off, 0x20)` (an out-of-range diagnostic) may wrap harmlessly.
+            function reqTail(off, l, m) {
+                if gt(off, sub(l, 0x20)) {
+                    mstore(0x00, m)
+                    mstore(0x04, add(off, 0x20))
+                    mstore(0x24, l)
+                    revert(0x00, 0x44)
+                }
+            }
+            let bo := calldataload(o)
+            reqTail(bo, len, malformed)
+            // Nested struct tail bounds are out of scope here; those fields are read through
+            // Solidity calldata accessors downstream, which bounds-check against calldatasize
+            // (bare revert, not `MalformedPayload` — fail-closed, INVARIANTS §19).
+            bundle := add(o, bo)
+            let sfo := calldataload(add(o, 0x20))
+            reqTail(sfo, len, malformed)
+            statefulSig := add(o, sfo)
+            let slo := calldataload(add(o, 0x40))
+            reqTail(slo, len, malformed)
+            statelessSig := add(o, slo)
+        }
+    }
+
+    /// @dev The digest a SHRINCS probe vector signs: the upgrade target address as a single
+    ///      hashed word — binds the probe to `verifyUpgrade`'s `newImplementation`.
+    function probeDigest(address newImplementation) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(uint256(uint160(newImplementation)));
     }
 
     /// @dev Decodes the ERC-1271 `signature` blob, the ABI encoding of
@@ -326,9 +410,12 @@ library ShrincsWalletCodec {
     ///      caller returns on `!ok` and never dereferences them.
     ///
     ///      Nested `PublicKey`/`Signature` tail bounds stay out of scope here — those fields are
-    ///      read downstream through Solidity calldata accessors (which bounds-check calldatasize
-    ///      and revert), but that read sits BEHIND the owner ECDSA gate and is unreachable to an
-    ///      adversary, so its revert is not a DoS surface.
+    ///      read downstream through Solidity calldata accessors, which bounds-check calldatasize
+    ///      and revert (a bare revert, not `MalformedPayload`). The owner ECDSA gate does NOT
+    ///      make that read unreachable: the ECDSA half of a blob is reusable, so anyone holding a
+    ///      previously shared blob can corrupt a nested offset. `_checkErc1271Signature`
+    ///      therefore performs the nested reads behind a self-staticcall and maps the revert to
+    ///      `MalformedErc1271Payload`.
     function tryDecodeErc1271Signature(
         bytes calldata sig
     )

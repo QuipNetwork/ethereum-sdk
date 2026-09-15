@@ -50,10 +50,10 @@ contract WOTSPlusImplementation is
     uint256 public constant MAX_KEYS = 10;
     address payable public immutable FACTORY;
 
-    /// @dev Transient storage slot used to gate `migrate` to the `upgradeToAndCall` context.
-    /// @notice REQUIRES EIP-1153 (transient storage opcodes TSTORE/TLOAD).
-    uint256 private constant _UPGRADE_GUARD_SLOT =
-        uint256(keccak256("quip.wallet.upgrade.guard")) - 1;
+    /// @dev This implementation's own deploy address. `migrate`'s mid-upgrade gate compares
+    ///      it against the wallet's installed (ERC-1967) implementation (family-neutral, the
+    ///      frozen `IWallet` seam).
+    address private immutable _SELF = address(this);
 
     /// @dev PQ storage base slot (ERC-7201 namespace: quip.storage.wallet.wotsplus).
     /// Layout: quipFactory at base+0, disasterRecoveryKey at base+1 (seed) and base+2 (hash),
@@ -476,10 +476,6 @@ contract WOTSPlusImplementation is
         (bool shouldMigrate, bytes calldata migratorPayload) = Codec
             .decodeUpgradeMigration(data);
         if (shouldMigrate) {
-            uint256 slot = _UPGRADE_GUARD_SLOT;
-            assembly {
-                tstore(slot, 1)
-            }
             // abi.encodeCall re-serializes migratorPayload into fresh calldata,
             // so migrate's decodeInit reads from offset 0 of the init layout
             // regardless of where the slice sat in the original upgrade payload.
@@ -487,9 +483,6 @@ contract WOTSPlusImplementation is
                 newImplementation,
                 abi.encodeCall(this.migrate, (migratorPayload))
             );
-            assembly {
-                tstore(slot, 0)
-            }
         }
 
         super.upgradeToAndCall(newImplementation, data[0:0]);
@@ -919,9 +912,26 @@ contract WOTSPlusImplementation is
         emit RecoveryUpgrade(newImplementation, currentRecoveryKey);
     }
 
+    /// @dev Reverts unless an upgrade into this code is in flight — the sole gate on
+    ///      `migrate` (frozen `IWallet` seam, family-neutral). During `upgradeToAndCall`
+    ///      the ERC-1967 slot still holds the PREVIOUS implementation (the swap lands
+    ///      after `migrate`), so `installed != _SELF` exactly while another implementation
+    ///      migrates the wallet into this code. A direct call on a live wallet dispatches
+    ///      to the installed code itself (`installed == _SELF`); on the bare implementation
+    ///      the slot is empty (`installed == 0`) — both refused. The gate reads only the
+    ///      wallet's own storage plus this code's immutable, so no caller-side convention
+    ///      (e.g. a transient flag) is ever required.
+    function _enforceUpgradeInFlight() internal view {
+        address installed;
+        assembly {
+            installed := sload(_ERC1967_IMPLEMENTATION_SLOT)
+        }
+        if (installed == address(0) || installed == _SELF) revert NotUpgrading();
+    }
+
     /// @inheritdoc IWOTSPlusImplementation
     function migrate(bytes calldata payload) external {
-        if (_upgradeGuard() == 0) revert NotUpgrading();
+        _enforceUpgradeInFlight();
         (
             WOTSPlus.WinternitzAddress calldata disasterRecoveryKey,
             WOTSPlus.WinternitzAddress calldata ownershipKey,
@@ -931,6 +941,11 @@ contract WOTSPlusImplementation is
         ) = Codec.decodeInit(payload);
 
         Storage.Layout storage $ = Storage.layout();
+        // No-drift invariant (mirrors ShrincsWallet.migrate): re-establish `$.quipFactory`
+        // from this (the new) implementation's immutable `FACTORY`. On a CROSS-FAMILY
+        // migration the WOTS+ namespace is virgin — without this pin,
+        // `_verifyInitialState` reverts `ZeroAddressFactory`.
+        $.quipFactory = FACTORY;
         _clearKeys($.transactionKeys);
         _clearKeys($.recoveryKeys);
         _clearKeys($.verificationKeys);
@@ -976,6 +991,7 @@ contract WOTSPlusImplementation is
         ) = Codec.decodeRecoveryUpgradeVerification(data);
         _verifyImplementationSig(newImplementation, verifier, verifySig);
     }
+
 
     /// @inheritdoc IWOTSPlusImplementation
     function quipFactory() public view returns (address payable) {
@@ -1692,13 +1708,6 @@ contract WOTSPlusImplementation is
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                     PRIVATES                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    function _upgradeGuard() internal view returns (uint256 v) {
-        uint256 slot = _UPGRADE_GUARD_SLOT;
-        assembly {
-            v := tload(slot)
-        }
-    }
 
     /// @dev Snapshots the 7 slots protected by `storageStoreGuard` into memory so a
     ///      caller can later verify none were modified by an intervening delegatecall.

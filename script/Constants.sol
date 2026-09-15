@@ -97,9 +97,17 @@ library DeployConstants {
     // on the testnets, and the suffix is kept uniform across impls. CREATE3 ignores
     // initcode and `CreateXHelpers` skips an occupied address, so every retired
     // preimage must never be reused — see DEPLOYMENTS.md.
+    //
+    // `-beta.2` (Shrincs impls only): the spent-tree registries fix (a stateful
+    // or stateless tree can never be re-installed on a wallet/paymaster —
+    // INVARIANTS §25). Storage is ERC-7201 append-only, so the proxies stay put
+    // and `02_DeployShrincs` upgrades them in place on chains that already hold
+    // the generation; on a fresh chain (Base mainnet) it lands as the first
+    // impl. The WalletFactory code did not change, so its impl salt stays at
+    // `-beta.1`. Retired impl addresses live in DEPLOYMENTS.md.
 
     string internal constant PROXY_VERSION = "V1.0.1";
-    string internal constant IMPL_VERSION = "V1.0.1-beta.1";
+    string internal constant IMPL_VERSION = "V1.0.1-beta.2";
 
     // ── Salt preimages (sender-guarded CreateX CREATE3) ──────────────
     // The deployed address is a function of (CreateX, DEPLOY_OPERATOR,
@@ -123,12 +131,12 @@ library DeployConstants {
     /// version bump. `DeployShrincsBase._requireExpectedVerifierScheme`
     /// cross-checks the live verifier at deploy time.
     function shrincsWalletSalt() internal pure returns (bytes memory) {
-        return abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:", SHRINCSParams.PROFILE_ID);
+        return abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.2:", SHRINCSParams.PROFILE_ID);
     }
 
     function shrincsPaymasterImplSalt() internal pure returns (bytes memory) {
         return abi.encodePacked(
-            "QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.1:", SHRINCSParams.PROFILE_ID
+            "QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.2:", SHRINCSParams.PROFILE_ID
         );
     }
 }

@@ -4,6 +4,8 @@ pragma solidity ^0.8.33;
 import {ShrincsWallet} from "../../contracts/shrincs/ShrincsWallet.sol";
 import {ShrincsWalletStorage as Storage} from "../../contracts/shrincs/ShrincsWalletStorage.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
 
 /// @dev Test harness exposing `ShrincsWallet` internals and a direct storage installer so
 ///      behavior tests can set up arbitrary state without threading a factory deploy.
@@ -34,15 +36,6 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _shrincsDomainSeparator();
     }
 
-    /// @dev Wraps the eight-slot guard snapshot.
-    function exposed_snapshotGuardedSlots()
-        external
-        view
-        returns (bytes32[8] memory)
-    {
-        return _snapshotGuardedSlots();
-    }
-
     /// @dev Test-only direct install of the wallet's PQ state, bypassing the factory
     ///      `initialize` path. NOT a production function.
     function harness_install(
@@ -55,8 +48,71 @@ contract ShrincsWalletHarness is ShrincsWallet {
         Storage.Layout storage $ = Storage.layout();
         $.walletFactory = FACTORY;
         $.shrincsPublicKeyCommitment = commitment;
-        $.erc1271StatelessCommitment = erc1271Commitment;
+        $.erc1271PublicKeyCommitment = erc1271Commitment;
         $.maxSignatures = maxSignaturesValue;
+    }
+
+    /// @dev Records the installed bundle's trees as spent, mirroring what `initialize` does for a
+    ///      factory-deployed wallet.
+    function harness_spendTrees(SHRINCS.PublicKey calldata pk) external {
+        _safeInstallStatefulKey(pk.statefulPublicKey);
+        _safeInstallStatelessKey(pk.pkSeed, pk.hypertreeRoot);
+    }
+
+    /// @dev Wraps the tree-identity primitives (decoding the 68-byte stateful encoding first,
+    ///      mirroring `_safeInstallStatefulKey`).
+    function exposed_statefulTreeId(bytes calldata statefulPublicKey) external pure returns (bytes32) {
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(statefulPublicKey);
+        if (!ok) revert CommitmentMismatch();
+        return _statefulTreeId(decoded);
+    }
+
+    function exposed_statelessTreeId(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) external pure returns (bytes32) {
+        return _statelessTreeId(pkSeed, hypertreeRoot);
+    }
+
+    /// @dev Wraps the whole-bundle install (validate + derive commitment + install both halves).
+    function exposed_safeInstallKeyBundle(SHRINCS.PublicKey calldata pk) external returns (bytes32) {
+        return _safeInstallKeyBundle(pk);
+    }
+
+    /// @dev Wraps the install-payload decoder/validator.
+    function exposed_decodeAndValidateInstall(bytes calldata payload)
+        external
+        pure
+        returns (
+            bytes32 declaredCommitment,
+            uint32 maxSignatures,
+            SHRINCS.PublicKey memory mainKey,
+            SHRINCS.PublicKey memory erc1271Key
+        )
+    {
+        return _decodeAndValidateInstall(payload);
+    }
+
+    /// @dev Wraps the check-and-record install primitives.
+    function exposed_safeInstallStatefulKey(bytes calldata statefulPublicKey) external {
+        _safeInstallStatefulKey(statefulPublicKey);
+    }
+
+    function exposed_safeInstallStatelessKey(
+        bytes calldata pkSeed,
+        bytes calldata hypertreeRoot
+    ) external {
+        _safeInstallStatelessKey(pkSeed, hypertreeRoot);
+    }
+
+    /// @dev Reads the spent-tree registries so tests can pin which install paths record trees.
+    function harness_isStatefulTreeSpent(bytes32 treeId) external view returns (bool) {
+        return Storage.layout().spentStatefulTrees[treeId];
+    }
+
+    function harness_isStatelessTreeSpent(bytes32 treeId) external view returns (bool) {
+        return Storage.layout().spentStatelessTrees[treeId];
     }
 
     /// @dev Test-only setter to mark a stateful leaf consumed in the current key epoch (e.g. to
@@ -138,14 +194,6 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _tryVerifyStateless(expectedCommitment, messageHash, envelope);
     }
 
-    /// @dev Wraps the guarded-slot tamper check so each of the eight slots can be mutated and the
-    ///      `GuardedSlotTampered(index)` revert asserted.
-    function exposed_assertGuardedSlotsUnchanged(
-        bytes32[8] memory snapshot
-    ) external view {
-        _assertGuardedSlotsUnchanged(snapshot);
-    }
-
     /// @dev Wraps the per-op execute-fee collection.
     function exposed_collectExecuteFee(uint256 maxFee) external {
         _collectExecuteFee(maxFee);
@@ -178,18 +226,36 @@ contract ShrincsWalletHarness is ShrincsWallet {
         return _guardInitializeOwner();
     }
 
-    /// @dev Drives `migrate` inside the transient upgrade-guard context (mirrors the production
-    ///      `upgradeToAndCall` gating) so the success path and `NotUpgrading` guard are testable
-    ///      without a full UUPS round-trip.
-    function harness_migrateInUpgradeContext(bytes calldata payload) external {
-        uint256 slot = uint256(keccak256("quip.shrincs.wallet.upgrade.guard")) -
-            1;
-        assembly {
-            tstore(slot, 1)
-        }
-        this.migrate(payload);
-        assembly {
-            tstore(slot, 0)
-        }
+    /// @dev Exposes the `migrate` entry gate for direct unit testing.
+    function exposed_enforceUpgradeInFlight() external view {
+        _enforceUpgradeInFlight();
+    }
+
+    /// @dev Wraps the UUPS authorization hook (`onlyOwner`) — the defense-in-depth gate
+    ///      `super.upgradeToAndCall` runs behind the wallet's own `onlyOwner`.
+    function exposed_authorizeUpgrade(address newImplementation) external {
+        _authorizeUpgrade(newImplementation);
+    }
+
+    /// @dev Wraps the wallet's own ERC-1967 pointer read.
+    function exposed_msgImplementation() external view returns (address) {
+        return _msgImplementation();
+    }
+
+    /// @dev Wraps the single leaf-index derivation point (authPath length).
+    function exposed_leafIndex(SHRINCS.Signature calldata signature) external pure returns (uint32) {
+        return _leafIndex(signature);
+    }
+
+    /// @dev Wraps the stateless full-rotation validator (shape checks + commitment recompute +
+    ///      recovery-signature verify; zero return = reject).
+    function exposed_statelessRotate(
+        bytes32 expectedCommitment,
+        SHRINCS.PublicKey calldata currentPublicKey,
+        SHRINCS.RotationContext memory ctx,
+        SPHINCSPlusC.Signature calldata recoverySignature,
+        SHRINCS.RotationTarget calldata nextKey
+    ) external view returns (bytes32) {
+        return _statelessRotate(expectedCommitment, currentPublicKey, ctx, recoverySignature, nextKey);
     }
 }

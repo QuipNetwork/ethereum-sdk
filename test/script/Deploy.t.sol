@@ -83,8 +83,8 @@ contract DeployScriptsTest is Test {
     address internal constant CANONICAL_OPERATOR_PUBLISHED = 0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26;
     address internal constant PUBLISHED_FACTORY_IMPL = 0x77622e199DfF602f937fC5E5eB6479aE4b18161F;
     address internal constant PUBLISHED_FACTORY_PROXY = 0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8;
-    address internal constant PUBLISHED_SHRINCS_WALLET = 0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094;
-    address internal constant PUBLISHED_SHRINCS_PM_IMPL = 0xD0C56265b942160bb4470077f65123EE34E0Ee93;
+    address internal constant PUBLISHED_SHRINCS_WALLET = 0x680840c831c6D147404a0e00edA08a5360564FBC;
+    address internal constant PUBLISHED_SHRINCS_PM_IMPL = 0x5E4E4003118a0F8825494D76E86Db2ed654992d2;
     address internal constant PUBLISHED_SHRINCS_PM_PROXY = 0x430c8c89492E3541e141148Dd7a7D6dD432e5890;
 
     // eip1967.proxy.implementation slot (keccak256("eip1967.proxy.implementation") - 1),
@@ -159,8 +159,8 @@ contract DeployScriptsTest is Test {
     function _livePreimages() internal pure returns (bytes[5] memory p) {
         p[0] = FACTORY_IMPL_PREIMAGE;
         p[1] = FACTORY_PROXY_PREIMAGE;
-        p[2] = abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:", PROFILE_ID_INDEPENDENT);
-        p[3] = abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.1:", PROFILE_ID_INDEPENDENT);
+        p[2] = abi.encodePacked("QUIP:ShrincsWallet:Impl:V1.0.1-beta.2:", PROFILE_ID_INDEPENDENT);
+        p[3] = abi.encodePacked("QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.2:", PROFILE_ID_INDEPENDENT);
         p[4] = SHRINCS_PM_PROXY_PREIMAGE;
     }
 
@@ -223,6 +223,53 @@ contract DeployScriptsTest is Test {
         assertEq(fAddr, fAddr2, "factory stable");
         assertEq(sImpl1, sImpl2, "shrincs impl stable");
         assertEq(sPm1, sPm2, "shrincs paymaster stable");
+    }
+
+    /// In-place generation bump: a chain that already holds the paymaster proxy
+    /// delegating to an EARLIER impl gets upgraded to this build's impl (owner
+    /// UUPS upgrade, no re-init) instead of failing the identity assert.
+    function test_upgradeInPlace_existingPaymasterProxyMovesToThisImpl() public {
+        h.factory(owner, PK, owner, MAX_FEE);
+        address sPm =
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+        address canonicalImpl = address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT))));
+
+        // Simulate the previous generation: same code at another address (a
+        // UUPS target must be a real UUPS impl for `proxiableUUID`), pointed at
+        // by the live proxy.
+        address oldImpl = makeAddr("previous-paymaster-impl");
+        vm.etch(oldImpl, canonicalImpl.code);
+        vm.store(sPm, ERC1967_IMPL_SLOT, bytes32(uint256(uint160(oldImpl))));
+        (bytes32 commitmentBefore,,,,) = IShrincsVerifierView(sPm).getShrincsVerifier();
+
+        address sPm2 =
+            h.shrincsPaymaster(owner, PK, owner, verifierPk, HashSuite.HASH_SUITE_ID);
+        assertEq(sPm2, sPm, "proxy address stable");
+        assertEq(
+            address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT)))),
+            canonicalImpl,
+            "proxy upgraded back to this build's impl"
+        );
+        (bytes32 commitmentAfter,,,,) = IShrincsVerifierView(sPm).getShrincsVerifier();
+        assertEq(commitmentAfter, commitmentBefore, "state preserved across the upgrade");
+    }
+
+    /// The upgrade is `onlyOwner`: a proxy owned by someone else refuses before
+    /// any broadcast.
+    function test_upgradeInPlace_revertsWhen_keyIsNotProxyOwner() public {
+        h.factory(owner, PK, owner, MAX_FEE);
+        address other = makeAddr("other-paymaster-owner");
+        address sPm =
+            h.shrincsPaymaster(owner, PK, other, verifierPk, HashSuite.HASH_SUITE_ID);
+        address canonicalImpl = address(uint160(uint256(vm.load(sPm, ERC1967_IMPL_SLOT))));
+        address oldImpl = makeAddr("previous-paymaster-impl");
+        vm.etch(oldImpl, canonicalImpl.code);
+        vm.store(sPm, ERC1967_IMPL_SLOT, bytes32(uint256(uint160(oldImpl))));
+
+        vm.expectRevert(
+            bytes("ShrincsPaymaster proxy: PRIVATE_KEY is not the proxy owner (upgrade is onlyOwner)")
+        );
+        h.shrincsPaymaster(owner, PK, other, verifierPk, HashSuite.HASH_SUITE_ID);
     }
 
     /// Squat-proofing, first line: the deploy helper refuses before broadcast when
@@ -329,4 +376,8 @@ contract DeployScriptsTest is Test {
 /// ADDRESS the deploy reaches, not what lands there.
 contract Tiny {
     uint256 public x = 1;
+}
+
+interface IShrincsVerifierView {
+    function getShrincsVerifier() external view returns (bytes32, uint32, uint256, uint32, uint32);
 }

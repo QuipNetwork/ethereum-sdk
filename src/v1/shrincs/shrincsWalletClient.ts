@@ -22,6 +22,7 @@ import {
   type PublicClient,
   type TransactionReceipt,
   type WalletClient,
+  bytesToHex,
   encodeFunctionData,
   keccak256,
 } from "viem";
@@ -41,7 +42,9 @@ import {
   OwnerMismatchError,
   StatefulBudgetExhaustedError,
   ZeroAddressOwnerError,
-  ZeroErc1271CommitmentError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
+  UnsupportedByWalletVersionError,
 } from "./errors.js";
 import { prepareTx, type ContractCallParams, type TxOptions } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
@@ -71,11 +74,15 @@ import {
   buildActionContext,
   buildRotationContext,
   buildStatefulRotationTarget,
+  statefulTreeId,
+  statelessTreeId,
   dataHash as keccakData,
   domainSeparator,
   encodeErc1271Signature,
+  encodeProbeVector,
   encodeUpgradeData,
   executePayloadHash,
+  probeDigest,
   leavesHash,
   markLeavesUsedPayloadHash,
   publicKeyToAbi,
@@ -83,6 +90,8 @@ import {
   rotationDomainSeparator,
   setErc1271KeyPayloadHash,
   SHRINCS_PROFILE_NAME,
+  statefulRawMessageHash,
+  statelessRawMessageHash,
   toRotationTarget,
   transferOwnershipPayloadHash,
   upgradePayloadHash,
@@ -91,6 +100,10 @@ import {
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import { type RotationTarget, type ShrincsPublicKey } from "./types.js";
 import {
+  type WalletVersionDescriptor,
+  resolveWalletVersionFromChain,
+} from "./versions/index.js";
+import {
   type PackedUserOperation,
   buildUserOp,
   computeUserOpHash,
@@ -98,7 +111,12 @@ import {
 } from "./userOp.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
-const ZERO32 = ("0x" + "00".repeat(32)) as Hex;
+
+/// Signing budget for a throwaway `verifyUpgrade` probe bundle. The probe bundle
+/// is single-use and verified only against its OWN commitment, so a tiny tree
+/// suffices; it signs the target digest once (at leaf 1).
+const PROBE_MAX_SIGNATURES = 4;
+const PROBE_LEAF = 1;
 
 const shrincsWalletDomain = (chainId: number, walletAddress: Address) =>
   ({
@@ -144,7 +162,7 @@ export interface ShrincsWalletState {
   version: bigint;
   executeFee: bigint;
   shrincsPublicKeyCommitment: Hex;
-  erc1271Commitment: Hex;
+  erc1271PublicKeyCommitment: Hex;
   hashSuite: number;
   erc1271HashSuite: number;
   keyVersion: bigint;
@@ -228,14 +246,22 @@ export interface ShrincsWalletClientParams {
 
 export async function fetchShrincsWalletState(
   publicClient: PublicClient,
-  walletAddress: Address
+  walletAddress: Address,
+  version?: WalletVersionDescriptor
 ): Promise<ShrincsWalletState> {
+  // Resolve the wallet's deployed generation so reads use the RIGHT ABI + getter
+  // names. A V1.0.1-beta.2 wallet exposes `getErc1271Commitment`, not the later
+  // `getErc1271PublicKeyCommitment`; reading the wrong name reverts and would
+  // otherwise make EVERY operation (upgrade included) fail against beta.2.
+  const resolved =
+    version ?? (await resolveWalletVersionFromChain(publicClient, walletAddress));
+  const erc1271CommitmentGetter = resolved.quirks.erc1271CommitmentGetter;
   const fns = [
     "owner",
     "version",
     "getExecuteFee",
     "getShrincsPublicKeyCommitment",
-    "getErc1271Commitment",
+    erc1271CommitmentGetter,
     "getHashSuite",
     "getErc1271HashSuite",
     "keyVersion",
@@ -248,7 +274,7 @@ export async function fetchShrincsWalletState(
     publicClient,
     fns.map((functionName) => ({
       address: walletAddress,
-      abi: shrincsWalletAbi,
+      abi: resolved.abi,
       functionName,
     }))
   );
@@ -264,7 +290,7 @@ export async function fetchShrincsWalletState(
     version: BigInt(get(1)),
     executeFee: BigInt(get(2)),
     shrincsPublicKeyCommitment: get(3),
-    erc1271Commitment: get(4),
+    erc1271PublicKeyCommitment: get(4),
     hashSuite: Number(get(5)),
     erc1271HashSuite: Number(get(6)),
     keyVersion: BigInt(get(7)),
@@ -290,6 +316,8 @@ export class ShrincsWalletClient {
   private readonly walletClient: WalletClient;
   private readonly signer?: ShrincsSigner;
   private readonly keypair?: ShrincsKeyPair;
+  /// Memoized deployed generation of this wallet (see `resolveVersion`).
+  private walletVersion?: WalletVersionDescriptor;
   /// Per-instance record of leaves already handed out for signing this session,
   /// so a sign-then-retry (changed payload, first tx not yet landed) cannot pick
   /// the same leaf twice and reuse a one-time signature.
@@ -314,7 +342,24 @@ export class ShrincsWalletClient {
 
   /// Atomic snapshot of wallet state via Multicall3 (sequential fallback).
   async getWalletState(): Promise<ShrincsWalletState> {
-    return fetchShrincsWalletState(this.publicClient, this.walletAddress);
+    return fetchShrincsWalletState(
+      this.publicClient,
+      this.walletAddress,
+      await this.resolveVersion()
+    );
+  }
+
+  /// The wallet's deployed generation, resolved once (from its installed
+  /// implementation) and memoized. Selects the version-correct ABI + getter
+  /// names so the SDK keeps operating and UPGRADING older on-chain wallets.
+  async resolveVersion(): Promise<WalletVersionDescriptor> {
+    if (!this.walletVersion) {
+      this.walletVersion = await resolveWalletVersionFromChain(
+        this.publicClient,
+        this.walletAddress
+      );
+    }
+    return this.walletVersion;
   }
 
   async isStatefulLeafUsed(leaf: number): Promise<boolean> {
@@ -468,18 +513,53 @@ export class ShrincsWalletClient {
     ) as Promise<Hex>;
   }
 
-  /// Pre-flight the `verifyUpgrade` reachability probe as a staticcall: resolves
-  /// if `data` (an `encodeUpgradeData` blob) re-verifies against `newImplementation`,
-  /// otherwise throws the decoded contract error. Run before `upgradeToAndCall`.
+  /// Pre-flight the `verifyUpgrade` reachability probe as a staticcall against
+  /// the NEW IMPLEMENTATION — exactly the contract, and the exact bytes, the
+  /// wallet forwards during `upgradeToAndCall` (the deployed beta.2 caller
+  /// forwards the WHOLE `data` blob; the target's `verifyUpgrade` shape-sniffs
+  /// `0xc0` and unwraps it). Resolves if the target accepts `data`, otherwise
+  /// throws the decoded contract error. Run before `upgradeToAndCall`.
   async verifyUpgrade(newImplementation: Address, data: Hex): Promise<void> {
     await withDecodedError(
       this.publicClient.readContract({
-        address: this.walletAddress,
+        address: newImplementation,
         abi: shrincsWalletAbi,
         functionName: "verifyUpgrade",
         args: [newImplementation, data],
       })
     );
+  }
+
+  /// Build the bare `verifyUpgrade` probe vector for `newImplementation`: a
+  /// SEPARATE throwaway SHRINCS bundle signs the recomputed `probeDigest` under
+  /// both halves. It is deliberately NOT the wallet's own key — signing two
+  /// different messages (the upgrade authorization AND the probe digest) at one
+  /// leaf of the same tree would expose that leaf's one-time key. Requires a
+  /// `signer` to derive the throwaway bundle.
+  buildUpgradeProbeVector(newImplementation: Address): Hex {
+    if (!this.signer) {
+      throw new Error(
+        "upgradeToAndCall requires a signer to build the verifyUpgrade probe vector"
+      );
+    }
+    const seed = bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
+    const probe = this.signer.keygenFromSeedHex(seed, {
+      maxSignatures: PROBE_MAX_SIGNATURES,
+    });
+    const digest = probeDigest(newImplementation);
+    const commitment = probe.publicKeyCommitment;
+    const statefulSig = probe.signStatefulRawAt(
+      statefulRawMessageHash(commitment, digest),
+      PROBE_LEAF
+    );
+    const statelessSig = probe.signStatelessRaw(
+      statelessRawMessageHash(commitment, digest)
+    );
+    return encodeProbeVector({
+      bundle: probe.publicKey,
+      statefulSig,
+      statelessSig,
+    });
   }
 
   /*  ── write helpers ───────────────────────────────────────────────────  */
@@ -520,9 +600,32 @@ export class ShrincsWalletClient {
   /// the lowest unused leaf (or honor an explicit override). `excludeLeaves`
   /// constrains only the automatic pick; callers with an explicit `keyOpts.leaf`
   /// are responsible for their own exclusion guard (see `markLeavesUsed`).
+  /// Pre-flight mirror of the wallet's spent-tree registry for the one case the
+  /// client can see: the next stateful tree equals the INSTALLED one (same
+  /// tree, or the same tree under a re-declared budget). Cycles back to an
+  /// older tree are only caught on-chain (`StatefulTreeSpentError` decoded).
+  private assertFreshStatefulTree(nextStatefulPublicKey: Hex, current: ShrincsPublicKey): void {
+    const next = statefulTreeId(nextStatefulPublicKey);
+    if (next === statefulTreeId(current.statefulPublicKey)) {
+      throw new StatefulTreeSpentError(next);
+    }
+  }
+
+  /// Pre-flight for full-bundle installs (`recoverWallet` / `transferOwnership`
+  /// / `setErc1271Key`): both halves of `nextKey` must differ from the
+  /// installed main bundle.
+  private assertFreshBundle(nextKey: ShrincsPublicKey, current: ShrincsPublicKey): void {
+    this.assertFreshStatefulTree(nextKey.statefulPublicKey, current);
+    const next = statelessTreeId(nextKey.pkSeed, nextKey.hypertreeRoot);
+    if (next === statelessTreeId(current.pkSeed, current.hypertreeRoot)) {
+      throw new StatelessTreeSpentError(next);
+    }
+  }
+
   private async prepareStatefulOp(
     keyOpts?: ShrincsTxKeyOptions,
-    excludeLeaves?: ReadonlySet<number>
+    excludeLeaves?: ReadonlySet<number>,
+    preflight?: (keypair: ShrincsKeyPair, state: ShrincsWalletState) => void
   ): Promise<{
     keypair: ShrincsKeyPair;
     state: ShrincsWalletState;
@@ -535,6 +638,10 @@ export class ShrincsWalletClient {
       state.maxSignatures,
       state.shrincsPublicKeyCommitment
     );
+    // Caller pre-flights (e.g. spent-tree checks) run BEFORE any leaf is
+    // reserved: reservations have no release API, so a rejected call must not
+    // burn a signing leaf.
+    preflight?.(keypair, state);
     // Validate the excluded leaves BEFORE reserving. `excludeLeaves` carries the
     // revocation targets (`markLeavesUsed`), which must be valid signing leaves
     // `[1..maxSignatures]`. Rejecting a malformed target here — before any leaf
@@ -821,17 +928,26 @@ export class ShrincsWalletClient {
     return this.submit("addDeposit", [], amount, opts);
   }
 
-  /// Install a dedicated ERC-1271 stateless verifier key (authorized by a
-  /// stateful signature from the main key).
+  /// Rotate the dedicated ERC-1271 verifier key (authorized by a stateful
+  /// signature from the main key). The new key travels as a FULL bundle: the
+  /// wallet derives its commitment on-chain and spends both of its trees in
+  /// the lifetime registries, so the bundle must be entirely fresh — never
+  /// held by this wallet under either role. Pre-flights the collisions the
+  /// client can see (the installed main bundle's trees, and re-installing the
+  /// installed 1271 bundle); older trees are only caught on-chain
+  /// (`StatefulTreeSpentError` / `StatelessTreeSpentError` decoded). A
+  /// rejected bundle consumes no leaf: the wallet installs before verifying,
+  /// and the client pre-flights before reserving.
   async setErc1271Key(
-    params: { newCommitment: Hex; newHashSuite?: number },
+    params: { newErc1271Key: ShrincsPublicKey; newHashSuite?: number },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
-    if (
-      !params.newCommitment ||
-      params.newCommitment.toLowerCase() === ZERO32
-    ) {
-      throw new ZeroErc1271CommitmentError();
+    // beta.2 took a bare `bytes32` commitment (pre tree-isolation); this SDK only
+    // offers the full-bundle form. Reject loudly rather than send a wrong-ABI tx
+    // — the wallet should be upgraded first.
+    const version = await this.resolveVersion();
+    if (version.quirks.erc1271KeyArgument !== "publicKeyBundle") {
+      throw new UnsupportedByWalletVersionError(version.label, "setErc1271Key");
     }
     const hashSuite = params.newHashSuite ?? HASH_SUITE_KECCAK_256;
     const {
@@ -839,18 +955,38 @@ export class ShrincsWalletClient {
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(opts, undefined, (kp, st) => {
+      this.assertFreshBundle(params.newErc1271Key, kp.publicKey);
+      // Re-installing the CURRENT 1271 bundle: equal commitments mean equal
+      // bundles, and the wallet refuses its stateful half first.
+      if (
+        params.newErc1271Key.publicKeyCommitment.toLowerCase() ===
+        st.erc1271PublicKeyCommitment.toLowerCase()
+      ) {
+        throw new StatefulTreeSpentError(
+          statefulTreeId(params.newErc1271Key.statefulPublicKey)
+        );
+      }
+    });
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
       actionType: ACTION_SET_ERC1271_KEY,
-      payloadHash: setErc1271KeyPayloadHash(params.newCommitment, hashSuite),
+      payloadHash: setErc1271KeyPayloadHash(
+        params.newErc1271Key.publicKeyCommitment,
+        hashSuite
+      ),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
     return this.submit(
       "setErc1271Key",
-      [publicKeyToAbi(keypair.publicKey), signature, params.newCommitment, hashSuite],
+      [
+        publicKeyToAbi(keypair.publicKey),
+        signature,
+        publicKeyToAbi(params.newErc1271Key),
+        hashSuite,
+      ],
       0n,
       opts
     );
@@ -859,6 +995,8 @@ export class ShrincsWalletClient {
   /// Routine stateful rotation: refresh the stateful subkey, reuse the stateless
   /// recovery root. `nextStatefulPublicKey` is the fresh stateful key's encoded
   /// 68-byte public key (from a freshly keygen'd bundle under a new commitment).
+  /// Pre-flights `StatefulTreeSpentError` when it is the installed tree (any
+  /// budget); older trees are refused on-chain — trees never come back.
   async rotateKey(
     params: { nextStatefulPublicKey: Hex },
     opts: TxOptions & ShrincsTxKeyOptions = {}
@@ -868,7 +1006,9 @@ export class ShrincsWalletClient {
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(opts, undefined, (kp) =>
+      this.assertFreshStatefulTree(params.nextStatefulPublicKey, kp.publicKey)
+    );
     const nextStatefulKey = buildStatefulRotationTarget({
       nextStatefulPublicKey: params.nextStatefulPublicKey,
       currentPkSeed: keypair.publicKey.pkSeed,
@@ -943,17 +1083,26 @@ export class ShrincsWalletClient {
     );
   }
 
-  /// UUPS upgrade gated by a stateful signature.
+  /// UUPS upgrade gated by a stateful signature. Works against BOTH the deployed
+  /// V1.0.1-beta.2 generation and later ones: the SDK always emits the 6-field
+  /// blob (auth signature + a `verifyUpgrade` probe vector for the target). The
+  /// beta.2 caller reads the first 5 fields and forwards the whole blob to the
+  /// target's probe; later callers read all 6. Set `preflight: false` to skip
+  /// the staticcall probe pre-check (on by default).
   async upgradeToAndCall(
     params: {
       newImplementation: Address;
       shouldMigrate?: boolean;
       migratorPayload?: Hex;
+      preflight?: boolean;
     },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
     const shouldMigrate = params.shouldMigrate ?? false;
     const migratorPayload = params.migratorPayload ?? "0x";
+    // The probe vector binds ONLY the target address, so it can be built before
+    // reserving the wallet's signing leaf.
+    const probePayload = this.buildUpgradeProbeVector(params.newImplementation);
     const {
       keypair,
       state,
@@ -980,13 +1129,21 @@ export class ShrincsWalletClient {
       // Must be the same live nonce the context above bound (the wallet's
       // StaleActionNonce gate checks blob nonce == actionNonce()).
       nonce: state.actionNonce,
+      probePayload,
     });
-    return this.submit(
+    if (params.preflight !== false) {
+      await this.verifyUpgrade(params.newImplementation, data);
+    }
+    const receipt = await this.submit(
       "upgradeToAndCall",
       [params.newImplementation, data],
       0n,
       opts
     );
+    // The wallet's implementation just changed, so any memoized version is
+    // stale — the next resolveVersion()/getWalletState() must re-read the slot.
+    this.walletVersion = undefined;
+    return receipt;
   }
 
   /*  ── dual-signature & stateless writes ───────────────────────────────  */
@@ -1004,7 +1161,9 @@ export class ShrincsWalletClient {
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts);
+    } = await this.prepareStatefulOp(opts, undefined, (kp) =>
+      this.assertFreshBundle(params.nextKey, kp.publicKey)
+    );
     const rotationTarget = toRotationTarget(params.nextKey);
 
     const ownerCtx = buildActionContext({
@@ -1047,6 +1206,8 @@ export class ShrincsWalletClient {
 
   /// Break-glass recovery: install an entirely fresh bundle authorized by the
   /// stateless recovery signature. Ownership unchanged. No leaf consumed.
+  /// Both halves of `nextKey` must be fresh: the installed trees pre-flight
+  /// `StatefulTreeSpentError` / `StatelessTreeSpentError`; older ones on-chain.
   async recoverWallet(
     params: { nextKey: ShrincsPublicKey },
     opts: TxOptions = {}
@@ -1057,6 +1218,7 @@ export class ShrincsWalletClient {
       state.maxSignatures,
       state.shrincsPublicKeyCommitment
     );
+    this.assertFreshBundle(params.nextKey, keypair.publicKey);
     const rotationTarget: RotationTarget = toRotationTarget(params.nextKey);
     const rctx = buildRotationContext({
       domainSeparator: rotationDomainSeparator(
@@ -1086,7 +1248,7 @@ export class ShrincsWalletClient {
   ///      browser wallet can sign it via `eth_signTypedData_v4`).
   /// The ERC-1271 verifier key is a separate vault branch from the main key, so
   /// the caller supplies its recovered keypair (its commitment must match the
-  /// installed `erc1271Commitment`). The `owner` must sign for the wallet's
+  /// installed `erc1271PublicKeyCommitment`). The `owner` must sign for the wallet's
   /// on-chain `owner()`.
   ///
   /// FRESHNESS: the blob binds the wallet's LIVE `actionNonce()`, so it is
@@ -1103,11 +1265,11 @@ export class ShrincsWalletClient {
 
     if (
       params.erc1271KeyPair.publicKeyCommitment.toLowerCase() !==
-      state.erc1271Commitment.toLowerCase()
+      state.erc1271PublicKeyCommitment.toLowerCase()
     ) {
       throw new CommitmentMismatchError(
         params.erc1271KeyPair.publicKeyCommitment,
-        state.erc1271Commitment
+        state.erc1271PublicKeyCommitment
       );
     }
     if (params.owner.address.toLowerCase() === ZERO_ADDRESS) {

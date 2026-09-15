@@ -31,11 +31,15 @@ library ShrincsWalletStorage {
         ///      re-validates against this commitment. Changes only via `rotateKey`
         ///      (stateful) or `recoverWallet` (stateless break-glass).
         bytes32 shrincsPublicKeyCommitment;
-        /// @dev Commitment to a SEPARATE, dedicated SHRINCS bundle used solely for ERC-1271
-        ///      contract-signature verification (stateless, view-safe). Isolated from the
-        ///      main key so contract-signing never touches the recovery authority. Rotated
+        /// @dev Full-bundle commitment (same shape as `shrincsPublicKeyCommitment`) of the
+        ///      SEPARATE, dedicated SHRINCS bundle used solely for ERC-1271 contract-signature
+        ///      verification — only its stateless half ever signs (view-safe). Isolated from the
+        ///      main key so contract-signing never touches the recovery authority — enforced,
+        ///      not assumed: every install path receives the full 1271 bundle and records both
+        ///      of its trees in `spentStatefulTrees` / `spentStatelessTrees`, so it can never
+        ///      share a tree with the main key (past or present) nor be reinstalled. Rotated
         ///      via `setErc1271Key` (a stateful action from the main key).
-        bytes32 erc1271StatelessCommitment;
+        bytes32 erc1271PublicKeyCommitment;
         /// @dev Installed-key epoch. Bound into every canonical action/rotation context and
         ///      incremented on every key rotation (`rotateKey` / `recoverWallet`) and on
         ///      migration, so signatures from a prior key epoch cannot be replayed.
@@ -65,40 +69,31 @@ library ShrincsWalletStorage {
         ///      is set when leaf `leafIndex` is consumed.
         mapping(uint256 keyVersion => mapping(uint256 wordIndex => uint256 usedBits))
             usedStatefulLeafBitmap;
+        /// @dev Tree identities this wallet has ever installed, keyed by keccak256(pkSeed ‖ root).
+        ///      A hash-based tree is one-time material for its lifetime, not per epoch: the
+        ///      leaf bitmap resets on rotation, so re-installing a tree would resurrect its
+        ///      consumed leaves. Every install path rejects a spent tree. Append-only.
+        mapping(bytes32 statefulTreeId => bool) spentStatefulTrees;
+        mapping(bytes32 statelessTreeId => bool) spentStatelessTrees;
     }
 
     /// @dev `keccak256(abi.encode(uint256(keccak256("quip.storage.wallet.shrincs")) - 1))
     ///      & ~bytes32(uint256(0xff))`.
     ///      Single source of truth for the ERC-7201 namespace base. The derived per-field
-    ///      constants below are aliased into `ShrincsWallet`'s `storageStoreGuard` /
-    ///      `delegateExecuteGuard` so the wallet's pre/post-snapshot Yul checks read from the
-    ///      same slots the library's `layout()` writes to. Solidity's inline assembly only
-    ///      accepts direct numeric constants, which is why each derived offset is its own hex
-    ///      literal rather than `base + N`.
+    ///      constant below is read by `ShrincsWallet`'s Yul from the same slot the library's
+    ///      `layout()` writes to. Solidity's inline assembly only accepts direct numeric
+    ///      constants, which is why the derived offset is its own hex literal rather than
+    ///      `base + N`.
     bytes32 internal constant _SHRINCS_STORAGE_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
 
-    /// @dev Slots of the six guarded `Layout` scalar fields that `ShrincsWallet`'s guard
-    ///      modifiers snapshot/check. Must be kept in lock-step with the field order of
-    ///      `Layout` above; `test/fixtures/ShrincsWallet.storageLayout.json` pins each field's
-    ///      slot offset and fails the suite on any drift. A namespace rename above must
-    ///      regenerate every literal below together — they aren't independently meaningful.
-    ///      The packed `{statefulLeavesUsed,maxSignatures}` scalars share
-    ///      `_LEAF_STATE_SLOT`. The
-    ///      `usedStatefulLeafBitmap` mapping occupies the next slot and is intentionally NOT
-    ///      one of the guarded slots (see its field comment).
+    /// @dev Slot of `Layout.walletFactory` (field 0 of the namespace above). Read by
+    ///      `initialize`/`migrate` Yul to re-establish the factory pin without an extra
+    ///      keccak. `test/fixtures/ShrincsWallet.storageLayout.json` pins each field's slot
+    ///      offset and fails the suite on any drift; a namespace rename above must
+    ///      regenerate this literal with it.
     bytes32 internal constant _SHRINCS_FACTORY_SLOT =
         0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc00;
-    bytes32 internal constant _SHRINCS_COMMITMENT_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc01;
-    bytes32 internal constant _ERC1271_COMMITMENT_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc02;
-    bytes32 internal constant _KEY_VERSION_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03;
-    bytes32 internal constant _NONCE_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc04;
-    bytes32 internal constant _LEAF_STATE_SLOT =
-        0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc05;
 
     /// @dev Returns the ERC-7201 namespaced storage layout.
     function layout() internal pure returns (Layout storage $) {

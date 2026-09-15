@@ -206,6 +206,11 @@ abstract contract CreateXHelpers is Script {
     ///      the factory and the paymaster are upgradeable. So require a non-zero
     ///      implementation slot — which foreign, non-proxy code will not have — and
     ///      surface a divergent target loudly instead of failing on it.
+    /// The implementation an ERC-1967 proxy currently delegates to (zero if none).
+    function _erc1967Impl(address proxy) internal view returns (address) {
+        return address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
+    }
+
     function _assertErc1967Proxy(address proxy, address impl, string memory name) internal view {
         address current = address(uint160(uint256(vm.load(proxy, ERC1967_IMPL_SLOT))));
         require(

@@ -19,11 +19,24 @@ contract ShrincsWalletCodec_boundsCheck is ShrincsWalletCodecTest {
 
     function test_decodeInit_boundsHappyPath() public view {
         SHRINCS.PublicKey memory pk = _samplePublicKey();
+        SHRINCS.PublicKey memory epk = _sampleErc1271PublicKey();
         bytes memory payload = abi.encode(
-            keccak256("commit"), keccak256("seed"), pk, HashSuite.HASH_SUITE_ID, keccak256("erc1271"), uint32(2)
+            keccak256("commit"), keccak256("seed"), pk, HashSuite.HASH_SUITE_ID, epk, uint32(2)
         );
-        (,, SHRINCS.PublicKey memory mb,,,) = codec.exposed_decodeInit(payload);
+        (,, SHRINCS.PublicKey memory mb,, SHRINCS.PublicKey memory eb,) = codec.exposed_decodeInit(payload);
         _assertPkEq(mb, pk);
+        _assertPkEq(eb, epk);
+    }
+
+    function test_decodeInit_revertsWhen_erc1271TailOffsetOutOfBounds() public {
+        // word[2] (main bundle) points at a valid in-range tail head; word[4] (erc1271 bundle)
+        // points at the slice end so its pointed-to head word spills past `len`.
+        bytes memory payload = bytes.concat(
+            bytes32(0), bytes32(0), bytes32(uint256(0xc0)), bytes32(0), bytes32(uint256(0xe0)), bytes32(0),
+            bytes32(0) // one word of tail so the main offset (0xc0) is in range; 0xe0 is not
+        );
+        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0x100, 0xe0));
+        codec.exposed_decodeInit(payload);
     }
 
     function test_decodeInit_revertsWhen_tailOffsetOutOfBounds() public {
@@ -87,21 +100,22 @@ contract ShrincsWalletCodec_boundsCheck is ShrincsWalletCodecTest {
 
     function test_decodeUpgradeAuth_boundsHappyPath() public view {
         SHRINCS.PublicKey memory pk = _samplePublicKey();
-        bytes memory data = abi.encode(pk, _sampleStatefulSig(), true, hex"deadbeef", uint256(7));
-        (SHRINCS.PublicKey memory dpk,,, bytes memory dPayload, uint256 dNonce) =
+        bytes memory data = abi.encode(pk, _sampleStatefulSig(), true, hex"deadbeef", uint256(7), hex"beef");
+        (SHRINCS.PublicKey memory dpk,,, bytes memory dPayload, uint256 dNonce, bytes memory dProbe) =
             codec.exposed_decodeUpgradeAuth(data);
         _assertPkEq(dpk, pk);
         assertEq(dPayload, hex"deadbeef", "migratorPayload");
         assertEq(dNonce, 7, "nonce");
+        assertEq(dProbe, hex"beef", "probePayload");
     }
 
     function test_decodeUpgradeAuth_revertsWhen_tailOffsetOutOfBounds() public {
-        // Head is 0xa0 (five words); word[0] is the `publicKey` tail offset — send it past the end.
+        // Head is 0xc0 (six words); word[0] is the `publicKey` tail offset — send it past the end.
         bytes memory data = bytes.concat(
-            bytes32(uint256(0xa0)), bytes32(0), bytes32(0), bytes32(0), bytes32(0)
+            bytes32(uint256(0xc0)), bytes32(0), bytes32(0), bytes32(0), bytes32(0), bytes32(0)
         );
-        // Reading the pointed-to head word needs 0xa0 + 0x20 = 0xc0 bytes; the slice is 0xa0.
-        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0xc0, 0xa0));
+        // Reading the pointed-to head word needs 0xc0 + 0x20 = 0xe0 bytes; the slice is 0xc0.
+        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0xe0, 0xc0));
         codec.exposed_decodeUpgradeAuth(data);
     }
 
@@ -119,6 +133,24 @@ contract ShrincsWalletCodec_boundsCheck is ShrincsWalletCodecTest {
         // Diagnostic `expected` = off + 0x20 + length wraps mod 2^256 for the max-value length;
         // the revert still carries MalformedPayload with the real slice length as `actual`.
         vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0xbf, 0xc0));
+        codec.exposed_decodeUpgradeAuth(data);
+    }
+
+    function test_decodeUpgradeAuth_revertsWhen_probePayloadLengthOversized() public {
+        // All offsets in range (len 0x100), migratorPayload length 0 (its length word is the
+        // final zero word), but the probePayload length word at word[5]'s target is oversized.
+        bytes memory data = bytes.concat(
+            bytes32(uint256(0xe0)), // publicKey offset -> in range
+            bytes32(uint256(0xe0)), // signature offset -> in range
+            bytes32(0),             // shouldMigrate
+            bytes32(uint256(0xe0)), // migratorPayload offset -> zero length word at o+0xe0
+            bytes32(0),             // nonce
+            bytes32(uint256(0xc0)), // probePayload offset -> length word at o+0xc0
+            bytes32(type(uint256).max), // declared probePayload length -> oversized
+            bytes32(0)              // migratorPayload length word (zero)
+        );
+        // Diagnostic `expected` = off + 0x20 + length wraps mod 2^256 for the max-value length.
+        vm.expectRevert(abi.encodeWithSelector(Codec.MalformedPayload.selector, 0xdf, 0x100));
         codec.exposed_decodeUpgradeAuth(data);
     }
 

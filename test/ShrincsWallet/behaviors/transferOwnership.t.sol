@@ -9,6 +9,7 @@ import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for the atomic ownership-handover `transferOwnership`. Access control, input
@@ -75,7 +76,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER);
         assertEq(wallet.owner(), NEW_OWNER, "classical owner handed over");
         assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "fresh bundle installed for the new owner");
-        assertEq(factory.lastOwnerUpdate(address(wallet)), NEW_OWNER, "factory registry synced");
+        assertEq(factory.walletOwner(address(wallet)), NEW_OWNER, "factory registry synced");
         assertEq(wallet.keyVersion(), 1, "epoch bumped");
         // Two signatures consumed (stateful owner-binding + stateless rotation), both bound to
         // the pre-call nonce — nets exactly +2.
@@ -110,5 +111,94 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER);
+    }
+
+    /*──────────────────── spent-tree tracking ────────────────────*/
+
+    /// @dev Full rotation target that recomputes to the installed bundle.
+    function _sameBundleTarget() internal view returns (SHRINCS.RotationTarget memory) {
+        return SHRINCS.RotationTarget({
+            statefulPublicKey: mainPk.statefulPublicKey,
+            publicKeyCommitment: mainPk.publicKeyCommitment,
+            pkSeed: mainPk.pkSeed,
+            hypertreeRoot: mainPk.hypertreeRoot
+        });
+    }
+
+    /// @dev Full rotation target: fresh stateful tree, CURRENT stateless tree carried forward.
+    function _freshStatefulSameStatelessTarget(bytes memory seed)
+        internal
+        view
+        returns (SHRINCS.RotationTarget memory target)
+    {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
+        require(ok, "keygen");
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot);
+        target = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(c),
+            pkSeed: mainPk.pkSeed,
+            hypertreeRoot: mainPk.hypertreeRoot
+        });
+    }
+
+    /// @dev Public-key view of a full rotation target (for the tree-identity helpers).
+    function _bundleOf(SHRINCS.RotationTarget memory t) internal pure returns (SHRINCS.PublicKey memory pk) {
+        pk.statefulPublicKey = t.statefulPublicKey;
+        pk.publicKeyCommitment = t.publicKeyCommitment;
+        pk.pkSeed = t.pkSeed;
+        pk.hypertreeRoot = t.hypertreeRoot;
+    }
+
+    function test_transferOwnership_spendsBothNextTrees() public {
+        (SHRINCS.RotationTarget memory t,) = _makeRotationTarget("transfer-spends");
+        SHRINCS.PublicKey memory next = _bundleOf(t);
+        _assertTreesUnspent(next);
+        bytes32 c = _toBytes32(next.publicKeyCommitment);
+        SPHINCSPlusC.Signature memory recoverySig = _signFullRotation(t, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
+        SHRINCS.Signature memory ownerSig = _ownerBindingSig(NEW_OWNER, c);
+        vm.prank(OWNER);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, t, NEW_OWNER);
+        assertEq(wallet.owner(), NEW_OWNER, "handed over");
+        _assertTreesSpent(next);
+    }
+
+    function test_transferOwnership_revertsWhen_sameBundle() public {
+        SHRINCS.RotationTarget memory same = _sameBundleTarget();
+        SPHINCSPlusC.Signature memory recoverySig = _signFullRotation(same, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
+        SHRINCS.Signature memory ownerSig = _ownerBindingSig(NEW_OWNER, mainCommitment);
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(mainPk.statefulPublicKey))
+        );
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, same, NEW_OWNER);
+    }
+
+    /// @dev Regression (audit): a handover bundle may not reuse the dedicated ERC-1271 key's
+    ///      stateless root — its trees are in the same lifetime registries as the main key's.
+    function test_transferOwnership_revertsWhen_erc1271StatelessRootReused() public {
+        (, SHRINCS.PublicKey memory pk, bool ok) = SHRINCSTestSigner.keygen("transfer-erc1271-root", MAX_SIG);
+        require(ok, "keygen");
+        bytes32 c = SHRINCS.publicKeyCommitmentFromParts(pk.statefulPublicKey, erc1271Pk.pkSeed, erc1271Pk.hypertreeRoot);
+        SHRINCS.RotationTarget memory t = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(c),
+            pkSeed: erc1271Pk.pkSeed,
+            hypertreeRoot: erc1271Pk.hypertreeRoot
+        });
+        SPHINCSPlusC.Signature memory recoverySig = _signFullRotation(t, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
+        SHRINCS.Signature memory ownerSig = _ownerBindingSig(NEW_OWNER, c);
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(erc1271Pk)));
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, t, NEW_OWNER);
+    }
+
+    function test_transferOwnership_revertsWhen_statelessTreeCarriedForward() public {
+        SHRINCS.RotationTarget memory t = _freshStatefulSameStatelessTarget("transfer-carry-stateless");
+        SPHINCSPlusC.Signature memory recoverySig = _signFullRotation(t, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
+        SHRINCS.Signature memory ownerSig = _ownerBindingSig(NEW_OWNER, _toBytes32(t.publicKeyCommitment));
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, t, NEW_OWNER);
     }
 }

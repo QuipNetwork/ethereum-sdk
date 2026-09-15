@@ -24,6 +24,9 @@ export * from "./constants.js";
 export * from "./addresses.js";
 export * as ShrincsCodec from "./shrincsCodec.js";
 
+// Wallet version resolution (operate + upgrade older on-chain generations)
+export * from "./versions/index.js";
+
 // Core SDK classes
 export { ShrincsSigner, ShrincsKeyPair } from "./shrincsSigner.js";
 export type {

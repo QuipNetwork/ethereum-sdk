@@ -77,10 +77,10 @@ ensure_image() {
     || die "Image $IMAGE not found. Run: ./run build"
 }
 
-# forge build + the JS codegen jest depends on (generated ABIs + inlined wasm).
-# src/v1/abi/ and the browser inline.ts are gitignored build outputs that the
+# forge build + the ABI codegen jest depends on.
+# src/v1/abi/ is a gitignored build output that the
 # TS suite imports, so they must exist before any jest run.
-PREPARE_JS='forge build && npm run copy-abi && npm run gen-wasm-inline'
+PREPARE_JS='forge build && npm run copy-abi'
 
 JEST='node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs'
 

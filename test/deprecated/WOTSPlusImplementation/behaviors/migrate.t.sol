@@ -9,13 +9,14 @@ import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus
 import {EnumerableWinternitzAddressSet as Keyset} from "../../../../contracts/deprecated/wots/EnumerableWinternitzAddressSet.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 
-/// @dev Behaviour tests for `migrate(bytes)`. Gated by `_upgradeGuard()` — the
-///      transient-storage flag set by `upgradeToAndCall` around its migrator
-///      delegatecall. Direct calls revert `NotUpgrading`; calls under the flag
-///      clear + reinstall txn/recovery/verification keys and emit `WalletMigrated`.
+/// @dev Behaviour tests for `migrate(bytes)`. Gated by the wallet's OWN ERC-1967 pointer —
+///      during `upgradeToAndCall` the slot still holds the PREVIOUS implementation, so
+///      `installed != _SELF` exactly while another implementation migrates the wallet into
+///      this code. Direct calls revert `NotUpgrading`; mid-upgrade calls clear + reinstall
+///      txn/recovery/verification keys and emit `WalletMigrated`.
 ///
-///      The harness helper `exposed_migrateInUpgradeContext` sets the tstore
-///      flag, invokes `this.migrate(payload)`, and clears the flag — so these
+///      The harness helper `exposed_migrateInUpgradeContext` parks a sentinel in the
+///      ERC-1967 slot and delegatecalls `migrate` on the installed code — so these
 ///      tests exercise migrate in isolation without a full upgrade round-trip.
 contract WOTSPlusImplementation_migrate is WOTSPlusImplementationTest {
     WOTSPlusImplementationHarness public harnessProxy;

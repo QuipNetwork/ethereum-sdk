@@ -27,6 +27,12 @@ contract ShrincsWallet_executeBatch is ShrincsWalletTest {
         target = new BatchTarget();
     }
 
+    function test_setUp() public view override {
+        super.test_setUp();
+        assertTrue(address(target).code.length > 0, "batch target deployed");
+        assertEq(target.sum(), 0, "batch target pristine");
+    }
+
     function _calls() internal view returns (ERC4337.Call[] memory calls) {
         calls = new ERC4337.Call[](2);
         calls[0] = ERC4337.Call({target: address(target), value: 0, data: abi.encodeCall(BatchTarget.add, (3))});
@@ -41,7 +47,7 @@ contract ShrincsWallet_executeBatch is ShrincsWalletTest {
 
     function test_executeBatch_runsAllCallsAndCollectsFee() public {
         uint256 fee = 0.02 ether;
-        factory.setExecuteFee(fee);
+        _setExecuteFee(fee);
         vm.deal(WALLET, fee);
         uint256 factoryBefore = address(factory).balance;
 
@@ -53,7 +59,7 @@ contract ShrincsWallet_executeBatch is ShrincsWalletTest {
     }
 
     function test_executeBatch_revertsWhen_feeExceedsCap() public {
-        factory.setExecuteFee(0.02 ether);
+        _setExecuteFee(0.02 ether);
         vm.deal(WALLET, 1 ether);
 
         vm.prank(ENTRY_POINT);

@@ -261,7 +261,7 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxSignatures: MAX_SIGS,
     });
     expect(erc1271KeyPair.publicKeyCommitment.toLowerCase()).toBe(
-      state.erc1271Commitment.toLowerCase()
+      state.erc1271PublicKeyCommitment.toLowerCase()
     );
 
     const hash =
@@ -921,13 +921,13 @@ describe("Shrincs SDK live-anvil smoke", () => {
       maxSignatures: MAX_SIGS,
     });
     const statefulC = mainKey.publicKeyCommitment;
-    const statelessC = erc1271Key.publicKeyCommitment;
+    const erc1271C = erc1271Key.publicKeyCommitment;
     const victimOwner = DEFAULT_ACCOUNT.address;
-    const victimCommitment = v1Commitment(statefulC, statelessC, victimOwner);
+    const victimCommitment = v1Commitment(statefulC, erc1271C, victimOwner);
 
     const initPayload = encodeInitPayload({
       mainBundle: mainKey.publicKey,
-      erc1271Commitment: statelessC,
+      erc1271Bundle: erc1271Key.publicKey,
     });
 
     // Fixture vets exactly one impl; index 0 is that entry.

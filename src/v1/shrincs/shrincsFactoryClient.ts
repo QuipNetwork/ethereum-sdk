@@ -36,12 +36,19 @@ import {
   CommitmentMismatchError,
   ImplementationDeprecatedError,
   ImplementationNotVettedError,
+  StatefulTreeSpentError,
+  StatelessTreeSpentError,
 } from "./errors.js";
 import { type ContractCallParams, type TxOptions, prepareTx } from "./gas.js";
 import { type CostEstimate, estimateTxCost } from "./estimateCost.js";
 import { withDecodedError } from "./internal/decodeError.js";
 import { assertReceiptSuccess } from "./internal/assertReceiptSuccess.js";
-import { encodeInitPayload } from "./shrincsCodec.js";
+import {
+  encodeInitPayload,
+  statefulTreeId,
+  statelessTreeId,
+} from "./shrincsCodec.js";
+import { type ShrincsPublicKey } from "./types.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
   ShrincsWalletClient,
@@ -55,11 +62,14 @@ import {
 /// it (exactly as it must for the main `derivationIndex`). Either:
 ///   - `{ derivationIndex, maxSignatures? }`: derive it from the SAME `signer`
 ///     under a caller-chosen index (recover later via the same index), or
-///   - `{ commitment }`: supply a precomputed commitment for a fully
-///     independent key (e.g. a different signer or an out-of-band key).
+///   - `{ publicKey }`: supply the FULL public-key bundle of an independent
+///     key (e.g. a different signer or an out-of-band key). A bare commitment
+///     is not enough: the wallet's initialize takes the whole bundle so it can
+///     derive the commitment on-chain and spend the bundle's trees in the
+///     lifetime registries.
 export type Erc1271KeySpec =
   | { derivationIndex: number; maxSignatures?: number }
-  | { commitment: Hex };
+  | { publicKey: ShrincsPublicKey };
 
 export interface ShrincsFactoryClientParams {
   publicClient: PublicClient;
@@ -226,15 +236,15 @@ export class ShrincsFactoryClient {
     const { derivationIndex, erc1271, owner, signer, maxSignatures } = params;
     const keypair = signer.recoverKeyPair(derivationIndex, { maxSignatures });
     const statefulC = keypair.publicKeyCommitment;
-    const statelessC = this.resolveErc1271Commitment(
+    const erc1271C = this.resolveErc1271Bundle(
       signer,
       erc1271,
       maxSignatures
-    );
-    const commitment = v1Commitment(statefulC, statelessC, owner);
+    ).publicKeyCommitment;
+    const commitment = v1Commitment(statefulC, erc1271C, owner);
     const walletAddress = await this.getShrincsWalletAddress(
       statefulC,
-      statelessC,
+      erc1271C,
       owner
     );
     if (walletAddress === zeroAddress) {
@@ -315,27 +325,27 @@ export class ShrincsFactoryClient {
   }
 
   /// The factory-registered wallet address for the V1 identity
-  /// `(statefulC, statelessC, owner)` (`zeroAddress` if none). The mapping is
+  /// `(statefulC, erc1271C, owner)` (`zeroAddress` if none). The mapping is
   /// keyed by `commitment` (CREATE3 salt == commitment).
   async getShrincsWalletAddress(
     statefulC: Hex,
-    statelessC: Hex,
+    erc1271C: Hex,
     owner: Address
   ): Promise<Address> {
-    return this.readWallets(v1Commitment(statefulC, statelessC, owner));
+    return this.readWallets(v1Commitment(statefulC, erc1271C, owner));
   }
 
-  private resolveErc1271Commitment(
+  private resolveErc1271Bundle(
     signer: ShrincsSigner,
     erc1271: Erc1271KeySpec,
     defaultMaxSignatures: number
-  ): Hex {
+  ): ShrincsPublicKey {
     if ("derivationIndex" in erc1271) {
       return signer.recoverKeyPair(erc1271.derivationIndex, {
         maxSignatures: erc1271.maxSignatures ?? defaultMaxSignatures,
-      }).publicKeyCommitment;
+      }).publicKey;
     }
-    return erc1271.commitment;
+    return erc1271.publicKey;
   }
 
   private async readWallets(id: Hex): Promise<Address> {
@@ -350,8 +360,8 @@ export class ShrincsFactoryClient {
   }
 
   /// Everything `createShrincsWallet` and `estimateCreationCost` share: recover
-  /// the main key, resolve the ERC-1271 commitment, compute the V1 commitment
-  /// for `(statefulC, statelessC, owner)`, refuse an already-deployed identity,
+  /// the main key, resolve the ERC-1271 bundle, compute the V1 commitment
+  /// for `(statefulC, erc1271C, owner)`, refuse an already-deployed identity,
   /// and pack the `deploySpecificWalletProxy` call.
   private async buildCreateCall(params: CreateShrincsWalletParams): Promise<{
     commitment: Hex;
@@ -363,17 +373,38 @@ export class ShrincsFactoryClient {
       maxSignatures: params.maxSignatures,
     });
     const statefulC = mainKey.publicKeyCommitment;
-    const statelessC = this.resolveErc1271Commitment(
+    const erc1271Bundle = this.resolveErc1271Bundle(
       params.signer,
       params.erc1271,
       params.maxSignatures
     );
+    const erc1271C = erc1271Bundle.publicKeyCommitment;
+    // Deploy-time mirror of the wallet's install registries: initialize spends
+    // all four trees (main + ERC-1271, stateful + stateless), so a 1271 bundle
+    // sharing a tree with the main bundle reverts on-chain. Same order as the
+    // wallet: the main bundle installs first, so the 1271 install trips.
+    const erc1271StatefulTree = statefulTreeId(erc1271Bundle.statefulPublicKey);
+    if (
+      erc1271StatefulTree === statefulTreeId(mainKey.publicKey.statefulPublicKey)
+    ) {
+      throw new StatefulTreeSpentError(erc1271StatefulTree);
+    }
+    const erc1271StatelessTree = statelessTreeId(
+      erc1271Bundle.pkSeed,
+      erc1271Bundle.hypertreeRoot
+    );
+    if (
+      erc1271StatelessTree ===
+      statelessTreeId(mainKey.publicKey.pkSeed, mainKey.publicKey.hypertreeRoot)
+    ) {
+      throw new StatelessTreeSpentError(erc1271StatelessTree);
+    }
     const owner = this.account;
-    const commitment = v1Commitment(statefulC, statelessC, owner);
+    const commitment = v1Commitment(statefulC, erc1271C, owner);
 
     const existing = await this.getShrincsWalletAddress(
       statefulC,
-      statelessC,
+      erc1271C,
       owner
     );
     if (existing !== zeroAddress) {
@@ -382,7 +413,7 @@ export class ShrincsFactoryClient {
 
     const initPayload = encodeInitPayload({
       mainBundle: mainKey.publicKey,
-      erc1271Commitment: statelessC,
+      erc1271Bundle,
     });
 
     const index = await this.resolveImplementationIndex();

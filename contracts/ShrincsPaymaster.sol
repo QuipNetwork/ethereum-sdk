@@ -141,6 +141,7 @@ contract ShrincsPaymaster is
         // statefulLeavesUsed and the leaf bitmap start empty by default.
         $.shrincsCommitment = commitment;
         $.maxSignatures = decoded.maxSignatures;
+        _safeInstallStatefulKey(publicKey.statefulPublicKey);
 
         emit PaymasterInitialized(owner_);
         emit ShrincsVerifierSet(
@@ -172,16 +173,18 @@ contract ShrincsPaymaster is
             return ("", 1);
         }
 
-        // Fail-closed policy for a malformed sponsorship blob. Two failure
-        // classes are handled differently on purpose:
-        //   - Too short to hold the ABI head: SOFT fail (the `return ("", 1)`
-        //     above). The bundler drops the op without penalising the sender.
-        //   - Long enough to pass that check but carrying an offset that runs
-        //     past the blob: HARD `MalformedPayload` revert from the codec
-        //     inside `_verifyAndAdvance`. Such an offset cannot come from an
-        //     honest operator, and decoding it could read adjacent calldata, so
-        //     reverting to reject the op outright is the intended fail-closed
-        //     behaviour, not a soft rejection.
+        // Never-revert framing policy. A blob too short to hold the ABI head
+        // soft-fails above. A longer blob whose TOP-LEVEL offset runs past the
+        // blob (the codec's `MalformedPayload` revert) or whose NESTED offset
+        // (inside the PublicKey/Signature tails, which the codec does not walk)
+        // runs past calldatasize (Solidity's own calldata bounds check at
+        // `_leafIndex` / `abi.encode(pk, sig)`, a bare revert) is decoded behind
+        // the `sponsorshipEnvelope` self-staticcall inside `_verifyAndAdvance`,
+        // so both map to the same `return ("", 1)` (AA34) + `MalformedPayload`
+        // reason as every other rejection instead of reverting out of
+        // validation (AA33). The sponsorship blob carries no co-signature, so
+        // this path is reachable by anyone; nothing is written either way
+        // (INVARIANTS §19).
         if (!_verifyAndAdvance(userOp)) return ("", 1);
 
         bytes calldata paymasterData = userOp
@@ -254,6 +257,10 @@ contract ShrincsPaymaster is
             nextStatefulKey.publicKeyCommitment.length != 32 ||
             bytes32(nextStatefulKey.publicKeyCommitment[:32]) != nextCommitment
         ) revert CommitmentMismatch();
+
+        // Trees are one-time material for their lifetime: refuse a replacement ever installed
+        // here (the bitmap resets per epoch, so a cycle back would resurrect consumed leaves).
+        _safeInstallStatefulKey(nextStatefulKey.statefulPublicKey);
 
         bytes32 previous = $.shrincsCommitment;
         // keyVersion is monotonic: always bump, never reset. A fresh epoch gives a fresh (empty)
@@ -358,13 +365,26 @@ contract ShrincsPaymaster is
 
         bytes calldata blob = userOp.paymasterAndData[_PAYMASTER_DATA_OFFSET +
             _CUSTOM_SIG_OFFSET:];
-        (
-            SHRINCS.PublicKey calldata pk,
-            SHRINCS.Signature calldata sig
-        ) = Codec.decodeSponsorshipSignature(blob);
+        // Decode + leaf read + re-encode behind a self-staticcall: every framing revert (the
+        // codec's `MalformedPayload` or Solidity's nested calldata bounds check) lands in the
+        // catch and becomes a soft `MalformedPayload` rejection (INVARIANTS §19).
+        uint32 leaf;
+        bytes memory envelope;
+        try this.sponsorshipEnvelope(blob) returns (
+            uint32 decodedLeaf,
+            bytes memory encoded
+        ) {
+            leaf = decodedLeaf;
+            envelope = encoded;
+        } catch {
+            emit PaymasterValidationRejected(
+                userOp.sender,
+                PaymasterValidationFailure.MalformedPayload
+            );
+            return false;
+        }
 
         uint256 epoch = $.keyVersion;
-        uint32 leaf = _leafIndex(sig);
         if (leaf == 0 || leaf > $.maxSignatures) {
             emit PaymasterValidationRejected(
                 userOp.sender,
@@ -395,7 +415,7 @@ contract ShrincsPaymaster is
             IERC7913SignatureVerifier(SHRINCS_VERIFIER).verify(
                 abi.encodePacked(commitment),
                 SHRINCS.statefulActionMessageHash(commitment, ctx),
-                abi.encode(pk, sig)
+                envelope
             )
         returns (bytes4 result) {
             sponsorshipValid =
@@ -479,6 +499,21 @@ contract ShrincsPaymaster is
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @inheritdoc IShrincsPaymaster
+    function sponsorshipEnvelope(
+        bytes calldata blob
+    ) external view returns (uint32 leaf, bytes memory envelope) {
+        if (msg.sender != address(this)) revert SelfCallOnly();
+        (
+            SHRINCS.PublicKey calldata pk,
+            SHRINCS.Signature calldata sig
+        ) = Codec.decodeSponsorshipSignature(blob);
+        // Solidity's calldata accessors bounds-check every nested tail here and revert on an
+        // overrun; the caller's try/catch is the containment.
+        leaf = _leafIndex(sig);
+        envelope = abi.encode(pk, sig);
+    }
+
+    /// @inheritdoc IShrincsPaymaster
     function getShrincsVerifier()
         external
         view
@@ -529,5 +564,27 @@ contract ShrincsPaymaster is
     /// @inheritdoc IShrincsPaymaster
     function getDeposit() external view returns (uint256) {
         return IEntryPointStake(ENTRY_POINT).balanceOf(address(this));
+    }
+
+    /// @dev Tree identity of a stateful public key: keccak256(pkSeed ‖ root); excludes
+    ///      `maxSignatures` — the same tree under a different budget is the same tree.
+    function _statefulTreeId(
+        UXMSS.StatefulPublicKey memory decoded
+    ) internal pure returns (bytes32) {
+        return EfficientHashLib.hash(decoded.pkSeed, decoded.root);
+    }
+
+    /// @dev Installs one stateful key half (68-byte encoding): derives its tree ID and records
+    ///      it in the lifetime registry, reverting `StatefulTreeSpent` if it was ever installed
+    ///      here (a re-installed tree would resurrect its consumed leaves once the bitmap
+    ///      resets).
+    function _safeInstallStatefulKey(bytes calldata statefulPublicKey) internal {
+        (UXMSS.StatefulPublicKey memory decoded, bool ok) = SHRINCS
+            .decodeStatefulPublicKey(statefulPublicKey);
+        if (!ok) revert CommitmentMismatch();
+        bytes32 treeId = _statefulTreeId(decoded);
+        Storage.Layout storage $ = Storage.layout();
+        if ($.spentStatefulTrees[treeId]) revert StatefulTreeSpent(treeId);
+        $.spentStatefulTrees[treeId] = true;
     }
 }

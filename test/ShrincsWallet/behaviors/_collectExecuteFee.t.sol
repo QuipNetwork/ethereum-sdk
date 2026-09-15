@@ -7,11 +7,29 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 /// @dev Behavior tests for the internal `_collectExecuteFee(maxFee)` (via
 ///      `exposed_collectExecuteFee`), which reads the factory's LIVE `executeFee` once, reverts
 ///      `ExecuteFeeExceedsCap` if it exceeds the signer's `maxFee` ceiling, forwards the live fee
-///      to the factory otherwise, and is a no-op when the fee is zero.
+///      to the factory otherwise, and is a no-op when the fee is zero. The suite's setUp installs
+///      a standing non-zero live fee and funds the wallet; tests that need a different live fee
+///      (zero, or above the cap) move it explicitly as their subject.
 contract ShrincsWallet__collectExecuteFee is ShrincsWalletTest {
+    // The standing live fee installed by this suite's setUp.
+    uint256 internal constant EXECUTE_FEE = 0.1 ether;
+    // The wallet's funded balance for fee collection.
+    uint256 internal constant WALLET_BALANCE = 1 ether;
+
+    function setUp() public override {
+        super.setUp();
+        _setExecuteFee(EXECUTE_FEE);
+        vm.deal(WALLET, WALLET_BALANCE);
+    }
+
+    function test_setUp() public view override {
+        super.test_setUp();
+        assertEq(wallet.getExecuteFee(), EXECUTE_FEE, "standing live fee installed");
+        assertEq(WALLET.balance, WALLET_BALANCE, "wallet funded");
+    }
+
     function test_collectExecuteFee_noopWhenZero() public {
-        assertEq(wallet.getExecuteFee(), 0, "default fee is zero");
-        vm.deal(WALLET, 1 ether);
+        _setExecuteFee(0);
         uint256 walletBefore = WALLET.balance;
         uint256 factoryBefore = address(factory).balance;
 
@@ -22,53 +40,50 @@ contract ShrincsWallet__collectExecuteFee is ShrincsWalletTest {
     }
 
     function test_collectExecuteFee_forwardsFeeToFactory() public {
-        uint256 fee = 0.25 ether;
-        factory.setExecuteFee(fee);
-        vm.deal(WALLET, 1 ether);
         uint256 walletBefore = WALLET.balance;
         uint256 factoryBefore = address(factory).balance;
 
-        wallet.exposed_collectExecuteFee(fee);
+        wallet.exposed_collectExecuteFee(EXECUTE_FEE);
 
-        assertEq(walletBefore - WALLET.balance, fee, "wallet debited the fee");
-        assertEq(address(factory).balance - factoryBefore, fee, "factory credited the fee");
+        assertEq(walletBefore - WALLET.balance, EXECUTE_FEE, "wallet debited the fee");
+        assertEq(address(factory).balance - factoryBefore, EXECUTE_FEE, "factory credited the fee");
     }
 
     function test_collectExecuteFee_revertsWhen_insufficientBalance() public {
-        factory.setExecuteFee(1 ether);
-        vm.deal(WALLET, 0.5 ether); // less than the fee
+        vm.deal(WALLET, EXECUTE_FEE - 1); // less than the fee
         vm.expectRevert(); // SafeTransferLib.ETHTransferFailed
-        wallet.exposed_collectExecuteFee(1 ether);
+        wallet.exposed_collectExecuteFee(EXECUTE_FEE);
     }
 
     function test_collectExecuteFee_chargesLiveFeeBelowCap() public {
-        factory.setExecuteFee(0.1 ether);
-        vm.deal(WALLET, 1 ether);
         uint256 factoryBefore = address(factory).balance;
 
-        wallet.exposed_collectExecuteFee(0.5 ether); // headroom above the live fee
+        wallet.exposed_collectExecuteFee(EXECUTE_FEE * 5); // headroom above the live fee
 
-        assertEq(address(factory).balance - factoryBefore, 0.1 ether, "LIVE fee charged, not the ceiling");
+        assertEq(
+            address(factory).balance - factoryBefore,
+            EXECUTE_FEE,
+            "LIVE fee charged, not the ceiling"
+        );
     }
 
     function test_collectExecuteFee_revertsWhen_feeExceedsCap() public {
-        factory.setExecuteFee(0.2 ether);
-        vm.deal(WALLET, 1 ether);
+        _setExecuteFee(EXECUTE_FEE * 2); // live fee moved above the signer's cap
 
         vm.expectRevert(
-            abi.encodeWithSelector(IShrincsWallet.ExecuteFeeExceedsCap.selector, 0.2 ether, 0.1 ether)
+            abi.encodeWithSelector(
+                IShrincsWallet.ExecuteFeeExceedsCap.selector, EXECUTE_FEE * 2, EXECUTE_FEE
+            )
         );
-        wallet.exposed_collectExecuteFee(0.1 ether);
+        wallet.exposed_collectExecuteFee(EXECUTE_FEE);
     }
 
     /// @dev Boundary: live fee exactly equal to the cap passes (`<=`, not `<`).
     function test_collectExecuteFee_liveFeeEqualsCap() public {
-        factory.setExecuteFee(0.1 ether);
-        vm.deal(WALLET, 1 ether);
         uint256 factoryBefore = address(factory).balance;
 
-        wallet.exposed_collectExecuteFee(0.1 ether);
+        wallet.exposed_collectExecuteFee(EXECUTE_FEE);
 
-        assertEq(address(factory).balance - factoryBefore, 0.1 ether, "boundary fee collected");
+        assertEq(address(factory).balance - factoryBefore, EXECUTE_FEE, "boundary fee collected");
     }
 }
