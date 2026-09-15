@@ -13,6 +13,8 @@ bun.lock
 
 # Containerised runner caches (HOME, solc, npm, known_hosts) — see ./run
 /.run
+# GitLab CI caches (HOME, foundry, jest transform cache) — see .gitlab-ci.yml
+/.ci
 
 *.tmp.json
 dist/

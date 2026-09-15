@@ -29,4 +29,9 @@ module.exports = {
   },
   forceExit: true,
   transformIgnorePatterns: ["node_modules/(?!(viem|@viem)/)"],
+  // In-tree so CI can persist it: GitLab only caches paths under the project
+  // dir, and the default (os tmpdir) is lost between jobs, which makes every
+  // job re-transpile the whole suite through ts-jest. Entries are keyed by
+  // file content + config hash, so a stale cache is skipped, never wrong.
+  cacheDirectory: "<rootDir>/.ci/jest",
 };
