@@ -52,10 +52,20 @@ installed under `-beta.2` stays outside the registry, exactly as the
 deploy has no in-place path for the factory proxy and the old check vets the
 new impl fine. Its impl stays at `-beta.1`.
 
-Predicted with `make predict-addresses` (operator `0xc68B…6A26`); fill in the
-per-chain block/tx records below as each broadcast lands.
+Predicted with `make predict-addresses` (operator `0xc68B…6A26`); the per-chain
+block/tx records below are filled in as each broadcast lands.
 
-- **Base Sepolia (84532)**: _pending_
+- **Base Sepolia (84532)**: broadcast 2026-09-15 from commit `54003b1` ("bump
+  salts to V1.0.1-beta.3") with `make deploy-shrincs-base-sepolia`; four txs,
+  all in block 46859253, all succeeded: wallet impl `0x0801ad77…b7c1`
+  (4,430,149 gas), vet `0x3f2aff9a…0be6` (89,061), paymaster impl
+  `0x985d8ae4…eff4` (2,069,797), proxy `upgradeToAndCall` `0x74c20fe0…43ad`
+  (36,192). Post-state: `latestWalletImpl()` is `0xc4E46528…35E7`, the
+  paymaster proxy's ERC-1967 slot reads `0xAd31002F…6Ca4`, and
+  `getShrincsVerifier()` is unchanged by the upgrade (commitment
+  `0x538c6eb0…07bf`, epoch 0, budget 4096, 0 used). Note the hashes in
+  `broadcast/…/84532/run-latest.json` are attached to the wrong `transactions[]`
+  entries (a forge quirk); the on-chain receipts above are authoritative.
 - **OP Sepolia (11155420)**: _pending_
 - **Base mainnet (8453)**: _pending_ (paymaster owner must send the upgrade if
   it is no longer the operator; the script prints the exact call)
