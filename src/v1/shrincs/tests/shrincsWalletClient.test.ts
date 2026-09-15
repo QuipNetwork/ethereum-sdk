@@ -16,15 +16,17 @@ import {
 
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
+  AuthLeafInTargetsError,
+  GasEstimationError,
   OwnerMismatchError,
   ShrincsHdDerivationError,
   ZeroAddressOwnerError,
   StatefulTreeSpentError,
   StatelessTreeSpentError,
-  AuthLeafInTargetsError,
   UnsupportedByWalletVersionError,
 } from "../errors.js";
 import { SHRINCS_WALLET_BETA2_IMPLEMENTATION } from "../addresses.js";
+import { encodeInitPayload } from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
 import { type PackedUserOperation } from "../../userOpCodec.js";
@@ -46,6 +48,9 @@ const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 
 let keypair: ShrincsKeyPair;
 let freshKey: ShrincsKeyPair;
+/// Second never-installed bundle, so a migrate payload can carry a fresh main
+/// AND a fresh, distinct ERC-1271 bundle.
+let freshErc1271Key: ShrincsKeyPair;
 let signer: ShrincsSigner;
 
 // A non-beta.2 implementation address, padded to a full ERC-1967 slot word, so
@@ -60,6 +65,9 @@ beforeAll(async () => {
     maxSignatures: MAX_SIG,
   });
   freshKey = signer.keygenFromSeedHex(seed("shrincs wallet fresh key seed"), {
+    maxSignatures: MAX_SIG,
+  });
+  freshErc1271Key = signer.keygenFromSeedHex(seed("shrincs wallet fresh erc1271 key seed"), {
     maxSignatures: MAX_SIG,
   });
 });
@@ -368,6 +376,8 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
     } catch (e) {
       caught = e;
     }
+    expect(caught).toBeDefined();
+    expect(caught).toBeInstanceOf(GasEstimationError);
     expect(caught).not.toBeInstanceOf(StatefulTreeSpentError);
     expect(caught).not.toBeInstanceOf(StatelessTreeSpentError);
   }
@@ -478,6 +488,81 @@ describe("ShrincsWalletClient spent-tree pre-flights", () => {
     const client = makeWalletClient();
     await passesPreflight(() =>
       client.setErc1271Key({ newErc1271Key: freshKey.publicKey })
+    );
+  });
+
+  it("upgradeToAndCall migrate refuses a 1271 bundle sharing a tree with the payload's main bundle", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.upgradeToAndCall({
+        newImplementation: WRONG_OWNER,
+        shouldMigrate: true,
+        migratorPayload: encodeInitPayload({
+          mainBundle: freshKey.publicKey,
+          erc1271Bundle: freshKey.publicKey,
+        }),
+      })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("upgradeToAndCall migrate refuses re-installing the installed 1271 bundle", async () => {
+    const client = makeWalletClient({
+      getErc1271PublicKeyCommitment: freshKey.publicKeyCommitment,
+    });
+    await expect(
+      client.upgradeToAndCall({
+        newImplementation: WRONG_OWNER,
+        shouldMigrate: true,
+        migratorPayload: encodeInitPayload({
+          mainBundle: freshErc1271Key.publicKey,
+          erc1271Bundle: freshKey.publicKey,
+        }),
+      })
+    ).rejects.toThrow(StatefulTreeSpentError);
+  });
+
+  it("transferOwnership rejection reserves no leaf (the next call still picks leaf 1)", async () => {
+    const client = makeWalletClient();
+    await expect(
+      client.transferOwnership({ nextKey: keypair.publicKey, newOwner: NEW_OWNER })
+    ).rejects.toThrow(StatefulTreeSpentError);
+    // markLeavesUsed's own guard forbids authorizing from inside the target set:
+    // if leaf 1 had been reserved by the rejected handover, the auto-pick would
+    // move to 2 and this would no longer be the in-set collision it asserts.
+    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
+      AuthLeafInTargetsError
+    );
+  });
+
+  it("upgradeToAndCall migrate refuses the installed bundle before reserving a leaf", async () => {
+    const client = makeWalletClient();
+    const migratorPayload = encodeInitPayload({
+      mainBundle: keypair.publicKey,
+      erc1271Bundle: freshKey.publicKey,
+    });
+    await expect(
+      client.upgradeToAndCall({
+        newImplementation: WRONG_OWNER,
+        shouldMigrate: true,
+        migratorPayload,
+      })
+    ).rejects.toThrow(StatefulTreeSpentError);
+    await expect(client.markLeavesUsed({ leaves: [1] }, { leaf: 1 })).rejects.toThrow(
+      AuthLeafInTargetsError
+    );
+  });
+
+  it("upgradeToAndCall migrate lets a fresh-bundle payload through the pre-flight", async () => {
+    const client = makeWalletClient();
+    await passesPreflight(() =>
+      client.upgradeToAndCall({
+        newImplementation: WRONG_OWNER,
+        shouldMigrate: true,
+        migratorPayload: encodeInitPayload({
+          mainBundle: freshKey.publicKey,
+          erc1271Bundle: freshErc1271Key.publicKey,
+        }),
+      })
     );
   });
 });

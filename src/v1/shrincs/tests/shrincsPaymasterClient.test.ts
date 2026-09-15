@@ -13,7 +13,11 @@ import {
 } from "viem";
 
 import { HASH_SUITE_KECCAK_256 } from "../constants.js";
-import { ShrincsHdDerivationError, StatefulTreeSpentError } from "../errors.js";
+import {
+  GasEstimationError,
+  ShrincsHdDerivationError,
+  StatefulTreeSpentError,
+} from "../errors.js";
 import { ShrincsPaymasterClient } from "../shrincsPaymasterClient.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 
@@ -113,6 +117,8 @@ describe("ShrincsPaymasterClient rotateStatefulKey spent-tree pre-flight", () =>
       caught = e;
     }
     // Fails later at the unmocked send layer, never at the pre-flight.
+    expect(caught).toBeDefined();
+    expect(caught).toBeInstanceOf(GasEstimationError);
     expect(caught).not.toBeInstanceOf(StatefulTreeSpentError);
   });
 });

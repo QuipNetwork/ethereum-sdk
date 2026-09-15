@@ -39,8 +39,12 @@ wallet or paymaster — INVARIANTS §25; the same-key rotation that reset the
 leaf bitmap). Storage is ERC-7201 append-only, so **both proxies keep their
 addresses**; `02_DeployShrincs` now (a) deploys the two new impls, (b) vets the
 wallet impl, and (c) `upgradeToAndCall`s the paymaster proxy in place (owner =
-operator on the testnets, no re-init). The `-beta.1` wallet impl stays vetted
-(not deprecated). The WalletFactory
+operator on the testnets, no re-init). The upgrade runs no initializer, so the
+tree those two proxies installed under `-beta.1` stays absent from the new
+registry and the on-chain guard does not bind on it. The "Registry provenance"
+bullet in INVARIANTS §25 gives the scope and the operational mitigations. The
+`-beta.1` wallet
+impl stays vetted (not deprecated). The WalletFactory
 code is unchanged, so its impl stays at `-beta.1`. Base mainnet gets the whole
 generation fresh at these same addresses (done — see the Base mainnet section
 above).
