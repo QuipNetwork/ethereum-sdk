@@ -7,6 +7,7 @@ import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {WalletFactory} from "../../contracts/WalletFactory.sol";
 import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
 /// @title WalletFactory Base Test
@@ -78,7 +79,7 @@ contract WalletFactoryTest is Test {
         pure
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
     {
-        return WOTSPlus.generateKeyPair(seed);
+        return WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     /// @dev Sign a message with a WOTS+ private key
@@ -89,7 +90,7 @@ contract WalletFactoryTest is Test {
         WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
             messageHash: messageHash
         });
-        bytes32[67] memory elements = WOTSPlus.sign(privateKey, message);
+        bytes32[67] memory elements = WOTSPlusTestSigner.sign(privateKey, message);
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 
@@ -103,7 +104,7 @@ contract WalletFactoryTest is Test {
             bytes32 seed = keccak256(
                 abi.encodePacked(privateKey, "recovery", i)
             );
-            (pubkeys[i], ) = WOTSPlus.generateKeyPair(seed);
+            (pubkeys[i], ) = WOTSPlusTestSigner.generateKeyPair(seed);
         }
     }
 
@@ -115,7 +116,7 @@ contract WalletFactoryTest is Test {
         bytes32 seed = keccak256(
             abi.encodePacked(privateKey, "recovery", index)
         );
-        (, bytes32 signingKey) = WOTSPlus.generateKeyPair(seed);
+        (, bytes32 signingKey) = WOTSPlusTestSigner.generateKeyPair(seed);
         return signingKey;
     }
 
@@ -130,7 +131,7 @@ contract WalletFactoryTest is Test {
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
     {
         bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "disaster"));
-        (pubkey, privateKey) = WOTSPlus.generateKeyPair(seed);
+        (pubkey, privateKey) = WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     /// @dev Derive the ownership keypair deterministically from a vault seed.
@@ -144,7 +145,7 @@ contract WalletFactoryTest is Test {
         returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
     {
         bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "ownership"));
-        (pubkey, privateKey) = WOTSPlus.generateKeyPair(seed);
+        (pubkey, privateKey) = WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     /// @dev Generate the 10 initial transaction keys deterministically from a vault seed.
@@ -160,7 +161,7 @@ contract WalletFactoryTest is Test {
     {
         for (uint256 i = 0; i < 10; i++) {
             bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "txn", i));
-            (pubkeys[i], privateKeys[i]) = WOTSPlus.generateKeyPair(seed);
+            (pubkeys[i], privateKeys[i]) = WOTSPlusTestSigner.generateKeyPair(seed);
         }
     }
 
@@ -177,7 +178,7 @@ contract WalletFactoryTest is Test {
     {
         for (uint256 i = 0; i < 10; i++) {
             bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "verify", i));
-            (pubkeys[i], privateKeys[i]) = WOTSPlus.generateKeyPair(seed);
+            (pubkeys[i], privateKeys[i]) = WOTSPlusTestSigner.generateKeyPair(seed);
         }
     }
 
@@ -308,7 +309,7 @@ contract WalletFactoryTest is Test {
                     i
                 )
             );
-            (txnFixed[i], ) = WOTSPlus.generateKeyPair(seed);
+            (txnFixed[i], ) = WOTSPlusTestSigner.generateKeyPair(seed);
         }
         WOTSPlus.WinternitzAddress[10] memory recFixed;
         for (uint256 i = 0; i < 10; i++) {
@@ -324,7 +325,7 @@ contract WalletFactoryTest is Test {
                     i
                 )
             );
-            (verifFixed[i], ) = WOTSPlus.generateKeyPair(seed);
+            (verifFixed[i], ) = WOTSPlusTestSigner.generateKeyPair(seed);
         }
         // Derive a stable disaster recovery key from pqOwner for legacy single-key helper.
         bytes32 disasterSeedBytes = keccak256(
@@ -334,7 +335,7 @@ contract WalletFactoryTest is Test {
                 "disaster-legacy"
             )
         );
-        (WOTSPlus.WinternitzAddress memory disasterKey, ) = WOTSPlus
+        (WOTSPlus.WinternitzAddress memory disasterKey, ) = WOTSPlusTestSigner
             .generateKeyPair(disasterSeedBytes);
         // Likewise derive a stable ownership key from pqOwner for legacy single-key helper.
         bytes32 ownershipSeedBytes = keccak256(
@@ -344,7 +345,7 @@ contract WalletFactoryTest is Test {
                 "ownership-legacy"
             )
         );
-        (WOTSPlus.WinternitzAddress memory ownershipKey, ) = WOTSPlus
+        (WOTSPlus.WinternitzAddress memory ownershipKey, ) = WOTSPlusTestSigner
             .generateKeyPair(ownershipSeedBytes);
         return
             Codec.encodeInit(

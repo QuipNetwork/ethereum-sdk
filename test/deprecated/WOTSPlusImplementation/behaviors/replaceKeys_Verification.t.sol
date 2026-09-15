@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementationHarness, HarnessKeyset} from "../../harness/WOTSPlusImplementationHarness.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
@@ -33,7 +34,7 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
         // Mirror `_encodeInitPayload`'s "verify-fill" derivation so tests can
         // reference the in-set verification keys.
         for (uint256 i = 0; i < 10; i++) {
-            (WOTSPlus.WinternitzAddress memory key,) = WOTSPlus.generateKeyPair(
+            (WOTSPlus.WinternitzAddress memory key,) = WOTSPlusTestSigner.generateKeyPair(
                 keccak256(abi.encodePacked(alicePubkey.publicSeed, alicePubkey.publicKeyHash, "verify-fill", i))
             );
             seededVerifierKeys.push(key);
@@ -161,7 +162,7 @@ contract WOTSPlusImplementation_replaceKeys_Verification is WOTSPlusImplementati
     function _freshKeys(bytes32 seed, uint256 n) internal pure returns (WOTSPlus.WinternitzAddress[] memory out) {
         out = new WOTSPlus.WinternitzAddress[](n);
         for (uint256 i = 0; i < n; i++) {
-            (out[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
+            (out[i],) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 

@@ -6,6 +6,7 @@ import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTS
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementation} from "../../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
@@ -33,18 +34,18 @@ contract WOTSPlusImplementation_initialize is WOTSPlusImplementationTest {
         )
     {
         for (uint256 i = 0; i < 10; i++) {
-            (txn[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(tag, "-txn-", i)));
+            (txn[i],) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encodePacked(tag, "-txn-", i)));
         }
         for (uint256 i = 0; i < 10; i++) {
-            (rec[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(tag, "-rec-", i)));
+            (rec[i],) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encodePacked(tag, "-rec-", i)));
         }
         for (uint256 i = 0; i < 10; i++) {
-            (ver[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(tag, "-ver-", i)));
+            (ver[i],) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encodePacked(tag, "-ver-", i)));
         }
     }
 
     function _key(string memory tag) internal pure returns (WOTSPlus.WinternitzAddress memory pub) {
-        (pub,) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(tag)));
+        (pub,) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encodePacked(tag)));
     }
 
     function test_initialize_setsOwner() public view {

@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementationHarness, HarnessKeyset} from "../../harness/WOTSPlusImplementationHarness.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 
@@ -38,7 +39,7 @@ contract WOTSPlusImplementation_replaceKeys_Transaction is WOTSPlusImplementatio
         harnessTxKeys[0] = alicePubkey;
         for (uint256 i = 1; i < 10; i++) {
             bytes32 seed = keccak256(abi.encodePacked(alicePubkey.publicSeed, alicePubkey.publicKeyHash, "txn-fill", i));
-            (harnessTxKeys[i],) = WOTSPlus.generateKeyPair(seed);
+            (harnessTxKeys[i],) = WOTSPlusTestSigner.generateKeyPair(seed);
         }
     }
 
@@ -175,7 +176,7 @@ contract WOTSPlusImplementation_replaceKeys_Transaction is WOTSPlusImplementatio
     function _freshKeys(bytes32 seed, uint256 n) internal pure returns (WOTSPlus.WinternitzAddress[] memory out) {
         out = new WOTSPlus.WinternitzAddress[](n);
         for (uint256 i = 0; i < n; i++) {
-            (out[i],) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
+            (out[i],) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 

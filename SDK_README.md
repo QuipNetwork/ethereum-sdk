@@ -124,6 +124,31 @@ const pmClient = new ShrincsPaymasterClient({ ...params, vaultId: newVault, keyp
 
 ---
 
+## Deployments (SHRINCS, V1.0.1 generation)
+
+Every SHRINCS address is a sender-guarded CREATE3 value — identical on every chain the operator has deployed to. `getShrincsAddresses(chainId)` / `getNetworkAddresses(chainId)` return that single address set for any chain in the SDK's allowlist (Ethereum, Sepolia, Base, Base Sepolia, Optimism, OP Sepolia, MIDL) and throw `UnsupportedNetworkError` otherwise.
+
+**Allowlisted ≠ live.** The allowlist says the addresses are *derivable* on that chain, not that contracts exist there. The SDK does not probe for code. Before binding a client to a chain, the consumer MUST confirm the deployment is live — e.g. `publicClient.getCode({ address: getNetworkAddresses(chainId).WalletFactory })` is non-empty — or expect opaque reverts from an empty address.
+
+| Chain | Status (2026-08-27) |
+|---|---|
+| Base Sepolia (84532) | live |
+| OP Sepolia (11155420) | live |
+| Base (8453) | not deployed — awaits the V4/V3 verifier pair |
+| Ethereum (1), Sepolia (11155111), Optimism (10), MIDL (777) | not deployed |
+
+| Contract | Address |
+|---|---|
+| WalletFactory proxy | `0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8` |
+| ShrincsWallet implementation | `0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094` |
+| ShrincsPaymaster proxy | `0x430c8c89492E3541e141148Dd7a7D6dD432e5890` |
+| SHRINCS256sKeccak verifier (V4) | `0xF2f9E6D692da41b089c3c261c41509669eEc5567` |
+| EntryPoint v0.7 | `0x0000000071727De22E5E9d8BAf0edAc6f37da032` |
+
+The paymaster's sponsorship key on both testnets has commitment `0x538c6eb0aa2a22531068031057e7baac0b1d5dea46a8473bbe96c0aad4e807bf` (`maxSignatures` 4096, QUIP HD derivation index 0). Its EntryPoint deposit is not yet funded, so sponsored userOps fail with `AA31` until it is. Full salt/derivation records live in `DEPLOYMENTS.md` of the contracts repo. The previous V1.0.0 generation (factory `0xdCD90563…`) is retired; wallets created through it are not reachable from this SDK version.
+
+---
+
 ## Legacy WOTS+ wallets (`/deprecated/v0`)
 
 The WOTS+ wallet family is sunset. SHRINCS is the go-forward family. Existing WOTS+ wallets stay operable through the `@quip.network/ethereum-sdk/deprecated/v0` client (`QuipSigner`, `QuipWalletClient`, and `QuipClient`). This client targets the original QuipFactory and QuipWallet contracts.
@@ -139,6 +164,16 @@ The `deprecated/v0` client targets the original pre-v1 contracts. Its method nam
 ## Versioning
 
 `0.2.x` is a major break from `0.1.x` (see `MIGRATION.md` for the mapping). The SDK tracks the contract surface 1:1; minor releases land alongside contract upgrades that change the public surface.
+
+### Breaking changes in `0.3.0-beta.6`
+
+| Area | Change |
+|---|---|
+| Verifier | Contracts pin the **V4** `SHRINCS256sKeccak` verifier (hashsigs-solidity MR !26): every raw ERC-7913 signature is bound to the full public-key commitment. Signatures produced by earlier SDK versions do not verify. |
+| Wasm boundary | Requires `@quip.network/hashsigs-wasm@0.2.1-rc9`. The wasm exchanges `Uint8Array` ABI envelopes; `types.ts` owns the DTO shapes and `WasmShrincsKeypair` is gone from the public surface. Signing goes through the explicit-leaf entry points; the V4 digest bindings (`statefulRawMessageHash` / `statelessRawMessageHash`) are applied inside `ShrincsKeyPair`, so callers keep signing canonical action hashes. |
+| Key derivation | QUIP HD v1 (hardened SLIP-0010-style chain, see above). The same secret derives a DIFFERENT keypair than `0.3.0-beta.5` and earlier — regenerate any stored public keys / commitments. |
+| Addresses | Full redeploy (V1.0.1 generation, see *Deployments*). Every contract moved, including the WalletFactory proxy, so wallet addresses derive fresh; nothing from the V1.0.0 generation carries over. Live on Base Sepolia and OP Sepolia only. |
+| Hash suites | `HASH_SUITE_SHA2_256 = 2`; `HASH_SUITE_UNSUPPORTED = 0xFFFFFFFF` (V4 sentinel). |
 
 ### Breaking changes in `0.2.0-beta.1`
 

@@ -1,6 +1,67 @@
 # Deployments
 
-## Live — canonical addresses (CreateX-direct, sender-guarded)
+## Live — V1.0.1 generation (Base Sepolia 84532 + OP Sepolia 11155420, deployed 2026-08-27; Base mainnet pending)
+
+A **full redeploy of every contract on every chain**. Three things moved at
+once: `script/Constants.sol` now pins the **V4** `SHRINCS256sKeccak` verifier
+from hashsigs-solidity MR !26 (raw ERC-7913 signatures bound to the full
+public-key commitment; `VERSION_TAG` v4; oak-02…15 audit fixes), which both
+Shrincs implementations bake in as an immutable; the WalletFactory code changed
+since the 2026-08-03 deploy (e3r commitment-bound deploy salts, deploy
+authorization, codehash deprecation); and the V1.0.0 generation below was a
+production-testing deployment, so rather than `upgradeToAndCall` its proxies in
+place, the proxies move too and every wallet address derives fresh from the new
+factory. CREATE3 ignores initcode and `CreateXHelpers` idempotent-skips an
+occupied address, so every V1.0.0 / V1.0.0-beta preimage is retired. Impls
+start at `V1.0.1-beta.1` rather than `-beta` because
+`QUIP:ShrincsPaymaster:Impl:V1.0.1-beta:` was already consumed on the testnets
+(see the retired table) and the suffix is kept uniform across impls.
+
+Proxies carry a plain version (`V1.0.1` — a proxy is just a proxy);
+implementations carry `V1.0.1-beta.1`, bumped npm-style (`-beta.2`, …) on any
+relocation within the generation.
+
+Deployed from commit `2342d9b` on 2026-08-27 on **Base Sepolia (84532)**
+(`01_DeployFactory` block 46041802, `02_DeployShrincs` block 46042001) and
+**OP Sepolia (11155420)** (`01` block 48025406, `02` block 48025453);
+receipts under `broadcast/`. Every address landed exactly where
+`PredictAddresses` said, and the runtime code is byte-identical across the two
+chains except ShrincsWallet's cached EIP-712 immutables (domain separator +
+chain id). On both chains the paymaster proxy was initialized with the
+operator's freshly derived V4/HD verifier key — commitment
+`0x538c6eb0aa2a22531068031057e7baac0b1d5dea46a8473bbe96c0aad4e807bf`,
+`maxSignatures` 4096, derivation index 0; EntryPoint deposit/stake are not
+funded yet. The verifier pair is live on both testnets — `cast code` runtime
+hashes `0xe9319929…` (SHRINCS V4) and `0xe8d1cd07…` (SPHINCSPlusC V3) match
+hashsigs-solidity's `DEPLOYMENTS.md` (OP Sepolia pair deployed 2026-08-27 from
+the hashsigs-solidity checkout at `672cb90`, same operator), and the live
+`VERSION_TAG` / `PROFILE_TAG` read back as v4 / `shrincs-256s-keccak`. Base
+mainnet still needs hashsigs-solidity to deploy `SPHINCSPlusC256sKeccak:V3.0`
+then `SHRINCS256sKeccak:V4.0` first; then `01_DeployFactory` →
+`02_DeployShrincs` land at the same addresses (`02` refuses until the pinned
+verifier hosts the expected `PROFILE_TAG`). Explorer source verification:
+everything verified on OP Sepolia except the ShrincsWallet impl (Etherscan
+rejected the automatic bytecode match — immutables; re-run with
+`forge verify-contract` if needed).
+
+| | Address |
+|---|---|
+| WalletFactory impl (`QUIP:WalletFactory:Impl:V1.0.1-beta.1`) | `0x77622e199DfF602f937fC5E5eB6479aE4b18161F` |
+| **WalletFactory proxy** (`QUIP:WalletFactory:Proxy:V1.0.1`) | `0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8` |
+| ShrincsWallet impl (`…:Impl:V1.0.1-beta.1:` ‖ `PROFILE_ID`) | `0x076bF15aa48bf12a6D9f48b3b0D79875d4E1e094` |
+| ShrincsPaymaster impl (`…:Impl:V1.0.1-beta.1:` ‖ `PROFILE_ID`) | `0xD0C56265b942160bb4470077f65123EE34E0Ee93` |
+| **ShrincsPaymaster proxy** (`QUIP:ShrincsPaymaster:Proxy:V1.0.1`) | `0x430c8c89492E3541e141148Dd7a7D6dD432e5890` |
+| SHRINCS256sKeccak verifier V4.0 (external, pinned) | `0xF2f9E6D692da41b089c3c261c41509669eEc5567` |
+| SPHINCSPlusC256sKeccak V3.0 (its stateless delegate) | `0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864` |
+
+`src/v1/shrincs/addresses.ts`, `src/v1/addresses.json`,
+`src/v1/shrincs/tests/addresses.test.ts` and
+`deployments/bytecode/WalletFactory.sol/0x77622e19….json` describe this generation. The
+dep is pinned to `672cb90`, the head of the open MR (now targeting `main`);
+re-pin if it is rebased before merge. Withdraw the V1.0.0 paymaster's EntryPoint deposit/stake once the
+new one is live.
+
+## Live — V1.0.0 generation (CreateX-direct, sender-guarded) — superseded by the V1.0.1 redeploy above
 
 The go-forward lineage: WalletFactory (UUPS) + SHRINCS family, deployed by
 `script/01_DeployFactory.s.sol` → `script/02_DeployShrincs.s.sol`. Every
@@ -30,12 +91,12 @@ those chains — see *Superseded generation*.
 | | Address |
 |---|---|
 | CANONICAL_OPERATOR | `0xc68B64770Da7914DEb0EF238b048a0Bf3B5f6A26` |
-| WalletFactory impl | `0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f` |
-| **WalletFactory proxy** (permanent factory identity) | `0xdCD90563B912f82D2f23d5c7988B3Fec2da63471` |
-| ShrincsWallet impl | `0x33d3949117c8Bba7A3637C96a564a817E00c5aE0` |
-| ShrincsPaymaster impl | `0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3` |
-| **ShrincsPaymaster proxy** (canonical paymaster) | `0x077C06913777777DfABf951a5A0F8CA665764ac9` |
-| SHRINCS256sKeccak verifier (external, pinned) | `0xE6F2970bA30d59e8288b7007bA755828372457c3` |
+| WalletFactory impl (`V1.0.0-beta`; retired) | `0x738456Bc546b887764bD6C462FDA6d49bBcA0c9f` |
+| **WalletFactory proxy** (`V1.0.0`; retired — wallets derived from it stay with it) | `0xdCD90563B912f82D2f23d5c7988B3Fec2da63471` |
+| ShrincsWallet impl (`V1.0.0-beta`; retired) | `0x33d3949117c8Bba7A3637C96a564a817E00c5aE0` |
+| ShrincsPaymaster impl (`V1.0.0-beta`; retired) | `0x995bDB6768F25822Faafb2c9b6Ad7Cf10CB6EEc3` |
+| **ShrincsPaymaster proxy** (`V1.0.0`; retired) | `0x077C06913777777DfABf951a5A0F8CA665764ac9` |
+| SHRINCS256sKeccak verifier (external; V2 — superseded by the pending V4 pin) | `0xE6F2970bA30d59e8288b7007bA755828372457c3` |
 
 
 > The verifier is deployed by hashsigs-solidity's own CreateX scripts (its
@@ -216,23 +277,34 @@ cryptographic scheme structurally lands at a different address.
 
 **One scheme, two suffixes**, applied uniformly:
 
-- **proxies → `V1.0.0`** — the permanent public identity. A proxy address is
-  meant never to move again; code changes happen *under* it via UUPS.
-- **implementations → `V1.0.0-beta`** — the churning half, replaced whenever the
-  code or the pinned verifier changes.
+- **proxies → `V1.0.1`** — the generation's public identity, plain version (a
+  proxy is just a proxy); code changes happen *under* it via UUPS.
+- **implementations → `V1.0.1-beta.1.N`** — the churning half, replaced whenever
+  the code or the pinned verifier changes; bumped npm-style (`-beta`, `-beta.1`,
+  …) on every relocation within the generation.
 
 Salt strings are **opaque preimages**: only uniqueness matters. `V1.0.0` is not
 "newer than" `V1.0.0-beta` — they name different roles, not an ordering.
 
 | Contract | Salt preimage |
 |---|---|
-| WalletFactory impl (UUPS) | `QUIP:WalletFactory:Impl:V1.0.0-beta` |
-| WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V1.0.0` |
-| ShrincsWallet impl | `QUIP:ShrincsWallet:Impl:V1.0.0-beta:` ‖ `PROFILE_ID` |
-| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.0.0-beta:` ‖ `PROFILE_ID` |
-| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.0.0` |
+| WalletFactory impl (UUPS) | `QUIP:WalletFactory:Impl:V1.0.1-beta.1` |
+| WalletFactory proxy (canonical) | `QUIP:WalletFactory:Proxy:V1.0.1` |
+| ShrincsWallet impl | `QUIP:ShrincsWallet:Impl:V1.0.1-beta.1:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster impl | `QUIP:ShrincsPaymaster:Impl:V1.0.1-beta.1:` ‖ `PROFILE_ID` |
+| ShrincsPaymaster proxy | `QUIP:ShrincsPaymaster:Proxy:V1.0.1` |
 
-Retired and permanently occupied on Base Sepolia / OP Sepolia — **never reuse**:
+Retired and permanently occupied — **never reuse**:
+
+| Contract | Salt preimage | Occupied on |
+|---|---|---|
+| WalletFactory impl (pre-e3r code) | `QUIP:WalletFactory:Impl:V1.0.0-beta` | Base mainnet, Base Sepolia, OP Sepolia |
+| WalletFactory proxy (V1.0.0 generation) | `QUIP:WalletFactory:Proxy:V1.0.0` | Base mainnet, Base Sepolia, OP Sepolia |
+| ShrincsPaymaster proxy (V1.0.0 generation) | `QUIP:ShrincsPaymaster:Proxy:V1.0.0` | Base mainnet |
+| ShrincsWallet impl (V2 verifier) | `QUIP:ShrincsWallet:Impl:V1.0.0-beta:` ‖ `PROFILE_ID` | Base mainnet, Base Sepolia, OP Sepolia |
+| ShrincsPaymaster impl (V2 verifier) | `QUIP:ShrincsPaymaster:Impl:V1.0.0-beta:` ‖ `PROFILE_ID` | Base mainnet |
+
+On Base Sepolia / OP Sepolia only:
 
 | | Retired preimage |
 |---|---|

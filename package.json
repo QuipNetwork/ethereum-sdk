@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.3.0-beta.5",
+  "version": "0.3.0-beta.6",
   "type": "module",
   "files": [
     "dist/**/*.js",
@@ -101,7 +101,7 @@
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@quip.network/hashsigs": "^0.1.0",
-    "@quip.network/hashsigs-wasm": "0.2.0-rc.2",
+    "@quip.network/hashsigs-wasm": "0.2.1-rc9",
     "@scure/bip39": "^1.6.0",
     "viem": "^2.21.0"
   }

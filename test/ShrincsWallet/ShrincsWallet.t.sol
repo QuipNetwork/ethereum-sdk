@@ -42,7 +42,7 @@ contract ShrincsWalletTest is Test {
     // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
     // sibling (`SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER`); the sibling's code must live
     // there or every stateless verification reverts on empty code.
-    address internal constant SPHINCS_SIBLING = 0x97B3726F44e3B7521199CE4e0fC160A32A597d31;
+    address internal constant SPHINCS_SIBLING = 0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864;
 
     ShrincsWalletHarness internal wallet;
     MockShrincsFactory internal factory;
@@ -205,7 +205,12 @@ contract ShrincsWalletTest is Test {
     {
         SHRINCS.ActionContext memory ctx = _actionContext(actionType, payloadHash);
         bytes memory message =
-            abi.encodePacked(SHRINCS.statefulActionMessageHash(wallet.getShrincsPublicKeyCommitment(), ctx));
+            abi.encodePacked(
+                SHRINCS.statefulRawMessageHash(
+                    wallet.getShrincsPublicKeyCommitment(),
+                    SHRINCS.statefulActionMessageHash(wallet.getShrincsPublicKeyCommitment(), ctx)
+                )
+            );
         bool ok;
         (sig, ok) = SHRINCSTestSigner.signStatefulRawAtLeaf(mainKey, SIGN_BASE + leaf, message);
         require(ok, "stateful sign failed");
@@ -227,7 +232,12 @@ contract ShrincsWalletTest is Test {
     function _signErc1271(bytes32 hash) internal returns (SPHINCSPlusC.Signature memory) {
         SHRINCS.ActionContext memory ctx = _actionContext(Codec.ACTION_ERC1271, hash);
         bytes memory message =
-            abi.encodePacked(SHRINCS.statelessActionMessageHash(wallet.getErc1271Commitment(), ctx));
+            abi.encodePacked(
+                SHRINCS.statelessRawMessageHash(
+                    wallet.getErc1271Commitment(),
+                    SHRINCS.statelessActionMessageHash(wallet.getErc1271Commitment(), ctx)
+                )
+            );
         return _signStatelessRaw(erc1271Key, erc1271Pk, message);
     }
 
@@ -239,7 +249,10 @@ contract ShrincsWalletTest is Test {
     {
         SHRINCS.PublicKey memory pk = mainPk;
         bytes memory message = abi.encodePacked(
-            _fullRotationMessageHash(wallet.getShrincsPublicKeyCommitment(), pk, _rotationContext(rotationTag), nextKey)
+            SHRINCS.statelessRawMessageHash(
+                wallet.getShrincsPublicKeyCommitment(),
+                _fullRotationMessageHash(wallet.getShrincsPublicKeyCommitment(), pk, _rotationContext(rotationTag), nextKey)
+            )
         );
         return _signStatelessRaw(mainKey, pk, message);
     }

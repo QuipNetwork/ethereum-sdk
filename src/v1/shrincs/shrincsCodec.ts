@@ -155,6 +155,127 @@ export function publicKeyCommitment(parts: {
 }
 
 /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                 CANONICAL MESSAGE HASHES                    */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+// Mirrors `SHRINCS.sol`'s canonical message-hash constructions verbatim
+// (V4 verifier). Through hashsigs-wasm 0.2.0-rc.2 these lived behind wasm
+// entry points (`shrincsStatefulActionMessageHash` et al.); the current
+// wasm dropped them, and they are plain
+// `keccak256(abi.encodePacked(...))`, so the SDK computes them here. The
+// cross-language agreement is pinned by the digest vectors in
+// tests/shrincsCodec.test.ts.
+
+/// Operation tags domain-separating each signed message family
+/// (`SHRINCS.OP_*`).
+export const OP_VERIFY_STATEFUL = keccakUtf8("shrincs-verify-stateful");
+export const OP_VERIFY_STATELESS = keccakUtf8("shrincs-verify-stateless");
+export const OP_ROTATE_FULL = keccakUtf8("shrincs-rotate-full");
+
+/// `HashSuite.HASH_SUITE_ID` as `abi.encodePacked(uint32)` — 4 bytes BE.
+const HASH_SUITE_ID_BE4: Hex = toHex(HASH_SUITE_KECCAK_256, { size: 4 });
+
+/// `SHRINCS.statefulActionMessageHash`: op tag ‖ suite id ‖ installed-key
+/// commitment ‖ the five ActionContext words.
+export function statefulActionMessageHash(
+  expectedPublicKeyCommitment: Hex,
+  context: ActionContext
+): Hex {
+  return keccak256(
+    concat([
+      OP_VERIFY_STATEFUL,
+      HASH_SUITE_ID_BE4,
+      expectedPublicKeyCommitment,
+      context.domainSeparator,
+      context.nonce,
+      context.keyVersion,
+      context.actionType,
+      context.payloadHash,
+    ])
+  );
+}
+
+/// `SHRINCS.statelessActionMessageHash`: the stateless-path twin of
+/// `statefulActionMessageHash` under its own operation tag.
+export function statelessActionMessageHash(
+  expectedPublicKeyCommitment: Hex,
+  context: ActionContext
+): Hex {
+  return keccak256(
+    concat([
+      OP_VERIFY_STATELESS,
+      HASH_SUITE_ID_BE4,
+      expectedPublicKeyCommitment,
+      context.domainSeparator,
+      context.nonce,
+      context.keyVersion,
+      context.actionType,
+      context.payloadHash,
+    ])
+  );
+}
+
+// The wallet delegates ALL signature verification to the deployed
+// `SHRINCSVerifier` (see ShrincsWallet.sol, EXTERNAL VERIFIER DELEGATION),
+// whose V4 ERC-7913 adapters bind `*RawMessageHash(commitment, hash)` over
+// the caller-supplied hash. Signed digests are therefore the canonical
+// action/rotation hash wrapped once more in the matching raw binding.
+
+/// `SHRINCS.statefulRawMessageHash` — the V4 binding
+/// `SHRINCSVerifier.verify` (stateful) applies to its caller hash.
+export function statefulRawMessageHash(
+  expectedPublicKeyCommitment: Hex,
+  hash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      OP_VERIFY_STATEFUL,
+      HASH_SUITE_ID_BE4,
+      expectedPublicKeyCommitment,
+      hash,
+    ])
+  );
+}
+
+/// `SHRINCS.statelessRawMessageHash` — the V4 binding
+/// `SHRINCSVerifier.verifyStateless` applies to its caller hash.
+export function statelessRawMessageHash(
+  expectedPublicKeyCommitment: Hex,
+  hash: Hex
+): Hex {
+  return keccak256(
+    concat([
+      OP_VERIFY_STATELESS,
+      HASH_SUITE_ID_BE4,
+      expectedPublicKeyCommitment,
+      hash,
+    ])
+  );
+}
+
+/// `SHRINCS.fullRotationMessageHash`: op tag ‖ suite id ‖ installed-key
+/// commitment ‖ rotation context ‖ current and next bundle commitments.
+export function fullRotationMessageHash(
+  expectedPublicKeyCommitment: Hex,
+  currentPublicKey: ShrincsPublicKey,
+  context: RotationContext,
+  nextKey: RotationTarget
+): Hex {
+  return keccak256(
+    concat([
+      OP_ROTATE_FULL,
+      HASH_SUITE_ID_BE4,
+      expectedPublicKeyCommitment,
+      context.domainSeparator,
+      context.nonce,
+      context.keyVersion,
+      currentPublicKey.publicKeyCommitment,
+      nextKey.publicKeyCommitment,
+    ])
+  );
+}
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
 /*                     PAYLOAD HASHES                          */
 /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 

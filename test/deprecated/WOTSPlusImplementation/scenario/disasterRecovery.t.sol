@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 
@@ -164,7 +165,7 @@ contract WOTSPlusImplementation_disasterRecovery is WOTSPlusImplementationTest {
 
     /// @dev Mirrors the per-index derivation used by the setUp loop.
     function _freshRecoveryPriv(uint256 i) internal view returns (bytes32) {
-        (, bytes32 priv) = WOTSPlus.generateKeyPair(keccak256(abi.encodePacked(VAULT_SEED, "fresh-rec", i)));
+        (, bytes32 priv) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encodePacked(VAULT_SEED, "fresh-rec", i)));
         return priv;
     }
 }

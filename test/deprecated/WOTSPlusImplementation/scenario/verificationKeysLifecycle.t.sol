@@ -3,6 +3,7 @@ pragma solidity ^0.8.33;
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 
@@ -50,7 +51,7 @@ contract WOTSPlusImplementation_scenario_verificationKeysLifecycle is WOTSPlusIm
         returns (WOTSPlus.WinternitzAddress[10] memory keys, bytes32[10] memory privs)
     {
         for (uint256 i = 0; i < 10; i++) {
-            (keys[i], privs[i]) = WOTSPlus.generateKeyPair(keccak256(abi.encode(seed, i)));
+            (keys[i], privs[i]) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encode(seed, i)));
         }
     }
 

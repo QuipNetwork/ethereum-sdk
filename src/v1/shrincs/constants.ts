@@ -15,11 +15,14 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-/// On-chain `ShrincsTypes` hash-suite ids (uint32). The library hardcodes
-/// keccak-256 into every canonical message hash; the id is a client-agreement
-/// check carried in install payloads, not a dispatch choice.
+/// On-chain hash-suite ids (uint32). The library hardcodes the suite into
+/// every canonical message hash; the id is a client-agreement check carried
+/// in install payloads, not a dispatch choice. The V4 verifier assigns
+/// keccak = 1 and sha2 = 2, and keeps `SHRINCS.HASH_SUITE_UNSUPPORTED` as a
+/// sentinel that never collides with a real suite id.
 export const HASH_SUITE_KECCAK_256 = 1;
-export const HASH_SUITE_UNSUPPORTED = 2;
+export const HASH_SUITE_SHA2_256 = 2;
+export const HASH_SUITE_UNSUPPORTED = 0xffffffff;
 
 /// WOTS-C chains revealed per stateful signature for the production profile.
 /// (Structural cross-check for decoded signatures.)

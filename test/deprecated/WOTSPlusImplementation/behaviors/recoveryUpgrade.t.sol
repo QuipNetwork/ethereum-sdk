@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementation} from "../../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
 import {Ownable as SoladyOwnable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTSPlusCodec.sol";
@@ -42,7 +43,7 @@ contract WOTSPlusImplementation_recoveryUpgrade is WOTSPlusImplementationTest {
 
     function _replacementKey(uint256 keyIndex) internal pure returns (WOTSPlus.WinternitzAddress memory pub) {
         bytes32 seed = keccak256(abi.encodePacked("recovery-replacement", keyIndex));
-        (pub,) = WOTSPlus.generateKeyPair(seed);
+        (pub,) = WOTSPlusTestSigner.generateKeyPair(seed);
     }
 
     function _buildRecoveryUpgradePayload(
