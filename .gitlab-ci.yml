@@ -1,30 +1,197 @@
-# This file is a template, and might need editing before it works on your project.
-# This is a sample GitLab CI/CD configuration file that should run without any modifications.
-# It demonstrates a basic 3 stage CI/CD pipeline. Instead of real tests or scripts,
-# it uses echo commands to simulate the pipeline execution.
+# ethereum-sdk CI
 #
-# A pipeline is composed of independent jobs that run scripts, grouped into stages.
-# Stages run in sequential order, but jobs within stages run in parallel.
+# Tiers (wall-clock is the constraint — the forge suite is signing-heavy):
+#   check      solhint + oxlint + forge build + tsc + storage-layout gate  (every MR)
+#   test       forge unit suite sharded 5-way, low fuzz budget; jest unit  (every MR)
+#   test-full  invariants, high fuzz, anvil-backed jest, live-RPC forks    (main, schedules;
+#                                                                            manual on MRs)
+#   reflect    GitHub mirror                                               (main only)
 #
-# For more information, see: https://docs.gitlab.com/ee/ci/yaml/#stages
-#
-# You can copy and paste this template into a new `.gitlab-ci.yml` file.
-# You should not add this template to an existing `.gitlab-ci.yml` file by using the `include:` keyword.
-#
-# To contribute improvements to CI/CD templates, please follow the Development guide at:
-# https://docs.gitlab.com/development/cicd/templates/
-# This specific template is located at:
-# https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Getting-Started.gitlab-ci.yml
+# One-time setup on gitlab.com:
+#   1. hashsigs-solidity → Settings → CI/CD → Job token permissions → allow this project,
+#      so `forge soldeer install` can clone the private dep with $CI_JOB_TOKEN.
+#   2. Optional CI variables (masked): API_URL_BASE, API_URL_BASE_SEPOLIA → enables the
+#      fork job in test-full. Without them it is skipped, not failed.
+#   3. Settings → CI/CD → General pipelines → "Auto-cancel redundant pipelines" (uses
+#      `interruptible` below), and a nightly schedule on main for the full tier.
 
-stages: # List of stages for jobs, and their order of execution
+stages:
+  - check
+  - test
+  - test-full
   - reflect
 
-variables: # Variables that can be referenced
-  COMMIT_USER_EMAIL: "colton@postquant.xyz"
-  GITHUB_TOKEN: $GITHUB_PAT
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_COMMIT_TAG
+
+variables:
+  FOUNDRY_VERSION: "1.8.1"           # match the local toolchain (forge --version)
+  # Everything cacheable lives under the project dir (GitLab only caches in-tree paths):
+  # foundry binaries, ~/.svm solc downloads, ~/.npm.
+  CI_HOME: $CI_PROJECT_DIR/.ci/home
+  FOUNDRY_DIR: $CI_PROJECT_DIR/.ci/foundry
+  # Fast-tier fuzz budget; test-full overrides.
+  FOUNDRY_FUZZ_RUNS: "64"
+  # Live-RPC trees excluded from every hermetic run (see ./run).
+  FORGE_FORK_GLOB: "test/{integration,fork}/**"
+  GIT_DEPTH: "1"
+
+default:
+  image: node:20-bookworm
+  interruptible: true
+  retry:
+    max: 1
+    when: [runner_system_failure, stuck_or_timeout_failure]
+  cache:
+    - key:
+        files: [soldeer.lock, package-lock.json]
+        prefix: deps
+      paths: [.ci/, dependencies/, node_modules/]
+    - key: build-$CI_COMMIT_REF_SLUG
+      fallback_keys: [build-$CI_DEFAULT_BRANCH]
+      paths: [out/, cache/]
+  before_script:
+    - export HOME="$CI_HOME" && mkdir -p "$HOME"
+    - export PATH="$FOUNDRY_DIR/bin:$PATH"
+    - |
+      if ! forge --version 2>/dev/null | grep -q "$FOUNDRY_VERSION"; then
+        curl -fsSL https://foundry.paradigm.xyz | bash
+        foundryup --install "$FOUNDRY_VERSION"
+      fi
+    - forge --version
+    # Private soldeer dep is pinned as git@gitlab.com:… — rewrite to a job-token HTTPS clone.
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/".insteadOf "git@gitlab.com:"
+    - forge soldeer install
+
+.node:
+  before_script:
+    - !reference [default, before_script]
+    - npm ci --no-audit --no-fund
+
+.rules-fast:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+.rules-full:
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: true            # manual-on-MR must not block the merge button
+
+# ── check ─────────────────────────────────────────────────────────
+
+build:
+  stage: check
+  extends: [.node, .rules-fast]
+  script:
+    - apt-get update -qq && apt-get install -y -qq jq >/dev/null
+    - forge build
+    - npm run copy-abi
+    - npm run typecheck
+    - make storage-layout-check
+
+lint:
+  stage: check
+  extends: [.node, .rules-fast]
+  cache:
+    - key:
+        files: [soldeer.lock, package-lock.json]
+        prefix: deps
+      paths: [.ci/, dependencies/, node_modules/]
+      policy: pull
+  script:
+    - npm run lint:sol
+    - npm run lint
+
+# ── test (fast tier) ──────────────────────────────────────────────
+# Sharded so wall-clock ≈ slowest shard. Excludes invariants and live-RPC trees.
+
+.forge-shards:
+  parallel:
+    matrix:
+      - SHARD: "test/ShrincsWallet/**"
+      - SHARD: "test/ShrincsPaymaster/**"
+      - SHARD: "test/WalletFactory/**"
+      - SHARD: "test/{ShrincsWalletCodec,script}/**"
+      - SHARD: "test/deprecated/**"
+  script:
+    - forge test --match-path "$SHARD" --no-match-path "$FORGE_FORK_GLOB" --no-match-contract Invariant
+
+test:forge:
+  stage: test
+  extends: [.forge-shards, .rules-fast]
+  needs: [build]
+  timeout: 2h
+
+test:jest-unit:
+  stage: test
+  extends: [.node, .rules-fast]
+  needs: [build]
+  timeout: 1h
+  script:
+    - forge build && npm run copy-abi
+    - npm run test:unit
+
+# ── test-full ─────────────────────────────────────────────────────
+
+test-full:forge-fuzz:
+  stage: test-full
+  extends: [.forge-shards, .rules-full]
+  needs: [build]
+  timeout: 4h
+  variables:
+    FOUNDRY_FUZZ_RUNS: "1024"
+
+test-full:forge-invariant:
+  stage: test-full
+  extends: .rules-full
+  needs: [build]
+  timeout: 4h
+  variables:
+    FOUNDRY_INVARIANT_RUNS: "256"
+    FOUNDRY_INVARIANT_DEPTH: "500"
+  script:
+    - forge test --match-contract Invariant
+
+test-full:forge-fork:
+  stage: test-full
+  extends: .rules-full
+  needs: [build]
+  timeout: 2h
+  rules:
+    - if: $API_URL_BASE == null || $API_URL_BASE_SEPOLIA == null
+      when: never
+    - !reference [.rules-full, rules]
+  script:
+    - forge test --match-path "$FORGE_FORK_GLOB"
+
+test-full:jest-integration:
+  stage: test-full
+  extends: [.node, .rules-full]
+  needs: [build]
+  timeout: 2h
+  script:
+    - forge build && npm run copy-abi
+    # anvil-backed; the *.fork test needs FORK_RPC_URL and is left to smoke:fork.
+    - node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs
+        --testPathPattern integration --testPathIgnorePatterns /node_modules/ fork
+
+# ── reflect ───────────────────────────────────────────────────────
 
 github-push:
   stage: reflect
+  cache: []
+  before_script: []
+  variables:
+    GITHUB_TOKEN: $GITHUB_PAT
   script:
     - git config user.email ci@postquant.xyz
     - git config user.name "postquant-ci"
