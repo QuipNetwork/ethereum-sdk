@@ -95,6 +95,17 @@ interface IShrincsWallet is IWallet {
     /// @notice Thrown when the classical `transferOwnership(address)` is called directly.
     /// @dev Only the SHRINCS-authenticated `transferOwnership(bytes)` path is permitted.
     error ClassicalTransferOwnershipDisabled();
+    /// @notice Thrown when the incoming classical owner's acceptance signature over
+    ///         `quipSignedHashEcdsaTarget(transferOwnershipPayloadHash(newOwner, nextCommitment))`
+    ///         does not verify for `newOwner` (ECDSA, or ERC-1271 for a contract owner). A
+    ///         mistyped `newOwner` cannot produce it, so the handover reverts instead of
+    ///         stranding the wallet.
+    error InvalidOwnerAcceptance();
+    /// @notice Thrown when the incoming key bundle's stateful acceptance signature does not
+    ///         verify against `nextCommitment`, or names a leaf outside
+    ///         `[1, nextKey.maxSignatures]`. A bundle its holder cannot sign with cannot be
+    ///         installed.
+    error InvalidKeyAcceptance();
     /// @notice Thrown when a self-call-only helper (`userOpEnvelope`, `erc1271Envelope`) is
     ///         called by anyone other than the wallet itself.
     error SelfCallOnly();
@@ -306,23 +317,38 @@ interface IShrincsWallet is IWallet {
     /// @notice Atomic full ownership handover to a new party. Installs an entirely FRESH key
     ///         bundle (new stateless recovery root) for the new owner AND sets the new classical
     ///         owner in one action, so the prior owner retains neither spend nor break-glass
-    ///         authority. Requires BOTH: the current STATELESS recovery signature authorizing the
-    ///         fresh bundle, and the current STATEFUL signature cross-binding `newOwner` to that
-    ///         bundle (so the two cannot be mixed across attempts). Consumes one stateful leaf and
-    ///         one stateless-budget unit; bumps the key epoch and notifies the factory registry.
-    ///         Both trees of `nextKey` must be fresh and are recorded as spent (reverts
-    ///         `StatefulTreeSpent` / `StatelessTreeSpent`).
+    ///         authority. Requires BOTH current-owner signatures: the STATELESS recovery signature
+    ///         authorizing the fresh bundle, and the STATEFUL signature cross-binding `newOwner`
+    ///         to that bundle (so the two cannot be mixed across attempts) — AND both halves of
+    ///         the incoming party's acceptance: `newOwner`'s classical signature and a stateful
+    ///         signature from `nextKey` itself, each over `(newOwner, nextKey.commitment)`. The
+    ///         acceptance proves the recipient controls both keys it will operate the wallet
+    ///         with; without it a mistyped `newOwner` or an unusable bundle would strand the
+    ///         wallet with every path — recovery included — gated behind a party that does not
+    ///         exist. Consumes one stateful leaf and one stateless-budget unit from the current
+    ///         key, plus the acceptance leaf of the incoming key (recorded used in the new epoch);
+    ///         bumps the key epoch and notifies the factory registry. Both trees of `nextKey` must
+    ///         be fresh and are recorded as spent (reverts `StatefulTreeSpent` /
+    ///         `StatelessTreeSpent`).
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param ownerBindingSignature Stateful signature over `(newOwner, nextKey.commitment)`.
     /// @param recoverySignature Stateless recovery signature authorizing the fresh bundle.
     /// @param nextKey The new owner's replacement full key bundle.
     /// @param newOwner The incoming classical owner (ERC-1271 ECDSA gate + factory registry).
+    /// @param keyAcceptance Stateful signature by `nextKey` under `ACTION_TRANSFER_OWNERSHIP`
+    ///        over `(newOwner, nextKey.commitment)` at nonce 0 / epoch 0, verified against
+    ///        `nextKey.commitment` (not the installed one). Its leaf is spent in the new epoch.
+    /// @param ownerAcceptance `newOwner`'s signature over
+    ///        `quipSignedHashEcdsaTarget(transferOwnershipPayloadHash(newOwner,
+    ///        nextKey.commitment))` (ECDSA for an EOA; ERC-1271 for a contract).
     function transferOwnership(
         SHRINCS.PublicKey calldata currentPublicKey,
         SHRINCS.Signature calldata ownerBindingSignature,
         SPHINCSPlusC.Signature calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey,
-        address newOwner
+        address newOwner,
+        SHRINCS.Signature calldata keyAcceptance,
+        bytes calldata ownerAcceptance
     ) external payable;
 
     /// @notice (Re)installs the dedicated ERC-1271 stateless verifier key, authorized by a
@@ -437,7 +463,12 @@ interface IShrincsWallet is IWallet {
         bytes calldata signature
     ) external view returns (Erc1271ValidationResult);
 
-    /// @notice The EIP-712 typed-data target the ERC-1271 ECDSA half must sign.
+    /// @notice The EIP-712 typed-data target the ERC-1271 ECDSA half must sign. Also the
+    ///         target the INCOMING owner signs to accept a `transferOwnership` handover, with
+    ///         `hash = transferOwnershipPayloadHash(newOwner, nextCommitment)`: the wallet
+    ///         (verifying contract) and chain id ride in the domain, and the commitment can be
+    ///         installed here at most once, so the acceptance authorizes exactly one install and
+    ///         cannot go stale while the current owner keeps transacting.
     function quipSignedHashEcdsaTarget(
         bytes32 hash
     ) external view returns (bytes32);

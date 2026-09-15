@@ -336,6 +336,14 @@ contract ShrincsPaymaster is
         IEntryPointStake(ENTRY_POINT).withdrawStake(to);
     }
 
+    /// @notice Disabled; always reverts with `RenounceDisabled` (INVARIANTS §12, same override as
+    ///         `WalletFactory` and `ShrincsWallet`). The paymaster must always have an owner:
+    ///         it is the sole holder of key rotation, leaf revocation, deposit/stake withdrawal
+    ///         and upgrade authority.
+    function renounceOwnership() public payable override(Ownable) onlyOwner {
+        revert RenounceDisabled();
+    }
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                  INTERNAL FUNCTIONS                    */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/

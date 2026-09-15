@@ -24,6 +24,7 @@ import {SafeTransferLib} from "solady-0.1.26/src/utils/SafeTransferLib.sol";
 import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {ECDSA} from "solady-0.1.26/src/utils/ECDSA.sol";
+import {SignatureCheckerLib} from "solady-0.1.26/src/utils/SignatureCheckerLib.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
@@ -558,7 +559,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         SHRINCS.Signature calldata ownerBindingSignature,
         SPHINCSPlusC.Signature calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey,
-        address newOwner
+        address newOwner,
+        SHRINCS.Signature calldata keyAcceptance,
+        bytes calldata ownerAcceptance
     ) external payable onlyOwner {
         if (newOwner == address(0)) revert ZeroAddressOwner();
 
@@ -600,6 +603,17 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (UXMSS.StatefulPublicKey memory decoded, ) = SHRINCS
             .decodeStatefulPublicKey(nextKey.statefulPublicKey);
 
+        // The INCOMING party proves control of both halves it will operate the wallet with,
+        // after the current owner's authority is established and before any registry write.
+        uint32 acceptLeaf = _verifyOwnershipAcceptance(
+            nextKey,
+            nextCommitment,
+            newOwner,
+            decoded.maxSignatures,
+            keyAcceptance,
+            ownerAcceptance
+        );
+
         // A stateless signature was spent: both replacement key halves must be fresh.
         _safeInstallStatefulKey(nextKey.statefulPublicKey);
         _safeInstallStatelessKey(nextKey.pkSeed, nextKey.hypertreeRoot);
@@ -612,8 +626,12 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             $.nonce += 1;
             $.keyVersion += 1;
         }
-        // New epoch ⇒ fresh (empty) leaf bitmap namespace; reset the per-epoch used counter.
-        $.statefulLeavesUsed = 0;
+        // New epoch ⇒ fresh leaf bitmap namespace, opened with exactly the acceptance leaf
+        // consumed: the incoming key's one-time leaf signed a public message and must never
+        // sign a second one.
+        _markStatefulLeafUsed($, $.keyVersion, acceptLeaf);
+        $.statefulLeavesUsed = 1;
+        emit StatefulSignatureVerified(acceptLeaf, $.keyVersion);
         _setOwner(newOwner);
         // Tail callback; factory pins the predicate `owner() == newOwner`.
         IWalletFactory(FACTORY).updateWalletOwner(newOwner);
@@ -1351,6 +1369,72 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         ) return bytes32(0);
 
         return computedNext;
+    }
+
+    /// @dev The incoming party's half of a `transferOwnership`: a hybrid proof, mirroring the
+    ///      wallet's own PQ-AND-ECDSA gate, that whoever receives the wallet controls BOTH keys
+    ///      it will be operated with. 
+    ///
+    ///      Neither half binds the live nonce or epoch. `nextCommitment` can be installed on
+    ///      this wallet at most once (lifetime tree registries) and both halves bind it together
+    ///      with `newOwner`, so an acceptance authorizes exactly one install of exactly this
+    ///      bundle for exactly this owner on this wallet/chain — and stays valid however many
+    ///      actions the current owner consumes between the recipient signing and the broadcast.
+    ///      The stateful half's context therefore carries nonce 0 / epoch 0 under the wallet's
+    ///      domain, with the same `ACTION_TRANSFER_OWNERSHIP` tag and payload as the current
+    ///      owner's binding signature: the two messages are distinct because each is bound to
+    ///      its own commitment (installed vs. incoming), and no live action of the incoming key
+    ///      can ever carry nonce 0 / epoch 0 once it is installed.
+    ///
+    function _verifyOwnershipAcceptance(
+        SHRINCS.RotationTarget calldata nextKey,
+        bytes32 nextCommitment,
+        address newOwner,
+        uint32 nextMaxSignatures,
+        SHRINCS.Signature calldata keyAcceptance,
+        bytes calldata ownerAcceptance
+    ) internal view returns (uint32 leaf) {
+        // Classical half: ECDSA for an EOA, ERC-1271 for a contract recipient, over the wallet's
+        // `QuipSignedHash` target of the handover payload. That target is also the ERC-1271
+        // message surface, but only this wallet's OWNER ever signs it for this wallet, and the
+        // recipient is not the owner until this call lands — so nothing harvestable elsewhere
+        // can double as an acceptance.
+        bytes32 payloadHash = Codec.transferOwnershipPayloadHash(
+            newOwner,
+            nextCommitment
+        );
+        if (
+            !SignatureCheckerLib.isValidSignatureNowCalldata(
+                newOwner,
+                quipSignedHashEcdsaTarget(payloadHash),
+                ownerAcceptance
+            )
+        ) revert InvalidOwnerAcceptance();
+
+        // PQ half: a stateful signature from the INCOMING bundle, verified against ITS
+        // commitment (not the installed one).
+        leaf = _leafIndex(keyAcceptance);
+        if (leaf == 0 || leaf > nextMaxSignatures) revert InvalidKeyAcceptance();
+        SHRINCS.PublicKey memory nextPk = SHRINCS.PublicKey({
+            statefulPublicKey: nextKey.statefulPublicKey,
+            publicKeyCommitment: nextKey.publicKeyCommitment,
+            pkSeed: nextKey.pkSeed,
+            hypertreeRoot: nextKey.hypertreeRoot
+        });
+        SHRINCS.ActionContext memory ctx = Codec.buildActionContext(
+            _shrincsDomainSeparator(),
+            0,
+            0,
+            Codec.ACTION_TRANSFER_OWNERSHIP,
+            payloadHash
+        );
+        if (
+            !_tryVerifyStateful(
+                nextCommitment,
+                SHRINCS.statefulActionMessageHash(nextCommitment, ctx),
+                abi.encode(nextPk, keyAcceptance)
+            )
+        ) revert InvalidKeyAcceptance();
     }
 
     /// @dev Returns whether stateful `leafIndex` has been consumed in the given key epoch.

@@ -42,6 +42,11 @@ interface IShrincsPaymaster is IPaymaster {
     /// @notice Thrown when the self-call-only helper (`sponsorshipEnvelope`) is called by anyone
     ///         other than the paymaster itself.
     error SelfCallOnly();
+    /// @notice Thrown when `renounceOwnership` is called (always reverts).
+    /// @dev Every admin path (key rotation, leaf revocation, deposit/stake withdrawal, upgrades)
+    ///      is owner-gated with no alternate access, so a renounced paymaster would sponsor under
+    ///      a frozen key forever and strand its EntryPoint deposit and stake (INVARIANTS §12).
+    error RenounceDisabled();
     /// @notice Thrown when registering a verifier key with a zero `maxSignatures` budget, which can
     ///         never authorize a stateful signature.
     error ZeroMaxSignatures();

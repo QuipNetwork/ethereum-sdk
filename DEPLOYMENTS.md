@@ -621,7 +621,10 @@ SHRINCS_VERIFIER_PUBLIC_KEY=0x...              # 02_DeployShrincs — abi-encode
                                                # SHRINCS.PublicKey bundle from
                                                # gen-shrincs-paymaster-verifier.mjs;
                                                # initialize derives the commitment
-                                               # + leaf budget from it on-chain
+                                               # + leaf budget from it on-chain.
+                                               # ONE bundle per chain (HD network
+                                               # level = chain id, index = epoch);
+                                               # never reuse across chains.
 
 # Sunset WOTS+ family only
 DEPLOYER_ADDRESS=0xA1A3990Ea898123e4B107D0A2f614232bE428Ef1

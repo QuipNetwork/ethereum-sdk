@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { keccak_256 } from "@noble/hashes/sha3";
-import { type Hex, concat, encodeAbiParameters, hexToBytes, toHex } from "viem";
+import { type Address, type Hex, concat, encodeAbiParameters, hexToBytes, toHex } from "viem";
 
 import {
   abiTuples,
@@ -26,6 +26,7 @@ import {
   statefulRawMessageHash,
   statelessActionMessageHash,
   statelessRawMessageHash,
+  buildOwnershipAcceptanceContext,
 } from "./shrincsCodec.js";
 import { ShrincsKeyDerivationSelfTestError } from "./errors.js";
 import { deriveQuipSeed, mnemonicToSeed, type QuipHdPathOptions } from "./hd.js";
@@ -77,6 +78,13 @@ export interface DeriveKeyPairParams {
   statefulIndex: number;
   statelessIndex: number;
   maxSignatures: number;
+  /// HD path levels for the stateful half, merged over the signer's own path
+  /// options. Lets a graft span two `network` levels — e.g. a paymaster whose
+  /// stateless half was derived under the default network and whose stateful
+  /// half is chain-scoped (`{ network: chainId }`) after a rotation.
+  statefulPath?: QuipHdPathOptions;
+  /// HD path levels for the stateless half; see `statefulPath`.
+  statelessPath?: QuipHdPathOptions;
 }
 
 /// One derived key half at the wasm boundary: the 264-byte flat signing key
@@ -235,6 +243,28 @@ export class ShrincsKeyPair {
     return this.signStatelessRaw(message);
   }
 
+  /// Sign the RECIPIENT's stateful half of a `transferOwnership` acceptance
+  /// with THIS (incoming) bundle: `ACTION_TRANSFER_OWNERSHIP` over
+  /// `(newOwner, thisCommitment)` at nonce 0 / keyVersion 0, bound to this
+  /// bundle's own commitment (see `buildOwnershipAcceptanceContext`). The
+  /// wallet records `leaf` as used in the new epoch when the handover lands,
+  /// so this bundle's first operational signature must use a different leaf
+  /// — and a bundle accepts exactly ONE handover: signing a second acceptance
+  /// (another wallet, another owner) at the same leaf is a one-time-signature
+  /// reuse. Keygen a fresh bundle per handover.
+  signOwnershipAcceptance(
+    domainSeparator: Hex,
+    newOwner: Address,
+    leaf: number = 1
+  ): StatefulSignature {
+    const ctx = buildOwnershipAcceptanceContext({
+      domainSeparator,
+      newOwner,
+      nextCommitment: this.publicKeyCommitment,
+    });
+    return this.signStatefulActionAt(ctx, leaf);
+  }
+
   // ── canonical message hashes (no signing) ──────────────────────────────────
 
   statefulActionMessageHash(context: ActionContext): Hex {
@@ -283,18 +313,18 @@ export class ShrincsKeyPair {
   // ── verification helpers (self-test / debugging) ───────────────────────────
 
   verifyStatefulRaw(messageHex: Hex, signature: StatefulSignature): boolean {
-    // The wasm raw verify takes the composite `PublicKey ‖ Signature`
-    // envelope and pins the commitment against the carried key. Re-encode
-    // through the codec tuples — byte-identical to the wasm's own encoding.
-    const envelope = encodeAbiParameters(
-      [abiTuples.publicKey, abiTuples.statefulSignature],
-      [this.publicKey, signature]
-    );
-    return this.wasm.shrincsVerifyStatefulRaw(
-      hexToBytes(envelope),
-      hexToBytes(messageHex),
-      hexToBytes(this.publicKeyCommitment)
-    );
+    return verifyStatefulEnvelope(this.wasm, this.publicKey, messageHex, signature);
+  }
+
+  /// Verify a raw stateful signature by ANY bundle (not necessarily this one)
+  /// — e.g. the incoming bundle's `transferOwnership` acceptance, checked by
+  /// the current owner before spending their own signatures on the handover.
+  verifyStatefulEnvelope(
+    publicKey: ShrincsPublicKey,
+    messageHex: Hex,
+    signature: StatefulSignature
+  ): boolean {
+    return verifyStatefulEnvelope(this.wasm, publicKey, messageHex, signature);
   }
 
   verifyStatelessAction(
@@ -317,6 +347,27 @@ export class ShrincsKeyPair {
       hexToBytes(concat([this.publicKey.pkSeed, this.publicKey.hypertreeRoot]))
     );
   }
+}
+
+/// Raw stateful verification through the wasm: the composite
+/// `PublicKey ‖ Signature` envelope, re-encoded through the codec tuples
+/// (byte-identical to the wasm's own encoding), pinned against the bundle's
+/// commitment exactly as the deployed ERC-7913 verifier pins it.
+function verifyStatefulEnvelope(
+  wasm: ShrincsWasmModule,
+  publicKey: ShrincsPublicKey,
+  messageHex: Hex,
+  signature: StatefulSignature
+): boolean {
+  const envelope = encodeAbiParameters(
+    [abiTuples.publicKey, abiTuples.statefulSignature],
+    [publicKey, signature]
+  );
+  return wasm.shrincsVerifyStatefulRaw(
+    hexToBytes(envelope),
+    hexToBytes(messageHex),
+    hexToBytes(publicKey.publicKeyCommitment)
+  );
 }
 
 /// In-memory SHRINCS signer keyed off a single master seed (the seed-phrase
@@ -380,8 +431,13 @@ export class ShrincsSigner {
 
   /// Deterministic per-index keygen seed: the QUIP HD leaf at
   /// m/20814'/algorithm'/network'/account'/derivationIndex'.
-  deriveSeedHex(derivationIndex: number): Hex {
-    return deriveQuipSeed(this.masterSeed, derivationIndex, this.pathOptions);
+  /// `pathOverride` replaces individual levels of the signer's path options for
+  /// this derivation only (e.g. `{ network: chainId }` for a chain-scoped key).
+  deriveSeedHex(derivationIndex: number, pathOverride?: QuipHdPathOptions): Hex {
+    return deriveQuipSeed(this.masterSeed, derivationIndex, {
+      ...this.pathOptions,
+      ...pathOverride,
+    });
   }
 
   /// Recover (re-derive) the keypair for a derivation index. The canonical path:
@@ -395,17 +451,19 @@ export class ShrincsSigner {
   }
 
   deriveKeyPair(params: DeriveKeyPairParams): ShrincsKeyPair {
-    const stateful = this.keyMaterial(
-      this.deriveSeedHex(params.statefulIndex),
-      params.maxSignatures
+    const statefulSeed = this.deriveSeedHex(
+      params.statefulIndex,
+      params.statefulPath
     );
+    const statelessSeed = this.deriveSeedHex(
+      params.statelessIndex,
+      params.statelessPath
+    );
+    const stateful = this.keyMaterial(statefulSeed, params.maxSignatures);
     const stateless =
-      params.statelessIndex === params.statefulIndex
+      statelessSeed === statefulSeed
         ? stateful
-        : this.keyMaterial(
-            this.deriveSeedHex(params.statelessIndex),
-            params.maxSignatures
-          );
+        : this.keyMaterial(statelessSeed, params.maxSignatures);
     const pair = new ShrincsKeyPair(this.wasm, stateful, stateless);
     this.runSelfTest(pair);
     return pair;

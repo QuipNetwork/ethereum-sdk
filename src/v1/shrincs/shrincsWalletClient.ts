@@ -25,6 +25,7 @@ import {
   bytesToHex,
   encodeFunctionData,
   keccak256,
+  recoverTypedDataAddress,
 } from "viem";
 
 import { assertProviderState, boundChain } from "../internal/providerState.js";
@@ -39,6 +40,8 @@ import {
   Erc1271ValidationResult,
   LeafOutOfRangeError,
   ExecuteTargetHasNoCodeError,
+  InvalidKeyAcceptanceError,
+  InvalidOwnerAcceptanceError,
   OwnerMismatchError,
   StatefulBudgetExhaustedError,
   StatefulTreeSpentError,
@@ -72,6 +75,7 @@ import {
   ROTATION_DOMAIN_RECOVER_WALLET,
   ROTATION_DOMAIN_TRANSFER_OWNERSHIP,
   buildActionContext,
+  buildOwnershipAcceptanceContext,
   buildRotationContext,
   buildStatefulRotationTarget,
   dataHash as keccakData,
@@ -89,6 +93,8 @@ import {
   rotationDomainSeparator,
   setErc1271KeyPayloadHash,
   SHRINCS_PROFILE_NAME,
+  statefulActionMessageHash,
+  statefulMaxSignatures,
   statefulRawMessageHash,
   statelessRawMessageHash,
   statefulTreeId,
@@ -99,7 +105,11 @@ import {
   withdrawPayloadHash,
 } from "./shrincsCodec.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
-import { type RotationTarget, type ShrincsPublicKey } from "./types.js";
+import {
+  type RotationTarget,
+  type ShrincsPublicKey,
+  type StatefulSignature,
+} from "./types.js";
 import {
   type WalletVersionDescriptor,
   resolveWalletVersionFromChain,
@@ -157,6 +167,62 @@ export const quipSignedHashTypedData = (
     primaryType: "QuipSignedHash",
     message: { hash },
   }) as const;
+
+/// The INCOMING party's half of a `transferOwnership` handover: proof that
+/// whoever receives the wallet controls BOTH keys it will be operated with.
+/// Produced by the recipient (`signOwnershipAcceptance`), handed to the current
+/// owner alongside the bundle, and verified on-chain before the install.
+export interface OwnershipAcceptance {
+  /// The recipient's fresh full key bundle (both trees never held by the wallet).
+  nextKey: ShrincsPublicKey;
+  /// The incoming classical owner.
+  newOwner: Address;
+  /// Stateful signature by `nextKey` over the handover payload, bound to
+  /// `nextKey`'s own commitment at nonce 0 / keyVersion 0
+  /// (`buildOwnershipAcceptanceContext`). Its leaf is spent in the new epoch.
+  keyAcceptance: StatefulSignature;
+  /// `newOwner`'s signature over the wallet's
+  /// `QuipSignedHash(transferOwnershipPayloadHash(newOwner, nextCommitment))`
+  /// EIP-712 target (ECDSA for an EOA; ERC-1271 for a contract owner).
+  ownerAcceptance: Hex;
+}
+
+/// RECIPIENT side of a `transferOwnership` handover. Signs both halves of the
+/// acceptance for `walletAddress` on `chainId`: the classical half via
+/// `signTypedData` on the wallet's `QuipSignedHash` struct (so a browser or
+/// hardware wallet can sign it), and the PQ half with the incoming bundle at
+/// `leaf` (default 1). Needs no wallet client and no on-chain read: the
+/// acceptance binds neither the nonce nor the epoch, only the wallet, chain,
+/// `newOwner` and the bundle's commitment — which the wallet can install once.
+///
+/// ONE handover per bundle. The PQ half is a one-time signature at `leaf`; a
+/// second acceptance with the same bundle (another wallet, another owner)
+/// would sign a different message at the same leaf. Keygen a fresh bundle per
+/// handover, and note the wallet records `leaf` as used once installed.
+export async function signOwnershipAcceptance(params: {
+  chainId: number;
+  walletAddress: Address;
+  nextKeyPair: ShrincsKeyPair;
+  newOwner: LocalAccount;
+  leaf?: number;
+}): Promise<OwnershipAcceptance> {
+  const newOwner = params.newOwner.address;
+  if (newOwner.toLowerCase() === ZERO_ADDRESS) throw new ZeroAddressOwnerError();
+  const nextKey = params.nextKeyPair.publicKey;
+  const payloadHash = transferOwnershipPayloadHash(
+    newOwner,
+    nextKey.publicKeyCommitment
+  );
+  const keyAcceptance = params.nextKeyPair.signOwnershipAcceptance(
+    domainSeparator(params.chainId, params.walletAddress),
+    newOwner,
+    params.leaf ?? 1
+  );
+  const ownerAcceptance = await params.newOwner.signTypedData(
+    quipSignedHashTypedData(payloadHash, params.chainId, params.walletAddress)
+  );
+  return { nextKey, newOwner, keyAcceptance, ownerAcceptance };
+}
 
 export interface ShrincsWalletState {
   owner: Address;
@@ -651,7 +717,10 @@ export class ShrincsWalletClient {
   private async prepareStatefulOp(
     keyOpts?: ShrincsTxKeyOptions,
     excludeLeaves?: ReadonlySet<number>,
-    preflight?: (keypair: ShrincsKeyPair, state: ShrincsWalletState) => void
+    preflight?: (
+      keypair: ShrincsKeyPair,
+      state: ShrincsWalletState
+    ) => void | Promise<void>
   ): Promise<{
     keypair: ShrincsKeyPair;
     state: ShrincsWalletState;
@@ -667,7 +736,7 @@ export class ShrincsWalletClient {
     // Caller pre-flights (e.g. spent-tree checks) run BEFORE any leaf is
     // reserved: reservations have no release API, so a rejected call must not
     // burn a signing leaf.
-    preflight?.(keypair, state);
+    await preflight?.(keypair, state);
     // Validate the excluded leaves BEFORE reserving. `excludeLeaves` carries the
     // revocation targets (`markLeavesUsed`), which must be valid signing leaves
     // `[1..maxSignatures]`. Rejecting a malformed target here — before any leaf
@@ -732,11 +801,12 @@ export class ShrincsWalletClient {
   private buildContractCall(
     functionName: string,
     args: readonly unknown[],
-    value: bigint
+    value: bigint,
+    abi: readonly unknown[] = shrincsWalletAbi as readonly unknown[]
   ): ContractCallParams {
     return {
       address: this.walletAddress,
-      abi: shrincsWalletAbi as readonly unknown[],
+      abi,
       functionName,
       args,
       value,
@@ -748,10 +818,11 @@ export class ShrincsWalletClient {
     functionName: string,
     args: readonly unknown[],
     value: bigint,
-    opts: TxOptions
+    opts: TxOptions,
+    abi?: readonly unknown[]
   ): Promise<TransactionReceipt> {
     return this.send(
-      this.buildContractCall(functionName, args, value),
+      this.buildContractCall(functionName, args, value, abi),
       value,
       opts
     );
@@ -1182,20 +1253,39 @@ export class ShrincsWalletClient {
 
   /// Atomic ownership handover: a fresh bundle (`nextKey`) plus a new classical
   /// owner, authorized by BOTH a stateful owner-binding signature and a stateless
-  /// recovery signature from the current key.
+  /// recovery signature from the current key — AND, on wallets past beta.2, the
+  /// RECIPIENT's hybrid acceptance (`OwnershipAcceptance`, produced by
+  /// `signOwnershipAcceptance` on their side): `newOwner`'s signature and a
+  /// stateful signature from `nextKey` itself, each over the handover payload.
+  /// Without it a mistyped `newOwner` or an unusable bundle would strand the
+  /// wallet behind an owner that does not exist, every path (recovery
+  /// included) gated behind it.
+  ///
+  /// Both acceptance halves are verified locally BEFORE any current-key leaf is
+  /// reserved or signature produced, so a bad acceptance costs nothing. On a
+  /// beta.2 wallet (`handoverAcceptance: "none"`) the legacy single-step call
+  /// is sent and any acceptance supplied is ignored.
   async transferOwnership(
-    params: { nextKey: ShrincsPublicKey; newOwner: Address },
+    params: {
+      nextKey: ShrincsPublicKey;
+      newOwner: Address;
+      keyAcceptance?: StatefulSignature;
+      ownerAcceptance?: Hex;
+    },
     opts: TxOptions & ShrincsTxKeyOptions = {}
   ): Promise<TransactionReceipt> {
     if (params.newOwner === ZERO_ADDRESS) throw new ZeroAddressOwnerError();
+    const version = await this.resolveVersion();
+    const hybrid = version.quirks.handoverAcceptance === "hybrid";
     const {
       keypair,
       state,
       leaf,
       domainSeparator: ds,
-    } = await this.prepareStatefulOp(opts, undefined, (kp) =>
-      this.assertFreshBundle(params.nextKey, kp.publicKey)
-    );
+    } = await this.prepareStatefulOp(opts, undefined, async (kp) => {
+      this.assertFreshBundle(params.nextKey, kp.publicKey);
+      if (hybrid) await this.assertOwnershipAcceptance(params, kp);
+    });
     const rotationTarget = toRotationTarget(params.nextKey);
 
     const ownerCtx = buildActionContext({
@@ -1222,18 +1312,102 @@ export class ShrincsWalletClient {
     });
     const recoverySignature = keypair.signFullRotation(rctx, rotationTarget);
 
+    const legacyArgs = [
+      publicKeyToAbi(keypair.publicKey),
+      ownerBindingSignature,
+      recoverySignature,
+      publicKeyToAbi(params.nextKey),
+      params.newOwner,
+    ] as const;
+    if (!hybrid) {
+      return this.submit("transferOwnership", legacyArgs, 0n, opts, version.abi);
+    }
     return this.submit(
       "transferOwnership",
-      [
-        publicKeyToAbi(keypair.publicKey),
-        ownerBindingSignature,
-        recoverySignature,
-        publicKeyToAbi(params.nextKey),
-        params.newOwner,
-      ],
+      [...legacyArgs, params.keyAcceptance, params.ownerAcceptance],
       0n,
       opts
     );
+  }
+
+  /// Local mirror of `ShrincsWallet._verifyOwnershipAcceptance`, run in the
+  /// pre-flight so a bad acceptance is rejected before the current owner
+  /// reserves a leaf or produces either of their signatures. The classical
+  /// half recovers the EIP-712 signer (an EOA) and falls back to the node's
+  /// ERC-1271-aware `verifyTypedData` for a contract `newOwner`; the PQ half
+  /// is verified through the wasm against the INCOMING commitment.
+  private async assertOwnershipAcceptance(
+    params: {
+      nextKey: ShrincsPublicKey;
+      newOwner: Address;
+      keyAcceptance?: StatefulSignature;
+      ownerAcceptance?: Hex;
+    },
+    keypair: ShrincsKeyPair
+  ): Promise<void> {
+    if (params.ownerAcceptance === undefined) {
+      throw new InvalidOwnerAcceptanceError(
+        "no ownerAcceptance supplied (the recipient signs it via signOwnershipAcceptance)"
+      );
+    }
+    if (params.keyAcceptance === undefined) {
+      throw new InvalidKeyAcceptanceError(
+        "no keyAcceptance supplied (the recipient signs it via signOwnershipAcceptance)"
+      );
+    }
+    const nextCommitment = params.nextKey.publicKeyCommitment;
+    const payloadHash = transferOwnershipPayloadHash(params.newOwner, nextCommitment);
+
+    // Classical half.
+    const typedData = quipSignedHashTypedData(payloadHash, this.chainId, this.walletAddress);
+    let ownerOk = false;
+    try {
+      const recovered = await recoverTypedDataAddress({
+        ...typedData,
+        signature: params.ownerAcceptance,
+      });
+      ownerOk = recovered.toLowerCase() === params.newOwner.toLowerCase();
+    } catch {
+      ownerOk = false;
+    }
+    if (!ownerOk) {
+      const code = await this.publicClient.getCode({ address: params.newOwner });
+      if (code && code !== "0x") {
+        ownerOk = await this.publicClient.verifyTypedData({
+          address: params.newOwner,
+          ...typedData,
+          signature: params.ownerAcceptance,
+        });
+      }
+    }
+    if (!ownerOk) {
+      throw new InvalidOwnerAcceptanceError(
+        `signature does not verify for newOwner ${params.newOwner}`
+      );
+    }
+
+    // PQ half: leaf range against the INCOMING key's budget, then the wasm verify.
+    const acceptLeaf = params.keyAcceptance.authPath.length;
+    const nextBudget = statefulMaxSignatures(params.nextKey.statefulPublicKey);
+    if (acceptLeaf < 1 || acceptLeaf > nextBudget) {
+      throw new InvalidKeyAcceptanceError(
+        `acceptance leaf ${acceptLeaf} outside [1, ${nextBudget}]`
+      );
+    }
+    const ctx = buildOwnershipAcceptanceContext({
+      domainSeparator: domainSeparator(this.chainId, this.walletAddress),
+      newOwner: params.newOwner,
+      nextCommitment,
+    });
+    const message = statefulRawMessageHash(
+      nextCommitment,
+      statefulActionMessageHash(nextCommitment, ctx)
+    );
+    if (!keypair.verifyStatefulEnvelope(params.nextKey, message, params.keyAcceptance)) {
+      throw new InvalidKeyAcceptanceError(
+        "stateful signature does not verify against the incoming bundle"
+      );
+    }
   }
 
   /// Break-glass recovery: install an entirely fresh bundle authorized by the

@@ -602,6 +602,41 @@ export class OwnershipHandoverDisabledError extends QuipError {
   }
 }
 
+/// The incoming classical owner's `transferOwnership` acceptance — their
+/// signature over `QuipSignedHash(transferOwnershipPayloadHash(newOwner,
+/// nextCommitment))` — does not verify for `newOwner` (ECDSA, or ERC-1271 for a
+/// contract). A mistyped `newOwner` cannot produce it, so the handover fails
+/// instead of stranding the wallet. Raised client-side (pre-flight, before any
+/// current-key signature is spent) and decoded from the wallet's revert.
+export class InvalidOwnerAcceptanceError extends QuipError {
+  constructor(reason?: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_OWNER_ACCEPTANCE",
+      reason
+        ? `Ownership acceptance by the incoming owner is invalid: ${reason}`
+        : "Ownership acceptance by the incoming owner is invalid",
+      opts
+    );
+  }
+}
+
+/// The incoming key bundle's `transferOwnership` acceptance — its stateful
+/// signature over the handover payload, bound to ITS commitment at nonce 0 /
+/// keyVersion 0 — does not verify, or names a leaf outside
+/// `[1, nextKey.maxSignatures]`. A bundle its holder cannot sign with cannot be
+/// installed. Raised client-side (pre-flight) and decoded from the wallet's revert.
+export class InvalidKeyAcceptanceError extends QuipError {
+  constructor(reason?: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_KEY_ACCEPTANCE",
+      reason
+        ? `Ownership acceptance by the incoming key bundle is invalid: ${reason}`
+        : "Ownership acceptance by the incoming key bundle is invalid",
+      opts
+    );
+  }
+}
+
 export class StorageStoreDisabledError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super("SHRINCS_STORAGE_STORE_DISABLED", "storageStore is disabled on this wallet", opts);

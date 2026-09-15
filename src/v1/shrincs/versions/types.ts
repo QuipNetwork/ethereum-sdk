@@ -45,6 +45,13 @@ export interface WalletVersionQuirks {
   /// beta.2 predates lifetime spent-tree tracking, so a migrator that reuses a
   /// tree is rejected only on the NEW implementation being migrated TO.
   readonly enforcesSpentTreeFreshnessOnMigrate: boolean;
+  /// What `transferOwnership` requires from the INCOMING party. beta.2 was a
+  /// single-step handover (current-owner signatures only); later generations
+  /// also verify the recipient's hybrid acceptance — `newOwner`'s ECDSA /
+  /// ERC-1271 signature AND a stateful signature from the incoming bundle —
+  /// so a mistyped owner or an unusable bundle reverts instead of stranding
+  /// the wallet. Selects the call shape the SDK encodes.
+  readonly handoverAcceptance: "none" | "hybrid";
 }
 
 /// Everything the SDK needs to operate a wallet of a given generation: its

@@ -80,8 +80,9 @@ contract WalletFactory is IWalletFactory, Ownable, UUPSUpgradeable, Initializabl
     /// @inheritdoc IWalletFactory
     function vetImplementation(address impl) external onlyOwner {
         Storage.Layout storage $ = Storage.layout();
+
+        if (impl.code.length == 0) revert EmptyCode();
         bytes32 codehash = impl.codehash;
-        if (codehash == 0) revert EmptyCode();
         if (!$.vettedCode.add(codehash)) revert AlreadyVetted();
         $.vettedWalletImpls[codehash] = impl;
         // A freshly-added entry is, by construction, at `length() - 1` — the

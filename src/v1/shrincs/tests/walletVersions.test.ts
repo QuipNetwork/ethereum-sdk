@@ -70,6 +70,7 @@ describe("wallet version resolution", () => {
       erc1271KeyArgument: "bytes32Commitment",
       hasStatefulLeafBitmapWord: false,
       enforcesSpentTreeFreshnessOnMigrate: false,
+      handoverAcceptance: "none",
     });
   });
 

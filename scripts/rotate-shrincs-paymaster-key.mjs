@@ -1,10 +1,17 @@
 // Copyright (C) 2025 quip.network
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Ops: rotate the ShrincsPaymaster's STATEFUL verifier subkey to a different
-// QUIP HD derivation index (owner-fiat `rotateStatefulKey`; the stateless half
-// of the CURRENT bundle is carried forward, so the resulting live bundle is a
-// graft: `deriveKeyPair({ statefulIndex: NEXT, statelessIndex: CURRENT_STATELESS })`).
+// Ops: rotate the ShrincsPaymaster's STATEFUL verifier subkey (owner-fiat
+// `rotateStatefulKey`; the stateless half of the CURRENT bundle is carried
+// forward, so the resulting live bundle is a graft).
+//
+// ONE KEY PER CHAIN. Sponsorship keys live under the QUIP HD path
+//   m/20814'/algorithm'/<chainId>'/account'/<epoch>'
+// (see gen-shrincs-paymaster-verifier.mjs): the `network` level is the chain
+// id and the index is the per-chain rotation epoch. The NEXT stateful key is
+// always derived that way for ROTATE_CHAIN_ID. The CURRENT bundle is
+// recomputed from its recorded coordinates, which for deployments made before
+// this convention sit under the default network level (legacy, 20049).
 //
 // SIMULATES ONLY unless `--broadcast` is passed.
 //
@@ -12,17 +19,21 @@
 //   set -a; source .env; set +a
 //   ROTATE_RPC_URL=$API_URL_BASE ROTATE_CHAIN_ID=8453 \
 //   ROTATE_PAYMASTER=0x430c8c89492E3541e141148Dd7a7D6dD432e5890 \
-//   ROTATE_CURRENT_STATEFUL_INDEX=0 ROTATE_CURRENT_STATELESS_INDEX=0 ROTATE_NEXT_INDEX=1 \
+//   ROTATE_CURRENT_STATEFUL_INDEX=1 ROTATE_CURRENT_STATELESS_INDEX=0 \
+//   ROTATE_CURRENT_HD_NETWORK=20049 ROTATE_NEXT_EPOCH=0 \
 //     node scripts/rotate-shrincs-paymaster-key.mjs [--broadcast]
 //
 // Env: SHRINCS_OPERATOR_SECRET (0x + 32 bytes), PRIVATE_KEY (paymaster owner),
-//      SHRINCS_VERIFIER_MAX_SIGNATURES (budget for the NEXT stateful key).
-//      ROTATE_CURRENT_STATELESS_INDEX defaults to 0 (a stateful-only rotation
-//      does not move the live stateless index).
-//      ROTATE_NEXT_INDEX must be greater than ROTATE_CURRENT_STATEFUL_INDEX.
-//      Pre-registry trees on upgraded proxies are not covered on-chain, so a
-//      lower next index would succeed there. Set ROTATE_ALLOW_NONMONOTONIC=1
-//      to allow a lower next index for recovery (equality is still rejected).
+//      SHRINCS_VERIFIER_MAX_SIGNATURES (budget for the NEXT stateful key),
+//      ROTATE_CURRENT_STATELESS_INDEX (defaults to the current stateful index),
+//      ROTATE_CURRENT_HD_NETWORK (HD network level of the CURRENT bundle;
+//        default: the chain id, i.e. an already chain-scoped key; pass the
+//        legacy default level 20049 for pre-convention deployments),
+//      ROTATE_NEXT_EPOCH (per-chain epoch of the NEXT stateful key; must be
+//        greater than ROTATE_CURRENT_STATEFUL_INDEX when the current bundle
+//        is already chain-scoped, since pre-registry trees on upgraded proxies
+//        are not covered on-chain; ROTATE_ALLOW_NONMONOTONIC=1 relaxes that to
+//        "must differ" for recovery).
 
 import {
   createPublicClient,
@@ -37,6 +48,7 @@ import {
   ShrincsSigner,
   ShrincsCodec,
   shrincsPaymasterAbi,
+  quipHdPath,
 } from "../dist/src/v1/shrincs/index.js";
 
 function req(name) {
@@ -68,8 +80,9 @@ if (!isAddress(paymasterAddress)) {
   throw new Error("ROTATE_PAYMASTER must be a valid address");
 }
 const currentStatefulIndex = idx("ROTATE_CURRENT_STATEFUL_INDEX", "0");
-const currentStatelessIndex = idx("ROTATE_CURRENT_STATELESS_INDEX", "0");
-const nextIndex = idx("ROTATE_NEXT_INDEX");
+const currentStatelessIndex = idx("ROTATE_CURRENT_STATELESS_INDEX", String(currentStatefulIndex));
+const currentHdNetwork = idx("ROTATE_CURRENT_HD_NETWORK", String(chainId));
+const nextEpoch = idx("ROTATE_NEXT_EPOCH");
 const maxSignatures = Number(req("SHRINCS_VERIFIER_MAX_SIGNATURES"));
 if (
   !Number.isInteger(maxSignatures) ||
@@ -80,20 +93,26 @@ if (
     "SHRINCS_VERIFIER_MAX_SIGNATURES must be an integer in [1, 2^32)"
   );
 }
+const currentPath = { network: currentHdNetwork };
+const nextPath = { network: chainId };
 // Pre-registry trees on upgraded proxies are not covered on-chain, so a
-// rotation back to an older HD index would succeed. Monotonic indices make
-// cycling back impossible from this script. Set ROTATE_ALLOW_NONMONOTONIC=1
-// to restore the old !== check for recovery.
-if (process.env.ROTATE_ALLOW_NONMONOTONIC === "1") {
-  if (nextIndex === currentStatefulIndex) {
+// rotation back to an older epoch under the same HD network would succeed.
+// Monotonic epochs make cycling back impossible from this script. Set
+// ROTATE_ALLOW_NONMONOTONIC=1 to restore the plain !== check for recovery.
+// A legacy current bundle (different network level) has no ordering relation
+// to chain-scoped epochs, so any epoch is accepted for that first migration.
+if (currentHdNetwork === chainId) {
+  if (process.env.ROTATE_ALLOW_NONMONOTONIC === "1") {
+    if (nextEpoch === currentStatefulIndex) {
+      throw new Error(
+        "ROTATE_NEXT_EPOCH must differ from the current stateful epoch on this chain"
+      );
+    }
+  } else if (nextEpoch <= currentStatefulIndex) {
     throw new Error(
-      "ROTATE_NEXT_INDEX must differ from the current stateful index"
+      "ROTATE_NEXT_EPOCH must be greater than the current stateful epoch on this chain"
     );
   }
-} else if (nextIndex <= currentStatefulIndex) {
-  throw new Error(
-    "ROTATE_NEXT_INDEX must be greater than the current stateful index"
-  );
 }
 
 const account = privateKeyToAccount(req("PRIVATE_KEY"));
@@ -112,11 +131,13 @@ const owner = await publicClient.readContract({ address: paymasterAddress, abi: 
 // Current bundle (graft-aware) must recompute to the live commitment.
 const current = signer.deriveKeyPair({
   statefulIndex: currentStatefulIndex, statelessIndex: currentStatelessIndex, maxSignatures: Number(liveMax),
+  statefulPath: currentPath, statelessPath: currentPath,
 });
 if (current.publicKeyCommitment.toLowerCase() !== commitment.toLowerCase()) {
-  throw new Error(`current bundle (stateful ${currentStatefulIndex} / stateless ${currentStatelessIndex}) recomputes to ${current.publicKeyCommitment}, live is ${commitment}`);
+  throw new Error(`current bundle (stateful ${currentStatefulIndex} / stateless ${currentStatelessIndex} @ network ${currentHdNetwork}) recomputes to ${current.publicKeyCommitment}, live is ${commitment}`);
 }
-const next = signer.recoverKeyPair(nextIndex, { maxSignatures });
+// NEXT stateful key: chain-scoped by construction.
+const next = signer.keygenFromSeedHex(signer.deriveSeedHex(nextEpoch, nextPath), { maxSignatures });
 const target = ShrincsCodec.buildStatefulRotationTarget({
   nextStatefulPublicKey: next.publicKey.statefulPublicKey,
   currentPkSeed: current.publicKey.pkSeed,
@@ -128,8 +149,8 @@ if (nextTree === ShrincsCodec.statefulTreeId(current.publicKey.statefulPublicKey
 console.log(`paymaster        ${paymasterAddress} (chain ${chainId})`);
 console.log(`owner            ${owner}  signer ${account.address}`);
 console.log(`live commitment  ${commitment}  epoch ${keyVersion}  budget ${liveMax}  used ${used}`);
-console.log(`current bundle   stateful idx ${currentStatefulIndex}, stateless idx ${currentStatelessIndex}`);
-console.log(`next stateful    idx ${nextIndex}, tree ${nextTree}, budget ${maxSignatures}`);
+console.log(`current bundle   stateful idx ${currentStatefulIndex}, stateless idx ${currentStatelessIndex}, HD network ${currentHdNetwork}`);
+console.log(`next stateful    epoch ${nextEpoch} @ HD network ${chainId} (${quipHdPath(nextEpoch, nextPath)}), tree ${nextTree}, budget ${maxSignatures}`);
 console.log(`next commitment  ${target.publicKeyCommitment}`);
 if (owner.toLowerCase() !== account.address.toLowerCase()) throw new Error("PRIVATE_KEY is not the paymaster owner");
 
@@ -177,7 +198,7 @@ if (c2.toLowerCase() !== target.publicKeyCommitment.toLowerCase()) {
 }
 console.log(`live now         commitment ${c2}  epoch ${v2}`);
 console.log(
-  `\nSponsor client config for this chain: deriveKeyPair({ ` +
-    `statefulIndex: ${nextIndex}, statelessIndex: ${currentStatelessIndex}, ` +
-    `maxSignatures: ${maxSignatures} })`
+  `\nSponsor client config for chain ${chainId} (pass as \`keypair\`):\n` +
+  `  signer.deriveKeyPair({ statefulIndex: ${nextEpoch}, statefulPath: { network: ${chainId} },` +
+  ` statelessIndex: ${currentStatelessIndex}, statelessPath: { network: ${currentHdNetwork} }, maxSignatures: ${maxSignatures} })`
 );

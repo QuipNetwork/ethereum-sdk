@@ -22,6 +22,7 @@ import {
   concat,
   decodeAbiParameters,
   encodeAbiParameters,
+  hexToBytes,
   keccak256,
   pad,
   size,
@@ -363,6 +364,31 @@ export function buildActionContext(params: {
   };
 }
 
+/// The `ActionContext` the INCOMING bundle signs to accept a `transferOwnership`
+/// handover (mirrors `ShrincsWallet._verifyOwnershipAcceptance`): the wallet's
+/// domain, `ACTION_TRANSFER_OWNERSHIP`, the handover payload — and nonce 0 /
+/// keyVersion 0 rather than live values. The acceptance is bound to the
+/// incoming commitment (which the wallet can install at most once) and to
+/// `newOwner`, so it authorizes exactly one install and cannot go stale while
+/// the current owner keeps transacting. Signed against the INCOMING commitment,
+/// never the installed one.
+export function buildOwnershipAcceptanceContext(params: {
+  domainSeparator: Hex;
+  newOwner: Address;
+  nextCommitment: Hex;
+}): ActionContext {
+  return buildActionContext({
+    domainSeparator: params.domainSeparator,
+    nonce: 0n,
+    keyVersion: 0n,
+    actionType: ACTION_TRANSFER_OWNERSHIP,
+    payloadHash: transferOwnershipPayloadHash(
+      params.newOwner,
+      params.nextCommitment
+    ),
+  });
+}
+
 export function buildRotationContext(params: {
   domainSeparator: Hex;
   nonce: bigint;
@@ -657,6 +683,21 @@ export function statefulTreeId(statefulPublicKey: Hex): Hex {
     throw new Error(`statefulPublicKey must be 68 bytes, got ${n}`);
   }
   return keccak256(sliceHex(statefulPublicKey, 0, 64));
+}
+
+/// The signing budget a 68-byte encoded stateful public key declares: its
+/// trailing big-endian `uint32` (`pkSeed(32) ‖ root(32) ‖ maxSignatures(4)`).
+/// Mirrors `UXMSS.decodeStatefulPublicKey(...).maxSignatures`.
+export function statefulMaxSignatures(statefulPublicKey: Hex): number {
+  const bytes = hexToBytes(statefulPublicKey);
+  if (bytes.length !== 68) {
+    throw new Error(
+      `statefulPublicKey must be 68 bytes, got ${bytes.length}`
+    );
+  }
+  return (
+    ((bytes[64] << 24) | (bytes[65] << 16) | (bytes[66] << 8) | bytes[67]) >>> 0
+  );
 }
 
 /// Lifetime identity of a stateless tree: `keccak256(pkSeed ‖ hypertreeRoot)`

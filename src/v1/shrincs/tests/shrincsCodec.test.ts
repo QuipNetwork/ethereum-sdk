@@ -37,6 +37,69 @@ beforeAll(async () => {
   });
 });
 
+describe("shrincsCodec transferOwnership acceptance", () => {
+  const NEW_OWNER = "0x00000000000000000000000000000000000000c3" as Address;
+
+  it("statefulMaxSignatures reads the budget the keygen declared", () => {
+    expect(Codec.statefulMaxSignatures(mainKey.publicKey.statefulPublicKey)).toBe(MAX_SIG);
+    const bytes = toBytes(mainKey.publicKey.statefulPublicKey);
+    bytes[64] = 0x01; // 0x01000008 big-endian
+    expect(Codec.statefulMaxSignatures(toHex(bytes))).toBe(0x01000000 + MAX_SIG);
+    expect(() => Codec.statefulMaxSignatures("0x1234")).toThrow(/68 bytes/);
+  });
+
+  it("buildOwnershipAcceptanceContext mirrors _verifyOwnershipAcceptance's context", () => {
+    const ds = Codec.domainSeparator(CHAIN_ID, WALLET);
+    const ctx = Codec.buildOwnershipAcceptanceContext({
+      domainSeparator: ds,
+      newOwner: NEW_OWNER,
+      nextCommitment: erc1271Key.publicKeyCommitment,
+    });
+    expect(ctx).toEqual({
+      domainSeparator: ds,
+      nonce: ("0x" + "00".repeat(32)) as Hex,
+      keyVersion: ("0x" + "00".repeat(32)) as Hex,
+      actionType: Codec.ACTION_TRANSFER_OWNERSHIP,
+      payloadHash: Codec.transferOwnershipPayloadHash(NEW_OWNER, erc1271Key.publicKeyCommitment),
+    });
+    // Same payload hash the current owner's binding signature carries — the two
+    // messages differ only by the commitment each is bound to.
+    expect(ctx.payloadHash).toBe(
+      keccak256(concat([`0x${"00".repeat(12)}${NEW_OWNER.slice(2)}`, erc1271Key.publicKeyCommitment]))
+    );
+  });
+
+  it("signOwnershipAcceptance verifies against the signing bundle's own commitment only", () => {
+    const ds = Codec.domainSeparator(CHAIN_ID, WALLET);
+    // `erc1271Key` plays the incoming bundle here (any fresh keypair would).
+    const incoming = erc1271Key;
+    const sig = incoming.signOwnershipAcceptance(ds, NEW_OWNER);
+    expect(sig.authPath.length).toBe(1);
+
+    const messageFor = (commitment: Hex, owner: Address) =>
+      Codec.statefulRawMessageHash(
+        commitment,
+        Codec.statefulActionMessageHash(
+          commitment,
+          Codec.buildOwnershipAcceptanceContext({ domainSeparator: ds, newOwner: owner, nextCommitment: commitment })
+        )
+      );
+    const message = messageFor(incoming.publicKeyCommitment, NEW_OWNER);
+    expect(incoming.verifyStatefulEnvelope(incoming.publicKey, message, sig)).toBe(true);
+    // A verifier holding only the public bundle reaches the same verdict.
+    expect(mainKey.verifyStatefulEnvelope(incoming.publicKey, message, sig)).toBe(true);
+    // Not an acceptance for another owner, and not one by another bundle.
+    expect(
+      incoming.verifyStatefulEnvelope(incoming.publicKey, messageFor(incoming.publicKeyCommitment, WALLET), sig)
+    ).toBe(false);
+    expect(
+      mainKey.verifyStatefulEnvelope(mainKey.publicKey, messageFor(mainKey.publicKeyCommitment, NEW_OWNER), sig)
+    ).toBe(false);
+    // Explicit leaf.
+    expect(incoming.signOwnershipAcceptance(ds, NEW_OWNER, 3).authPath.length).toBe(3);
+  });
+});
+
 describe("shrincsCodec", () => {
   it("publicKeyCommitment matches the wasm keygen's own commitment (preimage parity)", () => {
     // The TS keccak preimage ("shrincs-public-key" ‖ statefulPublicKey ‖ pkSeed

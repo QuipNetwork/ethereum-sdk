@@ -53,6 +53,8 @@ import {
   ClassicalWithdrawDisabledError,
   ClassicalTransferOwnershipDisabledError,
   OwnershipHandoverDisabledError,
+  InvalidOwnerAcceptanceError,
+  InvalidKeyAcceptanceError,
   StorageStoreDisabledError,
   DelegateExecuteDisabledError,
   // Paymaster
@@ -117,6 +119,9 @@ const ERROR_REGISTRY: Record<string, ErrorFactory> = {
   ClassicalTransferOwnershipDisabled: (_, o) =>
     new ClassicalTransferOwnershipDisabledError(o),
   OwnershipHandoverDisabled: (_, o) => new OwnershipHandoverDisabledError(o),
+  // `transferOwnership` hybrid acceptance (audit fix: two-party handover).
+  InvalidOwnerAcceptance: (_, o) => new InvalidOwnerAcceptanceError(undefined, o),
+  InvalidKeyAcceptance: (_, o) => new InvalidKeyAcceptanceError(undefined, o),
   StorageStoreDisabled: (_, o) => new StorageStoreDisabledError(o),
   DelegateExecuteDisabled: (_, o) => new DelegateExecuteDisabledError(o),
 
