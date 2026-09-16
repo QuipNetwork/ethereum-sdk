@@ -242,23 +242,28 @@ Deploy targets pass `--verify` to forge by default. Etherscan v2 is configured p
 To verify an already-deployed contract independently:
 
 ```bash
-# WOTSPlus library (no constructor args)
+# WalletFactory implementation (constructor: uint256 maxFee_ — the MAX_FEE immutable;
+# the owner is NOT a constructor arg, it is set on the proxy via initialize)
 forge verify-contract \
   --rpc-url base_sepolia \
   --chain base_sepolia \
-  0x742376ec2A8237Ba46E1ACDDfF315f1Ef25E4C0e \
-  @quip.network/hashsigs-solidity-0.1.0/contracts/WOTSPlus.sol:WOTSPlus
-
-# WalletFactory (constructor: address initialOwner, uint256 maxFee)
-forge verify-contract \
-  --rpc-url base_sepolia \
-  --chain base_sepolia \
-  --constructor-args $(cast abi-encode "constructor(address,uint256)" "$FACTORY_OWNER" "$MAX_FEE") \
-  0xE567d318819c067c26fC1E44D04beD2b4FE93BCC \
+  --constructor-args $(cast abi-encode "constructor(uint256)" "$MAX_FEE") \
+  0x77622e199DfF602f937fC5E5eB6479aE4b18161F \
   contracts/WalletFactory.sol:WalletFactory
+
+# WalletFactory proxy (OpenZeppelin ERC1967Proxy; constructor: address implementation,
+# bytes data — `data` is the initialize(address) call that sets FACTORY_OWNER)
+forge verify-contract \
+  --rpc-url base_sepolia \
+  --chain base_sepolia \
+  --constructor-args $(cast abi-encode "constructor(address,bytes)" \
+      0x77622e199DfF602f937fC5E5eB6479aE4b18161F \
+      $(cast calldata "initialize(address)" "$FACTORY_OWNER")) \
+  0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8 \
+  @openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy
 ```
 
-The above addresses are the deterministic CREATE3 addresses currently registered in `src/v1/addresses.json` (the SDK's "default" entry, shared across the chains in `SHARED_DEPLOYMENT_CHAIN_IDS`). Pre-V2 CREATE2 mainnet addresses are listed separately in [DEPLOYMENTS.md](DEPLOYMENTS.md).
+The above are the canonical CREATE3 addresses (identical on every chain the operator has deployed to — `make predict-addresses` prints them, and `src/v1/shrincs/addresses.ts` ships them to integrators). The live `MAX_FEE` is 1e18. The full per-chain history, including the sunset WOTS+-era contracts and the pre-V2 CREATE2 mainnet addresses, is in [DEPLOYMENTS.md](DEPLOYMENTS.md).
 
 ---
 

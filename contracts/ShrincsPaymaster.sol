@@ -92,6 +92,10 @@ contract ShrincsPaymaster is
 
     constructor(address shrincsVerifier_) {
         if (shrincsVerifier_ == address(0)) revert ZeroAddressVerifier();
+        // Existence guard only. The wallet's profile-tag probe is deliberately NOT ported:
+        // the paymaster's signing domain does not embed the profile identity, so a
+        // scheme check would guard nothing here (see IShrincsPaymaster.VerifierHasNoCode).
+        if (shrincsVerifier_.code.length == 0) revert VerifierHasNoCode();
         SHRINCS_VERIFIER = shrincsVerifier_;
         _disableInitializers();
     }

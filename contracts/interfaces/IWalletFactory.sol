@@ -199,11 +199,19 @@ interface IWalletFactory {
     /// @dev Only callable by the admin. The codehash MUST already be in the vetted
     ///      set and currently flagged as deprecated; otherwise reverts with
     ///      `ImplementationNotVetted` or `NotDeprecated`. Re-binds
-    ///      `vettedWalletImpls[codehash]` to the supplied address (so a redeploy of
-    ///      identical bytecode at a different address can replace the original
-    ///      pointer) and recomputes `latestWalletImpl` via the insertion-order
-    ///      backward scan, so reactivating the highest-index entry restores it as
-    ///      the latest active implementation. Emits `ImplementationUndeprecated`.
+    ///      `vettedWalletImpls[codehash]` to the supplied address and recomputes
+    ///      `latestWalletImpl` via the insertion-order backward scan, so reactivating
+    ///      the highest-index entry restores it as the latest active implementation.
+    ///      Emits `ImplementationUndeprecated`.
+    ///
+    ///      The re-bind only ever moves the pointer for a family whose runtime code
+    ///      is address-independent. For the SHRINCS (and sunset WOTS+) wallets it is
+    ///      always the ORIGINAL address: their code embeds `address(this)` in
+    ///      immutables (Solady EIP712's cached domain, the wallet's `_SELF`), so a
+    ///      redeploy of the same source has a fresh, unvetted codehash and reverts
+    ///      `ImplementationNotVetted` here. To replace such an implementation with a
+    ///      redeploy, `vetImplementation` the new address (it vets as a new entry and
+    ///      becomes the latest), then `deprecateImplementation` the old one.
     /// @param impl The deployed implementation contract address.
     function undeprecateImplementation(address impl) external;
 

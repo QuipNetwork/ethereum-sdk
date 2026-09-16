@@ -133,6 +133,24 @@ export class VerifierMismatchError extends QuipError {
   }
 }
 
+/// Client-side only (never a contract revert): a sponsorship's
+/// `validUntil` / `validAfter` window is malformed — inverted, already expired
+/// at signing time, negative, non-integer, or past the 6-byte field width.
+/// Caught BEFORE the operator's one-time leaf is spent on an unusable approval.
+export class InvalidSponsorshipWindowError extends QuipError {
+  readonly validUntil: number;
+  readonly validAfter: number;
+  constructor(validUntil: number, validAfter: number, reason: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_SPONSORSHIP_WINDOW",
+      `Invalid sponsorship window (validUntil=${validUntil}, validAfter=${validAfter}): ${reason}`,
+      opts
+    );
+    this.validUntil = validUntil;
+    this.validAfter = validAfter;
+  }
+}
+
 /// Fallback for a recognized contract revert with no dedicated SDK class.
 export class UnknownContractError extends QuipError {
   readonly errorName?: string;

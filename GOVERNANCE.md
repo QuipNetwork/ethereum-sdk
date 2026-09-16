@@ -16,13 +16,13 @@ The intended production posture is: factory owner is a multisig (Safe or equival
 
 Every entry in this table is `onlyOwner`, single transaction, immediate effect:
 
-| Action | Contract / line | Effect |
+| Action | Contract | Effect |
 |---|---|---|
-| `vetImplementation(address)` | `WalletFactory.sol:86` | Adds a codehash to the vetted set. New wallets via `deployLatestWalletProxy` will use the newly-vetted impl; existing wallets can upgrade to it. |
-| `deprecateImplementation(address)` | `WalletFactory.sol:116` | Marks a vetted codehash deprecated. Stops new deployments + new upgrades to that impl. |
-| `undeprecateImplementation(address)` | `WalletFactory.sol:99` | Reverses a deprecation. |
-| `setCreationFee(uint256)` | `WalletFactory.sol:149` | Changes the per-wallet creation fee, bounded by the immutable `MAX_FEE`. |
-| `setExecuteFee(uint256)` | `WalletFactory.sol:157` | Changes the per-execute fee, bounded by `MAX_FEE`. |
+| `vetImplementation(address)` | `WalletFactory.sol` | Adds a codehash to the vetted set. New wallets via `deployLatestWalletProxy` will use the newly-vetted impl; existing wallets can upgrade to it. |
+| `deprecateImplementation(address)` | `WalletFactory.sol` | Marks a vetted codehash deprecated. Stops new deployments + new upgrades to that impl. |
+| `undeprecateImplementation(address)` | `WalletFactory.sol` | Reverses a deprecation. |
+| `setCreationFee(uint256)` | `WalletFactory.sol` | Changes the per-wallet creation fee, bounded by the immutable `MAX_FEE`. |
+| `setExecuteFee(uint256)` | `WalletFactory.sol` | Changes the per-execute fee, bounded by `MAX_FEE`. |
 | `withdraw(uint256)` | `WalletFactory.sol` | Transfers up to the factory balance to the owner. Drains accumulated fee revenue. |
 | `upgradeToAndCall(address,bytes)` | Solady `UUPSUpgradeable` | Replaces the factory implementation behind the ERC-1967 proxy. THE trust-delta action — see below. |
 | `transferOwnership(address)` | Solady `Ownable` | Hands ownership to a new address IMMEDIATELY. The two-step alternative is Solady's handover: the candidate calls `requestOwnershipHandover()`, the owner calls `completeOwnershipHandover(candidate)`. |
@@ -47,11 +47,11 @@ So the blast radius of a single compromised owner key is: rogue impl entering th
 
 ## What new owners cannot be
 
-The factory's `updateWalletOwner` callback (`WalletFactory.sol:173–201`) validates only `newOwner != 0`. The factory doesn't enforce policy on what kind of address can own a wallet — that's an out-of-band decision (cold wallet, smart account, multisig, etc.).
+The factory's `updateWalletOwner` callback (`WalletFactory.sol`) validates only `newOwner != 0`. The factory doesn't enforce policy on what kind of address can own a wallet — that's an out-of-band decision (cold wallet, smart account, multisig, etc.).
 
 ## Recommended operator posture
 
-1. **Owner is a multisig.** Set `FACTORY_OWNER` and `PAYMASTER_OWNER` at deploy time to a Safe or equivalent ≥2-of-N multisig. Single-key ownership is acceptable only for testnets.
+1. **Owner is a multisig.** Set `FACTORY_OWNER` and `SHRINCS_PAYMASTER_OWNER` at deploy time to a Safe or equivalent ≥2-of-N multisig. Single-key ownership is acceptable only for testnets.
 2. **Monitor sensitive events.** Off-chain monitoring on:
    - `ImplementationVetted(address impl, bytes32 codehash)`
    - `ImplementationSunset(address impl, bytes32 codehash)`

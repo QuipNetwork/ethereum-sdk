@@ -40,8 +40,11 @@ import {
   DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
   DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
   DEFAULT_PRE_VERIFICATION_GAS,
+  DEFAULT_SPONSORSHIP_VALIDITY_SECONDS,
   DEFAULT_VERIFICATION_GAS_LIMIT,
+  MAX_PAYMASTER_TIMESTAMP,
 } from "./constants.js";
+import { InvalidSponsorshipWindowError } from "./errors.js";
 import { type ShrincsKeyPair } from "./shrincsSigner.js";
 import { type ShrincsPublicKey, type StatefulSignature } from "./types.js";
 
@@ -211,23 +214,74 @@ export interface SignPaymasterUserOpParams {
   keyVersion: bigint;
   verificationGasLimit?: bigint;
   postOpGasLimit?: bigint;
+  /// Unix seconds after which the EntryPoint rejects the sponsorship. Omitted:
+  /// `now + validitySeconds`. `0` is the ERC-4337 sentinel for NO expiry and
+  /// must be passed explicitly — an unbounded approval is never the default.
   validUntil?: number;
+  /// Unix seconds before which the EntryPoint rejects the sponsorship. Default 0.
   validAfter?: number;
+  /// Lifetime used when `validUntil` is omitted. Default
+  /// `DEFAULT_SPONSORSHIP_VALIDITY_SECONDS` (15 minutes).
+  validitySeconds?: number;
+  /// The clock (unix seconds) the default `validUntil` and the expiry check are
+  /// computed against. Default: the local wall clock.
+  now?: number;
   /// Lowest unused stateful leaf on the paymaster, read from chain by the client.
   leaf: number;
 }
 
+/// Resolve and validate a sponsorship's validity window. Exposed so callers can
+/// preview what `signPaymasterUserOp` will pack (and fail early) without
+/// spending a leaf. Throws `InvalidSponsorshipWindowError` on an inverted,
+/// already-expired, negative, non-integer or over-width window.
+export function resolveSponsorshipWindow(params: {
+  validUntil?: number;
+  validAfter?: number;
+  validitySeconds?: number;
+  now?: number;
+}): { validUntil: number; validAfter: number; now: number } {
+  const now = params.now ?? Math.floor(Date.now() / 1000);
+  const validAfter = params.validAfter ?? 0;
+  const validitySeconds = params.validitySeconds ?? DEFAULT_SPONSORSHIP_VALIDITY_SECONDS;
+  if (!Number.isInteger(validitySeconds) || validitySeconds <= 0) {
+    throw new InvalidSponsorshipWindowError(
+      params.validUntil ?? -1,
+      validAfter,
+      `validitySeconds must be a positive integer, got ${validitySeconds}`
+    );
+  }
+  const validUntil = params.validUntil ?? now + validitySeconds;
+  const fail = (reason: string): never => {
+    throw new InvalidSponsorshipWindowError(validUntil, validAfter, reason);
+  };
+  for (const [name, value] of [
+    ["validUntil", validUntil],
+    ["validAfter", validAfter],
+  ] as const) {
+    if (!Number.isInteger(value) || value < 0) fail(`${name} must be a non-negative integer`);
+    if (value > MAX_PAYMASTER_TIMESTAMP) fail(`${name} exceeds the 6-byte field (max ${MAX_PAYMASTER_TIMESTAMP})`);
+  }
+  if (validUntil !== 0) {
+    if (validUntil <= validAfter) fail("validUntil must be after validAfter (or 0 for no expiry)");
+    if (validUntil <= now) fail(`validUntil is already in the past at signing time (now=${now})`);
+  }
+  return { validUntil, validAfter, now };
+}
+
 /// Produce the fully-signed `paymasterAndData` for a sponsored userOp. Binds the
 /// sponsorship to the specific wallet via the userOp's `sender`, so one global
-/// verifier key safely covers all wallets.
+/// verifier key safely covers all wallets. The validity window is resolved by
+/// `resolveSponsorshipWindow` BEFORE the leaf is signed: a malformed window
+/// throws rather than burning a one-time leaf on an unusable approval.
 export function signPaymasterUserOp(params: SignPaymasterUserOpParams): Hex {
+  const { validUntil, validAfter } = resolveSponsorshipWindow(params);
   const header64 = packPaymasterHeader({
     paymaster: params.paymaster,
     verificationGasLimit:
       params.verificationGasLimit ?? DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
     postOpGasLimit: params.postOpGasLimit ?? DEFAULT_PAYMASTER_POST_OP_GAS_LIMIT,
-    validUntil: params.validUntil ?? 0,
-    validAfter: params.validAfter ?? 0,
+    validUntil,
+    validAfter,
   });
   // The binding covers the header (which is `paymasterAndData[0:64)` at verify
   // time), so feed the header in as the truncated paymasterAndData.

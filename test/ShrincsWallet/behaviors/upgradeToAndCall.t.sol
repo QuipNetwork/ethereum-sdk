@@ -13,14 +13,15 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
+import {ShrincsWalletStorage as Storage} from "../../../contracts/shrincs/ShrincsWalletStorage.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
 bytes32 constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
-// keyVersion slot (`ShrincsWalletStorage` base + 3).
-bytes32 constant KEY_VERSION_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc03;
-// `usedStatefulLeafBitmap` mapping base (`ShrincsWalletStorage` base + 6).
-bytes32 constant BITMAP_BASE_SLOT = 0x156c3acdcccbf9925f3430f598565ae5b05788e8a68a7bf182e71c432eafdc06;
+// keyVersion slot (`ShrincsWalletStorage` base + 3) and the `usedStatefulLeafBitmap` mapping
+// base (base + 6). The offsets are pinned by `_storageLayout.t.sol`; derive, never retype.
+bytes32 constant KEY_VERSION_SLOT = bytes32(uint256(Storage._SHRINCS_STORAGE_SLOT) + 3);
+bytes32 constant BITMAP_BASE_SLOT = bytes32(uint256(Storage._SHRINCS_STORAGE_SLOT) + 6);
 
 contract DummyImpl {
     uint256 public marker;
@@ -108,8 +109,10 @@ contract MockMigrateImpl {
             installed := sload(IMPL_SLOT)
         }
         require(address(uint160(installed)) == EXPECTED_OLD, "impl slot swapped before migrate");
+        // Inline assembly only takes direct number constants; the slot is derived, so bind it first.
+        bytes32 keyVersionSlot = KEY_VERSION_SLOT;
         assembly {
-            sstore(KEY_VERSION_SLOT, add(sload(KEY_VERSION_SLOT), 1))
+            sstore(keyVersionSlot, add(sload(keyVersionSlot), 1))
         }
     }
 }

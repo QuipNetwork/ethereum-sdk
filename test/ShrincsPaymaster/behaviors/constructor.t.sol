@@ -5,8 +5,8 @@ import {IShrincsPaymaster} from "../../../contracts/interfaces/IShrincsPaymaster
 import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 
-/// @dev Behavior tests for the ShrincsPaymaster constructor — the single explicit revert
-///      branch (zero verifier) and the happy-path immutable assignment.
+/// @dev Behavior tests for the ShrincsPaymaster constructor — the two explicit revert
+///      branches (zero verifier, codeless verifier) and the happy-path immutable assignment.
 contract ShrincsPaymaster_constructor is ShrincsPaymasterTest {
     function test_constructor_setsVerifierImmutable() public {
         ShrincsPaymasterHarness fresh =
@@ -17,5 +17,21 @@ contract ShrincsPaymaster_constructor is ShrincsPaymasterTest {
     function test_constructor_revertsWhen_verifierZero() public {
         vm.expectRevert(IShrincsPaymaster.ZeroAddressVerifier.selector);
         new ShrincsPaymasterHarness(address(0));
+    }
+
+    /// @dev A non-zero address with no deployed code is rejected. Both EIP-1052 flavours are
+    ///      covered: a never-touched address (codehash 0) and a touched EOA (codehash
+    ///      keccak256("")) — `code.length` is 0 for both, unlike a `codehash != 0` guard.
+    function test_constructor_revertsWhen_verifierCodeless() public {
+        address untouched = makeAddr("untouchedVerifier");
+        assertEq(untouched.code.length, 0, "precondition: no code");
+        vm.expectRevert(IShrincsPaymaster.VerifierHasNoCode.selector);
+        new ShrincsPaymasterHarness(untouched);
+
+        address touched = makeAddr("touchedVerifier");
+        vm.deal(touched, 1 wei);
+        assertEq(touched.code.length, 0, "precondition: touched but no code");
+        vm.expectRevert(IShrincsPaymaster.VerifierHasNoCode.selector);
+        new ShrincsPaymasterHarness(touched);
     }
 }

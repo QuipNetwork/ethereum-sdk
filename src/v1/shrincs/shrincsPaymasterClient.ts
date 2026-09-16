@@ -54,6 +54,7 @@ import { withDecodedError } from "./internal/decodeError.js";
 import { type ShrincsKeyPair, type ShrincsSigner } from "./shrincsSigner.js";
 import {
   type PackedUserOperation,
+  resolveSponsorshipWindow,
   signPaymasterUserOp,
 } from "./userOp.js";
 import {
@@ -222,18 +223,31 @@ export class ShrincsPaymasterClient {
   /// pre-checks the operator key's commitment matches it (throwing
   /// `VerifierMismatchError` BEFORE signing), picks the lowest unused leaf, and
   /// signs the sponsorship binding.
+  ///
+  /// EXPIRY: a sponsorship is valid until `validUntil` (default: `now +
+  /// validitySeconds`, 15 minutes). It is the only control that makes an
+  /// issued-but-unsubmitted approval go stale on its own — the leaf already
+  /// binds sender, calldata and gas caps, and `markLeavesUsed` /
+  /// `rotateStatefulKey` are explicit owner actions, not expirations. Pass
+  /// `validUntil: 0` to opt INTO an unbounded approval. The window is
+  /// validated before any leaf is reserved (`InvalidSponsorshipWindowError`).
+  /// Every sponsorship that expires unused strands its leaf: burn it.
   async sponsorUserOp(params: {
     userOp: PackedUserOperation;
     validUntil?: number;
     validAfter?: number;
+    validitySeconds?: number;
+    now?: number;
     verificationGasLimit?: bigint;
     postOpGasLimit?: bigint;
     leaf?: number;
-  }): Promise<{ paymasterAndData: Hex; leaf: number }> {
+  }): Promise<{ paymasterAndData: Hex; leaf: number; validUntil: number; validAfter: number }> {
     await assertProviderState({
       publicClient: this.publicClient,
       expectedChainId: this.chainId,
     });
+    // Fail on a malformed window BEFORE the verifier read and the leaf reservation.
+    const window = resolveSponsorshipWindow(params);
     const verifier = await this.getShrincsVerifier();
     const keypair = this.operatorKeyPair(verifier.maxSignatures);
     if (
@@ -275,11 +289,12 @@ export class ShrincsPaymasterClient {
       keyVersion: verifier.keyVersion,
       verificationGasLimit: params.verificationGasLimit,
       postOpGasLimit: params.postOpGasLimit,
-      validUntil: params.validUntil,
-      validAfter: params.validAfter,
+      validUntil: window.validUntil,
+      validAfter: window.validAfter,
+      now: window.now,
       leaf,
     });
-    return { paymasterAndData, leaf };
+    return { paymasterAndData, leaf, validUntil: window.validUntil, validAfter: window.validAfter };
   }
 
   /// Local (no-RPC) upper bound on the gas a sponsored userOp can cost the

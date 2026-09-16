@@ -12,8 +12,10 @@ import {
   ACTION_PAYMASTER_APPROVE,
   packPaymasterHeader,
   paymasterBindingHash,
+  resolveSponsorshipWindow,
   signPaymasterUserOp,
 } from "../userOp.js";
+import { InvalidSponsorshipWindowError } from "../errors.js";
 
 const PAYMASTER = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const SENDER = "0x00000000000000000000000000000000000A11cE" as Address;
@@ -84,6 +86,7 @@ describe("shrincs paymaster userOp", () => {
     const leaf = 2;
     const op = userOpFor(5n, header64());
     const paymasterAndData = signPaymasterUserOp({
+      validUntil: 0, // explicit: the unbounded approval the zero header64() encodes
       keypair: verifier,
       userOp: op,
       paymaster: PAYMASTER,
@@ -127,6 +130,7 @@ describe("shrincs paymaster userOp", () => {
     // Deterministic for fixed inputs; different nonce => different signature.
     expect(
       signPaymasterUserOp({
+        validUntil: 0, // explicit: the unbounded approval the zero header64() encodes
         keypair: verifier,
         userOp: op,
         paymaster: PAYMASTER,
@@ -139,6 +143,7 @@ describe("shrincs paymaster userOp", () => {
     ).toBe(paymasterAndData);
     expect(
       signPaymasterUserOp({
+        validUntil: 0, // explicit: the unbounded approval the zero header64() encodes
         keypair: verifier,
         userOp: userOpFor(6n, header64()),
         paymaster: PAYMASTER,
@@ -149,5 +154,90 @@ describe("shrincs paymaster userOp", () => {
         leaf,
       })
     ).not.toBe(paymasterAndData);
+  });
+});
+
+describe("sponsorship validity window", () => {
+  const NOW = 1_700_000_000;
+
+  it("defaults validUntil to now + 15 minutes, validAfter to 0", () => {
+    expect(resolveSponsorshipWindow({ now: NOW })).toEqual({
+      validUntil: NOW + 15 * 60,
+      validAfter: 0,
+      now: NOW,
+    });
+  });
+
+  it("packs the default window into the signed header", () => {
+    const paymasterAndData = signPaymasterUserOp({
+      keypair: verifier,
+      userOp: userOpFor(5n, header64()),
+      paymaster: PAYMASTER,
+      chainId: CHAIN_ID,
+      keyVersion: 0n,
+      verificationGasLimit: 100_000n,
+      postOpGasLimit: 50_000n,
+      now: NOW,
+      leaf: 3,
+    });
+    const h = sliceHex(paymasterAndData, 0, 64);
+    expect(BigInt(sliceHex(h, 52, 58))).toBe(BigInt(NOW + 15 * 60)); // validUntil
+    expect(BigInt(sliceHex(h, 58, 64))).toBe(0n); // validAfter
+    // The signature commits to that header: a caller cannot later present the
+    // same sponsorship with a different window.
+    expect(h).toBe(header64(NOW + 15 * 60, 0));
+  });
+
+  it("every timing input is overridable", () => {
+    expect(resolveSponsorshipWindow({ now: NOW, validitySeconds: 60 })).toMatchObject({
+      validUntil: NOW + 60,
+    });
+    expect(resolveSponsorshipWindow({ now: NOW, validUntil: NOW + 5, validAfter: NOW + 1 })).toEqual({
+      validUntil: NOW + 5,
+      validAfter: NOW + 1,
+      now: NOW,
+    });
+    // Wall clock by default.
+    const before = Math.floor(Date.now() / 1000);
+    const w = resolveSponsorshipWindow({});
+    expect(w.now).toBeGreaterThanOrEqual(before);
+    expect(w.validUntil).toBe(w.now + 15 * 60);
+  });
+
+  it("an unbounded approval is an explicit opt-in (validUntil: 0), never the default", () => {
+    expect(resolveSponsorshipWindow({ now: NOW, validUntil: 0 })).toMatchObject({ validUntil: 0 });
+    expect(resolveSponsorshipWindow({ now: NOW, validUntil: 0, validAfter: NOW + 100 })).toMatchObject({
+      validUntil: 0,
+      validAfter: NOW + 100,
+    });
+  });
+
+  it("rejects malformed windows before a leaf is spent", () => {
+    const bad = (p: Parameters<typeof resolveSponsorshipWindow>[0]) =>
+      expect(() => resolveSponsorshipWindow({ now: NOW, ...p })).toThrow(InvalidSponsorshipWindowError);
+    bad({ validUntil: NOW + 10, validAfter: NOW + 10 }); // inverted / empty
+    bad({ validUntil: NOW + 10, validAfter: NOW + 20 });
+    bad({ validUntil: NOW }); // already expired at signing time
+    bad({ validUntil: NOW - 1 });
+    bad({ validUntil: -5 });
+    bad({ validAfter: -1 });
+    bad({ validUntil: 1.5 });
+    bad({ validUntil: 2 ** 48 }); // over the 6-byte field
+    bad({ validAfter: 2 ** 48 });
+    bad({ validitySeconds: 0 });
+    bad({ validitySeconds: -60 });
+    // The signing helper surfaces the same error and signs nothing.
+    expect(() =>
+      signPaymasterUserOp({
+        keypair: verifier,
+        userOp: userOpFor(5n, header64()),
+        paymaster: PAYMASTER,
+        chainId: CHAIN_ID,
+        keyVersion: 0n,
+        now: NOW,
+        validUntil: NOW - 1,
+        leaf: 4,
+      })
+    ).toThrow(InvalidSponsorshipWindowError);
   });
 });
