@@ -10,6 +10,8 @@
 #   ./run test-integration   Run the jest anvil-backed integration suite.
 #   ./run test-all           Full hermetic suite: forge + every jest test.
 #   ./run test-forge-fork    Live-RPC forge integration suite (needs .env).
+#   ./run mutation [file] [filter]
+#                            Gambit mutation testing (see scripts/mutation.sh).
 #   ./run forge <args>       Pass arbitrary args to forge.
 #   ./run npm <args>         Pass arbitrary args to npm.
 #   ./run shell              Interactive shell inside the container.
@@ -68,6 +70,8 @@ container() {
     -w /work \
     -e HOME=/cache \
     -e FORK_RPC_URL="${FORK_RPC_URL:-}" \
+    -e MUTATION_OUTDIR="${MUTATION_OUTDIR:-/cache/gambit}" \
+    -e MUTATION_TIMEOUT="${MUTATION_TIMEOUT:-600}" \
     -e GIT_SSH_COMMAND="ssh -i /ssh/$SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/cache/known_hosts" \
     "$IMAGE" bash -c "$*"
 }
@@ -131,6 +135,11 @@ case "$cmd" in
   test-all)
     ensure_image; check_node_modules
     container batch "$PREPARE_JS && forge test --no-match-path '$FORGE_FORK_GLOB' && $JEST"
+    ;;
+
+  mutation)
+    ensure_image
+    container batch "bash scripts/mutation.sh $*"
     ;;
 
   forge)
