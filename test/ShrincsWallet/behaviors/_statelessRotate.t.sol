@@ -123,4 +123,19 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
             _signFullRotation(bad, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         assertEq(_rotate(bad, sig), bytes32(0), "signed tampered declaration rejected");
     }
+
+    /// @dev The fixed-width gates keep the rotation preimage canonical: an off-width pkSeed
+    ///      must fail even when the declared commitment is honestly recomputed over it and the
+    ///      signature is fresh — otherwise variable-length fields could alias two bundles to
+    ///      one packed encoding.
+    function test_exposed_statelessRotate_returnsZeroWhen_offWidthSeedConsistent() public {
+        SHRINCS.RotationTarget memory wide = target;
+        wide.pkSeed = new bytes(31);
+        wide.publicKeyCommitment = abi.encodePacked(
+            SHRINCS.publicKeyCommitmentFromParts(wide.statefulPublicKey, wide.pkSeed, wide.hypertreeRoot)
+        );
+        SPHINCSPlusC.Signature memory sig =
+            _signFullRotation(wide, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        assertEq(_rotate(wide, sig), bytes32(0), "off-width pkSeed rejected despite consistency");
+    }
 }
