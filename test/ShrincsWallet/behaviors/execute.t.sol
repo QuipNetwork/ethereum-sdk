@@ -20,6 +20,17 @@ contract MockCallee {
     }
 }
 
+/// @dev Records the argument of the function actually invoked — with NO fallback, so a
+///      plain ETH transfer (rather than the encoded contract call) reverts instead of
+///      silently landing. Proves `execute` forwards the calldata, not just pings the target.
+contract MockCallRecorder {
+    uint256 public lastValue;
+
+    function record(uint256 v) external {
+        lastValue = v;
+    }
+}
+
 /// @dev Behavior tests for the owner-path
 ///      `execute(PublicKey,StatefulSignature,address,uint256,bytes,uint256 maxFee)`.
 ///      Access control, the pre-verify leaf guards, the `InvalidSignature` branch, and the
@@ -199,6 +210,21 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         wallet.execute(_mainPk(), sig, callee, 0, hex"1234", 0);
 
         assertTrue(MockCallee(payable(callee)).called(), "callee received the call");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
+    }
+
+    function test_execute_forwardsCalldataToContract() public {
+        // Etch a recorder with NO fallback: only the real encoded call can land. A plain
+        // ETH transfer to it (the empty-data path) reverts instead of silently succeeding.
+        address recorder = address(0xCA11EC);
+        vm.etch(recorder, address(new MockCallRecorder()).code);
+        bytes memory data = abi.encodeCall(MockCallRecorder.record, (0xC0FFEE));
+        SHRINCS.Signature memory sig = _executeSig(recorder, 0, data, 1);
+
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), sig, recorder, 0, data, 0);
+
+        assertEq(MockCallRecorder(recorder).lastValue(), 0xC0FFEE, "calldata reached the callee");
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
     }
 
