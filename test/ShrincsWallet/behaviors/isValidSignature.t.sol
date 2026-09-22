@@ -108,6 +108,19 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         assertEq(uint8(wallet.debugIsValidSignature(HASH, blob)), uint8(IShrincsWallet.Erc1271ValidationResult.Ok));
     }
 
+    /// @dev Zero-hash membrane: `hash` is the only caller-supplied context field, so a fully
+    ///      valid blob over `bytes32(0)` must still fail — otherwise an empty context could
+    ///      verify as a signature over nothing.
+    function test_isValidSignature_revertsWhen_zeroHash() public {
+        SPHINCSPlusC.Signature memory sig = _signErc1271(bytes32(0));
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(bytes32(0)));
+        assertEq(wallet.isValidSignature(bytes32(0), blob), FAIL);
+        assertEq(
+            uint8(wallet.debugIsValidSignature(bytes32(0), blob)),
+            uint8(IShrincsWallet.Erc1271ValidationResult.InvalidShrincsSignature)
+        );
+    }
+
     /// @dev The stateless 1271 verify must actually leave the wallet: a valid blob staticcalls
     ///      the pinned verifier's `verifyStateless`.
     function test_isValidSignature_delegatesToVerifier() public {
