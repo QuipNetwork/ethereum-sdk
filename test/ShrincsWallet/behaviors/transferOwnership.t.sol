@@ -218,6 +218,33 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertFalse(wallet.isStatefulLeafUsed(1), "no other leaf spent");
     }
 
+    /// @dev The handover installs the INCOMING bundle's signing budget: without the install the
+    ///      new owner inherits the old budget under the new keys. A different budget makes the
+    ///      write observable (same-budget handovers cannot distinguish it).
+    function test_transferOwnership_installsNewBudget() public {
+        uint32 nextBudget = MAX_SIG + 4;
+        (SHRINCS.SigningKey memory key, SHRINCS.PublicKey memory pk, bool ok) =
+            SHRINCSTestSigner.keygen("transfer-ownership-diff-budget", nextBudget);
+        require(ok, "keygen");
+        SHRINCS.RotationTarget memory nextKey = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: pk.publicKeyCommitment,
+            pkSeed: pk.pkSeed,
+            hypertreeRoot: pk.hypertreeRoot
+        });
+        bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
+        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) =
+            _currentOwnerSigs(nextKey, NEW_OWNER);
+        SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, nextCommitment, NEW_OWNER, ACCEPT_LEAF);
+        bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, nextCommitment);
+
+        vm.prank(OWNER);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER, keyAcc, ownerAcc);
+
+        assertEq(wallet.maxSignatures(), nextBudget, "incoming bundle budget installed");
+        assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "fresh bundle installed");
+    }
+
     /// @dev The acceptance binds neither nonce nor epoch: the recipient can sign it long before the
     ///      current owner broadcasts, and any actions the current owner consumes in between do not
     ///      invalidate it. (The commitment can be installed once, so it cannot be replayed either.)
