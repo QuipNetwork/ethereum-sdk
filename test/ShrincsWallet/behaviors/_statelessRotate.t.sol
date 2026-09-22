@@ -111,4 +111,16 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
             _signFullRotation(target, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
         assertEq(_rotate(target, crossSig), bytes32(0), "cross-domain signature rejected");
     }
+
+    /// @dev Declared-vs-recomputed equality is the authorization semantics: the signature binds
+    ///      the DECLARED bytes while the wallet installs the RECOMPUTED value. A tampered
+    ///      declaration must fail even when the recovery signature is freshly made over it —
+    ///      otherwise a signed lie would install an unverified bundle.
+    function test_exposed_statelessRotate_returnsZeroWhen_tamperedCommitmentSigned() public {
+        SHRINCS.RotationTarget memory bad = target;
+        bad.publicKeyCommitment = abi.encodePacked(keccak256("tampered-declared-commitment"));
+        SPHINCSPlusC.Signature memory sig =
+            _signFullRotation(bad, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        assertEq(_rotate(bad, sig), bytes32(0), "signed tampered declaration rejected");
+    }
 }
