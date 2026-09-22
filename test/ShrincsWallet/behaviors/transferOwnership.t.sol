@@ -179,6 +179,25 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 2);
     }
 
+    /// @dev The new epoch's leaf counter restarts at the acceptance leaf even when the
+    ///      previous epoch consumed leaves: without the reset, pre-handover consumption would
+    ///      leak into the new epoch's budget (the bitmap namespace is fresh but the counter is
+    ///      not), short-changing the new owner.
+    function test_transferOwnership_handoverResetsLeafCounterToAcceptanceLeaf() public {
+        // Dirty the counter first — without prior consumption it already reads 1 at handover
+        // time and the reset is a silent no-op.
+        bytes32 payloadHash = Codec.executePayloadHash(TARGET, 0, keccak256(""), 0);
+        SHRINCS.Signature memory executeSig = _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 2);
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), executeSig, TARGET, 0, "", 0);
+        assertEq(wallet.statefulLeavesUsed(), 1, "one leaf consumed before handover");
+
+        _handover();
+
+        assertEq(wallet.statefulLeavesUsed(), 1, "new epoch counter restarts at the acceptance leaf");
+        assertTrue(wallet.isStatefulLeafUsed(ACCEPT_LEAF), "acceptance leaf spent in the new epoch");
+    }
+
     /// @dev The acceptance binds neither nonce nor epoch: the recipient can sign it long before the
     ///      current owner broadcasts, and any actions the current owner consumes in between do not
     ///      invalidate it. (The commitment can be installed once, so it cannot be replayed either.)
