@@ -36,6 +36,17 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the wrapper nonce");
     }
 
+    /// @dev The real EntryPoint path end to end: `validateUserOp` (not just the exposed
+    ///      internal core) must accept a valid op. This is the only coverage of the envelope
+    ///      plumbing — the try/catch decode whose result feeds verification.
+    function test_validateSignature_entrypointAcceptsValidOp() public {
+        (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
+        vm.prank(ENTRY_POINT);
+        uint256 result = wallet.validateUserOp(op, userOpHash, 0);
+        assertEq(result, 0, "entrypoint validation accepts a valid op");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 marked consumed");
+    }
+
     function test_validateSignature_revertsWhen_replayConsumedLeaf() public {
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "first use passes");
