@@ -9,19 +9,27 @@ import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlu
 /// forge-config: default.invariant.depth = 10
 
 /// @title WalletFactory — Deploy Invariant Suite (deploy registry + fee split)
-/// @dev Stateful fuzz over wallet deployment interleaved with creation-fee
-///      updates and seed deprecate/undeprecate cycles. Every successful
-///      deploy is mirrored with its fee/value context; invariants replay the
-///      full registry binding (`wallets`, `commitmentOf`, `walletOwner`,
-///      owner commitment-sets), the fee split (factory keeps exactly the
-///      live creation fee, the wallet receives the remainder), and the
+/// @dev Stateful fuzz over wallet deployment (`deployLatestWalletProxy` and
+///      `deploySpecificWalletProxy`) interleaved with creation-fee updates
+///      and seed deprecate/undeprecate cycles. Every successful deploy is
+///      mirrored with its fee/value context; invariants replay the full
+///      registry binding (`wallets`, `commitmentOf`, `walletOwner`, owner
+///      commitment-sets, `getWallets`), the fee split (factory keeps exactly
+///      the live creation fee, the wallet receives the remainder), and the
 ///      wallet-to-factory linkage (`owner`, `quipFactory`).
+///
+///      setUp seeds one fee update and one deploy per entry point so the
+///      suite is never vacuous: a mutant that disables deploys or fee writes
+///      fails `test_setUp` deterministically rather than passing on an empty
+///      mirror.
 ///
 ///      Deploy calls carry a full WOTS+ init payload, so this suite runs a
 ///      scoped budget (8 runs x 10 calls) rather than the foundry.toml
 ///      defaults. `fail_on_revert` stays false: underfunded and
 ///      no-active-implementation attempts are expected reverts.
 contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
+    uint256 internal constant SEED_FEE = 0.05 ether;
+
     WalletFactoryDeployHandler public deployHandler;
 
     function setUp() public override {
@@ -30,20 +38,27 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         deployHandler.initialize(factory, address(walletImplementation));
         vm.prank(ADMIN);
         factory.transferOwnership(address(deployHandler));
+        deployHandler.fuzzSetCreationFee(SEED_FEE);
+        deployHandler.fuzzDeployLatest(1, 1);
+        deployHandler.fuzzDeploySpecific(0);
         targetContract(address(deployHandler));
 
-        bytes4[] memory selectors = new bytes4[](4);
+        bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = WalletFactoryDeployHandler.fuzzDeployLatest.selector;
-        selectors[1] = WalletFactoryDeployHandler.fuzzSetCreationFee.selector;
-        selectors[2] = WalletFactoryDeployHandler.fuzzDeprecateSeed.selector;
-        selectors[3] = WalletFactoryDeployHandler.fuzzUndeprecateSeed.selector;
+        selectors[1] = WalletFactoryDeployHandler.fuzzDeploySpecific.selector;
+        selectors[2] = WalletFactoryDeployHandler.fuzzSetCreationFee.selector;
+        selectors[3] = WalletFactoryDeployHandler.fuzzDeprecateSeed.selector;
+        selectors[4] = WalletFactoryDeployHandler.fuzzUndeprecateSeed.selector;
         targetSelector(FuzzSelector({addr: address(deployHandler), selectors: selectors}));
     }
 
     function test_setUp() public view override {
         assertEq(factory.owner(), address(deployHandler));
-        assertEq(factory.creationFee(), 0);
+        assertEq(factory.creationFee(), SEED_FEE, "seeded fee update landed");
+        assertTrue(deployHandler.feeEverSet(), "fee mirror recorded the seeded update");
         assertEq(factory.getVettedCodeCount(), 1);
+        assertEq(deployHandler.deployCount(), 2, "one seeded deploy per entry point");
+        assertEq(deployHandler.callsDeploySpecific(), 1, "seeded specific deploy landed");
     }
 
     /// @dev Every mirrored deploy resolves through all four registry views:
@@ -113,5 +128,34 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
     ///      mid-campaign updates.
     function invariant_creationFeeBounded() public view {
         assertLe(factory.creationFee(), factory.MAX_FEE(), "creationFee exceeds MAX_FEE");
+    }
+
+    /// @dev The last successful fee update took effect verbatim: the live
+    ///      fee always equals the handler's mirror. A deleted, constant, or
+    ///      gated fee write diverges here.
+    function invariant_feeWriteTookEffect() public view {
+        assertTrue(deployHandler.feeEverSet(), "no fee update ever landed");
+        assertEq(factory.creationFee(), deployHandler.lastSetFee(), "live fee diverged from mirrored update");
+    }
+
+    /// @dev The `getWallets` view resolves every owner's commitment-set
+    ///      through `wallets`: for each fuzz owner the returned set equals
+    ///      the mirrored deploys addressed to them — no more, no fewer, no
+    ///      zero slots.
+    function invariant_getWalletsMatchesMirror() public view {
+        uint256 n = deployHandler.deployCount();
+        for (uint256 o = 1; o <= 5; o++) {
+            address owner_ = address(uint160(o));
+            address[] memory addrs = factory.getWallets(owner_);
+            uint256 expected;
+            for (uint256 i = 0; i < n; i++) {
+                if (deployHandler.deployAt(i).to == owner_) expected++;
+            }
+            assertEq(addrs.length, expected, "getWallets length diverged from mirror");
+            for (uint256 j = 0; j < addrs.length; j++) {
+                assertTrue(addrs[j] != address(0), "getWallets returned a zero slot");
+                assertEq(factory.walletOwner(addrs[j]), owner_, "getWallets entry owned elsewhere");
+            }
+        }
     }
 }

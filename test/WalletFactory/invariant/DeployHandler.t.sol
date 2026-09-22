@@ -34,10 +34,13 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     uint256 public expectedFactoryFees;
     bool public seedDeprecated;
     uint256 public callsDeploy;
+    uint256 public callsDeploySpecific;
     uint256 public callsSetFee;
     uint256 public callsDeprecate;
     uint256 public callsUndeprecate;
     uint256 public revertCount;
+    uint256 public lastSetFee;
+    bool public feeEverSet;
 
     /// @dev Called once from the suite setUp. Funds the handler so it can
     ///      forward deployment value on every fuzz attempt.
@@ -88,11 +91,52 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
 
     /// @dev Moves the creation fee within `[0, MAX_FEE]` so later deploys
     ///      are charged at the then-current fee. Out-of-range fees are
-    ///      covered by per-function behavior tests.
+    ///      covered by per-function behavior tests. The last successful fee
+    ///      is mirrored so invariants pin the write (a deleted or constant
+    ///      write diverges from the mirror).
     function fuzzSetCreationFee(uint256 fee) external {
         fee = bound(fee, 0, factory_.MAX_FEE());
         try factory_.setCreationFee(fee) {
             callsSetFee++;
+            lastSetFee = fee;
+            feeEverSet = true;
+        } catch {
+            revertCount++;
+        }
+    }
+
+    /// @dev Deploys through `deploySpecificWalletProxy` at a vetted index
+    ///      (bound to the live set, a singleton here). Exercises the
+    ///      index-resolution + deprecation-gate path that `deployLatest`
+    ///      never touches; successes mirror exactly like latest deploys.
+    function fuzzDeploySpecific(uint256 idxSalt) external {
+        uint256 count = factory_.getVettedCodeCount();
+        if (count == 0) {
+            revertCount++;
+            return;
+        }
+        uint256 index = bound(idxSalt, 0, count - 1);
+        address to = address(uint160(bound(idxSalt >> 128, 1, 5)));
+        uint256 fee = factory_.creationFee();
+        uint256 value = bound(idxSalt, fee, fee + 2 ether);
+        bytes32 commitment = keccak256(abi.encode(deployNonce));
+        deployNonce++;
+        bytes memory payload = _deployPayload(deployNonce);
+        try factory_.deploySpecificWalletProxy{value: value}(commitment, index, payable(to), payload) returns (
+            address wallet
+        ) {
+            callsDeploySpecific++;
+            expectedFactoryFees += fee;
+            deploys.push(
+                DeployRecord({
+                    commitment: commitment,
+                    wallet: wallet,
+                    to: to,
+                    fee: fee,
+                    value: value,
+                    addrMatch: wallet == _predictedWallet(commitment)
+                })
+            );
         } catch {
             revertCount++;
         }
