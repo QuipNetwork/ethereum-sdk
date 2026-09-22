@@ -60,6 +60,23 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         );
     }
 
+    /// @dev Top-level malformation (tails cut off) must report `MalformedErc1271Payload`
+    ///      specifically — not fall through to a later gate. Skipping the decode check would
+    ///      misreport such blobs (e.g. as bad ECDSA).
+    function test_isValidSignature_revertsWhen_topLevelMalformed() public {
+        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
+        bytes memory cut = new bytes(0x60);
+        for (uint256 i; i < 0x60; ++i) {
+            cut[i] = blob[i];
+        }
+        assertEq(wallet.isValidSignature(HASH, cut), FAIL);
+        assertEq(
+            uint8(wallet.debugIsValidSignature(HASH, cut)),
+            uint8(IShrincsWallet.Erc1271ValidationResult.MalformedErc1271Payload)
+        );
+    }
+
     /// @dev ERC-1271 never-revert property (staticcall DoS resistance): a relying contract
     ///      staticcalls `isValidSignature`, so any revert is a denial of service on it. Adversarial
     ///      blobs whose ABI tail offsets point out of bounds — which the codec's `pw8` bounds-check
