@@ -151,4 +151,23 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
             _signFullRotation(wide, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         assertEq(_rotate(wide, sig), bytes32(0), "off-width root rejected despite consistency");
     }
+
+    /// @dev A zero-budget replacement key is unusable and must fail even with an honestly
+    ///      recomputed declaration and a fresh signature — otherwise rotation could install
+    ///      a key that can never sign again.
+    function test_exposed_statelessRotate_returnsZeroWhen_zeroBudgetConsistent() public {
+        SHRINCS.RotationTarget memory bad = target;
+        bytes memory spk = bad.statefulPublicKey;
+        spk[64] = 0;
+        spk[65] = 0;
+        spk[66] = 0;
+        spk[67] = 0; // zero the trailing maxSignatures
+        bad.statefulPublicKey = spk;
+        bad.publicKeyCommitment = abi.encodePacked(
+            SHRINCS.publicKeyCommitmentFromParts(spk, bad.pkSeed, bad.hypertreeRoot)
+        );
+        SPHINCSPlusC.Signature memory sig =
+            _signFullRotation(bad, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        assertEq(_rotate(bad, sig), bytes32(0), "zero-budget replacement rejected despite consistency");
+    }
 }
