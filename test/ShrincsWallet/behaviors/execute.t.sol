@@ -110,6 +110,17 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
 
+    /// @dev The remaining-budget view tracks consumption exactly: full budget minus used leaves.
+    ///      (Saturation at zero is unreachable — bitmap enforcement caps consumption at the
+    ///      budget — so the view is the plain difference on every reachable state.)
+    function test_execute_remainingSignaturesTracksConsumption() public {
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG, "full budget before");
+        SHRINCS.Signature memory sig = _executeSig(TARGET, 0, "", 1);
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), sig, TARGET, 0, "", 0);
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - 1, "budget minus one leaf");
+    }
+
     /// @dev Supersession headline: a signature bound to a superseded nonce is dead even though
     ///      its leaf is unused and its payload is intact.
     function test_execute_revertsWhen_staleNonce() public {
