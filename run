@@ -99,6 +99,16 @@ check_node_modules() {
 
 cmd="${1:-help}"; shift || true
 
+# Shell-quote user args once: the container runs everything through
+# `bash -c`, so metacharacters (|, parens, spaces) in filters or paths
+# would otherwise be re-parsed remotely. `%q` re-quotes each arg so the
+# remote shell recovers it verbatim. `exec`/`shell` skip this on purpose:
+# they take a remote-shell string by contract.
+forward_args=""
+for arg in "$@"; do
+  forward_args="$forward_args $(printf '%q' "$arg")"
+done
+
 case "$cmd" in
   build)
     podman build -t "$IMAGE" -f "$REPO/Containerfile" "$REPO"
@@ -113,13 +123,13 @@ case "$cmd" in
 
   test)
     ensure_image
-    container batch "forge test --no-match-path '$FORGE_FORK_GLOB' $*"
+    container batch "forge test --no-match-path '$FORGE_FORK_GLOB'$forward_args"
     ;;
 
   test-forge-fork)
     ensure_image
     [ -f "$REPO/.env" ] || die ".env required for fork tests (needs API_URL_BASE_SEPOLIA)."
-    container batch "forge test --match-path '$FORGE_FORK_GLOB' $*"
+    container batch "forge test --match-path '$FORGE_FORK_GLOB'$forward_args"
     ;;
 
   test-unit)
@@ -139,17 +149,17 @@ case "$cmd" in
 
   mutation)
     ensure_image
-    container batch "bash scripts/mutation.sh $*"
+    container batch "bash scripts/mutation.sh$forward_args"
     ;;
 
   forge)
     ensure_image
-    container batch "forge $*"
+    container batch "forge$forward_args"
     ;;
 
   npm)
     ensure_image
-    container batch "npm $*"
+    container batch "npm$forward_args"
     ;;
 
   exec)
