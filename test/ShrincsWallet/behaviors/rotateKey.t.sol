@@ -87,6 +87,30 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 0, "fresh epoch counter");
     }
 
+    /// @dev Rotation installs the NEW subkey's signing budget: without the install the wallet
+    ///      keeps enforcing the old budget under the new key. A different budget makes the
+    ///      write observable (same-budget rotations cannot distinguish it).
+    function test_rotateKey_installsNewBudget() public {
+        uint32 nextBudget = MAX_SIG + 4;
+        (, SHRINCS.PublicKey memory pk, bool ok) =
+            SHRINCSTestSigner.keygen("rotate-key-diff-budget", nextBudget);
+        require(ok, "keygen");
+        bytes32 nextCommitment = SHRINCS.publicKeyCommitmentFromParts(
+            pk.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot
+        );
+        SHRINCS.StatefulRotationTarget memory t = SHRINCS.StatefulRotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: abi.encodePacked(nextCommitment)
+        });
+        SHRINCS.Signature memory sig = _signStatefulAction(
+            Codec.ACTION_ROTATE_KEY, Codec.rotateKeyPayloadHash(nextCommitment), 1
+        );
+        vm.prank(OWNER);
+        wallet.rotateKey(_mainPk(), sig, t);
+        assertEq(wallet.maxSignatures(), nextBudget, "new stateful budget installed");
+        assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "new stateful subkey installed");
+    }
+
     /*──────────────────── spent-tree tracking ────────────────────*/
 
     function _rotateSig(bytes32 nextCommitment, uint32 slot) internal view returns (SHRINCS.Signature memory) {
