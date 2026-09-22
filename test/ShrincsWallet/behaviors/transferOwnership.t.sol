@@ -198,6 +198,26 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertTrue(wallet.isStatefulLeafUsed(ACCEPT_LEAF), "acceptance leaf spent in the new epoch");
     }
 
+    /// @dev The acceptance leaf is whatever leaf the incoming bundle actually signed with — not
+    ///      always 1. The new epoch opens with exactly THAT leaf spent; pinning any other leaf
+    ///      would leave the real one reusable and burn an innocent one.
+    function test_transferOwnership_acceptanceLeafRecordedInNewEpoch() public {
+        (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
+        bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
+        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) =
+            _currentOwnerSigs(nextKey, NEW_OWNER);
+        SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, c, NEW_OWNER, 2);
+        bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, c);
+
+        vm.prank(OWNER);
+        vm.expectEmit(true, true, false, false, address(wallet));
+        emit IShrincsWallet.StatefulSignatureVerified(2, 1);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER, keyAcc, ownerAcc);
+
+        assertTrue(wallet.isStatefulLeafUsed(2), "actual acceptance leaf spent in the new epoch");
+        assertFalse(wallet.isStatefulLeafUsed(1), "no other leaf spent");
+    }
+
     /// @dev The acceptance binds neither nonce nor epoch: the recipient can sign it long before the
     ///      current owner broadcasts, and any actions the current owner consumes in between do not
     ///      invalidate it. (The commitment can be installed once, so it cannot be replayed either.)
