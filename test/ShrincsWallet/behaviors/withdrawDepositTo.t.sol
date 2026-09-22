@@ -20,6 +20,18 @@ contract MockEntryPointStub {
     receive() external payable {}
 }
 
+/// @dev EntryPoint stand-in that RECORDS the withdrawal: proves `withdrawDepositTo` actually
+///      forwards `(to, amount)` instead of merely consuming the signature.
+contract MockEntryPointRecorder {
+    address public lastTo;
+    uint256 public lastAmount;
+
+    function withdrawTo(address to, uint256 amount) external {
+        lastTo = to;
+        lastAmount = amount;
+    }
+}
+
 /// @dev Behavior tests for owner-path `withdrawDepositTo(PublicKey,StatefulSignature,address,uint256)`.
 contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     address internal constant TO = address(0xD00D);
@@ -70,5 +82,17 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
         wallet.withdrawDepositTo(_pk(), sig, TO, 0);
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
+    }
+
+    function test_withdraw_forwardsToAndAmount() public {
+        // A nonzero withdrawal against a RECORDING EntryPoint: only the real forwarded
+        // `withdrawTo(to, amount)` call lands exactly once with the signed values.
+        vm.etch(ENTRY_POINT, address(new MockEntryPointRecorder()).code);
+        SHRINCS.Signature memory sig =
+            _signStatefulAction(Codec.ACTION_WITHDRAW, Codec.withdrawPayloadHash(TO, 1 ether), 1);
+        vm.prank(OWNER);
+        wallet.withdrawDepositTo(_pk(), sig, TO, 1 ether);
+        assertEq(MockEntryPointRecorder(ENTRY_POINT).lastTo(), TO, "recipient forwarded");
+        assertEq(MockEntryPointRecorder(ENTRY_POINT).lastAmount(), 1 ether, "amount forwarded");
     }
 }
