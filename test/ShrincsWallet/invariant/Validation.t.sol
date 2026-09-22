@@ -59,6 +59,13 @@ contract ShrincsWallet_Validation_Invariant is ShrincsWalletTest {
             ERC4337.PackedUserOperation memory op = _signChainOp(k);
             valHandler.pushValidOp(op, _chainHash(k), SIGN_BASE + 1 + uint32(k));
         }
+        // Seeded prefix: validate entry 0, then resubmit it for the
+        // deterministic stale (duplicate of a consumed leaf). The remaining
+        // chain stays aligned — entry k binds nonce k — and the suite is
+        // never vacuous: a mutant that breaks all validations, or the
+        // used-leaf guard, fails `test_setUp` instead of passing empty.
+        valHandler.fuzzValidateReplay(0);
+        valHandler.fuzzValidateReplay(0);
         targetContract(address(valHandler));
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = ShrincsWalletValidationHandler.fuzzValidateReplay.selector;
@@ -67,8 +74,11 @@ contract ShrincsWallet_Validation_Invariant is ShrincsWalletTest {
 
     function test_setUp() public view override {
         assertEq(valHandler.poolLength(), CHAIN_LEN, "validation chain seeded");
-        assertEq(wallet.actionNonce(), valInitialNonce, "nonce untouched by seeding");
-        assertEq(wallet.statefulLeavesUsed(), 0, "no leaf consumed by seeding");
+        assertEq(valHandler.callsValidate(), 1, "seeded entry validated");
+        assertEq(valHandler.staleUsedCount(), 1, "seeded duplicate reported consumed leaf");
+        assertEq(wallet.actionNonce(), valInitialNonce + 1, "seeded validation advanced the nonce");
+        assertEq(wallet.statefulLeavesUsed(), 1, "seeded validation consumed its leaf");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "seeded leaf marked");
     }
 
     /// @dev Every validated op advances the wrapper nonce by exactly one.

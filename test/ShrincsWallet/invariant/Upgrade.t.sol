@@ -100,6 +100,13 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
                 _probeVectorFor(chainImpls[k])
             );
         }
+        // Seeded prefix: land entry 0, then replay it for the deterministic
+        // stale (blob nonce 0 against live nonce 1). The remaining chain
+        // stays aligned — entry k binds blob nonce k — and the suite is never
+        // vacuous: a mutant that breaks all upgrades fails `test_setUp`
+        // instead of passing on an empty mirror.
+        upHandler.fuzzUpgradeReplay(0);
+        upHandler.fuzzUpgradeReplay(0);
         targetContract(address(upHandler));
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = ShrincsWalletUpgradeHandler.fuzzUpgradeReplay.selector;
@@ -125,9 +132,12 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
                 "chain impl codehash vetted"
             );
         }
-        assertEq(_implSlot(), address(walletImplementation), "impl slot starts at seed impl");
-        assertEq(wallet.actionNonce(), upInitialNonce, "nonce untouched by seeding");
-        assertEq(wallet.keyVersion(), 0, "epoch untouched by seeding");
+        assertEq(upHandler.callsUpgrade(), 1, "seeded entry landed");
+        assertEq(upHandler.staleCount(), 1, "seeded duplicate reported stale blob nonce");
+        assertEq(_implSlot(), chainImpls[0], "impl slot holds the seeded upgrade");
+        assertEq(wallet.actionNonce(), upInitialNonce + 1, "seeded landing advanced the nonce");
+        assertEq(wallet.keyVersion(), 0, "plain seeded upgrade keeps the epoch");
+        assertEq(wallet.statefulLeavesUsed(), 1, "seeded landing consumed its leaf");
     }
 
     /// @dev Every landing upgrade advances the nonce by exactly one.

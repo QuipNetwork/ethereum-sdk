@@ -98,6 +98,13 @@ contract ShrincsWallet_Rotation_Invariant is ShrincsWalletTest {
                 _treeId(next.statefulPublicKey)
             );
         }
+        // Seeded prefix: land entry 0, then replay it for the deterministic
+        // stale (a duplicate past the epoch reset reports InvalidSignature).
+        // The remaining chain stays aligned — entry k binds (nonce k, epoch
+        // k) — and the suite is never vacuous: a mutant that breaks all
+        // landings fails `test_setUp` instead of passing on an empty mirror.
+        rotHandler.fuzzRotateReplay(0);
+        rotHandler.fuzzRotateReplay(0);
         targetContract(address(rotHandler));
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = ShrincsWalletRotationHandler.fuzzRotateReplay.selector;
@@ -106,9 +113,12 @@ contract ShrincsWallet_Rotation_Invariant is ShrincsWalletTest {
 
     function test_setUp() public view override {
         assertEq(rotHandler.poolLength(), CHAIN_LEN, "rotation chain seeded");
-        assertEq(wallet.actionNonce(), rotInitialNonce, "nonce untouched by seeding");
-        assertEq(wallet.keyVersion(), 0, "epoch untouched by seeding");
-        assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment, "commitment untouched by seeding");
+        assertEq(rotHandler.callsRotate(), 1, "seeded entry landed");
+        assertEq(rotHandler.staleCount(), 1, "seeded duplicate reported superseded nonce");
+        assertEq(wallet.actionNonce(), rotInitialNonce + 1, "seeded landing advanced the nonce");
+        assertEq(wallet.keyVersion(), 1, "seeded landing bumped the epoch");
+        assertEq(wallet.getShrincsPublicKeyCommitment(), _chainCommitment(1), "seeded bundle installed");
+        assertEq(wallet.statefulLeavesUsed(), 0, "seeded rotation reset the used counter");
     }
 
     /// @dev Every landing rotation advances the nonce by exactly one.

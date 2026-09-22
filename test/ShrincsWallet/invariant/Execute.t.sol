@@ -74,6 +74,13 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
                 SIGN_BASE + 1 + uint32(k)
             );
         }
+        // Seeded prefix: land entry 0, then replay it for the deterministic
+        // stale (duplicate of a consumed leaf). The remaining chain stays
+        // aligned — entry k binds nonce k — and the suite is never vacuous:
+        // a mutant that breaks all landings, or the used-leaf guard, fails
+        // `test_setUp` instead of passing on an empty mirror.
+        execHandler.fuzzExecuteReplay(0);
+        execHandler.fuzzExecuteReplay(0);
         targetContract(address(execHandler));
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = ShrincsWalletExecuteHandler.fuzzExecuteReplay.selector;
@@ -82,9 +89,13 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
 
     function test_setUp() public view override {
         assertEq(execHandler.poolLength(), CHAIN_LEN, "execute chain seeded");
-        assertEq(wallet.actionNonce(), execInitialNonce, "nonce untouched by seeding");
-        assertEq(wallet.statefulLeavesUsed(), 0, "no leaf consumed by seeding");
-        assertEq(WALLET.balance, WALLET_FUNDS, "wallet funded");
+        assertEq(execHandler.callsExecute(), 1, "seeded entry landed");
+        assertEq(execHandler.staleUsedCount(), 1, "seeded duplicate reported consumed leaf");
+        assertEq(wallet.actionNonce(), execInitialNonce + 1, "seeded landing advanced the nonce");
+        assertEq(wallet.statefulLeavesUsed(), 1, "seeded landing consumed its leaf");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "seeded leaf marked");
+        assertEq(WALLET.balance, WALLET_FUNDS - _chainValue(0), "wallet debited by seeded value");
+        assertEq(_chainSink(0).balance, _chainValue(0), "seeded value delivered");
     }
 
     /// @dev Every landing entry advances the nonce by exactly one, so the
