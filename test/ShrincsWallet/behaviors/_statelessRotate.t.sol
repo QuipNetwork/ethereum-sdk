@@ -138,4 +138,17 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
             _signFullRotation(wide, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         assertEq(_rotate(wide, sig), bytes32(0), "off-width pkSeed rejected despite consistency");
     }
+
+    /// @dev Twin of the pkSeed gate for the hypertree root: an off-width root must fail even
+    ///      with an honestly recomputed declaration and a fresh signature.
+    function test_exposed_statelessRotate_returnsZeroWhen_offWidthRootConsistent() public {
+        SHRINCS.RotationTarget memory wide = target;
+        wide.hypertreeRoot = new bytes(33);
+        wide.publicKeyCommitment = abi.encodePacked(
+            SHRINCS.publicKeyCommitmentFromParts(wide.statefulPublicKey, wide.pkSeed, wide.hypertreeRoot)
+        );
+        SPHINCSPlusC.Signature memory sig =
+            _signFullRotation(wide, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        assertEq(_rotate(wide, sig), bytes32(0), "off-width root rejected despite consistency");
+    }
 }
