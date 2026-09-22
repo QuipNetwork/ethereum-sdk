@@ -2,10 +2,14 @@
 pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
+import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
+import {WalletFactory} from "../../../contracts/WalletFactory.sol";
+import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
 /// @dev Behavior tests for `migrate`. It is reachable ONLY mid-upgrade (the ERC-1967 gate), so
@@ -56,6 +60,37 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
             }
         }
         assertTrue(found, "WalletMigrated not emitted");
+    }
+
+    /// @dev `migrate` runs as the NEW implementation, so it re-pins the `walletFactory`
+    ///      storage slot to the new code's immutable: after a cross-factory upgrade the getter
+    ///      must follow the new implementation, never keep pointing at the old factory.
+    function test_migrate_repinsWalletFactoryToNewImplementation() public {
+        WalletFactory factory2Impl = new WalletFactory(MAX_FEE);
+        WalletFactory factory2 = WalletFactory(payable(LibClone.deployERC1967(address(factory2Impl))));
+        factory2.initialize(payable(ADMIN));
+        ShrincsWalletHarness implB =
+            new ShrincsWalletHarness(payable(address(factory2)), address(shrincsVerifier));
+
+        // The upgrade pre-check reads the CURRENT implementation's registry, so the new
+        // codehash is vetted there (vetting is codehash-keyed; the factory binding is
+        // irrelevant to it).
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(implB));
+
+        (bytes memory payload,) = _freshInitPayload("migrate-repin-factory");
+        SHRINCS.Signature memory sig = _signStatefulAction(
+            Codec.ACTION_UPGRADE,
+            Codec.upgradePayloadHash(address(implB), true, keccak256(payload)),
+            1
+        );
+        bytes memory data = abi.encode(
+            _mainPk(), sig, true, payload, wallet.actionNonce(), _probeVectorFor(address(implB))
+        );
+        vm.prank(OWNER);
+        wallet.upgradeToAndCall(address(implB), data);
+
+        assertEq(wallet.walletFactory(), address(factory2), "factory pin follows the new implementation");
     }
 
     function test_migrate_revertsWhen_notUpgrading() public {
