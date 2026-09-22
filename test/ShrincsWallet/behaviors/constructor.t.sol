@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {IWalletFactory} from "../../../contracts/interfaces/IWalletFactory.sol";
@@ -101,5 +102,15 @@ contract ShrincsWallet_constructor is ShrincsWalletTest {
         factory.deprecateImplementation(address(walletImplementation));
         assertEq(factory.latestWalletImpl(), address(redeploy));
         assertEq(factory.getVettedCodeCount(), 2, "two distinct codehashes for one source");
+    }
+
+    /// @dev The constructor locks the implementation (`_disableInitializers`): `initialize`
+    ///      must only run in a proxy's context. A directly-initialized implementation would
+    ///      let anyone claim its (codehash-vetted) identity with their own keys.
+    function test_constructor_revertsWhen_implementationInitialized() public {
+        ShrincsWalletHarness fresh =
+            new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier));
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        fresh.initialize(payable(OWNER), _validInitPayload());
     }
 }
