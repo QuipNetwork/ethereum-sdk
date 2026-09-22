@@ -93,6 +93,28 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         assertEq(wallet.walletFactory(), address(factory2), "factory pin follows the new implementation");
     }
 
+    /// @dev Migration installs the NEW bundles' signing budget: without the install the wallet
+    ///      keeps enforcing the old budget under the new keys. A different budget makes the
+    ///      write observable (same-budget migrations cannot distinguish it).
+    function test_migrate_installsNewBudget() public {
+        uint32 nextBudget = MAX_SIG + 4;
+        (, SHRINCS.PublicKey memory pk, bool ok) =
+            SHRINCSTestSigner.keygen("migrate-diff-budget", nextBudget);
+        require(ok, "keygen");
+        bytes32 commitment = _commitment32(pk);
+        bytes memory payload = _buildInitPayload(
+            commitment,
+            _toBytes32(pk.pkSeed),
+            pk,
+            HashSuite.HASH_SUITE_ID,
+            _freshErc1271Pk("migrate-diff-budget"),
+            HashSuite.HASH_SUITE_ID
+        );
+        _migrateViaUpgrade(payload);
+        assertEq(wallet.maxSignatures(), nextBudget, "new bundle budget installed");
+        assertEq(wallet.getShrincsPublicKeyCommitment(), commitment, "fresh bundle installed");
+    }
+
     function test_migrate_revertsWhen_notUpgrading() public {
         // Called directly (no upgrade in flight: the live proxy's pointer is the code that
         // runs) it must revert.
