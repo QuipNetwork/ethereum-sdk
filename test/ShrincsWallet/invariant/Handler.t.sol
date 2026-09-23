@@ -105,7 +105,13 @@ contract ShrincsWalletInvariantHandler is Test {
             callsDisabled++;
             return;
         }
-        if (ret.length >= 4 && bytes4(ret) == expected) {
+        bytes4 revertSelector;
+        if (ret.length >= 4) {
+            assembly ("memory-safe") {
+                revertSelector := mload(add(ret, 0x20))
+            }
+        }
+        if (revertSelector == expected) {
             revertCount++;
         } else {
             badReasonCount++;

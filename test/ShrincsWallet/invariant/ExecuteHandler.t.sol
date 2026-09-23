@@ -84,7 +84,14 @@ contract ShrincsWalletExecuteHandler is Test {
         (bool ok, bytes memory ret) = address(wallet).call(
             abi.encodeCall(
                 IShrincsWallet.execute,
-                (entry.pk, entry.sig, entry.target, entry.value, entry.data, entry.maxFee)
+                (
+                    entry.pk,
+                    entry.sig,
+                    entry.target,
+                    entry.value,
+                    entry.data,
+                    entry.maxFee
+                )
             )
         );
         if (ok) {
@@ -92,9 +99,17 @@ contract ShrincsWalletExecuteHandler is Test {
             successIdx.push(idx);
             return;
         }
-        if (ret.length >= 4 && bytes4(ret) == IShrincsWallet.InvalidSignature.selector) {
+        bytes4 revertSelector;
+        if (ret.length >= 4) {
+            assembly ("memory-safe") {
+                revertSelector := mload(add(ret, 0x20))
+            }
+        }
+        if (revertSelector == IShrincsWallet.InvalidSignature.selector) {
             staleCount++;
-        } else if (ret.length >= 4 && bytes4(ret) == IShrincsWallet.StaleStatefulLeaf.selector) {
+        } else if (
+            revertSelector == IShrincsWallet.StaleStatefulLeaf.selector
+        ) {
             staleUsedCount++;
         } else {
             badReasonCount++;

@@ -71,14 +71,23 @@ contract ShrincsWalletRotationHandler is Test {
         RotationEntry storage entry = pool[idx];
         vm.prank(owner);
         (bool ok, bytes memory ret) = address(wallet).call(
-            abi.encodeCall(IShrincsWallet.rotateKey, (entry.pk, entry.sig, entry.target))
+            abi.encodeCall(
+                IShrincsWallet.rotateKey,
+                (entry.pk, entry.sig, entry.target)
+            )
         );
         if (ok) {
             callsRotate++;
             successIdx.push(idx);
             return;
         }
-        if (ret.length >= 4 && bytes4(ret) == IShrincsWallet.InvalidSignature.selector) {
+        bytes4 revertSelector;
+        if (ret.length >= 4) {
+            assembly ("memory-safe") {
+                revertSelector := mload(add(ret, 0x20))
+            }
+        }
+        if (revertSelector == IShrincsWallet.InvalidSignature.selector) {
             staleCount++;
         } else {
             badReasonCount++;

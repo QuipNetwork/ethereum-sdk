@@ -29,9 +29,13 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         address impl,
         bool shouldMigrate,
         bytes memory migrator,
-        uint256 k
+        uint32 k
     ) internal view returns (SHRINCS.Signature memory) {
-        bytes32 payloadHash = Codec.upgradePayloadHash(impl, shouldMigrate, keccak256(migrator));
+        bytes32 payloadHash = Codec.upgradePayloadHash(
+            impl,
+            shouldMigrate,
+            keccak256(migrator)
+        );
         SHRINCS.ActionContext memory ctx = Codec.buildActionContext(
             wallet.exposed_shrincsDomainSeparator(),
             upInitialNonce + k,
@@ -39,7 +43,13 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
             Codec.ACTION_UPGRADE,
             payloadHash
         );
-        return _signStatefulActionWith(mainKey, mainCommitment, ctx, SIGN_BASE + 1 + uint32(k));
+        return
+            _signStatefulActionWith(
+                mainKey,
+                mainCommitment,
+                ctx,
+                SIGN_BASE + 1 + k
+            );
     }
 
     function _implSlot() internal view returns (address) {
@@ -49,17 +59,23 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
     function setUp() public override {
         super.setUp();
         upInitialNonce = wallet.actionNonce();
-        for (uint256 k = 0; k < CHAIN_LEN; k++) {
-            chainImpls[k] =
-                address(new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier)));
+        for (uint32 k = 0; k < CHAIN_LEN; k++) {
+            chainImpls[k] = address(
+                new ShrincsWalletHarness(
+                    payable(address(factory)),
+                    address(shrincsVerifier)
+                )
+            );
         }
         vm.startPrank(ADMIN);
-        for (uint256 k = 0; k < CHAIN_LEN; k++) {
+        for (uint32 k = 0; k < CHAIN_LEN; k++) {
             factory.vetImplementation(chainImpls[k]);
         }
         vm.stopPrank();
 
-        (bytes memory migrator, bytes32 freshCommitment) = _freshInitPayload("upgrade-chain-migrate");
+        (bytes memory migrator, bytes32 freshCommitment) = _freshInitPayload(
+            "upgrade-chain-migrate"
+        );
         migrateCommitment = freshCommitment;
         migrateErc1271Pk = _freshErc1271Pk("upgrade-chain-migrate");
         migrateErc1271Commitment = _commitment32(migrateErc1271Pk);
@@ -67,7 +83,7 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
 
         upHandler = new ShrincsWalletUpgradeHandler();
         upHandler.initialize(wallet, OWNER);
-        for (uint256 k = 0; k < CHAIN_LEN; k++) {
+        for (uint32 k = 0; k < CHAIN_LEN; k++) {
             bool tail = k == CHAIN_LEN - 1;
             bytes memory mig = tail ? migrator : bytes("");
             upHandler.pushValidUpgrade(
@@ -85,13 +101,21 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         targetContract(address(upHandler));
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = ShrincsWalletUpgradeHandler.fuzzUpgradeReplay.selector;
-        targetSelector(FuzzSelector({addr: address(upHandler), selectors: selectors}));
+        targetSelector(
+            FuzzSelector({addr: address(upHandler), selectors: selectors})
+        );
     }
 
-    function _chainFreshMain(bytes memory seed)
+    function _chainFreshMain(
+        bytes memory seed
+    )
         internal
         view
-        returns (SHRINCS.SigningKey memory key, SHRINCS.PublicKey memory pk, bool ok)
+        returns (
+            SHRINCS.SigningKey memory key,
+            SHRINCS.PublicKey memory pk,
+            bool ok
+        )
     {
         (key, pk, ok) = SHRINCSTestSigner.keygen(seed, MAX_SIG);
         require(ok, "chain fresh keygen");
@@ -101,16 +125,37 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         assertEq(upHandler.poolLength(), CHAIN_LEN, "upgrade chain seeded");
         for (uint256 k = 0; k < CHAIN_LEN; k++) {
             assertTrue(
-                factory.getVettedCodeIndex(chainImpls[k].codehash) != type(uint256).max,
+                factory.getVettedCodeIndex(chainImpls[k].codehash) !=
+                    type(uint256).max,
                 "chain impl codehash vetted"
             );
         }
         assertEq(upHandler.callsUpgrade(), 1, "seeded entry landed");
-        assertEq(upHandler.staleCount(), 1, "seeded duplicate reported stale blob nonce");
-        assertEq(_implSlot(), chainImpls[0], "impl slot holds the seeded upgrade");
-        assertEq(wallet.actionNonce(), upInitialNonce + 1, "seeded landing advanced the nonce");
-        assertEq(wallet.keyVersion(), 0, "plain seeded upgrade keeps the epoch");
-        assertEq(wallet.statefulLeavesUsed(), 1, "seeded landing consumed its leaf");
+        assertEq(
+            upHandler.staleCount(),
+            1,
+            "seeded duplicate reported stale blob nonce"
+        );
+        assertEq(
+            _implSlot(),
+            chainImpls[0],
+            "impl slot holds the seeded upgrade"
+        );
+        assertEq(
+            wallet.actionNonce(),
+            upInitialNonce + 1,
+            "seeded landing advanced the nonce"
+        );
+        assertEq(
+            wallet.keyVersion(),
+            0,
+            "plain seeded upgrade keeps the epoch"
+        );
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            1,
+            "seeded landing consumed its leaf"
+        );
     }
 
     function invariant_nonceTracksSuccesses() public view {
@@ -123,18 +168,36 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
 
     function invariant_implSlotTracksPrefix() public view {
         uint256 m = upHandler.successLength();
-        assertEq(m, upHandler.callsUpgrade(), "success mirror diverged from counter");
+        assertEq(
+            m,
+            upHandler.callsUpgrade(),
+            "success mirror diverged from counter"
+        );
         for (uint256 i = 0; i < m; i++) {
-            assertLt(upHandler.successAt(i), m, "success outside the landed prefix");
+            assertLt(
+                upHandler.successAt(i),
+                m,
+                "success outside the landed prefix"
+            );
         }
-        address expected = m == 0 ? address(walletImplementation) : upHandler.entryImpl(m - 1);
-        assertEq(_implSlot(), expected, "implementation slot left the landed prefix");
+        address expected = m == 0
+            ? address(walletImplementation)
+            : upHandler.entryImpl(m - 1);
+        assertEq(
+            _implSlot(),
+            expected,
+            "implementation slot left the landed prefix"
+        );
     }
 
     function invariant_epochAndCommitmentsTrackTail() public view {
         uint256 m = upHandler.successLength();
         bool migrated = m == CHAIN_LEN;
-        assertEq(wallet.keyVersion(), migrated ? 1 : 0, "epoch diverged from migrate tail");
+        assertEq(
+            wallet.keyVersion(),
+            migrated ? 1 : 0,
+            "epoch diverged from migrate tail"
+        );
         assertEq(
             wallet.getShrincsPublicKeyCommitment(),
             migrated ? migrateCommitment : mainCommitment,
@@ -149,14 +212,20 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
 
     function invariant_usedTracksPrefix() public view {
         uint256 m = upHandler.successLength();
-        assertEq(wallet.statefulLeavesUsed(), m == CHAIN_LEN ? 0 : m, "used counter left the landed prefix");
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            m == CHAIN_LEN ? 0 : m,
+            "used counter left the landed prefix"
+        );
     }
 
     function invariant_migratedTreesSpent() public view {
         uint256 m = upHandler.successLength();
         if (m != CHAIN_LEN) return;
         assertTrue(
-            wallet.harness_isStatefulTreeSpent(_treeId(migrateMainPk.statefulPublicKey)),
+            wallet.harness_isStatefulTreeSpent(
+                _treeId(migrateMainPk.statefulPublicKey)
+            ),
             "migrated main stateful tree not spent"
         );
         assertTrue(
@@ -164,7 +233,9 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
             "migrated main stateless tree not spent"
         );
         assertTrue(
-            wallet.harness_isStatefulTreeSpent(_treeId(migrateErc1271Pk.statefulPublicKey)),
+            wallet.harness_isStatefulTreeSpent(
+                _treeId(migrateErc1271Pk.statefulPublicKey)
+            ),
             "migrated 1271 stateful tree not spent"
         );
         assertTrue(
@@ -174,7 +245,11 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
     }
 
     function invariant_noBadReason() public view {
-        assertEq(upHandler.badReasonCount(), 0, "upgradeToAndCall reverted with an unexpected reason");
+        assertEq(
+            upHandler.badReasonCount(),
+            0,
+            "upgradeToAndCall reverted with an unexpected reason"
+        );
     }
 
     function invariant_upgradeTouchesNothingElse() public view {
