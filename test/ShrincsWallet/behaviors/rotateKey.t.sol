@@ -87,9 +87,6 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 0, "fresh epoch counter");
     }
 
-    /// @dev Rotation installs the NEW subkey's signing budget: without the install the wallet
-    ///      keeps enforcing the old budget under the new key. A different budget makes the
-    ///      write observable (same-budget rotations cannot distinguish it).
     function test_rotateKey_installsNewBudget() public {
         uint32 nextBudget = MAX_SIG + 4;
         (, SHRINCS.PublicKey memory pk, bool ok) =

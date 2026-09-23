@@ -8,10 +8,6 @@ import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 
-/// @dev Disabled-surface selectors. The classical/uncapped overloads are
-///      inherited from Solady (`Ownable`/`ERC4337`), not declared in
-///      `IShrincsWallet`, and several names are overloaded — explicit
-///      canonical selectors keep every reference unambiguous.
 bytes4 constant SEL_RENOUNCE = bytes4(keccak256("renounceOwnership()"));
 bytes4 constant SEL_TRANSFER = bytes4(keccak256("transferOwnership(address)"));
 bytes4 constant SEL_REQUEST = bytes4(keccak256("requestOwnershipHandover()"));
@@ -33,14 +29,6 @@ bytes4 constant SEL_DELEGATE = bytes4(
 );
 bytes4 constant SEL_STORE = bytes4(keccak256("storageStore(bytes32,bytes32)"));
 
-/// @title ShrincsWallet Invariant Fuzz Handler
-/// @dev Drives two surfaces. Disabled classical entry points go through
-///      low-level calls asserting the exact expected revert selector; any
-///      success or wrong reason is counted separately. `markLeavesUsed` has
-///      a garbage path (must never succeed) and a valid-replay pool
-///      (pre-signed in setUp: first replay succeeds, later replays exercise
-///      the stale-leaf and skip paths). Owner-gated calls prank the real
-///      owner since classical transfer is disabled.
 contract ShrincsWalletInvariantHandler is Test {
     ShrincsWalletHarness public wallet;
     address public owner;
@@ -112,7 +100,6 @@ contract ShrincsWalletInvariantHandler is Test {
         bool ownerGated
     ) internal {
         if (ownerGated) vm.prank(owner);
-        // solhint-disable-next-line avoid-low-level-calls
         (bool ok, bytes memory ret) = address(wallet).call(data);
         if (ok) {
             callsDisabled++;

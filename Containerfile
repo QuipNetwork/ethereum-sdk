@@ -14,9 +14,7 @@ FROM node:20-bookworm-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # curl: foundryup installer. git+openssh-client: soldeer git deps (the private
-# gitlab hashsigs-solidity dep is fetched over SSH). jq: storage-layout target
-# (also used by scripts/mutation.sh). curl also fetches the pinned Gambit +
-# solc binaries in the layer after Foundry.
+# gitlab hashsigs-solidity dep is fetched over SSH). jq: storage-layout target.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         git \
@@ -36,11 +34,6 @@ RUN curl -fsSL https://foundry.paradigm.xyz | bash \
     && chmod -R a+rx /opt/foundry/bin \
     && forge --version && anvil --version
 
-# Certora Gambit (Solidity mutation testing, `./run mutation`): prebuilt
-# release binary, plus the solc build Gambit shells out to for mutant ASTs.
-# Both pinned so mutation scores stay reproducible. This layer sits after
-# Foundry so a Gambit/solc version bump does not invalidate the foundryup
-# layer above.
 ARG GAMBIT_VERSION=v1.0.6
 ARG SOLC_VERSION=v0.8.33
 RUN curl -fsSL -o /usr/local/bin/gambit \

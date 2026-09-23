@@ -60,9 +60,6 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         );
     }
 
-    /// @dev Top-level malformation (tails cut off) must report `MalformedErc1271Payload`
-    ///      specifically — not fall through to a later gate. Skipping the decode check would
-    ///      misreport such blobs (e.g. as bad ECDSA).
     function test_isValidSignature_revertsWhen_topLevelMalformed() public {
         SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
         bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
@@ -125,9 +122,6 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         assertEq(uint8(wallet.debugIsValidSignature(HASH, blob)), uint8(IShrincsWallet.Erc1271ValidationResult.Ok));
     }
 
-    /// @dev Zero-hash membrane: `hash` is the only caller-supplied context field, so a fully
-    ///      valid blob over `bytes32(0)` must still fail — otherwise an empty context could
-    ///      verify as a signature over nothing.
     function test_isValidSignature_revertsWhen_zeroHash() public {
         SPHINCSPlusC.Signature memory sig = _signErc1271(bytes32(0));
         bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(bytes32(0)));

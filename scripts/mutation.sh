@@ -1,38 +1,7 @@
 #!/usr/bin/env bash
-# Mutation testing for the Foundry suite via Certora Gambit.
-#
-# Generates source mutants for one contract, runs the scoped forge tests
-# against each mutant, and reports the kill score. A surviving mutant is a
-# test gap: the scoped suite passes on code that is wrong.
-#
-# Usage:
-#   ./run mutation [source-file] [match-contract]
-#
-#   source-file    Contract to mutate, repo-relative.
-#                  Default: contracts/shrincs/ShrincsWalletCodec.sol
-#   match-contract Forge --match-contract filter for the scoped tests.
-#                  Default: ShrincsWalletCodec
-#
-# Environment:
-#   MUTATION_OUTDIR  Where gambit writes mutants. Default: /cache/gambit
-#                    (/cache persists across ./run invocations; the repo
-#                    itself is never polluted — swapped files are restored).
-#   MUTATION_TIMEOUT Per-mutant `forge test` timeout in seconds. Default: 600.
-#
-# Recovery: if the run is killed violently (SIGKILL/OOM/CI timeout) the trap
-# below cannot fire and the swapped mutant persists in the worktree — recover
-# with `git checkout -- <source-file>`. The preflight refuses to start when
-# the target file has uncommitted changes, so the trap can only ever discard
-# the runner's own swap, never user edits.
-#
-# Examples:
-#   ./run mutation
-#   ./run mutation contracts/storage/WalletFactoryStorage.sol WalletFactory
-#
-# Exit codes:
-#   0 — every mutant killed
-#   1 — at least one mutant survived (test gap; ids listed on stdout)
-#   2 — usage or tooling error
+# Generate Gambit mutants and run the matching Forge tests; exit nonzero if any survive.
+# Run: ./run mutation [source-file] [match-contract]
+# Defaults: contracts/shrincs/ShrincsWalletCodec.sol and ShrincsWalletCodec.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

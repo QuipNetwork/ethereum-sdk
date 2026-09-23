@@ -20,9 +20,6 @@ contract MockCallee {
     }
 }
 
-/// @dev Records the argument of the function actually invoked — with NO fallback, so a
-///      plain ETH transfer (rather than the encoded contract call) reverts instead of
-///      silently landing. Proves `execute` forwards the calldata, not just pings the target.
 contract MockCallRecorder {
     uint256 public lastValue;
 
@@ -110,9 +107,6 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
     }
 
-    /// @dev The remaining-budget view tracks consumption exactly: full budget minus used leaves.
-    ///      (Saturation at zero is unreachable — bitmap enforcement caps consumption at the
-    ///      budget — so the view is the plain difference on every reachable state.)
     function test_execute_remainingSignaturesTracksConsumption() public {
         assertEq(wallet.remainingStatefulSignatures(), MAX_SIG, "full budget before");
         SHRINCS.Signature memory sig = _executeSig(TARGET, 0, "", 1);
@@ -225,8 +219,6 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
     }
 
     function test_execute_forwardsCalldataToContract() public {
-        // Etch a recorder with NO fallback: only the real encoded call can land. A plain
-        // ETH transfer to it (the empty-data path) reverts instead of silently succeeding.
         address recorder = address(0xCA11EC);
         vm.etch(recorder, address(new MockCallRecorder()).code);
         bytes memory data = abi.encodeCall(MockCallRecorder.record, (0xC0FFEE));

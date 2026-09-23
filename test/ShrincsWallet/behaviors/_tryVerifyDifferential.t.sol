@@ -6,12 +6,6 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {IERC7913SignatureVerifier} from "@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
 
-/// @title ShrincsWallet — _tryVerifyStateful differential vs the reference verifier
-/// @dev Pins accept/reject agreement between the wallet's `_tryVerifyStateful`
-///      policy boundary and a direct call to the pinned SHRINCS verifier over
-///      identical (commitment, messageHash, envelope) triples. Any divergence
-///      means the wallet's framing drifted from what the verifier expects.
-///      Covers INVARIANTS.md §19 (every verifier revert maps to rejection).
 contract ShrincsWallet__tryVerifyDifferential is ShrincsWalletTest {
     struct Triple {
         bytes32 commitment;

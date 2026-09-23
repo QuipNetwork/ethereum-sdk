@@ -6,17 +6,6 @@ import {WalletFactory} from "../../../contracts/WalletFactory.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
-/// @title WalletFactory Deploy Fuzz Handler
-/// @dev Fuzzes the wallet-deployment surface (`deployLatestWalletProxy`)
-///      interleaved with `setCreationFee` and seed deprecate/undeprecate.
-///      Inherits `WalletFactoryTest` for the WOTS+ init-payload helpers only
-///      (`setUp` is never called on the handler). Owns the factory under
-///      test so the fee/lifecycle selectors need no pranking.
-///
-///      Every deploy attempt consumes a fresh nonce-derived commitment, so
-///      CREATE3 salts never collide even when an attempt reverts. Successful
-///      deploys are mirrored with their fee/value context; invariants replay
-///      the full registry binding and fee-split accounting off the mirror.
 contract WalletFactoryDeployHandler is WalletFactoryTest {
     struct DeployRecord {
         bytes32 commitment;
@@ -42,8 +31,6 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     uint256 public lastSetFee;
     bool public feeEverSet;
 
-    /// @dev Called once from the suite setUp. Funds the handler so it can
-    ///      forward deployment value on every fuzz attempt.
     function initialize(WalletFactory factory__, address seedImpl_) external {
         require(address(factory_) == address(0), "handler already initialized");
         factory_ = factory__;
@@ -51,11 +38,6 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         vm.deal(address(this), 10_000 ether);
     }
 
-    /// @dev Deploys a wallet through `deployLatestWalletProxy` with a fresh
-    ///      commitment. `to` ranges over a 5-address universe so owner
-    ///      commitment-sets accumulate multiple entries. One attempt in eight
-    ///      is deliberately underfunded (when a fee is live) to cover
-    ///      `InsufficientCreationFee`.
     function fuzzDeployLatest(uint256 ownerSalt, uint256 valueSalt) external {
         address to = address(uint160(bound(ownerSalt, 1, 5)));
         uint256 fee = factory_.creationFee();
@@ -89,11 +71,6 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         }
     }
 
-    /// @dev Moves the creation fee within `[0, MAX_FEE]` so later deploys
-    ///      are charged at the then-current fee. Out-of-range fees are
-    ///      covered by per-function behavior tests. The last successful fee
-    ///      is mirrored so invariants pin the write (a deleted or constant
-    ///      write diverges from the mirror).
     function fuzzSetCreationFee(uint256 fee) external {
         fee = bound(fee, 0, factory_.MAX_FEE());
         try factory_.setCreationFee(fee) {
@@ -105,10 +82,6 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         }
     }
 
-    /// @dev Deploys through `deploySpecificWalletProxy` at a vetted index
-    ///      (bound to the live set, a singleton here). Exercises the
-    ///      index-resolution + deprecation-gate path that `deployLatest`
-    ///      never touches; successes mirror exactly like latest deploys.
     function fuzzDeploySpecific(uint256 idxSalt) external {
         uint256 count = factory_.getVettedCodeCount();
         if (count == 0) {
@@ -142,11 +115,6 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         }
     }
 
-    /// @dev Deprecates the seed implementation. The seed is the only vetted
-    ///      impl, so the first success drops `latestWalletImpl` to
-    ///      `address(0)` and later `deployLatestWalletProxy` attempts revert
-    ///      with `NoActiveImplementation`. Double-deprecation is idempotent
-    ///      success, not a revert.
     function fuzzDeprecateSeed() external {
         try factory_.deprecateImplementation(seedImpl) {
             callsDeprecate++;
@@ -156,8 +124,6 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         }
     }
 
-    /// @dev Restores the seed implementation so the deploy/latest cycle can
-    ///      resume. Reverts with `NotDeprecated` when the seed is live.
     function fuzzUndeprecateSeed() external {
         try factory_.undeprecateImplementation(seedImpl) {
             callsUndeprecate++;

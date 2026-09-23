@@ -6,16 +6,6 @@ import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.s
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 
-/// @title ShrincsWallet Execute Fuzz Handler
-/// @dev Replays a pre-signed CHAIN of `execute` authorizations. Entry `k` is
-///      bound to action nonce `k`, so it succeeds if and only if every entry
-///      before it already landed: the successful set is always the prefix
-///      `{0..m-1}` where `m` is the success count. Out-of-order replays (fresh
-///      leaf, superseded nonce) revert with `InvalidSignature`; duplicate
-///      replays of a consumed entry revert with `StaleStatefulLeaf` — the
-///      wallet checks the used-leaf bitmap before verifying the signature.
-///      Both are counted as stale; any other revert reason is recorded
-///      separately and must never occur.
 contract ShrincsWalletExecuteHandler is Test {
     struct ExecuteEntry {
         SHRINCS.PublicKey pk;
@@ -36,17 +26,12 @@ contract ShrincsWalletExecuteHandler is Test {
     uint256 public staleUsedCount;
     uint256 public badReasonCount;
 
-    /// @dev Called once from the suite setUp. The pool is pushed entry by
-    ///      entry afterwards; fuzzing starts only after the full chain is
-    ///      seeded. Idempotent guard — a re-init would clobber the pool.
     function initialize(ShrincsWalletHarness wallet_, address owner_) external {
         require(address(wallet) == address(0), "handler already initialized");
         wallet = wallet_;
         owner = owner_;
     }
 
-    /// @dev Setup-only: appends one chained execute authorization. Not a
-    ///      fuzz selector (the suite allowlists `fuzzExecuteReplay` only).
     function pushValidExecute(
         SHRINCS.PublicKey calldata pk,
         SHRINCS.Signature calldata sig,
@@ -91,10 +76,6 @@ contract ShrincsWalletExecuteHandler is Test {
         return successIdx[i];
     }
 
-    /// @dev Replays pool entry `idx` as the owner. A landing entry advances
-    ///      the wallet nonce by exactly one; every other replay is stale by
-    ///      construction (`InvalidSignature` for a superseded nonce,
-    ///      `StaleStatefulLeaf` for a consumed leaf).
     function fuzzExecuteReplay(uint256 idx) external {
         if (pool.length == 0) return;
         idx = bound(idx, 0, pool.length - 1);

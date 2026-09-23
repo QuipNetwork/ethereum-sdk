@@ -104,9 +104,6 @@ contract ShrincsWallet_constructor is ShrincsWalletTest {
         assertEq(factory.getVettedCodeCount(), 2, "two distinct codehashes for one source");
     }
 
-    /// @dev The constructor locks the implementation (`_disableInitializers`): `initialize`
-    ///      must only run in a proxy's context. A directly-initialized implementation would
-    ///      let anyone claim its (codehash-vetted) identity with their own keys.
     function test_constructor_revertsWhen_implementationInitialized() public {
         ShrincsWalletHarness fresh =
             new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier));

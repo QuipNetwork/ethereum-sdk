@@ -9,21 +9,6 @@ import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.s
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 32
 
-/// @title ShrincsWallet — Execute Invariant Suite (valid-signature chain)
-/// @dev Stateful fuzz over the owner `execute` valid path. The suite
-///      pre-signs a CHAIN of authorizations — entry `k` binds action nonce
-///      `k` — then fuzzes replay order. Entry `k` lands if and only if
-///      entries `0..k-1` already did, so successes always form the prefix
-///      `{0..m-1}`: the nonce, leaf bitmap, and ETH accounting invariants
-///      replay that prefix off the handler mirror. Out-of-order replays are
-///      stale by construction (`InvalidSignature`); duplicates of a consumed
-///      entry revert with `StaleStatefulLeaf`, pinning the wallet's guard
-///      order (used-leaf check before signature verification). Any other
-///      revert reason fails `invariant_noBadReason`.
-///
-///      The factory execute fee stays at its setUp default (0): fee
-///      charging is covered by per-function behavior tests, and a zero fee
-///      keeps the wallet-balance accounting exact.
 contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
     uint256 internal constant CHAIN_LEN = 5;
     uint256 internal constant WALLET_FUNDS = 10 ether;
@@ -39,10 +24,6 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         return 0.1 ether * (k + 1);
     }
 
-    /// @dev Signs entry `k` of the chain: EXECUTE over (sink, value, empty
-    ///      data, maxFee 0) bound to action nonce `k` at epoch 0, authorized
-    ///      at leaf `SIGN_BASE + 1 + k`. Explicit-nonce signing (no live
-    ///      execution between entries) is what makes the chain a chain.
     function _signChainEntry(uint256 k) internal view returns (SHRINCS.Signature memory) {
         address target = _chainSink(k);
         uint256 value = _chainValue(k);
@@ -74,11 +55,6 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
                 SIGN_BASE + 1 + uint32(k)
             );
         }
-        // Seeded prefix: land entry 0, then replay it for the deterministic
-        // stale (duplicate of a consumed leaf). The remaining chain stays
-        // aligned — entry k binds nonce k — and the suite is never vacuous:
-        // a mutant that breaks all landings, or the used-leaf guard, fails
-        // `test_setUp` instead of passing on an empty mirror.
         execHandler.fuzzExecuteReplay(0);
         execHandler.fuzzExecuteReplay(0);
         targetContract(address(execHandler));
@@ -98,8 +74,6 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         assertEq(_chainSink(0).balance, _chainValue(0), "seeded value delivered");
     }
 
-    /// @dev Every landing entry advances the nonce by exactly one, so the
-    ///      success count equals the nonce delta — no more, no less.
     function invariant_nonceTracksSuccesses() public view {
         assertEq(
             wallet.actionNonce(),
@@ -108,9 +82,6 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         );
     }
 
-    /// @dev Successes always form the prefix `{0..m-1}`: each recorded index
-    ///      lies below the success count, and the used-leaf counter matches
-    ///      it (one fresh leaf per landing entry).
     function invariant_successesFormPrefix() public view {
         uint256 m = execHandler.successLength();
         assertEq(m, execHandler.callsExecute(), "success mirror diverged from counter");
@@ -122,9 +93,6 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         }
     }
 
-    /// @dev ETH accounting: the wallet retains exactly funds minus the
-    ///      landed prefix's values, and each sink holds its value if and
-    ///      only if its entry landed.
     function invariant_ethAccountingExact() public view {
         uint256 m = execHandler.successLength();
         uint256 spent;
@@ -138,15 +106,10 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         }
     }
 
-    /// @dev Stale replays (out-of-order or duplicate) must revert with
-    ///      `InvalidSignature`. Any other reason — or a landing entry that
-    ///      was never counted — fails here.
     function invariant_noBadReason() public view {
         assertEq(execHandler.badReasonCount(), 0, "execute reverted with an unexpected reason");
     }
 
-    /// @dev Execute touches neither ownership, epoch, commitments, nor the
-    ///      spent-tree registry.
     function invariant_executeTouchesNothingElse() public view {
         assertEq(wallet.owner(), OWNER, "wallet owner drifted");
         assertEq(wallet.keyVersion(), 0, "keyVersion advanced without rotation");

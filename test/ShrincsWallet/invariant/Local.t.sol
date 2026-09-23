@@ -4,21 +4,6 @@ pragma solidity ^0.8.33;
 import {ShrincsWalletInvariantBase} from "./InvariantBase.sol";
 import {ShrincsWalletInvariantHandler} from "./Handler.t.sol";
 
-/// @title ShrincsWallet — Local Invariant Suite (revocation lifecycle)
-/// @dev Stateful fuzz over two surfaces: the disabled classical/uncapped
-///      entry points (exact revert reasons asserted) and `markLeavesUsed`
-///      both with garbage signatures (must never succeed) and the
-///      pre-signed replay pool (first replay per entry succeeds, later
-///      replays exercise stale-leaf and skip paths).
-///
-///      Scope: every valid path in this suite is revocation-only, which is
-///      nonce-neutral by the INVARIANTS.md §17 carve-out and epoch-neutral
-///      (no rotation selector exists here). `nonceStable`/`epochStable` are
-///      therefore load-bearing properties OF THIS SUITE — adding a
-///      rotation/execute selector must revisit them. Pins §17 (failed
-///      verification advances nothing; revocation never advances the nonce),
-///      §25 (spent-tree registry untouched without installs) and the
-///      disabled-ownership surface.
 contract ShrincsWallet_Local_Invariant is ShrincsWalletInvariantBase {
     function setUp() public override {
         super.setUp();

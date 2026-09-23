@@ -99,11 +99,6 @@ check_node_modules() {
 
 cmd="${1:-help}"; shift || true
 
-# Shell-quote user args once: the container runs everything through
-# `bash -c`, so metacharacters (|, parens, spaces) in filters or paths
-# would otherwise be re-parsed remotely. `%q` re-quotes each arg so the
-# remote shell recovers it verbatim. `exec`/`shell` skip this on purpose:
-# they take a remote-shell string by contract.
 forward_args=""
 for arg in "$@"; do
   forward_args="$forward_args $(printf '%q' "$arg")"

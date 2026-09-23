@@ -3,12 +3,6 @@ pragma solidity ^0.8.33;
 
 import {ShrincsWalletInvariantBase} from "./InvariantBase.sol";
 
-/// @title ShrincsWallet — Replay-Pool Liveness
-/// @dev Deterministic guard for the invariant suite's success-path coverage:
-///      every `fuzzValidMarkReplay` pool entry must succeed on first replay
-///      and consume a fresh leaf. Without this, a silently-invalid pool
-///      would make the fuzz campaign revert-only again while every
-///      invariant still passes.
 contract ShrincsWallet_ReplayPoolLiveness is ShrincsWalletInvariantBase {
     function test_replayPoolLandsSuccess() public {
         uint32 usedBefore = wallet.statefulLeavesUsed();

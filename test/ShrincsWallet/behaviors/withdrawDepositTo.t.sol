@@ -20,8 +20,6 @@ contract MockEntryPointStub {
     receive() external payable {}
 }
 
-/// @dev EntryPoint stand-in that RECORDS the withdrawal: proves `withdrawDepositTo` actually
-///      forwards `(to, amount)` instead of merely consuming the signature.
 contract MockEntryPointRecorder {
     address public lastTo;
     uint256 public lastAmount;
@@ -85,8 +83,6 @@ contract ShrincsWallet_withdrawDepositTo is ShrincsWalletTest {
     }
 
     function test_withdraw_forwardsToAndAmount() public {
-        // A nonzero withdrawal against a RECORDING EntryPoint: only the real forwarded
-        // `withdrawTo(to, amount)` call lands exactly once with the signed values.
         vm.etch(ENTRY_POINT, address(new MockEntryPointRecorder()).code);
         SHRINCS.Signature memory sig =
             _signStatefulAction(Codec.ACTION_WITHDRAW, Codec.withdrawPayloadHash(TO, 1 ether), 1);

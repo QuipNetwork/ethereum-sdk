@@ -62,9 +62,6 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         assertTrue(found, "WalletMigrated not emitted");
     }
 
-    /// @dev `migrate` runs as the NEW implementation, so it re-pins the `walletFactory`
-    ///      storage slot to the new code's immutable: after a cross-factory upgrade the getter
-    ///      must follow the new implementation, never keep pointing at the old factory.
     function test_migrate_repinsWalletFactoryToNewImplementation() public {
         WalletFactory factory2Impl = new WalletFactory(MAX_FEE);
         WalletFactory factory2 = WalletFactory(payable(LibClone.deployERC1967(address(factory2Impl))));
@@ -72,9 +69,6 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         ShrincsWalletHarness implB =
             new ShrincsWalletHarness(payable(address(factory2)), address(shrincsVerifier));
 
-        // The upgrade pre-check reads the CURRENT implementation's registry, so the new
-        // codehash is vetted there (vetting is codehash-keyed; the factory binding is
-        // irrelevant to it).
         vm.prank(ADMIN);
         factory.vetImplementation(address(implB));
 
@@ -93,9 +87,6 @@ contract ShrincsWallet_migrate is ShrincsWalletTest {
         assertEq(wallet.walletFactory(), address(factory2), "factory pin follows the new implementation");
     }
 
-    /// @dev Migration installs the NEW bundles' signing budget: without the install the wallet
-    ///      keeps enforcing the old budget under the new keys. A different budget makes the
-    ///      write observable (same-budget migrations cannot distinguish it).
     function test_migrate_installsNewBudget() public {
         uint32 nextBudget = MAX_SIG + 4;
         (, SHRINCS.PublicKey memory pk, bool ok) =

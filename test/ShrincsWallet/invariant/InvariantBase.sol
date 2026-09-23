@@ -6,14 +6,6 @@ import {ShrincsWalletInvariantHandler} from "./Handler.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 
-/// @title ShrincsWallet Invariant Test Base
-/// @dev Seeds one real `markLeavesUsed` revocation (auth leaf SIGN_BASE+1,
-///      target SIGN_BASE+2) plus a three-entry valid-replay pool (auth leaves
-///      SIGN_BASE+3/4/5 over overlapping target sets, exercising the
-///      success, already-used skip and in-batch duplicate paths). Classical
-///      transfer is disabled so ownership stays with the real owner; the
-///      handler pranks it for owner-gated calls. Subclasses declare
-///      `invariant_*` functions and call `targetContract(address(handler))`.
 abstract contract ShrincsWalletInvariantBase is ShrincsWalletTest {
     ShrincsWalletInvariantHandler public handler;
 

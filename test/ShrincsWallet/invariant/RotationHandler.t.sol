@@ -6,19 +6,6 @@ import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.s
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 
-/// @title ShrincsWallet Rotation Fuzz Handler
-/// @dev Replays a pre-signed CHAIN of `rotateKey` authorizations. Entry `k`
-///      rotates the bundle of key `k` to the stateful tree of key `k + 1`
-///      (stateless half carried forward) and is bound to action nonce `k` at
-///      epoch `k`, so it lands if and only if every entry before it already
-///      did: successes always form the prefix `{0..m-1}`.
-///
-///      Unlike the execute chain, stale replays here revert ONLY with
-///      `InvalidSignature`: a landing rotation resets the epoch leaf bitmap
-///      and installs a new commitment, so a duplicate replay presents a
-///      fresh bitmap plus a wrong (nonce, epoch, commitment) triple and can
-///      never reach the used-leaf guard. Any other revert reason is recorded
-///      separately and must never occur.
 contract ShrincsWalletRotationHandler is Test {
     struct RotationEntry {
         SHRINCS.PublicKey pk;
@@ -36,17 +23,12 @@ contract ShrincsWalletRotationHandler is Test {
     uint256 public staleCount;
     uint256 public badReasonCount;
 
-    /// @dev Called once from the suite setUp. The pool is pushed entry by
-    ///      entry afterwards; fuzzing starts only after the full chain is
-    ///      seeded. Idempotent guard — a re-init would clobber the pool.
     function initialize(ShrincsWalletHarness wallet_, address owner_) external {
         require(address(wallet) == address(0), "handler already initialized");
         wallet = wallet_;
         owner = owner_;
     }
 
-    /// @dev Setup-only: appends one chained rotation authorization. Not a
-    ///      fuzz selector (the suite allowlists `fuzzRotateReplay` only).
     function pushValidRotation(
         SHRINCS.PublicKey calldata pk,
         SHRINCS.Signature calldata sig,
@@ -83,10 +65,6 @@ contract ShrincsWalletRotationHandler is Test {
         return successIdx[i];
     }
 
-    /// @dev Replays pool entry `idx` as the owner. A landing entry advances
-    ///      the wallet nonce by exactly one and the key version by exactly
-    ///      one; every other replay is stale by construction and must revert
-    ///      with `InvalidSignature`.
     function fuzzRotateReplay(uint256 idx) external {
         if (pool.length == 0) return;
         idx = bound(idx, 0, pool.length - 1);

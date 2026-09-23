@@ -11,21 +11,6 @@ import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/help
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 16
 
-/// @title ShrincsWallet — Upgrade Invariant Suite (valid-signature chain + migrate tail)
-/// @dev Stateful fuzz over the `upgradeToAndCall` valid path. The suite
-///      pre-deploys three fresh implementations (each vetted individually —
-///      every deployment bakes its own address into the `_SELF` immutable,
-///      so codehashes are distinct), pre-signs a
-///      CHAIN of upgrade authorizations — entries 0 and 1 plain, entry 2
-///      migrating to fresh bundles — then fuzzes replay order. Entry `k`
-///      lands if and only if entries `0..k-1` already did, so successes
-///      always form the prefix `{0..m-1}`: the nonce, implementation slot,
-///      epoch, installed-commitment, and leaf-accounting invariants replay
-///      that prefix off the handler mirror.
-///
-///      The wallet's blob-nonce gate fires before any verification, so every
-///      stale replay reverts with the exact `StaleActionNonce(live, k)` the
-///      handler asserts; any other reason fails `invariant_noBadReason`.
 contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
     bytes32 internal constant IMPL_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
@@ -40,8 +25,6 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
     SHRINCS.PublicKey internal migrateMainPk;
     SHRINCS.PublicKey internal migrateErc1271Pk;
 
-    /// @dev Signs entry `k`: UPGRADE over (impl, flag, migrator) bound to
-    ///      blob nonce `k` at epoch 0, authorized at leaf `SIGN_BASE + 1 + k`.
     function _signUpgradeEntry(
         address impl,
         bool shouldMigrate,
@@ -70,9 +53,6 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
             chainImpls[k] =
                 address(new ShrincsWalletHarness(payable(address(factory)), address(shrincsVerifier)));
         }
-        // Each deployment bakes its own address into the `_SELF` immutable,
-        // so every candidate has a distinct codehash and needs its own
-        // vetting (one shared vetting would leave the others unvetted).
         vm.startPrank(ADMIN);
         for (uint256 k = 0; k < CHAIN_LEN; k++) {
             factory.vetImplementation(chainImpls[k]);
@@ -100,11 +80,6 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
                 _probeVectorFor(chainImpls[k])
             );
         }
-        // Seeded prefix: land entry 0, then replay it for the deterministic
-        // stale (blob nonce 0 against live nonce 1). The remaining chain
-        // stays aligned — entry k binds blob nonce k — and the suite is never
-        // vacuous: a mutant that breaks all upgrades fails `test_setUp`
-        // instead of passing on an empty mirror.
         upHandler.fuzzUpgradeReplay(0);
         upHandler.fuzzUpgradeReplay(0);
         targetContract(address(upHandler));
@@ -113,8 +88,6 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         targetSelector(FuzzSelector({addr: address(upHandler), selectors: selectors}));
     }
 
-    /// @dev Re-derives the migrate tail's fresh main bundle (same deterministic
-    ///      seed `_freshInitPayload` used, so this is the installed bundle).
     function _chainFreshMain(bytes memory seed)
         internal
         view
@@ -140,7 +113,6 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 1, "seeded landing consumed its leaf");
     }
 
-    /// @dev Every landing upgrade advances the nonce by exactly one.
     function invariant_nonceTracksSuccesses() public view {
         assertEq(
             wallet.actionNonce(),
@@ -149,8 +121,6 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         );
     }
 
-    /// @dev Successes always form the prefix `{0..m-1}`, and the ERC-1967
-    ///      slot always points at the last landed entry's implementation.
     function invariant_implSlotTracksPrefix() public view {
         uint256 m = upHandler.successLength();
         assertEq(m, upHandler.callsUpgrade(), "success mirror diverged from counter");
@@ -161,9 +131,6 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         assertEq(_implSlot(), expected, "implementation slot left the landed prefix");
     }
 
-    /// @dev The migrating tail (entry 2) bumps the epoch and installs fresh
-    ///      bundles; plain upgrades touch neither. The tail lands only as
-    ///      the full prefix, so `m == 3` is exactly "migrated".
     function invariant_epochAndCommitmentsTrackTail() public view {
         uint256 m = upHandler.successLength();
         bool migrated = m == CHAIN_LEN;
@@ -180,16 +147,11 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         );
     }
 
-    /// @dev Each landing upgrade consumes its auth leaf; the migrating tail
-    ///      additionally resets the epoch bitmap. Used is therefore the
-    ///      landed count — or zero after a migration.
     function invariant_usedTracksPrefix() public view {
         uint256 m = upHandler.successLength();
         assertEq(wallet.statefulLeavesUsed(), m == CHAIN_LEN ? 0 : m, "used counter left the landed prefix");
     }
 
-    /// @dev The migrating tail installs genuinely fresh trees: they read
-    ///      spent afterwards, while the seed trees stay spent throughout.
     function invariant_migratedTreesSpent() public view {
         uint256 m = upHandler.successLength();
         if (m != CHAIN_LEN) return;
@@ -211,13 +173,10 @@ contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
         );
     }
 
-    /// @dev Stale replays must revert with the exact `StaleActionNonce` the
-    ///      blob carries. Any other reason fails here.
     function invariant_noBadReason() public view {
         assertEq(upHandler.badReasonCount(), 0, "upgradeToAndCall reverted with an unexpected reason");
     }
 
-    /// @dev Upgrades touch neither ownership nor the factory linkage.
     function invariant_upgradeTouchesNothingElse() public view {
         assertEq(wallet.owner(), OWNER, "wallet owner drifted");
         assertEq(wallet.maxSignatures(), MAX_SIG, "maxSignatures drifted");

@@ -179,13 +179,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 2);
     }
 
-    /// @dev The new epoch's leaf counter restarts at the acceptance leaf even when the
-    ///      previous epoch consumed leaves: without the reset, pre-handover consumption would
-    ///      leak into the new epoch's budget (the bitmap namespace is fresh but the counter is
-    ///      not), short-changing the new owner.
     function test_transferOwnership_handoverResetsLeafCounterToAcceptanceLeaf() public {
-        // Dirty the counter first — without prior consumption it already reads 1 at handover
-        // time and the reset is a silent no-op.
         bytes32 payloadHash = Codec.executePayloadHash(TARGET, 0, keccak256(""), 0);
         SHRINCS.Signature memory executeSig = _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 2);
         vm.prank(OWNER);
@@ -198,9 +192,6 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertTrue(wallet.isStatefulLeafUsed(ACCEPT_LEAF), "acceptance leaf spent in the new epoch");
     }
 
-    /// @dev The acceptance leaf is whatever leaf the incoming bundle actually signed with — not
-    ///      always 1. The new epoch opens with exactly THAT leaf spent; pinning any other leaf
-    ///      would leave the real one reusable and burn an innocent one.
     function test_transferOwnership_acceptanceLeafRecordedInNewEpoch() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
@@ -218,9 +209,6 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertFalse(wallet.isStatefulLeafUsed(1), "no other leaf spent");
     }
 
-    /// @dev The handover installs the INCOMING bundle's signing budget: without the install the
-    ///      new owner inherits the old budget under the new keys. A different budget makes the
-    ///      write observable (same-budget handovers cannot distinguish it).
     function test_transferOwnership_installsNewBudget() public {
         uint32 nextBudget = MAX_SIG + 4;
         (SHRINCS.SigningKey memory key, SHRINCS.PublicKey memory pk, bool ok) =
