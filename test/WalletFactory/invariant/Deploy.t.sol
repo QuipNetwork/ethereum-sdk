@@ -179,6 +179,11 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
             0,
             "deployment bypassed implementation deprecation"
         );
+        assertEq(
+            deployHandler.unexpectedFailures(),
+            0,
+            "valid deployment unexpectedly reverted"
+        );
     }
 
     function invariant_creationFeeBounded() public view {

@@ -26,6 +26,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     bool public seedDeprecated;
     bool public secondDeprecated;
     uint256 public unexpectedSuccesses;
+    uint256 public unexpectedFailures;
     uint256 public callsDeploy;
     uint256 public callsDeploySpecific;
     uint256 public callsSetFee;
@@ -70,7 +71,9 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             )
         returns (address wallet) {
             callsDeploy++;
-            if (expectedImpl == address(0)) unexpectedSuccesses++;
+            if (expectedImpl == address(0) || value < fee) {
+                unexpectedSuccesses++;
+            }
             expectedFactoryFees += fee;
             address predicted = _predictedWallet(commitment);
             deploys.push(
@@ -86,6 +89,9 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             );
         } catch {
             revertCount++;
+            if (expectedImpl != address(0) && value >= fee) {
+                unexpectedFailures++;
+            }
         }
     }
 
@@ -141,6 +147,12 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             );
         } catch {
             revertCount++;
+            if (
+                (index == 0 && !seedDeprecated) ||
+                (index == 1 && !secondDeprecated)
+            ) {
+                unexpectedFailures++;
+            }
         }
     }
 
