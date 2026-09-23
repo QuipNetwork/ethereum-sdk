@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 import {ShrincsWalletExecuteHandler} from "./support/ExecuteHandler.t.sol";
-import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 32
@@ -50,6 +51,32 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
                 ctx,
                 SIGN_BASE + 1 + k
             );
+    }
+
+    function _assertNextExecuteStillPending(
+        address alteredTarget
+    ) internal view {
+        assertEq(
+            wallet.actionNonce(),
+            execInitialNonce + 1,
+            "rejected payload advanced nonce"
+        );
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            1,
+            "rejected payload consumed a leaf"
+        );
+        assertFalse(
+            wallet.isStatefulLeafUsed(SIGN_BASE + 2),
+            "pending leaf consumed"
+        );
+        assertEq(
+            WALLET.balance,
+            WALLET_FUNDS - _chainValue(0),
+            "rejected payload debited wallet"
+        );
+        assertEq(_chainSink(1).balance, 0, "pending sink received ETH");
+        assertEq(alteredTarget.balance, 0, "altered sink received ETH");
     }
 
     function setUp() public override {
@@ -211,5 +238,43 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
             "main commitment drifted"
         );
         assertEq(wallet.maxSignatures(), MAX_SIG, "maxSignatures drifted");
+    }
+
+    function test_execute_revertsWhen_payloadFieldAltered() public {
+        SHRINCS.Signature memory signature = _signChainEntry(1);
+        address target = _chainSink(1);
+        address alteredTarget = makeAddr("altered execute target");
+        uint256 value = _chainValue(1);
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.execute(_mainPk(), signature, alteredTarget, value, "", 0);
+        _assertNextExecuteStillPending(alteredTarget);
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.execute(_mainPk(), signature, target, value + 1, "", 0);
+        _assertNextExecuteStillPending(alteredTarget);
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.execute(_mainPk(), signature, target, value, hex"1234", 0);
+        _assertNextExecuteStillPending(alteredTarget);
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.execute(_mainPk(), signature, target, value, "", 1);
+        _assertNextExecuteStillPending(alteredTarget);
+
+        execHandler.fuzzExecuteReplay(1);
+        assertEq(
+            execHandler.callsExecute(),
+            2,
+            "intact payload no longer lands"
+        );
+        invariant_nonceTracksSuccesses();
+        invariant_successesFormPrefix();
+        invariant_ethAccountingExact();
+        invariant_noBadReason();
     }
 }
