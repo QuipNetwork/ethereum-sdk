@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WalletFactoryInvariantBase} from "./InvariantBase.sol";
-import {WalletFactoryInvariantHandler} from "./Handler.t.sol";
+import {WalletFactoryInvariantBase} from "./support/InvariantBase.sol";
+import {WalletFactoryInvariantHandler} from "./support/Handler.sol";
 
 contract WalletFactory_Local_Invariant is WalletFactoryInvariantBase {
     function setUp() public override {

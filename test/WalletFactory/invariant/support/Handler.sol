@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {WalletFactory} from "../../../contracts/WalletFactory.sol";
+import {WalletFactory} from "../../../../contracts/WalletFactory.sol";
 
 contract FactoryImplStub {
     uint256 public immutable id;

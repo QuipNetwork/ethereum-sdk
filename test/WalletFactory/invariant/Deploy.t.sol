@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {WalletFactoryTest} from "../WalletFactory.t.sol";
-import {WalletFactoryDeployHandler} from "./DeployHandler.t.sol";
+import {WalletFactoryDeployHandler} from "./support/DeployHandler.sol";
 import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 
 /// forge-config: default.invariant.runs = 8

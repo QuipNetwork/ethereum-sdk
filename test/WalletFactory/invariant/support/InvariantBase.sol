@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WalletFactoryTest} from "../WalletFactory.t.sol";
-import {WalletFactoryInvariantHandler, FactoryImplStub} from "./Handler.t.sol";
+import {WalletFactoryTest} from "../../WalletFactory.t.sol";
+import {WalletFactoryInvariantHandler, FactoryImplStub} from "./Handler.sol";
 
 abstract contract WalletFactoryInvariantBase is WalletFactoryTest {
     WalletFactoryInvariantHandler public handler;
