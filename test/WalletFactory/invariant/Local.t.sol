@@ -50,13 +50,14 @@ contract WalletFactory_Local_Invariant is WalletFactoryInvariantBase {
     function invariant_deprecatedNeverSelectedLatest() public view {
         address latest = factory.latestWalletImpl();
         if (latest == address(0)) return;
+        bytes32 selectedCodehash = latest.codehash;
         uint256 vettedCount = handler.everVettedCount();
         for (uint256 i = 0; i < vettedCount; i++) {
             bytes32 codehash = handler.everVettedAt(i);
             if (!factory.deprecatedImpls(codehash)) continue;
             assertTrue(
-                factory.vettedWalletImpls(codehash) != latest,
-                "deprecated codehash resolves to selected latest"
+                selectedCodehash != codehash,
+                "deprecated codehash selected as latest"
             );
         }
     }
