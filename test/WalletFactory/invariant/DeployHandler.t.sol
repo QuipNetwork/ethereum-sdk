@@ -23,6 +23,8 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     uint256 internal deployNonce;
     DeployRecord[] internal deploys;
     uint256 public expectedFactoryFees;
+    uint256 public expectedWithdrawn;
+    uint256 public expectedHandlerBalance;
     bool public seedDeprecated;
     bool public secondDeprecated;
     uint256 public unexpectedSuccesses;
@@ -32,6 +34,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     uint256 public callsSetFee;
     uint256 public callsDeprecate;
     uint256 public callsUndeprecate;
+    uint256 public callsWithdraw;
     uint256 public revertCount;
     uint256 public lastSetFee;
     bool public feeEverSet;
@@ -46,6 +49,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         seedImpl = seedImpl_;
         secondImpl = secondImpl_;
         vm.deal(address(this), 10_000 ether);
+        expectedHandlerBalance = address(this).balance;
     }
 
     function fuzzDeployLatest(uint256 ownerSalt, uint256 valueSalt) external {
@@ -75,6 +79,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
                 unexpectedSuccesses++;
             }
             expectedFactoryFees += fee;
+            expectedHandlerBalance -= value;
             address predicted = _predictedWallet(commitment);
             deploys.push(
                 DeployRecord({
@@ -134,6 +139,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
                 (index == 1 && secondDeprecated)
             ) unexpectedSuccesses++;
             expectedFactoryFees += fee;
+            expectedHandlerBalance -= value;
             deploys.push(
                 DeployRecord({
                     commitment: commitment,
@@ -189,6 +195,25 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             secondDeprecated = false;
         } catch {
             revertCount++;
+        }
+    }
+
+    function fuzzWithdraw(uint256 amountSalt, bool overdraw) external {
+        uint256 available = expectedFactoryFees - expectedWithdrawn;
+        uint256 amount = overdraw
+            ? available + 1
+            : bound(amountSalt, 0, available);
+        try factory_.withdraw(amount) {
+            callsWithdraw++;
+            if (overdraw) {
+                unexpectedSuccesses++;
+            } else {
+                expectedWithdrawn += amount;
+                expectedHandlerBalance += amount;
+            }
+        } catch {
+            revertCount++;
+            if (!overdraw) unexpectedFailures++;
         }
     }
 

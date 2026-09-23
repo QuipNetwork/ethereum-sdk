@@ -34,9 +34,10 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         deployHandler.fuzzSetCreationFee(SEED_FEE);
         deployHandler.fuzzDeployLatest(1, 1);
         deployHandler.fuzzDeploySpecific(0);
+        deployHandler.fuzzWithdraw(0.02 ether, false);
         targetContract(address(deployHandler));
 
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = WalletFactoryDeployHandler.fuzzDeployLatest.selector;
         selectors[1] = WalletFactoryDeployHandler.fuzzDeploySpecific.selector;
         selectors[2] = WalletFactoryDeployHandler.fuzzSetCreationFee.selector;
@@ -46,6 +47,7 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         selectors[6] = WalletFactoryDeployHandler
             .fuzzUndeprecateSecond
             .selector;
+        selectors[7] = WalletFactoryDeployHandler.fuzzWithdraw.selector;
         targetSelector(
             FuzzSelector({addr: address(deployHandler), selectors: selectors})
         );
@@ -70,6 +72,7 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
             1,
             "seeded specific deploy landed"
         );
+        assertEq(deployHandler.callsWithdraw(), 1, "seeded withdrawal landed");
     }
 
     function invariant_registryBindingsHold() public view {
@@ -113,8 +116,14 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
     function invariant_feeSplitExact() public view {
         assertEq(
             address(factory).balance,
-            deployHandler.expectedFactoryFees(),
+            deployHandler.expectedFactoryFees() -
+                deployHandler.expectedWithdrawn(),
             "factory retained wrong fee total"
+        );
+        assertEq(
+            address(deployHandler).balance,
+            deployHandler.expectedHandlerBalance(),
+            "factory owner balance diverged from fee flow"
         );
         uint256 n = deployHandler.deployCount();
         for (uint256 i = 0; i < n; i++) {
@@ -256,12 +265,15 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         deployHandler.fuzzSetCreationFee(0.02 ether);
         deployHandler.fuzzDeploySpecific(1);
         assertEq(deployHandler.deployCount(), originalCount + 2);
+        deployHandler.fuzzWithdraw(0.03 ether, false);
+        deployHandler.fuzzWithdraw(0, true);
         assertEq(deployHandler.callsDeploy(), 2);
         assertEq(deployHandler.callsDeploySpecific(), 2);
         assertEq(deployHandler.callsDeprecate(), 2);
         assertEq(deployHandler.callsUndeprecate(), 1);
+        assertEq(deployHandler.callsWithdraw(), 2);
         assertEq(factory.creationFee(), 0.02 ether);
-        assertEq(deployHandler.revertCount(), 2);
+        assertEq(deployHandler.revertCount(), 3);
         invariant_walletLinkageHolds();
         invariant_getWalletsMatchesMirror();
         invariant_feeSplitExact();
