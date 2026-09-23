@@ -258,7 +258,12 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         assertEq(deployHandler.deployCount(), originalCount + 1);
         deployHandler.fuzzUndeprecateSecond();
         assertEq(factory.latestWalletImpl(), address(secondImplementation));
+        deployHandler.fuzzUndeprecateSecond();
+        assertEq(deployHandler.callsUndeprecate(), 1);
         deployHandler.fuzzDeprecateSeed();
+        assertEq(deployHandler.callsDeprecate(), 2);
+        deployHandler.fuzzDeprecateSeed();
+        assertEq(deployHandler.callsDeprecate(), 3);
         deployHandler.fuzzDeploySpecific(0);
         assertEq(deployHandler.deployCount(), originalCount + 1);
 
@@ -269,11 +274,11 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         deployHandler.fuzzWithdraw(0, true);
         assertEq(deployHandler.callsDeploy(), 2);
         assertEq(deployHandler.callsDeploySpecific(), 2);
-        assertEq(deployHandler.callsDeprecate(), 2);
+        assertEq(deployHandler.callsDeprecate(), 3);
         assertEq(deployHandler.callsUndeprecate(), 1);
         assertEq(deployHandler.callsWithdraw(), 2);
         assertEq(factory.creationFee(), 0.02 ether);
-        assertEq(deployHandler.revertCount(), 3);
+        assertEq(deployHandler.revertCount(), 4);
         invariant_walletLinkageHolds();
         invariant_getWalletsMatchesMirror();
         invariant_feeSplitExact();

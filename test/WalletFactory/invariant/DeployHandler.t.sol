@@ -108,6 +108,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             feeEverSet = true;
         } catch {
             revertCount++;
+            unexpectedFailures++;
         }
     }
 
@@ -168,15 +169,19 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             seedDeprecated = true;
         } catch {
             revertCount++;
+            unexpectedFailures++;
         }
     }
 
     function fuzzUndeprecateSeed() external {
+        bool wasDeprecated = seedDeprecated;
         try factory_.undeprecateImplementation(seedImpl) {
+            if (!wasDeprecated) unexpectedSuccesses++;
             callsUndeprecate++;
             seedDeprecated = false;
         } catch {
             revertCount++;
+            if (wasDeprecated) unexpectedFailures++;
         }
     }
 
@@ -186,15 +191,19 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             secondDeprecated = true;
         } catch {
             revertCount++;
+            unexpectedFailures++;
         }
     }
 
     function fuzzUndeprecateSecond() external {
+        bool wasDeprecated = secondDeprecated;
         try factory_.undeprecateImplementation(secondImpl) {
+            if (!wasDeprecated) unexpectedSuccesses++;
             callsUndeprecate++;
             secondDeprecated = false;
         } catch {
             revertCount++;
+            if (wasDeprecated) unexpectedFailures++;
         }
     }
 
