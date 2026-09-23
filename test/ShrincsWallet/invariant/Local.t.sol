@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletInvariantBase} from "./support/InvariantBase.sol";
 import {ShrincsWalletInvariantHandler} from "./support/Handler.t.sol";
 
@@ -194,5 +196,23 @@ contract ShrincsWallet_Local_Invariant is ShrincsWalletInvariantBase {
     function invariant_spentTreesStable() public view {
         _assertTreesSpent(mainPk);
         _assertTreesSpent(erc1271Pk);
+    }
+
+    function test_markLeavesUsed_revertsWhen_signatureAltered() public {
+        uint32[] memory targets = _single(2);
+        SHRINCS.Signature memory signature = _signedMarkTargets(targets, 8);
+        signature.randomizer = bytes32(uint256(signature.randomizer) ^ 1);
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.markLeavesUsed(_mainPk(), signature, targets);
+
+        invariant_ownerStable();
+        invariant_nonceStable();
+        invariant_epochStable();
+        invariant_maxStable();
+        invariant_commitmentsStable();
+        invariant_bitmapMatchesSuccessfulRevocations();
+        invariant_usedMatchesMirror();
     }
 }
