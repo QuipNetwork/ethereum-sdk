@@ -4,29 +4,11 @@ pragma solidity ^0.8.33;
 import {WalletFactoryInvariantBase} from "./InvariantBase.sol";
 import {WalletFactoryInvariantHandler} from "./Handler.t.sol";
 
-/// @title WalletFactory — Local Invariant Suite (implementation lifecycle)
-/// @dev Stateful fuzz campaign over the implementation-lifecycle surface:
-///        - vetImplementation
-///        - deprecateImplementation
-///        - undeprecateImplementation (incl. address-rebind via twin pool)
-///        - setCreationFee
-///        - setExecuteFee
-///
-///      All five selectors are cheap (no WOTS+, no proxy deployment), so
-///      this suite inherits foundry.toml's defaults rather than scoping
-///      down. The audit findings checked here are INVARIANTS.md §7
-///      (implementation vetting) and §8 (fee bounding), restated as
-///      properties that must hold across arbitrary owner-action sequences.
 contract WalletFactory_Local_Invariant is WalletFactoryInvariantBase {
     function setUp() public override {
         super.setUp();
         targetContract(address(handler));
 
-        // Scope the fuzz to lifecycle selectors only. Without this, the
-        // runner also picks `initialize` and `acceptFactoryOwnership`,
-        // both of which are one-shot setUp helpers — every fuzz hit on
-        // them is a guaranteed revert that consumes budget without
-        // exploring real state.
         bytes4[] memory selectors = new bytes4[](5);
         selectors[0] = WalletFactoryInvariantHandler
             .fuzzVetImplementation
@@ -65,58 +47,41 @@ contract WalletFactory_Local_Invariant is WalletFactoryInvariantBase {
         );
     }
 
-    /// @dev Audit restatement — the temporal property "a deprecated impl
-    ///      never becomes the selected latest without explicit
-    ///      undeprecation." Equivalent to the first invariant
-    ///      contrapositively, but iterating the full codehash mirror
-    ///      surfaces the offending hash on failure rather than just the
-    ///      symptom address.
     function invariant_deprecatedNeverSelectedLatest() public view {
         address latest = factory.latestWalletImpl();
         if (latest == address(0)) return;
-        uint256 n = handler.everVettedCount();
-        for (uint256 i = 0; i < n; i++) {
-            bytes32 ch = handler.everVettedAt(i);
-            if (!factory.deprecatedImpls(ch)) continue;
+        uint256 vettedCount = handler.everVettedCount();
+        for (uint256 i = 0; i < vettedCount; i++) {
+            bytes32 codehash = handler.everVettedAt(i);
+            if (!factory.deprecatedImpls(codehash)) continue;
             assertTrue(
-                factory.vettedWalletImpls(ch) != latest,
+                factory.vettedWalletImpls(codehash) != latest,
                 "deprecated codehash resolves to selected latest"
             );
         }
     }
 
-    /// @dev Audit finding — codehash-to-address provenance. For every
-    ///      codehash currently in the vetted set, the registered impl's
-    ///      `.codehash` must equal the key it's stored under. Pins the
-    ///      `undeprecateImplementation` rebind contract: an address swap
-    ///      is allowed, but only to another address with the same
-    ///      bytecode (and therefore same codehash). A bug that lets the
-    ///      pointer drift to a different codehash would let unvetted
-    ///      bytecode masquerade as vetted.
     function invariant_codehashProvenancePreserved() public view {
-        uint256 n = factory.getVettedCodeCount();
-        for (uint256 i = 0; i < n; i++) {
-            bytes32 ch = factory.getVettedCodeAt(i);
-            address impl = factory.vettedWalletImpls(ch);
-            assertTrue(impl != address(0), "vetted codehash has zero impl");
+        uint256 vettedCount = factory.getVettedCodeCount();
+        for (uint256 i = 0; i < vettedCount; i++) {
+            bytes32 codehash = factory.getVettedCodeAt(i);
+            address implementation = factory.vettedWalletImpls(codehash);
+            assertTrue(
+                implementation != address(0),
+                "vetted codehash has zero impl"
+            );
             assertEq(
-                impl.codehash,
-                ch,
+                implementation.codehash,
+                codehash,
                 "registered impl codehash diverged from key"
             );
         }
     }
 
-    /// @dev INVARIANTS.md §8 — fees are capped at `MAX_FEE` at every
-    ///      boundary. Combined with this campaign interleaving fee ops
-    ///      against vet/deprecate/undeprecate ops, the other invariants
-    ///      double as a non-interaction check: if fee updates could
-    ///      corrupt implementation-selection state, one of the other
-    ///      properties would fire while this one holds.
     function invariant_feesBoundedByMaxFee() public view {
-        uint256 max = factory.MAX_FEE();
-        assertLe(factory.creationFee(), max, "creationFee exceeds MAX_FEE");
-        assertLe(factory.executeFee(), max, "executeFee exceeds MAX_FEE");
+        uint256 maxFee = factory.MAX_FEE();
+        assertLe(factory.creationFee(), maxFee, "creationFee exceeds MAX_FEE");
+        assertLe(factory.executeFee(), maxFee, "executeFee exceeds MAX_FEE");
         assertEq(
             factory.creationFee(),
             handler.expectedCreationFee(),
@@ -129,9 +94,6 @@ contract WalletFactory_Local_Invariant is WalletFactoryInvariantBase {
         );
     }
 
-    /// @dev Factory ownership is set in `setUp` and untouched by any
-    ///      fuzz selector. A drift implies a broken `onlyOwner` gate or
-    ///      a write that escaped the access-control layer.
     function invariant_factoryOwnerStable() public view {
         assertEq(factory.owner(), address(handler), "factory owner drifted");
     }
