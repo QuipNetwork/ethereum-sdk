@@ -94,6 +94,11 @@ contract ShrincsWalletExecuteHandler is Test {
                 )
             )
         );
+        if (idx == successIdx.length) {
+            assertTrue(ok, "next signed execute must succeed");
+        } else {
+            assertFalse(ok, "out-of-order execute must fail");
+        }
         if (ok) {
             callsExecute++;
             successIdx.push(idx);
@@ -106,10 +111,20 @@ contract ShrincsWalletExecuteHandler is Test {
             }
         }
         if (revertSelector == IShrincsWallet.InvalidSignature.selector) {
+            assertGt(
+                idx,
+                successIdx.length,
+                "only future execute has an invalid signature"
+            );
             staleCount++;
         } else if (
             revertSelector == IShrincsWallet.StaleStatefulLeaf.selector
         ) {
+            assertLt(
+                idx,
+                successIdx.length,
+                "only landed execute uses a stale leaf"
+            );
             staleUsedCount++;
         } else {
             badReasonCount++;

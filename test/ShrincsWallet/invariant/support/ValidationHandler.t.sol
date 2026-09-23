@@ -60,16 +60,40 @@ contract ShrincsWalletValidationHandler is Test {
         idx = bound(idx, 0, pool.length - 1);
         ValidationEntry storage entry = pool[idx];
         vm.recordLogs();
-        uint256 result = wallet.exposed_validateSignature(entry.op, entry.userOpHash);
+        uint256 result = wallet.exposed_validateSignature(
+            entry.op,
+            entry.userOpHash
+        );
+        if (idx == successIdx.length) {
+            assertEq(result, 0, "next signed validation must succeed");
+        } else {
+            assertEq(result, 1, "out-of-order validation must fail");
+        }
         if (result == 0) {
             callsValidate++;
             successIdx.push(idx);
             return;
         }
         uint256 reason = _rejectionReason();
-        if (reason == uint256(IShrincsWallet.UserOpValidationFailure.InvalidSignature)) {
+        if (
+            reason ==
+            uint256(IShrincsWallet.UserOpValidationFailure.InvalidSignature)
+        ) {
+            assertGt(
+                idx,
+                successIdx.length,
+                "only future validation has an invalid signature"
+            );
             staleCount++;
-        } else if (reason == uint256(IShrincsWallet.UserOpValidationFailure.StaleStatefulLeaf)) {
+        } else if (
+            reason ==
+            uint256(IShrincsWallet.UserOpValidationFailure.StaleStatefulLeaf)
+        ) {
+            assertLt(
+                idx,
+                successIdx.length,
+                "only landed validation uses a stale leaf"
+            );
             staleUsedCount++;
         } else {
             badReasonCount++;
@@ -79,7 +103,10 @@ contract ShrincsWalletValidationHandler is Test {
     function _rejectionReason() internal returns (uint256) {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IShrincsWallet.UserOpValidationRejected.selector) {
+            if (
+                logs[i].topics[0] ==
+                IShrincsWallet.UserOpValidationRejected.selector
+            ) {
                 return uint256(logs[i].topics[1]);
             }
         }

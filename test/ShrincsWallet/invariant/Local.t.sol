@@ -108,19 +108,22 @@ contract ShrincsWallet_Local_Invariant is ShrincsWalletInvariantBase {
         );
     }
 
-    function invariant_bitmapMonotonic() public view {
-        uint256 n = handler.everSeenCount();
-        uint256 checked;
-        for (
-            uint256 leaf = 1;
-            leaf <= wallet.maxSignatures() && checked < n;
-            leaf++
-        ) {
-            if (!handler.isSeen(leaf)) continue;
-            checked++;
-            assertTrue(wallet.isStatefulLeafUsed(leaf), "used leaf cleared");
+    function invariant_bitmapMatchesSuccessfulRevocations() public view {
+        uint256 seen;
+        for (uint256 leaf = 1; leaf <= wallet.maxSignatures(); leaf++) {
+            bool expectedUsed = handler.isSeen(leaf);
+            if (expectedUsed) seen++;
+            assertEq(
+                wallet.isStatefulLeafUsed(leaf),
+                expectedUsed,
+                "bitmap differs from successful revocations"
+            );
         }
-        assertEq(checked, n, "mirror references leaves outside range");
+        assertEq(
+            seen,
+            handler.everSeenCount(),
+            "mirror count differs from bitmap"
+        );
     }
 
     function invariant_usedMatchesMirror() public view {

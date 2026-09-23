@@ -8,6 +8,7 @@ import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.s
 
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 32
+/// forge-config: default.invariant.fail-on-revert = true
 
 contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
     uint256 internal constant CHAIN_LEN = 5;
@@ -112,6 +113,24 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         );
     }
 
+    function test_execute_entireSignedChainLands() public {
+        for (uint256 i = 1; i < CHAIN_LEN; i++) {
+            execHandler.fuzzExecuteReplay(i);
+        }
+        assertEq(execHandler.callsExecute(), CHAIN_LEN);
+        invariant_nonceTracksSuccesses();
+        invariant_successesFormPrefix();
+        invariant_ethAccountingExact();
+    }
+
+    function test_execute_futureSignatureDoesNotBlockNextEntry() public {
+        execHandler.fuzzExecuteReplay(CHAIN_LEN - 1);
+        assertEq(execHandler.staleCount(), 1);
+        execHandler.fuzzExecuteReplay(1);
+        assertEq(execHandler.callsExecute(), 2);
+        invariant_ethAccountingExact();
+    }
+
     function invariant_nonceTracksSuccesses() public view {
         assertEq(
             wallet.actionNonce(),
@@ -134,10 +153,18 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         );
         for (uint256 i = 0; i < m; i++) {
             uint256 idx = execHandler.successAt(i);
-            assertLt(idx, m, "success outside the landed prefix");
+            assertEq(idx, i, "execute successes must follow signing order");
             assertTrue(
                 wallet.isStatefulLeafUsed(execHandler.entryLeaf(idx)),
                 "landed entry leaf not marked"
+            );
+        }
+        for (uint32 leaf = 0; leaf <= MAX_SIG + 1; leaf++) {
+            bool expectedUsed = leaf > SIGN_BASE && leaf <= SIGN_BASE + m;
+            assertEq(
+                wallet.isStatefulLeafUsed(leaf),
+                expectedUsed,
+                "execute bitmap differs from landed prefix"
             );
         }
     }

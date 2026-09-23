@@ -71,6 +71,7 @@ abstract contract ShrincsWalletInvariantBase is ShrincsWalletTest {
         SHRINCS.Signature memory seedSig = _signedMarkTargets(seedTargets, 1);
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), seedSig, seedTargets);
+        handler.recordSeedMark(uint32(seedSig.authPath.length), seedTargets);
 
         _pushPoolEntry(_single(SIGN_BASE + 6), 3);
         _pushPoolEntry(_pair(SIGN_BASE + 6, SIGN_BASE + 7), 4);

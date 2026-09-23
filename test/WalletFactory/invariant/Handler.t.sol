@@ -59,6 +59,8 @@ contract WalletFactoryInvariantHandler is Test {
     ///      codehash. Invariants iterate this to scan the full lifecycle.
     bytes32[] internal everVettedCodehashes;
     mapping(bytes32 => bool) internal codehashSeen;
+    mapping(bytes32 => bool) internal expectedDeprecated;
+    mapping(bytes32 => address) internal expectedImplementation;
 
     // Per-op success counters (reverts excluded).
     uint256 public callsVet;
@@ -66,6 +68,8 @@ contract WalletFactoryInvariantHandler is Test {
     uint256 public callsUndeprecate;
     uint256 public callsSetCreationFee;
     uint256 public callsSetExecuteFee;
+    uint256 public expectedCreationFee;
+    uint256 public expectedExecuteFee;
     uint256 public revertCount;
 
     /// @dev Called once from the base setUp after ownership has been handed
@@ -87,6 +91,7 @@ contract WalletFactoryInvariantHandler is Test {
             slotVetted.push(false);
         }
         _markCodehash(initialImpl_.codehash);
+        expectedImplementation[initialImpl_.codehash] = initialImpl_;
     }
 
     /*══════════════════════════ helpers ════════════════════════════════*/
@@ -111,6 +116,8 @@ contract WalletFactoryInvariantHandler is Test {
             callsVet++;
             slotVetted[idx] = true;
             _markCodehash(impl.codehash);
+            expectedImplementation[impl.codehash] = impl;
+            expectedDeprecated[impl.codehash] = false;
         } catch {
             revertCount++;
         }
@@ -145,6 +152,7 @@ contract WalletFactoryInvariantHandler is Test {
         }
         try factory.deprecateImplementation(impl) {
             callsDeprecate++;
+            expectedDeprecated[codehash] = true;
         } catch {
             revertCount++;
         }
@@ -173,6 +181,8 @@ contract WalletFactoryInvariantHandler is Test {
         }
         try factory.undeprecateImplementation(impl) {
             callsUndeprecate++;
+            expectedDeprecated[codehash] = false;
+            expectedImplementation[codehash] = impl;
         } catch {
             revertCount++;
         }
@@ -185,6 +195,7 @@ contract WalletFactoryInvariantHandler is Test {
         fee = bound(fee, 0, factory.MAX_FEE());
         try factory.setCreationFee(fee) {
             callsSetCreationFee++;
+            expectedCreationFee = fee;
         } catch {
             revertCount++;
         }
@@ -195,6 +206,7 @@ contract WalletFactoryInvariantHandler is Test {
         fee = bound(fee, 0, factory.MAX_FEE());
         try factory.setExecuteFee(fee) {
             callsSetExecuteFee++;
+            expectedExecuteFee = fee;
         } catch {
             revertCount++;
         }
@@ -210,6 +222,20 @@ contract WalletFactoryInvariantHandler is Test {
         return everVettedCodehashes[i];
     }
 
+    function deprecatedInMirror(bytes32 codehash) external view returns (bool) {
+        return expectedDeprecated[codehash];
+    }
+
+    function implementationInMirror(
+        bytes32 codehash
+    ) external view returns (address) {
+        return expectedImplementation[codehash];
+    }
+
+    function twinAt(uint256 index) external view returns (address) {
+        return twins[index];
+    }
+
     /*══════════════════════════ internals ══════════════════════════════*/
 
     /// @dev Linear scan over the pool for a twin whose codehash matches.
@@ -217,7 +243,9 @@ contract WalletFactoryInvariantHandler is Test {
     ///      the twin's address only if its sibling was actually vetted —
     ///      passing an unvetted twin to `undeprecateImplementation` is
     ///      always a revert path and provides no additional coverage.
-    function _findTwinForCodehash(bytes32 codehash) internal view returns (address) {
+    function _findTwinForCodehash(
+        bytes32 codehash
+    ) internal view returns (address) {
         for (uint256 i = 0; i < originals.length; i++) {
             if (slotVetted[i] && originals[i].codehash == codehash) {
                 return twins[i];

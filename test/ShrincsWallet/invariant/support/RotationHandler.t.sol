@@ -76,6 +76,11 @@ contract ShrincsWalletRotationHandler is Test {
                 (entry.pk, entry.sig, entry.target)
             )
         );
+        if (idx == successIdx.length) {
+            assertTrue(ok, "next signed rotation must succeed");
+        } else {
+            assertFalse(ok, "out-of-order rotation must fail");
+        }
         if (ok) {
             callsRotate++;
             successIdx.push(idx);

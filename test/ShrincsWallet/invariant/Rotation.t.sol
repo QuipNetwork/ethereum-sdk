@@ -9,6 +9,7 @@ import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/help
 
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 16
+/// forge-config: default.invariant.fail-on-revert = true
 
 contract ShrincsWallet_Rotation_Invariant is ShrincsWalletTest {
     uint256 internal constant CHAIN_LEN = 3;
@@ -16,33 +17,53 @@ contract ShrincsWallet_Rotation_Invariant is ShrincsWalletTest {
     ShrincsWalletRotationHandler public rotHandler;
     uint256 internal rotInitialNonce;
 
-    function _chainBundle(uint256 k) internal view returns (SHRINCS.PublicKey memory pk) {
+    function _chainBundle(
+        uint256 k
+    ) internal view returns (SHRINCS.PublicKey memory pk) {
         if (k == 0) return _mainPk();
         (, SHRINCS.PublicKey memory fresh, bool ok) = _chainKey(k);
         require(ok, "chain keygen");
         pk.statefulPublicKey = fresh.statefulPublicKey;
         pk.publicKeyCommitment = abi.encodePacked(
-            SHRINCS.publicKeyCommitmentFromParts(fresh.statefulPublicKey, mainPk.pkSeed, mainPk.hypertreeRoot)
+            SHRINCS.publicKeyCommitmentFromParts(
+                fresh.statefulPublicKey,
+                mainPk.pkSeed,
+                mainPk.hypertreeRoot
+            )
         );
         pk.pkSeed = mainPk.pkSeed;
         pk.hypertreeRoot = mainPk.hypertreeRoot;
     }
 
-    function _chainKey(uint256 k)
+    function _chainKey(
+        uint256 k
+    )
         internal
         view
-        returns (SHRINCS.SigningKey memory key, SHRINCS.PublicKey memory pk, bool ok)
+        returns (
+            SHRINCS.SigningKey memory key,
+            SHRINCS.PublicKey memory pk,
+            bool ok
+        )
     {
         if (k == 0) return (mainKey, mainPk, true);
-        return SHRINCSTestSigner.keygen(abi.encodePacked("rotation-chain-key-", k), MAX_SIG);
+        return
+            SHRINCSTestSigner.keygen(
+                abi.encodePacked("rotation-chain-key-", k),
+                MAX_SIG
+            );
     }
 
     function _chainCommitment(uint256 k) internal view returns (bytes32) {
         return _commitment32(_chainBundle(k));
     }
 
-    function _signRotationEntry(uint256 k) internal view returns (SHRINCS.Signature memory) {
-        bytes32 payloadHash = Codec.rotateKeyPayloadHash(_chainCommitment(k + 1));
+    function _signRotationEntry(
+        uint256 k
+    ) internal view returns (SHRINCS.Signature memory) {
+        bytes32 payloadHash = Codec.rotateKeyPayloadHash(
+            _chainCommitment(k + 1)
+        );
         SHRINCS.ActionContext memory ctx = Codec.buildActionContext(
             wallet.exposed_shrincsDomainSeparator(),
             rotInitialNonce + k,
@@ -82,17 +103,55 @@ contract ShrincsWallet_Rotation_Invariant is ShrincsWalletTest {
         targetContract(address(rotHandler));
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = ShrincsWalletRotationHandler.fuzzRotateReplay.selector;
-        targetSelector(FuzzSelector({addr: address(rotHandler), selectors: selectors}));
+        targetSelector(
+            FuzzSelector({addr: address(rotHandler), selectors: selectors})
+        );
     }
 
     function test_setUp() public view override {
         assertEq(rotHandler.poolLength(), CHAIN_LEN, "rotation chain seeded");
         assertEq(rotHandler.callsRotate(), 1, "seeded entry landed");
-        assertEq(rotHandler.staleCount(), 1, "seeded duplicate reported superseded nonce");
-        assertEq(wallet.actionNonce(), rotInitialNonce + 1, "seeded landing advanced the nonce");
+        assertEq(
+            rotHandler.staleCount(),
+            1,
+            "seeded duplicate reported superseded nonce"
+        );
+        assertEq(
+            wallet.actionNonce(),
+            rotInitialNonce + 1,
+            "seeded landing advanced the nonce"
+        );
         assertEq(wallet.keyVersion(), 1, "seeded landing bumped the epoch");
-        assertEq(wallet.getShrincsPublicKeyCommitment(), _chainCommitment(1), "seeded bundle installed");
-        assertEq(wallet.statefulLeavesUsed(), 0, "seeded rotation reset the used counter");
+        assertEq(
+            wallet.getShrincsPublicKeyCommitment(),
+            _chainCommitment(1),
+            "seeded bundle installed"
+        );
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            0,
+            "seeded rotation reset the used counter"
+        );
+    }
+
+    function test_rotateKey_entireSignedChainLands() public {
+        for (uint256 i = 1; i < CHAIN_LEN; i++) {
+            rotHandler.fuzzRotateReplay(i);
+            invariant_usedResetByRotation();
+        }
+        assertEq(rotHandler.callsRotate(), CHAIN_LEN);
+        invariant_nonceTracksSuccesses();
+        invariant_epochTracksSuccesses();
+        invariant_commitmentTracksPrefix();
+        invariant_landedTreesSpent();
+    }
+
+    function test_rotateKey_futureSignatureDoesNotBlockNextEntry() public {
+        rotHandler.fuzzRotateReplay(CHAIN_LEN - 1);
+        assertEq(rotHandler.staleCount(), 2);
+        rotHandler.fuzzRotateReplay(1);
+        assertEq(rotHandler.callsRotate(), 2);
+        invariant_commitmentTracksPrefix();
     }
 
     function invariant_nonceTracksSuccesses() public view {
@@ -105,24 +164,44 @@ contract ShrincsWallet_Rotation_Invariant is ShrincsWalletTest {
 
     function invariant_epochTracksSuccesses() public view {
         uint256 m = rotHandler.successLength();
-        assertEq(rotHandler.callsRotate(), m, "success mirror diverged from counter");
-        assertEq(wallet.keyVersion(), m, "keyVersion diverged from rotation success count");
+        assertEq(
+            rotHandler.callsRotate(),
+            m,
+            "success mirror diverged from counter"
+        );
+        assertEq(
+            wallet.keyVersion(),
+            m,
+            "keyVersion diverged from rotation success count"
+        );
         for (uint256 i = 0; i < m; i++) {
-            assertLt(rotHandler.successAt(i), m, "success outside the landed prefix");
+            assertEq(
+                rotHandler.successAt(i),
+                i,
+                "rotation successes must follow signing order"
+            );
         }
     }
 
     function invariant_commitmentTracksPrefix() public view {
         uint256 m = rotHandler.successLength();
-        bytes32 expected = m == 0 ? mainCommitment : rotHandler.entryNextCommitment(m - 1);
-        assertEq(wallet.getShrincsPublicKeyCommitment(), expected, "installed commitment left the landed prefix");
+        bytes32 expected = m == 0
+            ? mainCommitment
+            : rotHandler.entryNextCommitment(m - 1);
+        assertEq(
+            wallet.getShrincsPublicKeyCommitment(),
+            expected,
+            "installed commitment left the landed prefix"
+        );
     }
 
     function invariant_landedTreesSpent() public view {
         uint256 m = rotHandler.successLength();
         for (uint256 i = 0; i < m; i++) {
             assertTrue(
-                wallet.harness_isStatefulTreeSpent(rotHandler.entryNextTreeId(rotHandler.successAt(i))),
+                wallet.harness_isStatefulTreeSpent(
+                    rotHandler.entryNextTreeId(rotHandler.successAt(i))
+                ),
                 "landed rotation tree not marked spent"
             );
         }
@@ -133,16 +212,34 @@ contract ShrincsWallet_Rotation_Invariant is ShrincsWalletTest {
     }
 
     function invariant_usedResetByRotation() public view {
-        assertEq(wallet.statefulLeavesUsed(), 0, "used counter nonzero without a consuming non-rotation action");
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            0,
+            "used counter nonzero without a consuming non-rotation action"
+        );
+        for (uint32 leaf = 0; leaf <= MAX_SIG + 1; leaf++) {
+            assertFalse(
+                wallet.isStatefulLeafUsed(leaf),
+                "rotation left a used leaf in the current epoch"
+            );
+        }
     }
 
     function invariant_noBadReason() public view {
-        assertEq(rotHandler.badReasonCount(), 0, "rotateKey reverted with an unexpected reason");
+        assertEq(
+            rotHandler.badReasonCount(),
+            0,
+            "rotateKey reverted with an unexpected reason"
+        );
     }
 
     function invariant_rotationTouchesNothingElse() public view {
         assertEq(wallet.owner(), OWNER, "wallet owner drifted");
-        assertEq(wallet.getErc1271PublicKeyCommitment(), erc1271Commitment, "1271 commitment drifted");
+        assertEq(
+            wallet.getErc1271PublicKeyCommitment(),
+            erc1271Commitment,
+            "1271 commitment drifted"
+        );
         assertEq(wallet.maxSignatures(), MAX_SIG, "maxSignatures drifted");
     }
 }

@@ -55,7 +55,6 @@ contract ShrincsWalletInvariantHandler is Test {
         wallet = wallet_;
         owner = owner_;
         leafSeen = new bool[](uint256(wallet.maxSignatures()) + 1);
-        _recordMirror();
     }
 
     function pushValidMark(
@@ -68,7 +67,6 @@ contract ShrincsWalletInvariantHandler is Test {
         slot.pk = pk;
         slot.sig = sig;
         slot.leaves = leaves;
-        _recordMirror();
     }
 
     function validPoolLength() external view returns (uint256) {
@@ -84,14 +82,24 @@ contract ShrincsWalletInvariantHandler is Test {
         return leafSeen[leaf];
     }
 
-    function _recordMirror() internal {
-        uint256 maxSig = wallet.maxSignatures();
-        for (uint256 leaf = 1; leaf <= maxSig; leaf++) {
-            if (!leafSeen[leaf] && wallet.isStatefulLeafUsed(leaf)) {
-                leafSeen[leaf] = true;
-                seenCount++;
-            }
+    function recordSeedMark(
+        uint32 authLeaf,
+        uint32[] calldata targets
+    ) external {
+        _recordExpectedLeaf(authLeaf);
+        for (uint256 i = 0; i < targets.length; i++) {
+            _recordExpectedLeaf(targets[i]);
         }
+    }
+
+    function _recordExpectedLeaf(uint256 leaf) internal {
+        require(
+            leaf > 0 && leaf < leafSeen.length,
+            "expected leaf outside range"
+        );
+        if (leafSeen[leaf]) return;
+        leafSeen[leaf] = true;
+        seenCount++;
     }
 
     function _expectRevert(
@@ -240,7 +248,6 @@ contract ShrincsWalletInvariantHandler is Test {
         vm.prank(owner);
         try wallet.markLeavesUsed(_garbagePk(), _garbageSig(authLen), leaves) {
             callsInvalidMark++;
-            _recordMirror();
         } catch {
             revertCount++;
         }
@@ -256,7 +263,10 @@ contract ShrincsWalletInvariantHandler is Test {
         vm.prank(owner);
         try wallet.markLeavesUsed(entry.pk, entry.sig, entry.leaves) {
             callsValidMark++;
-            _recordMirror();
+            _recordExpectedLeaf(entry.sig.authPath.length);
+            for (uint256 i = 0; i < entry.leaves.length; i++) {
+                _recordExpectedLeaf(entry.leaves[i]);
+            }
         } catch {
             revertCount++;
         }

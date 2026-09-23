@@ -9,6 +9,7 @@ import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 32
+/// forge-config: default.invariant.fail-on-revert = true
 
 contract ShrincsWallet_Validation_Invariant is ShrincsWalletTest {
     uint256 internal constant CHAIN_LEN = 5;
@@ -85,6 +86,25 @@ contract ShrincsWallet_Validation_Invariant is ShrincsWalletTest {
         );
     }
 
+    function test_validateSignature_entireSignedChainLands() public {
+        for (uint256 i = 1; i < CHAIN_LEN; i++) {
+            valHandler.fuzzValidateReplay(i);
+        }
+        assertEq(valHandler.callsValidate(), CHAIN_LEN);
+        invariant_nonceTracksSuccesses();
+        invariant_successesFormPrefix();
+    }
+
+    function test_validateSignature_futureSignatureDoesNotBlockNextEntry()
+        public
+    {
+        valHandler.fuzzValidateReplay(CHAIN_LEN - 1);
+        assertEq(valHandler.staleCount(), 1);
+        valHandler.fuzzValidateReplay(1);
+        assertEq(valHandler.callsValidate(), 2);
+        invariant_successesFormPrefix();
+    }
+
     function invariant_nonceTracksSuccesses() public view {
         assertEq(
             wallet.actionNonce(),
@@ -107,10 +127,18 @@ contract ShrincsWallet_Validation_Invariant is ShrincsWalletTest {
         );
         for (uint256 i = 0; i < m; i++) {
             uint256 idx = valHandler.successAt(i);
-            assertLt(idx, m, "success outside the landed prefix");
+            assertEq(idx, i, "validation successes must follow signing order");
             assertTrue(
                 wallet.isStatefulLeafUsed(valHandler.entryLeaf(idx)),
                 "landed entry leaf not marked"
+            );
+        }
+        for (uint32 leaf = 0; leaf <= MAX_SIG + 1; leaf++) {
+            bool expectedUsed = leaf > SIGN_BASE && leaf <= SIGN_BASE + m;
+            assertEq(
+                wallet.isStatefulLeafUsed(leaf),
+                expectedUsed,
+                "validation bitmap differs from landed prefix"
             );
         }
     }

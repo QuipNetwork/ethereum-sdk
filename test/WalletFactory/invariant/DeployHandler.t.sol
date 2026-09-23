@@ -13,15 +13,19 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         address to;
         uint256 fee;
         uint256 value;
+        address implementation;
         bool addrMatch;
     }
 
     WalletFactory internal factory_;
     address internal seedImpl;
+    address internal secondImpl;
     uint256 internal deployNonce;
     DeployRecord[] internal deploys;
     uint256 public expectedFactoryFees;
     bool public seedDeprecated;
+    bool public secondDeprecated;
+    uint256 public unexpectedSuccesses;
     uint256 public callsDeploy;
     uint256 public callsDeploySpecific;
     uint256 public callsSetFee;
@@ -31,15 +35,20 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     uint256 public lastSetFee;
     bool public feeEverSet;
 
-    function initialize(WalletFactory factory__, address seedImpl_) external {
+    function initialize(
+        WalletFactory factory__,
+        address seedImpl_,
+        address secondImpl_
+    ) external {
         require(address(factory_) == address(0), "handler already initialized");
         factory_ = factory__;
         seedImpl = seedImpl_;
+        secondImpl = secondImpl_;
         vm.deal(address(this), 10_000 ether);
     }
 
     function fuzzDeployLatest(uint256 ownerSalt, uint256 valueSalt) external {
-        address to = address(uint160(bound(ownerSalt, 1, 5)));
+        address to = vm.addr(bound(ownerSalt, 1, 5));
         uint256 fee = factory_.creationFee();
         uint256 value;
         if (valueSalt % 8 == 0) {
@@ -50,10 +59,18 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         bytes32 commitment = keccak256(abi.encode(deployNonce));
         deployNonce++;
         bytes memory payload = _deployPayload(deployNonce);
-        try factory_.deployLatestWalletProxy{value: value}(commitment, payable(to), payload) returns (
-            address wallet
-        ) {
+        address expectedImpl = secondDeprecated
+            ? (seedDeprecated ? address(0) : seedImpl)
+            : secondImpl;
+        try
+            factory_.deployLatestWalletProxy{value: value}(
+                commitment,
+                payable(to),
+                payload
+            )
+        returns (address wallet) {
             callsDeploy++;
+            if (expectedImpl == address(0)) unexpectedSuccesses++;
             expectedFactoryFees += fee;
             address predicted = _predictedWallet(commitment);
             deploys.push(
@@ -63,6 +80,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
                     to: to,
                     fee: fee,
                     value: value,
+                    implementation: expectedImpl,
                     addrMatch: wallet == predicted
                 })
             );
@@ -89,16 +107,26 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             return;
         }
         uint256 index = bound(idxSalt, 0, count - 1);
-        address to = address(uint160(bound(idxSalt >> 128, 1, 5)));
+        address to = vm.addr(bound(idxSalt >> 128, 1, 5));
         uint256 fee = factory_.creationFee();
         uint256 value = bound(idxSalt, fee, fee + 2 ether);
         bytes32 commitment = keccak256(abi.encode(deployNonce));
         deployNonce++;
         bytes memory payload = _deployPayload(deployNonce);
-        try factory_.deploySpecificWalletProxy{value: value}(commitment, index, payable(to), payload) returns (
-            address wallet
-        ) {
+        address expectedImpl = index == 0 ? seedImpl : secondImpl;
+        try
+            factory_.deploySpecificWalletProxy{value: value}(
+                commitment,
+                index,
+                payable(to),
+                payload
+            )
+        returns (address wallet) {
             callsDeploySpecific++;
+            if (
+                (index == 0 && seedDeprecated) ||
+                (index == 1 && secondDeprecated)
+            ) unexpectedSuccesses++;
             expectedFactoryFees += fee;
             deploys.push(
                 DeployRecord({
@@ -107,6 +135,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
                     to: to,
                     fee: fee,
                     value: value,
+                    implementation: expectedImpl,
                     addrMatch: wallet == _predictedWallet(commitment)
                 })
             );
@@ -133,6 +162,24 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         }
     }
 
+    function fuzzDeprecateSecond() external {
+        try factory_.deprecateImplementation(secondImpl) {
+            callsDeprecate++;
+            secondDeprecated = true;
+        } catch {
+            revertCount++;
+        }
+    }
+
+    function fuzzUndeprecateSecond() external {
+        try factory_.undeprecateImplementation(secondImpl) {
+            callsUndeprecate++;
+            secondDeprecated = false;
+        } catch {
+            revertCount++;
+        }
+    }
+
     function deployCount() external view returns (uint256) {
         return deploys.length;
     }
@@ -141,17 +188,24 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         return deploys[i];
     }
 
-    function _deployPayload(uint256 nonce_) internal pure returns (bytes memory) {
+    function _deployPayload(
+        uint256 nonce_
+    ) internal pure returns (bytes memory) {
         bytes32 vaultSeed = keccak256(abi.encode(nonce_, "vault"));
         (
             WOTSPlus.WinternitzAddress[10] memory txnPubkeys,
             bytes32[10] memory txnPrivkeys
         ) = _generateTransactionKeys(vaultSeed);
-        WOTSPlus.WinternitzAddress[] memory recoveryPubkeys = _generateRecoveryKeys(txnPrivkeys[0], 10);
-        return _buildInitPayloadForCreate(vaultSeed, txnPubkeys, recoveryPubkeys);
+        WOTSPlus.WinternitzAddress[]
+            memory recoveryPubkeys = _generateRecoveryKeys(txnPrivkeys[0], 10);
+        return
+            _buildInitPayloadForCreate(vaultSeed, txnPubkeys, recoveryPubkeys);
     }
 
-    function _predictedWallet(bytes32 commitment) internal view returns (address) {
-        return CREATE3.predictDeterministicAddress(commitment, address(factory_));
+    function _predictedWallet(
+        bytes32 commitment
+    ) internal view returns (address) {
+        return
+            CREATE3.predictDeterministicAddress(commitment, address(factory_));
     }
 }

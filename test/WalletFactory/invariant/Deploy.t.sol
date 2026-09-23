@@ -9,14 +9,26 @@ import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlu
 /// forge-config: default.invariant.depth = 10
 
 contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
+    bytes32 internal constant IMPLEMENTATION_SLOT =
+        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
     uint256 internal constant SEED_FEE = 0.05 ether;
 
     WalletFactoryDeployHandler public deployHandler;
+    WOTSPlusImplementation public secondImplementation;
 
     function setUp() public override {
         super.setUp();
+        secondImplementation = new WOTSPlusImplementation(
+            payable(address(factory))
+        );
+        vm.prank(ADMIN);
+        factory.vetImplementation(address(secondImplementation));
         deployHandler = new WalletFactoryDeployHandler();
-        deployHandler.initialize(factory, address(walletImplementation));
+        deployHandler.initialize(
+            factory,
+            address(walletImplementation),
+            address(secondImplementation)
+        );
         vm.prank(ADMIN);
         factory.transferOwnership(address(deployHandler));
         deployHandler.fuzzSetCreationFee(SEED_FEE);
@@ -24,12 +36,16 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         deployHandler.fuzzDeploySpecific(0);
         targetContract(address(deployHandler));
 
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = WalletFactoryDeployHandler.fuzzDeployLatest.selector;
         selectors[1] = WalletFactoryDeployHandler.fuzzDeploySpecific.selector;
         selectors[2] = WalletFactoryDeployHandler.fuzzSetCreationFee.selector;
         selectors[3] = WalletFactoryDeployHandler.fuzzDeprecateSeed.selector;
         selectors[4] = WalletFactoryDeployHandler.fuzzUndeprecateSeed.selector;
+        selectors[5] = WalletFactoryDeployHandler.fuzzDeprecateSecond.selector;
+        selectors[6] = WalletFactoryDeployHandler
+            .fuzzUndeprecateSecond
+            .selector;
         targetSelector(
             FuzzSelector({addr: address(deployHandler), selectors: selectors})
         );
@@ -42,7 +58,8 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
             deployHandler.feeEverSet(),
             "fee mirror recorded the seeded update"
         );
-        assertEq(factory.getVettedCodeCount(), 1);
+        assertEq(factory.getVettedCodeCount(), 2);
+        assertEq(factory.latestWalletImpl(), address(secondImplementation));
         assertEq(
             deployHandler.deployCount(),
             2,
@@ -129,28 +146,39 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
                 address(factory),
                 "wallet factory pointer diverged"
             );
+            assertEq(
+                address(
+                    uint160(uint256(vm.load(rec.wallet, IMPLEMENTATION_SLOT)))
+                ),
+                rec.implementation,
+                "proxy points to the wrong implementation"
+            );
         }
     }
 
-    function invariant_latestTracksSeedDeprecation() public view {
+    function invariant_latestTracksDeprecation() public view {
         assertEq(
             factory.getVettedCodeCount(),
-            1,
+            2,
             "deploy touched the vetted set"
         );
-        if (deployHandler.seedDeprecated()) {
-            assertEq(
-                factory.latestWalletImpl(),
-                address(0),
-                "deprecated seed still latest"
-            );
-        } else {
-            assertEq(
-                factory.latestWalletImpl(),
-                address(walletImplementation),
-                "live seed not latest"
-            );
-        }
+        address expectedLatest = deployHandler.secondDeprecated()
+            ? (
+                deployHandler.seedDeprecated()
+                    ? address(0)
+                    : address(walletImplementation)
+            )
+            : address(secondImplementation);
+        assertEq(
+            factory.latestWalletImpl(),
+            expectedLatest,
+            "latest implementation diverged from mirror"
+        );
+        assertEq(
+            deployHandler.unexpectedSuccesses(),
+            0,
+            "deployment bypassed implementation deprecation"
+        );
     }
 
     function invariant_creationFeeBounded() public view {
@@ -173,7 +201,7 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
     function invariant_getWalletsMatchesMirror() public view {
         uint256 n = deployHandler.deployCount();
         for (uint256 o = 1; o <= 5; o++) {
-            address owner_ = address(uint160(bound(o, 1, 5)));
+            address owner_ = vm.addr(o);
             address[] memory addrs = factory.getWallets(owner_);
             uint256 expected;
             for (uint256 i = 0; i < n; i++) {
@@ -185,16 +213,53 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
                 "getWallets length diverged from mirror"
             );
             for (uint256 j = 0; j < addrs.length; j++) {
-                assertTrue(
-                    addrs[j] != address(0),
-                    "getWallets returned a zero slot"
-                );
-                assertEq(
-                    factory.walletOwner(addrs[j]),
-                    owner_,
-                    "getWallets entry owned elsewhere"
-                );
+                bool found;
+                for (uint256 i = 0; i < n; i++) {
+                    WalletFactoryDeployHandler.DeployRecord
+                        memory record = deployHandler.deployAt(i);
+                    if (record.to == owner_ && record.wallet == addrs[j]) {
+                        found = true;
+                        break;
+                    }
+                }
+                assertTrue(found, "getWallets returned an unrecorded wallet");
+                for (uint256 k = 0; k < j; k++) {
+                    assertTrue(
+                        addrs[k] != addrs[j],
+                        "getWallets returned a duplicate wallet"
+                    );
+                }
             }
         }
+    }
+
+    function test_deploymentActionsReachBothEntryPointsAndDeprecationRecovery()
+        public
+    {
+        uint256 originalCount = deployHandler.deployCount();
+        deployHandler.fuzzDeprecateSecond();
+        assertEq(factory.latestWalletImpl(), address(walletImplementation));
+        deployHandler.fuzzDeployLatest(4, 4);
+        deployHandler.fuzzDeploySpecific(1);
+        assertEq(deployHandler.deployCount(), originalCount + 1);
+        deployHandler.fuzzUndeprecateSecond();
+        assertEq(factory.latestWalletImpl(), address(secondImplementation));
+        deployHandler.fuzzDeprecateSeed();
+        deployHandler.fuzzDeploySpecific(0);
+        assertEq(deployHandler.deployCount(), originalCount + 1);
+
+        deployHandler.fuzzSetCreationFee(0.02 ether);
+        deployHandler.fuzzDeploySpecific(1);
+        assertEq(deployHandler.deployCount(), originalCount + 2);
+        assertEq(deployHandler.callsDeploy(), 2);
+        assertEq(deployHandler.callsDeploySpecific(), 2);
+        assertEq(deployHandler.callsDeprecate(), 2);
+        assertEq(deployHandler.callsUndeprecate(), 1);
+        assertEq(factory.creationFee(), 0.02 ether);
+        assertEq(deployHandler.revertCount(), 2);
+        invariant_walletLinkageHolds();
+        invariant_getWalletsMatchesMirror();
+        invariant_feeSplitExact();
+        invariant_latestTracksDeprecation();
     }
 }
