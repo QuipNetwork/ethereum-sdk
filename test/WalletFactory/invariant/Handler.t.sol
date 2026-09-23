@@ -71,6 +71,8 @@ contract WalletFactoryInvariantHandler is Test {
     uint256 public expectedCreationFee;
     uint256 public expectedExecuteFee;
     uint256 public revertCount;
+    uint256 public unexpectedSuccesses;
+    uint256 public unexpectedFailures;
 
     /// @dev Called once from the base setUp after ownership has been handed
     ///      off to this handler. Records the seed impl and the pre-deployed
@@ -112,7 +114,9 @@ contract WalletFactoryInvariantHandler is Test {
     function fuzzVetImplementation(uint256 idx) external {
         idx = bound(idx, 0, originals.length - 1);
         address impl = originals[idx];
+        bool alreadyVetted = slotVetted[idx];
         try factory.vetImplementation(impl) {
+            if (alreadyVetted) unexpectedSuccesses++;
             callsVet++;
             slotVetted[idx] = true;
             _markCodehash(impl.codehash);
@@ -120,6 +124,7 @@ contract WalletFactoryInvariantHandler is Test {
             expectedDeprecated[impl.codehash] = false;
         } catch {
             revertCount++;
+            if (!alreadyVetted) unexpectedFailures++;
         }
     }
 
@@ -155,6 +160,7 @@ contract WalletFactoryInvariantHandler is Test {
             expectedDeprecated[codehash] = true;
         } catch {
             revertCount++;
+            unexpectedFailures++;
         }
     }
 
@@ -170,6 +176,7 @@ contract WalletFactoryInvariantHandler is Test {
         }
         idx = bound(idx, 0, everVettedCodehashes.length - 1);
         bytes32 codehash = everVettedCodehashes[idx];
+        bool wasDeprecated = expectedDeprecated[codehash];
         address impl;
         if (useTwin) {
             impl = _findTwinForCodehash(codehash);
@@ -180,11 +187,13 @@ contract WalletFactoryInvariantHandler is Test {
             impl = factory.vettedWalletImpls(codehash);
         }
         try factory.undeprecateImplementation(impl) {
+            if (!wasDeprecated) unexpectedSuccesses++;
             callsUndeprecate++;
             expectedDeprecated[codehash] = false;
             expectedImplementation[codehash] = impl;
         } catch {
             revertCount++;
+            if (wasDeprecated) unexpectedFailures++;
         }
     }
 
@@ -198,6 +207,7 @@ contract WalletFactoryInvariantHandler is Test {
             expectedCreationFee = fee;
         } catch {
             revertCount++;
+            unexpectedFailures++;
         }
     }
 
@@ -209,6 +219,7 @@ contract WalletFactoryInvariantHandler is Test {
             expectedExecuteFee = fee;
         } catch {
             revertCount++;
+            unexpectedFailures++;
         }
     }
 

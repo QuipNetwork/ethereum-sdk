@@ -136,6 +136,19 @@ contract WalletFactory_Local_Invariant is WalletFactoryInvariantBase {
         assertEq(factory.owner(), address(handler), "factory owner drifted");
     }
 
+    function invariant_lifecycleActionsMatchExpectedOutcomes() public view {
+        assertEq(
+            handler.unexpectedSuccesses(),
+            0,
+            "invalid lifecycle call succeeded"
+        );
+        assertEq(
+            handler.unexpectedFailures(),
+            0,
+            "valid lifecycle call reverted"
+        );
+    }
+
     function invariant_vettedCodeMatchesMirror() public view {
         uint256 count = handler.everVettedCount();
         assertEq(
@@ -201,5 +214,6 @@ contract WalletFactory_Local_Invariant is WalletFactoryInvariantBase {
         assertEq(handler.callsSetCreationFee(), 1);
         assertEq(handler.callsSetExecuteFee(), 1);
         assertEq(handler.revertCount(), 0);
+        invariant_lifecycleActionsMatchExpectedOutcomes();
     }
 }
