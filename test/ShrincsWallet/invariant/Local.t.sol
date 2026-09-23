@@ -37,6 +37,34 @@ contract ShrincsWallet_Local_Invariant is ShrincsWalletInvariantBase {
         );
     }
 
+    function test_restrictedPathsRejectAndPreserveState() public {
+        address target = makeAddr("restricted target");
+        handler.fuzzDisabledRenounce();
+        handler.fuzzClassicalTransfer(target);
+        handler.fuzzHandover(0, target);
+        handler.fuzzHandover(1, target);
+        handler.fuzzHandover(2, target);
+        handler.fuzzClassicalWithdraw(target, 1 ether);
+        handler.fuzzDisabledExecute(target, 1 ether, hex"1234");
+        handler.fuzzDisabledDelegate(
+            target,
+            hex"1234",
+            bytes32(uint256(1)),
+            bytes32(uint256(2))
+        );
+        handler.fuzzInvalidMarkLeavesUsed(1, 2, 2, 1);
+
+        assertEq(handler.revertCount(), 12, "every restricted path rejected");
+        invariant_noDisabledSuccess();
+        invariant_noInvalidMarkSuccess();
+        invariant_noBadReason();
+        invariant_ownerStable();
+        invariant_nonceStable();
+        invariant_epochStable();
+        invariant_bitmapMatchesSuccessfulRevocations();
+        invariant_usedMatchesMirror();
+    }
+
     function invariant_noDisabledSuccess() public view {
         assertEq(handler.callsDisabled(), 0, "disabled entry point succeeded");
     }
