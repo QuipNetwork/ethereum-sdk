@@ -40,6 +40,7 @@ contract ShrincsWalletInvariantHandler is Test {
     }
 
     ValidMark[] internal validPool;
+    bool[] internal validMarkLanded;
 
     bool[] internal leafSeen;
     uint256 internal seenCount;
@@ -67,6 +68,7 @@ contract ShrincsWalletInvariantHandler is Test {
         slot.pk = pk;
         slot.sig = sig;
         slot.leaves = leaves;
+        validMarkLanded.push(false);
     }
 
     function validPoolLength() external view returns (uint256) {
@@ -262,12 +264,26 @@ contract ShrincsWalletInvariantHandler is Test {
         ValidMark storage entry = validPool[idx];
         vm.prank(owner);
         try wallet.markLeavesUsed(entry.pk, entry.sig, entry.leaves) {
+            assertFalse(validMarkLanded[idx], "used signature replayed");
+            validMarkLanded[idx] = true;
             callsValidMark++;
             _recordExpectedLeaf(entry.sig.authPath.length);
             for (uint256 i = 0; i < entry.leaves.length; i++) {
                 _recordExpectedLeaf(entry.leaves[i]);
             }
-        } catch {
+        } catch (bytes memory reason) {
+            assertTrue(validMarkLanded[idx], "fresh revocation rejected");
+            bytes4 actual;
+            if (reason.length >= 4) {
+                assembly ("memory-safe") {
+                    actual := mload(add(reason, 0x20))
+                }
+            }
+            assertEq(
+                actual,
+                IShrincsWallet.StaleStatefulLeaf.selector,
+                "revocation replay rejected for wrong reason"
+            );
             revertCount++;
         }
     }

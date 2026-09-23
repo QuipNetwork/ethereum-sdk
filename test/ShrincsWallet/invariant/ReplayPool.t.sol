@@ -36,4 +36,30 @@ contract ShrincsWallet_ReplayPoolLiveness is ShrincsWalletInvariantBase {
             "stale replay consumed a leaf"
         );
     }
+
+    function test_replayPoolLandsSuccessInReverseOrder() public {
+        uint32 usedBefore = wallet.statefulLeavesUsed();
+        handler.fuzzValidMarkReplay(2);
+        handler.fuzzValidMarkReplay(1);
+        handler.fuzzValidMarkReplay(0);
+
+        assertEq(handler.callsValidMark(), 3, "every fresh revocation landed");
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            usedBefore + 5,
+            "revocations consumed three auth leaves and two targets"
+        );
+        for (uint32 leaf = 1; leaf <= MAX_SIG; leaf++) {
+            assertEq(
+                wallet.isStatefulLeafUsed(leaf),
+                leaf >= SIGN_BASE + 1 && leaf <= SIGN_BASE + 7,
+                "reverse-order revocation marked an unexpected leaf"
+            );
+        }
+
+        handler.fuzzValidMarkReplay(2);
+        handler.fuzzValidMarkReplay(1);
+        handler.fuzzValidMarkReplay(0);
+        assertEq(handler.callsValidMark(), 3, "used signatures replayed");
+    }
 }
