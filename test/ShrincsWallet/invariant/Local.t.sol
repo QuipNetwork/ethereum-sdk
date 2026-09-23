@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsWalletInvariantBase} from "./InvariantBase.sol";
-import {ShrincsWalletInvariantHandler} from "./Handler.t.sol";
+import {ShrincsWalletInvariantBase} from "./support/InvariantBase.sol";
+import {ShrincsWalletInvariantHandler} from "./support/Handler.t.sol";
 
 contract ShrincsWallet_Local_Invariant is ShrincsWalletInvariantBase {
     function setUp() public override {

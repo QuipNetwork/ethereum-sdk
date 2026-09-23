@@ -3,24 +3,27 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
-import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
+import {IShrincsWallet} from "../../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {ShrincsWalletHarness} from "../../../harness/ShrincsWalletHarness.sol";
 
-contract ShrincsWalletRotationHandler is Test {
-    struct RotationEntry {
+contract ShrincsWalletExecuteHandler is Test {
+    struct ExecuteEntry {
         SHRINCS.PublicKey pk;
         SHRINCS.Signature sig;
-        SHRINCS.StatefulRotationTarget target;
-        bytes32 nextCommitment;
-        bytes32 nextTreeId;
+        address target;
+        uint256 value;
+        bytes data;
+        uint256 maxFee;
+        uint32 leaf;
     }
 
     ShrincsWalletHarness internal wallet;
     address internal owner;
-    RotationEntry[] internal pool;
+    ExecuteEntry[] internal pool;
     uint256[] internal successIdx;
-    uint256 public callsRotate;
+    uint256 public callsExecute;
     uint256 public staleCount;
+    uint256 public staleUsedCount;
     uint256 public badReasonCount;
 
     function initialize(ShrincsWalletHarness wallet_, address owner_) external {
@@ -29,32 +32,40 @@ contract ShrincsWalletRotationHandler is Test {
         owner = owner_;
     }
 
-    function pushValidRotation(
+    function pushValidExecute(
         SHRINCS.PublicKey calldata pk,
         SHRINCS.Signature calldata sig,
-        SHRINCS.StatefulRotationTarget calldata target,
-        bytes32 nextCommitment,
-        bytes32 nextTreeId
+        address target,
+        uint256 value,
+        bytes calldata data,
+        uint256 maxFee,
+        uint32 leaf
     ) external {
         pool.push();
-        RotationEntry storage slot = pool[pool.length - 1];
+        ExecuteEntry storage slot = pool[pool.length - 1];
         slot.pk = pk;
         slot.sig = sig;
         slot.target = target;
-        slot.nextCommitment = nextCommitment;
-        slot.nextTreeId = nextTreeId;
+        slot.value = value;
+        slot.data = data;
+        slot.maxFee = maxFee;
+        slot.leaf = leaf;
     }
 
     function poolLength() external view returns (uint256) {
         return pool.length;
     }
 
-    function entryNextCommitment(uint256 i) external view returns (bytes32) {
-        return pool[i].nextCommitment;
+    function entryLeaf(uint256 i) external view returns (uint32) {
+        return pool[i].leaf;
     }
 
-    function entryNextTreeId(uint256 i) external view returns (bytes32) {
-        return pool[i].nextTreeId;
+    function entryValue(uint256 i) external view returns (uint256) {
+        return pool[i].value;
+    }
+
+    function entryTarget(uint256 i) external view returns (address) {
+        return pool[i].target;
     }
 
     function successLength() external view returns (uint256) {
@@ -65,19 +76,26 @@ contract ShrincsWalletRotationHandler is Test {
         return successIdx[i];
     }
 
-    function fuzzRotateReplay(uint256 idx) external {
+    function fuzzExecuteReplay(uint256 idx) external {
         if (pool.length == 0) return;
         idx = bound(idx, 0, pool.length - 1);
-        RotationEntry storage entry = pool[idx];
+        ExecuteEntry storage entry = pool[idx];
         vm.prank(owner);
         (bool ok, bytes memory ret) = address(wallet).call(
             abi.encodeCall(
-                IShrincsWallet.rotateKey,
-                (entry.pk, entry.sig, entry.target)
+                IShrincsWallet.execute,
+                (
+                    entry.pk,
+                    entry.sig,
+                    entry.target,
+                    entry.value,
+                    entry.data,
+                    entry.maxFee
+                )
             )
         );
         if (ok) {
-            callsRotate++;
+            callsExecute++;
             successIdx.push(idx);
             return;
         }
@@ -89,6 +107,10 @@ contract ShrincsWalletRotationHandler is Test {
         }
         if (revertSelector == IShrincsWallet.InvalidSignature.selector) {
             staleCount++;
+        } else if (
+            revertSelector == IShrincsWallet.StaleStatefulLeaf.selector
+        ) {
+            staleUsedCount++;
         } else {
             badReasonCount++;
         }

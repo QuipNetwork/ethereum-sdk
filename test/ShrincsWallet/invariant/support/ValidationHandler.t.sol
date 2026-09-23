@@ -4,8 +4,8 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
-import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
-import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
+import {IShrincsWallet} from "../../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {ShrincsWalletHarness} from "../../../harness/ShrincsWalletHarness.sol";
 
 contract ShrincsWalletValidationHandler is Test {
     struct ValidationEntry {

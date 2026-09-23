@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ShrincsWalletInvariantBase} from "./InvariantBase.sol";
+import {ShrincsWalletInvariantBase} from "./support/InvariantBase.sol";
 
 contract ShrincsWallet_ReplayPoolLiveness is ShrincsWalletInvariantBase {
     function test_replayPoolLandsSuccess() public {

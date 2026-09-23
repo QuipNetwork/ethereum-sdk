@@ -25,9 +25,10 @@ test/
 │   ├── integration/                 # Fork tests
 │   ├── scenario/                    # Simulation tests
 │   └── invariant/
-│       ├── InvariantBase.sol       # Shared invariant checks
-│       ├── Handler.t.sol           # Fuzz handler
-│       └── {Context}.t.sol         # e.g., Local.t.sol, BSC.t.sol
+│       ├── {Context}.t.sol         # Runnable suite, e.g., Local.t.sol
+│       └── support/                # Shared bases and fuzz handlers
+│           ├── InvariantBase.sol
+│           └── Handler.t.sol
 └── harness/
     └── {ContractName}Harness.sol   # Exposes internals via exposed_{fn}()
 ```

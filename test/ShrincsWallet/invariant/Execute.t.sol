@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
-import {ShrincsWalletExecuteHandler} from "./ExecuteHandler.t.sol";
+import {ShrincsWalletExecuteHandler} from "./support/ExecuteHandler.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 
