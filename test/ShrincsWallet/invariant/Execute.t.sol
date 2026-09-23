@@ -53,9 +53,7 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
             );
     }
 
-    function _assertNextExecuteStillPending(
-        address alteredTarget
-    ) internal view {
+    function _assertNextExecuteStillPending() internal view {
         assertEq(
             wallet.actionNonce(),
             execInitialNonce + 1,
@@ -76,7 +74,6 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
             "rejected payload debited wallet"
         );
         assertEq(_chainSink(1).balance, 0, "pending sink received ETH");
-        assertEq(alteredTarget.balance, 0, "altered sink received ETH");
     }
 
     function setUp() public override {
@@ -249,28 +246,57 @@ contract ShrincsWallet_Execute_Invariant is ShrincsWalletTest {
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.execute(_mainPk(), signature, alteredTarget, value, "", 0);
-        _assertNextExecuteStillPending(alteredTarget);
+        _assertNextExecuteStillPending();
 
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.execute(_mainPk(), signature, target, value + 1, "", 0);
-        _assertNextExecuteStillPending(alteredTarget);
+        _assertNextExecuteStillPending();
 
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.execute(_mainPk(), signature, target, value, hex"1234", 0);
-        _assertNextExecuteStillPending(alteredTarget);
+        _assertNextExecuteStillPending();
 
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.execute(_mainPk(), signature, target, value, "", 1);
-        _assertNextExecuteStillPending(alteredTarget);
+        _assertNextExecuteStillPending();
+        assertEq(alteredTarget.balance, 0, "altered sink received ETH");
 
         execHandler.fuzzExecuteReplay(1);
         assertEq(
             execHandler.callsExecute(),
             2,
             "intact payload no longer lands"
+        );
+        invariant_nonceTracksSuccesses();
+        invariant_successesFormPrefix();
+        invariant_ethAccountingExact();
+        invariant_noBadReason();
+    }
+
+    function test_markLeavesUsed_revertsWhen_signedForExecute() public {
+        SHRINCS.Signature memory executeSignature = _signChainEntry(1);
+        uint32[] memory targets = new uint32[](1);
+        targets[0] = SIGN_BASE + 3;
+
+        vm.prank(OWNER);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.markLeavesUsed(_mainPk(), executeSignature, targets);
+
+        _assertNextExecuteStillPending();
+        assertFalse(
+            wallet.isStatefulLeafUsed(targets[0]),
+            "cross-action attempt revoked target leaf"
+        );
+        invariant_executeTouchesNothingElse();
+
+        execHandler.fuzzExecuteReplay(1);
+        assertEq(
+            execHandler.callsExecute(),
+            2,
+            "intact execute no longer lands"
         );
         invariant_nonceTracksSuccesses();
         invariant_successesFormPrefix();
