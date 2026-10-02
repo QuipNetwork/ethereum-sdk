@@ -7,6 +7,7 @@ import { foundry } from "viem/chains";
 import { afterAll, beforeAll, describe, expect, it } from "@jest/globals";
 
 import { walletFactoryAbi } from "../../abi/WalletFactory.js";
+import { InsufficientWalletBalanceError } from "../errors.js";
 import {
   type ShrincsAnvilStack,
   SHRINCS_ANVIL_PORTS,
@@ -107,6 +108,127 @@ describe("cost estimation against a live anvil stack", () => {
     expect((await client.getWalletState()).statefulLeavesUsed).toBe(before + 1);
     await expect(prepared.send()).rejects.toThrow("already sent");
   }, 180_000);
+
+  describe("execute funding source", () => {
+    const recipient = "0x000000000000000000000000000000000000beef" as const;
+    const value = parseEther("0.01");
+    const fee = parseEther("0.002");
+
+    const setExecuteFee = async (next: bigint) => {
+      const hash = await stack.walletClient.writeContract({
+        chain: foundry,
+        account: stack.account,
+        address: stack.factoryAddress,
+        abi: walletFactoryAbi,
+        functionName: "setExecuteFee",
+        args: [next],
+      });
+      await stack.publicClient.waitForTransactionReceipt({ hash });
+    };
+    const balanceOf = (address: `0x${string}`) =>
+      stack.publicClient.getBalance({ address });
+    const attachedValue = async (hash: `0x${string}`) =>
+      (await stack.publicClient.getTransaction({ hash })).value;
+
+    beforeAll(async () => {
+      await stack.testClient.setBalance({
+        address: stack.account.address,
+        value: parseEther("100"),
+      });
+      await setExecuteFee(fee);
+    }, 60_000);
+
+    afterAll(async () => {
+      await setExecuteFee(0n);
+    }, 60_000);
+
+    it("by default the sender attaches value + maxFee and the wallet balance is untouched", async () => {
+      const { client, walletAddress } = await createFreshShrincsWallet(
+        stack,
+        0x61,
+        { maxSignatures: MAX_SIGS }
+      );
+      const walletBefore = await balanceOf(walletAddress);
+      const recipientBefore = await balanceOf(recipient);
+
+      const prepared = await client.prepareExecute({ target: recipient, value });
+      expect(prepared.totalValue).toBe(value + fee);
+      const receipt = await prepared.send();
+
+      expect(await attachedValue(receipt.transactionHash)).toBe(value + fee);
+      expect((await balanceOf(recipient)) - recipientBefore).toBe(value);
+      expect(await balanceOf(walletAddress)).toBe(walletBefore);
+    }, 180_000);
+
+    it("fundFrom wallet attaches nothing and the wallet pays value + fee", async () => {
+      const { client, walletAddress } = await createFreshShrincsWallet(
+        stack,
+        0x62,
+        { maxSignatures: MAX_SIGS }
+      );
+      const walletBefore = await balanceOf(walletAddress);
+      const recipientBefore = await balanceOf(recipient);
+      const factoryBefore = await balanceOf(stack.factoryAddress);
+
+      const prepared = await client.prepareExecute({
+        target: recipient,
+        value,
+        fundFrom: "wallet",
+      });
+      expect(prepared.totalValue).toBe(0n);
+      const receipt = await prepared.send();
+
+      expect(await attachedValue(receipt.transactionHash)).toBe(0n);
+      expect((await balanceOf(recipient)) - recipientBefore).toBe(value);
+      expect(walletBefore - (await balanceOf(walletAddress))).toBe(value + fee);
+      expect((await balanceOf(stack.factoryAddress)) - factoryBefore).toBe(fee);
+    }, 180_000);
+
+    it("execute with fundFrom wallet lands from the wallet balance", async () => {
+      const { client, walletAddress } = await createFreshShrincsWallet(
+        stack,
+        0x63,
+        { maxSignatures: MAX_SIGS }
+      );
+      const walletBefore = await balanceOf(walletAddress);
+
+      const receipt = await client.execute({
+        target: recipient,
+        value,
+        fundFrom: "wallet",
+      });
+
+      expect(await attachedValue(receipt.transactionHash)).toBe(0n);
+      expect(walletBefore - (await balanceOf(walletAddress))).toBe(value + fee);
+    }, 180_000);
+
+    it("rejects an underfunded wallet before reserving a leaf", async () => {
+      const { client, walletAddress } = await createFreshShrincsWallet(
+        stack,
+        0x64,
+        { maxSignatures: MAX_SIGS, walletBalance: value + fee - 1n }
+      );
+
+      const rejection = client.execute({
+        target: recipient,
+        value,
+        fundFrom: "wallet",
+      });
+      await expect(rejection).rejects.toBeInstanceOf(
+        InsufficientWalletBalanceError
+      );
+      await expect(rejection).rejects.toMatchObject({
+        required: value + fee,
+        available: value + fee - 1n,
+      });
+
+      const leafAfterRejection = (
+        await client.prepareExecute({ target: recipient, value })
+      ).leaf;
+      expect(leafAfterRejection).toBe(1);
+      expect(await balanceOf(walletAddress)).toBe(value + fee - 1n);
+    }, 180_000);
+  });
 
   it("prices a charged deployment for an account holding nothing", async () => {
     const factory = makeShrincsFactoryClient(stack);

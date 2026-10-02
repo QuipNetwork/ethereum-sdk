@@ -60,6 +60,7 @@ export type {
   ShrincsWalletClientParams,
   ShrincsTxKeyOptions,
   ExecuteParams,
+  ExecuteFundingSource,
   ExecuteCostEstimate,
   PreparedExecute,
   ShrincsCall,
