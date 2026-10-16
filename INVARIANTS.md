@@ -159,6 +159,7 @@ Protected slots:
 - `MAX_FEE` is a per-IMPLEMENTATION immutable of the UUPS factory (22): it lives in implementation code, so a factory upgrade CAN change the cap. The wallet-side signed fee is therefore the load-bearing bound, not the cap.
 - The fee value is included in the execute digest — the signer explicitly authorizes the fee amount
 - Fee transfer happens after successful execution (atomic with the call)
+- Deployment fee split is exact: the factory retains exactly `creationFee`, the new wallet receives exactly `msg.value - creationFee`, and `withdraw` releases retained fees to the factory owner only up to the retained total (pinned by `test/WalletFactory/invariant/Deploy.t.sol`)
 
 **Contracts:** WalletFactory, QuipWallet
 
@@ -470,6 +471,27 @@ The mappings `wallets[vaultId] = wallet` and `vaultIdOf[wallet] = vaultId` are w
 **Contracts:** ShrincsWallet
 
 **Violation consequence:** A single-step handover with a wrong destination is a total, irreversible loss: the wallet keeps its funds, but every path that could move or recover them is gated behind a party that does not exist, and the party who made the mistake is no longer the one who could fix it.
+
+---
+
+## 27. Shrincs Signed-Material Ordering & Leaf Accounting
+
+**Among a set of outstanding stateful signatures bound to consecutive nonces, the ones that land form exactly the signing-order prefix; the live epoch's leaf bitmap equals the set of leaves consumed by landed actions and revocations; `statefulLeavesUsed` equals the bitmap's popcount; and every key install opens an empty bitmap (handover: the acceptance leaf only).**
+
+- **Prefix ordering.** At any time exactly one outstanding signature is live: the one bound to `actionNonce()`. A signature bound to a later nonce fails `InvalidSignature` (its context does not exist yet); one bound to an earlier nonce fails `StaleStatefulLeaf` (its leaf was consumed when it landed) — so landed actions are always `[0, m)` of the signed chain, never a subset with gaps, whatever order they are submitted in. Upgrade blobs fail `StaleActionNonce` instead, carrying the live and the signed nonce. This is the operational face of 17: supersession is total, not per-action.
+- **Rejection is free of side effects.** A rejected signature advances nothing — not the nonce, not the bitmap, not `statefulLeavesUsed` — and moves no value (ETH, EntryPoint deposit). The next signed entry still lands afterwards.
+- **Binding covers every field.** Altering any payload field (`target`, `value`, `data`, `maxFee`, recipient, amount, next commitment, implementation, migrator) or presenting a signature under a different action tag (an `execute` signature to `markLeavesUsed`, and vice versa) is `InvalidSignature`, with the same side-effect freedom (3).
+- **Bitmap = consumed set.** A leaf bit is set exactly when a landed action consumed that leaf or a landed revocation burned it (17, "second setter"); no other leaf in the epoch is ever set; `statefulLeavesUsed` and `remainingStatefulSignatures()` track the popcount exactly.
+- **Install resets.** `rotateKey`, `recoverWallet`, `migrate` leave the new epoch's bitmap empty with `statefulLeavesUsed == 0`; `transferOwnership` leaves exactly the incoming key's acceptance leaf set (26). Every landed install also records the installed tree(s) as spent (25). Nothing else — owner, factory pin, verifier pin, the ERC-1271 commitment, `maxSignatures` — moves except where the action installs it.
+- **Revocation is order-independent.** Any subset of outstanding revocation signatures lands in any submission order (each binds the live nonce without advancing it, 17), and a revocation that burns the leaf of a queued action cancels exactly that action.
+
+Pinned by the chain suites under `test/ShrincsWallet/invariant/` (`Execute`, `Validation`, `Rotation`, `Upgrade`, `Recovery`, `Ownership`, `SignedActions`, `MixedActions`), each replaying a pre-signed chain in fuzzed order against a success mirror, with the restricted-surface and revocation-pool suites (`Local`, `LocalStrict`, `ReplayPool`) covering the disabled entry points and the bitmap mirror.
+
+**Contracts:** ShrincsWallet
+
+**Violation consequence:** A gap in the prefix means a superseded signature landed — replay. A bitmap bit without a landed consumer (or a consumer without a bit) means either a leaf was burned for nothing or, far worse, a one-time leaf can sign twice. A rejected signature with side effects is a griefing vector: anyone holding a stale signature could burn the owner's leaves or advance the nonce.
+
+---
 
 These invariants form a security web — they depend on each other:
 

@@ -235,6 +235,20 @@ export class ExecuteTargetHasNoCodeError extends QuipError {
   }
 }
 
+export class InsufficientWalletBalanceError extends QuipError {
+  readonly required: bigint;
+  readonly available: bigint;
+  constructor(required: bigint, available: bigint, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INSUFFICIENT_WALLET_BALANCE",
+      `wallet balance ${available} wei is below the ${required} wei needed to fund execute value + fee`,
+      opts
+    );
+    this.required = required;
+    this.available = available;
+  }
+}
+
 export class ZeroAddressVerifierError extends QuipError {
   constructor(opts?: QuipErrorOptions) {
     super(

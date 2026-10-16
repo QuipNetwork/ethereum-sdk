@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.33;
+
+import {ShrincsWalletInvariantBase} from "./support/InvariantBase.sol";
+
+contract ShrincsWallet_ReplayPoolLiveness is ShrincsWalletInvariantBase {
+    function test_replayPoolLandsSuccess() public {
+        uint32 usedBefore = wallet.statefulLeavesUsed();
+        handler.fuzzValidMarkReplay(0);
+        handler.fuzzValidMarkReplay(1);
+        handler.fuzzValidMarkReplay(2);
+        assertEq(
+            handler.callsValidMark(),
+            3,
+            "every pool entry must succeed on first replay"
+        );
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            usedBefore + 5,
+            "pool must consume auth leaves 35/36/37 plus targets 38/39"
+        );
+        assertEq(handler.callsInvalidMark(), 0, "valid replay counted invalid");
+        for (uint32 leaf = 1; leaf <= MAX_SIG; leaf++) {
+            assertEq(
+                wallet.isStatefulLeafUsed(leaf),
+                leaf >= SIGN_BASE + 1 && leaf <= SIGN_BASE + 7,
+                "replay pool marked an unexpected leaf"
+            );
+        }
+
+        handler.fuzzValidMarkReplay(0);
+        assertEq(handler.callsValidMark(), 3, "stale replay must not succeed");
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            usedBefore + 5,
+            "stale replay consumed a leaf"
+        );
+    }
+
+    function test_replayPoolLandsSuccessInReverseOrder() public {
+        uint32 usedBefore = wallet.statefulLeavesUsed();
+        handler.fuzzValidMarkReplay(2);
+        handler.fuzzValidMarkReplay(1);
+        handler.fuzzValidMarkReplay(0);
+
+        assertEq(handler.callsValidMark(), 3, "every fresh revocation landed");
+        assertEq(
+            wallet.statefulLeavesUsed(),
+            usedBefore + 5,
+            "revocations consumed three auth leaves and two targets"
+        );
+        for (uint32 leaf = 1; leaf <= MAX_SIG; leaf++) {
+            assertEq(
+                wallet.isStatefulLeafUsed(leaf),
+                leaf >= SIGN_BASE + 1 && leaf <= SIGN_BASE + 7,
+                "reverse-order revocation marked an unexpected leaf"
+            );
+        }
+
+        handler.fuzzValidMarkReplay(2);
+        handler.fuzzValidMarkReplay(1);
+        handler.fuzzValidMarkReplay(0);
+        assertEq(handler.callsValidMark(), 3, "used signatures replayed");
+    }
+}

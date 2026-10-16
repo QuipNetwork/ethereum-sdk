@@ -2,6 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
+import {WOTSKeyFixtures} from "./WOTSKeyFixtures.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {WalletFactory} from "../../contracts/WalletFactory.sol";
@@ -15,7 +16,7 @@ import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCo
 ///      ERC-1967 proxy and vets an initial WOTSPlusImplementation implementation
 ///      for proxy deployment. (Unit tests need no CREATE3 factory address —
 ///      wallet CREATE3 addressing derives from whatever the factory address is.)
-contract WalletFactoryTest is Test {
+contract WalletFactoryTest is Test, WOTSKeyFixtures {
     WalletFactory public factory;
     WOTSPlusImplementation public walletImplementation;
 
@@ -94,20 +95,6 @@ contract WalletFactoryTest is Test {
         return WOTSPlus.WinternitzElements({elements: elements});
     }
 
-    /// @dev Generate recovery key public keys from a private key
-    function _generateRecoveryKeys(
-        bytes32 privateKey,
-        uint256 count
-    ) internal pure returns (WOTSPlus.WinternitzAddress[] memory pubkeys) {
-        pubkeys = new WOTSPlus.WinternitzAddress[](count);
-        for (uint256 i = 0; i < count; i++) {
-            bytes32 seed = keccak256(
-                abi.encodePacked(privateKey, "recovery", i)
-            );
-            (pubkeys[i], ) = WOTSPlusTestSigner.generateKeyPair(seed);
-        }
-    }
-
     /// @dev Derive the signing key for a recovery key at a given index
     function _recoverySigningKey(
         bytes32 privateKey,
@@ -118,68 +105,6 @@ contract WalletFactoryTest is Test {
         );
         (, bytes32 signingKey) = WOTSPlusTestSigner.generateKeyPair(seed);
         return signingKey;
-    }
-
-    /// @dev Derive the disaster recovery keypair deterministically from a vault seed.
-    ///      Tests that exercise `saveWallet` can re-derive the same keypair by feeding
-    ///      the vault seed back in.
-    function _generateDisasterRecoveryKey(
-        bytes32 vaultSeed
-    )
-        internal
-        pure
-        returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
-    {
-        bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "disaster"));
-        (pubkey, privateKey) = WOTSPlusTestSigner.generateKeyPair(seed);
-    }
-
-    /// @dev Derive the ownership keypair deterministically from a vault seed.
-    ///      Tests that exercise `transferOwnership` can re-derive the same
-    ///      keypair by feeding the vault seed back in.
-    function _generateOwnershipKey(
-        bytes32 vaultSeed
-    )
-        internal
-        pure
-        returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
-    {
-        bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "ownership"));
-        (pubkey, privateKey) = WOTSPlusTestSigner.generateKeyPair(seed);
-    }
-
-    /// @dev Generate the 10 initial transaction keys deterministically from a vault seed.
-    function _generateTransactionKeys(
-        bytes32 vaultSeed
-    )
-        internal
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress[10] memory pubkeys,
-            bytes32[10] memory privateKeys
-        )
-    {
-        for (uint256 i = 0; i < 10; i++) {
-            bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "txn", i));
-            (pubkeys[i], privateKeys[i]) = WOTSPlusTestSigner.generateKeyPair(seed);
-        }
-    }
-
-    /// @dev Generate the 10 initial verification keys deterministically from a vault seed.
-    function _generateVerificationKeys(
-        bytes32 vaultSeed
-    )
-        internal
-        pure
-        returns (
-            WOTSPlus.WinternitzAddress[10] memory pubkeys,
-            bytes32[10] memory privateKeys
-        )
-    {
-        for (uint256 i = 0; i < 10; i++) {
-            bytes32 seed = keccak256(abi.encodePacked(vaultSeed, "verify", i));
-            (pubkeys[i], privateKeys[i]) = WOTSPlusTestSigner.generateKeyPair(seed);
-        }
     }
 
     /// @dev Deploy a WOTSPlusImplementation proxy through the factory and return its address.
@@ -237,40 +162,6 @@ contract WalletFactoryTest is Test {
             payload,
             deposit
         );
-    }
-
-    /// @dev Builds the encoded init payload for `_createWalletFull` without
-    ///      holding all stack slots in the parent (stack-too-deep avoidance
-    ///      after the always-10 growth bumped the encoded layout).
-    function _buildInitPayloadForCreate(
-        bytes32 vaultSeed,
-        WOTSPlus.WinternitzAddress[10] memory txnPubkeys,
-        WOTSPlus.WinternitzAddress[] memory recoveryPubkeys
-    ) internal pure returns (bytes memory) {
-        (
-            WOTSPlus.WinternitzAddress memory disasterKey,
-
-        ) = _generateDisasterRecoveryKey(vaultSeed);
-        (
-            WOTSPlus.WinternitzAddress memory ownershipKey,
-
-        ) = _generateOwnershipKey(vaultSeed);
-        WOTSPlus.WinternitzAddress[10] memory recFixed;
-        for (uint256 i = 0; i < 10; i++) {
-            recFixed[i] = recoveryPubkeys[i];
-        }
-        (
-            WOTSPlus.WinternitzAddress[10] memory verifPubkeys,
-
-        ) = _generateVerificationKeys(vaultSeed);
-        return
-            Codec.encodeInit(
-                disasterKey,
-                ownershipKey,
-                txnPubkeys,
-                recFixed,
-                verifPubkeys
-            );
     }
 
     function _deployProxyAs(

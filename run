@@ -10,6 +10,8 @@
 #   ./run test-integration   Run the jest anvil-backed integration suite.
 #   ./run test-all           Full hermetic suite: forge + every jest test.
 #   ./run test-forge-fork    Live-RPC forge integration suite (needs .env).
+#   ./run mutation [file] [filter]
+#                            Gambit mutation testing (see scripts/mutation.sh).
 #   ./run forge <args>       Pass arbitrary args to forge.
 #   ./run npm <args>         Pass arbitrary args to npm.
 #   ./run shell              Interactive shell inside the container.
@@ -68,6 +70,8 @@ container() {
     -w /work \
     -e HOME=/cache \
     -e FORK_RPC_URL="${FORK_RPC_URL:-}" \
+    -e MUTATION_OUTDIR="${MUTATION_OUTDIR:-/cache/gambit}" \
+    -e MUTATION_TIMEOUT="${MUTATION_TIMEOUT:-600}" \
     -e GIT_SSH_COMMAND="ssh -i /ssh/$SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/cache/known_hosts" \
     "$IMAGE" bash -c "$*"
 }
@@ -95,6 +99,11 @@ check_node_modules() {
 
 cmd="${1:-help}"; shift || true
 
+forward_args=""
+for arg in "$@"; do
+  forward_args="$forward_args $(printf '%q' "$arg")"
+done
+
 case "$cmd" in
   build)
     podman build -t "$IMAGE" -f "$REPO/Containerfile" "$REPO"
@@ -109,13 +118,13 @@ case "$cmd" in
 
   test)
     ensure_image
-    container batch "forge test --no-match-path '$FORGE_FORK_GLOB' $*"
+    container batch "forge test --no-match-path '$FORGE_FORK_GLOB'$forward_args"
     ;;
 
   test-forge-fork)
     ensure_image
     [ -f "$REPO/.env" ] || die ".env required for fork tests (needs API_URL_BASE_SEPOLIA)."
-    container batch "forge test --match-path '$FORGE_FORK_GLOB' $*"
+    container batch "forge test --match-path '$FORGE_FORK_GLOB'$forward_args"
     ;;
 
   test-unit)
@@ -133,14 +142,19 @@ case "$cmd" in
     container batch "$PREPARE_JS && forge test --no-match-path '$FORGE_FORK_GLOB' && $JEST"
     ;;
 
+  mutation)
+    ensure_image
+    container batch "bash scripts/mutation.sh$forward_args"
+    ;;
+
   forge)
     ensure_image
-    container batch "forge $*"
+    container batch "forge$forward_args"
     ;;
 
   npm)
     ensure_image
-    container batch "npm $*"
+    container batch "npm$forward_args"
     ;;
 
   exec)

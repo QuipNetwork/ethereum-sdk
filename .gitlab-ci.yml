@@ -170,6 +170,9 @@ test-full:forge-fuzz:
   variables:
     FOUNDRY_FUZZ_RUNS: "1024"
 
+# NOTE: suites under test/ShrincsWallet/invariant and test/WalletFactory/invariant/Deploy.t.sol
+# carry inline `forge-config: default.invariant.*` budgets. Inline config outranks the
+# FOUNDRY_INVARIANT_* variables below, so those suites run at their own (smaller) budget here.
 test-full:forge-invariant:
   stage: test-full
   extends: .rules-full
