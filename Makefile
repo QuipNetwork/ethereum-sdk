@@ -293,6 +293,45 @@ vet-impl-base:
 	  --private-key $(PRIVATE_KEY) \
 	  --broadcast
 
+# ── Ethereum MAINNET (1) ──────────────────────────────────────────
+# Real funds; L1 gas. Same rules as Base mainnet: `API_URL_MAINNET` must be a
+# keyed provider, dry-run FIRST and compare the printed addresses to the Live
+# table in DEPLOYMENTS.md (they are chain-independent), then broadcast. The
+# SHRINCS verifier pair is deployed from hashsigs-solidity's own scripts
+# BEFORE step 2 (`02_DeployShrincs` refuses to run against an empty verifier).
+# The sunset WOTS+ targets are deliberately not mirrored here.
+
+predict-mainnet:
+	forge script script/PredictAddresses.s.sol --rpc-url mainnet
+
+dryrun-factory-mainnet:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url mainnet \
+	  --sender $(DEPLOY_OPERATOR)
+
+dryrun-shrincs-mainnet:
+	forge script script/02_DeployShrincs.s.sol \
+	  --rpc-url mainnet \
+	  --sender $(DEPLOY_OPERATOR)
+
+deploy-factory-mainnet:
+	forge script script/01_DeployFactory.s.sol \
+	  --rpc-url mainnet \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+deploy-shrincs-mainnet:
+	forge script script/02_DeployShrincs.s.sol \
+	  --rpc-url mainnet \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast --verify
+
+vet-impl-mainnet:
+	forge script script/VetImplementation.s.sol \
+	  --rpc-url mainnet \
+	  --private-key $(PRIVATE_KEY) \
+	  --broadcast
+
 # ── Utility Scripts ───────────────────────────────────────────────
 
 fund-deployer:

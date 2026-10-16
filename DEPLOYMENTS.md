@@ -1,6 +1,6 @@
 # Deployments
 
-## Live — V1.0.1 generation (Base mainnet 8453 deployed 2026-08-28; Base Sepolia 84532 + OP Sepolia 11155420 deployed 2026-08-27)
+## Live — V1.0.1 generation (Ethereum mainnet 1 deployed 2026-09-17; Base mainnet 8453 deployed 2026-08-28; Base Sepolia 84532 + OP Sepolia 11155420 deployed 2026-08-27)
 
 ### Base mainnet (8453) — deployed 2026-08-28 from commit `4588879`
 
@@ -31,6 +31,50 @@ deposit/stake not yet funded.
 0.000004 ETH ≈ $0.01 (tx `0x25d43d2c…fa2a`, block 50545029). `MAX_FEE`
 immutable is 1 ETH. Testnet factories keep both at 0.
 
+### Ethereum mainnet (1) — deployed 2026-09-17 from commit `992e8bc`
+
+Fresh chain, so the whole V1.0.1 generation landed directly at `-beta.3`, at
+the same addresses as every other chain (sender-guarded salts, operator
+`0xc68B…6A26`). Ten transactions, all from the operator, all succeeded, every
+contract verified on Etherscan (the wallet impl via `forge verify-contract`
+after `--verify` raced the queue, as on Base):
+
+- **Verifier pair** (hashsigs-solidity's own scripts, same canonical deployer
+  key; runtime codehashes match the dep's registry): V3
+  `SPHINCSPlusC256sKeccak` sibling `0x116a1387…005a` (block 25993198,
+  993,736 gas, codehash `0xe8d1cd07…1954`); V4 `SHRINCS256sKeccak`
+  `0xa0313a09…e70b` (block 25993205, 1,088,211 gas, codehash
+  `0xe9319929…8426`).
+- **`01_DeployFactory`**: factory impl `0x004e736b…aad6` (block 25993264,
+  1,798,348 gas), factory proxy `0x44fb0c98…ac6c` (block 25993265, 195,640).
+  `MAX_FEE` immutable 1 ETH, owner = operator.
+- **`02_DeployShrincs`**, all in block 25993287: wallet impl
+  `0xf73dd13d…9ec9` (4,430,149 gas), vet `0xa7d81a5d…6fa4` (101,961),
+  paymaster impl `0x15530c34…6691` (2,069,797), paymaster proxy + `initialize`
+  `0x67ee637f…8a81f` (275,221). No upgrade path fired.
+- **Factory fees** (owner txs, mirroring Base mainnet): `setCreationFee`
+  0.0004 ETH `0x815e3584…2a0d` (block 25993305); `setExecuteFee` 0.000004 ETH
+  `0x53f7980f…6823` (block 25993310).
+
+**Paymaster verifier key.** First chain under the per-chain HD-network
+convention (`scripts/gen-shrincs-paymaster-verifier.mjs`,
+`SHRINCS_VERIFIER_CHAIN_ID=1`, epoch 0, budget 4096): the bundle is derived
+under `m/20814'/algorithm'/1'/account'/0'`. Live: commitment
+`0x75de842a5faa9c8f274883a989807f0b1ba89e154f8f7a8f6e0860e9b59864bd`,
+hash suite 1, epoch 0, budget 4096, 0 used. Sponsor backend config:
+`ShrincsSigner.create(secret, { network: 1 })` +
+`ShrincsPaymasterClient({ derivationIndex: 0 })`. EntryPoint deposit/stake
+not yet funded.
+
+Post-state: `latestWalletImpl()` `0xc4E46528…35E7`; paymaster proxy ERC-1967
+slot `0xAd31002F…6Ca4`; both impls pin `SHRINCS_VERIFIER`
+`0xF2f9E6D6…5567`; factory `creationFee` 4e14 / `executeFee` 4e12 wei.
+Receipts under `broadcast/01_DeployFactory.s.sol/1/` and
+`broadcast/02_DeployShrincs.s.sol/1/` (same `run-latest.json` hash-mislabelling
+caveat as the other chains; the hashes above were checked on-chain). The
+verifier receipts live in hashsigs-solidity's `broadcast/*/1/`; its
+`DEPLOYMENTS.md` "Chains deployed" rows still need the Ethereum entry.
+
 ### `-beta.3` implementations (audit fixes) — PENDING: Base Sepolia first, then OP Sepolia and Base mainnet
 
 The Shrincs implementations move to `V1.0.1-beta.3` for the audit-fix
@@ -53,7 +97,9 @@ deploy has no in-place path for the factory proxy and the old check vets the
 new impl fine. Its impl stays at `-beta.1`.
 
 Predicted with `make predict-addresses` (operator `0xc68B…6A26`); the per-chain
-block/tx records below are filled in as each broadcast lands.
+block/tx records below are filled in as each broadcast lands. Ethereum
+mainnet (1) received this generation fresh on 2026-09-17 — see its section
+above.
 
 - **Base Sepolia (84532)**: broadcast 2026-09-15 from commit `54003b1` ("bump
   salts to V1.0.1-beta.3") with `make deploy-shrincs-base-sepolia`; four txs,
@@ -67,8 +113,18 @@ block/tx records below are filled in as each broadcast lands.
   `broadcast/…/84532/run-latest.json` are attached to the wrong `transactions[]`
   entries (a forge quirk); the on-chain receipts above are authoritative.
 - **OP Sepolia (11155420)**: _pending_
-- **Base mainnet (8453)**: _pending_ (paymaster owner must send the upgrade if
-  it is no longer the operator; the script prints the exact call)
+- **Base mainnet (8453)**: broadcast 2026-09-16 from commit `992e8bc` with
+  `make deploy-shrincs-base` (dry-run first via `make dryrun-shrincs-base`);
+  four txs, all in block 51402228, all succeeded: wallet impl
+  `0x32a4d677…6e45` (4,430,149 gas), vet `0x4a72cf1b…de11` (86,898), paymaster
+  impl `0x0bb10609…74b2` (2,069,797), proxy `upgradeToAndCall`
+  `0x4738f360…7e1d` (36,192). Both proxies were still operator-owned, so the
+  script vetted and upgraded itself. Post-state: `latestWalletImpl()` is
+  `0xc4E46528…35E7`, the paymaster proxy's ERC-1967 slot reads
+  `0xAd31002F…6Ca4`, and `getShrincsVerifier()` is unchanged (the index-1
+  graft, commitment `0x07275771…6857`, epoch 1, budget 4096). Same
+  `run-latest.json` hash-mislabelling caveat as Base Sepolia; the on-chain
+  receipts above are authoritative.
 
 | | Address |
 |---|---|
