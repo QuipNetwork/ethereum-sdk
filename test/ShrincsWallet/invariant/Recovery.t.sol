@@ -8,6 +8,10 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletRecoveryHandler} from "./support/RecoveryHandler.t.sol";
 
+// Inline invariant budget. Every handler call verifies a SHRINCS signature in the EVM
+// (~0.3s each), so this suite caps runs/depth here. Inline config outranks the
+// FOUNDRY_INVARIANT_* variables, so the cap also governs CI's test-full:forge-invariant
+// job: raise it here, not in CI.
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 24
 /// forge-config: default.invariant.fail-on-revert = true
@@ -16,6 +20,10 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
     uint256 internal constant WALLET_FUNDS = 1 ether;
     uint256 internal constant NEW_TRANSFER = 0.1 ether;
     uint256 internal constant OLD_TRANSFER = 0.2 ether;
+    uint32 internal constant SEED_EXECUTE_LEAF = SIGN_BASE + 1;
+    uint32 internal constant OLD_PENDING_LEAF = SIGN_BASE + 2;
+    uint32 internal constant NEW_KEY_EXECUTE_LEAF = SIGN_BASE + 3;
+    uint32 internal constant OLD_KEY_RECOVERED_CONTEXT_LEAF = SIGN_BASE + 4;
 
     ShrincsWalletRecoveryHandler public recoveryHandler;
     uint256 internal initialNonce;
@@ -75,7 +83,7 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
             0,
             address(0),
             0,
-            SIGN_BASE + 1
+            SEED_EXECUTE_LEAF
         );
         vm.prank(OWNER);
         wallet.execute(_mainPk(), seedSignature, address(0), 0, "", 0);
@@ -87,7 +95,7 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
             0,
             _oldSink(),
             OLD_TRANSFER,
-            SIGN_BASE + 2
+            OLD_PENDING_LEAF
         );
         (
             SHRINCS.RotationTarget memory nextKey,
@@ -109,7 +117,7 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
             1,
             _newSink(),
             NEW_TRANSFER,
-            SIGN_BASE + 3
+            NEW_KEY_EXECUTE_LEAF
         );
         SHRINCS.Signature memory oldKeyCurrentContextSignature = _signedExecute(
             mainKey,
@@ -118,7 +126,7 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
             1,
             _oldSink(),
             OLD_TRANSFER,
-            SIGN_BASE + 4
+            OLD_KEY_RECOVERED_CONTEXT_LEAF
         );
 
         recoveryHandler = new ShrincsWalletRecoveryHandler();
@@ -159,7 +167,7 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
         assertEq(wallet.actionNonce(), initialNonce + 1);
         assertEq(wallet.keyVersion(), 0);
         assertEq(wallet.statefulLeavesUsed(), 1);
-        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1));
+        assertTrue(wallet.isStatefulLeafUsed(SEED_EXECUTE_LEAF));
         assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment);
         assertFalse(recoveryHandler.recovered());
         assertFalse(recoveryHandler.newExecuteLanded());
@@ -173,7 +181,7 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
             0,
             _oldSink(),
             OLD_TRANSFER,
-            SIGN_BASE + 2
+            OLD_PENDING_LEAF
         );
         vm.prank(OWNER);
         wallet.execute(_mainPk(), signature, _oldSink(), OLD_TRANSFER, "", 0);
@@ -251,8 +259,8 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
         );
         for (uint32 leaf = 0; leaf <= MAX_SIG + 1; leaf++) {
             bool expected = recovered
-                ? executed && leaf == SIGN_BASE + 3
-                : leaf == SIGN_BASE + 1;
+                ? executed && leaf == NEW_KEY_EXECUTE_LEAF
+                : leaf == SEED_EXECUTE_LEAF;
             assertEq(
                 wallet.isStatefulLeafUsed(leaf),
                 expected,

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WalletFactoryTest} from "../../WalletFactory.t.sol";
+import {Test} from "forge-std-1.14.0/Test.sol";
+import {WOTSKeyFixtures} from "../../WOTSKeyFixtures.sol";
 import {WalletFactory} from "../../../../contracts/WalletFactory.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
 
-contract WalletFactoryDeployHandler is WalletFactoryTest {
+contract WalletFactoryDeployHandler is Test, WOTSKeyFixtures {
     struct DeployRecord {
         bytes32 commitment;
         address wallet;
@@ -17,7 +18,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         bool addrMatch;
     }
 
-    WalletFactory internal factory_;
+    WalletFactory internal factory;
     address internal seedImpl;
     address internal secondImpl;
     uint256 internal deployNonce;
@@ -40,12 +41,12 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     bool public feeEverSet;
 
     function initialize(
-        WalletFactory factory__,
+        WalletFactory factory_,
         address seedImpl_,
         address secondImpl_
     ) external {
-        require(address(factory_) == address(0), "handler already initialized");
-        factory_ = factory__;
+        require(address(factory) == address(0), "handler already initialized");
+        factory = factory_;
         seedImpl = seedImpl_;
         secondImpl = secondImpl_;
         vm.deal(address(this), 10_000 ether);
@@ -54,7 +55,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
 
     function fuzzDeployLatest(uint256 ownerSalt, uint256 valueSalt) external {
         address to = vm.addr(bound(ownerSalt, 1, 5));
-        uint256 fee = factory_.creationFee();
+        uint256 fee = factory.creationFee();
         uint256 value;
         if (valueSalt % 8 == 0) {
             value = fee == 0 ? 0 : fee - 1;
@@ -68,7 +69,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
             ? (seedDeprecated ? address(0) : seedImpl)
             : secondImpl;
         try
-            factory_.deployLatestWalletProxy{value: value}(
+            factory.deployLatestWalletProxy{value: value}(
                 commitment,
                 payable(to),
                 payload
@@ -101,8 +102,8 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     }
 
     function fuzzSetCreationFee(uint256 fee) external {
-        fee = bound(fee, 0, factory_.MAX_FEE());
-        try factory_.setCreationFee(fee) {
+        fee = bound(fee, 0, factory.MAX_FEE());
+        try factory.setCreationFee(fee) {
             callsSetFee++;
             lastSetFee = fee;
             feeEverSet = true;
@@ -113,21 +114,21 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     }
 
     function fuzzDeploySpecific(uint256 idxSalt) external {
-        uint256 count = factory_.getVettedCodeCount();
+        uint256 count = factory.getVettedCodeCount();
         if (count == 0) {
             revertCount++;
             return;
         }
         uint256 index = bound(idxSalt, 0, count - 1);
         address to = vm.addr(bound(idxSalt >> 128, 1, 5));
-        uint256 fee = factory_.creationFee();
+        uint256 fee = factory.creationFee();
         uint256 value = bound(idxSalt, fee, fee + 2 ether);
         bytes32 commitment = keccak256(abi.encode(deployNonce));
         deployNonce++;
         bytes memory payload = _deployPayload(deployNonce);
         address expectedImpl = index == 0 ? seedImpl : secondImpl;
         try
-            factory_.deploySpecificWalletProxy{value: value}(
+            factory.deploySpecificWalletProxy{value: value}(
                 commitment,
                 index,
                 payable(to),
@@ -164,7 +165,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     }
 
     function fuzzDeprecateSeed() external {
-        try factory_.deprecateImplementation(seedImpl) {
+        try factory.deprecateImplementation(seedImpl) {
             callsDeprecate++;
             seedDeprecated = true;
         } catch {
@@ -175,7 +176,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
 
     function fuzzUndeprecateSeed() external {
         bool wasDeprecated = seedDeprecated;
-        try factory_.undeprecateImplementation(seedImpl) {
+        try factory.undeprecateImplementation(seedImpl) {
             if (!wasDeprecated) unexpectedSuccesses++;
             callsUndeprecate++;
             seedDeprecated = false;
@@ -186,7 +187,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
     }
 
     function fuzzDeprecateSecond() external {
-        try factory_.deprecateImplementation(secondImpl) {
+        try factory.deprecateImplementation(secondImpl) {
             callsDeprecate++;
             secondDeprecated = true;
         } catch {
@@ -197,7 +198,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
 
     function fuzzUndeprecateSecond() external {
         bool wasDeprecated = secondDeprecated;
-        try factory_.undeprecateImplementation(secondImpl) {
+        try factory.undeprecateImplementation(secondImpl) {
             if (!wasDeprecated) unexpectedSuccesses++;
             callsUndeprecate++;
             secondDeprecated = false;
@@ -212,7 +213,7 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         uint256 amount = overdraw
             ? available + 1
             : bound(amountSalt, 0, available);
-        try factory_.withdraw(amount) {
+        try factory.withdraw(amount) {
             callsWithdraw++;
             if (overdraw) {
                 unexpectedSuccesses++;
@@ -252,6 +253,6 @@ contract WalletFactoryDeployHandler is WalletFactoryTest {
         bytes32 commitment
     ) internal view returns (address) {
         return
-            CREATE3.predictDeterministicAddress(commitment, address(factory_));
+            CREATE3.predictDeterministicAddress(commitment, address(factory));
     }
 }

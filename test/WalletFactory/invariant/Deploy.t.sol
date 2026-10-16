@@ -5,13 +5,24 @@ import {WalletFactoryTest} from "../WalletFactory.t.sol";
 import {WalletFactoryDeployHandler} from "./support/DeployHandler.sol";
 import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 
+// Inline invariant budget. Every handler call derives a full WOTS+ keyset in the EVM
+// (~40ms each), so this suite caps runs/depth here. Inline config outranks the
+// FOUNDRY_INVARIANT_* variables, so the cap also governs CI's test-full:forge-invariant
+// job: raise it here, not in CI.
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 10
+/// forge-config: default.invariant.fail-on-revert = true
 
 contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
     bytes32 internal constant IMPLEMENTATION_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
     uint256 internal constant SEED_FEE = 0.05 ether;
+    uint256 internal constant SEED_OWNER_SALT = 1;
+    uint256 internal constant SEED_VALUE_SALT = 1;
+    uint256 internal constant SEED_SPECIFIC_INDEX = 0;
+    uint256 internal constant SEED_WITHDRAWAL = 0.02 ether;
+    uint256 internal constant VETTED_IMPLEMENTATIONS = 2;
+    uint256 internal constant SEEDED_DEPLOYS = 2;
 
     WalletFactoryDeployHandler public deployHandler;
     WOTSPlusImplementation public secondImplementation;
@@ -32,9 +43,9 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
         vm.prank(ADMIN);
         factory.transferOwnership(address(deployHandler));
         deployHandler.fuzzSetCreationFee(SEED_FEE);
-        deployHandler.fuzzDeployLatest(1, 1);
-        deployHandler.fuzzDeploySpecific(0);
-        deployHandler.fuzzWithdraw(0.02 ether, false);
+        deployHandler.fuzzDeployLatest(SEED_OWNER_SALT, SEED_VALUE_SALT);
+        deployHandler.fuzzDeploySpecific(SEED_SPECIFIC_INDEX);
+        deployHandler.fuzzWithdraw(SEED_WITHDRAWAL, false);
         targetContract(address(deployHandler));
 
         bytes4[] memory selectors = new bytes4[](8);
@@ -60,11 +71,11 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
             deployHandler.feeEverSet(),
             "fee mirror recorded the seeded update"
         );
-        assertEq(factory.getVettedCodeCount(), 2);
+        assertEq(factory.getVettedCodeCount(), VETTED_IMPLEMENTATIONS);
         assertEq(factory.latestWalletImpl(), address(secondImplementation));
         assertEq(
             deployHandler.deployCount(),
-            2,
+            SEEDED_DEPLOYS,
             "one seeded deploy per entry point"
         );
         assertEq(
@@ -168,7 +179,7 @@ contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
     function invariant_latestTracksDeprecation() public view {
         assertEq(
             factory.getVettedCodeCount(),
-            2,
+            VETTED_IMPLEMENTATIONS,
             "deploy touched the vetted set"
         );
         address expectedLatest = deployHandler.secondDeprecated()

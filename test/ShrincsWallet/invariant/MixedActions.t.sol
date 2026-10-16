@@ -10,6 +10,10 @@ import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWall
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletMixedActionHandler} from "./support/MixedActionHandler.t.sol";
 
+// Inline invariant budget. Every handler call verifies a SHRINCS signature in the EVM
+// (~0.3s each), so this suite caps runs/depth here. Inline config outranks the
+// FOUNDRY_INVARIANT_* variables, so the cap also governs CI's test-full:forge-invariant
+// job: raise it here, not in CI.
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 32
 /// forge-config: default.invariant.fail-on-revert = true
@@ -24,6 +28,12 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
     uint256 internal constant INITIAL_BALANCE = 1 ether;
     uint256 internal constant FIRST_TRANSFER = 0.1 ether;
     uint256 internal constant SECOND_TRANSFER = 0.2 ether;
+    uint32 internal constant EXECUTE_LEAF = SIGN_BASE + 1;
+    uint32 internal constant VALIDATION_LEAF = SIGN_BASE + 2;
+    uint32 internal constant ROTATION_LEAF = SIGN_BASE + 3;
+    uint32 internal constant REVOCATION_AUTH_LEAF = SIGN_BASE + 5;
+    /// @dev Leaf of the queued second execute; both revocations burn exactly this leaf.
+    uint32 internal constant QUEUED_EXECUTE_LEAF = SIGN_BASE + 6;
 
     ShrincsWalletMixedActionHandler public mixedHandler;
     bytes32 internal rotatedCommitment;
@@ -74,7 +84,7 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
             epoch,
             Codec.ACTION_EXECUTE,
             Codec.executePayloadHash(target, value, keccak256(""), 0),
-            SIGN_BASE + 1
+            EXECUTE_LEAF
         );
         mixedHandler.addAction(
             abi.encodeCall(
@@ -94,7 +104,7 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
             0,
             Codec.ACTION_ERC4337_EXECUTE,
             Codec.erc4337PayloadHash(userOpHash),
-            SIGN_BASE + 2
+            VALIDATION_LEAF
         );
         ERC4337.PackedUserOperation memory userOp = _makeUserOp(
             _userOpBlob(signature, userOpHash)
@@ -119,7 +129,7 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
             0,
             Codec.ACTION_ROTATE_KEY,
             Codec.rotateKeyPayloadHash(rotatedCommitment),
-            SIGN_BASE + 3
+            ROTATION_LEAF
         );
         SHRINCS.StatefulRotationTarget memory target = SHRINCS
             .StatefulRotationTarget({
@@ -144,7 +154,7 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
         uint256 requiredActionCount
     ) internal {
         uint32[] memory targets = new uint32[](1);
-        targets[0] = SIGN_BASE + 6;
+        targets[0] = QUEUED_EXECUTE_LEAF;
         bytes32 targetsHash = keccak256(
             abi.encodePacked(bytes32(uint256(targets[0])))
         );
@@ -155,7 +165,7 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
             epoch,
             Codec.ACTION_MARK_LEAVES_USED,
             Codec.markLeavesUsedPayloadHash(targetsHash),
-            SIGN_BASE + 5
+            REVOCATION_AUTH_LEAF
         );
         mixedHandler.addRevocation(
             abi.encodeCall(
@@ -216,7 +226,7 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
                 keccak256(""),
                 0
             ),
-            SIGN_BASE + 6
+            QUEUED_EXECUTE_LEAF
         );
         _addRotation(rotatedPublicKey, initialNonce + 2);
         _addExecute(
@@ -351,7 +361,7 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
 
         assertEq(wallet.actionNonce(), initialNonce + 2);
         assertEq(_newSink().balance, SECOND_TRANSFER);
-        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 6));
+        assertTrue(wallet.isStatefulLeafUsed(QUEUED_EXECUTE_LEAF));
     }
 
     function invariant_noUnexpectedOutcome() public view {
@@ -434,13 +444,13 @@ contract ShrincsWallet_MixedActions_Invariant is ShrincsWalletTest {
         );
         for (uint32 leaf = 0; leaf <= MAX_SIG + 1; leaf++) {
             bool expected = rotated
-                ? (completed == 4 && leaf == SIGN_BASE + 1) ||
+                ? (completed == 4 && leaf == EXECUTE_LEAF) ||
                     (newRevocation &&
-                        (leaf == SIGN_BASE + 5 || leaf == SIGN_BASE + 6))
-                : leaf == SIGN_BASE + 1 ||
-                    (completed >= 2 && leaf == SIGN_BASE + 2) ||
+                        (leaf == REVOCATION_AUTH_LEAF || leaf == QUEUED_EXECUTE_LEAF))
+                : leaf == EXECUTE_LEAF ||
+                    (completed >= 2 && leaf == VALIDATION_LEAF) ||
                     (oldRevocation &&
-                        (leaf == SIGN_BASE + 5 || leaf == SIGN_BASE + 6));
+                        (leaf == REVOCATION_AUTH_LEAF || leaf == QUEUED_EXECUTE_LEAF));
             assertEq(
                 wallet.isStatefulLeafUsed(leaf),
                 expected,

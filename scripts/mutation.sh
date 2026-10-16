@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Generate Gambit mutants and run the matching Forge tests; exit nonzero if any survive.
+# Generate Gambit mutants and run the matching Forge tests; exit nonzero if any survive
+# or time out (a timed-out mutant is inconclusive, never counted as killed).
 # Run: ./run mutation [source-file] [match-contract]
 # Defaults: contracts/shrincs/ShrincsWalletCodec.sol and ShrincsWalletCodec.
 set -euo pipefail
@@ -142,10 +143,11 @@ test_mutants() {
             echo "Survived: #$mutant_id $description"
         else
             test_status=$?
-            KILLED_MUTANTS=$((KILLED_MUTANTS + 1))
             if test "$test_status" -eq 124; then
-                echo "Timed out: #$mutant_id $description (counted as killed)"
+                TIMED_OUT+=("$mutant_id ($description)")
+                echo "Timed out: #$mutant_id $description (inconclusive)"
             else
+                KILLED_MUTANTS=$((KILLED_MUTANTS + 1))
                 echo "Killed:   #$mutant_id $description"
             fi
         fi
@@ -156,13 +158,22 @@ test_mutants() {
 
 report_results() {
     local score=$((100 * KILLED_MUTANTS / TOTAL_MUTANTS))
+    local status=0
     echo "Score: $KILLED_MUTANTS/$TOTAL_MUTANTS mutants killed ($score%)"
+
+    if test "${#TIMED_OUT[@]}" -gt 0; then
+        echo "Timed-out mutants (inconclusive; raise MUTATION_TIMEOUT or inspect):"
+        printf '  - %s\n' "${TIMED_OUT[@]}"
+        status=1
+    fi
 
     if test "${#SURVIVORS[@]}" -gt 0; then
         echo "Surviving mutants (possible test gaps):"
         printf '  - %s\n' "${SURVIVORS[@]}"
-        return 1
+        status=1
     fi
+
+    return "$status"
 }
 
 if test "${1:-}" = "--help"; then
@@ -179,6 +190,7 @@ RESULTS_FILE=""
 TOTAL_MUTANTS=0
 KILLED_MUTANTS=0
 SURVIVORS=()
+TIMED_OUT=()
 REMAPPINGS=()
 
 check_tools

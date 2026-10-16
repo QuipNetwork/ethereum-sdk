@@ -7,6 +7,10 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletOwnershipHandler} from "./support/OwnershipHandler.t.sol";
 
+// Inline invariant budget. Every handler call verifies a SHRINCS signature in the EVM
+// (~0.3s each), so this suite caps runs/depth here. Inline config outranks the
+// FOUNDRY_INVARIANT_* variables, so the cap also governs CI's test-full:forge-invariant
+// job: raise it here, not in CI.
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 32
 /// forge-config: default.invariant.fail-on-revert = true
@@ -14,6 +18,8 @@ import {ShrincsWalletOwnershipHandler} from "./support/OwnershipHandler.t.sol";
 contract ShrincsWallet_Ownership_Invariant is ShrincsWalletTest {
     uint32 internal constant ACCEPTANCE_LEAF = 1;
     uint32 internal constant FRESH_LEAF = 2;
+    uint32 internal constant OWNER_BINDING_SLOT = 1;
+    uint32 internal constant OLD_KEY_EXECUTE_LEAF = SIGN_BASE + 2;
 
     ShrincsWalletOwnershipHandler public ownershipHandler;
     address internal nextOwner;
@@ -62,7 +68,7 @@ contract ShrincsWallet_Ownership_Invariant is ShrincsWalletTest {
         SHRINCS.Signature memory ownerBindingSignature = _signStatefulAction(
             Codec.ACTION_TRANSFER_OWNERSHIP,
             Codec.transferOwnershipPayloadHash(nextOwner, nextCommitment),
-            1
+            OWNER_BINDING_SLOT
         );
         SHRINCS.Signature memory keyAcceptance = _signKeyAcceptance(
             nextSigningKey,
@@ -92,7 +98,7 @@ contract ShrincsWallet_Ownership_Invariant is ShrincsWalletTest {
             wallet,
             _mainPk(),
             _bundleOf(nextKey),
-            _executeSignature(mainKey, mainCommitment, SIGN_BASE + 2),
+            _executeSignature(mainKey, mainCommitment, OLD_KEY_EXECUTE_LEAF),
             _executeSignature(nextSigningKey, nextCommitment, FRESH_LEAF),
             _executeSignature(nextSigningKey, nextCommitment, ACCEPTANCE_LEAF),
             OWNER,

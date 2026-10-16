@@ -9,6 +9,18 @@ import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.s
 abstract contract ShrincsWalletInvariantBase is ShrincsWalletTest {
     ShrincsWalletInvariantHandler public handler;
 
+    /// @dev `_signStatefulAction` maps an auth slot `s` to leaf `SIGN_BASE + s`; targets are leaves.
+    uint32 internal constant SEED_AUTH_SLOT = 1;
+    uint32 internal constant SEED_TARGET_LEAF = SIGN_BASE + 2;
+    uint32 internal constant POOL_AUTH_SLOT_A = 3;
+    uint32 internal constant POOL_AUTH_SLOT_B = 4;
+    uint32 internal constant POOL_AUTH_SLOT_C = 5;
+    uint32 internal constant POOL_TARGET_LEAF_A = SIGN_BASE + 6;
+    uint32 internal constant POOL_TARGET_LEAF_B = SIGN_BASE + 7;
+    /// @dev The seed revocation consumes its auth leaf plus one target.
+    uint32 internal constant SEED_LEAVES_CONSUMED = 2;
+    uint256 internal constant POOL_SIZE = 3;
+
     uint256 internal initialNonce;
     uint256 internal initialKeyVersion;
     uint32 internal initialUsed;
@@ -67,15 +79,24 @@ abstract contract ShrincsWalletInvariantBase is ShrincsWalletTest {
         handler = new ShrincsWalletInvariantHandler();
         handler.initialize(wallet, OWNER);
 
-        uint32[] memory seedTargets = _single(SIGN_BASE + 2);
-        SHRINCS.Signature memory seedSig = _signedMarkTargets(seedTargets, 1);
+        uint32[] memory seedTargets = _single(SEED_TARGET_LEAF);
+        SHRINCS.Signature memory seedSig = _signedMarkTargets(
+            seedTargets,
+            SEED_AUTH_SLOT
+        );
         vm.prank(OWNER);
         wallet.markLeavesUsed(_mainPk(), seedSig, seedTargets);
         handler.recordSeedMark(uint32(seedSig.authPath.length), seedTargets);
 
-        _pushPoolEntry(_single(SIGN_BASE + 6), 3);
-        _pushPoolEntry(_pair(SIGN_BASE + 6, SIGN_BASE + 7), 4);
-        _pushPoolEntry(_pair(SIGN_BASE + 7, SIGN_BASE + 7), 5);
+        _pushPoolEntry(_single(POOL_TARGET_LEAF_A), POOL_AUTH_SLOT_A);
+        _pushPoolEntry(
+            _pair(POOL_TARGET_LEAF_A, POOL_TARGET_LEAF_B),
+            POOL_AUTH_SLOT_B
+        );
+        _pushPoolEntry(
+            _pair(POOL_TARGET_LEAF_B, POOL_TARGET_LEAF_B),
+            POOL_AUTH_SLOT_C
+        );
 
         initialNonce = wallet.actionNonce();
         initialKeyVersion = wallet.keyVersion();
@@ -89,8 +110,12 @@ abstract contract ShrincsWalletInvariantBase is ShrincsWalletTest {
         assertEq(wallet.actionNonce(), initialNonce);
         assertEq(wallet.keyVersion(), initialKeyVersion);
         assertEq(wallet.statefulLeavesUsed(), initialUsed);
-        assertEq(initialUsed, 2, "seed revocation consumed auth + target");
-        assertEq(handler.validPoolLength(), 3, "replay pool seeded");
+        assertEq(
+            initialUsed,
+            SEED_LEAVES_CONSUMED,
+            "seed revocation consumed auth + target"
+        );
+        assertEq(handler.validPoolLength(), POOL_SIZE, "replay pool seeded");
         assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment);
         assertEq(wallet.getErc1271PublicKeyCommitment(), erc1271Commitment);
     }

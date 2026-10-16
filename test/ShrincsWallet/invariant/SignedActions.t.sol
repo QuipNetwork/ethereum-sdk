@@ -10,6 +10,10 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletSignedActionsHandler, SignedActionsEntryPoint} from "./support/SignedActionsHandler.t.sol";
 
+// Inline invariant budget. Every handler call verifies a SHRINCS signature in the EVM
+// (~0.3s each), so this suite caps runs/depth here. Inline config outranks the
+// FOUNDRY_INVARIANT_* variables, so the cap also governs CI's test-full:forge-invariant
+// job: raise it here, not in CI.
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 16
 /// forge-config: default.invariant.fail-on-revert = true
@@ -24,6 +28,8 @@ contract ShrincsWallet_SignedActions_Invariant is ShrincsWalletTest {
     bytes32 internal constant ERC1271_HASH =
         keccak256("signed-actions-erc1271");
     address internal constant RECIPIENT = address(0xD00D);
+    uint32 internal constant SET_KEY_LEAF = SIGN_BASE + 1;
+    uint32 internal constant WITHDRAW_LEAF = SIGN_BASE + 2;
 
     ShrincsWalletSignedActionsHandler public signedHandler;
     SHRINCS.PublicKey internal nextErc1271Key;
@@ -106,7 +112,7 @@ contract ShrincsWallet_SignedActions_Invariant is ShrincsWalletTest {
                         HashSuite.HASH_SUITE_ID
                     ),
                     initialNonce,
-                    SIGN_BASE + 1
+                    SET_KEY_LEAF
                 ),
                 nextErc1271Key,
                 HashSuite.HASH_SUITE_ID
@@ -120,7 +126,7 @@ contract ShrincsWallet_SignedActions_Invariant is ShrincsWalletTest {
                     Codec.ACTION_WITHDRAW,
                     Codec.withdrawPayloadHash(RECIPIENT, WITHDRAWAL),
                     initialNonce + 1,
-                    SIGN_BASE + 2
+                    WITHDRAW_LEAF
                 ),
                 RECIPIENT,
                 WITHDRAWAL
@@ -265,8 +271,8 @@ contract ShrincsWallet_SignedActions_Invariant is ShrincsWalletTest {
             "remaining budget diverged"
         );
         for (uint32 leaf = 0; leaf <= MAX_SIG + 1; leaf++) {
-            bool expected = (leaf == SIGN_BASE + 1 && completed >= 1) ||
-                (leaf == SIGN_BASE + 2 && completed == 2);
+            bool expected = (leaf == SET_KEY_LEAF && completed >= 1) ||
+                (leaf == WITHDRAW_LEAF && completed == 2);
             assertEq(
                 wallet.isStatefulLeafUsed(leaf),
                 expected,

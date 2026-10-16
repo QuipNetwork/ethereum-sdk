@@ -7,6 +7,10 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 
+// Inline invariant budget. Every handler call verifies a SHRINCS signature in the EVM
+// (~0.3s each), so this suite caps runs/depth here. Inline config outranks the
+// FOUNDRY_INVARIANT_* variables, so the cap also governs CI's test-full:forge-invariant
+// job: raise it here, not in CI.
 /// forge-config: default.invariant.runs = 8
 /// forge-config: default.invariant.depth = 32
 /// forge-config: default.invariant.fail-on-revert = true
