@@ -178,4 +178,37 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
         vm.expectRevert(IShrincsWallet.StaleStatefulLeaf.selector);
         wallet.exposed_verifyStatefulAndAdvance(_pk(), _statefulSigWithLeaf(leaf), ACTION, PAYLOAD);
     }
+
+    function test_exposed_verifyStatefulAndAdvance_revertsWhen_actionTypeDiffersWithSamePayload()
+        public
+    {
+        bytes32 payloadHash = keccak256("same payload, different action");
+        SHRINCS.Signature memory signature = _signStatefulAction(
+            Codec.ACTION_EXECUTE,
+            payloadHash,
+            1
+        );
+
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.exposed_verifyStatefulAndAdvance(
+            _pk(),
+            signature,
+            Codec.ACTION_WITHDRAW,
+            payloadHash
+        );
+        assertEq(wallet.actionNonce(), 0, "wrong action advanced nonce");
+        assertEq(wallet.statefulLeavesUsed(), 0, "wrong action consumed leaf");
+        assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1));
+
+        uint32 leaf = wallet.exposed_verifyStatefulAndAdvance(
+            _pk(),
+            signature,
+            Codec.ACTION_EXECUTE,
+            payloadHash
+        );
+        assertEq(leaf, SIGN_BASE + 1);
+        assertEq(wallet.actionNonce(), 1);
+        assertEq(wallet.statefulLeavesUsed(), 1);
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1));
+    }
 }

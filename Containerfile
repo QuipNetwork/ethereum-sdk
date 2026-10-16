@@ -34,5 +34,14 @@ RUN curl -fsSL https://foundry.paradigm.xyz | bash \
     && chmod -R a+rx /opt/foundry/bin \
     && forge --version && anvil --version
 
+ARG GAMBIT_VERSION=v1.0.6
+ARG SOLC_VERSION=v0.8.33
+RUN curl -fsSL -o /usr/local/bin/gambit \
+        "https://github.com/Certora/gambit/releases/download/${GAMBIT_VERSION}/gambit-linux-${GAMBIT_VERSION}" \
+    && curl -fsSL -o /usr/local/bin/solc \
+        "https://github.com/ethereum/solidity/releases/download/${SOLC_VERSION}/solc-static-linux" \
+    && chmod a+rx /usr/local/bin/gambit /usr/local/bin/solc \
+    && gambit --help >/dev/null && solc --version
+
 WORKDIR /work
 CMD ["bash"]

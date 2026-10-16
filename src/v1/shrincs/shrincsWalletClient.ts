@@ -40,6 +40,7 @@ import {
   Erc1271ValidationResult,
   LeafOutOfRangeError,
   ExecuteTargetHasNoCodeError,
+  InsufficientWalletBalanceError,
   InvalidKeyAcceptanceError,
   InvalidOwnerAcceptanceError,
   OwnerMismatchError,
@@ -244,7 +245,10 @@ export interface ExecuteParams {
   value?: bigint;
   data?: Hex;
   maxFee?: bigint;
+  fundFrom?: ExecuteFundingSource;
 }
+
+export type ExecuteFundingSource = "sender" | "wallet";
 
 export interface ExecuteCostEstimate extends CostEstimate {
   executeFee: bigint;
@@ -260,7 +264,8 @@ export interface PreparedExecute {
   maxFee: bigint;
   /// The live `executeFee` read at prepare time.
   executeFee: bigint;
-  /// ETH the sender attaches: `value + maxFee`.
+  /// ETH the sender attaches: `value + maxFee`, or 0 when `fundFrom` is
+  /// `"wallet"` (the wallet pays `value` + the live fee from its balance).
   totalValue: bigint;
   /// `eth_estimateGas` of the signed call with the sender's balance overridden,
   /// so the quote does not depend on the account currently being funded.
@@ -936,9 +941,15 @@ export class ShrincsWalletClient {
     if (data !== "0x") {
       await this.assertExecuteTargetHasCode(params.target);
     }
+    const fundedByWallet = params.fundFrom === "wallet";
     const { keypair, state, leaf, domainSeparator: ds } =
-      await this.prepareStatefulOp(opts);
+      await this.prepareStatefulOp(opts, undefined, async (_kp, st) => {
+        if (fundedByWallet) {
+          await this.assertWalletCoversExecute(value + st.executeFee);
+        }
+      });
     const maxFee = params.maxFee ?? state.executeFee;
+    const attachedValue = fundedByWallet ? 0n : value + maxFee;
     const ctx = buildActionContext({
       domainSeparator: ds,
       nonce: state.actionNonce,
@@ -952,9 +963,11 @@ export class ShrincsWalletClient {
       ),
     });
     const signature = keypair.signStatefulActionAt(ctx, leaf);
-    // msg.value funds the ceiling; any excess over the live fee stays in the
-    // wallet (the user's own funds), and the call cannot underfund a fee move
-    // within the cap.
+    // With "sender" funding, msg.value funds the ceiling; any excess over the
+    // live fee stays in the wallet (the user's own funds), and the call cannot
+    // underfund a fee move within the cap. With "wallet" funding nothing is
+    // attached and the wallet's balance pays `value` + the live fee, so a fee
+    // rise after the pre-flight can still underfund it and revert.
     return {
       contractCall: this.buildContractCall(
         "execute",
@@ -966,13 +979,22 @@ export class ShrincsWalletClient {
           data,
           maxFee,
         ],
-        value + maxFee
+        attachedValue
       ),
-      totalValue: value + maxFee,
+      totalValue: attachedValue,
       executeFee: state.executeFee,
       maxFee,
       leaf,
     };
+  }
+
+  private async assertWalletCoversExecute(required: bigint): Promise<void> {
+    const available = await this.publicClient.getBalance({
+      address: this.walletAddress,
+    });
+    if (available < required) {
+      throw new InsufficientWalletBalanceError(required, available);
+    }
   }
 
   /// Assert an `execute` target holds code, throwing `ExecuteTargetHasNoCodeError`

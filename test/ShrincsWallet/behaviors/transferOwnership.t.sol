@@ -179,6 +179,60 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 2);
     }
 
+    function test_transferOwnership_handoverResetsLeafCounterToAcceptanceLeaf() public {
+        bytes32 payloadHash = Codec.executePayloadHash(TARGET, 0, keccak256(""), 0);
+        SHRINCS.Signature memory executeSig = _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 2);
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), executeSig, TARGET, 0, "", 0);
+        assertEq(wallet.statefulLeavesUsed(), 1, "one leaf consumed before handover");
+
+        _handover();
+
+        assertEq(wallet.statefulLeavesUsed(), 1, "new epoch counter restarts at the acceptance leaf");
+        assertTrue(wallet.isStatefulLeafUsed(ACCEPT_LEAF), "acceptance leaf spent in the new epoch");
+    }
+
+    function test_transferOwnership_acceptanceLeafRecordedInNewEpoch() public {
+        (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
+        bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
+        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) =
+            _currentOwnerSigs(nextKey, NEW_OWNER);
+        SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, c, NEW_OWNER, 2);
+        bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, c);
+
+        vm.prank(OWNER);
+        vm.expectEmit(true, true, false, false, address(wallet));
+        emit IShrincsWallet.StatefulSignatureVerified(2, 1);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER, keyAcc, ownerAcc);
+
+        assertTrue(wallet.isStatefulLeafUsed(2), "actual acceptance leaf spent in the new epoch");
+        assertFalse(wallet.isStatefulLeafUsed(1), "no other leaf spent");
+    }
+
+    function test_transferOwnership_installsNewBudget() public {
+        uint32 nextBudget = MAX_SIG + 4;
+        (SHRINCS.SigningKey memory key, SHRINCS.PublicKey memory pk, bool ok) =
+            SHRINCSTestSigner.keygen("transfer-ownership-diff-budget", nextBudget);
+        require(ok, "keygen");
+        SHRINCS.RotationTarget memory nextKey = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: pk.publicKeyCommitment,
+            pkSeed: pk.pkSeed,
+            hypertreeRoot: pk.hypertreeRoot
+        });
+        bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
+        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) =
+            _currentOwnerSigs(nextKey, NEW_OWNER);
+        SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, nextCommitment, NEW_OWNER, ACCEPT_LEAF);
+        bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, nextCommitment);
+
+        vm.prank(OWNER);
+        wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER, keyAcc, ownerAcc);
+
+        assertEq(wallet.maxSignatures(), nextBudget, "incoming bundle budget installed");
+        assertEq(wallet.getShrincsPublicKeyCommitment(), nextCommitment, "fresh bundle installed");
+    }
+
     /// @dev The acceptance binds neither nonce nor epoch: the recipient can sign it long before the
     ///      current owner broadcasts, and any actions the current owner consumes in between do not
     ///      invalidate it. (The commitment can be installed once, so it cannot be replayed either.)

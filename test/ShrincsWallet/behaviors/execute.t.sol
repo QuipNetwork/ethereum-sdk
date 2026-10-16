@@ -20,6 +20,14 @@ contract MockCallee {
     }
 }
 
+contract MockCallRecorder {
+    uint256 public lastValue;
+
+    function record(uint256 v) external {
+        lastValue = v;
+    }
+}
+
 /// @dev Behavior tests for the owner-path
 ///      `execute(PublicKey,StatefulSignature,address,uint256,bytes,uint256 maxFee)`.
 ///      Access control, the pre-verify leaf guards, the `InvalidSignature` branch, and the
@@ -97,6 +105,14 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter incremented");
         assertEq(wallet.actionNonce(), 1, "consumed signature advances the action nonce");
+    }
+
+    function test_execute_remainingSignaturesTracksConsumption() public {
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG, "full budget before");
+        SHRINCS.Signature memory sig = _executeSig(TARGET, 0, "", 1);
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), sig, TARGET, 0, "", 0);
+        assertEq(wallet.remainingStatefulSignatures(), MAX_SIG - 1, "budget minus one leaf");
     }
 
     /// @dev Supersession headline: a signature bound to a superseded nonce is dead even though
@@ -199,6 +215,19 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         wallet.execute(_mainPk(), sig, callee, 0, hex"1234", 0);
 
         assertTrue(MockCallee(payable(callee)).called(), "callee received the call");
+        assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
+    }
+
+    function test_execute_forwardsCalldataToContract() public {
+        address recorder = address(0xCA11EC);
+        vm.etch(recorder, address(new MockCallRecorder()).code);
+        bytes memory data = abi.encodeCall(MockCallRecorder.record, (0xC0FFEE));
+        SHRINCS.Signature memory sig = _executeSig(recorder, 0, data, 1);
+
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), sig, recorder, 0, data, 0);
+
+        assertEq(MockCallRecorder(recorder).lastValue(), 0xC0FFEE, "calldata reached the callee");
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 consumed");
     }
 

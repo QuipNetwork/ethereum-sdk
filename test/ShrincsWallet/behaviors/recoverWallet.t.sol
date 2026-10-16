@@ -52,6 +52,34 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     /// @dev The stateless rotation verify must actually leave the wallet: a valid recovery
     ///      staticcalls the pinned verifier's `verifyStateless`.
+    function test_recoverWallet_installsBudgetAndResetsCounter() public {
+        bytes32 execHash = Codec.executePayloadHash(address(0xBEEF), 0, keccak256(""), 0);
+        SHRINCS.Signature memory executeSig = _signStatefulAction(Codec.ACTION_EXECUTE, execHash, 2);
+        vm.prank(OWNER);
+        wallet.execute(_mainPk(), executeSig, address(0xBEEF), 0, "", 0);
+        assertEq(wallet.statefulLeavesUsed(), 1, "one leaf consumed before recovery");
+
+        uint32 nextBudget = MAX_SIG + 4;
+        (, SHRINCS.PublicKey memory pk, bool ok) =
+            SHRINCSTestSigner.keygen("recover-wallet-diff-budget", nextBudget);
+        require(ok, "recovery keygen");
+        SHRINCS.RotationTarget memory nextKey = SHRINCS.RotationTarget({
+            statefulPublicKey: pk.statefulPublicKey,
+            publicKeyCommitment: pk.publicKeyCommitment,
+            pkSeed: pk.pkSeed,
+            hypertreeRoot: pk.hypertreeRoot
+        });
+        SPHINCSPlusC.Signature memory recoverySig =
+            _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+
+        vm.prank(OWNER);
+        wallet.recoverWallet(_mainPk(), recoverySig, nextKey);
+
+        assertEq(wallet.maxSignatures(), nextBudget, "new bundle budget installed");
+        assertEq(wallet.statefulLeavesUsed(), 0, "new epoch counter starts empty");
+        assertFalse(wallet.isStatefulLeafUsed(1), "fresh bitmap namespace");
+    }
+
     function test_recoverWallet_delegatesToVerifier() public {
         SHRINCS.RotationTarget memory nextKey = _nextKey();
         SPHINCSPlusC.Signature memory recoverySig =

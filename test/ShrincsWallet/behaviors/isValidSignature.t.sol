@@ -60,6 +60,20 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         );
     }
 
+    function test_isValidSignature_revertsWhen_topLevelMalformed() public {
+        SPHINCSPlusC.Signature memory sig = _signErc1271(HASH);
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
+        bytes memory cut = new bytes(0x60);
+        for (uint256 i; i < 0x60; ++i) {
+            cut[i] = blob[i];
+        }
+        assertEq(wallet.isValidSignature(HASH, cut), FAIL);
+        assertEq(
+            uint8(wallet.debugIsValidSignature(HASH, cut)),
+            uint8(IShrincsWallet.Erc1271ValidationResult.MalformedErc1271Payload)
+        );
+    }
+
     /// @dev ERC-1271 never-revert property (staticcall DoS resistance): a relying contract
     ///      staticcalls `isValidSignature`, so any revert is a denial of service on it. Adversarial
     ///      blobs whose ABI tail offsets point out of bounds — which the codec's `pw8` bounds-check
@@ -106,6 +120,16 @@ contract ShrincsWallet_isValidSignature is ShrincsWalletTest {
         bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(HASH));
         assertEq(wallet.isValidSignature(HASH, blob), MAGIC);
         assertEq(uint8(wallet.debugIsValidSignature(HASH, blob)), uint8(IShrincsWallet.Erc1271ValidationResult.Ok));
+    }
+
+    function test_isValidSignature_revertsWhen_zeroHash() public {
+        SPHINCSPlusC.Signature memory sig = _signErc1271(bytes32(0));
+        bytes memory blob = _blob(erc1271Pk, sig, _ownerEcdsa(bytes32(0)));
+        assertEq(wallet.isValidSignature(bytes32(0), blob), FAIL);
+        assertEq(
+            uint8(wallet.debugIsValidSignature(bytes32(0), blob)),
+            uint8(IShrincsWallet.Erc1271ValidationResult.InvalidShrincsSignature)
+        );
     }
 
     /// @dev The stateless 1271 verify must actually leave the wallet: a valid blob staticcalls
