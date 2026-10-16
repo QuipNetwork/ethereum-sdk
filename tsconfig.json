@@ -1,30 +1,26 @@
 {
   "compilerOptions": {
     "target": "es2020",
-    "module": "commonjs",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "outDir": "dist",
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "rootDir": ".",
-    "baseUrl": ".",
-    "paths": {
-      "*": ["node_modules/*", "typechain-types/*"]
-    },
-    "types": ["node", "hardhat", "mocha", "chai", "jest"]
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node", "jest"]
   },
   "include": [
-    "index.ts",
     "src/**/*",
-    "typechain-types/**/*",
-    "scripts/**/*",
-    "test/**/*",
-    "hardhat.config.ts"
+    "test/**/*.ts"
   ],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "hardhat.config.cts",
+    "scripts",
+    "test/midl-integration.ts"
+  ]
 }

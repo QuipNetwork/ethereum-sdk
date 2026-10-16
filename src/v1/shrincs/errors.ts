@@ -1,0 +1,739 @@
+// Copyright (C) 2025 quip.network
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { type Address, type Hex } from "viem";
+
+// Shrincs SDK errors extend the shared `QuipError` base from the v1 SDK so that
+// `instanceof QuipError` and the `.code` discriminator work uniformly across
+// both wallet families. Contract-revert -> typed-error mapping lives in
+// `internal/decodeError.ts`.
+import { QuipError, type QuipErrorOptions } from "../errors.js";
+
+// Re-export the base + the generic operational errors the reused helpers
+// (`internal/providerState.ts`, `gas.ts`) already throw, so Shrincs callers can
+// import everything from this barrel.
+export {
+  QuipError,
+  type QuipErrorOptions,
+  BalanceTooLowError,
+  GasEstimationError,
+  ChainChangedError,
+  AccountChangedError,
+  UnsupportedNetworkError,
+} from "../errors.js";
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                    VALIDATION ENUMS                         */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+/// `IShrincsWallet.UserOpValidationFailure` — the reason in a
+/// `UserOpValidationRejected` event from ERC-4337 `validateUserOp`.
+export enum UserOpValidationFailure {
+  BadSignatureLength = 0,
+  StaleStatefulLeaf = 1,
+  StatefulBudgetExhausted = 2,
+  InvalidSignature = 3,
+  /// The owner's ECDSA co-signature in the hybrid blob did not recover to `owner()`.
+  InvalidEcdsaSignature = 4,
+  /// The `userOp.signature` blob's ABI framing is malformed (a top-level or nested
+  /// tail offset / length runs past the blob); the `userOpEnvelope` self-staticcall
+  /// reverted and the wallet soft-failed instead of reverting out of validation.
+  MalformedSignature = 5,
+}
+
+/// `IShrincsWallet.Erc1271ValidationResult` — the diagnostic result from
+/// `debugIsValidSignature`.
+export enum Erc1271ValidationResult {
+  Ok = 0,
+  BadSignatureLength = 1,
+  InvalidEcdsaSignature = 2,
+  InvalidShrincsSignature = 3,
+  /// The 1271 blob's ABI framing is malformed (top-level decode failed, or a nested
+  /// tail offset made the `erc1271Envelope` self-staticcall revert).
+  MalformedErc1271Payload = 4,
+}
+
+/// `IShrincsPaymaster.PaymasterValidationFailure` — the reason in a
+/// `PaymasterValidationRejected` event from `validatePaymasterUserOp`.
+export enum PaymasterValidationFailure {
+  MalformedPayload = 0,
+  StaleStatefulLeaf = 1,
+  InvalidSignature = 2,
+  StatefulBudgetExhausted = 3,
+}
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                  SDK OPERATIONAL ERRORS                     */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+/// A freshly derived SHRINCS keypair failed its post-derivation self-test.
+export class ShrincsKeyDerivationSelfTestError extends QuipError {
+  readonly publicKeyCommitment: Hex;
+  constructor(publicKeyCommitment: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_KEY_DERIVATION_SELFTEST_FAILED",
+      `SHRINCS key with commitment ${publicKeyCommitment} failed the post-derivation self-test`,
+      opts
+    );
+    this.publicKeyCommitment = publicKeyCommitment;
+  }
+}
+
+/// A QUIP HD derivation input was invalid (seed too short, index out of the
+/// hardened range, or a malformed path component).
+export class ShrincsHdDerivationError extends QuipError {
+  constructor(message: string, opts?: QuipErrorOptions) {
+    super("SHRINCS_HD_DERIVATION_INVALID", message, opts);
+  }
+}
+
+/// A BIP-39 mnemonic failed wordlist or checksum validation.
+export class ShrincsInvalidMnemonicError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_MNEMONIC",
+      "mnemonic failed BIP-39 wordlist/checksum validation",
+      opts
+    );
+  }
+}
+
+/// The paymaster sponsorship key's commitment does not match the verifier
+/// registered on chain — signing would be rejected. Caught client-side before
+/// any signature is produced.
+export class VerifierMismatchError extends QuipError {
+  readonly suppliedCommitment: Hex;
+  readonly onChainCommitment: Hex;
+  constructor(
+    suppliedCommitment: Hex,
+    onChainCommitment: Hex,
+    opts?: QuipErrorOptions
+  ) {
+    super(
+      "SHRINCS_VERIFIER_MISMATCH",
+      `Sponsorship key commitment ${suppliedCommitment} does not match the registered verifier ${onChainCommitment}`,
+      opts
+    );
+    this.suppliedCommitment = suppliedCommitment;
+    this.onChainCommitment = onChainCommitment;
+  }
+}
+
+/// Client-side only (never a contract revert): a sponsorship's
+/// `validUntil` / `validAfter` window is malformed — inverted, already expired
+/// at signing time, negative, non-integer, or past the 6-byte field width.
+/// Caught BEFORE the operator's one-time leaf is spent on an unusable approval.
+export class InvalidSponsorshipWindowError extends QuipError {
+  readonly validUntil: number;
+  readonly validAfter: number;
+  constructor(validUntil: number, validAfter: number, reason: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_SPONSORSHIP_WINDOW",
+      `Invalid sponsorship window (validUntil=${validUntil}, validAfter=${validAfter}): ${reason}`,
+      opts
+    );
+    this.validUntil = validUntil;
+    this.validAfter = validAfter;
+  }
+}
+
+/// Fallback for a recognized contract revert with no dedicated SDK class.
+export class UnknownContractError extends QuipError {
+  readonly errorName?: string;
+  readonly args?: readonly unknown[];
+  constructor(
+    errorName: string | undefined,
+    args: readonly unknown[] | undefined,
+    opts?: QuipErrorOptions
+  ) {
+    super(
+      "UNKNOWN_CONTRACT_ERROR",
+      errorName
+        ? `Unrecognized contract error ${errorName}`
+        : "Unrecognized contract revert",
+      opts
+    );
+    this.errorName = errorName;
+    this.args = args;
+  }
+}
+
+/// `waitForTransactionReceipt` resolved with `status === "reverted"` — the
+/// transaction landed but the call reverted on chain.
+export class TransactionRevertedError extends QuipError {
+  readonly transactionHash: Hex;
+  constructor(transactionHash: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_TRANSACTION_REVERTED",
+      `Transaction ${transactionHash} reverted`,
+      opts
+    );
+    this.transactionHash = transactionHash;
+  }
+}
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                      WALLET ERRORS                          */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+export class ZeroAddressFactoryError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_ZERO_ADDRESS_FACTORY", "Factory address is zero", opts);
+  }
+}
+
+export class ZeroAddressOwnerError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_ZERO_ADDRESS_OWNER", "Owner address is zero", opts);
+  }
+}
+
+/// Client-side only (never a contract revert): the supplied owner is non-zero
+/// but does not match the wallet's on-chain `owner()`.
+export class OwnerMismatchError extends QuipError {
+  readonly expected: Address;
+  readonly actual: Address;
+  constructor(expected: Address, actual: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_OWNER_MISMATCH",
+      `Owner ${actual} does not match the installed owner ${expected}`,
+      opts
+    );
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+/// An `execute` call carries calldata but its target holds no code. Solady's
+/// `execute` is a raw call with no `extcodesize` guard, so a call to a codeless
+/// target is a phantom no-op that still consumes a leaf, nonce, fee, and gas
+/// while reporting success. Pure value transfers (empty calldata) are exempt —
+/// sending ETH to an EOA is legitimate.
+export class ExecuteTargetHasNoCodeError extends QuipError {
+  readonly target: Address;
+  constructor(target: Address, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EXECUTE_TARGET_NO_CODE",
+      `execute target ${target} has no code; a call to a codeless target is a phantom no-op that consumes a leaf`,
+      opts
+    );
+    this.target = target;
+  }
+}
+
+export class InsufficientWalletBalanceError extends QuipError {
+  readonly required: bigint;
+  readonly available: bigint;
+  constructor(required: bigint, available: bigint, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INSUFFICIENT_WALLET_BALANCE",
+      `wallet balance ${available} wei is below the ${required} wei needed to fund execute value + fee`,
+      opts
+    );
+    this.required = required;
+    this.available = available;
+  }
+}
+
+export class ZeroAddressVerifierError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_ZERO_ADDRESS_VERIFIER",
+      "SHRINCS verifier address is zero",
+      opts
+    );
+  }
+}
+
+export class InvalidFactoryError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_INVALID_FACTORY", "Caller is not the wallet factory", opts);
+  }
+}
+
+export class InvalidSignatureError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_INVALID_SIGNATURE", "SHRINCS signature verification failed", opts);
+  }
+}
+
+export class CommitmentMismatchError extends QuipError {
+  readonly suppliedCommitment?: Hex;
+  readonly onChainCommitment?: Hex;
+  constructor(
+    suppliedCommitment?: Hex,
+    onChainCommitment?: Hex,
+    opts?: QuipErrorOptions
+  ) {
+    super(
+      "SHRINCS_COMMITMENT_MISMATCH",
+      suppliedCommitment && onChainCommitment
+        ? `Signing key commitment ${suppliedCommitment} does not match the installed commitment ${onChainCommitment}`
+        : "Supplied public key does not match the installed commitment",
+      opts
+    );
+    this.suppliedCommitment = suppliedCommitment;
+    this.onChainCommitment = onChainCommitment;
+  }
+}
+
+export class ZeroMaxSignaturesError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_ZERO_MAX_SIGNATURES", "maxSignatures is zero", opts);
+  }
+}
+
+/// The stateful tree (`keccak256(pkSeed ‖ root)`, budget excluded) was installed
+/// on this wallet/paymaster before. Trees are one-time material for the
+/// contract's lifetime; re-installing one would reset its leaf bitmap.
+export class StatefulTreeSpentError extends QuipError {
+  readonly treeId?: Hex;
+  constructor(treeId?: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATEFUL_TREE_SPENT",
+      treeId === undefined
+        ? "Stateful tree was already installed on this contract — keygen a fresh key"
+        : `Stateful tree ${treeId} was already installed on this contract — keygen a fresh key`,
+      opts
+    );
+    this.treeId = treeId;
+  }
+}
+
+/// The stateless tree (`keccak256(pkSeed ‖ hypertreeRoot)`) was installed on
+/// this wallet before. `recoverWallet` / `transferOwnership` / `migrate` must
+/// present a bundle whose stateless half is entirely fresh.
+export class StatelessTreeSpentError extends QuipError {
+  readonly treeId?: Hex;
+  constructor(treeId?: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATELESS_TREE_SPENT",
+      treeId === undefined
+        ? "Stateless tree was already installed on this wallet — keygen a fresh bundle"
+        : `Stateless tree ${treeId} was already installed on this wallet — keygen a fresh bundle`,
+      opts
+    );
+    this.treeId = treeId;
+  }
+}
+
+/// A declared hash suite other than `HASH_SUITE_KECCAK_256` was supplied at
+/// install/rotate time (wallet initialize/migrate/setErc1271Key, paymaster
+/// initialize).
+export class UnsupportedHashSuiteError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UNSUPPORTED_HASH_SUITE",
+      "Hash suite is not HASH_SUITE_KECCAK_256 — the only suite the contracts accept",
+      opts
+    );
+  }
+}
+
+/// The chosen stateful leaf has already been consumed in the current key epoch.
+export class StaleStatefulLeafError extends QuipError {
+  readonly leaf?: number;
+  constructor(leaf?: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STALE_STATEFUL_LEAF",
+      leaf === undefined
+        ? "Stateful leaf has already been consumed in the current key epoch"
+        : `Stateful leaf ${leaf} has already been consumed in the current key epoch`,
+      opts
+    );
+    this.leaf = leaf;
+  }
+}
+
+/// An upgrade-auth blob bound an action nonce that no longer matches the live
+/// one — the signed upgrade was superseded by a later consumed signature.
+export class StaleActionNonceError extends QuipError {
+  readonly expected?: bigint;
+  readonly provided?: bigint;
+  constructor(expected?: bigint, provided?: bigint, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STALE_ACTION_NONCE",
+      expected === undefined
+        ? "Upgrade auth binds a stale action nonce; re-sign against the live actionNonce()"
+        : `Upgrade auth binds stale action nonce ${provided ?? "?"} (live is ${expected}); re-sign against the live actionNonce()`,
+      opts
+    );
+    this.expected = expected;
+    this.provided = provided;
+  }
+}
+
+/// No unused stateful leaf available in the current key epoch; rotate the key.
+export class StatefulBudgetExhaustedError extends QuipError {
+  readonly maxSignatures?: number;
+  readonly used?: number;
+  constructor(maxSignatures?: number, used?: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATEFUL_BUDGET_EXHAUSTED",
+      maxSignatures === undefined
+        ? "Stateful signature budget exhausted; rotate the key"
+        : `No unused stateful leaf available (used ${used ?? "?"}/${maxSignatures}); rotate the key`,
+      opts
+    );
+    this.maxSignatures = maxSignatures;
+    this.used = used;
+  }
+}
+
+/// A used-leaf bitmap word could not be read from chain while scanning for the
+/// lowest unused leaf. Raised instead of silently treating the unreadable
+/// leaves as used: a transport failure must never be confused with an exhausted
+/// budget, because that would either waste a still-free leaf or falsely report
+/// exhaustion. Retry the read; do not sign.
+export class LeafBitmapReadError extends QuipError {
+  readonly wordIndex: number;
+  constructor(wordIndex: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_LEAF_BITMAP_READ_FAILED",
+      `Could not read used-leaf bitmap word ${wordIndex}; cannot determine the lowest unused leaf`,
+      opts
+    );
+    this.wordIndex = wordIndex;
+  }
+}
+
+/// `markLeavesUsed` was called with an empty target array. Burning the
+/// authorizing leaf for nothing is almost certainly a mistake; a deliberate
+/// single-leaf burn already exists via the empty `execute` path.
+export class EmptyLeavesError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EMPTY_LEAVES",
+      "markLeavesUsed requires at least one target leaf",
+      opts
+    );
+  }
+}
+
+/// A `markLeavesUsed` target leaf is outside the signing range — zero or above
+/// the installed key's `maxSignatures` budget. A client bug, not a race, so the
+/// whole batch fails.
+export class LeafOutOfRangeError extends QuipError {
+  readonly leaf: number;
+  readonly maxSignatures?: number;
+  constructor(leaf: number, maxSignatures?: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_LEAF_OUT_OF_RANGE",
+      maxSignatures === undefined
+        ? `Revocation target leaf ${leaf} is out of range`
+        : `Revocation target leaf ${leaf} is out of range (valid: 1..${maxSignatures})`,
+      opts
+    );
+    this.leaf = leaf;
+    this.maxSignatures = maxSignatures;
+  }
+}
+
+/// Client-side only (never a contract revert): the explicitly-chosen authorizing
+/// leaf is inside the revocation target set. A leaf being revoked has typically
+/// already signed a message off-chain — authorizing with it would make its
+/// one-time key sign a SECOND message, the exact key reuse `markLeavesUsed`
+/// exists to prevent. Pick an authorizing leaf outside the target set (or omit
+/// the override and let the client choose one).
+export class AuthLeafInTargetsError extends QuipError {
+  readonly leaf: number;
+  constructor(leaf: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_AUTH_LEAF_IN_TARGETS",
+      `Authorizing leaf ${leaf} is inside the revocation target set (OTS key-reuse hazard)`,
+      opts
+    );
+    this.leaf = leaf;
+  }
+}
+
+export class ImplementationNotVettedError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_IMPLEMENTATION_NOT_VETTED",
+      "Upgrade target is not in the factory's vetted-code set",
+      opts
+    );
+  }
+}
+
+export class ImplementationDeprecatedError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_IMPLEMENTATION_DEPRECATED",
+      "Upgrade target implementation is deprecated",
+      opts
+    );
+  }
+}
+
+export class NotUpgradingError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_NOT_UPGRADING", "migrate() called outside an upgrade context", opts);
+  }
+}
+
+/// The deploy-time identity commitment (owner + both key commitments) did not
+/// match the CREATE3 salt the factory recorded — `initialize` rejected it.
+export class IdentityMismatchError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_IDENTITY_MISMATCH",
+      "wallet identity commitment does not match the factory-recorded salt",
+      opts
+    );
+  }
+}
+
+/// The wallet/paymaster constructor's pinned SHRINCS verifier does not match the
+/// expected profile — a wrong or incompatible verifier was supplied.
+export class VerifierProfileMismatchError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_VERIFIER_PROFILE_MISMATCH",
+      "pinned SHRINCS verifier does not match the expected profile",
+      opts
+    );
+  }
+}
+
+/// UUPS `upgradeToAndCall` rejected the new implementation (its `proxiableUUID`
+/// is not the ERC-1967 slot, or it is otherwise not a valid UUPS target). This
+/// fires AFTER the SHRINCS authorization + probe have passed.
+export class UpgradeFailedError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UPGRADE_FAILED",
+      "UUPS rejected the new implementation (bad proxiableUUID or non-UUPS target)",
+      opts
+    );
+  }
+}
+
+/// `setErc1271Key` on a V1.0.1-beta.2 wallet rejected a zero ERC-1271
+/// commitment. (Beta.2 stores the verifier as a bare `bytes32`; later
+/// generations pass a full bundle and validate it differently.)
+export class ZeroErc1271CommitmentError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_ZERO_ERC1271_COMMITMENT",
+      "ERC-1271 commitment must be non-zero",
+      opts
+    );
+  }
+}
+
+/// A wallet's installed implementation address is not a generation this SDK
+/// build knows how to talk to. Thrown only by the STRICT version resolver; the
+/// lenient default treats an unrecognized implementation as the `latest`
+/// surface the SDK was compiled against.
+export class UnknownWalletVersionError extends QuipError {
+  readonly implementation: Hex;
+  constructor(implementation: Hex, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UNKNOWN_WALLET_VERSION",
+      `installed implementation ${implementation} matches no known ShrincsWallet generation`,
+      opts
+    );
+    this.implementation = implementation;
+  }
+}
+
+/// A requested operation is not available on the wallet's deployed generation
+/// (e.g. `setErc1271Key` with a full bundle against a beta.2 wallet that only
+/// accepts a bare commitment). Caught client-side before any transaction.
+export class UnsupportedByWalletVersionError extends QuipError {
+  readonly versionLabel: string;
+  readonly operation: string;
+  constructor(versionLabel: string, operation: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_UNSUPPORTED_BY_WALLET_VERSION",
+      `operation '${operation}' is not supported on ShrincsWallet ${versionLabel}`,
+      opts
+    );
+    this.versionLabel = versionLabel;
+    this.operation = operation;
+  }
+}
+
+export class GuardedSlotTamperedError extends QuipError {
+  readonly slotIndex: number;
+  constructor(slotIndex: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_GUARDED_SLOT_TAMPERED",
+      `Delegatecalled implementation modified guarded storage slot ${slotIndex}`,
+      opts
+    );
+    this.slotIndex = slotIndex;
+  }
+}
+
+export class MalformedCodecPayloadError extends QuipError {
+  readonly expectedMin: bigint;
+  readonly actual: bigint;
+  constructor(expectedMin: bigint, actual: bigint, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_MALFORMED_PAYLOAD",
+      `Malformed SHRINCS payload: expected at least ${expectedMin} bytes, got ${actual}`,
+      opts
+    );
+    this.expectedMin = expectedMin;
+    this.actual = actual;
+  }
+}
+
+// ── disabled classical paths (thrown client-side and on revert) ──────────────
+
+export class RenounceDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_RENOUNCE_DISABLED", "renounceOwnership is disabled on this wallet", opts);
+  }
+}
+
+export class ClassicalWithdrawDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_CLASSICAL_WITHDRAW_DISABLED",
+      "Classical withdrawDepositTo is disabled; use the SHRINCS-authorized path",
+      opts
+    );
+  }
+}
+
+export class ClassicalTransferOwnershipDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_CLASSICAL_TRANSFER_OWNERSHIP_DISABLED",
+      "Classical transferOwnership is disabled; use the SHRINCS-authorized handover",
+      opts
+    );
+  }
+}
+
+export class OwnershipHandoverDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_OWNERSHIP_HANDOVER_DISABLED",
+      "Solady ownership-handover flow is disabled on this wallet",
+      opts
+    );
+  }
+}
+
+/// The incoming classical owner's `transferOwnership` acceptance — their
+/// signature over `QuipSignedHash(transferOwnershipPayloadHash(newOwner,
+/// nextCommitment))` — does not verify for `newOwner` (ECDSA, or ERC-1271 for a
+/// contract). A mistyped `newOwner` cannot produce it, so the handover fails
+/// instead of stranding the wallet. Raised client-side (pre-flight, before any
+/// current-key signature is spent) and decoded from the wallet's revert.
+export class InvalidOwnerAcceptanceError extends QuipError {
+  constructor(reason?: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_OWNER_ACCEPTANCE",
+      reason
+        ? `Ownership acceptance by the incoming owner is invalid: ${reason}`
+        : "Ownership acceptance by the incoming owner is invalid",
+      opts
+    );
+  }
+}
+
+/// The incoming key bundle's `transferOwnership` acceptance — its stateful
+/// signature over the handover payload, bound to ITS commitment at nonce 0 /
+/// keyVersion 0 — does not verify, or names a leaf outside
+/// `[1, nextKey.maxSignatures]`. A bundle its holder cannot sign with cannot be
+/// installed. Raised client-side (pre-flight) and decoded from the wallet's revert.
+export class InvalidKeyAcceptanceError extends QuipError {
+  constructor(reason?: string, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_INVALID_KEY_ACCEPTANCE",
+      reason
+        ? `Ownership acceptance by the incoming key bundle is invalid: ${reason}`
+        : "Ownership acceptance by the incoming key bundle is invalid",
+      opts
+    );
+  }
+}
+
+export class StorageStoreDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_STORAGE_STORE_DISABLED", "storageStore is disabled on this wallet", opts);
+  }
+}
+
+export class DelegateExecuteDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_DELEGATE_EXECUTE_DISABLED", "delegateExecute is disabled on this wallet", opts);
+  }
+}
+
+/// The factory's live execute fee exceeds the `maxFee` ceiling the signer
+/// authorized. Only fee INCREASES past the cap trigger this — decreases charge
+/// the lower live fee. Re-sign with a fresh (or higher) `maxFee`.
+export class ExecuteFeeExceedsCapError extends QuipError {
+  readonly fee?: bigint;
+  readonly maxFee?: bigint;
+  constructor(fee?: bigint, maxFee?: bigint, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_EXECUTE_FEE_EXCEEDS_CAP",
+      fee === undefined
+        ? "Live execute fee exceeds the signed maxFee ceiling; re-sign with a fresh maxFee"
+        : `Live execute fee ${fee} exceeds the signed maxFee ceiling ${maxFee ?? "?"}; re-sign with a fresh maxFee`,
+      opts
+    );
+    this.fee = fee;
+    this.maxFee = maxFee;
+  }
+}
+
+/// The inherited un-capped `execute`/`executeBatch` selector was called; only
+/// the `maxFee`-capped variants exist on this wallet.
+export class StandardExecuteDisabledError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STANDARD_EXECUTE_DISABLED",
+      "The un-capped execute/executeBatch selectors are disabled; use the maxFee-capped variants",
+      opts
+    );
+  }
+}
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                    PAYMASTER ERRORS                         */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+export class InvalidEntryPointError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_INVALID_ENTRYPOINT", "Caller is not the EntryPoint", opts);
+  }
+}
+
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*                  GENERIC (solady/oz)                        */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+export class UnauthorizedError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_UNAUTHORIZED", "Caller is not authorized", opts);
+  }
+}
+
+export class AlreadyInitializedError extends QuipError {
+  constructor(opts?: QuipErrorOptions) {
+    super("SHRINCS_ALREADY_INITIALIZED", "Contract is already initialized", opts);
+  }
+}

@@ -6,20 +6,28 @@ bun.lock
 /cache
 /artifacts
 
-# TypeChain files
-/typechain
-/typechain-types
+# Foundry files
+/out
+/cache_forge
+/dependencies
 
-# solidity-coverage files
-/coverage
-/coverage.json
-
-# Hardhat Ignition default
-ignition/
-
+# Containerised runner caches (HOME, solc, npm, known_hosts) — see ./run
+/.run
+# GitLab CI caches (HOME, foundry, jest transform cache) — see .gitlab-ci.yml
+/.ci
 
 *.tmp.json
 dist/
+
+# Generated SDK files
+src/v1/abi/
 .DS_Store
 
 pwCrack.ts
+
+# Local planning scratch (not committed)
+_prompt_planning/
+
+# Build output and broadcast logs (may contain RPC endpoints / calldata)
+bin/
+broadcast/

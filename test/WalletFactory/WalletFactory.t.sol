@@ -1,0 +1,278 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+pragma solidity ^0.8.33;
+
+import {Test} from "forge-std-1.14.0/Test.sol";
+import {WOTSKeyFixtures} from "./WOTSKeyFixtures.sol";
+import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
+import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
+import {WalletFactory} from "../../contracts/WalletFactory.sol";
+import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
+import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
+
+/// @title WalletFactory Base Test
+/// @dev Base contract for testing WalletFactory. Deploys the factory as impl +
+///      ERC-1967 proxy and vets an initial WOTSPlusImplementation implementation
+///      for proxy deployment. (Unit tests need no CREATE3 factory address —
+///      wallet CREATE3 addressing derives from whatever the factory address is.)
+contract WalletFactoryTest is Test, WOTSKeyFixtures {
+    WalletFactory public factory;
+    WOTSPlusImplementation public walletImplementation;
+
+    address public ADMIN = makeAddr("admin");
+    address public BOB = makeAddr("bob");
+
+    /// @dev ALICE is materialized with her ECDSA private key so tests that exercise
+    ///      ERC-1271 (which requires ECDSA from the classical owner) can sign on her behalf.
+    address public ALICE;
+    uint256 public ALICE_KEY;
+
+    // Standard test amounts
+    uint256 public constant INITIAL_DEPOSIT = 1 ether;
+    uint256 public constant CREATION_FEE = 0.01 ether;
+    uint256 public constant EXECUTE_FEE = 0.002 ether;
+
+    /// @dev The CREATE3 salt / registry key equals `commitment`.
+    function _salt(bytes32 commitment) internal pure returns (bytes32) {
+        return commitment;
+    }
+
+    function setUp() public virtual {
+        (ALICE, ALICE_KEY) = makeAddrAndKey("alice");
+        // Fund test accounts
+        vm.deal(ADMIN, 100 ether);
+        vm.deal(ALICE, 100 ether);
+        vm.deal(BOB, 100 ether);
+
+        // Deploy the WalletFactory implementation, then its ERC-1967 proxy —
+        // the PROXY address is the factory identity (CREATE3 wallet addressing
+        // derives from it, whatever address it lands at).
+        WalletFactory factoryImpl = new WalletFactory(0.1 ether);
+        address factoryAddr = LibClone.deployERC1967(address(factoryImpl));
+        factory = WalletFactory(payable(factoryAddr));
+        factory.initialize(payable(ADMIN));
+
+        // Deploy and vet a WOTSPlusImplementation implementation
+        walletImplementation = new WOTSPlusImplementation(
+            payable(address(factory))
+        );
+        vm.startPrank(ADMIN);
+        factory.vetImplementation(address(walletImplementation));
+        vm.stopPrank();
+    }
+
+    function test_setUp() public view virtual {
+        assertEq(factory.owner(), ADMIN);
+        assertEq(factory.creationFee(), 0);
+        assertEq(factory.executeFee(), 0);
+        assertEq(factory.MAX_FEE(), 0.1 ether);
+        assertEq(factory.getVettedCodeCount(), 1);
+    }
+
+    // --- Helpers ---
+
+    /// @dev Generate a WOTS+ keypair from a deterministic seed
+    function _generateKeyPair(
+        bytes32 seed
+    )
+        internal
+        pure
+        returns (WOTSPlus.WinternitzAddress memory pubkey, bytes32 privateKey)
+    {
+        return WOTSPlusTestSigner.generateKeyPair(seed);
+    }
+
+    /// @dev Sign a message with a WOTS+ private key
+    function _sign(
+        bytes32 privateKey,
+        bytes32 messageHash
+    ) internal pure returns (WOTSPlus.WinternitzElements memory) {
+        WOTSPlus.WinternitzMessage memory message = WOTSPlus.WinternitzMessage({
+            messageHash: messageHash
+        });
+        bytes32[67] memory elements = WOTSPlusTestSigner.sign(privateKey, message);
+        return WOTSPlus.WinternitzElements({elements: elements});
+    }
+
+    /// @dev Derive the signing key for a recovery key at a given index
+    function _recoverySigningKey(
+        bytes32 privateKey,
+        uint256 index
+    ) internal pure returns (bytes32) {
+        bytes32 seed = keccak256(
+            abi.encodePacked(privateKey, "recovery", index)
+        );
+        (, bytes32 signingKey) = WOTSPlusTestSigner.generateKeyPair(seed);
+        return signingKey;
+    }
+
+    /// @dev Deploy a WOTSPlusImplementation proxy through the factory and return its address.
+    ///      Returns the FIRST (index 0) transaction key as the "primary" signing key for
+    ///      convenience. Other 9 transaction keys are returned in `txnPubkeys`/`txnPrivkeys`.
+    function _createWallet(
+        address owner,
+        bytes32 vaultSeed,
+        uint256 deposit
+    )
+        internal
+        returns (
+            address walletAddr,
+            WOTSPlus.WinternitzAddress memory pubkey,
+            bytes32 privateKey,
+            WOTSPlus.WinternitzAddress[] memory recoveryPubkeys
+        )
+    {
+        WOTSPlus.WinternitzAddress[10] memory txnPubkeys;
+        bytes32[10] memory txnPrivkeys;
+        (
+            walletAddr,
+            txnPubkeys,
+            txnPrivkeys,
+            recoveryPubkeys
+        ) = _createWalletFull(owner, vaultSeed, deposit);
+        pubkey = txnPubkeys[0];
+        privateKey = txnPrivkeys[0];
+    }
+
+    /// @dev Full-form _createWallet that exposes all 10 transaction keys.
+    function _createWalletFull(
+        address owner,
+        bytes32 vaultSeed,
+        uint256 deposit
+    )
+        internal
+        returns (
+            address walletAddr,
+            WOTSPlus.WinternitzAddress[10] memory txnPubkeys,
+            bytes32[10] memory txnPrivkeys,
+            WOTSPlus.WinternitzAddress[] memory recoveryPubkeys
+        )
+    {
+        (txnPubkeys, txnPrivkeys) = _generateTransactionKeys(vaultSeed);
+        recoveryPubkeys = _generateRecoveryKeys(txnPrivkeys[0], 10);
+        bytes memory payload = _buildInitPayloadForCreate(
+            vaultSeed,
+            txnPubkeys,
+            recoveryPubkeys
+        );
+        walletAddr = _deployProxyAs(
+            owner,
+            keccak256(abi.encodePacked(vaultSeed)),
+            payload,
+            deposit
+        );
+    }
+
+    function _deployProxyAs(
+        address owner,
+        bytes32 commitment,
+        bytes memory payload,
+        uint256 deposit
+    ) internal returns (address) {
+        vm.prank(owner);
+        return
+            factory.deployLatestWalletProxy{value: deposit}(
+                commitment,
+                payable(owner),
+                payload
+            );
+    }
+
+    /// @dev Encode init payload from a single "pqOwner" key (legacy shim).
+    ///      The single `pqOwner` becomes txn key 0; the other 9 are derived
+    ///      deterministically from its public seed/hash; the 10 verification
+    ///      keys are derived in parallel. Use only where callers do not
+    ///      already have a full batch.
+    function _encodeInitPayload(
+        WOTSPlus.WinternitzAddress memory pqOwner,
+        WOTSPlus.WinternitzAddress[] memory recoveryKeys
+    ) internal pure returns (bytes memory) {
+        require(recoveryKeys.length == 10, "recoveryKeys length must be 10");
+        WOTSPlus.WinternitzAddress[10] memory txnFixed;
+        txnFixed[0] = pqOwner;
+        for (uint256 i = 1; i < 10; i++) {
+            bytes32 seed = keccak256(
+                abi.encodePacked(
+                    pqOwner.publicSeed,
+                    pqOwner.publicKeyHash,
+                    "txn-fill",
+                    i
+                )
+            );
+            (txnFixed[i], ) = WOTSPlusTestSigner.generateKeyPair(seed);
+        }
+        WOTSPlus.WinternitzAddress[10] memory recFixed;
+        for (uint256 i = 0; i < 10; i++) {
+            recFixed[i] = recoveryKeys[i];
+        }
+        WOTSPlus.WinternitzAddress[10] memory verifFixed;
+        for (uint256 i = 0; i < 10; i++) {
+            bytes32 seed = keccak256(
+                abi.encodePacked(
+                    pqOwner.publicSeed,
+                    pqOwner.publicKeyHash,
+                    "verify-fill",
+                    i
+                )
+            );
+            (verifFixed[i], ) = WOTSPlusTestSigner.generateKeyPair(seed);
+        }
+        // Derive a stable disaster recovery key from pqOwner for legacy single-key helper.
+        bytes32 disasterSeedBytes = keccak256(
+            abi.encodePacked(
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                "disaster-legacy"
+            )
+        );
+        (WOTSPlus.WinternitzAddress memory disasterKey, ) = WOTSPlusTestSigner
+            .generateKeyPair(disasterSeedBytes);
+        // Likewise derive a stable ownership key from pqOwner for legacy single-key helper.
+        bytes32 ownershipSeedBytes = keccak256(
+            abi.encodePacked(
+                pqOwner.publicSeed,
+                pqOwner.publicKeyHash,
+                "ownership-legacy"
+            )
+        );
+        (WOTSPlus.WinternitzAddress memory ownershipKey, ) = WOTSPlusTestSigner
+            .generateKeyPair(ownershipSeedBytes);
+        return
+            Codec.encodeInit(
+                disasterKey,
+                ownershipKey,
+                txnFixed,
+                recFixed,
+                verifFixed
+            );
+    }
+
+    /// @dev Compute the expected CREATE3 address for a WOTSPlusImplementation
+    function _computeWalletAddress(
+        bytes32 commitment,
+        address
+    ) internal view returns (address) {
+        // CREATE3 salt is the commitment.
+        return
+            CREATE3.predictDeterministicAddress(
+                _salt(commitment),
+                address(factory)
+            );
+    }
+
+    /// @dev Deploy a fresh uninitialized WOTSPlusImplementation proxy via CREATE3.
+    function _deployFreshProxy(
+        bytes32 salt
+    ) internal returns (WOTSPlusImplementation) {
+        bytes memory proxyInitcode = abi.encodePacked(
+            hex"603d3d8160223d3973",
+            address(walletImplementation),
+            hex"6009",
+            hex"5155f3363d3d373d3d363d7f360894a13ba1a3210667c828492db98dca3e2076",
+            hex"cc3735a920a3ca505d382bbc545af43d6000803e6038573d6000fd5b3d6000f3"
+        );
+        address proxyAddr = CREATE3.deployDeterministic(proxyInitcode, salt);
+        return WOTSPlusImplementation(payable(proxyAddr));
+    }
+}

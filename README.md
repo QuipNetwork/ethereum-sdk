@@ -1,157 +1,278 @@
 # Quip Network SDK
 
-This project contains the smart contracts and TypeScript SDK for interacting with the Quip Network EVM Smart Contracts.
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](#license)
 
-NOTICE: This project is currently in active development and is not yet ready for production use.
+This repository contains the smart contracts and TypeScript SDK for the Quip Network — post-quantum-secured smart-contract wallets on EVM chains.
+
+**Active development — not production-ready.** APIs, contract addresses, and the on-chain key schema may change between releases. See [TODO.md](TODO.md) for outstanding work.
+
+Active Dev Branch : deploy/testnet
+
+---
+
+## Directory Map 
+
+| Path                   | Purpose                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `contracts/`           | Live Solidity contracts: `WalletFactory` (UUPS), the SHRINCS wallet family (`shrincs/`); sunset code (incl. the `Deployer`) under `deprecated/`. |
+| `contracts/deprecated/` | Sunset WOTS+ wallet family (`wots/`) + `QuipPaymaster`. Fully functional, still tested; no new features.   |
+| `script/`              | Foundry deployment scripts (`*.s.sol`); sunset-family scripts under `script/deprecated/`.                   |
+| `scripts/`             | TypeScript operational scripts: `release.ts`, `fundDeployer.cts`, `drainDeployer.cts`, `balance.cts`, etc.  |
+| `src/v1/`              | Current TypeScript SDK: shared surface (`src/v1/index.ts`) + SHRINCS clients (`src/v1/shrincs/`).           |
+| `src/deprecated/`      | Sunset SDKs: the WOTS+ half of v1 (`v1/`) and the legacy v0 SDK (`v0/`).                                    |
+| `test/`                | Foundry tests (Solidity); sunset-family suites under `test/deprecated/`.                                    |
+| `src/v1/tests/`        | Jest tests (TypeScript). SHRINCS: `src/v1/shrincs/tests/`; WOTS+: `src/deprecated/v1/tests/`.               |
+| `deploy/midl_regtest/` | Hardhat deploy scripts for MIDL Bitcoin L2 only.                                                            |
+| `Makefile`             | The canonical interface for build / test / deploy.             |
+
+## Documentation map
+
+| Document                                                   | Context                                                                                                                 |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **This README**                                            | Setup, build/test commands, deploy commands.                                                                            |
+| **[SDK_README.md](SDK_README.md)**                         | You're consuming the published `@quip.network/ethereum-sdk` npm package.                                                |
+| **[INVARIANTS.md](INVARIANTS.md)**                         | You're auditing, extending, or porting the contracts/SDK. All cryptographic, on-chain, and SDK invariants in one place. |
+| **[GOVERNANCE.md](GOVERNANCE.md)**                         | Factory + paymaster trust model: what the owner can do, what they can't, recommended posture, and the planned move to on-chain governance. |
+| **[DEPLOYMENTS.md](DEPLOYMENTS.md)**                       | Canonical contract addresses, per-chain deployment status, salt schemes.                                                |
+| **[MIDL-DEPLOYMENT.md](MIDL-DEPLOYMENT.md)**               | Deploying onto MIDL (chain 777). Separate from the EVM workflow.                                                        |
+| **[MIDL-REOWN-INTEGRATION.md](MIDL-REOWN-INTEGRATION.md)** | Integrating Quip with Reown AppKit on MIDL.                                                                             |
+| **[TODO.md](TODO.md)**                                     | Roadmap and known gaps.                                                                                                 |
+
+---
 
 ## Prerequisites
 
-- Node.js
-- npm, bun, yarn, or other equivalent node package manager
-- Environment variables set up in `.env` (see Environment Setup below)
+- **Node.js** ≥ 20 and a package manager (`npm`, `bun`, `yarn`, or `pnpm`). Examples below show `bun` but `npm run <script>` works identically.
+- **[Foundry](https://book.getfoundry.sh/getting-started/installation)** — `forge`, `cast`, `anvil`. The canonical toolchain for compiling, testing, and deploying the contracts on EVM chains.
+- **[soldeer](https://soldeer.xyz)** — Foundry's package manager. Run `forge soldeer install` (or `make install`) once after cloning.
+- **GNU Make** — drives every workflow via the [`Makefile`](Makefile).
+- **[jq](https://jqlang.org)** — required by the storage-layout snapshot/check targets.
 
-## Environment Setup
+Hardhat is also installed, but it's used **only** for MIDL deploy scripts (`deploy/midl_regtest/`). All EVM compilation, testing, deployment, and release-bytecode generation go through Foundry. See `hardhat.config.cts` for the scope of the Hardhat configuration. 
 
-Copy `.env.example` to `.env` and fill in:
-```shell
-ALCHEMY_API_KEY=your_alchemy_key
-API_URL_SEPOLIA=your_sepolia_url
-API_URL_BASE_SEPOLIA=your_base_sepolia_url
-API_URL_OP_SEPOLIA=your_optimism_sepolia_url
-API_URL_MAINNET=your_mainnet_url
-API_URL_BASE=your_base_url
-API_URL_OPTIMISM=your_optimism_url
-PRIVATE_KEY=your_wallet_private_key
-DEPLOYER_ADDRESS=quip_deployer_contract_address
+## Installation
+
+> ⚠️ `npm install` alone is **not** sufficient for a fresh clone — the SDK build (`forge build` → `copy-abi` → `tsc`) needs Foundry's `soldeer` dependencies materialized first. Use `make install` below; it runs `forge soldeer install` and `npm install` together.
+
+```bash
+git clone <repo>
+cd ethereum-sdk
+make install          # forge soldeer install + npm install
 ```
 
-For running addNetwork, additional variables are required (contact Rick):
+## Environment setup
+
+Copy `.env.example` to `.env`. 
+
+Variables are loaded automatically by the `Makefile` and Foundry's `[rpc_endpoints]` table. The base set below is enough for building, testing, running utility scripts, and SDK development:
+
 ```shell
-DEPLOYER_PRIVATE_KEY=
-DEPLOYER_PUBLIC_KEY=
+# RPC endpoints (one per chain you target)
+API_URL_SEPOLIA=https://eth-sepolia.g.alchemy.com/v2/...
+API_URL_BASE_SEPOLIA=https://base-sepolia.g.alchemy.com/v2/...
+API_URL_OP_SEPOLIA=https://opt-sepolia.g.alchemy.com/v2/...
+API_URL_MAINNET=https://eth-mainnet.g.alchemy.com/v2/...
+API_URL_BASE=https://base-mainnet.g.alchemy.com/v2/...
+API_URL_OPTIMISM=https://opt-mainnet.g.alchemy.com/v2/...
+
+# Operator wallet — signs any broadcast (deploys, vetting, utility scripts).
+# For test/build only, can be omitted. For live-contract deploys this MUST
+# be the key of DEPLOY_OPERATOR (see the Deployment section).
+PRIVATE_KEY=0x...
+
+# Etherscan v2 — one key covers Ethereum, Base, Optimism, and their L2 testnets.
+# Required when deploys pass --verify (the default).
+ETHERSCAN_API_KEY=...
 ```
 
-## Contract Development
+Deployment targets require additional variables — they're listed in the [Deployment](#deployment) section alongside the targets that consume them, so you only set what you actually need.
 
-### Testing Contracts
-```shell
-npx hardhat test
-# With gas reporting:
-REPORT_GAS=true npx hardhat test
+Network aliases must match `[rpc_endpoints]` in `foundry.toml`:
+
+| Alias | Chain | Chain ID |
+|---|---|---|
+| `sepolia` | Ethereum Sepolia | 11155111 |
+| `base_sepolia` | Base Sepolia | 84532 |
+| `op_sepolia` | Optimism Sepolia | 11155420 |
+| `mainnet` | Ethereum Mainnet | 1 |
+| `base` | Base Mainnet | 8453 |
+| `optimism` | Optimism Mainnet | 10 |
+
+MIDL Testnet (chain 777) uses a different toolchain — see [MIDL-DEPLOYMENT.md](MIDL-DEPLOYMENT.md).
+
+---
+
+## Contract development (Foundry)
+
+```bash
+make build                 # forge build
+make test                  # forge test
+make test-v                # forge test -vvv (verbose stack traces)
+make gas                   # forge test --gas-report
+make snapshot              # forge snapshot
+make lint                  # solhint contracts/**/*.sol
+make format                # prettier across .ts/.js/.json/.sol
 ```
 
-### Local Development
-```shell
-npx hardhat node
+`forge build` and `forge test` use the **default** profile, which compiles WOTSPlus as an inline library so tests don't need a pre-deployed address. The **`deploy`** profile (`FOUNDRY_PROFILE=deploy`) links WOTSPlus at the CREATE3-predicted address from `foundry.toml` and is used only by deployment scripts.
+
+### Local node
+
+```bash
+anvil                      # local EVM node on :8545
 ```
 
-## Deployment
+### Storage layout drift gate
 
-### Adding New Networks (deploying the Deployer contract)
-**Important:** Only authorized personnel should run these commands. Contact Rick first.
-```shell
-npx hardhat run scripts/addNetwork.ts
-npx hardhat run scripts/addNetwork.ts --network sepolia
-npx hardhat run scripts/addNetwork.ts --network sepolia_base
-npx hardhat run scripts/addNetwork.ts --network sepolia_optimism
+The WOTS+ wallet uses ERC-7201 namespaced storage (`quip.storage.wallet.wotsplus`), which `forge inspect storageLayout` cannot see directly. A test-only probe contract surfaces the layout, and the canonical fixture is `test/deprecated/fixtures/WOTSPlusImplementation.storageLayout.json`:
+
+```bash
+make storage-layout-check       # CI gate — fails if layout drifted
+make storage-layout-snapshot    # regenerate fixture (only after intentional change)
 ```
 
-After deploying, you can drain remaining funds from the wallet to the one owned by PRIVATE_KEY:
+If `storage-layout-check` fails, the upgrade path is broken unless you also write a corresponding migrator. Do not regenerate the snapshot to silence the gate.
 
-```shell
-npx hardhat run scripts/drainDeployer.ts
-npx hardhat run scripts/drainDeployer.ts --network sepolia
-npx hardhat run scripts/drainDeployer.ts --network sepolia_base
-npx hardhat run scripts/drainDeployer.ts --network sepolia_optimism
+---
+
+## SDK development (TypeScript)
+
+The SDK is the npm package `@quip.network/ethereum-sdk`. It depends on the compiled contract ABIs, so SDK builds always include a contract build.
+
+```bash
+bun run build              # forge build + copy ABIs + tsc
+bun run test:unit          # jest (TypeScript unit + integration tests)
+bun run smoke:fork         # jest, but only the fork smoke test
+bun run smoke:tarball      # pack + dry-install the SDK to verify exports
 ```
 
-### Deploying Contracts
-```shell
-INITIAL_OWNER=<initial_owner_address> npx hardhat run scripts/deploy.ts --network <network_name>
-```
+`bun run` is interchangeable with `npm run` here — both invoke the same `package.json` scripts. Use whichever you prefer.
 
-Note that the initial owner address will change the deployment address. 
+### Publishing a release
 
-## SDK Development
+The release script regenerates `src/v1/addresses.json` and `deployments/bytecode/` from the current Foundry build (compiler settings in `foundry.toml`), then prepares the tarball for `npm publish`:
 
-### Building the SDK
-```shell
-bun run build
-```
-
-### Testing the SDK
-```shell
-bun run test
-```
-
-### Publishing
-```shell
+```bash
+make release               # forge build + tsx scripts/release.ts
+bun run smoke:tarball      # verify the tarball before publishing
 npm publish
 ```
 
-## Contract Verification
+`scripts/release.ts` reads Foundry artifacts from `out/`, computes CREATE3 addresses (`DEPLOY_OPERATOR` is REQUIRED — live canonical addresses are sender-guarded CreateX deployments and therefore a function of the operator; sunset WOTS+-era rows keep their Deployer derivation), links the WOTSPlus library into the `QuipWallet` (WOTS+ implementation) bytecode — the factory links no libraries since the WOTS+ decoupling — and snapshots each release under `deployments/bytecode/<Contract>.sol/` with the compiler settings recorded verbatim from each artifact's metadata. MIDL deploys consume those snapshots via `lib/deploy.cts::loadReleaseBytecode` so the bytecode actually deployed on MIDL matches what was compiled by Foundry for the EVM chains.
 
-Assuming the following is in your addresses.json folder: 
+---
 
-```
-Deployer: 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-WOTSPlus: 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
-QuipFactory: 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99
-```
+## Deployment
 
-Deployer:
+EVM deployments go through Foundry scripts in `script/`, driven by the Makefile. The live flow is two NUMBERED scripts run in order — `01_DeployFactory.s.sol`, then `02_DeployShrincs.s.sol` — both idempotent. Each step writes a broadcast log to `broadcast/<Script>.s.sol/<chainId>/` for replay/inspection.
 
-```
-npx hardhat verify --network mainnet 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-npx hardhat verify --network optimism 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-npx hardhat verify --network base 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-npx hardhat verify --network degen 0xF768b4E4A314C9119587b8Cd35a89bDC228290b5
-...
-```
+> ⚠️ **Steps 1 and 2 are governance-sensitive.** `deploy-factory-<chain>` sets the initial WalletFactory owner; `deploy-shrincs-<chain>` sets the ShrincsPaymaster owner and requires the caller to be the factory owner (vetting is `onlyOwner`), as does `vet-impl-<chain>`.
+> Double-check `FACTORY_OWNER` / `SHRINCS_PAYMASTER_OWNER` are addresses you actually want as the long-term operators. Both steps require `PRIVATE_KEY` to be **`DEPLOY_OPERATOR`'s key** — live canonical addresses are sender-guarded CreateX deployments, a function of the operator address, and no other key can consume the canonical salts.
 
-WOTSPlus:
+### Pipeline (per chain)
 
-```
-npx hardhat verify --network mainnet 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
-npx hardhat verify --network degen 0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991
-...
+The numbered steps below also list the `.env` variables each one consumes. Set only the ones for the steps you're running.
+
+**0. Predict the CREATE3 addresses for the current bytecode.**
+
+```bash
+DEPLOY_OPERATOR=0x... make predict-addresses
+# or: DEPLOY_OPERATOR=0x... forge script script/PredictAddresses.s.sol
 ```
 
-QuipFactory:
+No RPC needed. `DEPLOY_OPERATOR` is required for the live-contract rows (their addresses are a function of it — sender-guarded CreateX salts); without it only the sunset WOTS+-era rows print.
 
+**1. Deploy the WalletFactory (UUPS impl + ERC-1967 proxy).** ⚠️ **Governance-sensitive. Contact Rick first.** `FACTORY_OWNER` becomes the only address that can vet implementations, collect creation fees, and **upgrade the factory implementation** on this chain going forward. The factory PROXY address is the permanent identity every wallet bakes in — the impl behind it is replaceable via `upgradeToAndCall`.
+
+```bash
+make deploy-factory-base-sepolia
 ```
-npx hardhat verify --network base 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99 "0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9" "0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991"
-npx hardhat verify --network degen 0x4a5A444F3B12342Dc50E34f562DfFBf0152cBb99 "0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9" "0x1Ad02caBfc65ed65FDF6da64108f04f71E2e8991"
-...
+
+Env: `PRIVATE_KEY` (must be `DEPLOY_OPERATOR`'s key), `DEPLOY_OPERATOR` (the operator every live canonical address derives from — guard that key), `FACTORY_OWNER`, `MAX_FEE` (WalletFactory creation fee in wei), `ETHERSCAN_API_KEY`.
+
+**2. Deploy the Shrincs family — ShrincsWallet impl (vetted; becomes `latestWalletImpl`) + ShrincsPaymaster (impl + proxy).** The script locates the factory at its canonical derived address only — there is no `FACTORY_ADDRESS` override — and refuses to broadcast unless that address hosts an ERC-1967 proxy owned by the operator. ⚠️ `SHRINCS_PAYMASTER_OWNER` becomes the only address that can configure the ShrincsPaymaster; `PRIVATE_KEY` must also be the factory owner (vetting).
+
+```bash
+make deploy-shrincs-base-sepolia
 ```
 
-Where `0x4971905b8741BDbE1Ba008f73C28C82DE9d95dF9` is the initial owner address.
+Env: `PRIVATE_KEY`, `DEPLOY_OPERATOR`, `SHRINCS_PAYMASTER_OWNER`, `SHRINCS_VERIFIER_PUBLIC_KEY` (abi-encoded verifier bundle from `scripts/gen-shrincs-paymaster-verifier.mjs` — the commitment and leaf budget are derived from it on-chain), `ETHERSCAN_API_KEY`.
 
-## Available Networks
+**Ops: vet an implementation on the factory.** ⚠️ **Requires the calling `PRIVATE_KEY` to be the factory's current owner.** The factory's `vetImplementation` is `onlyOwner`, so any other key produces a revert; a successful vet makes the impl the new `latestWalletImpl`. **Contact Rick** for coordination if you're not the registered factory owner on the target chain.
 
-- Ethereum Sepolia (`sepolia`)
-- Base Sepolia (`sepolia_base`)
-- Optimism Sepolia (`sepolia_optimism`)
-- Ethereum Mainnet (`mainnet`)
-- Base (`base`)
-- Optimism (`optimism`)
+```bash
+IMPLEMENTATION=0x... make vet-impl-base-sepolia
+```
 
+Env: `PRIVATE_KEY` (must equal the factory owner), `FACTORY_ADDRESS`, `IMPLEMENTATION`.
+
+**Sunset WOTS+ family (optional, frozen under `script/deprecated/`).** `make deploy-deployer-<chain>` bootstraps the legacy `Deployer` (anyone can run it — unguarded salt), then `make deploy-impl-<chain>` deploys a WOTSPlusImplementation through it under `FOUNDRY_PROFILE=deploy` (env: `PRIVATE_KEY`, `DEPLOYER_ADDRESS`, `FACTORY_ADDRESS`). Vetting a WOTS+ impl AFTER step 2 would flip `latestWalletImpl` back to WOTS+ — the intended default is Shrincs.
+
+### Adding a new chain
+
+Per-chain Makefile targets currently exist for **base_sepolia** as a worked example. To add support for another chain:
+
+1. Add an alias in `foundry.toml` `[rpc_endpoints]` and `[etherscan]`.
+2. Copy the `*-base-sepolia` targets in the `Makefile` and rename them for the new alias.
+3. Run steps 0–2 above against the new alias.
+
+For one-off runs against arbitrary chains, use the bare `make deploy-*` targets with an explicit RPC override:
+
+```bash
+RPC_URL=$API_URL_SEPOLIA make deploy-factory
+RPC_URL=$API_URL_SEPOLIA make deploy-shrincs
+```
+
+Canonical contract addresses and salts are in [DEPLOYMENTS.md](DEPLOYMENTS.md).
+
+### Utility scripts
+
+```bash
+make fund-deployer         # send ETH from PRIVATE_KEY to the operator deployer
+make drain-deployer        # sweep remaining ETH back out
+make balance               # print operator balances across configured chains
+```
+
+All three are TypeScript scripts in `scripts/` invoked via `npx tsx`. They read RPC and key material from `.env`. The `drain-deployer` script replaces the old `npx hardhat run scripts/drainDeployer.ts --network <name>` invocation that was used in the V1 deployment flow.
+
+### Contract verification
+
+Deploy targets pass `--verify` to forge by default. Etherscan v2 is configured per-chain in `foundry.toml [etherscan]`, so a single `ETHERSCAN_API_KEY` covers mainnet, Base, Optimism, and their L2 testnets.
+
+To verify an already-deployed contract independently:
+
+```bash
+# WalletFactory implementation (constructor: uint256 maxFee_ — the MAX_FEE immutable;
+# the owner is NOT a constructor arg, it is set on the proxy via initialize)
+forge verify-contract \
+  --rpc-url base_sepolia \
+  --chain base_sepolia \
+  --constructor-args $(cast abi-encode "constructor(uint256)" "$MAX_FEE") \
+  0x77622e199DfF602f937fC5E5eB6479aE4b18161F \
+  contracts/WalletFactory.sol:WalletFactory
+
+# WalletFactory proxy (OpenZeppelin ERC1967Proxy; constructor: address implementation,
+# bytes data — `data` is the initialize(address) call that sets FACTORY_OWNER)
+forge verify-contract \
+  --rpc-url base_sepolia \
+  --chain base_sepolia \
+  --constructor-args $(cast abi-encode "constructor(address,bytes)" \
+      0x77622e199DfF602f937fC5E5eB6479aE4b18161F \
+      $(cast calldata "initialize(address)" "$FACTORY_OWNER")) \
+  0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8 \
+  @openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy
+```
+
+The above are the canonical CREATE3 addresses (identical on every chain the operator has deployed to — `make predict-addresses` prints them, and `src/v1/shrincs/addresses.ts` ships them to integrators). The live `MAX_FEE` is 1e18. The full per-chain history, including the sunset WOTS+-era contracts and the pre-V2 CREATE2 mainnet addresses, is in [DEPLOYMENTS.md](DEPLOYMENTS.md).
+
+---
 
 ## License
 
-Copyright (C) 2024 quip.network
+Copyright (C) 2024–2026 quip.network
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
 
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-See COPYING for the full license text.
+You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>. See [COPYING](COPYING) for the full license text.
