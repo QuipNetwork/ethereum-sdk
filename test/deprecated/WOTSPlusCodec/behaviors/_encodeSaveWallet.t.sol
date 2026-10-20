@@ -47,21 +47,8 @@ contract WOTSPlusCodec__encodeSaveWallet is WOTSPlusCodecTest {
             WOTSPlus.WinternitzAddress[10] memory dVer
         ) = codec.exposed_decodeSaveWallet(encoded);
 
-        assertEq(dCur.publicSeed, b.cur.publicSeed);
-        assertEq(dCur.publicKeyHash, b.cur.publicKeyHash);
-        assertEq(dNxt.publicSeed, b.nxt.publicSeed);
-        assertEq(dNxt.publicKeyHash, b.nxt.publicKeyHash);
-        for (uint256 i = 0; i < 67; i++) {
-            assertEq(dSig.elements[i], b.sig.elements[i]);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dTxn[i].publicSeed, b.txn[i].publicSeed);
-            assertEq(dTxn[i].publicKeyHash, b.txn[i].publicKeyHash);
-            assertEq(dRec[i].publicSeed, b.rec[i].publicSeed);
-            assertEq(dRec[i].publicKeyHash, b.rec[i].publicKeyHash);
-            assertEq(dVer[i].publicSeed, b.ver[i].publicSeed);
-            assertEq(dVer[i].publicKeyHash, b.ver[i].publicKeyHash);
-        }
+        _assertEqAuthPrefix(dCur, b.cur, dNxt, b.nxt, dSig, b.sig);
+        _assertEqKeysets10(dTxn, b.txn, dRec, b.rec, dVer, b.ver);
     }
 
     /// @dev Property: encode → decode preserves every field for any seed.

@@ -29,7 +29,12 @@ const seed = (s: string) => keccak256(toHex(new TextEncoder().encode(s)));
 let signer: ShrincsSigner;
 let main: ShrincsKeyPair;
 let erc1271: ShrincsKeyPair;
+let recovered1: ShrincsKeyPair;
+let recovered2: ShrincsKeyPair;
 
+// Shared fixtures: each derivation costs seconds (keygen plus the sign/verify
+// self-test), so derive once here. Tests that pin determinism still perform
+// their own fresh derivation and compare against these.
 beforeAll(async () => {
   signer = await ShrincsSigner.create(new TextEncoder().encode("any master (hd seed padding)"));
   main = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
@@ -38,10 +43,13 @@ beforeAll(async () => {
   erc1271 = signer.keygenFromSeedHex(seed("shrincs wallet erc1271 key seed"), {
     maxSignatures: MAX_SIG,
   });
+  recovered1 = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
+  recovered2 = signer.recoverKeyPair(2, { maxSignatures: MAX_SIG });
 });
 
 describe("ShrincsSigner", () => {
   it("keygen is deterministic in the seed and distinct across seeds", async () => {
+    // Fresh derivation vs the beforeAll fixture: two independent executions.
     const again = signer.keygenFromSeedHex(seed("shrincs wallet main key seed"), {
       maxSignatures: MAX_SIG,
     });
@@ -149,15 +157,15 @@ describe("ShrincsSigner", () => {
   });
 
   it("recoverKeyPair is deterministic for the same derivationIndex", () => {
-    const a = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
-    const b = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
-    expect(a.publicKeyCommitment).toBe(b.publicKeyCommitment);
+    // Fresh derivation vs the beforeAll fixture: two independent executions.
+    const again = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
+    expect(again.publicKeyCommitment).toBe(recovered1.publicKeyCommitment);
   });
 
   it("recoverKeyPair yields a different commitment for a different derivationIndex", () => {
-    const a = signer.recoverKeyPair(1, { maxSignatures: MAX_SIG });
-    const b = signer.recoverKeyPair(2, { maxSignatures: MAX_SIG });
-    expect(a.publicKeyCommitment).not.toBe(b.publicKeyCommitment);
+    expect(recovered1.publicKeyCommitment).not.toBe(
+      recovered2.publicKeyCommitment
+    );
   });
 
   describe("QUIP HD derivation", () => {

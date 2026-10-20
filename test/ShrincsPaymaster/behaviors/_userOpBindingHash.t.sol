@@ -141,8 +141,25 @@ contract ShrincsPaymaster__userOpBindingHash is ShrincsPaymasterTest {
 
     /* ─────────────────────────────── FUZZ ─────────────────────────────── */
 
+    /// @dev Baseline op with the five fuzzable scalar fields overridden — shared arrange for
+    ///      the fuzz properties below.
+    function _opWithFields(
+        address sender,
+        uint256 nonce,
+        bytes32 accountGasLimits,
+        uint256 preVerificationGas,
+        bytes32 gasFees
+    ) internal view returns (PackedUserOperation memory op) {
+        op = _baseline();
+        op.sender = sender;
+        op.nonce = nonce;
+        op.accountGasLimits = accountGasLimits;
+        op.preVerificationGas = preVerificationGas;
+        op.gasFees = gasFees;
+    }
+
     /// @dev Determinism over arbitrary bound fields: the hash is a pure function of the userOp, so the
-    ///      same field set always yields the same digest.
+    ///      same field set always yields the same digest — asserted over two INDEPENDENTLY built ops.
     function testFuzz_bindingHash_isDeterministic(
         address sender,
         uint256 nonce,
@@ -150,13 +167,10 @@ contract ShrincsPaymaster__userOpBindingHash is ShrincsPaymasterTest {
         uint256 preVerificationGas,
         bytes32 gasFees
     ) public view {
-        PackedUserOperation memory op = _baseline();
-        op.sender = sender;
-        op.nonce = nonce;
-        op.accountGasLimits = accountGasLimits;
-        op.preVerificationGas = preVerificationGas;
-        op.gasFees = gasFees;
-        assertEq(_hash(op), _hash(op));
+        assertEq(
+            _hash(_opWithFields(sender, nonce, accountGasLimits, preVerificationGas, gasFees)),
+            _hash(_opWithFields(sender, nonce, accountGasLimits, preVerificationGas, gasFees))
+        );
     }
 
     /// @dev Injectivity over the scalar fields: changing any single bound field changes the digest.
@@ -178,12 +192,8 @@ contract ShrincsPaymaster__userOpBindingHash is ShrincsPaymasterTest {
                 preVerificationGas != base.preVerificationGas ||
                 gasFees != base.gasFees
         );
-        PackedUserOperation memory op = _baseline();
-        op.sender = sender;
-        op.nonce = nonce;
-        op.accountGasLimits = accountGasLimits;
-        op.preVerificationGas = preVerificationGas;
-        op.gasFees = gasFees;
+        PackedUserOperation memory op =
+            _opWithFields(sender, nonce, accountGasLimits, preVerificationGas, gasFees);
         assertTrue(
             _hash(op) != _hash(base),
             "distinct bound fields produce a distinct hash"

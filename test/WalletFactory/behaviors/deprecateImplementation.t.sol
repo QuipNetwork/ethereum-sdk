@@ -18,18 +18,13 @@ contract WalletFactory_deprecateImplementation is WalletFactoryTest {
     }
 
     function test_deprecateImplementation_updatesLatestWalletImpl() public {
-        // Vet a second implementation
-        WOTSPlusImplementation impl2 = new WOTSPlusImplementation(payable(address(factory)));
-        vm.prank(ADMIN);
-        factory.vetImplementation(address(impl2));
-
-        assertEq(factory.latestWalletImpl(), address(impl2));
+        WOTSPlusImplementation impl2 = _vetSecondImpl();
+        assertEq(factory.latestWalletImpl(), address(impl2), "impl2 vetted as latest");
 
         // Deprecate impl2 — should fall back to first impl
         vm.prank(ADMIN);
         factory.deprecateImplementation(address(impl2));
-
-        assertEq(factory.latestWalletImpl(), address(walletImplementation));
+        assertEq(factory.latestWalletImpl(), address(walletImplementation), "falls back to first");
     }
 
     function test_deprecateImplementation_emitsImplementationSunset() public {

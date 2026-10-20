@@ -48,6 +48,36 @@ contract WOTSPlusImplementation_initialize is WOTSPlusImplementationTest {
         (pub,) = WOTSPlusTestSigner.generateKeyPair(keccak256(abi.encodePacked(tag)));
     }
 
+    function _initializeRevertsOnZeroTxnKey(bytes32 tag, WOTSPlus.WinternitzAddress memory emptyPubkey)
+        internal
+    {
+        WOTSPlusImplementation freshWallet = _deployFreshProxy(tag);
+        (, bytes32 privKey) = _generateKeyPair("dummy");
+        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privKey, 10);
+        bytes memory payload = _encodeInitPayload(emptyPubkey, rKeys);
+
+        vm.prank(address(factory));
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        freshWallet.initialize(payable(ALICE), payload);
+    }
+
+    function _initializeRevertsOnZeroRecoveryKey(
+        bytes32 tag,
+        uint256 badIndex,
+        WOTSPlus.WinternitzAddress memory badKey
+    ) internal {
+        WOTSPlusImplementation freshWallet = _deployFreshProxy(tag);
+        (WOTSPlus.WinternitzAddress memory newPubkey, bytes32 newPrivKey) = _generateKeyPair("new-seed");
+
+        WOTSPlus.WinternitzAddress[] memory badRecovery = _generateRecoveryKeys(newPrivKey, 10);
+        badRecovery[badIndex] = badKey;
+        bytes memory payload = _encodeInitPayload(newPubkey, badRecovery);
+
+        vm.prank(address(factory));
+        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
+        freshWallet.initialize(payable(ALICE), payload);
+    }
+
     function test_initialize_setsOwner() public view {
         assertEq(wallet.owner(), ALICE);
     }
@@ -142,16 +172,11 @@ contract WOTSPlusImplementation_initialize is WOTSPlusImplementationTest {
     }
 
     function test_initialize_revertsWhen_recoveryKeyHashIsZero() public {
-        WOTSPlusImplementation freshWallet = _deployFreshProxy("fresh-zero-recovery-hash");
-        (WOTSPlus.WinternitzAddress memory newPubkey, bytes32 newPrivKey) = _generateKeyPair("new-seed");
-
-        WOTSPlus.WinternitzAddress[] memory badRecovery = _generateRecoveryKeys(newPrivKey, 10);
-        badRecovery[5] = WOTSPlus.WinternitzAddress({publicSeed: bytes32("non-empty"), publicKeyHash: bytes32(0)});
-        bytes memory payload = _encodeInitPayload(newPubkey, badRecovery);
-
-        vm.prank(address(factory));
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        freshWallet.initialize(payable(ALICE), payload);
+        _initializeRevertsOnZeroRecoveryKey(
+            "fresh-zero-recovery-hash",
+            5,
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32("non-empty"), publicKeyHash: bytes32(0)})
+        );
     }
 
     function test_initialize_revertsWhen_alreadyInitialized() public {
@@ -176,42 +201,25 @@ contract WOTSPlusImplementation_initialize is WOTSPlusImplementationTest {
     }
 
     function test_initialize_revertsWhen_transactionKeySeedIsZero() public {
-        WOTSPlusImplementation freshWallet = _deployFreshProxy("fresh-empty-seed");
-        WOTSPlus.WinternitzAddress memory emptyPubkey =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32("non-empty")});
-        (, bytes32 privKey) = _generateKeyPair("dummy");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privKey, 10);
-        bytes memory payload = _encodeInitPayload(emptyPubkey, rKeys);
-
-        vm.prank(address(factory));
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        freshWallet.initialize(payable(ALICE), payload);
+        _initializeRevertsOnZeroTxnKey(
+            "fresh-empty-seed",
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32("non-empty")})
+        );
     }
 
     function test_initialize_revertsWhen_transactionKeyHashIsZero() public {
-        WOTSPlusImplementation freshWallet = _deployFreshProxy("fresh-empty-hash");
-        WOTSPlus.WinternitzAddress memory emptyPubkey =
-            WOTSPlus.WinternitzAddress({publicSeed: bytes32("non-empty"), publicKeyHash: bytes32(0)});
-        (, bytes32 privKey) = _generateKeyPair("dummy");
-        WOTSPlus.WinternitzAddress[] memory rKeys = _generateRecoveryKeys(privKey, 10);
-        bytes memory payload = _encodeInitPayload(emptyPubkey, rKeys);
-
-        vm.prank(address(factory));
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        freshWallet.initialize(payable(ALICE), payload);
+        _initializeRevertsOnZeroTxnKey(
+            "fresh-empty-hash",
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32("non-empty"), publicKeyHash: bytes32(0)})
+        );
     }
 
     function test_initialize_revertsWhen_recoveryKeySeedIsZero() public {
-        WOTSPlusImplementation freshWallet = _deployFreshProxy("fresh-zero-recovery");
-        (WOTSPlus.WinternitzAddress memory newPubkey, bytes32 newPrivKey) = _generateKeyPair("new-seed");
-
-        WOTSPlus.WinternitzAddress[] memory badRecovery = _generateRecoveryKeys(newPrivKey, 10);
-        badRecovery[0] = WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32("non-empty")});
-        bytes memory payload = _encodeInitPayload(newPubkey, badRecovery);
-
-        vm.prank(address(factory));
-        vm.expectRevert(Keyset.ZeroValueWinternitzAddress.selector);
-        freshWallet.initialize(payable(ALICE), payload);
+        _initializeRevertsOnZeroRecoveryKey(
+            "fresh-zero-recovery",
+            0,
+            WOTSPlus.WinternitzAddress({publicSeed: bytes32(0), publicKeyHash: bytes32("non-empty")})
+        );
     }
 
     function test_initialize_revertsWhen_keyAlreadyInUse() public {

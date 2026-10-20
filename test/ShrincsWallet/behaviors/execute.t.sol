@@ -156,36 +156,38 @@ contract ShrincsWallet_execute is ShrincsWalletTest {
         assertEq(wallet.actionNonce(), 0, "nonce preserved by the full revert");
     }
 
-    /// @dev Cap matrix (equal): live fee == maxFee succeeds and charges exactly the fee.
-    function test_execute_liveFeeEqualsCap() public {
+    /// @dev Shared driver for the fee-cap matrix: signs a 0.5 ether transfer at a 0.01 ether
+    ///      cap, sets the live fee to `liveFee` AFTER signing, executes with the signed cap,
+    ///      asserts delivery, and returns the fee actually collected by the factory.
+    function _executeSignedAtCapWithLiveFee(uint256 liveFee) internal returns (uint256 charged) {
         _setExecuteFee(0.01 ether);
         vm.deal(WALLET, 1 ether);
         SHRINCS.Signature memory sig = _executeSig(TARGET, 0.5 ether, "", 1, 0.01 ether);
+
+        _setExecuteFee(liveFee);
         uint256 factoryBefore = address(factory).balance;
 
         vm.prank(OWNER);
         wallet.execute(_mainPk(), sig, TARGET, 0.5 ether, "", 0.01 ether);
 
-        assertEq(address(factory).balance - factoryBefore, 0.01 ether, "exact fee charged");
         assertEq(TARGET.balance, 0.5 ether, "value delivered");
+        return address(factory).balance - factoryBefore;
+    }
+
+    /// @dev Cap matrix (equal): live fee == maxFee succeeds and charges exactly the fee.
+    function test_execute_liveFeeEqualsCap() public {
+        assertEq(_executeSignedAtCapWithLiveFee(0.01 ether), 0.01 ether, "exact fee charged");
     }
 
     /// @dev Cap matrix (down): a fee DECREASE between signing and landing succeeds, charging the
     ///      lower live fee — the deliberate `<=` semantics (previously this was an
     ///      `InvalidSignature` digest mismatch that bricked the in-flight signature).
     function test_execute_feeDecreaseSucceedsChargingLiveFee() public {
-        _setExecuteFee(0.01 ether);
-        vm.deal(WALLET, 1 ether);
-        SHRINCS.Signature memory sig = _executeSig(TARGET, 0.5 ether, "", 1, 0.01 ether);
-
-        _setExecuteFee(0.002 ether); // fee lowered after signing
-        uint256 factoryBefore = address(factory).balance;
-
-        vm.prank(OWNER);
-        wallet.execute(_mainPk(), sig, TARGET, 0.5 ether, "", 0.01 ether);
-
-        assertEq(address(factory).balance - factoryBefore, 0.002 ether, "LIVE fee charged, not the ceiling");
-        assertEq(TARGET.balance, 0.5 ether, "value delivered");
+        assertEq(
+            _executeSignedAtCapWithLiveFee(0.002 ether),
+            0.002 ether,
+            "LIVE fee charged, not the ceiling"
+        );
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf consumed");
     }
 

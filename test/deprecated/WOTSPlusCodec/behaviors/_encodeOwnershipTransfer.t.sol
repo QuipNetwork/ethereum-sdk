@@ -53,40 +53,7 @@ contract WOTSPlusCodec__encodeOwnershipTransfer is WOTSPlusCodecTest {
         Bundle memory b = _sampleBundle();
         bytes memory encoded =
             codec.exposed_encodeOwnershipTransfer(b.cur, b.nxt, b.sig, b.newOwner, b.disaster, b.txn, b.rec, b.ver);
-
-        (
-            WOTSPlus.WinternitzAddress memory dCur,
-            WOTSPlus.WinternitzAddress memory dNxt,
-            WOTSPlus.WinternitzElements memory dSig,
-            address dOwner,
-            WOTSPlus.WinternitzAddress memory dDisaster,
-            WOTSPlus.WinternitzAddress[10] memory dTxn,
-            WOTSPlus.WinternitzAddress[10] memory dRec,
-            WOTSPlus.WinternitzAddress[10] memory dVer
-        ) = codec.exposed_decodeOwnershipTransfer(encoded);
-
-        assertEq(dCur.publicSeed, b.cur.publicSeed);
-        assertEq(dCur.publicKeyHash, b.cur.publicKeyHash);
-        assertEq(dNxt.publicSeed, b.nxt.publicSeed);
-        assertEq(dNxt.publicKeyHash, b.nxt.publicKeyHash);
-        assertEq(dOwner, b.newOwner);
-        assertEq(dDisaster.publicSeed, b.disaster.publicSeed);
-        assertEq(dDisaster.publicKeyHash, b.disaster.publicKeyHash);
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dTxn[i].publicSeed, b.txn[i].publicSeed);
-            assertEq(dTxn[i].publicKeyHash, b.txn[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dRec[i].publicSeed, b.rec[i].publicSeed);
-            assertEq(dRec[i].publicKeyHash, b.rec[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dVer[i].publicSeed, b.ver[i].publicSeed);
-            assertEq(dVer[i].publicKeyHash, b.ver[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 67; i++) {
-            assertEq(dSig.elements[i], b.sig.elements[i]);
-        }
+        _assertBundleRoundtrip(b, encoded);
     }
 
     function _fuzzBundle(bytes32 seed, address newOwner) internal pure returns (Bundle memory b) {
@@ -118,28 +85,10 @@ contract WOTSPlusCodec__encodeOwnershipTransfer is WOTSPlusCodecTest {
             WOTSPlus.WinternitzAddress[10] memory dVer
         ) = codec.exposed_decodeOwnershipTransfer(encoded);
 
-        assertEq(dCur.publicSeed, b.cur.publicSeed);
-        assertEq(dCur.publicKeyHash, b.cur.publicKeyHash);
-        assertEq(dNxt.publicSeed, b.nxt.publicSeed);
-        assertEq(dNxt.publicKeyHash, b.nxt.publicKeyHash);
-        for (uint256 i = 0; i < 67; i++) {
-            assertEq(dSig.elements[i], b.sig.elements[i]);
-        }
+        _assertEqAuthPrefix(dCur, b.cur, dNxt, b.nxt, dSig, b.sig);
         assertEq(dOwner, b.newOwner);
-        assertEq(dDisaster.publicSeed, b.disaster.publicSeed);
-        assertEq(dDisaster.publicKeyHash, b.disaster.publicKeyHash);
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dTxn[i].publicSeed, b.txn[i].publicSeed);
-            assertEq(dTxn[i].publicKeyHash, b.txn[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dRec[i].publicSeed, b.rec[i].publicSeed);
-            assertEq(dRec[i].publicKeyHash, b.rec[i].publicKeyHash);
-        }
-        for (uint256 i = 0; i < 10; i++) {
-            assertEq(dVer[i].publicSeed, b.ver[i].publicSeed);
-            assertEq(dVer[i].publicKeyHash, b.ver[i].publicKeyHash);
-        }
+        _assertEqWinternitzAddress(dDisaster, b.disaster);
+        _assertEqKeysets10(dTxn, b.txn, dRec, b.rec, dVer, b.ver);
     }
 
     /// @dev Property: encode → decode preserves every field for any inputs.
