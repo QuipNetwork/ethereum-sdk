@@ -426,7 +426,9 @@ with no env vars and no RPC.
 > remain live and fully functional, but the source now lives under
 > `contracts/deprecated/` (deploy scripts under `script/deprecated/`; SDK surface
 > under the `./deprecated/*` npm subpaths). SHRINCS (`ShrincsWallet` +
-> `ShrincsPaymaster`) is the go-forward family.
+> `ShrincsPaymaster`) is the go-forward family. The older **V0** trio
+> (`Deployer`/`QuipFactory`/`QuipWallet` from SDK 0.1.x) is archived as
+> uncompiled source under `contracts/deprecated/v0/`; see the v0.1.x section.
 
 > ⚠️ **The go-forward factory (UUPS, renamed `WalletFactory`) supersedes the
 > address above — and deploys through a new mechanism.** The factory became
@@ -758,4 +760,6 @@ Live on Ethereum, Base, Optimism, Degen as of `0.1.7`.
 
 The corresponding committed release bytecode lives under
 `deployments/bytecode-v0-historical/` (archived; not consumed by any v1
-script).
+script). The Solidity source is archived, byte-identical to tag `v0.1.7`,
+under `contracts/deprecated/v0/` (excluded from the Foundry build, solhint
+and prettier; see its README).

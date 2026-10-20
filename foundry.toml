@@ -15,6 +15,11 @@ cbor_metadata = false
 bytecode_hash = "none"
 extra_output = ["abi", "storageLayout"]
 extra_output_files = ["abi"]
+# contracts/deprecated/v0/ is the archived V0 (hardhat-era, @quip.network/ethereum-sdk <= 0.1.7)
+# source. It targets hashsigs-solidity 0.1.x via an npm remapping this project no longer has,
+# and its deployed bytecode is pinned under deployments/bytecode-v0-historical/. Keep it out of
+# the build so no misleading artifact is produced; see contracts/deprecated/v0/README.md.
+skip = ["contracts/deprecated/v0/**"]
 # CreateX pins solc 0.8.23, so tests load its shipped artifact via vm.getCode
 # instead of compiling the source (see test/script/Deploy.t.sol).
 fs_permissions = [{ access = "read", path = "dependencies/pcaversaccio-createx-1.0.0/artifacts" }]

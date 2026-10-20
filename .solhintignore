@@ -3,3 +3,4 @@ dependencies/
 out/
 cache_forge/
 lib/
+contracts/deprecated/v0/
