@@ -173,6 +173,9 @@ test-full:forge-fuzz:
 # NOTE: suites under test/ShrincsWallet/invariant and test/WalletFactory/invariant/Deploy.t.sol
 # carry inline `forge-config: default.invariant.*` budgets. Inline config outranks the
 # FOUNDRY_INVARIANT_* variables below, so those suites run at their own (smaller) budget here.
+# The deprecated tree is excluded: its WOTSPlusImplementation_Local_Invariant has no inline
+# budget and alone takes ~2.5h at 256/500, past the runner's 2h cap, while the code it covers
+# is archived and no longer changes.
 test-full:forge-invariant:
   stage: test-full
   extends: .rules-full
@@ -182,7 +185,7 @@ test-full:forge-invariant:
     FOUNDRY_INVARIANT_RUNS: "256"
     FOUNDRY_INVARIANT_DEPTH: "500"
   script:
-    - forge test --match-contract Invariant
+    - forge test --match-contract Invariant --no-match-path "test/deprecated/**"
 
 test-full:forge-fork:
   stage: test-full
