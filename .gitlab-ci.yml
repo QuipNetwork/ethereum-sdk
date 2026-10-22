@@ -6,7 +6,6 @@
 #              jest unit sharded 3-way                                    (every MR)
 #   test-full  invariants, high fuzz, anvil-backed jest, live-RPC forks    (main, schedules;
 #                                                                            manual on MRs)
-#   reflect    GitHub mirror                                               (main only)
 #
 # One-time setup on gitlab.com:
 #   1. hashsigs-solidity → Settings → CI/CD → Job token permissions → allow this project,
@@ -20,7 +19,6 @@ stages:
   - check
   - test
   - test-full
-  - reflect
 
 workflow:
   rules:
@@ -209,22 +207,3 @@ test-full:jest-integration:
     # anvil-backed; the *.fork test needs FORK_RPC_URL and is left to smoke:fork.
     - node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs
         --testPathPattern integration --testPathIgnorePatterns /node_modules/ fork
-
-# ── reflect ───────────────────────────────────────────────────────
-
-github-push:
-  stage: reflect
-  cache: []
-  before_script: []
-  variables:
-    GITHUB_TOKEN: $GITHUB_PAT
-  script:
-    - git config user.email ci@postquant.xyz
-    - git config user.name "postquant-ci"
-    - git remote add github_origin https://cadillion:$GITHUB_PAT@github.com/QuipNetwork/ethereum-sdk.git
-    - git add .
-    - git commit -m "CI push from pipeline"
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
-      when: always
-    - when: never
