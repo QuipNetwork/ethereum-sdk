@@ -506,3 +506,37 @@ These invariants form a security web — they depend on each other:
 5. **Epoch Namespacing (17, 20) + Spent-Tree Registries (25):** The epoch gives a rotated key a blank bitmap; the registry guarantees the key is genuinely new. Epochs without the registry resurrect consumed leaves on re-install; the registry without epochs would leak leaf state across keys.
 
 6. **ERC-4337 Validation Phasing (1) + Execution Reversion:** Key rotation in the validation phase survives execution-phase reverts. Moving rotation to execution would create a window where a revealed key remains active.
+
+---
+
+## Formal Verification Coverage — WalletFactory (Certora, wave 1)
+
+A Certora CVL specification machine-checks a subset of the WalletFactory suites. It mirrors the executable Foundry tests (not this document's numbering): each row maps a Foundry invariant to its CVL artifact, or records why none exists.
+
+**Scope.** `WalletFactory` only. Spec `certora/specs/WalletFactory.spec` (22 rules + 1 invariant), harnesses `certora/harness/WalletFactoryHarness.sol` and `certora/harness/EnumerableSetHarness.sol` (the latter reroutes Solady's `Bytes32Set` — inlining it crashes the local prover's TAC typechecker), runner `certora/conf/WalletFactory.conf` (`certoraRun certora/conf/WalletFactory.conf`, solc 0.8.33). Latest run: **65/65 checks verified, 0 property violations**, every non-vacuity sanity check healthy.
+
+### Mirrored in CVL
+
+| Foundry source | CVL artifact | Notes |
+|---|---|---|
+| `invariant_feesBoundedByMaxFee` (Local) | `invariant feesBoundedByMaxFee` + `setCreationFee_*` / `setExecuteFee_*` | The ≤ MAX_FEE half is the invariant; the handler-mirror equality half is a Foundry-handler artifact — in CVL the writes themselves are proven by the setter rules |
+| `invariant_factoryOwnerStable` (Local) | `rule ownerStableOutsideOwnershipTransfer` | Stronger: parametric over every non-view method outside the ownership surface, not just the handler's five selectors |
+| `invariant_lifecycleActionsMatchExpectedOutcomes` (Local) | `vet/deprecate/undeprecateImplementation_{success,revertsWhen_notOwner}` | Per-call outcomes proven individually instead of handler counters; the `AlreadyVetted`/`EmptyCode`/`ImplementationNotVetted` paths appear as premises of the success rules rather than separate revert rules |
+| `invariant_vettedCodeMatchesMirror` (Local) | asserts of the three lifecycle `success` rules | The mirror is a Foundry-handler artifact; CVL asserts the transitions directly (append count/index, flag on/off, re-bind) |
+| `invariant_codehashProvenancePreserved` (Local) | `vetImplementation_success`, `undeprecateImplementation_success` | Transition-wise: each rule asserts the codehash→impl binding it writes; no set-wide quantified invariant (see limitations) |
+| `renounceOwnership` behavior | `rule renounceOwnership_alwaysReverts` | Invariant 12 |
+| `updateWalletOwner` behavior | `rule updateWalletOwner_revertsWhen_{notWallet,zeroAddressOwner,sameOwner}` | The 4th gate (`OwnerStateMismatch`) is not modeled: `IWallet.owner()` is summarized NONDET, so its return cannot be pinned by a premise |
+| `withdraw` behavior | `withdraw_transfersToOwner`, `withdraw_revertsWhen_{insufficientBalance,notOwner}` | EOA recipient only; the contract-recipient case (CREATE-fallback force transfer) is deferred |
+| Registry write-once (behaviors) | `walletsRegistryWriteOnce`, `commitmentOfWriteOnce` | Parametric over all admin/ownership methods |
+
+### Not mirrored, and why
+
+- **`invariant_deprecatedNeverSelectedLatest` (Local):** not inductive over the Prover's arbitrary initial states; the reachable-state repair premises require quantified contract-state reads this Prover rejects (three stacked limits, documented as `KNOWN LIMITATION` at the end of the spec). Executable coverage stays with the Foundry suite; the vet/deprecate/undeprecate transitions are individually verified in CVL.
+- **`invariant_latestIsMostRecentlyVettedActiveImplementation` (Local):** only the vet-side half is asserted (`vetImplementation_success`); the `_findLatestActive` recompute after deprecate/undeprecate (insertion-order backward scan) is not asserted in wave 1 — that scan lives in the same storage family as the limitation above. Sequence-level rebinds are covered by `test_lifecycleActionsReachVettingFallbackRebindAndFeeWrites`.
+- **`test/WalletFactory/invariant/Deploy.t.sol` (8 invariants — fee-split exactness for 8, registry bindings, CREATE3 address prediction, wallet linkage):** out of scope for wave 1 — both deploy registries are written only by `_deployProxy`, which the spec excludes (see the spec header).
+- **`upgradeToAndCall` / `initialize` transitions:** excluded from the parametric filters by design — a UUPS upgrade delegates to arbitrary code (22) so no property of the old implementation survives it, and `initialize` is an ownership-SETTING entrypoint (22); induction over them would be unsound.
+- **Remaining WalletFactory behaviors** (`deployLatestWalletProxy`, `deploySpecificWalletProxy`, `_deployProxy`, `_findLatestActive`, the view getters, `transferOwnership`, `upgradeToAndCall`, `receive`, constructor/guard tests): not in wave 1.
+- **Invariants 1–6, 9–11, 13–14, 17–27 (WOTS+, SHRINCS, paymasters):** out of scope — wave 1 is factory-only; their coverage remains the Foundry/SDK suites.
+- **Registry Consistency (16) wallet-side half / Vetting Contract (21) rule 2:** a factory-only spec cannot see wallet internals; CVL proves the factory half (registries write-once, `updateWalletOwner` gates, owner stability). The wallet-side obligation stays review-gated at vetting time, as 21 states.
+
+**Status.** The Certora run is not wired into CI (GitLab CI runs the Foundry tiers); the spec is run manually. CVL `assert lastReverted` does not distinguish revert selectors — gate separation rests on the rules' disjoint premises, not on error identity.
