@@ -17,6 +17,7 @@
 #   4. npmjs.com → @quip.network/ethereum-sdk → Settings → Trusted Publisher → GitLab CI/CD:
 #      namespace quip.network, project ethereum-sdk, file .gitlab-ci.yml, environment npm,
 #      allow `npm publish`. The publish job then needs no npm token.
+#   5. Settings → CI/CD → Runners → enable instance runners, for publish:npm.
 
 include:
   - project: quip.network/ci-templates
@@ -50,6 +51,9 @@ variables:
 
 default:
   image: node:20-bookworm
+  # Shared runners are on for publish:npm only. These tags keep every other job on the
+  # group runners.
+  tags: [linux, docker]
   interruptible: true
   retry:
     max: 1
@@ -221,11 +225,13 @@ test-full:jest-integration:
 # A stable tag vX.Y.Z publishes to npm through trusted publishing (OIDC). The tag must
 # match package.json. The dependency gate runs in .pre and blocks this job.
 # Trusted publishing needs npm 11.5.1 and Node 22.14 or later, so this job uses Node 24.
+# npm accepts the OIDC token only from a GitLab.com hosted runner, not a group runner.
 
 publish:npm:
   stage: publish
   extends: .node
   image: node:24-bookworm
+  tags: [saas-linux-small-amd64]
   interruptible: false
   cache: []
   environment: npm
