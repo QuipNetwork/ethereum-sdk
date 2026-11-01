@@ -14,21 +14,20 @@
 #      fork job in test-full. Without them it is skipped, not failed.
 #   3. Settings → CI/CD → General pipelines → "Auto-cancel redundant pipelines" (uses
 #      `interruptible` below), and a nightly schedule on main for the full tier.
+#   4. npmjs.com → @quip.network/ethereum-sdk → Settings → Trusted Publisher → GitLab CI/CD:
+#      namespace quip.network, project ethereum-sdk, file .gitlab-ci.yml, environment npm,
+#      allow `npm publish`. The publish job then needs no npm token.
 
 include:
   - project: quip.network/ci-templates
-    ref: v1.1.1
+    ref: v1.1.2
     file: templates/dependency-gate.yml
-
-# No other job runs on a stable tag. GitLab creates no pipeline when only .pre and
-# .post jobs match, so the gate runs in the check stage instead.
-dependency-gate:
-  stage: check
 
 stages:
   - check
   - test
   - test-full
+  - publish
 
 workflow:
   rules:
@@ -217,3 +216,24 @@ test-full:jest-integration:
     # anvil-backed; the *.fork test needs FORK_RPC_URL and is left to smoke:fork.
     - node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.config.cjs
         --testPathPattern integration --testPathIgnorePatterns /node_modules/ fork
+
+# ── publish ───────────────────────────────────────────────────────
+# A stable tag vX.Y.Z publishes to npm through trusted publishing (OIDC). The tag must
+# match package.json. The dependency gate runs in .pre and blocks this job.
+# Trusted publishing needs npm 11.5.1 and Node 22.14 or later, so this job uses Node 24.
+
+publish:npm:
+  stage: publish
+  extends: .node
+  image: node:24-bookworm
+  interruptible: false
+  cache: []
+  environment: npm
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  id_tokens:
+    NPM_ID_TOKEN:
+      aud: "npm:registry.npmjs.org"
+  script:
+    - test "v$(node -p 'require("./package.json").version')" = "$CI_COMMIT_TAG"
+    - npm publish --access public
