@@ -17,8 +17,13 @@
 
 include:
   - project: quip.network/ci-templates
-    ref: v1.1.0
+    ref: v1.1.1
     file: templates/dependency-gate.yml
+
+# No other job runs on a stable tag. GitLab creates no pipeline when only .pre and
+# .post jobs match, so the gate runs in the check stage instead.
+dependency-gate:
+  stage: check
 
 stages:
   - check
