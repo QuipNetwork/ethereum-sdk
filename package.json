@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "files": [
     "dist/**/*.js",
@@ -107,5 +107,9 @@
   },
   "overrides": {
     "@nomicfoundation/edr": "0.12.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/quip.network/ethereum-sdk.git"
   }
 }
