@@ -260,7 +260,7 @@ forge verify-contract \
       0x77622e199DfF602f937fC5E5eB6479aE4b18161F \
       $(cast calldata "initialize(address)" "$FACTORY_OWNER")) \
   0xA2B2F71456a799FCf4EF7A3111c4B96b3e928cc8 \
-  @openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy
+  @openzeppelin-contracts-5.6.1/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy
 ```
 
 The above are the canonical CREATE3 addresses (identical on every chain the operator has deployed to — `make predict-addresses` prints them, and `src/v1/shrincs/addresses.ts` ships them to integrators). The live `MAX_FEE` is 1e18. The full per-chain history, including the sunset WOTS+-era contracts and the pre-V2 CREATE2 mainnet addresses, is in [DEPLOYMENTS.md](DEPLOYMENTS.md).

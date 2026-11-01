@@ -5,7 +5,7 @@ import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTS
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementationHarness, HarnessKeyset} from "../../harness/WOTSPlusImplementationHarness.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.3.0/contracts/WOTSPlus.sol";
 
 /// @dev Behaviour tests for `_verifyAndRotate(set, current, next, pqSig, digest)`.
 ///      Enforces (a) `current ∈ set`, (b) `next ∉ set`, (c) valid WOTS+ sig over

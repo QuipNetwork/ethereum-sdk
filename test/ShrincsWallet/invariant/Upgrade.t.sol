@@ -5,9 +5,9 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 import {ShrincsWalletUpgradeHandler} from "./support/UpgradeHandler.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
-import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.3.0/test/helpers/SHRINCSTestSigner.sol";
 
 // Inline invariant budget. Every handler call verifies a SHRINCS signature in the EVM
 // (~0.3s each), so this suite caps runs/depth here. Inline config outranks the

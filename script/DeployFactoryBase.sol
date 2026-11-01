@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.1/proxy/ERC1967/ERC1967Proxy.sol";
 import {WalletFactory} from "../contracts/WalletFactory.sol";
 import {DeployConstants} from "./Constants.sol";
 import {CreateXHelpers} from "./CreateXHelpers.sol";

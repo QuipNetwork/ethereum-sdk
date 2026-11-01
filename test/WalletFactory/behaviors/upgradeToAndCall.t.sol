@@ -6,7 +6,7 @@ import {CallContextChecker} from "solady-0.1.26/src/utils/CallContextChecker.sol
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
 import {WalletFactoryTest} from "../WalletFactory.t.sol";
 import {WalletFactory} from "../../../contracts/WalletFactory.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.3.0/contracts/WOTSPlus.sol";
 
 /// @dev Minimal V2: same layout discipline (all state in the ERC-7201
 ///      namespace), one new function — the smallest observable upgrade.

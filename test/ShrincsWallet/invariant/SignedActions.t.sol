@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
-import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SPHINCSPlusC.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.3.0/test/helpers/SHRINCSTestSigner.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";

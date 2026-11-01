@@ -5,8 +5,8 @@ import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTS
 
 import {WOTSPlusImplementationTest} from "../WOTSPlusImplementation.t.sol";
 import {WOTSPlusImplementation} from "../../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.3.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.3.0/test/helpers/WOTSPlusTestSigner.sol";
 import {IWOTSPlusImplementation} from "../../../../contracts/deprecated/wots/interfaces/IWOTSPlusImplementation.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {Vm} from "forge-std-1.14.0/Vm.sol";

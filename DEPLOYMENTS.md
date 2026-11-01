@@ -626,7 +626,7 @@ link-free.) Foundry handles the wallet linking via the
 ```toml
 [profile.deploy]
 libraries = [
-    "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol:WOTSPlus:0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723"
+    "@quip.network/hashsigs-solidity-0.3.0/contracts/WOTSPlus.sol:WOTSPlus:0x7837b85Fa4D31a5af8FD28e66b18f156F66C3723"
 ]
 ```
 

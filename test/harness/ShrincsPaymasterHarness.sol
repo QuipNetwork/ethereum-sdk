@@ -3,9 +3,9 @@ pragma solidity ^0.8.33;
 
 import {ShrincsPaymaster} from "../../contracts/ShrincsPaymaster.sol";
 import {ShrincsPaymasterStorage as Storage} from "../../contracts/storage/ShrincsPaymasterStorage.sol";
-import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {PackedUserOperation} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/UXMSS.sol";
 
 /// @dev Test harness exposing `ShrincsPaymaster` internals and a direct storage installer so
 ///      behavior tests can set up arbitrary verifier state without an owner-gated registration.

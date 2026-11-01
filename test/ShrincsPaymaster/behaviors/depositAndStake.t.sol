@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {IEntryPointStake} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {IEntryPointStake} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 
 /// @dev Behavior tests for the EntryPoint deposit/stake forwarders. The EntryPoint is mocked via
