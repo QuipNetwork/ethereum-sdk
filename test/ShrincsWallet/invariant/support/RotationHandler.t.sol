@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol";
 import {IShrincsWallet} from "../../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../../harness/ShrincsWalletHarness.sol";
 

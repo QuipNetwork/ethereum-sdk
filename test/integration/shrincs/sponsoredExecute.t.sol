@@ -2,7 +2,7 @@
 pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
-import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {PackedUserOperation} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
 import {IShrincsPaymaster} from "../../../contracts/interfaces/IShrincsPaymaster.sol";
 import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 

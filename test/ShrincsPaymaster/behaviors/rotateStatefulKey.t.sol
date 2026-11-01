@@ -2,10 +2,10 @@
 pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
-import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/SHRINCSTestSigner.sol";
-import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.3.0/test/helpers/SHRINCSTestSigner.sol";
+import {PackedUserOperation} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
 import {IShrincsPaymaster} from "../../../contracts/interfaces/IShrincsPaymaster.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 

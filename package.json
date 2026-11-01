@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "0.3.0-beta.8",
+  "version": "1.0.1",
   "type": "module",
   "files": [
     "dist/**/*.js",
@@ -101,8 +101,11 @@
     "@noble/ciphers": "^1.2.1",
     "@noble/hashes": "^1.7.1",
     "@quip.network/hashsigs": "^0.1.0",
-    "@quip.network/hashsigs-wasm": "0.2.1-rc9",
+    "@quip.network/hashsigs-wasm": "0.2.1",
     "@scure/bip39": "^1.6.0",
     "viem": "^2.21.0"
+  },
+  "overrides": {
+    "@nomicfoundation/edr": "0.12.1"
   }
 }

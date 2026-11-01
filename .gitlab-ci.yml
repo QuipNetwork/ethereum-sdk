@@ -15,6 +15,11 @@
 #   3. Settings → CI/CD → General pipelines → "Auto-cancel redundant pipelines" (uses
 #      `interruptible` below), and a nightly schedule on main for the full tier.
 
+include:
+  - project: quip.network/ci-templates
+    ref: v1.1.0
+    file: templates/dependency-gate.yml
+
 stages:
   - check
   - test

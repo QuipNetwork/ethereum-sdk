@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {PackedUserOperation} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol";
 import {ShrincsE2EBase} from "./ShrincsE2EBase.t.sol";
 
 /// @dev e2e key-rotation: rotating the paymaster's global verifier (owner-only) bumps its epoch and

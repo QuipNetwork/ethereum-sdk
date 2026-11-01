@@ -20,13 +20,13 @@ import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.3.0/contracts/WOTSPlus.sol";
 // prettier-ignore
 import {
     IPaymaster,
     IEntryPointStake,
     PackedUserOperation
-} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
 import {IQuipPaymaster} from "./interfaces/IQuipPaymaster.sol";
 import {QuipPaymasterStorage as Storage} from "./storage/QuipPaymasterStorage.sol";
 

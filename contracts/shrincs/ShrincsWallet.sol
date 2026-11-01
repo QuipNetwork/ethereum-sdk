@@ -25,14 +25,14 @@ import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {ECDSA} from "solady-0.1.26/src/utils/ECDSA.sol";
 import {SignatureCheckerLib} from "solady-0.1.26/src/utils/SignatureCheckerLib.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
-import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
-import {SHRINCSVerifier} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCSVerifier.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCS.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.3.0/contracts/UXMSS.sol";
+import {SHRINCSVerifier} from "@quip.network/hashsigs-solidity-0.3.0/contracts/SHRINCSVerifier.sol";
 // prettier-ignore
 import {
     IERC7913SignatureVerifier
-} from "@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
+} from "@quip.network/hashsigs-solidity-0.3.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "./interfaces/IShrincsWallet.sol";

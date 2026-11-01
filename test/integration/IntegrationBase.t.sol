@@ -7,10 +7,10 @@ import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {WalletFactory} from "../../contracts/WalletFactory.sol";
 import {WOTSPlusImplementation} from "../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
 import {QuipPaymaster} from "../../contracts/deprecated/QuipPaymaster.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
-import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.2.0/test/helpers/WOTSPlusTestSigner.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.3.0/contracts/WOTSPlus.sol";
+import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.3.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusCodec as Codec} from "../../contracts/deprecated/wots/WOTSPlusCodec.sol";
-import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
 
 /// @dev Minimal extension of IEntryPoint to expose getUserOpHash on the fork.
 interface IEntryPointExt is IEntryPoint {

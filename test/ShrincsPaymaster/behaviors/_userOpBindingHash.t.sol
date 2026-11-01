@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
+import {PackedUserOperation} from "@openzeppelin-contracts-5.6.1/interfaces/draft-IERC4337.sol";
 import {ShrincsPaymasterTest} from "../ShrincsPaymaster.t.sol";
 
 /// @dev Behavior tests for the PURE `_userOpBindingHash`. Fully testable now (no signature): it must

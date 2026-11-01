@@ -1,0 +1,13 @@
+[[allow]]
+ecosystem = "npm"
+name = "aes-js"
+version = "4.0.0-beta.5"
+commit = "2dcb8d90c1d38fab36e5be14519099f8651dedc5"
+reason = "ethers v6 depends on this exact release; aes-js has no stable 4.x release"
+
+[[allow]]
+ecosystem = "npm"
+name = "gensync"
+version = "1.0.0-beta.2"
+commit = "a182868db47da283a1a044cb15bfd388697a632f"
+reason = "required by @babel/core; gensync has no stable release"
