@@ -262,4 +262,5 @@ publish:npm:
     SIGSTORE_ID_TOKEN:
       aud: sigstore
   script:
-    - npm publish pkg/*.tgz --access public
+    # ./ makes npm read a file path. Without it, pkg/x.tgz parses as GitHub shorthand.
+    - npm publish ./pkg/*.tgz --access public
