@@ -1,6 +1,6 @@
 {
   "name": "@quip.network/ethereum-sdk",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "files": [
     "dist/**/*.js",

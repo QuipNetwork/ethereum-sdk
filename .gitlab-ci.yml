@@ -223,23 +223,42 @@ test-full:jest-integration:
 
 # ── publish ───────────────────────────────────────────────────────
 # A stable tag vX.Y.Z publishes to npm through trusted publishing (OIDC). The tag must
-# match package.json. The dependency gate runs in .pre and blocks this job.
-# Trusted publishing needs npm 11.5.1 and Node 22.14 or later, so this job uses Node 24.
-# npm accepts the OIDC token only from a GitLab.com hosted runner, not a group runner.
+# match package.json. The dependency gate runs in .pre and blocks both jobs.
+#
+# npm accepts the OIDC token only from a GitLab.com hosted runner, and only while the token
+# is fresh. GitLab issues it when the job starts, and the prepack build takes ten minutes,
+# so pack:npm builds the tarball on the group runners and publish:npm only uploads it.
 
+pack:npm:
+  stage: check
+  extends: .node
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+  script:
+    - test "v$(node -p 'require("./package.json").version')" = "$CI_COMMIT_TAG"
+    - npm pack --pack-destination pkg
+  artifacts:
+    paths: [pkg/]
+    expire_in: 1 week
+
+# Trusted publishing needs npm 11.5.1 and Node 22.14 or later, so this job uses Node 24.
+# SIGSTORE_ID_TOKEN lets npm sign the provenance statement.
 publish:npm:
   stage: publish
-  extends: .node
   image: node:24-bookworm
   tags: [saas-linux-small-amd64]
   interruptible: false
   cache: []
+  before_script: []
   environment: npm
+  variables:
+    GIT_STRATEGY: none
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
   id_tokens:
     NPM_ID_TOKEN:
       aud: "npm:registry.npmjs.org"
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
   script:
-    - test "v$(node -p 'require("./package.json").version')" = "$CI_COMMIT_TAG"
-    - npm publish --access public
+    - npm publish pkg/*.tgz --access public
