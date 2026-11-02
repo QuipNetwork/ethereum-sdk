@@ -236,6 +236,7 @@ pack:npm:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
   script:
     - test "v$(node -p 'require("./package.json").version')" = "$CI_COMMIT_TAG"
+    - mkdir -p pkg
     - npm pack --pack-destination pkg
   artifacts:
     paths: [pkg/]
