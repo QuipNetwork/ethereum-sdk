@@ -119,6 +119,14 @@ build:
     - npm run copy-abi
     - npm run typecheck
     - make storage-layout-check
+    # Pack the release tarball for release-check:npm. The -ci suffix gives it a version that
+    # npm has not published, so the dry run does not fail on the current version.
+    - npm version "$(node -p 'require("./package.json").version')-ci.$CI_PIPELINE_IID" --no-git-tag-version --ignore-scripts
+    - mkdir -p pkg
+    - npm pack --pack-destination pkg
+  artifacts:
+    paths: [pkg/]
+    expire_in: 1 day
 
 lint:
   stage: check
@@ -264,3 +272,17 @@ publish:npm:
   script:
     # ./ makes npm read a file path. Without it, pkg/x.tgz parses as GitHub shorthand.
     - npm publish ./pkg/*.tgz --access public
+
+# Runs the publish:npm command as a dry run on the tarball from build, so a fault in the
+# release path fails the MR instead of the tag. npm requires --tag for the -ci prerelease.
+release-check:npm:
+  stage: test
+  extends: .rules-fast
+  image: node:24-bookworm
+  needs: [build]
+  cache: []
+  before_script: []
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - npm publish ./pkg/*.tgz --access public --tag ci --dry-run
