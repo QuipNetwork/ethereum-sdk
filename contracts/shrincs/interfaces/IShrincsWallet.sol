@@ -16,8 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
 import {IWallet} from "../../interfaces/IWallet.sol";
 
 /// @title IShrincsWallet
@@ -106,8 +105,8 @@ interface IShrincsWallet is IWallet {
     ///         `[1, nextKey.maxSignatures]`. A bundle its holder cannot sign with cannot be
     ///         installed.
     error InvalidKeyAcceptance();
-    /// @notice Thrown when a self-call-only helper (`userOpEnvelope`, `erc1271Envelope`) is
-    ///         called by anyone other than the wallet itself.
+    /// @notice Thrown when the self-call-only helper `userOpEnvelope` is called by anyone
+    ///         other than the wallet itself.
     error SelfCallOnly();
     /// @notice Thrown when any of Solady's inherited two-step ownership handover entry
     ///         points is called. This wallet supports only the SHRINCS-authenticated
@@ -233,6 +232,10 @@ interface IShrincsWallet is IWallet {
 
     /// @notice Discriminates the reasons `isValidSignature` returns the ERC-1271 failure magic,
     ///         plus an `Ok` success sentinel surfaced by `debugIsValidSignature`.
+    ///         `BadSignatureLength`: not exactly the envelope length. `MalformedErc1271Payload`:
+    ///         wrong magic, version or profile id. `InvalidEcdsaSignature`: the owner ECDSA half
+    ///         does not recover `owner()`. `InvalidShrincsSignature`: zero `hash`, or the
+    ///         stateless payload does not verify against the ERC-1271 key.
     enum Erc1271ValidationResult {
         Ok,
         BadSignatureLength,
@@ -278,10 +281,12 @@ interface IShrincsWallet is IWallet {
     ///         STATICCALLed on the NEW implementation during `upgradeToAndCall`.
     /// @param newImplementation The upgrade target; the probe digest is its hashed word.
     /// @param data The probe vector `abi.encode(PublicKey bundle, Signature statefulSig,
-    ///        SPHINCSPlusC.Signature statelessSig)` — or, deployed-implementation compat, a
-    ///        full upgrade-auth blob whose `probePayload` field carries that vector. The
-    ///        digest must verify under BOTH halves of the (throwaway) bundle or the call
-    ///        reverts `InvalidSignature`.
+    ///        bytes statelessSig)`, `statelessSig` being the fixed-layout PQ section (hashsigs
+    ///        `StatelessLayout`, `PQ_LEN` bytes) — or, deployed-implementation compat, a full
+    ///        upgrade-auth blob whose `probePayload` field carries that vector. The digest
+    ///        must verify under BOTH halves of the (throwaway) bundle or the call reverts
+    ///        `InvalidSignature`; a `bundle` field of the wrong width also reverts
+    ///        `InvalidSignature`.
     function verifyUpgrade(
         address newImplementation,
         bytes calldata data
@@ -332,7 +337,10 @@ interface IShrincsWallet is IWallet {
     ///         `StatelessTreeSpent`).
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
     /// @param ownerBindingSignature Stateful signature over `(newOwner, nextKey.commitment)`.
-    /// @param recoverySignature Stateless recovery signature authorizing the fresh bundle.
+    /// @param recoverySignature Stateless recovery signature authorizing the fresh bundle: the
+    ///        fixed-layout PQ section (hashsigs `StatelessLayout`, `PQ_LEN` bytes). The wallet
+    ///        prefixes `currentPublicKey`'s fields to form the verifier payload `PK ‖ PQ`; a
+    ///        key field of the wrong width reverts `InvalidSignature`.
     /// @param nextKey The new owner's replacement full key bundle.
     /// @param newOwner The incoming classical owner (ERC-1271 ECDSA gate + factory registry).
     /// @param keyAcceptance Stateful signature by `nextKey` under `ACTION_TRANSFER_OWNERSHIP`
@@ -344,7 +352,7 @@ interface IShrincsWallet is IWallet {
     function transferOwnership(
         SHRINCS.PublicKey calldata currentPublicKey,
         SHRINCS.Signature calldata ownerBindingSignature,
-        SPHINCSPlusC.Signature calldata recoverySignature,
+        bytes calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey,
         address newOwner,
         SHRINCS.Signature calldata keyAcceptance,
@@ -411,34 +419,33 @@ interface IShrincsWallet is IWallet {
     ///         `transferOwnership`. Both trees of `nextKey` must be fresh and are recorded as
     ///         spent (reverts `StatefulTreeSpent` / `StatelessTreeSpent`).
     /// @param currentPublicKey The current main-key bundle (re-validated against the commitment).
-    /// @param recoverySignature The stateless recovery signature authorizing the rotation.
+    /// @param recoverySignature The stateless recovery signature authorizing the rotation: the
+    ///        fixed-layout PQ section (hashsigs `StatelessLayout`, `PQ_LEN` bytes). The wallet
+    ///        prefixes `currentPublicKey`'s fields to form the verifier payload `PK ‖ PQ`; a
+    ///        key field of the wrong width reverts `InvalidSignature`.
     /// @param nextKey The replacement full key bundle.
     function recoverWallet(
         SHRINCS.PublicKey calldata currentPublicKey,
-        SPHINCSPlusC.Signature calldata recoverySignature,
+        bytes calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
     ) external payable;
 
-    /// @notice Self-call target of `isValidSignature`: re-encodes the SHRINCS half of an
-    ///         ERC-1271 blob into the verifier envelope `abi.encode(publicKey, signature)`.
-    /// @dev Callable only by the wallet itself (`SelfCallOnly`). It exists purely to put a call
-    ///      boundary around the nested-calldata reads: the codec bounds-checks only a blob's
-    ///      top-level tail offsets, and a nested offset past calldatasize makes Solidity's
-    ///      calldata accessors revert. Wrapping the re-encode in `try this.erc1271Envelope`
-    ///      lets `isValidSignature` map that revert to `0xffffffff` instead of propagating it to
-    ///      the relying contract that staticcalled it (INVARIANTS §19).
-    function erc1271Envelope(
-        bytes calldata signature
-    ) external view returns (bytes memory);
+    /// @notice The ERC-1271 envelope version this implementation accepts
+    ///         (`ShrincsWalletCodec.ERC1271_VERSION`, which is the upstream
+    ///         `StatelessLayout.ENCODING_VERSION`). The envelope is
+    ///         `MAGIC "QPCS" (4) ‖ VERSION (1) ‖ PROFILE_ID (32) ‖ owner ECDSA (65) ‖ PK ‖ PQ`,
+    ///         the trailing `PK ‖ PQ` being the verifier's stateless payload (hashsigs
+    ///         `StatelessLayout`).
+    /// @return The envelope version.
+    function erc1271Version() external pure returns (uint8);
 
     /// @notice Self-call target of `validateUserOp`: decodes the hybrid `userOp.signature` blob
     ///         `abi.encode(PublicKey, Signature, bytes ecdsaSig)`, derives the stateful leaf
     ///         index, and re-encodes the SHRINCS half into the verifier envelope
     ///         `abi.encode(publicKey, signature)`.
-    /// @dev Callable only by the wallet itself (`SelfCallOnly`). Twin of `erc1271Envelope` for
-    ///      the ERC-4337 path: the codec bounds-checks only a blob's top-level tail offsets, and
-    ///      a nested offset past calldatasize makes Solidity's calldata accessors revert at the
-    ///      first field read (`_leafIndex`, the re-encode). Running every such read behind
+    /// @dev Callable only by the wallet itself (`SelfCallOnly`). The codec bounds-checks only a
+    ///      blob's top-level tail offsets, and a nested offset past calldatasize makes
+    ///      Solidity's calldata accessors revert at the first field read (`_leafIndex`, the re-encode). Running every such read behind
     ///      `try this.userOpEnvelope` lets `_validateSignature` map that revert — and the codec's
     ///      own `MalformedPayload` — to `validationData == 1` + `MalformedSignature` instead of
     ///      reverting out of validation (INVARIANTS §19). Inside the self-call the blob is the
@@ -454,7 +461,7 @@ interface IShrincsWallet is IWallet {
         returns (uint32 leaf, bytes memory envelope, bytes memory ecdsaSig);
 
     /// @notice Off-chain diagnostic variant of `isValidSignature` returning the failure branch.
-    /// @dev ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
+    /// @dev Takes the same envelope as `isValidSignature` (see `erc1271Version`). ERC-1271 `isValidSignature(bytes32,bytes)` itself is inherited from the ERC1271 base
     ///      and overridden by the wallet (stateless SHRINCS verify against the dedicated verifier
     ///      key AND classical `owner()` ECDSA); it is not redeclared here to avoid an
     ///      override clash.

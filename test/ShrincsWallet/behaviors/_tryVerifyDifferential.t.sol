@@ -3,8 +3,8 @@ pragma solidity ^0.8.33;
 
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {IERC7913SignatureVerifier} from "@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
+import {IERC7913SignatureVerifier} from "@quip.network/hashsigs-solidity-0.4.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
 
 contract ShrincsWallet__tryVerifyDifferential is ShrincsWalletTest {
     struct Triple {

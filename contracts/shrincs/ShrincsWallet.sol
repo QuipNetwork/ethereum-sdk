@@ -25,14 +25,13 @@ import {LibCall} from "solady-0.1.26/src/utils/LibCall.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
 import {ECDSA} from "solady-0.1.26/src/utils/ECDSA.sol";
 import {SignatureCheckerLib} from "solady-0.1.26/src/utils/SignatureCheckerLib.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
-import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
-import {SHRINCSVerifier} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCSVerifier.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
+import {SHRINCSVerifier} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCSVerifier.sol";
 // prettier-ignore
 import {
     IERC7913SignatureVerifier
-} from "@quip.network/hashsigs-solidity-0.2.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
+} from "@quip.network/hashsigs-solidity-0.4.0/contracts/interfaces/IERC7913SignatureVerifier.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {IShrincsWallet} from "./interfaces/IShrincsWallet.sol";
@@ -62,7 +61,10 @@ interface ISHRINCSProfileTag {
 //          everything else delegated to the pinned SHRINCS_VERIFIER. The full delegation model —
 //          hash/envelope equivalence with the inlined library, which checks live where, revert
 //          model, ERC-7562 — is documented in SDK_README.md ("External verifier delegation") and
-//          INVARIANTS.md invariant 19.
+//          INVARIANTS.md invariant 19. Every stateless signature reaches the verifier as its
+//          fixed-layout payload `PK ‖ PQ` (hashsigs `StatelessLayout`): ERC-1271 forwards it
+//          from the envelope unchanged; rotation and the upgrade probe receive the key as a
+//          struct plus the PQ section and concatenate (`Codec.tryEncodeStatelessPayload`).
 contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @dev The immutable WalletFactory that deploys and registers this wallet.
     address payable public immutable FACTORY;
@@ -538,7 +540,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     function transferOwnership(
         SHRINCS.PublicKey calldata currentPublicKey,
         SHRINCS.Signature calldata ownerBindingSignature,
-        SPHINCSPlusC.Signature calldata recoverySignature,
+        bytes calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey,
         address newOwner,
         SHRINCS.Signature calldata keyAcceptance,
@@ -700,7 +702,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     /// @inheritdoc IShrincsWallet
     function recoverWallet(
         SHRINCS.PublicKey calldata currentPublicKey,
-        SPHINCSPlusC.Signature calldata recoverySignature,
+        bytes calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
     ) external payable onlyOwner {
         Storage.Layout storage $ = Storage.layout();
@@ -882,22 +884,8 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @inheritdoc IShrincsWallet
-    function erc1271Envelope(
-        bytes calldata signature
-    ) external view returns (bytes memory) {
-        if (msg.sender != address(this)) revert SelfCallOnly();
-        (
-            bool ok,
-            SHRINCS.PublicKey calldata pk,
-            SPHINCSPlusC.Signature calldata sig,
-
-        ) = Codec.tryDecodeErc1271Signature(signature);
-        // Unreachable from `_checkErc1271Signature` (it returns on `!ok` first); kept so the
-        // function never dereferences the zero-length failure slices.
-        if (!ok) revert InvalidSignature();
-        // Solidity's calldata accessors bounds-check every nested tail here and revert on an
-        // overrun; the caller's try/catch is the containment.
-        return abi.encode(pk, sig);
+    function erc1271Version() external pure returns (uint8) {
+        return Codec.ERC1271_VERSION;
     }
 
     /// @inheritdoc IShrincsWallet
@@ -924,7 +912,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         (
             SHRINCS.PublicKey calldata bundle,
             SHRINCS.Signature calldata statefulSig,
-            SPHINCSPlusC.Signature calldata statelessSig
+            bytes calldata statelessSig
         ) = Codec.decodeProbePayload(vector);
 
         bytes32 digest = Codec.probeDigest(newImplementation);
@@ -932,7 +920,9 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
 
         if (!_tryVerifyStateful(commitment, digest, abi.encode(bundle, statefulSig)))
             revert InvalidSignature();
-        if (!_tryVerifyStateless(commitment, digest, abi.encode(bundle, statelessSig)))
+        (bool ok, bytes memory statelessPayload) = Codec
+            .tryEncodeStatelessPayload(bundle, statelessSig);
+        if (!ok || !_tryVerifyStateless(commitment, digest, statelessPayload))
             revert InvalidSignature();
     }
 
@@ -1247,10 +1237,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     ///      its own policy decision". This wallet's contract is never-revert-on-bad-signature
     ///      validation (ERC-4337 returns 1) and never-revert ERC-1271, so EVERY verifier revert
     ///      maps to "invalid signature". Malformed ABI framing of the blob itself is handled
-    ///      before the verifier is reached (behind the `userOpEnvelope` / `erc1271Envelope`
-    ///      self-staticcalls on the validation paths — INVARIANTS §19). Accepted trade-off: an
-    ///      inner out-of-gas is also
-    ///      reported as an invalid signature instead of propagating.
+    ///      before the verifier is reached (behind the `userOpEnvelope` self-staticcall on the
+    ///      ERC-4337 path — INVARIANTS §19; the ERC-1271 envelope has no offsets). Accepted
+    ///      trade-off: an inner out-of-gas is also reported as an invalid signature instead of
+    ///      propagating.
     function _tryVerifyStateful(
         bytes32 expectedCommitment,
         bytes32 messageHash,
@@ -1270,17 +1260,19 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @dev Stateless twin of `_tryVerifyStateful` (identical revert policy), targeting the
-    ///      verifier's `verifyStateless` entrypoint.
+    ///      verifier's `verifyStateless` entrypoint. `payload` is the fixed-layout `PK ‖ PQ`.
+    ///      The verifier returns its failure value for any malformed payload; what is left to
+    ///      catch is an undeployed sibling or an inner out-of-gas.
     function _tryVerifyStateless(
         bytes32 expectedCommitment,
         bytes32 messageHash,
-        bytes memory envelope
+        bytes memory payload
     ) internal view returns (bool) {
         try
             SHRINCSVerifier(SHRINCS_VERIFIER).verifyStateless(
                 abi.encodePacked(expectedCommitment),
                 messageHash,
-                envelope
+                payload
             )
         returns (bytes4 result) {
             return result == IERC7913SignatureVerifier.verify.selector;
@@ -1302,7 +1294,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
         bytes32 expectedCommitment,
         SHRINCS.PublicKey calldata currentPublicKey,
         SHRINCS.RotationContext memory ctx,
-        SPHINCSPlusC.Signature calldata recoverySignature,
+        bytes calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
     ) internal view returns (bytes32) {
         // The replacement bundle's four fields have fixed widths.
@@ -1341,13 +1333,15 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             ctx,
             nextKey
         );
+        (bool encoded, bytes memory payload) = Codec.tryEncodeStatelessPayload(
+            currentPublicKey,
+            recoverySignature
+        );
         if (
-            !_tryVerifyStateless(
-                expectedCommitment,
-                messageHash,
-                abi.encode(currentPublicKey, recoverySignature)
-            )
-        ) return bytes32(0);
+            !encoded ||
+            !_tryVerifyStateless(expectedCommitment, messageHash, payload)
+        )
+            return bytes32(0);
 
         return computedNext;
     }
@@ -1441,21 +1435,20 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
     }
 
     /// @dev Shared core for `isValidSignature` and `debugIsValidSignature`. Order: length →
-    ///      ECDSA (owner) → stateless SHRINCS (dedicated verifier key).
+    ///      envelope header → ECDSA (owner) → stateless SHRINCS (dedicated verifier key).
+    ///      Never reverts on any `signature` bytes: the envelope has no offsets, the decoder
+    ///      reads only inside `signature`, and the verifier returns its failure value for a
+    ///      malformed payload (INVARIANTS §19).
     function _checkErc1271Signature(
         bytes32 hash,
         bytes calldata signature
     ) internal view returns (Erc1271ValidationResult) {
-        if (signature.length < 0x60)
+        if (signature.length != Codec.ERC1271_TOTAL_LEN)
             return Erc1271ValidationResult.BadSignatureLength;
-        // Non-reverting decode: a malformed blob (out-of-bounds ABI tail offsets) must return the
-        // ERC-1271 failure magic, never revert — a revert here is a DoS on the staticcalling
-        // relying contract. The reverting decoders remain on the transaction paths.
         (
             bool ok,
-            SHRINCS.PublicKey calldata pk,
-            SPHINCSPlusC.Signature calldata sig,
-            bytes calldata ecdsaSig
+            bytes calldata ecdsaSig,
+            bytes calldata payload
         ) = Codec.tryDecodeErc1271Signature(signature);
         if (!ok) return Erc1271ValidationResult.MalformedErc1271Payload;
 
@@ -1484,22 +1477,10 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
             Codec.ACTION_ERC1271,
             hash
         );
-        // The codec bounds-checks only the blob's TOP-LEVEL tail offsets; the nested
-        // PublicKey/Signature tail offsets are first touched by the `abi.encode(pk, sig)`
-        // re-encode, where Solidity's calldata accessors REVERT on an overrun. That revert
-        // would surface in THIS frame, outside `_tryVerifyStateless`'s try/catch, and the
-        // owner ECDSA half of a blob is reusable, so anyone holding a previously shared blob
-        // could trigger it. The re-encode therefore runs behind a self-staticcall so the
-        // overrun maps to the failure magic like every other rejection (INVARIANTS §19).
-        bytes memory envelope;
-        try this.erc1271Envelope(signature) returns (bytes memory encoded) {
-            envelope = encoded;
-        } catch {
-            return Erc1271ValidationResult.MalformedErc1271Payload;
-        }
 
         // Stateless verification via the pinned verifier: canonical stateless action hash
-        // computed locally; bundle checks + FORS-C/hypertree crypto delegated
+        // computed locally; bundle checks + FORS-C/hypertree crypto delegated over the
+        // envelope's payload, forwarded unchanged.
         if (
             !_tryVerifyStateless(
                 $.erc1271PublicKeyCommitment,
@@ -1507,7 +1488,7 @@ contract ShrincsWallet is IShrincsWallet, ERC4337, Initializable {
                     $.erc1271PublicKeyCommitment,
                     ctx
                 ),
-                envelope
+                payload
             )
         ) return Erc1271ValidationResult.InvalidShrincsSignature;
 

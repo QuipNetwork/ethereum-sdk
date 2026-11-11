@@ -2,11 +2,11 @@
 pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {FORSMinusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/FORSMinusC.sol";
-import {Hypertree} from "@quip.network/hashsigs-solidity-0.2.0/contracts/Hypertree.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
-import {UXMSS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/UXMSS.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
+import {FORSMinusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/FORSMinusC.sol";
+import {Hypertree} from "@quip.network/hashsigs-solidity-0.4.0/contracts/Hypertree.sol";
+import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
+import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodecHarness} from "../harness/ShrincsWalletCodecHarness.sol";

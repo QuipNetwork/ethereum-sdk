@@ -5,7 +5,7 @@ import {Test} from "forge-std-1.14.0/Test.sol";
 import {WOTSKeyFixtures} from "../../WOTSKeyFixtures.sol";
 import {WalletFactory} from "../../../../contracts/WalletFactory.sol";
 import {CREATE3} from "solady-0.1.26/src/utils/CREATE3.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.4.0/contracts/WOTSPlus.sol";
 
 contract WalletFactoryDeployHandler is Test, WOTSKeyFixtures {
     struct DeployRecord {

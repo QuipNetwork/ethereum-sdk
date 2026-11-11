@@ -3,8 +3,8 @@ pragma solidity ^0.8.33;
 
 import {console} from "forge-std-1.14.0/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Proxy.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS256sKeccak.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
+import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS256sKeccak.sol";
 import {ShrincsPaymaster} from "../contracts/ShrincsPaymaster.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";

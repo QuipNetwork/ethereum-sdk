@@ -5,7 +5,7 @@ import {WOTSPlusCodec as Codec} from "../../../../contracts/deprecated/wots/WOTS
 
 import {WOTSPlusCodecTest} from "../WOTSPlusCodec.t.sol";
 import {WOTSPlusCodecHarness} from "../../harness/WOTSPlusCodecHarness.sol";
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.4.0/contracts/WOTSPlus.sol";
 
 contract WOTSPlusCodec__decodeResetKeyset is WOTSPlusCodecTest {
     function test_exposed_decodeResetKeyset_decodesTxSignTxTarget() public view {

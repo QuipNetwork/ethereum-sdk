@@ -6,7 +6,7 @@ import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 import {ShrincsWalletHarness} from "../../../harness/ShrincsWalletHarness.sol";
 import {IShrincsWallet} from "../../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
 
 bytes4 constant SEL_RENOUNCE = bytes4(keccak256("renounceOwnership()"));
 bytes4 constant SEL_TRANSFER = bytes4(keccak256("transferOwnership(address)"));

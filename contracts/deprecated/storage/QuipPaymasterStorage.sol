@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.2.0/contracts/WOTSPlus.sol";
+import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.4.0/contracts/WOTSPlus.sol";
 
 /// @custom:deprecated Sunset with the WOTS+ wallet family — superseded by ShrincsPaymaster's
 ///                    storage (contracts/shrincs/). Kept fully functional for existing deployments.

@@ -16,20 +16,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
-import {SHRINCS} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.2.0/contracts/SPHINCSPlusC.sol";
+import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
+import {StatelessLayout} from "@quip.network/hashsigs-solidity-0.4.0/contracts/StatelessLayout.sol";
 import {EfficientHashLib} from "solady-0.1.26/src/utils/EfficientHashLib.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 
 /// @title ShrincsWalletCodec
-/// @notice Decoders and canonical-context builders for `ShrincsWallet`.
+/// @notice Decoders, stateless-payload builder and canonical-context builders for
+///         `ShrincsWallet`.
 /// @dev Owner-path wallet functions take SHRINCS structs as direct `calldata` parameters
 ///      (Solidity supplies bounds-checked calldata refs), so they do NOT route through this
 ///      codec for decoding. This codec only decodes the operations whose ABI is fixed by an
 ///      external standard and therefore arrives as a `bytes` blob: `initialize` (factory ABI),
 ///      ERC-4337 `userOp.signature`, UUPS `upgradeToAndCall` `data`, and ERC-1271 `signature`.
 ///      SHRINCS verify functions require `calldata` struct args and Solidity cannot
-///      `abi.decode` into `calldata`, so each blob decoder hands back calldata struct pointers
-///      using the standard ABI head/tail offset layout (`ptr = blob.offset + offset_word`).
+///      `abi.decode` into `calldata`, so each ABI blob decoder hands back calldata struct
+///      pointers using the standard ABI head/tail offset layout
+///      (`ptr = blob.offset + offset_word`). The ERC-1271 `signature` is the exception: it is a
+///      fixed-layout envelope with no offsets ("ERC-1271 ENVELOPE LAYOUT" below).
 library ShrincsWalletCodec {
     /// @notice Thrown when a `bytes` blob is too short to contain its fixed ABI head.
     error MalformedPayload(uint256 expectedMin, uint256 actual);
@@ -76,13 +80,50 @@ library ShrincsWalletCodec {
     bytes32 internal constant ROTATION_DOMAIN_TRANSFER_OWNERSHIP =
         keccak256("quip.shrincs.rotation.transferOwnership");
 
+    /// @dev Domain separator committed inside the full-width V1 identity hash
+    ///      (`v1Commitment`).
+    bytes32 internal constant V1_IDENTITY_DOMAIN =
+        keccak256("QUIP_SHRINCS_IDENTITY_V1");
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                 ERC-1271 ENVELOPE LAYOUT               */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    // Fixed-layout ERC-1271 `signature`. No offsets, no padding; every size
+    // derives from the compiled profile.
+    //
+    //   [0, 4)                     MAGIC       "QPCS"
+    //   [4, 5)                     VERSION     StatelessLayout.ENCODING_VERSION
+    //   [5, 37)                    PROFILE_ID  SHRINCSParams.PROFILE_ID
+    //   [37, 102)                  ecdsaSig    owner ECDSA r ‖ s ‖ v
+    //   [102, TOTAL_LEN)           payload     verifier stateless payload PK ‖ PQ
+    //                                          (StatelessLayout.PAYLOAD_LEN bytes)
+    //
+    // `payload` is forwarded unchanged to the verifier's `verifyStateless`.
+    // Decoded by `tryDecodeErc1271Signature` ("ERC-1271 ENVELOPE" below).
+
+    /// @dev Envelope magic, ASCII "QPCS". Wallet-owned: it marks this envelope's own framing
+    ///      (header, ECDSA slot), so a wallet-side layout change changes the magic.
+    bytes4 internal constant ERC1271_MAGIC = 0x51504353;
+    /// @dev Envelope encoding version: the upstream fixed-layout version of the `PK ‖ PQ`
+    ///      payload, which `StatelessLayout` says the wallet envelope header carries.
+    uint8 internal constant ERC1271_VERSION = StatelessLayout.ENCODING_VERSION;
+
+    uint256 internal constant ERC1271_VERSION_OFF = 4; // bytes4 MAGIC
+    uint256 internal constant ERC1271_PROFILE_OFF = ERC1271_VERSION_OFF + 1; // uint8 VERSION
+    /// @dev MAGIC ‖ VERSION ‖ PROFILE_ID.
+    uint256 internal constant ERC1271_HEADER_LEN = ERC1271_PROFILE_OFF + 32; // bytes32 PROFILE_ID
+    uint256 internal constant ERC1271_ECDSA_OFF = ERC1271_HEADER_LEN;
+    /// @dev Owner ECDSA `r ‖ s ‖ v`. No upstream or Solady constant exists for this width.
+    uint256 internal constant ERC1271_ECDSA_LEN = 65;
+    uint256 internal constant ERC1271_PAYLOAD_OFF =
+        ERC1271_ECDSA_OFF + ERC1271_ECDSA_LEN;
+    uint256 internal constant ERC1271_TOTAL_LEN =
+        ERC1271_PAYLOAD_OFF + StatelessLayout.PAYLOAD_LEN;
+
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                    IDENTITY (V1)                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
-
-    /// @dev Domain separator committed inside the full-width V1 identity hash.
-    bytes32 internal constant V1_IDENTITY_DOMAIN =
-        keccak256("QUIP_SHRINCS_IDENTITY_V1");
 
     /// @dev Full-width identity commitment binding both key commitments and the intended
     ///      owner. The version domain lives inside the hash preimage so all 256 output bits
@@ -347,8 +388,10 @@ library ShrincsWalletCodec {
 
     /// @dev Decodes the SHRINCS `verifyUpgrade` probe vector (the frozen `IWallet` seam),
     ///      the ABI encoding of `(PublicKey bundle, SHRINCS.Signature statefulSig,
-    ///      SPHINCSPlusC.Signature statelessSig)`. The signed digest is not carried — it is
-    ///      recomputed on-chain via `probeDigest(newImplementation)`.
+    ///      bytes statelessSig)`, where `statelessSig` is the fixed-layout PQ section
+    ///      (`StatelessLayout.PQ_LEN` bytes; its length is checked by the verifier, not here).
+    ///      The signed digest is not carried — it is recomputed on-chain via
+    ///      `probeDigest(newImplementation)`.
     function decodeProbePayload(
         bytes calldata payload
     )
@@ -357,7 +400,7 @@ library ShrincsWalletCodec {
         returns (
             SHRINCS.PublicKey calldata bundle,
             SHRINCS.Signature calldata statefulSig,
-            SPHINCSPlusC.Signature calldata statelessSig
+            bytes calldata statelessSig
         )
     {
         // Head is three 32-byte words (all tail offsets).
@@ -390,76 +433,97 @@ library ShrincsWalletCodec {
             statefulSig := add(o, sfo)
             let slo := calldataload(add(o, 0x40))
             reqTail(slo, len, malformed)
-            statelessSig := add(o, slo)
+            let slLen := calldataload(add(o, slo))
+            // The statelessSig bytes must fit: slo + 0x20 + slLen <= len. `slo <= len - 0x20`
+            // was just proven, so `sub(sub(len, 0x20), slo)` cannot underflow.
+            if gt(slLen, sub(sub(len, 0x20), slo)) {
+                mstore(0x00, malformed)
+                mstore(0x04, add(add(slo, 0x20), slLen))
+                mstore(0x24, len)
+                revert(0x00, 0x44)
+            }
+            statelessSig.offset := add(o, add(slo, 0x20))
+            statelessSig.length := slLen
         }
     }
 
     /// @dev The digest a SHRINCS probe vector signs: the upgrade target address as a single
     ///      hashed word — binds the probe to `verifyUpgrade`'s `newImplementation`.
-    function probeDigest(address newImplementation) internal pure returns (bytes32) {
+    function probeDigest(
+        address newImplementation
+    ) internal pure returns (bytes32) {
         return EfficientHashLib.hash(uint256(uint160(newImplementation)));
     }
 
-    /// @dev Decodes the ERC-1271 `signature` blob, the ABI encoding of
-    ///      `(PublicKey publicKey, SPHINCSPlusC.Signature signature, bytes ecdsaSig)`.
-    /// @dev Non-reverting decoder for the ERC-1271 staticcall path, where a revert is a denial of
-    ///      service on the relying contract that staticcalls `isValidSignature`. Applies the SAME
-    ///      top-level ABI tail-offset bounds checks as the reverting decoders, but signals a
-    ///      malformed payload with `ok = false` instead of reverting `MalformedPayload`. On failure
-    ///      the calldata references are pinned to a safe zero-length slice at `sig.offset`; the
-    ///      caller returns on `!ok` and never dereferences them.
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   STATELESS PAYLOAD                    */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Builds the verifier's stateless payload `PK ‖ PQ` (`StatelessLayout`) from an ABI
+    ///      `PublicKey` and the fixed-layout PQ section, for the paths that also need the key
+    ///      as a struct (rotation message hash, stateful half of the probe).
+    ///      `PK = statefulPublicKey ‖ publicKeyCommitment ‖ pkSeed ‖ hypertreeRoot`.
     ///
-    ///      Nested `PublicKey`/`Signature` tail bounds stay out of scope here — those fields are
-    ///      read downstream through Solidity calldata accessors, which bounds-check calldatasize
-    ///      and revert (a bare revert, not `MalformedPayload`). The owner ECDSA gate does NOT
-    ///      make that read unreachable: the ECDSA half of a blob is reusable, so anyone holding a
-    ///      previously shared blob can corrupt a nested offset. `_checkErc1271Signature`
-    ///      therefore performs the nested reads behind a self-staticcall and maps the revert to
-    ///      `MalformedErc1271Payload`.
+    ///      `ok = false` when a key field has the wrong width. The verifier only checks the
+    ///      payload's TOTAL length, so without this check mis-sized fields that sum to the right
+    ///      width would be re-split at the fixed offsets; the verifier's commitment recompute
+    ///      would still reject that, but the wallet does not rely on it. `pq`'s length is left
+    ///      to the verifier (a wrong length returns its failure value).
+    function tryEncodeStatelessPayload(
+        SHRINCS.PublicKey calldata publicKey,
+        bytes calldata pq
+    ) internal pure returns (bool ok, bytes memory payload) {
+        if (
+            publicKey.statefulPublicKey.length !=
+            SHRINCSParams.STATEFUL_PUBLIC_KEY_BYTES ||
+            publicKey.publicKeyCommitment.length != 32 ||
+            publicKey.pkSeed.length != 32 ||
+            publicKey.hypertreeRoot.length != 32
+        ) return (false, payload);
+        return (
+            true,
+            abi.encodePacked(
+                publicKey.statefulPublicKey,
+                publicKey.publicKeyCommitment,
+                publicKey.pkSeed,
+                publicKey.hypertreeRoot,
+                pq
+            )
+        );
+    }
+
+    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /*                   ERC-1271 ENVELOPE                    */
+    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+    /// @dev Non-reverting decoder for the envelope laid out in "ERC-1271 ENVELOPE LAYOUT".
+    ///      Non-reverting decoder for the ERC-1271 envelope, the staticcall path where a revert
+    ///      is a denial of service on the relying contract. `ok` holds iff `sig` has the exact
+    ///      envelope length and carries this build's magic, version and profile id. It never
+    ///      inspects the payload (the verifier does) and reads only inside `sig`. On failure
+    ///      both slices are empty.
+    /// @return ok Whether `sig` is an envelope for this build.
+    /// @return ecdsaSig The owner ECDSA half, `sig[ECDSA_OFF:PAYLOAD_OFF]`.
+    /// @return payload The verifier stateless payload, `sig[PAYLOAD_OFF:]`.
     function tryDecodeErc1271Signature(
         bytes calldata sig
     )
         internal
         pure
-        returns (
-            bool ok,
-            SHRINCS.PublicKey calldata publicKey,
-            SPHINCSPlusC.Signature calldata signature,
-            bytes calldata ecdsaSig
-        )
+        returns (bool ok, bytes calldata ecdsaSig, bytes calldata payload)
     {
-        assembly {
-            let o := sig.offset
-            let len := sig.length
-            // Safe default: a zero-length slice at the head, overwritten only when every check
-            // passes. Until then the caller must not (and does not) dereference these.
-            publicKey := o
-            signature := o
-            ecdsaSig.offset := o
-            ecdsaSig.length := 0
-            // `tail` holds iff the head word a tail offset points at is inside the slice. Reached
-            // only under `len >= 0x60`, so `sub(len, 0x20)` never underflows.
-            function tail(off, l) -> good {
-                good := iszero(gt(off, sub(l, 0x20)))
-            }
-            if iszero(lt(len, 0x60)) {
-                let pkOff := calldataload(o)
-                let sigOff := calldataload(add(o, 0x20))
-                let eo := calldataload(add(o, 0x40))
-                if and(tail(pkOff, len), and(tail(sigOff, len), tail(eo, len))) {
-                    let ecLen := calldataload(add(o, eo))
-                    // The ecdsaSig bytes must fit: eo + 0x20 + ecLen <= len. `eo <= len - 0x20`
-                    // was just proven, so `sub(sub(len, 0x20), eo)` cannot underflow.
-                    if iszero(gt(ecLen, sub(sub(len, 0x20), eo))) {
-                        publicKey := add(o, pkOff)
-                        signature := add(o, sigOff)
-                        ecdsaSig.offset := add(o, add(eo, 0x20))
-                        ecdsaSig.length := ecLen
-                        ok := 1
-                    }
-                }
-            }
-        }
+        if (
+            sig.length != ERC1271_TOTAL_LEN ||
+            bytes4(sig[:ERC1271_VERSION_OFF]) != ERC1271_MAGIC ||
+            uint8(sig[ERC1271_VERSION_OFF]) != ERC1271_VERSION ||
+            bytes32(sig[ERC1271_PROFILE_OFF:ERC1271_HEADER_LEN]) !=
+            SHRINCSParams.PROFILE_ID
+        ) return (false, sig[0:0], sig[0:0]);
+        return (
+            true,
+            sig[ERC1271_ECDSA_OFF:ERC1271_PAYLOAD_OFF],
+            sig[ERC1271_PAYLOAD_OFF:]
+        );
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/

@@ -1,2 +1,5 @@
 # Archived V0 source: kept byte-identical to tag v0.1.7, never reformatted.
 contracts/deprecated/v0/
+
+# Generated: vendored Safe v1.5.0 runtime bytecode (test/mocks/safe/Safe150Bytecode.sol header).
+test/mocks/safe/Safe150Bytecode.sol
