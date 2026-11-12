@@ -85,6 +85,8 @@ import {
   decodeInitPayload,
   domainSeparator,
   encodeErc1271Signature,
+  encodeLegacyErc1271Signature,
+  encodeStatelessSignature,
   encodeProbeVector,
   encodeUpgradeData,
   executePayloadHash,
@@ -112,6 +114,7 @@ import {
   type RotationTarget,
   type ShrincsPublicKey,
   type StatefulSignature,
+  type StatelessSignature,
 } from "./types.js";
 import {
   type WalletVersionDescriptor,
@@ -579,6 +582,20 @@ export class ShrincsWalletClient {
       })
     )) as number;
     return Number(result) as Erc1271ValidationResult;
+  }
+
+  /// The ERC-1271 envelope version this wallet accepts (`erc1271Version()`).
+  /// Implementations that predate the fixed-layout envelope lack the function,
+  /// so a revert here means "ABI-encoded ERC-1271 signatures only".
+  async getErc1271Version(): Promise<number> {
+    const version = (await withDecodedError(
+      this.publicClient.readContract({
+        address: this.walletAddress,
+        abi: shrincsWalletAbi,
+        functionName: "erc1271Version",
+      })
+    )) as number;
+    return Number(version);
   }
 
   /// The EIP-712 typed-data digest the ERC-1271 ECDSA half must sign. Read from
@@ -1361,7 +1378,10 @@ export class ShrincsWalletClient {
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
     });
-    const recoverySignature = keypair.signFullRotation(rctx, rotationTarget);
+    const recoverySignature = this.encodeRecoverySignature(
+      keypair.signFullRotation(rctx, rotationTarget),
+      version
+    );
 
     const legacyArgs = [
       publicKeyToAbi(keypair.publicKey),
@@ -1377,7 +1397,8 @@ export class ShrincsWalletClient {
       "transferOwnership",
       [...legacyArgs, params.keyAcceptance, params.ownerAcceptance],
       0n,
-      opts
+      opts,
+      version.abi
     );
   }
 
@@ -1470,6 +1491,7 @@ export class ShrincsWalletClient {
     opts: TxOptions = {}
   ): Promise<TransactionReceipt> {
     await this.assertProviderBinding();
+    const version = await this.resolveVersion();
     const state = await this.getWalletState();
     const keypair = this.recoverSigningKey(
       state.maxSignatures,
@@ -1485,13 +1507,28 @@ export class ShrincsWalletClient {
       nonce: state.actionNonce,
       keyVersion: state.keyVersion,
     });
-    const recoverySignature = keypair.signFullRotation(rctx, rotationTarget);
+    const recoverySignature = this.encodeRecoverySignature(
+      keypair.signFullRotation(rctx, rotationTarget),
+      version
+    );
     return this.submit(
       "recoverWallet",
       [publicKeyToAbi(keypair.publicKey), recoverySignature, publicKeyToAbi(params.nextKey)],
       0n,
-      opts
+      opts,
+      version.abi
     );
+  }
+
+  /// The `recoverySignature` argument in the shape this wallet generation
+  /// takes: the fixed-layout PQ bytes, or the ABI struct on beta.2.
+  private encodeRecoverySignature(
+    signature: StatelessSignature,
+    version: WalletVersionDescriptor
+  ): StatelessSignature | Hex {
+    return version.quirks.statelessSignatureEncoding === "fixedLayout"
+      ? encodeStatelessSignature(signature)
+      : signature;
   }
 
   /*  ── ERC-1271 signature assembly ──────────────────────────────────────  */
@@ -1552,7 +1589,12 @@ export class ShrincsWalletClient {
       quipSignedHashTypedData(params.hash, this.chainId, this.walletAddress)
     );
 
-    return encodeErc1271Signature({
+    const version = await this.resolveVersion();
+    const encode =
+      version.quirks.statelessSignatureEncoding === "fixedLayout"
+        ? encodeErc1271Signature
+        : encodeLegacyErc1271Signature;
+    return encode({
       publicKey: params.erc1271KeyPair.publicKey,
       signature: statelessSignature,
       ecdsaSig,

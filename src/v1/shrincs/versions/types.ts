@@ -21,7 +21,7 @@ import type { Abi, Address } from "viem";
 /// the surface THIS SDK build was compiled against (the working-tree contract);
 /// every other id names a FROZEN deployed generation the SDK must keep operating
 /// and upgrading, whose specifics live under `versions/<id>/`.
-export type WalletVersionId = "v1.0.1-beta.2" | "latest";
+export type WalletVersionId = "v1.0.1-beta.2" | "v1.0.1-beta.3" | "latest";
 
 /// Per-generation quirks that change how the SDK must talk to a wallet. Kept as
 /// an explicit capability record (not a version-number comparison) so each call
@@ -52,6 +52,12 @@ export interface WalletVersionQuirks {
   /// so a mistyped owner or an unusable bundle reverts instead of stranding
   /// the wallet. Selects the call shape the SDK encodes.
   readonly handoverAcceptance: "none" | "hybrid";
+  /// How the wallet takes a STATELESS signature. beta.2 takes the ABI struct
+  /// (`SPHINCSPlusC.Signature`; the ERC-1271 signature is an ABI blob). Later
+  /// generations run against the hashsigs 0.4.0 verifier and take the fixed
+  /// layout: `bytes` PQ for `recoverWallet` / `transferOwnership`, and the
+  /// fixed-layout envelope for ERC-1271. Selects the encoder the SDK uses.
+  readonly statelessSignatureEncoding: "abiStruct" | "fixedLayout";
 }
 
 /// Everything the SDK needs to operate a wallet of a given generation: its

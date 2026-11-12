@@ -30,8 +30,6 @@
 // Requires `API_URL_BASE` (loaded from .env). Hard-fails if unset — this suite
 // must run, never silently skip. Invoked by `npm run smoke:fork`.
 import "dotenv/config";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { describe, it, expect, beforeAll, afterAll } from "@jest/globals";
 import {
@@ -58,7 +56,7 @@ import {
   encodeInitPayload,
   publicKeyToAbi,
 } from "../shrincsCodec.js";
-import { HASH_SUITE_KECCAK_256 } from "../constants.js";
+import { ERC1271_SIGNATURE_BYTES, HASH_SUITE_KECCAK_256 } from "../constants.js";
 import {
   SHRINCS_WALLET_BETA2_IMPLEMENTATION,
   getShrincsWalletAddress,
@@ -68,6 +66,7 @@ import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
 import { ShrincsWalletClient } from "../shrincsWalletClient.js";
 import { shrincsWalletBeta2Abi } from "../versions/v1_0_1_beta2/abi.js";
 import { resolveWalletVersion } from "../versions/index.js";
+import { deployAndVetCurrentImplementation } from "./utils/shrincsAnvilFixture.js";
 
 // ── Pinned fork constants (mirror test/fork/ForkUpgradeFromDeployed.t.sol) ──
 const FORK_BLOCK_NUMBER = 50_754_000n;
@@ -82,18 +81,6 @@ const ANVIL_PRIV_KEY =
 
 const HASH_SUITE = HASH_SUITE_KECCAK_256;
 const MAX_SIGS = 4;
-
-interface ForgeArtifact {
-  abi: unknown[];
-  bytecode: { object: Hex };
-  deployedBytecode: { object: Hex };
-}
-
-function readForgeArtifact(relativePath: string): ForgeArtifact {
-  return JSON.parse(
-    readFileSync(join(process.cwd(), relativePath), "utf8")
-  ) as ForgeArtifact;
-}
 
 function requireForkUrl(): string {
   const url = process.env.API_URL_BASE;
@@ -279,50 +266,53 @@ describe("SDK fork smoke: operate + upgrade a live V1.0.1-beta.2 wallet", () => 
     expect(after.statefulLeavesUsed).toBe(before.statefulLeavesUsed + 1);
   }, 120_000);
 
-  it("3. UPGRADES the beta.2 wallet to this tree's implementation via the SDK, WITH migration", async () => {
-    // Deploy the current implementation, pinned to the same live verifier.
-    const walletArtifact = readForgeArtifact(
-      "out/ShrincsWallet.sol/ShrincsWallet.json"
-    );
-    const newImplHash = await walletClient.deployContract({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      abi: walletArtifact.abi as any,
-      bytecode: walletArtifact.bytecode.object,
-      args: [FACTORY, shrincsVerifier],
-      account: owner,
-      chain: base,
+  // Backwards compatibility: the two STATELESS paths against the frozen beta.2
+  // bytecode. beta.2 takes the stateless signature as an ABI struct and the
+  // ERC-1271 signature as an ABI blob; the SDK must keep producing those for
+  // this generation while later generations get the fixed layout.
+  it("2b. signs an ERC-1271 signature the beta.2 wallet accepts (legacy ABI encoding)", async () => {
+    const hash = ("0x" + "22".repeat(32)) as Hex;
+    const blob = await client.signErc1271({
+      hash,
+      erc1271KeyPair: signer.recoverKeyPair(erc1271Index, { maxSignatures: MAX_SIGS }),
+      owner,
     });
-    const newImplReceipt = await publicClient.waitForTransactionReceipt({
-      hash: newImplHash,
-    });
-    const newImplementation = getAddress(
-      newImplReceipt.contractAddress as Address
-    );
-    // The new implementation is NOT a pinned `latest` address, so the resolver
-    // treats it as the current (latest) surface.
-    expect(resolveWalletVersion(newImplementation).id).toBe("latest");
+    expect(blob.length).toBeGreaterThan(2 + 2 * ERC1271_SIGNATURE_BYTES);
+    expect(await client.isValidSignature(hash, blob)).toBe(true);
+  }, 120_000);
 
-    // Vet it as the LIVE factory owner (impersonated on the fork).
-    const factoryOwner = (await publicClient.readContract({
-      address: FACTORY,
-      abi: walletFactoryAbi,
-      functionName: "owner",
-    })) as Address;
-    await testClient.impersonateAccount({ address: factoryOwner });
-    await testClient.setBalance({
-      address: factoryOwner,
-      value: parseEther("10"),
-    });
-    const vetHash = await walletClient.writeContract({
+  it("2c. recoverWallet works on the beta.2 wallet (stateless signature as an ABI struct)", async () => {
+    // Rolled back afterwards so the upgrade below still starts from the original key.
+    const snapshot = await testClient.snapshot();
+    try {
+      const nextKey = signer.recoverKeyPair(derivationIndex + 100, {
+        maxSignatures: MAX_SIGS,
+      });
+      const receipt = await client.recoverWallet({ nextKey: nextKey.publicKey });
+      expect(receipt.status).toBe("success");
+      expect(
+        (await client.getWalletState()).shrincsPublicKeyCommitment.toLowerCase()
+      ).toBe(commitmentOf(nextKey).toLowerCase());
+    } finally {
+      await testClient.revert({ id: snapshot });
+    }
+  }, 120_000);
+
+  it("3. UPGRADES the beta.2 wallet to this tree's implementation via the SDK, WITH migration", async () => {
+    // Deploy this tree's implementation (against a locally deployed hashsigs
+    // 0.4.0 verifier) and vet it as the live factory owner.
+    const newImplementation = await deployAndVetCurrentImplementation({
+      publicClient,
+      walletClient,
+      testClient,
+      deployer: owner,
       chain: base,
-      address: FACTORY,
-      abi: walletFactoryAbi,
-      functionName: "vetImplementation",
-      args: [newImplementation],
-      account: factoryOwner,
+      factory: FACTORY,
     });
-    await publicClient.waitForTransactionReceipt({ hash: vetHash });
-    await testClient.stopImpersonatingAccount({ address: factoryOwner });
+    // The new implementation is NOT a pinned address, so the resolver treats it
+    // as the current (latest) surface.
+    expect(resolveWalletVersion(newImplementation).id).toBe("latest");
+    expect(shrincsVerifier).toBeDefined();
 
     // Fresh key material for the migrating upgrade (new impl's `migrate`
     // requires strictly fresh trees), encoded in the NEW init format.

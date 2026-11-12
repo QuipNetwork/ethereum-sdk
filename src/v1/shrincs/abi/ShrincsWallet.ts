@@ -198,22 +198,16 @@ export const shrincsWalletAbi = [
   },
   {
     "type": "function",
-    "name": "erc1271Envelope",
-    "inputs": [
-      {
-        "name": "signature",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
+    "name": "erc1271Version",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ],
-    "stateMutability": "view"
+    "stateMutability": "pure"
   },
   {
     "type": "function",
@@ -824,83 +818,8 @@ export const shrincsWalletAbi = [
       },
       {
         "name": "recoverySignature",
-        "type": "tuple",
-        "internalType": "struct SPHINCSPlusC.Signature",
-        "components": [
-          {
-            "name": "fors",
-            "type": "tuple",
-            "internalType": "struct FORSMinusC.ForsSignature",
-            "components": [
-              {
-                "name": "randomizer",
-                "type": "bytes",
-                "internalType": "bytes"
-              },
-              {
-                "name": "counter",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "entries",
-                "type": "tuple[]",
-                "internalType": "struct FORSMinusC.ForsEntry[]",
-                "components": [
-                  {
-                    "name": "secretLeaf",
-                    "type": "bytes",
-                    "internalType": "bytes"
-                  },
-                  {
-                    "name": "authPath",
-                    "type": "bytes[]",
-                    "internalType": "bytes[]"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "name": "hypertree",
-            "type": "tuple[]",
-            "internalType": "struct Hypertree.HypertreeLayerSignature[]",
-            "components": [
-              {
-                "name": "wotsCPkHash",
-                "type": "bytes",
-                "internalType": "bytes"
-              },
-              {
-                "name": "wotsCSignature",
-                "type": "tuple",
-                "internalType": "struct WOTSPlusC.WotsCSignature",
-                "components": [
-                  {
-                    "name": "randomizer",
-                    "type": "bytes",
-                    "internalType": "bytes"
-                  },
-                  {
-                    "name": "counter",
-                    "type": "uint32",
-                    "internalType": "uint32"
-                  },
-                  {
-                    "name": "chains",
-                    "type": "bytes[]",
-                    "internalType": "bytes[]"
-                  }
-                ]
-              },
-              {
-                "name": "authPath",
-                "type": "bytes[]",
-                "internalType": "bytes[]"
-              }
-            ]
-          }
-        ]
+        "type": "bytes",
+        "internalType": "bytes"
       },
       {
         "name": "nextKey",
@@ -1262,83 +1181,8 @@ export const shrincsWalletAbi = [
       },
       {
         "name": "recoverySignature",
-        "type": "tuple",
-        "internalType": "struct SPHINCSPlusC.Signature",
-        "components": [
-          {
-            "name": "fors",
-            "type": "tuple",
-            "internalType": "struct FORSMinusC.ForsSignature",
-            "components": [
-              {
-                "name": "randomizer",
-                "type": "bytes",
-                "internalType": "bytes"
-              },
-              {
-                "name": "counter",
-                "type": "uint32",
-                "internalType": "uint32"
-              },
-              {
-                "name": "entries",
-                "type": "tuple[]",
-                "internalType": "struct FORSMinusC.ForsEntry[]",
-                "components": [
-                  {
-                    "name": "secretLeaf",
-                    "type": "bytes",
-                    "internalType": "bytes"
-                  },
-                  {
-                    "name": "authPath",
-                    "type": "bytes[]",
-                    "internalType": "bytes[]"
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "name": "hypertree",
-            "type": "tuple[]",
-            "internalType": "struct Hypertree.HypertreeLayerSignature[]",
-            "components": [
-              {
-                "name": "wotsCPkHash",
-                "type": "bytes",
-                "internalType": "bytes"
-              },
-              {
-                "name": "wotsCSignature",
-                "type": "tuple",
-                "internalType": "struct WOTSPlusC.WotsCSignature",
-                "components": [
-                  {
-                    "name": "randomizer",
-                    "type": "bytes",
-                    "internalType": "bytes"
-                  },
-                  {
-                    "name": "counter",
-                    "type": "uint32",
-                    "internalType": "uint32"
-                  },
-                  {
-                    "name": "chains",
-                    "type": "bytes[]",
-                    "internalType": "bytes[]"
-                  }
-                ]
-              },
-              {
-                "name": "authPath",
-                "type": "bytes[]",
-                "internalType": "bytes[]"
-              }
-            ]
-          }
-        ]
+        "type": "bytes",
+        "internalType": "bytes"
       },
       {
         "name": "nextKey",

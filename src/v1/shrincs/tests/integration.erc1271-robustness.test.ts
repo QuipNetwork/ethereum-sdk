@@ -3,15 +3,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Pins the ERC-1271 never-revert property of `ShrincsWallet.isValidSignature`
-// against adversarial input. `Codec.tryDecodeErc1271Signature` returns
-// `ok = false` on malformation, so the wallet returns the ERC-1271 failure
-// magic instead of reverting.
+// against adversarial input, on a real deployment. The signature is a
+// fixed-layout envelope, so the wallet's first check is its exact length; every
+// rejection returns the ERC-1271 failure magic instead of reverting.
 
-import { type Address, type Hex, keccak256, toHex } from "viem";
+import { type Address, type Hex, concat, keccak256, toHex } from "viem";
 
 import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
-import { encodeErc1271Signature } from "../shrincsCodec.js";
-import { type StatelessSignature } from "../types.js";
+import {
+  ERC1271_MAGIC,
+  ERC1271_SIGNATURE_BYTES,
+  ERC1271_VERSION,
+  SHRINCS_PROFILE_ID,
+  STATELESS_PAYLOAD_BYTES,
+} from "../constants.js";
+import { encodeLegacyErc1271Signature } from "../shrincsCodec.js";
 import {
   DEFAULT_ACCOUNT,
   createFreshShrincsWallet,
@@ -24,20 +30,18 @@ import {
 const PORT = 8561;
 const FAIL_MAGIC = "0xffffffff";
 
-// A structurally well-formed but semantically empty SHRINCS stateless signature
-// — valid ABI (proper offsets, zero-length dynamic fields), so decoding it never
-// reads out of bounds; it simply fails verification.
-const EMPTY_STATELESS: StatelessSignature = {
-  fors: { randomizer: "0x", counter: 0, entries: [] },
-  hypertree: [],
-};
+const filled = (n: number, byte: string): Hex => ("0x" + byte.repeat(n)) as Hex;
 
-const EMPTY_PUBLIC_KEY = {
-  statefulPublicKey: "0x" as Hex,
-  publicKeyCommitment: "0x" as Hex,
-  pkSeed: "0x" as Hex,
-  hypertreeRoot: "0x" as Hex,
-};
+/// A header-valid envelope around the given ECDSA half and an all-zero
+/// `PK ‖ PQ` payload: exact length, right magic / version / profile.
+const zeroPayloadEnvelope = (ecdsaSig: Hex): Hex =>
+  concat([
+    ERC1271_MAGIC,
+    toHex(ERC1271_VERSION, { size: 1 }),
+    SHRINCS_PROFILE_ID,
+    ecdsaSig,
+    filled(STATELESS_PAYLOAD_BYTES, "00"),
+  ]);
 
 let stack: ShrincsAnvilStack;
 let wallet: FreshShrincsWallet;
@@ -70,51 +74,26 @@ afterAll(async () => {
 describe("ShrincsWallet.isValidSignature never-revert robustness", () => {
   const hash = keccak256(toHex("erc1271 robustness probe message"));
 
-  // Adversary-reachable inputs: none of these carry a valid owner ECDSA sig, so
-  // they short-circuit at the ECDSA gate before reaching the SHRINCS decode.
+  // Adversary-reachable inputs: none carries a valid owner ECDSA half.
   const adversarial: Array<{ name: string; blob: Hex }> = [
-    { name: "empty (length 0 < 0x60)", blob: "0x" },
-    { name: "short (0x40 zero bytes < 0x60)", blob: ("0x" + "00".repeat(0x40)) as Hex },
-    { name: "0x60 zero bytes (all offsets -> 0)", blob: ("0x" + "00".repeat(0x60)) as Hex },
-    { name: "0x60 0xff bytes (offsets wrap huge)", blob: ("0x" + "ff".repeat(0x60)) as Hex },
-    { name: "0x100 0xff bytes", blob: ("0x" + "ff".repeat(0x100)) as Hex },
+    { name: "empty", blob: "0x" },
+    { name: "short junk", blob: filled(0x100, "ff") },
+    { name: "one byte short of the envelope", blob: filled(ERC1271_SIGNATURE_BYTES - 1, "00") },
+    { name: "one byte past the envelope", blob: filled(ERC1271_SIGNATURE_BYTES + 1, "00") },
+    { name: "exact length, all zero (wrong header)", blob: filled(ERC1271_SIGNATURE_BYTES, "00") },
+    { name: "exact length, all 0xff (wrong header)", blob: filled(ERC1271_SIGNATURE_BYTES, "ff") },
+    { name: "valid header, junk ECDSA, zero payload", blob: zeroPayloadEnvelope(filled(65, "11")) },
     {
-      name: "offsets point past calldatasize",
-      // three head words: pk/sig/ecdsa offsets all = 0xffff..ff (wrap to wild
-      // pointers); reads there return zero -> empty -> ECDSA fails -> fail magic.
-      blob: ("0x" + "ff".repeat(0x20).repeat(3)) as Hex,
-    },
-    {
-      name: "huge ecdsaSig length word",
-      // head: pk=0, sig=0, ecdsa-offset=0x60; at 0x60 a length word of all-ff so
-      // ecdsaSig.length is enormous -> tryRecover sees length != 64/65 -> zero.
-      blob: ("0x" +
-        "00".repeat(0x20) +
-        "00".repeat(0x20) +
-        toHex(0x60, { size: 32 }).slice(2) +
-        "ff".repeat(0x20)) as Hex,
-    },
-    {
-      name: "deterministic pseudo-random 0xc8 bytes",
-      blob: ("0x" +
-        Array.from({ length: 0xc8 }, (_, i) =>
-          ((i * 131 + 17) & 0xff).toString(16).padStart(2, "0")
-        ).join("")) as Hex,
-    },
-    {
-      name: "well-formed envelope, empty SHRINCS + no ECDSA",
-      blob: encodeErc1271Signature({
-        publicKey: EMPTY_PUBLIC_KEY,
-        signature: EMPTY_STATELESS,
-        ecdsaSig: "0x",
-      }),
-    },
-    {
-      name: "well-formed envelope, empty SHRINCS + junk 65-byte ECDSA",
-      blob: encodeErc1271Signature({
-        publicKey: EMPTY_PUBLIC_KEY,
-        signature: EMPTY_STATELESS,
-        ecdsaSig: ("0x" + "11".repeat(65)) as Hex,
+      name: "pre-0.4.0 ABI-encoded signature",
+      blob: encodeLegacyErc1271Signature({
+        publicKey: {
+          statefulPublicKey: "0x",
+          publicKeyCommitment: "0x",
+          pkSeed: "0x",
+          hypertreeRoot: "0x",
+        },
+        signature: { fors: { randomizer: "0x", counter: 0, entries: [] }, hypertree: [] },
+        ecdsaSig: filled(65, "11"),
       }),
     },
   ];
@@ -134,12 +113,10 @@ describe("ShrincsWallet.isValidSignature never-revert robustness", () => {
     ).resolves.toBe(false);
   });
 
-  // Owner-reachable path: a VALID owner ECDSA sig over the EIP-712 target passes
-  // the gate and reaches SHRINCS.verifyStateless. With a WELL-FORMED (empty)
-  // stateless blob the nested calldata reads stay in bounds, so verification
-  // fails cleanly rather than reverting — proving even past the gate, in-spec
-  // input is non-reverting.
-  it("does not revert when a valid owner ECDSA reaches the SHRINCS verify with an empty (well-formed) stateless sig", async () => {
+  // Owner-reachable path: a VALID owner ECDSA half passes the gate, so the
+  // all-zero payload reaches the external verifier, which must answer "invalid"
+  // rather than revert.
+  it("does not revert when a valid owner ECDSA reaches the verifier with a zero payload", async () => {
     const owner: Address = DEFAULT_ACCOUNT.address;
     expect(owner.toLowerCase()).toBe(
       (await wallet.client.getWalletState()).owner.toLowerCase()
@@ -148,11 +125,7 @@ describe("ShrincsWallet.isValidSignature never-revert robustness", () => {
     const target = await wallet.client.quipSignedHashEcdsaTarget(hash);
     const ecdsaSig = await DEFAULT_ACCOUNT.sign({ hash: target });
 
-    const blob = encodeErc1271Signature({
-      publicKey: EMPTY_PUBLIC_KEY,
-      signature: EMPTY_STATELESS,
-      ecdsaSig,
-    });
+    const blob = zeroPayloadEnvelope(ecdsaSig);
     const result = await callIsValidSignature(hash, blob);
     expect(result).not.toBe("THREW");
     expect(result).toBe(FAIL_MAGIC); // ECDSA ok, SHRINCS verify fails cleanly
@@ -174,6 +147,9 @@ describe("ShrincsWallet.isValidSignature never-revert robustness", () => {
       owner: DEFAULT_ACCOUNT,
     });
     expect(await wallet.client.isValidSignature(hash, blob)).toBe(true);
+    // The SDK built the fixed-layout envelope the wallet reports it accepts.
+    expect(blob.length).toBe(2 + 2 * ERC1271_SIGNATURE_BYTES);
+    expect(await wallet.client.getErc1271Version()).toBe(ERC1271_VERSION);
     // Real SHRINCS keygen + signErc1271 (SPHINCS+) runs well past jest's 5s
     // default; the other suites keep this cost in beforeAll, this test doesn't.
   }, 30_000);

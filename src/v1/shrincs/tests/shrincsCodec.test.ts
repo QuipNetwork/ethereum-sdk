@@ -2,20 +2,35 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { readFileSync } from "node:fs";
+
 import {
   type Address,
   type Hex,
   concat,
   decodeAbiParameters,
   keccak256,
+  size,
   sliceHex,
   toBytes,
   toHex,
 } from "viem";
 
-import { HASH_SUITE_KECCAK_256 } from "../constants.js";
+import {
+  ERC1271_ECDSA_BYTES,
+  ERC1271_MAGIC,
+  ERC1271_SIGNATURE_BYTES,
+  ERC1271_VERSION,
+  HASH_SUITE_KECCAK_256,
+  SHRINCS_PROFILE_ID,
+  STATELESS_PAYLOAD_BYTES,
+  STATELESS_PK_BYTES,
+  STATELESS_PQ_BYTES,
+} from "../constants.js";
+import { StatelessEncodingLengthError } from "../errors.js";
 import * as Codec from "../shrincsCodec.js";
 import { ShrincsSigner, type ShrincsKeyPair } from "../shrincsSigner.js";
+import type { ShrincsPublicKey, StatelessSignature } from "../types.js";
 
 const WALLET = "0x5B38Da6a701c568545dCfcB03FcB875f56beddC4" as Address;
 const CHAIN_ID = 31337;
@@ -347,6 +362,12 @@ describe("shrincsCodec", () => {
     });
     const word0 = sliceHex(vector, 0, 32);
     expect(BigInt(word0)).toBe(0x60n); // three tail offsets → PublicKey at 0x60
+    // The third field is `bytes`: the fixed-layout PQ section, not an ABI struct.
+    const [, , pq] = decodeAbiParameters(
+      [Codec.abiTuples.publicKey, Codec.abiTuples.statefulSignature, { type: "bytes" }],
+      vector
+    );
+    expect(pq).toBe(Codec.encodeStatelessSignature(statelessSig));
   });
 
   it("probeDigest mirrors the on-chain keccak256(uint256(uint160(impl)))", () => {
@@ -384,5 +405,100 @@ describe("shrincsCodec", () => {
     expect(decoded.publicKey).toEqual(mainKey.publicKey);
     expect(decoded.signature).toEqual(signature);
     expect(mainKey.verifyStatefulRaw(message, decoded.signature)).toBe(true);
+  });
+});
+
+// The stateless fixed layout is defined upstream (hashsigs-solidity 0.4.0
+// `StatelessLayout`). Upstream's golden vector file is the independent oracle:
+// it carries one signature both as the pre-0.4.0 ABI envelope and as the
+// fixed-layout payload, so re-encoding the first must reproduce the second.
+describe("shrincsCodec stateless fixed layout", () => {
+  const golden = JSON.parse(
+    readFileSync(
+      "dependencies/@quip.network-hashsigs-solidity-0.4.0/test/test_vectors/stateless-compact-256s.json",
+      "utf-8"
+    )
+  );
+  const [goldenPk, goldenSig] = decodeAbiParameters(
+    [Codec.abiTuples.publicKey, Codec.abiTuples.statelessSignature],
+    golden.vectors.valid.abiEnvelope as Hex
+  ) as unknown as [ShrincsPublicKey, StatelessSignature];
+  const ecdsaSig = ("0x" + "ec".repeat(ERC1271_ECDSA_BYTES)) as Hex;
+
+  it("mirrors upstream's sizes, version and profile id", () => {
+    expect(STATELESS_PK_BYTES).toBe(golden.pkLength);
+    expect(STATELESS_PQ_BYTES).toBe(golden.pqLength);
+    expect(STATELESS_PAYLOAD_BYTES).toBe(golden.payloadLength);
+    expect(ERC1271_VERSION).toBe(golden.compactEncodingVersion);
+    expect(SHRINCS_PROFILE_ID).toBe(keccak256(toBytes(golden.profile)));
+    expect(ERC1271_MAGIC).toBe(toHex("QPCS"));
+    expect(ERC1271_SIGNATURE_BYTES).toBe(29_358);
+  });
+
+  it("re-encodes upstream's golden signature byte-for-byte", () => {
+    expect(Codec.encodeStatelessPayload(goldenPk, goldenSig)).toBe(
+      golden.vectors.valid.compactPayload
+    );
+    expect(Codec.encodeStatelessSignature(goldenSig)).toBe(
+      sliceHex(golden.vectors.valid.compactPayload as Hex, STATELESS_PK_BYTES)
+    );
+  });
+
+  it("encodeErc1271Signature lays out MAGIC, VERSION, PROFILE_ID, ECDSA, PK and PQ", () => {
+    const envelope = Codec.encodeErc1271Signature({
+      publicKey: goldenPk,
+      signature: goldenSig,
+      ecdsaSig,
+    });
+    expect(size(envelope)).toBe(ERC1271_SIGNATURE_BYTES);
+    expect(sliceHex(envelope, 0, 4)).toBe(ERC1271_MAGIC);
+    expect(sliceHex(envelope, 4, 5)).toBe(toHex(ERC1271_VERSION, { size: 1 }));
+    expect(sliceHex(envelope, 5, 37)).toBe(SHRINCS_PROFILE_ID);
+    expect(sliceHex(envelope, 37, 102)).toBe(ecdsaSig);
+    expect(sliceHex(envelope, 102)).toBe(golden.vectors.valid.compactPayload);
+    // The same signature in the pre-0.4.0 ABI form is over three times larger.
+    expect(
+      size(
+        Codec.encodeLegacyErc1271Signature({
+          publicKey: goldenPk,
+          signature: goldenSig,
+          ecdsaSig,
+        })
+      )
+    ).toBe(91_840);
+  });
+
+  it.each([
+    {
+      name: "a missing hypertree layer",
+      run: () =>
+        Codec.encodeStatelessSignature({
+          ...goldenSig,
+          hypertree: goldenSig.hypertree.slice(1),
+        }),
+    },
+    {
+      name: "a mis-sized key field whose total width is unchanged",
+      run: () =>
+        Codec.encodeStatelessPayload(
+          {
+            ...goldenPk,
+            pkSeed: concat([goldenPk.pkSeed, "0x00"]),
+            hypertreeRoot: sliceHex(goldenPk.hypertreeRoot, 1),
+          },
+          goldenSig
+        ),
+    },
+    {
+      name: "a 64-byte ECDSA signature",
+      run: () =>
+        Codec.encodeErc1271Signature({
+          publicKey: goldenPk,
+          signature: goldenSig,
+          ecdsaSig: sliceHex(ecdsaSig, 1),
+        }),
+    },
+  ])("throws StatelessEncodingLengthError for $name", ({ run }) => {
+    expect(run).toThrow(StatelessEncodingLengthError);
   });
 });

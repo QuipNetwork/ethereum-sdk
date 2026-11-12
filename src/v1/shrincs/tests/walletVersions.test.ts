@@ -71,7 +71,10 @@ describe("wallet version resolution", () => {
       hasStatefulLeafBitmapWord: false,
       enforcesSpentTreeFreshnessOnMigrate: false,
       handoverAcceptance: "none",
+      statelessSignatureEncoding: "abiStruct",
     });
+    // The working-tree generation runs against the hashsigs 0.4.0 verifier.
+    expect(LATEST_WALLET_VERSION.quirks.statelessSignatureEncoding).toBe("fixedLayout");
   });
 
   it("beta.2 ABI is the frozen deployed surface, not the current one", () => {

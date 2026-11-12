@@ -81,6 +81,8 @@
     "@midl/react": "2.0.11",
     "@types/jest": "^29.5.14",
     "@viem/anvil": "^0.0.10",
+    "@walletconnect/sign-client": "^2.26.0",
+    "@walletconnect/utils": "^2.26.0",
     "bitcoinjs-lib": "^7.0.0",
     "copyfiles": "^2.4.1",
     "dotenv": "^16.4.7",

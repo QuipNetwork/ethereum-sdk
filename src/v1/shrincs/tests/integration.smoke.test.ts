@@ -1090,4 +1090,49 @@ describe("Shrincs SDK live-anvil smoke", () => {
     }
     expect(caught).not.toBeNull();
   }, 180_000);
+
+  // ── (m) recoverWallet: stateless recovery signature in the fixed layout ──
+  it("m. recoverWallet installs a fresh bundle authorized by the stateless recovery signature", async () => {
+    const { client } = await createFreshShrincsWallet(stack, 0xd0, {
+      maxSignatures: MAX_SIGS,
+    });
+    const before = await client.getWalletState();
+    const nextKeyPair = (await makeShrincsSigner(0xd1)).recoverKeyPair(0xd1, {
+      maxSignatures: MAX_SIGS,
+    });
+
+    const receipt = await client.recoverWallet({ nextKey: nextKeyPair.publicKey });
+    expect(receipt.status).toBe("success");
+
+    const after = await client.getWalletState();
+    expect(after.shrincsPublicKeyCommitment.toLowerCase()).toBe(
+      nextKeyPair.publicKeyCommitment.toLowerCase()
+    );
+    expect(after.keyVersion).toBe(before.keyVersion + 1n);
+    expect(getAddress(after.owner)).toBe(getAddress(before.owner));
+    // Recovery consumes no stateful leaf of either epoch.
+    expect(after.statefulLeavesUsed).toBe(0);
+  }, 180_000);
+
+  // ── (n) verifyUpgrade probe: both halves, stateless half in the fixed layout ──
+  it("n. the SDK's upgrade probe vector is accepted by the implementation it targets, and only that one", async () => {
+    const { client } = await createFreshShrincsWallet(stack, 0xe0, {
+      maxSignatures: MAX_SIGS,
+    });
+    const target = stack.shrincsWalletImpl;
+    const vector = client.buildUpgradeProbeVector(target);
+    await expect(client.verifyUpgrade(target, vector)).resolves.toBeUndefined();
+
+    // The probe digest binds the target address: the same vector presented for
+    // another implementation address fails verification.
+    const otherTarget = client.walletAddress;
+    await expect(
+      stack.publicClient.readContract({
+        address: target,
+        abi: shrincsWalletAbi,
+        functionName: "verifyUpgrade",
+        args: [otherTarget, vector],
+      })
+    ).rejects.toThrow();
+  }, 180_000);
 });

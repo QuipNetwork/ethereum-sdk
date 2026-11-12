@@ -96,6 +96,11 @@ const SHRINCS_WALLET_IMPLEMENTATION =
 /// See `versions/`.
 export const SHRINCS_WALLET_BETA2_IMPLEMENTATION =
   "0x680840c831c6D147404a0e00edA08a5360564FBC" as Address;
+/// The DEPLOYED ShrincsWallet implementation `V1.0.1-beta.3`. Pinned by name so
+/// the version resolver keeps recognizing beta.3 wallets after
+/// `SHRINCS_WALLET_IMPLEMENTATION` moves to a later generation. See `versions/`.
+export const SHRINCS_WALLET_BETA3_IMPLEMENTATION =
+  "0xc4E4652898bB12C4f0Ba9083829689B1963135E7" as Address;
 const SHRINCS_PAYMASTER_PROXY =
   "0x430c8c89492E3541e141148Dd7a7D6dD432e5890" as Address;
 const SHRINCS_PAYMASTER_IMPL =

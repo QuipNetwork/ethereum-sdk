@@ -24,6 +24,32 @@ export const HASH_SUITE_KECCAK_256 = 1;
 export const HASH_SUITE_SHA2_256 = 2;
 export const HASH_SUITE_UNSUPPORTED = 0xffffffff;
 
+// ── Stateless fixed layout (hashsigs-solidity 0.4.0 `StatelessLayout`, 256s) ──
+// Mirrors of on-chain constants. `shrincsCodec.test.ts` pins every one of them
+// against upstream's golden vector file, and the anvil smoke test proves the
+// deployed wallet accepts what they produce.
+
+/// `keccak256("shrincs-256s-keccak")` — `SHRINCSParams.PROFILE_ID`.
+export const SHRINCS_PROFILE_ID =
+  "0x32f573b453ffc4b3edb5db5c8c6f10d92aae60d6b7749116a86651f56e2a4878" as `0x${string}`;
+/// `StatelessLayout.PK_LEN`: statefulPublicKey(68) ‖ commitment ‖ pkSeed ‖ root.
+export const STATELESS_PK_BYTES = 164;
+/// `StatelessLayout.PQ_LEN`: the FORS ‖ hypertree signature.
+export const STATELESS_PQ_BYTES = 29_092;
+/// `StatelessLayout.PAYLOAD_LEN`: what `verifyStateless` takes.
+export const STATELESS_PAYLOAD_BYTES = STATELESS_PK_BYTES + STATELESS_PQ_BYTES;
+
+/// ERC-1271 envelope magic, ASCII "QPCS" (`ShrincsWalletCodec.ERC1271_MAGIC`).
+export const ERC1271_MAGIC = "0x51504353" as `0x${string}`;
+/// Envelope version (`ShrincsWalletCodec.ERC1271_VERSION`); the wallet reports
+/// the one it accepts through `erc1271Version()`.
+export const ERC1271_VERSION = 1;
+/// Owner ECDSA `r ‖ s ‖ v`.
+export const ERC1271_ECDSA_BYTES = 65;
+/// MAGIC(4) ‖ VERSION(1) ‖ PROFILE_ID(32) ‖ ECDSA(65) ‖ PK ‖ PQ.
+export const ERC1271_SIGNATURE_BYTES =
+  4 + 1 + 32 + ERC1271_ECDSA_BYTES + STATELESS_PAYLOAD_BYTES;
+
 /// WOTS-C chains revealed per stateful signature for the production profile.
 /// (Structural cross-check for decoded signatures.)
 export const STATEFUL_CHAINS = 64;

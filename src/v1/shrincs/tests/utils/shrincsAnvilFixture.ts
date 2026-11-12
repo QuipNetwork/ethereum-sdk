@@ -27,9 +27,11 @@ import {
   type PublicClient,
   type WalletClient,
   type TestClient,
+  type Chain,
   createPublicClient,
   createWalletClient,
   createTestClient,
+  getAddress,
   http,
   parseEther,
 } from "viem";
@@ -73,12 +75,11 @@ export const SHRINCS_ANVIL_PORTS = {
 /// The SPHINCSPlusC verifier address compile-time pinned inside
 /// `SHRINCS256sKeccak` (dep `DEPLOYMENTS.md`, CREATE3 — same on every chain).
 /// The fixture places its runtime bytecode here; stateless verification
-/// reverts on empty code at this address. Moved with the V4 verifier bump
-/// ("QUIP:SPHINCSPlusC256sKeccak:V3.0" salt; was `0x97B3726F…`); it must
-/// track the dep pin, so re-read
-/// `SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER` after any dep bump.
+/// reverts on empty code at this address. It moves with every verifier bump
+/// (hashsigs 0.4.0: "QUIP:SPHINCSPlusC256sKeccak:V4.0"); `assertVerifierPinMatches`
+/// fails the setup if it drifts from the built verifier.
 export const SPHINCS_PLUS_C_SIBLING =
-  "0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864" as const;
+  "0xD0bADF4aF24f2CaF2AAf82a31c7296002CcD62e4" as const;
 
 function assertVerifierPinMatches(verifierArtifact: {
   deployedBytecode: { object: string };
@@ -463,4 +464,70 @@ export async function deployFreshPaymasterProxy(
     stack.account,
     implReceipt.contractAddress!
   );
+}
+
+// ─── Fork helper ────────────────────────────────────────────────────
+
+/// On a FORK of a live chain: deploy this tree's ShrincsWallet implementation
+/// and vet it on the live factory (impersonating the factory owner).
+///
+/// The live pinned verifier is the pre-0.4.0 build and only understands the ABI
+/// stateless envelope, so the new implementation cannot use it. Until the
+/// hashsigs 0.4.0 pair is deployed, the verifier is deployed here and its
+/// SPHINCSPlusC sibling's code is placed at the address the verifier pins.
+export async function deployAndVetCurrentImplementation(params: {
+  publicClient: PublicClient;
+  walletClient: WalletClient;
+  testClient: TestClient;
+  deployer: PrivateKeyAccount;
+  chain: Chain;
+  factory: Address;
+}): Promise<Address> {
+  const { publicClient, walletClient, testClient, deployer, chain, factory } = params;
+  const deploy = async (artifactPath: string, args?: readonly unknown[]) => {
+    const artifact = readForgeArtifact(artifactPath);
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: await walletClient.deployContract({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        abi: artifact.abi as any,
+        bytecode: artifact.bytecode.object as Hex,
+        args,
+        account: deployer,
+        chain,
+      }),
+    });
+    return getAddress(receipt.contractAddress as Address);
+  };
+
+  await testClient.setCode({
+    address: SPHINCS_PLUS_C_SIBLING,
+    bytecode: readForgeArtifact(
+      "out/SPHINCSPlusC256sKeccak.sol/SPHINCSPlusC256sKeccak.json"
+    ).deployedBytecode.object as Hex,
+  });
+  const verifier = await deploy("out/SHRINCS256sKeccak.sol/SHRINCS256sKeccak.json");
+  const implementation = await deploy("out/ShrincsWallet.sol/ShrincsWallet.json", [
+    factory,
+    verifier,
+  ]);
+
+  const factoryOwner = (await publicClient.readContract({
+    address: factory,
+    abi: walletFactoryAbi,
+    functionName: "owner",
+  })) as Address;
+  await testClient.impersonateAccount({ address: factoryOwner });
+  await testClient.setBalance({ address: factoryOwner, value: parseEther("10") });
+  await publicClient.waitForTransactionReceipt({
+    hash: await walletClient.writeContract({
+      chain,
+      address: factory,
+      abi: walletFactoryAbi,
+      functionName: "vetImplementation",
+      args: [implementation],
+      account: factoryOwner,
+    }),
+  });
+  await testClient.stopImpersonatingAccount({ address: factoryOwner });
+  return implementation;
 }

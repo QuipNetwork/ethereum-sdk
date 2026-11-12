@@ -29,6 +29,7 @@ import { shrincsWalletAbi } from "../abi/ShrincsWallet.js";
 import { UnknownWalletVersionError } from "../errors.js";
 import type { WalletVersionDescriptor } from "./types.js";
 import { v1_0_1_beta2 } from "./v1_0_1_beta2/index.js";
+import { v1_0_1_beta3 } from "./v1_0_1_beta3/index.js";
 
 export type {
   WalletVersionDescriptor,
@@ -37,6 +38,8 @@ export type {
 } from "./types.js";
 export { v1_0_1_beta2 } from "./v1_0_1_beta2/index.js";
 export { shrincsWalletBeta2Abi } from "./v1_0_1_beta2/abi.js";
+export { v1_0_1_beta3 } from "./v1_0_1_beta3/index.js";
+export { shrincsWalletBeta3Abi } from "./v1_0_1_beta3/abi.js";
 
 /// The ERC-1967 implementation slot
 /// (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
@@ -58,6 +61,7 @@ export const LATEST_WALLET_VERSION: WalletVersionDescriptor = {
     hasStatefulLeafBitmapWord: true,
     enforcesSpentTreeFreshnessOnMigrate: true,
     handoverAcceptance: "hybrid",
+    statelessSignatureEncoding: "fixedLayout",
   },
 };
 
@@ -66,6 +70,7 @@ export const LATEST_WALLET_VERSION: WalletVersionDescriptor = {
 /// fallback, never matched by address.
 export const KNOWN_WALLET_VERSIONS: readonly WalletVersionDescriptor[] = [
   v1_0_1_beta2,
+  v1_0_1_beta3,
 ];
 
 /// Resolve a generation from an installed implementation address. Lenient:

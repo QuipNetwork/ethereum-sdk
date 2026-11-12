@@ -596,6 +596,26 @@ export class MalformedCodecPayloadError extends QuipError {
   }
 }
 
+/// Thrown client-side by the fixed-layout encoders (`encodeStatelessSignature`,
+/// `encodeStatelessPayload`, `encodeErc1271Signature`) when a field or the whole
+/// encoding does not have its exact on-chain width. The chain would reject the
+/// same bytes; failing here saves the round trip.
+export class StatelessEncodingLengthError extends QuipError {
+  readonly field: string;
+  readonly expected: number;
+  readonly actual: number;
+  constructor(field: string, expected: number, actual: number, opts?: QuipErrorOptions) {
+    super(
+      "SHRINCS_STATELESS_ENCODING_LENGTH",
+      `Malformed SHRINCS ${field}: expected exactly ${expected} bytes, got ${actual}`,
+      opts
+    );
+    this.field = field;
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
 // ── disabled classical paths (thrown client-side and on revert) ──────────────
 
 export class RenounceDisabledError extends QuipError {

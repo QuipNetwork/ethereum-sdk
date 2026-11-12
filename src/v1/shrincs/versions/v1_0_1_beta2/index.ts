@@ -41,5 +41,6 @@ export const v1_0_1_beta2: WalletVersionDescriptor = {
     hasStatefulLeafBitmapWord: false,
     enforcesSpentTreeFreshnessOnMigrate: false,
     handoverAcceptance: "none",
+    statelessSignatureEncoding: "abiStruct",
   },
 };

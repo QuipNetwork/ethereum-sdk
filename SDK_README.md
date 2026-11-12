@@ -202,6 +202,15 @@ The `deprecated/v0` client targets the original pre-v1 contracts. Its method nam
 
 `0.2.x` is a major break from `0.1.x` (see `MIGRATION.md` for the mapping). The SDK tracks the contract surface 1:1; minor releases land alongside contract upgrades that change the public surface.
 
+### Breaking changes in the next release (hashsigs-solidity 0.4.0)
+
+| Area | Change |
+|---|---|
+| Stateless signatures | Wallets built from this tree verify stateless signatures in the fixed layout of hashsigs-solidity 0.4.0: `recoverWallet`, `transferOwnership` and the `verifyUpgrade` probe take the signature as `bytes` (29,092 bytes on 256s), not an ABI struct. The client methods are unchanged; the SDK picks the encoding from the wallet's generation (`quirks.statelessSignatureEncoding`), so V1.0.1-beta.2 wallets keep working. |
+| ERC-1271 | `encodeErc1271Signature` now returns the fixed-layout envelope `MAGIC "QPCS" ‖ VERSION ‖ PROFILE_ID ‖ owner ECDSA ‖ PK ‖ PQ` (29,358 bytes on 256s, down from 91,840). Same parameters. `encodeLegacyErc1271Signature` produces the previous ABI form for V1.0.1-beta.2 wallets; `signErc1271` chooses between them. |
+| New surface | `encodeStatelessSignature`, `encodeStatelessPayload`, `getErc1271Version()`, `StatelessEncodingLengthError`, and the layout constants (`STATELESS_PQ_BYTES`, `ERC1271_SIGNATURE_BYTES`, …). |
+| Verifier | Contracts pin the hashsigs-solidity 0.4.0 `SHRINCS256sKeccak`. Its SPHINCSPlusC sibling moved to `0xD0bADF4aF24f2CaF2AAf82a31c7296002CcD62e4`. |
+
 ### Breaking changes in `0.3.0-beta.6`
 
 | Area | Change |

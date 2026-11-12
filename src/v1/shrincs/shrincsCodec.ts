@@ -32,8 +32,21 @@ import {
 } from "viem";
 
 import { shrincsWalletAbi } from "./abi/ShrincsWallet.js";
-import { HASH_SUITE_KECCAK_256 } from "./constants.js";
-import { MalformedCodecPayloadError } from "./errors.js";
+import { shrincsWalletBeta2Abi } from "./versions/v1_0_1_beta2/abi.js";
+import {
+  ERC1271_ECDSA_BYTES,
+  ERC1271_MAGIC,
+  ERC1271_SIGNATURE_BYTES,
+  ERC1271_VERSION,
+  HASH_SUITE_KECCAK_256,
+  SHRINCS_PROFILE_ID,
+  STATELESS_PK_BYTES,
+  STATELESS_PQ_BYTES,
+} from "./constants.js";
+import {
+  MalformedCodecPayloadError,
+  StatelessEncodingLengthError,
+} from "./errors.js";
 import {
   type ActionContext,
   type RotationContext,
@@ -408,9 +421,13 @@ export function buildRotationContext(params: {
 // The SHRINCS struct tuple shapes are extracted directly from the generated
 // `shrincsWalletAbi` (keyed by Solidity `internalType`) rather than re-declared
 // here, so the codec stays a single source of truth with the contract: a struct
-// change regenerates the ABI and these follow automatically. The nested
-// `StatelessSignature` (Fors/Hypertree/WotsC) is pulled in whole by one lookup.
-function findStructTuple(internalType: string): AbiParameter {
+// change regenerates the ABI and these follow automatically.
+type AbiFunctions = readonly { type: string; inputs?: readonly AbiParameter[] }[];
+
+function findStructTuple(
+  internalType: string,
+  abi: AbiFunctions = shrincsWalletAbi as AbiFunctions
+): AbiParameter {
   const search = (params: readonly AbiParameter[]): AbiParameter | undefined => {
     for (const p of params) {
       if (p.internalType === internalType) return p;
@@ -421,7 +438,7 @@ function findStructTuple(internalType: string): AbiParameter {
     }
     return undefined;
   };
-  for (const item of shrincsWalletAbi as readonly { type: string; inputs?: readonly AbiParameter[] }[]) {
+  for (const item of abi) {
     if (item.type === "function" && item.inputs) {
       const hit = search(item.inputs);
       // structuredClone detaches from the readonly `as const` ABI; we drop the
@@ -429,12 +446,19 @@ function findStructTuple(internalType: string): AbiParameter {
       if (hit) return { ...(structuredClone(hit) as AbiParameter), name: undefined };
     }
   }
-  throw new Error(`struct ${internalType} not found in shrincsWalletAbi`);
+  throw new Error(`struct ${internalType} not found in the wallet ABI`);
 }
 
 const PUBLIC_KEY_TUPLE = findStructTuple("struct SHRINCS.PublicKey");
 const STATEFUL_SIGNATURE_TUPLE = findStructTuple("struct SHRINCS.Signature");
-const STATELESS_SIGNATURE_TUPLE = findStructTuple("struct SPHINCSPlusC.Signature");
+// The stateless signature is no longer an ABI struct on chain (hashsigs 0.4.0
+// uses the fixed layout below). The struct form survives in two places: the
+// wasm signer's output, and the frozen V1.0.1-beta.2 generation's calldata. Its
+// tuple shape is therefore read from that generation's ABI snapshot.
+const STATELESS_SIGNATURE_TUPLE = findStructTuple(
+  "struct SPHINCSPlusC.Signature",
+  shrincsWalletBeta2Abi as AbiFunctions
+);
 
 /// The on-chain `PublicKey` struct now matches the SDK/WASM shape field-for-field
 /// (no parameter-set discriminator). These converters survive as explicit
@@ -592,20 +616,96 @@ export function probeDigest(newImplementation: Address): Hex {
   );
 }
 
+/*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+/*              STATELESS FIXED LAYOUT (hashsigs 0.4.0)        */
+/*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+
+/// The stateless signature in the verifier's fixed layout (`StatelessLayout`'s
+/// PQ section): `FORS ‖ hypertree`, a flat concatenation with no offsets or
+/// length words.
+///
+///   FORS      = randomizer ‖ counter(u32 BE) ‖ entry…   entry = secretLeaf ‖ authPath…
+///   hypertree = layer…   layer = wotsCPkHash ‖ randomizer ‖ counter(u32 BE) ‖ chains… ‖ authPath…
+///
+/// This is what `recoverWallet`, `transferOwnership` and the `verifyUpgrade`
+/// probe take as `bytes`, and the tail of the ERC-1271 envelope. Throws if the
+/// result is not exactly `STATELESS_PQ_BYTES` long, which catches any struct
+/// with a missing, extra or mis-sized node before it reaches the chain.
+export function encodeStatelessSignature(signature: StatelessSignature): Hex {
+  const u32 = (n: number): Hex => toHex(n, { size: 4 });
+  const pq = concat([
+    signature.fors.randomizer,
+    u32(signature.fors.counter),
+    ...signature.fors.entries.flatMap((entry) => [
+      entry.secretLeaf,
+      ...entry.authPath,
+    ]),
+    ...signature.hypertree.flatMap((layer) => [
+      layer.wotsCPkHash,
+      layer.wotsCSignature.randomizer,
+      u32(layer.wotsCSignature.counter),
+      ...layer.wotsCSignature.chains,
+      ...layer.authPath,
+    ]),
+  ]);
+  if (size(pq) !== STATELESS_PQ_BYTES) {
+    throw new StatelessEncodingLengthError(
+      "statelessSignature",
+      STATELESS_PQ_BYTES,
+      size(pq)
+    );
+  }
+  return pq;
+}
+
+/// The verifier's stateless payload `PK ‖ PQ`, with
+/// `PK = statefulPublicKey ‖ publicKeyCommitment ‖ pkSeed ‖ hypertreeRoot`.
+/// Mirrors `ShrincsWalletCodec.tryEncodeStatelessPayload`; throws where the
+/// contract rejects (a key field of the wrong width).
+export function encodeStatelessPayload(
+  publicKey: ShrincsPublicKey,
+  signature: StatelessSignature
+): Hex {
+  const pk = concat([
+    publicKey.statefulPublicKey,
+    publicKey.publicKeyCommitment,
+    publicKey.pkSeed,
+    publicKey.hypertreeRoot,
+  ]);
+  if (
+    size(publicKey.statefulPublicKey) !== STATELESS_PK_BYTES - 96 ||
+    size(publicKey.publicKeyCommitment) !== 32 ||
+    size(publicKey.pkSeed) !== 32 ||
+    size(publicKey.hypertreeRoot) !== 32
+  ) {
+    throw new StatelessEncodingLengthError(
+      "statelessPublicKey",
+      STATELESS_PK_BYTES,
+      size(pk)
+    );
+  }
+  return concat([pk, encodeStatelessSignature(signature)]);
+}
+
 /// The bare `verifyUpgrade` probe vector = `abi.encode(PublicKey bundle,
-/// StatefulSignature statefulSig, StatelessSignature statelessSig)` — the frozen
-/// `IWallet` seam a throwaway bundle presents so `verifyUpgrade` can confirm the
-/// target implementation speaks this signing scheme. Head word[0] == 0x60
-/// (three tail offsets), the shape the wallet's shape-sniff reads as "bare
-/// vector" (vs 0xc0 for a full auth blob it must unwrap first).
+/// StatefulSignature statefulSig, bytes statelessSig)` — the frozen `IWallet`
+/// seam a throwaway bundle presents so `verifyUpgrade` can confirm the target
+/// implementation speaks this signing scheme. `statelessSig` is the fixed-layout
+/// PQ section. Head word[0] == 0x60 (three tail offsets), the shape the wallet's
+/// shape-sniff reads as "bare vector" (vs 0xc0 for a full auth blob it must
+/// unwrap first).
 export function encodeProbeVector(params: {
   bundle: ShrincsPublicKey;
   statefulSig: StatefulSignature;
   statelessSig: StatelessSignature;
 }): Hex {
   return encodeAbiParameters(
-    [PUBLIC_KEY_TUPLE, STATEFUL_SIGNATURE_TUPLE, STATELESS_SIGNATURE_TUPLE],
-    [publicKeyToAbi(params.bundle), params.statefulSig, params.statelessSig]
+    [PUBLIC_KEY_TUPLE, STATEFUL_SIGNATURE_TUPLE, { type: "bytes" }],
+    [
+      publicKeyToAbi(params.bundle),
+      params.statefulSig,
+      encodeStatelessSignature(params.statelessSig),
+    ]
   );
 }
 
@@ -653,8 +753,46 @@ export function encodeUpgradeData(params: {
   );
 }
 
-/// ERC-1271 signature blob = `abi.encode(PublicKey, StatelessSignature, bytes ecdsaSig)`.
+/// ERC-1271 signature in the wallet's fixed-layout envelope:
+///
+///   MAGIC "QPCS" (4) ‖ VERSION (1) ‖ PROFILE_ID (32) ‖ owner ECDSA (65) ‖ PK ‖ PQ
+///
+/// 29,358 bytes on the 256s profile. Mirrors the layout in
+/// `ShrincsWalletCodec` ("ERC-1271 ENVELOPE LAYOUT"). The trailing `PK ‖ PQ` is
+/// `encodeStatelessPayload`, forwarded unchanged to the verifier.
 export function encodeErc1271Signature(params: {
+  publicKey: ShrincsPublicKey;
+  signature: StatelessSignature;
+  ecdsaSig: Hex;
+}): Hex {
+  if (size(params.ecdsaSig) !== ERC1271_ECDSA_BYTES) {
+    throw new StatelessEncodingLengthError(
+      "erc1271EcdsaSignature",
+      ERC1271_ECDSA_BYTES,
+      size(params.ecdsaSig)
+    );
+  }
+  const envelope = concat([
+    ERC1271_MAGIC,
+    toHex(ERC1271_VERSION, { size: 1 }),
+    SHRINCS_PROFILE_ID,
+    params.ecdsaSig,
+    encodeStatelessPayload(params.publicKey, params.signature),
+  ]);
+  if (size(envelope) !== ERC1271_SIGNATURE_BYTES) {
+    throw new StatelessEncodingLengthError(
+      "erc1271Signature",
+      ERC1271_SIGNATURE_BYTES,
+      size(envelope)
+    );
+  }
+  return envelope;
+}
+
+/// The ERC-1271 signature the frozen V1.0.1-beta.2 generation accepts:
+/// `abi.encode(PublicKey, StatelessSignature, bytes ecdsaSig)`. Wallets on a
+/// later generation reject it; use `encodeErc1271Signature`.
+export function encodeLegacyErc1271Signature(params: {
   publicKey: ShrincsPublicKey;
   signature: StatelessSignature;
   ecdsaSig: Hex;
