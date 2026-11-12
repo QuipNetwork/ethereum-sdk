@@ -408,12 +408,18 @@ contract ShrincsForkUpgradeFromDeployed is Test {
         SHRINCS.PublicKey memory pk,
         bytes memory message
     ) internal returns (bytes memory sig) {
+        // On a fork, forge caps each call from the test at the forked chain's block gas limit
+        // (400M on Base). The in-Solidity signer is test scaffolding standing in for an off-chain
+        // signer and needs far more than that, so gas metering is paused for the signing calls
+        // ONLY. Every wallet call in this file stays metered under the real block gas limit.
+        vm.pauseGasMetering();
         (bytes32 sessionId, bool ok) = statelessSigner.beginSession(key, pk, message);
         require(ok, "stateless session begin failed");
         StatelessSignatureTypes.Signature memory structSig;
         (, structSig, ok) = SHRINCSStatelessVectorSigningFacade.completeSession(statelessSigner, sessionId);
         require(ok, "stateless sign failed");
         sig = SHRINCSTestCodec.encodeCompactSignature(structSig);
+        vm.resumeGasMetering();
     }
 
     function _commitment32(SHRINCS.PublicKey memory pk) internal pure returns (bytes32 out) {
