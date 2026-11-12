@@ -3,16 +3,21 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSTestCodec} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestCodec.sol";
+import {StatelessSignatureTypes} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/StatelessSignatureTypes.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestSigner.sol";
 import {SHRINCSStatelessVectorSigner} from
     "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSStatelessVectorSigner.sol";
 import {SHRINCSStatelessVectorSigningFacade} from
     "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSStatelessVectorSigningFacade.sol";
+import {SHRINCS256sKeccak} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS256sKeccak.sol";
+import {SPHINCSPlusC256sKeccak} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC256sKeccak.sol";
 import {ShrincsWallet} from "../../contracts/shrincs/ShrincsWallet.sol";
 import {ShrincsWalletCodec as Codec} from "../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {ERC1967Utils} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Utils.sol";
+import {SHRINCS256sKeccakHarness} from "../harness/SHRINCS256sKeccakHarness.sol";
 
 /// @dev The live WalletFactory surface this test needs (frozen, deployed).
 interface IDeployedFactory {
@@ -87,7 +92,7 @@ contract ShrincsForkUpgradeFromDeployed is Test {
     address internal constant EXPECTED_LATEST_IMPL = 0x680840c831c6D147404a0e00edA08a5360564FBC;
 
     // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
-    bytes32 internal constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant IMPL_SLOT = ERC1967Utils.IMPLEMENTATION_SLOT;
 
     uint32 internal constant SIGN_BASE = 32;
     uint32 internal constant MAX_SIG = SIGN_BASE + 8;
@@ -157,8 +162,19 @@ contract ShrincsForkUpgradeFromDeployed is Test {
         assertEq(wallet.getShrincsPublicKeyCommitment(), mainCommitment, "live deploy installed the main key");
         assertEq(_installedImpl(), deployedImpl, "wallet proxy points at the deployed implementation");
 
-        // ── 2. Deploy the NEW implementation from this tree, against the LIVE pinned verifier ──
-        newImpl = new ShrincsWallet(payable(FACTORY), wallet.getShrincsVerifier());
+        // ── 2. Deploy the NEW implementation from this tree, against the hashsigs 0.4.0 verifier ──
+        // The LIVE pinned verifier (`wallet.getShrincsVerifier()`) is the pre-0.4.0 build: it
+        // only understands the ABI stateless envelope, so the new implementation cannot use it.
+        // The 0.4.0 pair is not on Base mainnet at the pinned fork block, so it is deployed
+        // locally: the verifier fresh, its SPHINCSPlusC sibling etched at the address the
+        // verifier pins at compile time. Replace both with the live addresses (and bump
+        // FORK_BLOCK_NUMBER) once the 0.4.0 pair is deployed.
+        SHRINCS256sKeccak newVerifier = new SHRINCS256sKeccak();
+        vm.etch(
+            new SHRINCS256sKeccakHarness().exposed_pinnedSphincsPlusC(), address(new SPHINCSPlusC256sKeccak()).code
+        );
+        assertTrue(address(newVerifier) != wallet.getShrincsVerifier(), "new impl pins a different verifier");
+        newImpl = new ShrincsWallet(payable(FACTORY), address(newVerifier));
 
         // ── 3. Vet it as the live factory owner ──
         vm.prank(factory.owner());
@@ -341,7 +357,7 @@ contract ShrincsForkUpgradeFromDeployed is Test {
             abi.encodePacked(SHRINCS.statefulRawMessageHash(probeCommitment, digest))
         );
         assertTrue(okS, "probe stateful sign");
-        SPHINCSPlusC.Signature memory probeStateless = _signStatelessRaw(
+        bytes memory probeStateless = _signStatelessRaw(
             probeKey, probePk, abi.encodePacked(SHRINCS.statelessRawMessageHash(probeCommitment, digest))
         );
         return abi.encode(probePk, probeStateful, probeStateless);
@@ -391,11 +407,13 @@ contract ShrincsForkUpgradeFromDeployed is Test {
         SHRINCS.SigningKey memory key,
         SHRINCS.PublicKey memory pk,
         bytes memory message
-    ) internal returns (SPHINCSPlusC.Signature memory sig) {
+    ) internal returns (bytes memory sig) {
         (bytes32 sessionId, bool ok) = statelessSigner.beginSession(key, pk, message);
         require(ok, "stateless session begin failed");
-        (, sig, ok) = SHRINCSStatelessVectorSigningFacade.completeSession(statelessSigner, sessionId);
+        StatelessSignatureTypes.Signature memory structSig;
+        (, structSig, ok) = SHRINCSStatelessVectorSigningFacade.completeSession(statelessSigner, sessionId);
         require(ok, "stateless sign failed");
+        sig = SHRINCSTestCodec.encodeCompactSignature(structSig);
     }
 
     function _commitment32(SHRINCS.PublicKey memory pk) internal pure returns (bytes32 out) {

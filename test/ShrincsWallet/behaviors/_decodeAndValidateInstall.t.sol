@@ -46,10 +46,7 @@ contract ShrincsWallet__decodeAndValidateInstall is ShrincsWalletTest {
     function test_decodeAndValidateInstall_revertsWhen_zeroMaxSignatures() public {
         SHRINCS.PublicKey memory pk = _mainPk();
         bytes memory spk = pk.statefulPublicKey;
-        spk[64] = 0;
-        spk[65] = 0;
-        spk[66] = 0;
-        spk[67] = 0;
+        _zeroMaxSignatures(spk);
         pk.statefulPublicKey = spk;
         bytes memory payload = _buildInitPayload(
             mainCommitment, _toBytes32(pk.pkSeed), pk,

@@ -5,7 +5,6 @@ import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {Initializable} from "solady-0.1.26/src/utils/Initializable.sol";
 import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -14,6 +13,7 @@ import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWall
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
+import {ERC1967Utils} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Utils.sol";
 
 /// @dev Behavior tests for `initialize`: the deterministic shape/suite/commitment validation.
 ///      Every branch reachable through the production path is driven through the REAL
@@ -28,8 +28,7 @@ contract ShrincsWallet_initialize is ShrincsWalletTest {
     ShrincsWalletHarness internal bare;
 
     // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
-    bytes32 internal constant IMPL_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant IMPL_SLOT = ERC1967Utils.IMPLEMENTATION_SLOT;
 
     function setUp() public override {
         super.setUp();

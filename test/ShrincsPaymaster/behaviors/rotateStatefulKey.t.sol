@@ -297,7 +297,7 @@ contract ShrincsPaymaster_rotateStatefulKey is ShrincsPaymasterTest {
 
     function test_rotateStatefulKey_revertsWhen_sameTreeDifferentBudget() public {
         bytes memory spk = verifierPk.statefulPublicKey;
-        spk[67] = bytes1(uint8(spk[67]) + 1); // low byte of the trailing maxSignatures
+        spk[spk.length - 1] = bytes1(uint8(spk[spk.length - 1]) + 1); // low byte of the trailing maxSignatures
         bytes32 c = SHRINCS.publicKeyCommitmentFromParts(spk, verifierPk.pkSeed, verifierPk.hypertreeRoot);
         assertTrue(c != _toBytes32(verifierPk.publicKeyCommitment), "budget changes the commitment");
         SHRINCS.StatefulRotationTarget memory t =

@@ -22,7 +22,10 @@ extra_output_files = ["abi"]
 skip = ["contracts/deprecated/v0/**"]
 # CreateX pins solc 0.8.23, so tests load its shipped artifact via vm.getCode
 # instead of compiling the source (see test/script/Deploy.t.sol).
-fs_permissions = [{ access = "read", path = "dependencies/pcaversaccio-createx-1.0.0/artifacts" }]
+fs_permissions = [
+    { access = "read", path = "dependencies/pcaversaccio-createx-1.0.0/artifacts" },
+    { access = "read", path = "dependencies/@quip.network-hashsigs-solidity-0.4.0/test/test_vectors" },
+]
 
 # The in-Solidity SHRINCS test signer (dependency test/helpers) is hash- and memory-heavy:
 # keygen/stateless signing expand EVM memory far past the defaults (matches the dependency's

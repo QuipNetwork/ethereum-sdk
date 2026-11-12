@@ -44,7 +44,7 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
 
     /// @dev After rotation, the stored commitment is the new key, so an op carrying the OLD verifier
     ///      key fails `matchesExpectedPublicKeyCommitment` inside `verifyStateful` → `AA34`.
-    function test_e2e_paymasterRotation_oldKeyRejected() public {
+    function test_e2e_paymasterRotation_oldKeyReverts() public {
         _rotateToVerifier2();
         // The paymaster blob is the OLD verifierKey, signed under epoch 0.
         _handleExpectRevert(
@@ -70,7 +70,7 @@ contract ShrincsE2E_keyRotation is ShrincsE2EBase {
     ///      installs a new commitment and bumps the wallet epoch. An OLD-epoch sponsorship — whose
     ///      wallet signature is bound to the prior key/epoch — is then rejected by the account →
     ///      `AA24` (the EntryPoint nonce is untouched by the direct `rotateKey` call).
-    function test_e2e_walletRotation_oldEpochSigRejected() public {
+    function test_e2e_walletRotation_oldEpochSigReverts() public {
         // Build the pre-rotation sponsorship FIRST (bound to the old key/epoch 0).
         PackedUserOperation memory preRotation = _checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1);
 

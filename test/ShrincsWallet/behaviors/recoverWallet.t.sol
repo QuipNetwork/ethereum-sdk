@@ -3,7 +3,6 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {SHRINCSVerifier} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCSVerifier.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
@@ -22,7 +21,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     }
 
     function test_recoverWallet_revertsWhen_notOwner() public {
-        SPHINCSPlusC.Signature memory recoverySig;
+        bytes memory recoverySig;
         SHRINCS.RotationTarget memory nextKey;
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -30,7 +29,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     }
 
     function test_recoverWallet_revertsWhen_invalidRecoverySignature() public {
-        SPHINCSPlusC.Signature memory recoverySig; // empty ⇒ statelessRotate returns zero
+        bytes memory recoverySig; // empty ⇒ statelessRotate returns zero
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
         wallet.recoverWallet(_mainPk(), recoverySig, _nextKey());
@@ -38,7 +37,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_succeeds() public {
         SHRINCS.RotationTarget memory nextKey = _nextKey();
-        SPHINCSPlusC.Signature memory recoverySig =
+        bytes memory recoverySig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
         uint256 nonceBefore = wallet.actionNonce();
@@ -69,7 +68,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
             pkSeed: pk.pkSeed,
             hypertreeRoot: pk.hypertreeRoot
         });
-        SPHINCSPlusC.Signature memory recoverySig =
+        bytes memory recoverySig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
 
         vm.prank(OWNER);
@@ -82,7 +81,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_delegatesToVerifier() public {
         SHRINCS.RotationTarget memory nextKey = _nextKey();
-        SPHINCSPlusC.Signature memory recoverySig =
+        bytes memory recoverySig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.expectCall(
             address(shrincsVerifier), abi.encodeWithSelector(SHRINCSVerifier.verifyStateless.selector)
@@ -101,7 +100,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     ///      make the two stateless-rotation paths mutually invalid.
     function test_recoverWallet_revertsWhen_signatureSignedForTransferOwnership() public {
         SHRINCS.RotationTarget memory nextKey = _nextKey();
-        SPHINCSPlusC.Signature memory handoverSig =
+        bytes memory handoverSig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
@@ -117,7 +116,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     ///      zero-call `expectCall`). Callers tamper `nextKey` between signing and this call.
     function _expectRecoverRejected(
         SHRINCS.RotationTarget memory nextKey,
-        SPHINCSPlusC.Signature memory recoverySig
+        bytes memory recoverySig
     ) internal {
         vm.expectCall(
             address(shrincsVerifier), abi.encodeWithSelector(SHRINCSVerifier.verifyStateless.selector), 0
@@ -129,7 +128,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_revertsWhen_declaredNextCommitmentMismatch() public {
         SHRINCS.RotationTarget memory nextKey = _nextKey();
-        SPHINCSPlusC.Signature memory recoverySig =
+        bytes memory recoverySig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         // Tamper the DECLARED commitment after signing: recompute-vs-declared must trip.
         nextKey.publicKeyCommitment = abi.encodePacked(keccak256("not-the-recomputed-commitment"));
@@ -138,7 +137,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_revertsWhen_zeroBudgetNextKey() public {
         SHRINCS.RotationTarget memory nextKey = _nextKey();
-        SPHINCSPlusC.Signature memory recoverySig =
+        bytes memory recoverySig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         // Zero the 4-byte maxSignatures tail of the 68-byte stateful key: an unusable key
         // must be rejected by the wallet's budget guard, before any delegation.
@@ -150,7 +149,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_revertsWhen_badNextKeyFieldWidths() public {
         SHRINCS.RotationTarget memory nextKey = _nextKey();
-        SPHINCSPlusC.Signature memory recoverySig =
+        bytes memory recoverySig =
             _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         nextKey.pkSeed = new bytes(31); // fixed-width fields keep the rotation preimage canonical
         _expectRecoverRejected(nextKey, recoverySig);
@@ -162,7 +161,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         (SHRINCS.RotationTarget memory t,) = _makeRotationTarget("recover-spends");
         SHRINCS.PublicKey memory next = _bundleOf(t);
         _assertTreesUnspent(next);
-        SPHINCSPlusC.Signature memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        bytes memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.prank(OWNER);
         wallet.recoverWallet(_mainPk(), sig, t);
         assertEq(wallet.getShrincsPublicKeyCommitment(), _toBytes32(next.publicKeyCommitment), "recovered");
@@ -171,7 +170,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_revertsWhen_sameBundle() public {
         SHRINCS.RotationTarget memory same = _sameBundleTarget();
-        SPHINCSPlusC.Signature memory sig = _signFullRotation(same, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        bytes memory sig = _signFullRotation(same, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.prank(OWNER);
         vm.expectRevert(
             abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(mainPk.statefulPublicKey))
@@ -192,7 +191,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
             pkSeed: erc1271Pk.pkSeed,
             hypertreeRoot: erc1271Pk.hypertreeRoot
         });
-        SPHINCSPlusC.Signature memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        bytes memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(erc1271Pk)));
         wallet.recoverWallet(_mainPk(), sig, t);
@@ -200,7 +199,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
 
     function test_recoverWallet_revertsWhen_statelessTreeCarriedForward() public {
         (SHRINCS.RotationTarget memory t,) = _freshStatefulSameStatelessTarget("recover-carry-stateless");
-        SPHINCSPlusC.Signature memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        bytes memory sig = _signFullRotation(t, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));
         wallet.recoverWallet(_mainPk(), sig, t);
@@ -209,7 +208,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
     function test_recoverWallet_revertsWhen_cyclingBackToEarlierBundle() public {
         SHRINCS.RotationTarget memory backToA = _sameBundleTarget();
         (SHRINCS.RotationTarget memory b, SHRINCS.SigningKey memory bKey) = _makeRotationTarget("recover-cycle-B");
-        SPHINCSPlusC.Signature memory sigAB = _signFullRotation(b, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        bytes memory sigAB = _signFullRotation(b, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.prank(OWNER);
         wallet.recoverWallet(_mainPk(), sigAB, b);
         assertEq(wallet.keyVersion(), 1);
@@ -217,7 +216,7 @@ contract ShrincsWallet_recoverWallet is ShrincsWalletTest {
         // Sign the B → A attempt with B (now installed). A's trees were spent at initialize.
         mainKey = bKey;
         mainPk = _bundleOf(b);
-        SPHINCSPlusC.Signature memory sigBA = _signFullRotation(backToA, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        bytes memory sigBA = _signFullRotation(backToA, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         vm.prank(OWNER);
         vm.expectRevert(
             abi.encodeWithSelector(IShrincsWallet.StatefulTreeSpent.selector, _treeId(backToA.statefulPublicKey))

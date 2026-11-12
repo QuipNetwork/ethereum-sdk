@@ -4,7 +4,6 @@ pragma solidity ^0.8.33;
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {UUPSUpgradeable} from "solady-0.1.26/src/utils/UUPSUpgradeable.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {WOTSPlus} from "@quip.network/hashsigs-solidity-0.4.0/contracts/WOTSPlus.sol";
 import {WOTSPlusTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/WOTSPlusTestSigner.sol";
 import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
@@ -15,9 +14,10 @@ import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestSigner.sol";
 import {ShrincsWalletStorage as Storage} from "../../../contracts/shrincs/ShrincsWalletStorage.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
+import {ERC1967Utils} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Utils.sol";
 
 // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
-bytes32 constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+bytes32 constant IMPL_SLOT = ERC1967Utils.IMPLEMENTATION_SLOT;
 // keyVersion slot (`ShrincsWalletStorage` base + 3) and the `usedStatefulLeafBitmap` mapping
 // base (base + 6). The offsets are pinned by `_storageLayout.t.sol`; derive, never retype.
 bytes32 constant KEY_VERSION_SLOT = bytes32(uint256(Storage._SHRINCS_STORAGE_SLOT) + 3);
@@ -104,11 +104,7 @@ contract MockMigrateImpl {
     function verifyUpgrade(address, bytes calldata) external view {}
 
     function migrate(bytes calldata) external {
-        uint256 installed;
-        assembly {
-            installed := sload(IMPL_SLOT)
-        }
-        require(address(uint160(installed)) == EXPECTED_OLD, "impl slot swapped before migrate");
+        require(ERC1967Utils.getImplementation() == EXPECTED_OLD, "impl slot swapped before migrate");
         // Inline assembly only takes direct number constants; the slot is derived, so bind it first.
         bytes32 keyVersionSlot = KEY_VERSION_SLOT;
         assembly {

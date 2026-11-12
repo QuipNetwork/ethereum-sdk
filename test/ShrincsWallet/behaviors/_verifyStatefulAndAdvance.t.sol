@@ -2,7 +2,6 @@
 pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -84,7 +83,7 @@ contract ShrincsWallet__verifyStatefulAndAdvance is ShrincsWalletTest {
 
     /// @dev A signature bound to a superseded nonce is rejected `InvalidSignature` with no state
     ///      change — the supersession property that replaced the signed-deadline design.
-    function test_verifyStatefulAndAdvance_rejectsStaleNonce() public {
+    function test_verifyStatefulAndAdvance_revertsWhen_staleNonce() public {
         bytes32 payloadHash = keccak256("stale-nonce-payload");
         SHRINCS.Signature memory sig = _signStatefulAction(Codec.ACTION_EXECUTE, payloadHash, 1);
 

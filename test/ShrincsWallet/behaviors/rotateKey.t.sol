@@ -3,7 +3,6 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -41,10 +40,7 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
     function test_rotateKey_revertsWhen_zeroMaxSignatures() public {
         SHRINCS.StatefulRotationTarget memory t = _validTarget();
         bytes memory spk = t.statefulPublicKey;
-        spk[64] = 0;
-        spk[65] = 0;
-        spk[66] = 0;
-        spk[67] = 0; // zero the trailing maxSignatures
+        _zeroMaxSignatures(spk);
         t.statefulPublicKey = spk;
 
         vm.prank(OWNER);
@@ -169,7 +165,7 @@ contract ShrincsWallet_rotateKey is ShrincsWalletTest {
     function test_rotateKey_revertsWhen_sameTreeDifferentBudget() public {
         // Same stateful tree, different declared budget: the commitment changes, the tree does not.
         bytes memory spk = mainPk.statefulPublicKey;
-        spk[67] = bytes1(uint8(spk[67]) + 1); // low byte of the trailing maxSignatures
+        spk[spk.length - 1] = bytes1(uint8(spk[spk.length - 1]) + 1); // low byte of the trailing maxSignatures
         bytes32 nextCommitment = SHRINCS.publicKeyCommitmentFromParts(spk, mainPk.pkSeed, mainPk.hypertreeRoot);
         assertTrue(nextCommitment != mainCommitment, "budget changes the commitment");
         SHRINCS.StatefulRotationTarget memory t = SHRINCS.StatefulRotationTarget({

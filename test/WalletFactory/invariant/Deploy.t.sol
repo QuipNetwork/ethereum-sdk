@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {WalletFactoryTest} from "../WalletFactory.t.sol";
 import {WalletFactoryDeployHandler} from "./support/DeployHandler.sol";
 import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlusImplementation.sol";
+import {ERC1967Utils} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Utils.sol";
 
 // Inline invariant budget. Every handler call derives a full WOTS+ keyset in the EVM
 // (~40ms each), so this suite caps runs/depth here. Inline config outranks the
@@ -14,8 +15,7 @@ import {WOTSPlusImplementation} from "../../../contracts/deprecated/wots/WOTSPlu
 /// forge-config: default.invariant.fail-on-revert = true
 
 contract WalletFactory_Deploy_Invariant is WalletFactoryTest {
-    bytes32 internal constant IMPLEMENTATION_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant IMPLEMENTATION_SLOT = ERC1967Utils.IMPLEMENTATION_SLOT;
     uint256 internal constant SEED_FEE = 0.05 ether;
     uint256 internal constant SEED_OWNER_SALT = 1;
     uint256 internal constant SEED_VALUE_SALT = 1;

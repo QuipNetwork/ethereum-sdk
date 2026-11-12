@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {ShrincsWalletHarness} from "../../../harness/ShrincsWalletHarness.sol";
 import {IShrincsWallet} from "../../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
+import {IERC1271} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/IERC1271.sol";
 
 contract SignedActionsEntryPoint {
     mapping(address => uint256) internal deposits;
@@ -94,7 +95,7 @@ contract ShrincsWalletSignedActionsHandler is Test {
         bytes4 expected = (index == OLD_SIGNATURE &&
             successfulActions == BEFORE_ACTIONS) ||
             (index == NEW_SIGNATURE && successfulActions == AFTER_KEY_SET)
-            ? bytes4(0x1626ba7e)
+            ? IERC1271.isValidSignature.selector
             : bytes4(0xffffffff);
         try
             wallet.isValidSignature(erc1271Hash, erc1271Signatures[index])

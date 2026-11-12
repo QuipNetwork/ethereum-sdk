@@ -4,7 +4,6 @@ pragma solidity ^0.8.33;
 import {ShrincsWallet} from "../../contracts/shrincs/ShrincsWallet.sol";
 import {ShrincsWalletStorage as Storage} from "../../contracts/shrincs/ShrincsWalletStorage.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 
 /// @dev Test harness exposing `ShrincsWallet` internals and a direct storage installer so
@@ -240,9 +239,9 @@ contract ShrincsWalletHarness is ShrincsWallet {
     function exposed_tryVerifyStateless(
         bytes32 expectedCommitment,
         bytes32 messageHash,
-        bytes calldata envelope
+        bytes calldata payload
     ) external view returns (bool) {
-        return _tryVerifyStateless(expectedCommitment, messageHash, envelope);
+        return _tryVerifyStateless(expectedCommitment, messageHash, payload);
     }
 
     /// @dev Wraps the per-op execute-fee collection.
@@ -304,7 +303,7 @@ contract ShrincsWalletHarness is ShrincsWallet {
         bytes32 expectedCommitment,
         SHRINCS.PublicKey calldata currentPublicKey,
         SHRINCS.RotationContext memory ctx,
-        SPHINCSPlusC.Signature calldata recoverySignature,
+        bytes calldata recoverySignature,
         SHRINCS.RotationTarget calldata nextKey
     ) external view returns (bytes32) {
         return _statelessRotate(expectedCommitment, currentPublicKey, ctx, recoverySignature, nextKey);

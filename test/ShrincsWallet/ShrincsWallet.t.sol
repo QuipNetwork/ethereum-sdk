@@ -4,10 +4,12 @@ pragma solidity ^0.8.33;
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
+import {StatelessSignatureTypes} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/StatelessSignatureTypes.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
+import {SHRINCSTestCodec} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestCodec.sol";
+import {StatelessSignatureTypes} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/StatelessSignatureTypes.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestSigner.sol";
 import {SHRINCSStatelessVectorSigner} from
     "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSStatelessVectorSigner.sol";
@@ -19,6 +21,7 @@ import {LibClone} from "solady-0.1.26/src/utils/LibClone.sol";
 import {ShrincsWalletCodec as Codec} from "../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletHarness} from "../harness/ShrincsWalletHarness.sol";
 import {WalletFactory} from "../../contracts/WalletFactory.sol";
+import {SHRINCS256sKeccakHarness} from "../harness/SHRINCS256sKeccakHarness.sol";
 
 /// @title ShrincsWallet Base Test
 /// @dev Generates SHRINCS keys and signatures entirely in Solidity via the dependency's
@@ -49,10 +52,14 @@ contract ShrincsWalletTest is Test {
     // Solady ERC4337's canonical EntryPoint (`onlyEntryPoint` overloads).
     address internal constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
 
-    // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
-    // sibling (`SHRINCS256sKeccak.SPHINCS_PLUS_C_VERIFIER`); the sibling's code must live
-    // there or every stateless verification reverts on empty code.
-    address internal constant SPHINCS_SIBLING = 0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864;
+    /// @dev CREATE3 address SHRINCS256sKeccak pins at compile time for its SPHINCSPlusC stateless
+    ///      sibling. Read from the dependency in `setUp`; the sibling's code must live there or
+    ///      every stateless verification reverts on empty code.
+    address internal SPHINCS_SIBLING;
+
+    /// @dev Size of the pre-0.4.0 ABI-encoded ERC-1271 signature on the 256s profile. Historical:
+    ///      no contract defines it any more, so this is its single home in the tests.
+    uint256 internal constant LEGACY_ERC1271_ABI_LEN = 91_840;
 
     ShrincsWalletHarness internal wallet;
     WalletFactory internal factory;
@@ -100,6 +107,7 @@ contract ShrincsWalletTest is Test {
         // sibling's code at the compile-time-pinned CREATE3 address (both are storage-free
         // and constructor-free, so etching runtime code is exact).
         shrincsVerifier = new SHRINCS256sKeccak();
+        SPHINCS_SIBLING = new SHRINCS256sKeccakHarness().exposed_pinnedSphincsPlusC();
         vm.etch(SPHINCS_SIBLING, address(new SPHINCSPlusC256sKeccak()).code);
 
         walletImplementation =
@@ -163,7 +171,7 @@ contract ShrincsWalletTest is Test {
             probeKey, SIGN_BASE + 1, abi.encodePacked(SHRINCS.statefulRawMessageHash(c, digest))
         );
         require(okS, "probe stateful sign");
-        SPHINCSPlusC.Signature memory sl = _signStatelessRaw(
+        bytes memory sl = _signStatelessRaw(
             probeKey, probePk, abi.encodePacked(SHRINCS.statelessRawMessageHash(c, digest))
         );
         return abi.encode(probePk, sf, sl);
@@ -397,36 +405,95 @@ contract ShrincsWalletTest is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    /// @dev Signs an arbitrary raw stateless message with the given key via the staged signer.
+    /// @dev Signs an arbitrary raw stateless message with the given key via the staged signer and
+    ///      returns the fixed-layout PQ section (`StatelessLayout.PQ_LEN` bytes).
     function _signStatelessRaw(
         SHRINCS.SigningKey memory key,
         SHRINCS.PublicKey memory pk,
         bytes memory message
-    ) internal returns (SPHINCSPlusC.Signature memory sig) {
+    ) internal returns (bytes memory) {
+        return SHRINCSTestCodec.encodeCompactSignature(_signStatelessRawStruct(key, pk, message));
+    }
+
+    /// @dev Struct form of `_signStatelessRaw`. Only needed to build pre-0.4.0 ABI-envelope blobs
+    ///      for the tests that prove the wallet rejects them.
+    function _signStatelessRawStruct(
+        SHRINCS.SigningKey memory key,
+        SHRINCS.PublicKey memory pk,
+        bytes memory message
+    ) internal returns (StatelessSignatureTypes.Signature memory sig) {
         (bytes32 sessionId, bool ok) = statelessSigner.beginSession(key, pk, message);
         require(ok, "stateless session begin failed");
         (, sig, ok) = SHRINCSStatelessVectorSigningFacade.completeSession(statelessSigner, sessionId);
         require(ok, "stateless sign failed");
     }
 
-    /// @dev Signs the wallet's canonical ERC-1271 STATELESS action message (dedicated verifier key).
-    function _signErc1271(bytes32 hash) internal returns (SPHINCSPlusC.Signature memory) {
+    /// @dev Zeroes the trailing `maxSignatures` of an encoded stateful public key in place.
+    function _zeroMaxSignatures(bytes memory statefulPublicKey) internal pure {
+        for (uint256 i = statefulPublicKey.length - 4; i < statefulPublicKey.length; ++i) {
+            statefulPublicKey[i] = 0;
+        }
+    }
+
+    /// @dev Intrinsic calldata gas of `data` (4 per zero byte, 16 per non-zero byte).
+    function _calldataGas(bytes memory data) internal pure returns (uint256 g) {
+        for (uint256 i; i < data.length; ++i) {
+            g += data[i] == 0 ? 4 : 16;
+        }
+    }
+
+    /// @dev The verifier's stateless payload `PK ‖ PQ` (`StatelessLayout`), as the SDK builds it.
+    function _statelessPayload(SHRINCS.PublicKey memory pk, bytes memory pq) internal pure returns (bytes memory) {
+        return abi.encodePacked(pk.statefulPublicKey, pk.publicKeyCommitment, pk.pkSeed, pk.hypertreeRoot, pq);
+    }
+
+    /// @dev The fixed-layout ERC-1271 envelope `MAGIC ‖ VERSION ‖ PROFILE_ID ‖ ecdsaSig ‖ PK ‖ PQ`.
+    function _erc1271Envelope(SHRINCS.PublicKey memory pk, bytes memory pq, bytes memory ecdsaSig)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodePacked(
+            Codec.ERC1271_MAGIC, Codec.ERC1271_VERSION, SHRINCSParams.PROFILE_ID, ecdsaSig, _statelessPayload(pk, pq)
+        );
+    }
+
+    /// @dev The raw message the dedicated verifier key signs for the wallet's canonical ERC-1271
+    ///      STATELESS action over `hash`.
+    function _erc1271Message(bytes32 hash) internal view returns (bytes memory) {
         SHRINCS.ActionContext memory ctx = _actionContext(Codec.ACTION_ERC1271, hash);
-        bytes memory message =
-            abi.encodePacked(
-                SHRINCS.statelessRawMessageHash(
-                    wallet.getErc1271PublicKeyCommitment(),
-                    SHRINCS.statelessActionMessageHash(wallet.getErc1271PublicKeyCommitment(), ctx)
-                )
-            );
-        return _signStatelessRaw(erc1271Key, erc1271Pk, message);
+        return abi.encodePacked(
+            SHRINCS.statelessRawMessageHash(
+                wallet.getErc1271PublicKeyCommitment(),
+                SHRINCS.statelessActionMessageHash(wallet.getErc1271PublicKeyCommitment(), ctx)
+            )
+        );
+    }
+
+    /// @dev Signs the wallet's canonical ERC-1271 STATELESS action message (dedicated verifier key).
+    function _signErc1271(bytes32 hash) internal returns (bytes memory) {
+        return _signStatelessRaw(erc1271Key, erc1271Pk, _erc1271Message(hash));
+    }
+
+    /// @dev A complete, valid ERC-1271 envelope over `hash`, signed live against the wallet's
+    ///      current nonce / keyVersion by the dedicated key and OWNER.
+    function _erc1271Blob(bytes32 hash) internal returns (bytes memory) {
+        return _erc1271Envelope(erc1271Pk, _signErc1271(hash), _ownerEcdsa(hash));
+    }
+
+    /// @dev The pre-0.4.0 ABI envelope `abi.encode(PublicKey, Signature, bytes)` of a VALID
+    ///      signature over `hash`. The wallet must reject it.
+    function _legacyErc1271Blob(bytes32 hash) internal returns (bytes memory) {
+        return abi.encode(
+            erc1271Pk, _signStatelessRawStruct(erc1271Key, erc1271Pk, _erc1271Message(hash)), _ownerEcdsa(hash)
+        );
     }
 
     /// @dev Signs the canonical FULL-rotation recovery message with the main key's stateless half,
     ///      under the given path's tagged rotation domain.
     function _signFullRotation(SHRINCS.RotationTarget memory nextKey, bytes32 rotationTag)
         internal
-        returns (SPHINCSPlusC.Signature memory)
+        returns (bytes memory)
     {
         SHRINCS.PublicKey memory pk = mainPk;
         bytes memory message = abi.encodePacked(
@@ -619,10 +686,7 @@ contract ShrincsWalletTest is Test {
     ///      `ZeroMaxSignatures` guard fires.
     function _zeroMaxSignaturesPayload(SHRINCS.PublicKey memory pk) internal view returns (bytes memory) {
         bytes memory spk = pk.statefulPublicKey;
-        spk[64] = 0;
-        spk[65] = 0;
-        spk[66] = 0;
-        spk[67] = 0;
+        _zeroMaxSignatures(spk);
         bytes32 newCommit = SHRINCS.publicKeyCommitmentFromParts(spk, pk.pkSeed, pk.hypertreeRoot);
         pk.statefulPublicKey = spk;
         pk.publicKeyCommitment = abi.encodePacked(newCommit);

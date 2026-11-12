@@ -8,6 +8,7 @@ import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWall
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestSigner.sol";
+import {ERC1967Utils} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Utils.sol";
 
 // Inline invariant budget. Every handler call verifies a SHRINCS signature in the EVM
 // (~0.3s each), so this suite caps runs/depth here. Inline config outranks the
@@ -18,8 +19,7 @@ import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/help
 /// forge-config: default.invariant.fail-on-revert = true
 
 contract ShrincsWallet_Upgrade_Invariant is ShrincsWalletTest {
-    bytes32 internal constant IMPL_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant IMPL_SLOT = ERC1967Utils.IMPLEMENTATION_SLOT;
 
     uint256 internal constant CHAIN_LEN = 3;
 

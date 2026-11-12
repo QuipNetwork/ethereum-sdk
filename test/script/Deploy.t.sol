@@ -14,6 +14,8 @@ import {DeployConstants} from "../../script/Constants.sol";
 import {IVettingFactory} from "../../script/DeployHelpers.sol";
 import {DeployShrincsBase} from "../../script/DeployShrincsBase.sol";
 import {DeployFactoryBase} from "../../script/DeployFactoryBase.sol";
+import {ERC1967Utils} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Utils.sol";
+import {SHRINCS256sKeccakHarness} from "../harness/SHRINCS256sKeccakHarness.sol";
 
 /// Public wrapper exposing the internal deploy-base helpers so a `Test` can drive
 /// them without inheriting `Script` (avoids the Test/Script diamond). Inherits the
@@ -90,8 +92,7 @@ contract DeployScriptsTest is Test {
 
     // eip1967.proxy.implementation slot (keccak256("eip1967.proxy.implementation") - 1),
     // read to recover an impl address from behind its ERC-1967 proxy.
-    bytes32 internal constant ERC1967_IMPL_SLOT =
-        0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant ERC1967_IMPL_SLOT = ERC1967Utils.IMPLEMENTATION_SLOT;
 
     // ERC-7201 base slot of `ShrincsPaymasterStorage.Layout`
     // (`contracts/storage/ShrincsPaymasterStorage.sol`). The field order declared
@@ -135,6 +136,12 @@ contract DeployScriptsTest is Test {
         // deploys (sibling + SHRINCS verifier) to already exist.
         vm.etch(0xF2f9E6D692da41b089c3c261c41509669eEc5567, address(new SHRINCS256sKeccak()).code);
         vm.etch(0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864, address(new SPHINCSPlusC256sKeccak()).code);
+        // hashsigs 0.4.0's SHRINCS256sKeccak pins a NEW sibling address. `script/Constants.sol`
+        // still names the pre-0.4.0 pair (it moves with the redeploy), so until then the 0.4.0
+        // verifier code sits at the old verifier address and its sibling at the new pin.
+        vm.etch(
+            new SHRINCS256sKeccakHarness().exposed_pinnedSphincsPlusC(), address(new SPHINCSPlusC256sKeccak()).code
+        );
     }
 
     /// Independent mirror of the raw-salt layout: operator(20) ‖ 0x00 ‖

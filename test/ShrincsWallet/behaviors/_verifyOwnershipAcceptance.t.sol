@@ -5,10 +5,11 @@ import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.s
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
+import {IERC1271} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/IERC1271.sol";
 
 /// @dev A contract recipient: accepts exactly the digests it was told to.
 contract AcceptingRecipient {
-    bytes4 internal constant MAGIC = 0x1626ba7e;
+    bytes4 internal constant MAGIC = IERC1271.isValidSignature.selector;
     mapping(bytes32 => bool) public accepted;
 
     function accept(bytes32 digest) external {

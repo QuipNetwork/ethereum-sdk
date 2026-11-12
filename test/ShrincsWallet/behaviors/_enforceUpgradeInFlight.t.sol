@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {ShrincsWalletHarness} from "../../harness/ShrincsWalletHarness.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
+import {ERC1967Utils} from "@openzeppelin-contracts-5.6.0-rc.1/proxy/ERC1967/ERC1967Utils.sol";
 
 /// @dev Unit tests for `_enforceUpgradeInFlight`, the sole gate on `migrate`: it passes exactly
 ///      when the ERC-1967 slot holds a PREVIOUS implementation (an upgrade into this code is in
@@ -11,7 +12,7 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 ///      (direct call on a live wallet).
 contract ShrincsWallet__enforceUpgradeInFlight is ShrincsWalletTest {
     // ERC-1967 implementation slot (`uint256(keccak256("eip1967.proxy.implementation")) - 1`).
-    bytes32 internal constant IMPL_SLOT = 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
+    bytes32 internal constant IMPL_SLOT = ERC1967Utils.IMPLEMENTATION_SLOT;
 
     ShrincsWalletHarness internal bare;
 

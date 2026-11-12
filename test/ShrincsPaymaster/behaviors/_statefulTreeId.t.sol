@@ -17,7 +17,7 @@ contract ShrincsPaymaster__statefulTreeId is ShrincsPaymasterTest {
 
     function test_statefulTreeId_ignoresMaxSignatures() public view {
         bytes memory spk = verifierPk.statefulPublicKey;
-        spk[67] = bytes1(uint8(spk[67]) + 1);
+        spk[spk.length - 1] = bytes1(uint8(spk[spk.length - 1]) + 1);
         assertEq(
             paymaster.exposed_statefulTreeId(spk),
             paymaster.exposed_statefulTreeId(verifierPk.statefulPublicKey),

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {StatelessLayout} from "@quip.network/hashsigs-solidity-0.4.0/contracts/StatelessLayout.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestSigner.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
@@ -47,7 +47,7 @@ contract ShrincsWallet_verifyUpgrade is ShrincsWalletTest {
     }
 
     /// @dev Raw-digest stateless signature from the throwaway key (no wallet context).
-    function _statelessProbeSig(bytes32 digest) internal returns (SPHINCSPlusC.Signature memory) {
+    function _statelessProbeSig(bytes32 digest) internal returns (bytes memory) {
         bytes memory message =
             abi.encodePacked(SHRINCS.statelessRawMessageHash(_commitment32(probePk), digest));
         return _signStatelessRaw(probeKey, probePk, message);
@@ -114,6 +114,55 @@ contract ShrincsWallet_verifyUpgrade is ShrincsWalletTest {
         bytes memory vector =
             abi.encode(_mainPk(), _statefulProbeSig(targetDigest), _statelessProbeSig(targetDigest));
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.verifyUpgrade(TARGET, vector);
+    }
+
+    /// @dev The stateless half is the fixed-layout PQ section: any other length is rejected by
+    ///      the verifier and surfaces as `InvalidSignature`.
+    function test_verifyUpgrade_revertsWhen_statelessSigTruncated() public {
+        bytes memory pq = _statelessProbeSig(targetDigest);
+        assertEq(pq.length, StatelessLayout.PQ_LEN, "fixture: PQ section width");
+        assembly {
+            mstore(pq, sub(mload(pq), 1))
+        }
+        bytes memory vector = abi.encode(probePk, _statefulProbeSig(targetDigest), pq);
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.verifyUpgrade(TARGET, vector);
+    }
+
+    function test_verifyUpgrade_revertsWhen_statelessSigExtended() public {
+        bytes memory vector = abi.encode(
+            probePk, _statefulProbeSig(targetDigest), abi.encodePacked(_statelessProbeSig(targetDigest), bytes1(0))
+        );
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.verifyUpgrade(TARGET, vector);
+    }
+
+    function test_verifyUpgrade_revertsWhen_statelessSigEmpty() public {
+        bytes memory vector = abi.encode(probePk, _statefulProbeSig(targetDigest), bytes(""));
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.verifyUpgrade(TARGET, vector);
+    }
+
+    /// @dev A mis-sized bundle field never reaches the fixed-offset payload.
+    function test_verifyUpgrade_revertsWhen_bundleFieldMisSized() public {
+        SHRINCS.PublicKey memory bad = probePk;
+        bad.hypertreeRoot = new bytes(33);
+        bytes memory vector = abi.encode(bad, _statefulProbeSig(targetDigest), _statelessProbeSig(targetDigest));
+        vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
+        wallet.verifyUpgrade(TARGET, vector);
+    }
+
+    /// @dev The stateless length word overruns the probe vector: the codec rejects it before
+    ///      any verification.
+    function test_verifyUpgrade_revertsWhen_statelessSigOverrunsPayload() public {
+        bytes memory vector = _vector(targetDigest);
+        uint256 slo;
+        assembly {
+            slo := mload(add(vector, 0x60))
+            mstore(add(add(vector, 0x20), slo), add(mload(add(add(vector, 0x20), slo)), 0x40))
+        }
+        vm.expectPartialRevert(Codec.MalformedPayload.selector);
         wallet.verifyUpgrade(TARGET, vector);
     }
 

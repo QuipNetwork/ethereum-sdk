@@ -3,9 +3,6 @@ pragma solidity ^0.8.33;
 
 import {Test} from "forge-std-1.14.0/Test.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {FORSMinusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/FORSMinusC.sol";
-import {Hypertree} from "@quip.network/hashsigs-solidity-0.4.0/contracts/Hypertree.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -49,11 +46,10 @@ contract ShrincsWalletCodecTest is Test {
         sig.authPath[2] = keccak256("auth-2");
     }
 
-    function _sampleStatelessSig() internal pure returns (SPHINCSPlusC.Signature memory sig) {
-        sig.fors.randomizer = abi.encodePacked(keccak256("fors-randomizer"));
-        sig.fors.counter = 11;
-        sig.fors.entries = new FORSMinusC.ForsEntry[](0);
-        sig.hypertree = new Hypertree.HypertreeLayerSignature[](0);
+    /// @dev Stand-in for the fixed-layout PQ section. The codec never inspects it (the verifier
+    ///      checks its length), so any bytes exercise the decoders.
+    function _sampleStatelessSig() internal pure returns (bytes memory) {
+        return abi.encodePacked(keccak256("fors-randomizer"), uint32(11), keccak256("fors-entry"));
     }
 
     /* ───────────────────────────── equality helpers ────────────────────────── */

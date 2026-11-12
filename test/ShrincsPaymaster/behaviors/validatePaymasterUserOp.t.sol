@@ -3,7 +3,6 @@ pragma solidity ^0.8.33;
 
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -51,7 +50,7 @@ contract ShrincsPaymaster_validatePaymasterUserOp is ShrincsPaymasterTest {
         paymaster.validatePaymasterUserOp(op, bytes32(0), 1 ether);
     }
 
-    function test_validate_rejectsMalformedShortPayload() public {
+    function test_validate_returnsFailureWhen_malformedShortPayload() public {
         PackedUserOperation memory op = _userOp(SENDER, new bytes(127)); // < 128 gate
         (uint256 reason, uint256 vd) = _rejectReason(op);
         assertEq(
@@ -63,7 +62,7 @@ contract ShrincsPaymaster_validatePaymasterUserOp is ShrincsPaymasterTest {
         assertEq(vd, 1, "validationData == 1");
     }
 
-    function test_validate_rejectsLeafZero() public {
+    function test_validate_returnsFailureWhen_leafZero() public {
         PackedUserOperation memory op = _userOp(
             SENDER,
             _pmData(_pk(), _statefulSigWithLeaf(0))
@@ -81,7 +80,7 @@ contract ShrincsPaymaster_validatePaymasterUserOp is ShrincsPaymasterTest {
         assertEq(paymaster.statefulLeavesUsed(), 0, "no leaf consumed");
     }
 
-    function test_validate_rejectsLeafOverBudget() public {
+    function test_validate_returnsFailureWhen_leafOverBudget() public {
         PackedUserOperation memory op = _userOp(
             SENDER,
             _pmData(_pk(), _statefulSigWithLeaf(uint256(MAX_SIG) + 1))
@@ -129,7 +128,7 @@ contract ShrincsPaymaster_validatePaymasterUserOp is ShrincsPaymasterTest {
         assertEq(paymaster.statefulLeavesUsed(), 0, "no leaf consumed");
     }
 
-    function test_validate_rejectsStaleLeaf() public {
+    function test_validate_returnsFailureWhen_staleLeaf() public {
         paymaster.harness_markLeafUsed(1);
         PackedUserOperation memory op = _userOp(
             SENDER,
@@ -145,7 +144,7 @@ contract ShrincsPaymaster_validatePaymasterUserOp is ShrincsPaymasterTest {
         assertEq(vd, 1);
     }
 
-    function test_validate_rejectsInvalidSignature() public {
+    function test_validate_returnsFailureWhen_invalidSignature() public {
         // Leaf-1 wallet sig: in budget, unused, reaches verify, but bound to the wrong context.
         PackedUserOperation memory op = _userOp(
             SENDER,

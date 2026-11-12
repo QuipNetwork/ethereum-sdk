@@ -3,7 +3,6 @@ pragma solidity ^0.8.33;
 
 import {IEntryPoint, IEntryPointStake, PackedUserOperation} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/draft-IERC4337.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -14,6 +13,7 @@ import {ShrincsPaymasterHarness} from "../../harness/ShrincsPaymasterHarness.sol
 import {MockShrincsFactory} from "../../mocks/MockShrincsFactory.sol";
 import {MockCallTarget} from "./MockCallTarget.sol";
 import {ShrincsE2EAssembler} from "./ShrincsE2EAssembler.t.sol";
+import {SHRINCS256sKeccakHarness} from "../../harness/SHRINCS256sKeccakHarness.sol";
 
 /// @dev Minimal extension exposing `getUserOpHash` on the forked EntryPoint.
 interface IEntryPointExt is IEntryPoint {
@@ -41,9 +41,10 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
     MockCallTarget internal callTarget;
     SHRINCS256sKeccak internal shrincsVerifier;
 
-    // CREATE3 address SHRINCS256sKeccak compile-time pins for its SPHINCSPlusC stateless
-    // sibling; its code must exist there or stateless verification reverts on empty code.
-    address internal constant SPHINCS_SIBLING = 0xe52707C5D76E2F7c3314cF3dcc340eB9BbAE3864;
+    /// @dev CREATE3 address SHRINCS256sKeccak pins at compile time for its SPHINCSPlusC stateless
+    ///      sibling (read from the dependency in `setUp`); its code must exist there or stateless
+    ///      verification reverts on empty code.
+    address internal SPHINCS_SIBLING;
 
     function setUp() public virtual override {
         super.setUp(); // generates the wallet + verifier keys
@@ -53,6 +54,7 @@ abstract contract ShrincsE2EBase is ShrincsE2EAssembler {
 
         // ── External verifier (fork won't have it; deploy + etch the pinned sibling) ──
         shrincsVerifier = new SHRINCS256sKeccak();
+        SPHINCS_SIBLING = new SHRINCS256sKeccakHarness().exposed_pinnedSphincsPlusC();
         vm.etch(SPHINCS_SIBLING, address(new SPHINCSPlusC256sKeccak()).code);
 
         // ── Place the wallet at its fixed address ──

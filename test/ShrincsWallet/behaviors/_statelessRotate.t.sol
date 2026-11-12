@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.33;
 
+import {StatelessLayout} from "@quip.network/hashsigs-solidity-0.4.0/contracts/StatelessLayout.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 
@@ -14,7 +14,7 @@ import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 ///      here assert the zero return rather than reverts.
 contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
     SHRINCS.RotationTarget internal target;
-    SPHINCSPlusC.Signature internal validSig;
+    bytes internal validSig;
     SHRINCS.RotationContext internal ctx;
 
     function setUp() public override {
@@ -43,7 +43,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
 
     function _rotate(
         SHRINCS.RotationTarget memory nextKey,
-        SPHINCSPlusC.Signature memory sig
+        bytes memory sig
     ) internal view returns (bytes32) {
         return
             wallet.exposed_statelessRotate(
@@ -124,10 +124,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
     {
         SHRINCS.RotationTarget memory bad = target;
         bytes memory spk = bad.statefulPublicKey;
-        spk[64] = 0;
-        spk[65] = 0;
-        spk[66] = 0;
-        spk[67] = 0;
+        _zeroMaxSignatures(spk);
         bad.statefulPublicKey = spk;
         assertEq(
             _rotate(bad, validSig),
@@ -155,7 +152,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
         public
         view
     {
-        SPHINCSPlusC.Signature memory empty;
+        bytes memory empty;
         assertEq(
             _rotate(target, empty),
             bytes32(0),
@@ -170,7 +167,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
         (SHRINCS.RotationTarget memory other, ) = _makeRotationTarget(
             "stateless-rotate-other"
         );
-        SPHINCSPlusC.Signature memory otherSig = _signFullRotation(
+        bytes memory otherSig = _signFullRotation(
             other,
             Codec.ROTATION_DOMAIN_RECOVER_WALLET
         );
@@ -185,7 +182,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
         public
     {
         // A transfer-ownership-domain signature must not authorize a recover-wallet rotation.
-        SPHINCSPlusC.Signature memory crossSig = _signFullRotation(
+        bytes memory crossSig = _signFullRotation(
             target,
             Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP
         );
@@ -196,14 +193,14 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_statelessRotate_rejectsSignedMismatchedCommitment()
+    function test_exposed_statelessRotate_returnsZeroWhen_signedMismatchedCommitment()
         public
     {
         SHRINCS.RotationTarget memory mismatchedTarget = target;
         mismatchedTarget.publicKeyCommitment = abi.encodePacked(
             keccak256("tampered-declared-commitment")
         );
-        SPHINCSPlusC.Signature memory recoverySignature = _signFullRotation(
+        bytes memory recoverySignature = _signFullRotation(
             mismatchedTarget,
             Codec.ROTATION_DOMAIN_RECOVER_WALLET
         );
@@ -214,7 +211,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_statelessRotate_rejectsSignedShortSeedWithMatchingCommitment()
+    function test_exposed_statelessRotate_returnsZeroWhen_signedShortSeedWithMatchingCommitment()
         public
     {
         SHRINCS.RotationTarget memory shortSeedTarget = target;
@@ -226,7 +223,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
                 shortSeedTarget.hypertreeRoot
             )
         );
-        SPHINCSPlusC.Signature memory recoverySignature = _signFullRotation(
+        bytes memory recoverySignature = _signFullRotation(
             shortSeedTarget,
             Codec.ROTATION_DOMAIN_RECOVER_WALLET
         );
@@ -237,7 +234,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_statelessRotate_rejectsSignedLongRootWithMatchingCommitment()
+    function test_exposed_statelessRotate_returnsZeroWhen_signedLongRootWithMatchingCommitment()
         public
     {
         SHRINCS.RotationTarget memory longRootTarget = target;
@@ -249,7 +246,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
                 longRootTarget.hypertreeRoot
             )
         );
-        SPHINCSPlusC.Signature memory recoverySignature = _signFullRotation(
+        bytes memory recoverySignature = _signFullRotation(
             longRootTarget,
             Codec.ROTATION_DOMAIN_RECOVER_WALLET
         );
@@ -260,15 +257,12 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_statelessRotate_rejectsSignedZeroBudgetWithMatchingCommitment()
+    function test_exposed_statelessRotate_returnsZeroWhen_signedZeroBudgetWithMatchingCommitment()
         public
     {
         SHRINCS.RotationTarget memory zeroBudgetTarget = target;
         bytes memory statefulPublicKey = zeroBudgetTarget.statefulPublicKey;
-        statefulPublicKey[64] = 0;
-        statefulPublicKey[65] = 0;
-        statefulPublicKey[66] = 0;
-        statefulPublicKey[67] = 0;
+        _zeroMaxSignatures(statefulPublicKey);
         zeroBudgetTarget.statefulPublicKey = statefulPublicKey;
         zeroBudgetTarget.publicKeyCommitment = abi.encodePacked(
             SHRINCS.publicKeyCommitmentFromParts(
@@ -277,7 +271,7 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
                 zeroBudgetTarget.hypertreeRoot
             )
         );
-        SPHINCSPlusC.Signature memory recoverySignature = _signFullRotation(
+        bytes memory recoverySignature = _signFullRotation(
             zeroBudgetTarget,
             Codec.ROTATION_DOMAIN_RECOVER_WALLET
         );
@@ -286,5 +280,84 @@ contract ShrincsWallet__statelessRotate is ShrincsWalletTest {
             bytes32(0),
             "zero-budget replacement rejected despite consistency"
         );
+    }
+
+    /* ───────────────── fixed-layout recovery signature (PQ section) ───────────────── */
+
+    function test_exposed_statelessRotate_recoverySignatureHasLayoutLength() public view {
+        assertEq(validSig.length, StatelessLayout.PQ_LEN, "PQ section width");
+    }
+
+    function test_exposed_statelessRotate_returnsZeroWhen_recoverySignatureTruncated() public view {
+        bytes memory sig = validSig;
+        assembly {
+            mstore(sig, sub(mload(sig), 1))
+        }
+        assertEq(_rotate(target, sig), bytes32(0), "one byte short rejected");
+    }
+
+    function test_exposed_statelessRotate_returnsZeroWhen_recoverySignatureExtended() public view {
+        assertEq(_rotate(target, abi.encodePacked(validSig, bytes1(0))), bytes32(0), "one byte long rejected");
+    }
+
+    function test_exposed_statelessRotate_returnsZeroWhen_recoverySignatureBitFlipped() public view {
+        bytes memory sig = validSig;
+        sig[0] ^= 0x01; // FORS randomizer
+        assertEq(_rotate(target, sig), bytes32(0), "flipped first byte rejected");
+        sig[0] ^= 0x01;
+        sig[sig.length - 1] ^= 0x01; // last hypertree auth-path byte
+        assertEq(_rotate(target, sig), bytes32(0), "flipped last byte rejected");
+    }
+
+    /// @dev The pre-0.4.0 ABI encoding of a signature is not a valid PQ section.
+    function test_exposed_statelessRotate_returnsZeroWhen_recoverySignatureAbiEncoded() public view {
+        assertEq(_rotate(target, abi.encode(validSig)), bytes32(0), "ABI-wrapped signature rejected");
+    }
+
+    /* ───────────────────── current public key (PK section) ───────────────────── */
+
+    function _rotateWithCurrent(SHRINCS.PublicKey memory current) internal view returns (bytes32) {
+        return wallet.exposed_statelessRotate(
+            wallet.getShrincsPublicKeyCommitment(), current, ctx, validSig, target
+        );
+    }
+
+    function test_exposed_statelessRotate_returnsZeroWhen_currentStatefulKeyWrongLength() public view {
+        SHRINCS.PublicKey memory bad = _mainPk();
+        bad.statefulPublicKey = bytes.concat(bad.statefulPublicKey, hex"00");
+        assertEq(_rotateWithCurrent(bad), bytes32(0), "mis-sized current statefulPublicKey rejected");
+    }
+
+    function test_exposed_statelessRotate_returnsZeroWhen_currentPkSeedWrongLength() public view {
+        SHRINCS.PublicKey memory bad = _mainPk();
+        bad.pkSeed = new bytes(31);
+        assertEq(_rotateWithCurrent(bad), bytes32(0), "mis-sized current pkSeed rejected");
+    }
+
+    function test_exposed_statelessRotate_returnsZeroWhen_currentHypertreeRootWrongLength() public view {
+        SHRINCS.PublicKey memory bad = _mainPk();
+        bad.hypertreeRoot = new bytes(33);
+        assertEq(_rotateWithCurrent(bad), bytes32(0), "mis-sized current hypertreeRoot rejected");
+    }
+
+    /// @dev Field widths that still sum to `PK_LEN`: the verifier's total-length check alone would
+    ///      pass, so the wallet's per-field check is what rejects.
+    function test_exposed_statelessRotate_returnsZeroWhen_currentFieldBoundaryShifted() public view {
+        SHRINCS.PublicKey memory bad = _mainPk();
+        bytes memory seed = bad.pkSeed;
+        bytes memory root = bad.hypertreeRoot;
+        bad.pkSeed = bytes.concat(seed, bytes1(root[0]));
+        bytes memory shortRoot = new bytes(31);
+        for (uint256 i; i < 31; ++i) {
+            shortRoot[i] = root[i + 1];
+        }
+        bad.hypertreeRoot = shortRoot;
+        assertEq(_rotateWithCurrent(bad), bytes32(0), "shifted pkSeed/hypertreeRoot boundary rejected");
+    }
+
+    /// @dev A well-formed bundle that is not the installed key: its commitment is not the
+    ///      wallet's, so the verifier rejects.
+    function test_exposed_statelessRotate_returnsZeroWhen_currentKeyIsOtherBundle() public view {
+        assertEq(_rotateWithCurrent(erc1271Pk), bytes32(0), "foreign bundle rejected");
     }
 }

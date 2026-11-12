@@ -29,7 +29,7 @@ contract ShrincsE2E_multiOpOutOfOrder is ShrincsE2EBase {
     ///      nonce 2) that re-signs the SAME wallet leaf 3 is rejected by the wallet's used-leaf
     ///      bitmap — EntryPoint nonce and wallet nonce are both valid, so this isolates the
     ///      leaf-replay guard as `AA24 signature error`.
-    function test_e2e_staleWalletLeafRejected() public {
+    function test_e2e_staleWalletLeafReverts() public {
         _handle(_checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 3, 0)); // consumes wallet leaf 3
         _handle(_checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 1, 2, 1)); // advances EP nonce to 2
 
@@ -46,7 +46,7 @@ contract ShrincsE2E_multiOpOutOfOrder is ShrincsE2EBase {
 
     /// @dev Supersession e2e: an op with a fresh leaf AND a fresh EntryPoint nonce but a STALE
     ///      wallet action nonce is rejected `AA24` — this isolates the nonce freshness guard.
-    function test_e2e_staleWalletNonceRejected() public {
+    function test_e2e_staleWalletNonceReverts() public {
         _handle(_checkedSponsoredOp(RECIPIENT, 0.1 ether, "", 0, 1, 0)); // advances wallet nonce to 1
 
         // EP nonce 1 (valid), leaf 2 (unused), but wallet nonce 0 (superseded).

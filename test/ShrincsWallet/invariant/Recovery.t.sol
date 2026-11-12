@@ -2,7 +2,6 @@
 pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
@@ -101,7 +100,7 @@ contract ShrincsWallet_Recovery_Invariant is ShrincsWalletTest {
             SHRINCS.RotationTarget memory nextKey,
             SHRINCS.SigningKey memory nextSigningKey
         ) = _makeRotationTarget("invariant-recovery-next-key");
-        SPHINCSPlusC.Signature memory recoverySignature = _signFullRotation(
+        bytes memory recoverySignature = _signFullRotation(
             nextKey,
             Codec.ROTATION_DOMAIN_RECOVER_WALLET
         );

@@ -18,7 +18,7 @@ contract ShrincsWallet__statefulTreeId is ShrincsWalletTest {
 
     function test_statefulTreeId_ignoresMaxSignatures() public view {
         bytes memory spk = mainPk.statefulPublicKey;
-        spk[67] = bytes1(uint8(spk[67]) + 1);
+        spk[spk.length - 1] = bytes1(uint8(spk[spk.length - 1]) + 1);
         assertEq(
             wallet.exposed_statefulTreeId(spk),
             wallet.exposed_statefulTreeId(mainPk.statefulPublicKey),

@@ -80,7 +80,7 @@ contract ShrincsWallet__tryVerifyDifferential is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_tryVerifyStateful_rejectsCorruptedSignature()
+    function test_exposed_tryVerifyStateful_returnsFalseWhen_corruptedSignature()
         public
         view
     {
@@ -101,7 +101,7 @@ contract ShrincsWallet__tryVerifyDifferential is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_tryVerifyStateful_rejectsWrongCommitment()
+    function test_exposed_tryVerifyStateful_returnsFalseWhen_wrongCommitment()
         public
         view
     {
@@ -117,7 +117,7 @@ contract ShrincsWallet__tryVerifyDifferential is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_tryVerifyStateful_rejectsTruncatedEnvelope()
+    function test_exposed_tryVerifyStateful_returnsFalseWhen_truncatedEnvelope()
         public
         view
     {
@@ -136,7 +136,7 @@ contract ShrincsWallet__tryVerifyDifferential is ShrincsWalletTest {
         );
     }
 
-    function test_exposed_tryVerifyStateful_rejectsEmptyEnvelope() public view {
+    function test_exposed_tryVerifyStateful_returnsFalseWhen_emptyEnvelope() public view {
         Triple memory t = _validTriple();
         assertFalse(
             _walletVerify(t.commitment, t.messageHash, new bytes(0)),

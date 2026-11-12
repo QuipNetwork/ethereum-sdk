@@ -2,7 +2,6 @@
 pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletOwnershipHandler} from "./support/OwnershipHandler.t.sol";
@@ -61,7 +60,7 @@ contract ShrincsWallet_Ownership_Invariant is ShrincsWalletTest {
         nextStatefulTree = _treeId(nextKey.statefulPublicKey);
         nextStatelessTree = _statelessId(_bundleOf(nextKey));
 
-        SPHINCSPlusC.Signature memory recoverySignature = _signFullRotation(
+        bytes memory recoverySignature = _signFullRotation(
             nextKey,
             Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP
         );

@@ -2,8 +2,9 @@
 pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
+import {StatelessLayout} from "@quip.network/hashsigs-solidity-0.4.0/contracts/StatelessLayout.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
+import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
 import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWalletCodec.sol";
 import {ShrincsWalletCodecTest} from "../ShrincsWalletCodec.t.sol";
 
@@ -156,31 +157,35 @@ contract ShrincsWalletCodec_boundsCheck is ShrincsWalletCodecTest {
 
     /* ───────────────────────── tryDecodeErc1271Signature ───────────────────────── */
 
-    // The ERC-1271 decoder is non-reverting (`tryDecodeErc1271Signature`): out-of-bounds tail
-    // offsets return `ok == false` instead of reverting, so a staticcalling relying contract is
-    // never DoS'd. The same bounds are still enforced — a malformed blob never decodes.
+    // The ERC-1271 envelope is fixed-layout: it carries no offsets or length words, so its only
+    // bound is the exact total length. The decoder is non-reverting (`ok == false`), so a
+    // staticcalling relying contract is never DoS'd. The two ABI-shaped blobs below were the
+    // out-of-bounds cases of the pre-0.4.0 ABI envelope; they must stay rejected.
     function test_tryDecodeErc1271Signature_boundsHappyPath() public view {
-        SHRINCS.PublicKey memory pk = _samplePublicKey();
-        bytes memory blob = abi.encode(pk, _sampleStatelessSig(), hex"1b");
-        (bool ok, SHRINCS.PublicKey memory dpk,,) = codec.exposed_tryDecodeErc1271Signature(blob);
-        assertTrue(ok, "well-formed blob decodes");
-        _assertPkEq(dpk, pk);
+        bytes memory blob = abi.encodePacked(
+            Codec.ERC1271_MAGIC,
+            Codec.ERC1271_VERSION,
+            SHRINCSParams.PROFILE_ID,
+            new bytes(Codec.ERC1271_ECDSA_LEN),
+            new bytes(StatelessLayout.PAYLOAD_LEN)
+        );
+        (bool ok, bytes memory ecdsaSig, bytes memory payload) = codec.exposed_tryDecodeErc1271Signature(blob);
+        assertTrue(ok, "exact-length envelope decodes");
+        assertEq(ecdsaSig.length, Codec.ERC1271_ECDSA_LEN, "ecdsa slice length");
+        assertEq(payload.length, StatelessLayout.PAYLOAD_LEN, "payload slice ends at the envelope end");
     }
 
-    function test_tryDecodeErc1271Signature_notOkWhen_tailOffsetOutOfBounds() public view {
-        // Head is 0x60 (three offset words); point the first past the slice end.
+    function test_tryDecodeErc1271Signature_returnsFalseWhen_tailOffsetOutOfBounds() public view {
         bytes memory blob = bytes.concat(bytes32(uint256(0x60)), bytes32(0), bytes32(0));
-        // Reading the pointed-to head word needs 0x60 + 0x20 = 0x80 bytes; the slice is 0x60.
-        (bool ok,,,) = codec.exposed_tryDecodeErc1271Signature(blob);
-        assertFalse(ok, "out-of-bounds tail offset rejected without reverting");
+        (bool ok,,) = codec.exposed_tryDecodeErc1271Signature(blob);
+        assertFalse(ok, "ABI-shaped blob with an out-of-bounds offset rejected without reverting");
     }
 
-    function test_tryDecodeErc1271Signature_notOkWhen_ecdsaSigLengthOversized() public view {
-        // All three offsets in range, but the ecdsaSig length word is oversized.
+    function test_tryDecodeErc1271Signature_returnsFalseWhen_ecdsaSigLengthOversized() public view {
         bytes memory blob = bytes.concat(
             bytes32(uint256(0x60)), bytes32(uint256(0x60)), bytes32(uint256(0x60)), bytes32(type(uint256).max)
         );
-        (bool ok,,,) = codec.exposed_tryDecodeErc1271Signature(blob);
-        assertFalse(ok, "oversized ecdsaSig length rejected without reverting");
+        (bool ok,,) = codec.exposed_tryDecodeErc1271Signature(blob);
+        assertFalse(ok, "ABI-shaped blob with an oversized length word rejected without reverting");
     }
 }

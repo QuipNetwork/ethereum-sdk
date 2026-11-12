@@ -4,7 +4,6 @@ pragma solidity ^0.8.33;
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -161,7 +160,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         );
     }
 
-    function test_markLeavesUsed_replayRejected() public {
+    function test_markLeavesUsed_revertsWhen_replayed() public {
         // The consumed authorizing leaf — not the nonce — is what blocks replaying the call.
         uint32[] memory leaves = _targets(SIGN_BASE + 2);
         SHRINCS.Signature memory sig = _markSig(leaves, 1);
@@ -262,7 +261,7 @@ contract ShrincsWallet_markLeavesUsed is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 2, "rejection consumes nothing further");
     }
 
-    function test_markLeavesUsed_revokedLeafRejectsDirectExecute() public {
+    function test_markLeavesUsed_revokedLeaf_directExecuteReverts() public {
         // Same property on the direct signed path.
         address target = address(0xBEEF);
         bytes32 payloadHash = Codec.executePayloadHash(target, 0, keccak256(""), 0);

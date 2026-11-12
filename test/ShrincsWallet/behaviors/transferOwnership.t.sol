@@ -3,7 +3,6 @@ pragma solidity ^0.8.33;
 
 import {Ownable} from "solady-0.1.26/src/auth/Ownable.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -11,10 +10,11 @@ import {ShrincsWalletCodec as Codec} from "../../../contracts/shrincs/ShrincsWal
 import {IShrincsWallet} from "../../../contracts/shrincs/interfaces/IShrincsWallet.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestSigner.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
+import {IERC1271} from "@openzeppelin-contracts-5.6.0-rc.1/interfaces/IERC1271.sol";
 
 /// @dev A contract recipient of a handover: accepts exactly the digests it was told to.
 contract AcceptingContractOwner {
-    bytes4 internal constant MAGIC = 0x1626ba7e;
+    bytes4 internal constant MAGIC = IERC1271.isValidSignature.selector;
     mapping(bytes32 => bool) public accepted;
 
     function accept(bytes32 digest) external {
@@ -72,7 +72,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     /// @dev Both current-owner signatures for handing `nextKey` to `newOwner`.
     function _currentOwnerSigs(SHRINCS.RotationTarget memory nextKey, address newOwner)
         internal
-        returns (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig)
+        returns (SHRINCS.Signature memory ownerSig, bytes memory recoverySig)
     {
         recoverySig = _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_TRANSFER_OWNERSHIP);
         ownerSig = _ownerBindingSig(newOwner, _toBytes32(nextKey.publicKeyCommitment));
@@ -92,7 +92,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     /// @dev Full, valid handover of a fresh bundle to NEW_OWNER, submitted by OWNER.
     function _handover() internal returns (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) {
         (nextKey, key) = _nextKey();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc, bytes memory ownerAcc) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
         vm.prank(OWNER);
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER, keyAcc, ownerAcc);
@@ -102,7 +102,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
     function test_transferOwnership_revertsWhen_notOwner() public {
         SHRINCS.Signature memory ownerSig;
-        SPHINCSPlusC.Signature memory recoverySig;
+        bytes memory recoverySig;
         SHRINCS.RotationTarget memory nextKey;
         vm.prank(makeAddr("stranger"));
         vm.expectRevert(Ownable.Unauthorized.selector);
@@ -111,7 +111,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
     function test_transferOwnership_revertsWhen_zeroOwner() public {
         SHRINCS.Signature memory ownerSig;
-        SPHINCSPlusC.Signature memory recoverySig;
+        bytes memory recoverySig;
         SHRINCS.RotationTarget memory nextKey;
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.ZeroAddressOwner.selector);
@@ -122,7 +122,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         // An empty recovery signature makes `statelessRotate` return the zero commitment,
         // surfaced as InvalidSignature.
         SHRINCS.Signature memory ownerSig;
-        SPHINCSPlusC.Signature memory recoverySig;
+        bytes memory recoverySig;
         (SHRINCS.RotationTarget memory nextKey,) = _nextKey();
         vm.prank(OWNER);
         vm.expectRevert(IShrincsWallet.InvalidSignature.selector);
@@ -134,7 +134,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_fullHandover() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc, bytes memory ownerAcc) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
         uint256 nonceBefore = wallet.actionNonce();
 
@@ -158,7 +158,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
     /// @dev After the handover the recipient operates the wallet with a fresh leaf, and the
     ///      acceptance leaf can never sign again — its one-time key already signed a public message.
-    function test_transferOwnership_newOwnerOperatesWithFreshLeaf_acceptanceLeafReplayRejected() public {
+    function test_transferOwnership_newOwnerOperatesWithFreshLeaf_acceptanceLeafReplayReverts() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _handover();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
         SHRINCS.PublicKey memory nextPk = _bundleOf(nextKey);
@@ -195,7 +195,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_acceptanceLeafRecordedInNewEpoch() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) =
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) =
             _currentOwnerSigs(nextKey, NEW_OWNER);
         SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, c, NEW_OWNER, 2);
         bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, c);
@@ -221,7 +221,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
             hypertreeRoot: pk.hypertreeRoot
         });
         bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) =
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) =
             _currentOwnerSigs(nextKey, NEW_OWNER);
         SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, nextCommitment, NEW_OWNER, ACCEPT_LEAF);
         bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, nextCommitment);
@@ -248,7 +248,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         uint256 nonceAfterExecute = wallet.actionNonce();
 
         // Current-owner signatures are produced against the LIVE state; the acceptance is reused as is.
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         vm.prank(OWNER);
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, nextKey, NEW_OWNER, keyAcc, ownerAcc);
         assertEq(wallet.owner(), NEW_OWNER);
@@ -261,7 +261,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         // The stateless rotation succeeds, but a `newOwner` not matching the stateful owner-binding
         // signature's `(newOwner, nextCommitment)` payload fails verification.
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc, bytes memory ownerAcc) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
 
         vm.prank(OWNER);
@@ -276,7 +276,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_revertsWhen_signatureSignedForRecoverWallet() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 nextCommitment = _toBytes32(nextKey.publicKeyCommitment);
-        SPHINCSPlusC.Signature memory recoverySig = _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
+        bytes memory recoverySig = _signFullRotation(nextKey, Codec.ROTATION_DOMAIN_RECOVER_WALLET);
         SHRINCS.Signature memory ownerSig = _ownerBindingSig(NEW_OWNER, nextCommitment);
         (SHRINCS.Signature memory keyAcc, bytes memory ownerAcc) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
 
@@ -293,7 +293,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_revertsWhen_newOwnerMistyped() public {
         address typo = makeAddr("newOwner-typo");
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, typo);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, typo);
         // The intended recipient signed for their own address; the bundle acceptance names the typo
         // so only the classical half is under test.
         SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, _toBytes32(nextKey.publicKeyCommitment), typo, ACCEPT_LEAF);
@@ -308,7 +308,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
     function test_transferOwnership_revertsWhen_ownerAcceptanceEmpty() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc,) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
 
         vm.prank(OWNER);
@@ -319,7 +319,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     /// @dev The current owner cannot forge the recipient's acceptance.
     function test_transferOwnership_revertsWhen_ownerAcceptanceSignedByCurrentOwner() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc,) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
         bytes memory forged = _signOwnerAcceptance(OWNER_PK, NEW_OWNER, _toBytes32(nextKey.publicKeyCommitment));
 
@@ -332,7 +332,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_revertsWhen_ownerAcceptanceBoundToOtherBundle() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         (SHRINCS.RotationTarget memory other,) = _makeRotationTarget("transfer-ownership-other-bundle");
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc,) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
         bytes memory forOther = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, _toBytes32(other.publicKeyCommitment));
 
@@ -347,7 +347,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_revertsWhen_ownerAcceptanceUnderOtherTypehash() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc,) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(NEW_OWNER_PK, wallet.quipUserOpHashEcdsaTarget(Codec.transferOwnershipPayloadHash(NEW_OWNER, c)));
@@ -362,7 +362,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
         recipient.accept(wallet.quipSignedHashEcdsaTarget(Codec.transferOwnershipPayloadHash(address(recipient), c)));
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, address(recipient));
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, address(recipient));
         SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, c, address(recipient), ACCEPT_LEAF);
 
         vm.prank(OWNER);
@@ -375,7 +375,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         AcceptingContractOwner recipient = new AcceptingContractOwner();
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, address(recipient));
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, address(recipient));
         SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, c, address(recipient), ACCEPT_LEAF);
 
         vm.prank(OWNER);
@@ -387,7 +387,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
     function test_transferOwnership_revertsWhen_keyAcceptanceEmpty() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (, bytes memory ownerAcc) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
         SHRINCS.Signature memory empty;
 
@@ -398,7 +398,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
     function test_transferOwnership_revertsWhen_keyAcceptanceLeafOverBudget() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         (, bytes memory ownerAcc) = _acceptance(nextKey, key, NEW_OWNER, NEW_OWNER_PK);
 
         vm.prank(OWNER);
@@ -413,7 +413,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_revertsWhen_keyAcceptanceSignedByCurrentKey() public {
         (SHRINCS.RotationTarget memory nextKey,) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, c);
         SHRINCS.Signature memory byCurrent = _signKeyAcceptance(mainKey, c, NEW_OWNER, SIGN_BASE + 3);
 
@@ -435,7 +435,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, c);
         SHRINCS.Signature memory keyAcc = _signStatefulActionWith(
             key, c, _actionContext(Codec.ACTION_TRANSFER_OWNERSHIP, Codec.transferOwnershipPayloadHash(NEW_OWNER, c)), ACCEPT_LEAF
@@ -451,7 +451,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_revertsWhen_keyAcceptanceForOtherOwner() public {
         (SHRINCS.RotationTarget memory nextKey, SHRINCS.SigningKey memory key) = _nextKey();
         bytes32 c = _toBytes32(nextKey.publicKeyCommitment);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(nextKey, NEW_OWNER);
         bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, c);
         SHRINCS.Signature memory keyAcc = _signKeyAcceptance(key, c, makeAddr("someone-else"), ACCEPT_LEAF);
 
@@ -466,7 +466,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
         (SHRINCS.RotationTarget memory t, SHRINCS.SigningKey memory key) = _makeRotationTarget("transfer-spends");
         SHRINCS.PublicKey memory next = _bundleOf(t);
         _assertTreesUnspent(next);
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(t, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(t, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc, bytes memory ownerAcc) = _acceptance(t, key, NEW_OWNER, NEW_OWNER_PK);
         vm.prank(OWNER);
         wallet.transferOwnership(_mainPk(), ownerSig, recoverySig, t, NEW_OWNER, keyAcc, ownerAcc);
@@ -476,7 +476,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
 
     function test_transferOwnership_revertsWhen_sameBundle() public {
         SHRINCS.RotationTarget memory same = _sameBundleTarget();
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(same, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(same, NEW_OWNER);
         // The "incoming" bundle IS the main key, so it signs the acceptance (at an unused leaf).
         SHRINCS.Signature memory keyAcc = _signKeyAcceptance(mainKey, mainCommitment, NEW_OWNER, SIGN_BASE + 5);
         bytes memory ownerAcc = _signOwnerAcceptance(NEW_OWNER_PK, NEW_OWNER, mainCommitment);
@@ -500,7 +500,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
             pkSeed: erc1271Pk.pkSeed,
             hypertreeRoot: erc1271Pk.hypertreeRoot
         });
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(t, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(t, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc, bytes memory ownerAcc) = _acceptance(t, key, NEW_OWNER, NEW_OWNER_PK);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(erc1271Pk)));
@@ -510,7 +510,7 @@ contract ShrincsWallet_transferOwnership is ShrincsWalletTest {
     function test_transferOwnership_revertsWhen_statelessTreeCarriedForward() public {
         (SHRINCS.RotationTarget memory t, SHRINCS.SigningKey memory key) =
             _freshStatefulSameStatelessTarget("transfer-carry-stateless");
-        (SHRINCS.Signature memory ownerSig, SPHINCSPlusC.Signature memory recoverySig) = _currentOwnerSigs(t, NEW_OWNER);
+        (SHRINCS.Signature memory ownerSig, bytes memory recoverySig) = _currentOwnerSigs(t, NEW_OWNER);
         (SHRINCS.Signature memory keyAcc, bytes memory ownerAcc) = _acceptance(t, key, NEW_OWNER, NEW_OWNER_PK);
         vm.prank(OWNER);
         vm.expectRevert(abi.encodeWithSelector(IShrincsWallet.StatelessTreeSpent.selector, _statelessId(mainPk)));

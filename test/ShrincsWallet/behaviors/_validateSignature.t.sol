@@ -4,7 +4,6 @@ pragma solidity ^0.8.33;
 import {Vm} from "forge-std-1.14.0/Vm.sol";
 import {ERC4337} from "solady-0.1.26/src/accounts/ERC4337.sol";
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {UXMSS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/UXMSS.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {SHRINCSParams} from "shrincs-profile/SHRINCSParams.sol";
@@ -44,7 +43,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         assertTrue(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf 1 marked consumed");
     }
 
-    function test_validateSignature_revertsWhen_replayConsumedLeaf() public {
+    function test_validateSignature_returnsFailureWhen_replayConsumedLeaf() public {
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 0, "first use passes");
         // Re-presenting the same consumed leaf is rejected by the bitmap (anti-replay).
@@ -52,14 +51,14 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         assertEq(wallet.statefulLeavesUsed(), 1, "used counter unchanged on rejection");
     }
 
-    function test_validateSignature_revertsWhen_leafAlreadyUsed() public {
+    function test_validateSignature_returnsFailureWhen_leafAlreadyUsed() public {
         // Pre-mark leaf 1 consumed; an otherwise-valid leaf-1 op must then be rejected.
         wallet.harness_markLeafUsed(SIGN_BASE + 1);
         (ERC4337.PackedUserOperation memory op, bytes32 userOpHash) = _erc4337Op(1);
         assertEq(wallet.exposed_validateSignature(op, userOpHash), 1, "already-consumed leaf must be rejected");
     }
 
-    function test_validateSignature_revertsWhen_wrongUserOpHash() public {
+    function test_validateSignature_returnsFailureWhen_wrongUserOpHash() public {
         // Both halves signed over the op's own hash, validated against a different one:
         // rejected at the ECDSA gate (it runs first), leaf untouched.
         (ERC4337.PackedUserOperation memory op,) = _erc4337Op(1);
@@ -68,7 +67,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         assertFalse(wallet.isStatefulLeafUsed(SIGN_BASE + 1), "leaf not consumed on rejection");
     }
 
-    function test_validateSignature_revertsWhen_badSignatureLength() public {
+    function test_validateSignature_returnsFailureWhen_badSignatureLength() public {
         ERC4337.PackedUserOperation memory op = _makeUserOp(hex"1234");
         uint256 result = wallet.exposed_validateSignature(op, keccak256("x"));
         assertEq(result, 1, "short signature must be rejected");
@@ -245,7 +244,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
         vm.clearMockedCalls();
     }
 
-    function test_validateSignature_rejectsStaleNonce() public {
+    function test_validateSignature_returnsFailureWhen_staleNonce() public {
         // Both ops signed against the SAME live nonce (0); after the first lands, the second is
         // superseded — rejected as InvalidSignature with its leaf NOT consumed.
         (ERC4337.PackedUserOperation memory op1, bytes32 h1) = _erc4337Op(1);
@@ -264,7 +263,7 @@ contract ShrincsWallet__validateSignature is ShrincsWalletTest {
     /// @dev A synthetic signature (correct `authPath.length`, no real crypto) can never verify, so
     ///      `_validateSignature` must return 1 (reject) for ANY leaf and userOpHash — never 0 — and
     ///      must never consume a leaf. Exercises the guard + verify-fail branches without a real sig.
-    function testFuzz_validateSignature_rejectsSyntheticSignature(uint256 leaf, bytes32 userOpHash) public {
+    function testFuzz_validateSignature_returnsFailureWhen_syntheticSignature(uint256 leaf, bytes32 userOpHash) public {
         leaf = bound(leaf, 0, 512); // `_statefulSigWithLeaf` allocates `new bytes32[](leaf)`
         // Valid co-signature: the rejection must come from the leaf guards / SHRINCS verify.
         ERC4337.PackedUserOperation memory op =

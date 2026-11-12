@@ -2,7 +2,6 @@
 pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {ShrincsWalletCodec as Codec} from "../../contracts/shrincs/ShrincsWalletCodec.sol";
 
 /// @dev Exposes the `ShrincsWalletCodec` library across an external boundary so its calldata
@@ -99,39 +98,37 @@ contract ShrincsWalletCodecHarness {
         returns (
             SHRINCS.PublicKey memory bundle,
             SHRINCS.Signature memory statefulSig,
-            SPHINCSPlusC.Signature memory statelessSig
+            bytes memory statelessSig
         )
     {
         (
             SHRINCS.PublicKey calldata _b,
             SHRINCS.Signature calldata _sf,
-            SPHINCSPlusC.Signature calldata _sl
+            bytes calldata _sl
         ) = Codec.decodeProbePayload(payload);
         bundle = _b;
         statefulSig = _sf;
         statelessSig = _sl;
     }
 
+    function exposed_tryEncodeStatelessPayload(SHRINCS.PublicKey calldata publicKey, bytes calldata pq)
+        external
+        pure
+        returns (bool ok, bytes memory payload)
+    {
+        return Codec.tryEncodeStatelessPayload(publicKey, pq);
+    }
+
     function exposed_tryDecodeErc1271Signature(bytes calldata sig)
         external
         pure
-        returns (
-            bool ok,
-            SHRINCS.PublicKey memory publicKey,
-            SPHINCSPlusC.Signature memory signature,
-            bytes memory ecdsaSig
-        )
+        returns (bool ok, bytes memory ecdsaSig, bytes memory payload)
     {
-        SHRINCS.PublicKey calldata _pk;
-        SPHINCSPlusC.Signature calldata _sig;
         bytes calldata _e;
-        (ok, _pk, _sig, _e) = Codec.tryDecodeErc1271Signature(sig);
-        // Mirror the production caller: on a malformed payload the calldata references are not
-        // valid ABI and must not be dereferenced. Return the zero-value memory structs instead.
-        if (!ok) return (ok, publicKey, signature, ecdsaSig);
-        publicKey = _pk;
-        signature = _sig;
+        bytes calldata _p;
+        (ok, _e, _p) = Codec.tryDecodeErc1271Signature(sig);
         ecdsaSig = _e;
+        payload = _p;
     }
 
     /* ────────────────────────── CONTEXT BUILDERS ───────────────────────────── */

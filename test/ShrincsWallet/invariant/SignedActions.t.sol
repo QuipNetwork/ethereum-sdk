@@ -2,7 +2,6 @@
 pragma solidity ^0.8.33;
 
 import {SHRINCS} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SHRINCS.sol";
-import {SPHINCSPlusC} from "@quip.network/hashsigs-solidity-0.4.0/contracts/SPHINCSPlusC.sol";
 import {SHRINCSTestSigner} from "@quip.network/hashsigs-solidity-0.4.0/test/helpers/SHRINCSTestSigner.sol";
 import {HashSuite} from "shrincs-hash/HashSuite.sol";
 import {ShrincsWalletTest} from "../ShrincsWallet.t.sol";
@@ -72,12 +71,12 @@ contract ShrincsWallet_SignedActions_Invariant is ShrincsWalletTest {
                 )
             )
         );
-        SPHINCSPlusC.Signature memory signature = _signStatelessRaw(
+        bytes memory signature = _signStatelessRaw(
             key,
             nextErc1271Key,
             message
         );
-        return abi.encode(nextErc1271Key, signature, _ownerEcdsa(ERC1271_HASH));
+        return _erc1271Envelope(nextErc1271Key, signature, _ownerEcdsa(ERC1271_HASH));
     }
 
     function setUp() public override {
@@ -134,11 +133,7 @@ contract ShrincsWallet_SignedActions_Invariant is ShrincsWalletTest {
         );
 
         bytes[] memory signatures = new bytes[](2);
-        signatures[OLD_SIGNATURE] = abi.encode(
-            erc1271Pk,
-            _signErc1271(ERC1271_HASH),
-            _ownerEcdsa(ERC1271_HASH)
-        );
+        signatures[OLD_SIGNATURE] = _erc1271Blob(ERC1271_HASH);
         signatures[NEW_SIGNATURE] = _newErc1271Signature(
             nextKey,
             initialNonce + 1
