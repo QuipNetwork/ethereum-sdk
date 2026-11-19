@@ -41,6 +41,7 @@ variables:
 
 default:
   image: node:20-bookworm
+  tags: [docker, amd64]
   interruptible: true
   retry:
     max: 1
